@@ -1,0 +1,165 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>TFTAgent</title>
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <span class="brand-mark">TFT</span>
+          <strong>局内检索</strong>
+        </div>
+        <div class="top-actions">
+          <button type="button" id="settings-button" title="设置">⚙</button>
+          <div class="status" id="status">就绪</div>
+        </div>
+      </header>
+
+      <form class="query-panel" id="query-form">
+        <textarea id="query-input" name="query" rows="2" autocomplete="off" spellcheck="false">霞带哪三件装备最好？</textarea>
+        <div class="action-row">
+          <button class="primary" type="submit">查询</button>
+          <button type="button" id="refresh-button" title="刷新结果">↻</button>
+          <button type="button" id="clear-button">清空</button>
+        </div>
+      </form>
+
+      <section class="controls" aria-label="查询条件">
+        <div class="segmented" id="sample-control" data-field="minSamples">
+          <button type="button" data-value="10">10</button>
+          <button type="button" data-value="50">50</button>
+          <button type="button" data-value="100" class="active">100</button>
+          <button type="button" data-value="500">500</button>
+          <button type="button" data-value="1000">1000</button>
+        </div>
+
+        <div class="segmented policy" id="policy-control" data-field="itemPolicy">
+          <button type="button" data-value="ordinary_only" class="active">普通</button>
+          <button type="button" data-value="include_radiant">光明</button>
+          <button type="button" data-value="include_artifact">神器</button>
+          <button type="button" data-value="include_special">特殊</button>
+        </div>
+
+        <select id="sort-select" aria-label="排序">
+          <option value="top4_first">前四</option>
+          <option value="win_first">吃鸡</option>
+          <option value="robust_first">样本</option>
+        </select>
+      </section>
+
+      <section class="settings-panel hidden" id="settings-panel" aria-label="设置">
+        <div class="settings-head">
+          <strong>设置</strong>
+          <button type="button" id="settings-close" title="关闭">×</button>
+        </div>
+        <label class="field-row">
+          <span>天数</span>
+          <select id="days-select" aria-label="天数">
+            <option value="1">1</option>
+            <option value="3">3</option>
+            <option value="7">7</option>
+            <option value="14">14</option>
+            <option value="30">30</option>
+          </select>
+        </label>
+        <label class="field-row">
+          <span>阵容</span>
+          <select id="context-strategy-select" aria-label="默认阵容策略">
+            <option value="popular">样本</option>
+            <option value="top4">前四</option>
+            <option value="score">Score</option>
+            <option value="avg">均名</option>
+          </select>
+        </label>
+        <label class="field-row">
+          <span>解析</span>
+          <select id="structured-parser-mode-select" aria-label="结构化解析策略">
+            <option value="inherit">继承</option>
+            <option value="auto">自动</option>
+            <option value="never">关闭</option>
+            <option value="always">始终</option>
+          </select>
+        </label>
+        <div class="rank-grid" id="rank-control" aria-label="段位">
+          <label><input type="checkbox" value="CHALLENGER">王者</label>
+          <label><input type="checkbox" value="GRANDMASTER">宗师</label>
+          <label><input type="checkbox" value="MASTER">大师</label>
+          <label><input type="checkbox" value="DIAMOND">钻石</label>
+          <label><input type="checkbox" value="EMERALD">翡翠</label>
+          <label><input type="checkbox" value="PLATINUM">铂金</label>
+          <label><input type="checkbox" value="GOLD">黄金</label>
+          <label><input type="checkbox" value="SILVER">白银</label>
+        </div>
+        <section class="runtime-status" aria-label="运行状态">
+          <div class="runtime-row">
+            <span>缓存</span>
+            <strong id="cache-status">-</strong>
+          </div>
+          <div class="runtime-row">
+            <span>LLM</span>
+            <strong id="llm-status">-</strong>
+          </div>
+          <small id="runtime-detail">-</small>
+        </section>
+        <section class="alias-review" aria-label="别名审核">
+          <div class="alias-head">
+            <strong>别名</strong>
+            <div class="alias-actions">
+              <button type="button" id="export-aliases-button">导出</button>
+              <button type="button" id="download-aliases-button">下载</button>
+              <button type="button" id="reload-aliases-button">刷新</button>
+              <button type="button" id="clear-entity-memory-button">清候选</button>
+            </div>
+          </div>
+          <div class="alias-filters">
+            <select id="alias-state-filter" aria-label="alias state">
+              <option value="">全部</option>
+              <option value="false">候选</option>
+              <option value="true">已启用</option>
+            </select>
+            <select id="alias-type-filter" aria-label="alias type">
+              <option value="">全部类型</option>
+              <option value="unit">英雄</option>
+              <option value="item">装备</option>
+              <option value="trait">羁绊</option>
+            </select>
+            <input id="alias-query-filter" type="search" autocomplete="off" placeholder="搜别名/API" aria-label="search aliases">
+          </div>
+          <div class="alias-batch">
+            <label><input type="checkbox" id="alias-select-all">全选</label>
+            <button type="button" id="enable-selected-aliases-button">启用选中</button>
+            <button type="button" id="disable-selected-aliases-button">停用选中</button>
+          </div>
+          <div class="alias-list" id="alias-list">
+            <div class="alias-empty">无候选</div>
+          </div>
+          <div class="alias-pagination">
+            <button type="button" id="alias-prev-button">上一页</button>
+            <span id="alias-page-label">0-0</span>
+            <button type="button" id="alias-next-button">下一页</button>
+          </div>
+        </section>
+        <div class="settings-actions">
+          <button type="button" id="clear-cache-button">清历史</button>
+          <button type="button" id="reset-preferences-button">重置</button>
+          <button type="button" class="primary" id="settings-done">完成</button>
+        </div>
+      </section>
+
+      <section class="result" id="result">
+        <div class="empty-state">待查询</div>
+      </section>
+
+      <details class="details" id="details">
+        <summary>条件</summary>
+        <pre id="raw-output"></pre>
+      </details>
+    </main>
+
+    <script src="/app.js" type="module"></script>
+  </body>
+</html>

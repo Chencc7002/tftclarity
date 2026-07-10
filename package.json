@@ -1,0 +1,27 @@
+{
+  "name": "tft-agent",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "TFT in-game data retrieval agent core for MetaTFT item build queries.",
+  "scripts": {
+    "start": "node src/app/small-window-server.js",
+    "window": "powershell -ExecutionPolicy Bypass -File scripts/start-small-window.ps1",
+    "window:server": "powershell -ExecutionPolicy Bypass -File scripts/start-small-window.ps1 -NoBrowser",
+    "test": "node --test",
+    "smoke": "node test/mvp-query.test.js",
+    "smoke:small-window": "node scripts/smoke-small-window.mjs",
+    "smoke:visual": "node scripts/smoke-small-window-visual.mjs",
+    "smoke:hotkey": "powershell -ExecutionPolicy Bypass -File scripts/smoke-small-window-hotkey.ps1",
+    "smoke:metatft": "node scripts/smoke-metatft.mjs",
+    "smoke:sqlite": "node scripts/smoke-sqlite-cache.mjs",
+    "audit:aliases": "node scripts/audit-alias-coverage.mjs",
+    "audit:items": "node scripts/audit-item-availability.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "optionalDependencies": {
+    "better-sqlite3": "^11.10.0"
+  }
+}

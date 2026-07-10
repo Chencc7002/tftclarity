@@ -1,0 +1,13 @@
+node_modules/
+.cache/
+.agents/
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite
+*.sqlite-*
+*.db
+*.db-*
+dist/
+coverage/
