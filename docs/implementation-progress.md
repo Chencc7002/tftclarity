@@ -4,6 +4,14 @@
 
 ## 已完成
 
+- 完成全局阵容排行榜端到端闭环：规则解析器支持最强、上分、稳、登顶、热门和平均名次等问法；可选 LLM 只输出受控 `comp_rankings`、metrics 和 limit，随后进入同一确定性服务。
+- 实际验证 MetaTFT `exact_units_traits2` 的八桶 `placement_count`，保存最小离线 fixture；阵容服务按稳定 cluster/规范化指纹聚合变体，复用 `StatsCalculator` 计算前四率、登顶率、平均名次和样本，并分别稳定排序。
+- 默认排除 PvE、重复英雄、召唤物、异常人口和明确专属强化 cluster；低于阈值的阵容只进入“低样本参考（不进入排名）”，不生成第三方等级标签。
+- 建立 Riot Data Dragon `16.13.1` 图标 manifest 与统一 asset resolver，覆盖英雄、装备和羁绊；CDN host 后端白名单、缺图固定占位、manifest 与装备本地化快照相互独立。
+- 小窗装备卡新增目标英雄与装备图标；阵容榜使用可展开卡片展示主要羁绊、成员、分指标统计、样本、核心英雄装备归属、来源、缓存和风险。
+- 阵容查询缓存键包含指标、limit、patch、queue、days、rank、minSamples、specialMode 和数据版本；实时失败可透明回退过期缓存。
+- 新增 `smoke:comps` 离线 smoke、`smoke:comps:live` 人工联网检查以及阵容数据来源文档。
+
 - 建立零依赖 Node ESM 项目骨架，优先保证离线可测。
 - 实现规则版 `QueryParser`：支持霞、观星、星级、三件套、普通/光明/神器策略、已持有装备、样本阈值、排序意图。
 - 补齐 `PreNormalizer` 的局内查询域归一化：NFKC 和大小写/空格处理之外，常见繁体字会在实体与规则解析前统一转为简体；`２星霞，３觀星，攜帶哪三件普通裝備最好？` 可生成与简体输入相同的 MetaTFT 参数。
@@ -167,6 +175,15 @@
 
 ## 最新验证
 
+- `npm test`：187/187 通过。
+- `npm run smoke:comps`：最终版本通过，覆盖前四/登顶独立榜首、缓存复用、零 `unit_builds` 调用、小窗 HTTP 响应、核心英雄装备归属和原始名次桶不泄露。
+- `npm run smoke:small-window`：最终版本通过；热缓存 4ms、本地持久缓存 6ms。
+- `npm run smoke:comps:live`：最终版本通过；250 行 exact 数据、当前 cluster 定义、样本范围 6,446,912，聚合后 70 个稳定 cluster/指纹组。
+- `npm run audit:assets`：16.13.1、662 条记录通过；刷新脚本现在支持干净克隆在本地缓存缺失时从固定版本 Data Dragon 获取源文件。
+- GitHub 外部状态已核实：现有 PR #1 为 `codex/items -> main`，open、mergeable_state=clean；当前 `codex/comps` 未推送且无对应 PR，本轮未擅自修改旧 PR。
+- 阵容数据源、口径、异常过滤和资产版本证据见 `docs/comp-ranking-data-source.md`。
+- bundled Playwright + 本地无头 Edge 已实际渲染最终版装备与阵容共 8 个场景。460px/360px 正常阵容、缺图、stale、低样本和空结果全部无横向溢出或紧凑文字裁切；英雄 32px、羁绊 22px、核心装备 18px，26 个缺图占位保持固定尺寸。首次检查发现 360px 空结果的长段位文本会撑宽 grid item，补充最小宽度和任意断行后全场景重跑通过。
+
 ```text
 node --check src\core\default-context-builder.js
 node --check src\core\context-builder.js
@@ -182,18 +199,18 @@ node --check src\app\small-window-ui\app.js
 node --check src\index.js
 
 npm test
-168 tests passed
+187 tests passed
 
 npm run smoke:small-window
 Small-window smoke checks passed.
-hot cache: 2ms (target <=100ms)
-reopened JSON cache: 3ms (target <=300ms)
+hot cache: 4ms (target <=100ms)
+reopened JSON cache: 6ms (target <=300ms)
 
 npm run smoke:item-localization
 item localization refresh: patch=17.6, source=16.13, items=179, localized=179, missing=0
 
 npm run smoke:visual
-standalone command skips without a project Playwright dependency; desktop Browser Playwright validation passed for 460px recommendation, 360px low-sample, and 360px empty-result states
+with --playwright-module pointing to bundled Playwright: 8 headless Edge scenes passed; 460px/360px, normal, missing-icon, stale, low-sample, empty, fixed-size, overflow and clipping checks covered
 
 npm run smoke:hotkey
 Hotkey smoke checks passed.
@@ -258,8 +275,8 @@ availabilityPolicy=item-availability-overrides-only
 - 同一 smoke 会验证启动 catalog 预热入口、多英雄、冲突排序、缺失比较项和低置信已持有装备输入在请求 Explorer 前阻断，验证完整装备对比卡、显式排除装备、结果反馈幂等、光明装备锁定查询，并验证当前不可用装备直接本地裁决且不增加 Explorer 调用；同时使用真实 query-cache 写入路径检查热缓存 `<=100ms`，随后重新打开临时 JSON 文件缓存，确认不调用远程客户端且本地缓存 `<=300ms`。最近一次结果分别为 2ms 和 3ms，可通过 `SMOKE_HOT_CACHE_MAX_MS`、`SMOKE_LOCAL_CACHE_MAX_MS` 调整发布环境阈值。
 - `POST /api/recommend` 输入 `guinsoo` 返回结构化澄清：`reason=missing_unit_with_item`，问题为“你说的是 羊刀，要查哪个英雄？”。
 - UTF-8 中文请求 `霞带哪三件装备最好？` 可命中并返回结果。
-- 浏览器检查：桌面内置 Browser 的 Playwright API 使用与 `smoke:visual` 相同的离线 fixture 完整渲染 460px 推荐卡、360px 低样本卡和 360px 零结果摘要。首次检查发现传统滚动条会把 `width: min(100vw, 460px)` 的 `.shell` 挤出 15px；改为 `width: min(100%, 460px)` 后，页面、面板、分段控件、统计格均无横向溢出，按钮、装备名和统计文字均无裁切。
-- 视觉证据保存在 `.cache/visual-smoke/desktop-result.png`、`.cache/visual-smoke/narrow-low-sample.png` 和 `.cache/visual-smoke/narrow-empty-result.png`。可选 `npm run smoke:visual` 仍支持项目已安装 Playwright 时独立运行；未安装时明确跳过。
+- 既有浏览器检查针对装备结果：桌面内置 Browser 的 Playwright API 完整渲染 460px 推荐卡、360px 低样本卡和 360px 零结果摘要。首次检查发现传统滚动条会把 `width: min(100vw, 460px)` 的 `.shell` 挤出 15px；改为 `width: min(100%, 460px)` 后，页面、面板、分段控件、统计格均无横向溢出，按钮、装备名和统计文字均无裁切。
+- 最终视觉截图保存在 `.cache/visual-smoke/`：装备为 `desktop-result.png`、`narrow-low-sample.png`、`narrow-empty-result.png`；阵容为 `comp-desktop.png`、`comp-narrow.png`、`comp-stale.png`、`comp-low-sample.png`、`comp-empty.png`。脚本用本地图块拦截 CDN，并通过 `--playwright-module` 使用 bundled Playwright 在本地无头 Edge 中完成全部断言。
 - `scripts/start-small-window.ps1 -NoBrowser -Port 17319` 可启动临时服务，通过 `/api/health` 检查后按 PID 清理。
 
 ## 当前限制

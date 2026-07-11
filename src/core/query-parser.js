@@ -2,6 +2,7 @@ import { DEFAULT_QUERY_OPTIONS, createCatalog } from "../data/static-data.js";
 import { digitValue, normalizeAlias, normalizeText, uniqueValues } from "./normalizer.js";
 import { resolveEntities } from "./entity-resolver.js";
 import { resolveHighConfidenceEntityCandidates } from "./high-confidence-entity-resolver.js";
+import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
 
 function parseStarLevels(input) {
   const matches = [...normalizeText(input).matchAll(/([123一二三两])星/g)];
@@ -164,6 +165,23 @@ function inferUnresolvedEntityHints(input, entities) {
 }
 
 export function parseQuery(input, options = {}) {
+  if (isCompRankingInput(input)) {
+    const compQuery = parseCompRankingQuery(input, options.compQuery);
+    return {
+      rawInput: String(input ?? ""),
+      ...compQuery,
+      unit: undefined,
+      unitAlias: undefined,
+      parser: {
+        usedLLM: false,
+        constraintConflicts: [],
+        unresolvedEntityHints: [],
+        entityAmbiguities: [],
+        entityMatches: []
+      },
+      defaults: DEFAULT_QUERY_OPTIONS
+    };
+  }
   const catalog = options.catalog ?? createCatalog();
   const exactEntities = resolveEntities(input, { catalog });
   const initialUnresolvedEntityHints = inferUnresolvedEntityHints(input, exactEntities);

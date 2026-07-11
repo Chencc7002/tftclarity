@@ -213,7 +213,141 @@ function metric(label, value) {
 }
 
 function itemPill(item) {
-  return `<span class="item${item.locked ? " locked" : ""}${item.compared ? " compared" : ""}">${escapeHtml(item.name)}</span>`;
+  const label = item.name ?? item.apiName ?? "装备";
+  return `<span class="item${item.locked ? " locked" : ""}${item.compared ? " compared" : ""}" title="${escapeHtml(label)}">
+    ${assetThumb(item.iconUrl, label, "item-icon")}
+    <span class="item-label">${escapeHtml(label)}</span>
+  </span>`;
+}
+
+function assetThumb(iconUrl, label, className = "") {
+  const text = String(label ?? "?").trim();
+  const fallback = text.slice(0, 1) || "?";
+  const image = iconUrl
+    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.hidden=true">`
+    : "";
+  return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${escapeHtml(fallback)}</span>${image}</span>`;
+}
+
+function hasNumericValue(value) {
+  return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
+}
+
+function rate(value) {
+  return hasNumericValue(value) ? `${(Number(value) * 100).toFixed(1)}%` : "不可用";
+}
+
+function placement(value) {
+  return hasNumericValue(value) ? Number(value).toFixed(2) : "不可用";
+}
+
+function compMetricLabel(key) {
+  return {
+    top4Rate: "前四率最高",
+    winRate: "登顶率最高",
+    avgPlacement: "平均名次最好",
+    popularity: "最热门"
+  }[key] ?? key;
+}
+
+function compPrimaryMetric(key, comp) {
+  if (key === "winRate") return `登顶 ${rate(comp.stats?.winRate)}`;
+  if (key === "avgPlacement") return `均名 ${placement(comp.stats?.avgPlacement)}`;
+  if (key === "popularity") return `样本 ${Number(comp.stats?.games ?? 0).toLocaleString("zh-CN")}`;
+  return `前四 ${rate(comp.stats?.top4Rate)}`;
+}
+
+function compTraitLabel(trait) {
+  const tier = Number(trait?.tier);
+  return Number.isInteger(tier) && tier > 0 ? `${trait.name} · ${tier}档` : trait?.name;
+}
+
+function compRankLabel(rankFilter = []) {
+  return rankFilter.length ? rankFilter.join("/") : "全部段位";
+}
+
+function compUpdatedLabel(value) {
+  if (!value) return "更新时间不可用";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "更新时间不可用";
+  return `更新 ${new Intl.DateTimeFormat("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false
+  }).format(date)}`;
+}
+
+function renderCompUnit(unit, expanded = false) {
+  const items = expanded && unit.items?.length
+    ? `<span class="unit-items">${unit.items.map((item) => assetThumb(item.iconUrl, item.name ?? item.apiName, "tiny-item-icon")).join("")}</span>`
+    : "";
+  const averageStar = expanded && hasNumericValue(unit.avgStarLevel)
+    ? `<small class="unit-star">均 ${Number(unit.avgStarLevel).toFixed(1)}★</small>`
+    : "";
+  return `<div class="comp-unit${unit.core ? " core" : ""}">
+    ${assetThumb(unit.iconUrl, unit.name, "unit-icon")}
+    ${expanded ? `<span class="unit-name">${escapeHtml(unit.name)}</span>${averageStar}${items}` : ""}
+  </div>`;
+}
+
+function renderCompCard(comp, metricKey, index) {
+  const mainTraits = (comp.traits ?? []).filter((trait) => !/UniqueTrait|SummonTrait/.test(trait.filterId ?? trait.apiName)).slice(0, 3);
+  const coreUnits = (comp.units ?? []).filter((unit) => unit.core).slice(0, 4);
+  const foldedUnits = coreUnits.length ? coreUnits : (comp.units ?? []).slice(0, 5);
+  return `
+    <details class="comp-card" ${index === 0 ? "open" : ""}>
+      <summary>
+        <div class="comp-summary-main">
+          <strong>${escapeHtml(comp.name)}</strong>
+          ${comp.lowSample ? '<span class="low-sample-label">低样本参考</span>' : ""}
+          <div class="trait-row">${mainTraits.map((trait) => assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")).join("")}</div>
+          <div class="unit-row">${foldedUnits.map((unit) => renderCompUnit(unit)).join("")}</div>
+        </div>
+        <div class="comp-summary-metric">
+          <b>${escapeHtml(compPrimaryMetric(metricKey, comp))}</b>
+          <span>${Number(comp.stats?.games ?? 0).toLocaleString("zh-CN")} 场</span>
+        </div>
+      </summary>
+      <div class="comp-expanded">
+        <div class="comp-stat-line">
+          <span>前四 ${rate(comp.stats?.top4Rate)}</span>
+          <span>登顶 ${rate(comp.stats?.winRate)}</span>
+          <span>均名 ${placement(comp.stats?.avgPlacement)}</span>
+        </div>
+        <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, true)).join("")}</div>
+        <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
+        <div class="comp-source">来源：MetaTFT exact_units_traits2${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(comp.source?.variantCount ?? 1)} 个形态 / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
+      </div>
+    </details>`;
+}
+
+function renderCompRankings(data) {
+  const sections = Object.entries(data.rankings ?? {}).filter(([, comps]) => comps?.length);
+  const references = data.references ?? [];
+  const stale = data.cache?.query?.stale ? "过期缓存" : data.cache?.query?.hit ? "缓存" : "实时";
+  if (!sections.length && !references.length) {
+    resultEl.innerHTML = `
+      <div class="empty-state">
+        <div>没有可用的阵容数据</div>
+        <small>近${escapeHtml(data.query?.days ?? 3)}天 · 样本>=${escapeHtml(data.query?.minSamples ?? 500)} · 段位 ${escapeHtml(compRankLabel(data.query?.rankFilter))}</small>
+        <small>未找到符合本地完整性规则的对局样本 · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
+      </div>
+      ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
+      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`;
+    return;
+  }
+  resultEl.innerHTML = `
+    <div class="comp-overview">
+      <strong>当前版本阵容榜</strong>
+      <span>近${escapeHtml(data.query?.days ?? 3)}天 · 样本>=${escapeHtml(data.query?.minSamples ?? 500)} · ${escapeHtml(stale)}</span>
+      <small title="${escapeHtml(compRankLabel(data.query?.rankFilter))}">段位 ${escapeHtml(compRankLabel(data.query?.rankFilter))} · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
+    </div>
+    ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
+    ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
+    ${references.length ? `<section class="ranking-section low-sample-section"><h2>低样本参考（不进入排名）</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
+    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`;
 }
 
 function newResultId() {
@@ -398,6 +532,13 @@ function renderResult(data) {
   state.lastResultId = newResultId();
   rawOutputEl.textContent = data.text ?? JSON.stringify(data, null, 2);
 
+  if (data.type === "comp_rankings") {
+    state.lastSuggestions = [];
+    state.lastEntityCandidates = [];
+    renderCompRankings(data);
+    return;
+  }
+
   if (data.clarification?.needsClarification) {
     state.lastSuggestions = data.clarification.suggestions ?? [];
     state.lastEntityCandidates = data.clarification.entityCandidates ?? [];
@@ -427,7 +568,10 @@ function renderResult(data) {
   resultEl.innerHTML = data.cards.map((card, index) => `
     <article class="result-card${card.winner ? " best" : ""}">
       <div class="card-head">
-        <div class="card-title">${escapeHtml(card.title)}</div>
+        <div class="card-title-group">
+          ${assetThumb(data.unit?.iconUrl ?? data.query?.unitIconUrl, data.unit?.name ?? data.query?.unitName ?? data.query?.unit ?? "英雄", "equipment-unit-icon")}
+          <div class="card-title">${escapeHtml(card.title)}</div>
+        </div>
         ${card.lowSample ? '<div class="risk">低样本</div>' : ""}
       </div>
       <div class="items">${card.items.map(itemPill).join("")}</div>

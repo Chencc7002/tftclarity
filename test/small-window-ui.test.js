@@ -121,3 +121,29 @@ test("small-window result cards expose idempotent feedback controls", () => {
   assert.match(styles, /\.result-feedback/);
   assert.match(styles, /\.feedback-button/);
 });
+
+test("small-window comp rankings use expandable fixed-size icon cards", () => {
+  assert.match(appJs, /renderCompRankings/);
+  assert.match(appJs, /renderCompCard/);
+  assert.match(appJs, /<details class="comp-card"/);
+  assert.match(appJs, /低样本参考（不进入排名）/);
+  assert.match(appJs, /equipment-unit-icon/);
+  assert.match(appJs, /data\.unit\?\.iconUrl \?\? data\.query\?\.unitIconUrl/);
+  assert.match(appJs, /compTraitLabel/);
+  assert.match(appJs, /段位 \$\{escapeHtml\(compRankLabel/);
+  assert.match(appJs, /compUpdatedLabel/);
+  assert.match(appJs, /assetThumb/);
+  assert.match(appJs, /aria-label/);
+  assert.match(appJs, /不可用/);
+  assert.match(appJs, /function hasNumericValue/);
+  assert.match(appJs, /value !== null && value !== undefined && value !== ""/);
+  assert.match(styles, /\.comp-card/);
+  assert.match(styles, /\.equipment-unit-icon/);
+  assert.match(styles, /\.unit-icon/);
+  assert.match(styles, /\.trait-icon/);
+  assert.match(styles, /\.tiny-item-icon/);
+  assert.match(styles, /\.full-unit-grid \.comp-unit/);
+  assert.match(styles, /grid-template-columns: 32px minmax\(0, 1fr\) auto/);
+  assert.match(styles, /width: 32px/);
+  assert.match(styles, /@media \(max-width: 379px\)/);
+});

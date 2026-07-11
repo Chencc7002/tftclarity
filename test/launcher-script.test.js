@@ -117,6 +117,10 @@ test("visual smoke script verifies responsive result states when Playwright is a
   assert.match(visualSmoke, /narrow-empty-result\.png/);
   assert.match(visualSmoke, /\.segmented/);
   assert.match(visualSmoke, /\.stats/);
+  assert.match(visualSmoke, /inspectAssetDimensions/);
+  assert.match(visualSmoke, /unstable asset dimensions/);
+  assert.match(visualSmoke, /page\.route\("https:\/\/ddragon\.leagueoflegends\.com\/\*\*"/);
+  assert.match(visualSmoke, /visualFixtureIcon/);
   assert.match(smallWindowStyles, /\.shell\s*\{[^}]*width:\s*min\(100%,\s*460px\)/s);
   assert.doesNotMatch(smallWindowStyles, /width:\s*min\(100vw,\s*460px\)/);
 });

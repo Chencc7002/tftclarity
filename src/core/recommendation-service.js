@@ -39,6 +39,9 @@ import {
   validateStructuredParserOutput
 } from "../llm/structured-parser.js";
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
+import { buildCompRankingQuery } from "./comp-query.js";
+import { buildCompRankings } from "./comp-ranking-service.js";
+import { decorateCompAssets } from "../data/asset-resolver.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
 
@@ -212,6 +215,11 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     applied.push(key);
   };
 
+  if (structured.intent === "comp_rankings" && !parsed.unit) {
+    next.intent = "comp_rankings";
+    applied.push("intent");
+  }
+
   if (!next.unit && reparsed.unit) {
     next.unit = reparsed.unit;
     next.unitAlias = reparsed.unitAlias;
@@ -243,6 +251,8 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
   applyScalar("queue", structured.constraints.queue);
   applyScalar("minSamples", structured.constraints.minSamples);
   applyScalar("sort", structured.constraints.sort);
+  applyArray("metrics", structured.constraints.metrics);
+  applyScalar("limit", structured.constraints.limit);
 
   return next;
 }
@@ -250,7 +260,8 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
 async function parseQueryWithOptionalStructuredParser(input, options, catalog) {
   const parsed = parseQuery(input, {
     catalog,
-    highConfidenceFuzzy: options.highConfidenceFuzzy
+    highConfidenceFuzzy: options.highConfidenceFuzzy,
+    compQuery: options.preferences
   });
   if (!shouldUseStructuredParser(parsed, options)) return parsed;
 
@@ -273,11 +284,13 @@ async function parseQueryWithOptionalStructuredParser(input, options, catalog) {
   const reparsed = expansion
     ? parseQuery(`${input}。${expansion}`, {
       catalog,
-      highConfidenceFuzzy: options.highConfidenceFuzzy
+      highConfidenceFuzzy: options.highConfidenceFuzzy,
+      compQuery: options.preferences
     })
     : parseQuery(input, {
       catalog,
-      highConfidenceFuzzy: options.highConfidenceFuzzy
+      highConfidenceFuzzy: options.highConfidenceFuzzy,
+      compQuery: options.preferences
     });
 
   return mergeStructuredParserResult(parsed, result.value, reparsed);
@@ -696,10 +709,99 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
+  const parsedInput = await parseQueryWithOptionalStructuredParser(input, options, catalog);
+
+  if (parsedInput.intent === "comp_rankings") {
+    const query = buildCompRankingQuery(parsedInput, {
+      preferences: options.preferences,
+      dataVersion: options.compDataVersion
+    });
+    const queryCacheKey = makeQueryCacheKey(query);
+    let response = options.compResponse ?? options.response;
+    let queryCache = { key: queryCacheKey, hit: false };
+    const warnings = [];
+
+    if (response === undefined && !options.bypassQueryCache) {
+      const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey);
+      if (cached?.value?.response !== undefined) {
+        response = cached.value.response;
+        queryCache = {
+          key: queryCacheKey,
+          hit: true,
+          updatedAt: cached.updatedAt,
+          expiresAt: cached.expiresAt
+        };
+      }
+    }
+
+    if (response === undefined) {
+      const params = {
+        formatnoarray: "true",
+        compact: "true",
+        queue: query.queue,
+        patch: query.patch,
+        days: query.days,
+        rank: query.rankFilter.join(",")
+      };
+      try {
+        response = await options.metaTFTClient?.getExactUnitsTraits2(params);
+        if (response !== undefined) {
+          const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
+            request: { endpoint: "/tft-explorer-api/exact_units_traits2", params },
+            response,
+            source: "metatft",
+            patch: query.patch
+          }, { ttlMs: options.queryTtlMs });
+          queryCache = {
+            ...queryCache,
+            updatedAt: stored?.updatedAt ?? new Date().toISOString(),
+            expiresAt: stored?.expiresAt ?? null
+          };
+        }
+      } catch (error) {
+        const stale = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, { allowExpired: true });
+        if (stale?.value?.response === undefined) throw error;
+        response = stale.value.response;
+        queryCache = {
+          key: queryCacheKey,
+          hit: true,
+          stale: true,
+          updatedAt: stale.updatedAt,
+          expiresAt: stale.expiresAt
+        };
+        warnings.push(`MetaTFT 请求失败，已使用 ${stale.updatedAt} 的过期阵容榜缓存`);
+      }
+    }
+
+    if (!response) throw new Error("comp rankings require exact_units_traits2 response or a MetaTFT client");
+    const sourceUpdatedAt = response.capture?.capturedAt
+      ?? queryCache.updatedAt
+      ?? options.compsData?.updatedAt
+      ?? options.compsData?.updated
+      ?? options.sourceUpdatedAt
+      ?? null;
+    const result = buildCompRankings(response, {
+      query,
+      catalog,
+      clusterResponse: options.compsData?.clusterInfo ?? options.clusterResponse,
+      compBuildsResponse: options.compsData?.compBuilds ?? options.compBuildsResponse,
+      sampleSize: Number(response.filter_adjustment?.sample_size ?? response.capture?.filterAdjustment?.sample_size),
+      updatedAt: sourceUpdatedAt,
+      warnings
+    });
+    const decorated = decorateCompAssets(result, {
+      resolver: options.assetResolver,
+      catalog
+    });
+    decorated.parsed = parsedInput;
+    decorated.cache = { query: queryCache };
+    decorated.text = "";
+    return decorated;
+  }
+
   const sessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", SESSION_LAST_QUERY_KEY);
-  const parsedInput = await parseQueryWithOptionalStructuredParser(input, options, catalog);
   const sessionMerge = inheritParsedFromSession(parsedInput, sessionEntry?.value);
   const parsed = sessionMerge.parsed;
   const parsedUnavailableItems = unavailableItemRecords(referencedItemApiNames(parsed), catalog);
