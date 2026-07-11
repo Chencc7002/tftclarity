@@ -26,6 +26,13 @@ function numericOption(value, fallback) {
   return Number.isFinite(number) && number > 0 ? number : fallback;
 }
 
+function chatCompletionsEndpoint(baseUrl) {
+  const normalized = String(baseUrl ?? "").trim().replace(/\/+$/u, "");
+  if (!normalized) return undefined;
+  if (/\/chat\/completions$/iu.test(normalized)) return normalized;
+  return `${normalized}/chat/completions`;
+}
+
 function compactParsed(parsed = {}) {
   return {
     intent: parsed.intent,
@@ -86,7 +93,12 @@ async function readPrompt(promptText) {
 }
 
 export function resolveStructuredParserConfig(options = {}, env = process.env) {
-  const provider = normalizeProvider(options.provider ?? env.TFT_AGENT_LLM_PROVIDER ?? "off");
+  const compatibleEndpoint = chatCompletionsEndpoint(env.OPENAI_BASE_URL);
+  const compatibleModel = env.MODEL_NAME ?? env.OPENAI_MODEL;
+  const inferredProvider = compatibleEndpoint && compatibleModel ? "chat" : "off";
+  const provider = normalizeProvider(
+    options.provider ?? env.TFT_AGENT_LLM_PROVIDER ?? inferredProvider
+  );
   const mode = normalizeMode(options.mode ?? env.TFT_AGENT_LLM_MODE ?? DEFAULT_STRUCTURED_PARSER_MODE);
   if (provider === "off") {
     return {
@@ -96,8 +108,8 @@ export function resolveStructuredParserConfig(options = {}, env = process.env) {
     };
   }
 
-  const endpoint = options.endpoint ?? env.TFT_AGENT_LLM_ENDPOINT;
-  const model = options.model ?? env.TFT_AGENT_LLM_MODEL;
+  const endpoint = options.endpoint ?? env.TFT_AGENT_LLM_ENDPOINT ?? compatibleEndpoint;
+  const model = options.model ?? env.TFT_AGENT_LLM_MODEL ?? compatibleModel;
   const apiKey = options.apiKey ?? env.TFT_AGENT_LLM_API_KEY ?? env.OPENAI_API_KEY;
   const timeoutMs = numericOption(
     options.timeoutMs ?? env.TFT_AGENT_LLM_TIMEOUT_MS,

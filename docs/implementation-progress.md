@@ -61,6 +61,7 @@
   - 新增 `src/llm/prompts/parse-query.md` 作为后续模型接入的输出契约，明确禁止模型计算胜率、编造 MetaTFT API name 或直接判断装备强度。
   - `recommendForInput` 支持可选注入 `structuredParser`；默认关闭，自动模式会在未识别英雄或已检测到显式但未解析的装备/羁绊片段时调用，完整命中字典的高频输入仍不进入 LLM 热路径。
   - 小窗服务支持通过 `TFT_AGENT_LLM_PROVIDER=chat`、`TFT_AGENT_LLM_ENDPOINT`、`TFT_AGENT_LLM_MODEL`、`TFT_AGENT_LLM_TIMEOUT_MS`、`TFT_AGENT_LLM_MODE` 或对应 CLI 参数启用该 provider；设置面板可持久化“继承/自动/关闭/始终”解析策略，但 endpoint、model 和 API key 仍只来自启动配置，未配置时保持纯规则/字典路径。
+  - 新增项目根目录 `.env` 自动加载与 `.env.example`；兼容 `OPENAI_API_KEY`、`OPENAI_BASE_URL`、`MODEL_NAME` 三变量配置，base URL 会补全为 `/chat/completions`，已存在的 shell 环境变量优先且真实 `.env` 不进入 Git。新增 `npm run smoke:llm` 用于真实 provider 连通性和结构化输出校验，输出不包含 API key。
   - 结构化解析结果只会补充玩家可见 mention（如“霞”“羊刀”）和约束字段，最终实体仍必须经本地字典、ContextBuilder 与 QueryValidator 校验后才能查询。
 - 实现本地实体候选检索兜底：
   - 新增 `src/llm/entity-candidate-retriever.js`，基于当前 catalog 的英雄/装备/羁绊别名做 BM25/关键词、子串、Damerau-Levenshtein、n-gram overlap 与本地稀疏 TF-IDF cosine 评分，用作轻量 RAG 前置版本。
@@ -181,7 +182,7 @@ node --check src\app\small-window-ui\app.js
 node --check src\index.js
 
 npm test
-166 tests passed
+168 tests passed
 
 npm run smoke:small-window
 Small-window smoke checks passed.

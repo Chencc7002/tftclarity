@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { loadLocalEnvironment } from "../config/load-env.js";
 import {
   CompsContextClient,
   DEFAULT_QUERY_OPTIONS,
@@ -1499,6 +1500,7 @@ export async function startSmallWindowServer(options = {}) {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  loadLocalEnvironment();
   startSmallWindowServer(parseCliOptions(process.argv.slice(2)))
     .then(({ url }) => {
       console.log(`TFTAgent small window: ${url}`);

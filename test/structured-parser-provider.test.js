@@ -1,5 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import {
   MemoryCacheStore,
   createCatalog,
@@ -12,6 +15,7 @@ import {
   handleRecommendRequest,
   resolveSmallWindowStructuredParserConfig
 } from "../src/app/small-window-server.js";
+import { loadLocalEnvironment } from "../src/config/load-env.js";
 
 const fixtureRows = [
   {
@@ -112,6 +116,58 @@ test("structured parser config is disabled by default and validates enabled prov
     maxTokens: 500,
     includeResponseFormat: true
   });
+});
+
+test("OpenAI-compatible environment aliases infer chat configuration and normalize the endpoint", () => {
+  assert.deepEqual(resolveStructuredParserConfig({}, {
+    OPENAI_API_KEY: "secret",
+    OPENAI_BASE_URL: "https://aihubmix.com/v1/",
+    MODEL_NAME: "test-model"
+  }), {
+    enabled: true,
+    provider: "chat",
+    mode: "auto",
+    endpoint: "https://aihubmix.com/v1/chat/completions",
+    model: "test-model",
+    apiKey: "secret",
+    timeoutMs: 1500,
+    temperature: 0,
+    maxTokens: 500,
+    includeResponseFormat: true
+  });
+
+  const explicit = resolveStructuredParserConfig({}, {
+    TFT_AGENT_LLM_PROVIDER: "chat",
+    TFT_AGENT_LLM_ENDPOINT: "https://llm.local/custom-endpoint",
+    TFT_AGENT_LLM_MODEL: "preferred-model",
+    OPENAI_BASE_URL: "https://aihubmix.com/v1",
+    MODEL_NAME: "fallback-model"
+  });
+  assert.equal(explicit.endpoint, "https://llm.local/custom-endpoint");
+  assert.equal(explicit.model, "preferred-model");
+});
+
+test("local env loading reads a selected file without overriding existing process values", () => {
+  const tempDir = mkdtempSync(join(tmpdir(), "tft-agent-env-"));
+  const envPath = join(tempDir, ".env");
+  const target = { OPENAI_API_KEY: "existing-secret" };
+  try {
+    writeFileSync(envPath, [
+      "OPENAI_API_KEY=file-secret",
+      "OPENAI_BASE_URL=https://aihubmix.com/v1",
+      "MODEL_NAME=test-model"
+    ].join("\n"), "utf8");
+
+    const result = loadLocalEnvironment({ path: envPath, processEnv: target });
+    assert.equal(result.loaded, true);
+    assert.equal(result.path, envPath);
+    assert.equal(target.OPENAI_API_KEY, "existing-secret");
+    assert.equal(target.OPENAI_BASE_URL, "https://aihubmix.com/v1");
+    assert.equal(target.MODEL_NAME, "test-model");
+    assert.equal(result.keys.includes("OPENAI_API_KEY"), true);
+  } finally {
+    rmSync(tempDir, { recursive: true, force: true });
+  }
 });
 
 test("small-window runtime wires configured structured parser into recommendations", async () => {

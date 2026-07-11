@@ -83,7 +83,23 @@ node scripts\smoke-small-window-visual.mjs `
 
 ## 可选 LLM 解析
 
-默认不启用 LLM，所有高频输入仍走规则和字典。需要给低置信输入启用结构化解析兜底时，可以配置一个 chat-completions 兼容 HTTP provider：
+默认不启用 LLM，所有高频输入仍走规则和字典。需要给低置信输入启用结构化解析兜底时，可以复制 `.env.example` 为 `.env`，填写 OpenAI-compatible provider：
+
+```env
+OPENAI_API_KEY=your_openai_compatible_api_key
+OPENAI_BASE_URL=https://aihubmix.com/v1
+MODEL_NAME=your_model_id
+TFT_AGENT_LLM_MODE=auto
+TFT_AGENT_LLM_TIMEOUT_MS=3000
+```
+
+`npm start`、`npm run window` 和 `npm run window:server` 启动的小窗服务会自动读取项目根目录 `.env`。`OPENAI_BASE_URL` 会补成 `/chat/completions` 请求地址；真实 `.env` 已被 Git 忽略。配置后可先运行：
+
+```powershell
+npm run smoke:llm
+```
+
+也可以继续通过当前 shell 的环境变量覆盖 `.env`：
 
 ```powershell
 $env:TFT_AGENT_LLM_PROVIDER = "chat"
