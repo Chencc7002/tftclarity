@@ -27,6 +27,14 @@ export { buildQueryContext } from "./core/context-builder.js";
 export { validateQueryContext } from "./core/query-validator.js";
 export { planMetaTFTUnitBuilds, buildUrl } from "./core/query-planner.js";
 export { calculatePlacementStats } from "./core/stats-calculator.js";
+export {
+  COMP_METRICS,
+  buildCompRankingQuery,
+  isCompRankingInput,
+  parseCompMetrics,
+  parseCompRankingQuery
+} from "./core/comp-query.js";
+export { buildCompRankings } from "./core/comp-ranking-service.js";
 export { filterBuildRows } from "./core/item-policy-filter.js";
 export {
   compareRankedBuilds,
@@ -46,6 +54,17 @@ export {
   normalizeLatestClusterInfoResponse,
   normalizeUnitBuildRows
 } from "./data/metatft-response-adapter.js";
+export {
+  normalizeClusterDefinitions,
+  normalizeCompBuildEvidence,
+  normalizeExactUnitsTraitsResponse,
+  parseExactCompRow
+} from "./data/comp-response-adapter.js";
+export {
+  createAssetResolver,
+  decorateCompAssets,
+  normalizeAssetUrl
+} from "./data/asset-resolver.js";
 export {
   buildItemCatalogFromItemsResponse,
   classifyItemApiName,

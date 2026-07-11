@@ -14,13 +14,17 @@
     "smoke:visual": "node scripts/smoke-small-window-visual.mjs",
     "smoke:hotkey": "powershell -ExecutionPolicy Bypass -File scripts/smoke-small-window-hotkey.ps1",
     "smoke:metatft": "node scripts/smoke-metatft.mjs",
+    "smoke:comps": "node scripts/smoke-comp-rankings.mjs",
+    "smoke:comps:live": "node scripts/smoke-comp-rankings-live.mjs",
     "smoke:sqlite": "node scripts/smoke-sqlite-cache.mjs",
     "smoke:llm": "node scripts/smoke-llm.mjs",
     "smoke:item-localization": "node scripts/refresh-item-localization.mjs --remote --check --strict-localization",
     "refresh:item-localization": "node scripts/refresh-item-localization.mjs",
     "audit:aliases": "node scripts/audit-alias-coverage.mjs",
     "audit:items": "node scripts/audit-item-availability.mjs",
-    "audit:item-patch": "node scripts/audit-item-patch.mjs"
+    "audit:item-patch": "node scripts/audit-item-patch.mjs",
+    "refresh:assets": "node scripts/refresh-asset-manifest.mjs",
+    "audit:assets": "node scripts/refresh-asset-manifest.mjs --check"
   },
   "engines": {
     "node": ">=18"

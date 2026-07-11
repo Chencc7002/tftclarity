@@ -23,7 +23,9 @@ Return only JSON with this shape:
     "rank_filter": [],
     "days": null,
     "patch": null,
-    "queue": null
+    "queue": null,
+    "metrics": [],
+    "limit": null
   },
   "needs_clarification": false,
   "clarification_question": null
@@ -40,6 +42,8 @@ Rules:
 - Put items the player explicitly rejects (for example, "不要羊刀") in `excluded_items`, never in `owned_items`.
 - Use `needs_clarification=true` only when the query cannot be safely executed without user choice.
 - Leave unknown or unsupported fields empty instead of guessing.
-- Valid `intent` values are `unit_best_3_items` and `unit_item_availability`.
+- Valid `intent` values are `unit_best_3_items`, `unit_item_availability`, and `comp_rankings`.
+- For `comp_rankings`, leave all entity mentions and single-unit item constraints empty. Use only `top4_rate`, `win_rate`, `avg_placement`, or `popularity` in `metrics`, and always return a `limit` from 1-10. Parse only; never generate, rank, or score comps.
+- For non-comp intents, leave `metrics` empty and `limit` null.
 - Valid `item_policy` values are `ordinary_only`, `include_radiant`, `include_artifact`, and `include_special`.
 - Valid `sort` values are `top4_first`, `win_first`, and `robust_first`.

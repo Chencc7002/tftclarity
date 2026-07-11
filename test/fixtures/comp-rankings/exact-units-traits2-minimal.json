@@ -1,0 +1,66 @@
+{
+  "capture": {
+    "capturedAt": "2026-07-11T06:05:30.0264699Z",
+    "endpoint": "/tft-explorer-api/exact_units_traits2",
+    "params": {
+      "formatnoarray": "true",
+      "compact": "true",
+      "queue": "1100",
+      "patch": "current",
+      "days": 3,
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM"
+    },
+    "filterAdjustment": {
+      "override_applied": false,
+      "rank_filter": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "sample_size": 6339248
+    },
+    "risk": "Unofficial endpoint; exact end-board shapes include summons, duplicates, PvE tokens, and hero-specific variants that require local filtering."
+  },
+  "data": [
+    {
+      "units_traits": "TFT17_Bard&TFT17_Blitzcrank&TFT17_Illaoi&TFT17_IvernMinion&TFT17_Karma&TFT17_Mordekaiser&TFT17_Nunu&TFT17_Sona&TFT17_Summon&TFT17_Vex|TFT17_BlitzcrankUniqueTrait_1&TFT17_DarkStar_1&TFT17_FlexTrait_1&TFT17_ManaTrait_1&TFT17_ShieldTank_2&TFT17_SonaUniqueTrait_1&TFT17_SpaceGroove_1&TFT17_SummonTrait_1&TFT17_VexUniqueTrait_1",
+      "placement_count": [10347, 10999, 12980, 13348, 12063, 10133, 7778, 4259]
+    },
+    {
+      "units_traits": "TFT17_Akali&TFT17_Belveth&TFT17_Briar&TFT17_Jinx&TFT17_Kindred&TFT17_Maokai&TFT17_RekSai&TFT17_Rhaast|TFT17_ASTrait_2&TFT17_DRX_1&TFT17_HPTank_1&TFT17_MeleeTrait_1&TFT17_Primordian_2&TFT17_RhaastUniqueTrait_1",
+      "placement_count": [7115, 16171, 18882, 14722, 9344, 5668, 3098, 1312]
+    },
+    {
+      "units_traits": "TFT17_Aatrox&TFT17_Belveth&TFT17_Maokai&TFT17_MissFortune&TFT17_Ornn&TFT17_Rhaast&TFT17_Urgot|TFT17_ASTrait_1&TFT17_DRX_1&TFT17_HPTank_1&TFT17_MeleeTrait_1&TFT17_MissFortuneUniqueTrait_1&TFT17_ResistTank_1&TFT17_RhaastUniqueTrait_1&TFT17_SpaceGroove_1",
+      "placement_count": [1545, 3204, 5271, 6457, 7002, 6366, 5140, 2935]
+    },
+    {
+      "units_traits": "TFT17_Bard&TFT17_Blitzcrank&TFT17_Illaoi&TFT17_IvernMinion&TFT17_Karma&TFT17_Mordekaiser&TFT17_Nunu&TFT17_PVE_ElderDragon&TFT17_Sona&TFT17_Summon&TFT17_Vex|TFT17_BlitzcrankUniqueTrait_1&TFT17_DarkStar_1&TFT17_FlexTrait_1&TFT17_ManaTrait_1&TFT17_ShieldTank_2&TFT17_SonaUniqueTrait_1&TFT17_SpaceGroove_1&TFT17_SummonTrait_1&TFT17_VexUniqueTrait_1",
+      "placement_count": [4950, 1982, 856, 327, 71, 4, 0, 0]
+    },
+    {
+      "units_traits": "TFT17_Fiora|TFT17_FioraUniqueTrait_1",
+      "placement_count": [1896, 750, 34, 3, 6, 4, 6, 9]
+    },
+    {
+      "units_traits": "TFT17_Gwen&TFT17_Nami&TFT17_Nasus&TFT17_Ornn&TFT17_Ornn&TFT17_Samira&TFT17_Samira|TFT17_SpaceGroove_3",
+      "placement_count": [47, 152, 428, 837, 1068, 1155, 1088, 678]
+    }
+  ],
+  "clusters": [
+    {
+      "Cluster": 409002,
+      "units_string": "TFT17_IvernMinion, TFT17_Mordekaiser, TFT17_Illaoi, TFT17_Karma, TFT17_Nunu, TFT17_Bard, TFT17_Blitzcrank, TFT17_Sona, TFT17_Vex, TFT17_Summon",
+      "traits_string": "TFT17_DarkStar_1, TFT17_FlexTrait_1, TFT17_ManaTrait_1, TFT17_ShieldTank_2, TFT17_SpaceGroove_1, TFT17_SummonTrait_1",
+      "name_string": "TFT17_ShieldTank, TFT17_Nunu, TFT17_Illaoi"
+    },
+    {
+      "Cluster": 409003,
+      "units_string": "TFT17_Aatrox, TFT17_Belveth, TFT17_MissFortune, TFT17_Maokai, TFT17_Urgot, TFT17_Ornn, TFT17_Rhaast, TFT17_Kindred",
+      "traits_string": "TFT17_ASTrait_3, TFT17_DRX_1, TFT17_HPTank_1, TFT17_MeleeTrait_1, TFT17_ResistTank_1, TFT17_SpaceGroove_1",
+      "name_string": "TFT17_ASTrait, TFT17_MissFortune, TFT17_Urgot"
+    },
+    {
+      "Cluster": 409019,
+      "units_string": "TFT17_Briar, TFT17_Caitlyn, TFT17_Aatrox, TFT17_RekSai, TFT17_Belveth, TFT17_Akali, TFT17_Maokai, TFT17_Kindred",
+      "traits_string": "TFT17_ASTrait_1, TFT17_DRX_2, TFT17_HPTank_1, TFT17_MeleeTrait_1, TFT17_Primordian_2",
+      "name_string": "TFT17_DRX, TFT17_Belveth"
+    }
+  ]
+}

@@ -18,6 +18,7 @@ import {
   buildUnitCatalogFromCompsData,
   buildUnitCatalogFromExplorerRows,
   createCatalog,
+  createAssetResolver,
   createStructuredParserFromConfig,
   mergeCatalogTraits,
   mergeCatalogUnits,
@@ -32,6 +33,7 @@ export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url));
+const ASSET_RESOLVER = createAssetResolver();
 const CONTENT_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
@@ -394,6 +396,9 @@ export async function resetSmallWindowPreferences(runtime) {
 }
 
 function serializeRecommendation(result, catalog, meta = {}) {
+  if (result.type === "comp_rankings") {
+    return serializeCompRankings(result, meta);
+  }
   const query = result.query ?? {};
   const hasLockedItems = (query.ownedItems ?? []).length > 0;
   const comparison = result.comparison ?? null;
@@ -421,6 +426,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       items: build.items.map((apiName) => ({
         apiName,
         name: itemName(apiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
         locked: (query.ownedItems ?? []).includes(apiName),
         compared: build.comparisonOption === apiName
       })),
@@ -468,6 +474,11 @@ function serializeRecommendation(result, catalog, meta = {}) {
   return {
     ok: true,
     text: result.text,
+    unit: query.unit ? {
+      apiName: query.unit,
+      name: unitName(query.unit, catalog),
+      iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
+    } : null,
     cards,
     comparison: serializedComparison,
     lockedItems: (query.ownedItems ?? []).map((apiName) => ({
@@ -479,6 +490,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     query: {
       unit: query.unit,
       unitName: unitName(query.unit, catalog),
+      unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
       starLevel: query.starLevel,
       itemCount: query.itemCount,
       traitFilters: query.traitFilters,
@@ -505,6 +517,65 @@ function serializeRecommendation(result, catalog, meta = {}) {
       rows: result.rows?.length ?? 0,
       filteredBuilds: result.filteredBuilds?.length ?? 0,
       rankedBuilds: result.rankedBuilds?.length ?? 0,
+      ...meta
+    }
+  };
+}
+
+function serializeCompRankings(result, meta = {}) {
+  const serializeComp = (comp) => ({
+      compId: comp.compId,
+      name: comp.name,
+      patch: comp.patch,
+      lowSample: Boolean(comp.lowSample),
+      units: (comp.units ?? []).map((unit) => ({
+        apiName: unit.apiName,
+        name: unit.name,
+        iconUrl: unit.iconUrl ?? null,
+        assetFallback: Boolean(unit.assetFallback),
+        starLevel: Number.isFinite(unit.starLevel) ? unit.starLevel : null,
+        avgStarLevel: Number.isFinite(unit.avgStarLevel) ? unit.avgStarLevel : null,
+        core: Boolean(unit.core),
+        items: (unit.items ?? []).map((item) => ({
+          apiName: item.apiName,
+          name: item.name ?? item.apiName,
+          iconUrl: item.iconUrl ?? null,
+          assetFallback: Boolean(item.fallback ?? item.assetFallback)
+        }))
+      })),
+      traits: (comp.traits ?? []).map((trait) => ({
+        apiName: trait.apiName,
+        filterId: trait.filterId,
+        name: trait.name,
+        tier: Number.isInteger(trait.tier) ? trait.tier : null,
+        iconUrl: trait.iconUrl ?? null,
+        assetFallback: Boolean(trait.assetFallback)
+      })),
+      stats: {
+        games: comp.stats?.games ?? 0,
+        top4Rate: Number.isFinite(comp.stats?.top4Rate) ? comp.stats.top4Rate : null,
+        winRate: Number.isFinite(comp.stats?.winRate) ? comp.stats.winRate : null,
+        avgPlacement: Number.isFinite(comp.stats?.avgPlacement) ? comp.stats.avgPlacement : null,
+        pickRate: Number.isFinite(comp.stats?.pickRate) ? comp.stats.pickRate : null
+      },
+      source: comp.source
+    });
+  const rankings = {};
+  for (const [metric, comps] of Object.entries(result.rankings ?? {})) {
+    rankings[metric] = (comps ?? []).map(serializeComp);
+  }
+  return {
+    ok: true,
+    type: "comp_rankings",
+    rankings,
+    references: (result.references ?? []).map(serializeComp),
+    query: result.query,
+    source: result.source,
+    warnings: result.warnings ?? [],
+    cache: result.cache ?? null,
+    meta: {
+      inputRows: result.diagnostics?.inputRows ?? 0,
+      acceptedGroups: result.diagnostics?.acceptedGroups ?? 0,
       ...meta
     }
   };

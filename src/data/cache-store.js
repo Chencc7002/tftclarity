@@ -93,6 +93,7 @@ function aliasMatchesQuery(entry, query) {
 
 export function makeQueryCacheKey(query) {
   const payload = {
+    intent: query.intent ?? null,
     unit: query.unit ?? null,
     star_level: sortNumbers(query.starLevel ?? query.star_level),
     item_count: query.itemCount ?? query.item_count ?? null,
@@ -105,7 +106,11 @@ export function makeQueryCacheKey(query) {
     patch: query.patch ?? null,
     queue: query.queue ?? null,
     min_samples: query.minSamples ?? query.min_samples ?? null,
-    sort: query.sort ?? null
+    sort: query.sort ?? null,
+    metrics: sortStrings(query.metrics),
+    limit: query.limit ?? null,
+    special_mode: query.specialMode ?? null,
+    data_version: query.dataVersion ?? null
   };
 
   return `query:${stableJson(payload)}`;

@@ -1,6 +1,14 @@
 const VALID_INTENTS = new Set([
   "unit_best_3_items",
-  "unit_item_availability"
+  "unit_item_availability",
+  "comp_rankings"
+]);
+
+const VALID_COMP_METRICS = new Set([
+  "top4_rate",
+  "win_rate",
+  "avg_placement",
+  "popularity"
 ]);
 
 const VALID_ITEM_POLICIES = new Set([
@@ -66,7 +74,9 @@ const ALLOWED_CONSTRAINT_KEYS = new Set([
   "rankFilter",
   "days",
   "patch",
-  "queue"
+  "queue",
+  "metrics",
+  "limit"
 ]);
 
 const ROOT_ALIAS_PAIRS = [
@@ -289,11 +299,44 @@ export function validateStructuredParserOutput(rawValue) {
         max: 30
       }),
       patch,
-      queue
+      queue,
+      metrics: readArray(constraints.metrics, "constraints.metrics", errors).filter((metric) => {
+        const valid = VALID_COMP_METRICS.has(metric);
+        if (!valid) errors.push(`constraints.metrics contains unsupported metric: ${metric}`);
+        return valid;
+      }),
+      limit: readInteger(constraints.limit, "constraints.limit", errors, { min: 1, max: 10 })
     },
     needsClarification,
     clarificationQuestion
   };
+
+  if (intent === "comp_rankings") {
+    const entityMentions = [
+      ...value.entities.unitMentions,
+      ...value.entities.itemMentions,
+      ...value.entities.traitMentions,
+      ...value.constraints.ownedItemMentions,
+      ...value.constraints.excludedItemMentions
+    ];
+    if (entityMentions.length > 0) {
+      errors.push("comp_rankings cannot include unit, item, or trait mentions");
+    }
+    if (value.constraints.starLevel.length > 0
+      || value.constraints.itemCount !== undefined
+      || value.constraints.itemPolicy !== undefined
+      || value.constraints.sort !== undefined) {
+      errors.push("comp_rankings cannot include single-unit item constraints");
+    }
+    if (value.constraints.metrics.length === 0) {
+      errors.push("comp_rankings requires at least one metric");
+    }
+    if (value.constraints.limit === undefined) {
+      errors.push("comp_rankings requires limit");
+    }
+  } else if (value.constraints.metrics.length > 0 || value.constraints.limit !== undefined) {
+    errors.push("metrics and limit are only valid for comp_rankings");
+  }
 
   if (needsClarification && !clarificationQuestion) {
     errors.push("clarification_question is required when needs_clarification is true");
@@ -322,6 +365,7 @@ export function shouldUseStructuredParser(parsed, options = {}) {
   const mode = options.useStructuredParser ?? "auto";
   if (mode === false || mode === "never") return false;
   if (mode === true || mode === "always" || options.forceStructuredParser) return true;
+  if (parsed.intent === "comp_rankings") return false;
   if ((parsed.parser?.entityAmbiguities ?? []).length > 0) return false;
   if ((parsed.parser?.unresolvedEntityHints ?? []).length > 0) return true;
   if (parsed.parser?.exclusion?.requested && (parsed.excludedItems ?? []).length === 0) return true;

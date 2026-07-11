@@ -328,8 +328,15 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(statusCode, 200);
   assert.equal(payload.ok, true);
   assert.equal(payload.cards[0].title, "推荐");
+  assert.deepEqual(payload.unit, {
+    apiName: "TFT17_Xayah",
+    name: "霞",
+    iconUrl: payload.query.unitIconUrl
+  });
   assert.deepEqual(payload.cards[0].items.map((item) => item.name), ["羊刀", "无尽", "巨杀"]);
   assert.equal(payload.query.unitName, "霞");
+  assert.match(payload.query.unitIconUrl, /^https:\/\/ddragon\.leagueoflegends\.com\/cdn\/16\.13\.1\//);
+  assert.ok(payload.cards[0].items.every((item) => item.iconUrl?.startsWith("https://ddragon.leagueoflegends.com/")));
   assert.equal(payload.query.minSamples, 100);
   assert.equal(payload.meta.rankedBuilds, 2);
 
@@ -355,6 +362,47 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(localized.payload.query.unitName, "霞");
   assert.equal(localized.payload.cards[0].title, "推荐补齐");
   assert.equal(localized.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
+});
+
+test("handleRecommendRequest serializes comp rankings without leaking raw rows", async () => {
+  const compResponse = {
+    data: [{
+      units_traits: "TFT17_Aatrox&TFT17_Belveth&TFT17_Kindred&TFT17_Maokai&TFT17_MissFortune&TFT17_Ornn&TFT17_Rhaast&TFT17_Urgot|TFT17_ASTrait_2&TFT17_DRX_1&TFT17_HPTank_1&TFT17_MeleeTrait_1&TFT17_ResistTank_1",
+      placement_count: [100, 90, 80, 70, 60, 50, 40, 30]
+    }],
+    filter_adjustment: { sample_size: 10000 }
+  };
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {
+      getExactUnitsTraits2: async () => compResponse
+    },
+    compsClient: {}
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({
+    input: "最热门的阵容",
+    preferences: { minSamples: 100 }
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.type, "comp_rankings");
+  assert.equal(payload.rankings.popularity.length, 1);
+  assert.equal(payload.rankings.popularity[0].stats.games, 520);
+  assert.ok(payload.rankings.popularity[0].traits.some((trait) => trait.tier === 2));
+  assert.deepEqual(payload.references, []);
+  assert.equal("raw" in payload.rankings.popularity[0], false);
+  assert.equal(JSON.stringify(payload).includes("placement_count"), false);
+
+  const lowSample = await handleRecommendRequest({
+    input: "最热门的阵容",
+    preferences: { minSamples: 100000 }
+  }, runtime);
+  assert.equal(lowSample.payload.rankings.popularity.length, 0);
+  assert.equal(lowSample.payload.references.length, 1);
+  assert.equal(lowSample.payload.references[0].lowSample, true);
 });
 
 test("handleRecommendRequest serializes item comparison cards and aggregate stats", async () => {

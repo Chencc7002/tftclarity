@@ -31,6 +31,25 @@
 | 所有指标来自 `placement_count` | 已验证 | `StatsCalculator` 单元测试验证 games、top4、win、avg；Formatter 只消费结构化统计 |
 | 输出 1 个推荐和最多 2 个备选 | 已验证 | Formatter、API 序列化和小窗卡测试 |
 
+## 阵容排行榜与图标
+
+| 要求 | 状态 | 直接证据 |
+|---|---|---|
+| 标准阵容问法无需 LLM | 已验证 | 最强/前四/登顶/热门/均名/上分/稳+吃鸡规则测试；装备意图不回归 |
+| 随意问法进入受控结构化意图 | 已验证 | 假 LLM `comp_rankings` schema 测试；未知指标和字段被拒绝，排序仍由本地 service 完成 |
+| 真实名次分布与本地统计 | 已验证 | `exact_units_traits2` 2026-07-11 实际响应证据、最小 fixture、八桶校验和 `StatsCalculator` |
+| 稳定阵容聚合和异常过滤 | 已验证 | cluster id/指纹、变体逐桶求和、PvE/重复/异常人口/专属玩法过滤测试 |
+| 前四、登顶、均名、热门独立排序 | 已验证 | fixture 返回不同榜首；均名升序、热门按样本、确定性 tie-break 测试 |
+| 低样本只作参考 | 已验证 | 未达阈值阵容不进入 rankings，只进入 `references` 且 `lowSample=true`；UI 明示“不进入排名” |
+| 无八桶分布不生成率指标 | 已验证 | 缺 `placement_count` 行被拒绝，前四与登顶榜为空 |
+| 统一 patch-aware 图标层 | 已验证 | Riot Data Dragon 16.13.1、662 条 manifest、unit/item/trait resolver 和 host allowlist 测试 |
+| 资产 manifest 可重建与审计 | 已验证 | `refresh:assets` 支持缓存优先/固定版本远程回源；`audit:assets` 对 662 条内容做漂移检查 |
+| 缺图与任意 URL 安全降级 | 已验证 | 未知 apiName 返回固定 fallback，非 `ddragon.leagueoflegends.com` URL 被拒绝，后端不泄露原始 payload |
+| 缓存与 stale 降级 | 已验证 | 新鲜缓存复用、过期后实时失败回退并标记 warning 的自动测试 |
+| 离线阵容 smoke | 已验证 | `npm run smoke:comps`；不请求网络、不调用 `unit_builds`，并实际验证小窗 HTTP 序列化与核心装备归属 |
+| 460px 阵容卡实际浏览器渲染 | 已验证 | bundled Playwright + 本地无头 Edge 使用离线 fixture 渲染最终版；真实/缺失图标同时出现，26 个缺图占位保持尺寸，页面无横向溢出或紧凑文字裁切；截图为 `.cache/visual-smoke/comp-desktop.png` |
+| 360px、stale、低样本、空结果完整截图 | 已验证 | 最终版 360px 正常、过期缓存、低样本参考和空结果均实际渲染；首次空结果检查发现长段位文本横向溢出，补充 grid item 最小宽度与任意断行后全部通过；截图为 `.cache/visual-smoke/comp-narrow.png`、`comp-stale.png`、`comp-low-sample.png`、`comp-empty.png` |
+
 ## 默认上下文与澄清
 
 | 要求 | 状态 | 直接证据 |
@@ -67,8 +86,8 @@
 | 低样本风险与弱结论 | 已验证 | 小窗 API 18 场样本返回 `lowSample=true`、标题改为“低样本参考”且 `winner=false`；文本明确“仅供参考，不作稳定推荐”，比较项低于稳定门槛时 `winner=null` |
 | 460px/360px 响应式视觉状态 | 已验证 | 桌面内置 Browser 的 Playwright API 使用离线 fixture 实际渲染 460px 推荐态、360px 低样本态和 360px 零结果态；页面、面板、分段控件、统计格均无横向溢出或文字裁切，截图位于 `.cache/visual-smoke/` |
 | 快捷键唤起和常驻小窗入口 | 已验证 | Windows app-window 启动器、全局热键 smoke |
-| 热缓存 <=100ms | 已验证 | `npm run smoke:small-window` 最近结果 2ms |
-| 本地持久缓存 <=300ms | 已验证 | JSON 文件缓存关闭重开后 3ms，且远程调用为 0 |
+| 热缓存 <=100ms | 已验证 | `npm run smoke:small-window` 最近结果 4ms |
+| 本地持久缓存 <=300ms | 已验证 | JSON 文件缓存关闭重开后 6ms，且远程调用为 0 |
 | SQLite 真实文件和小窗运行时持久化 | 已验证 | Node 24.14.0 `node:sqlite` 创建 98,304 字节文件；`item_catalog`、`units`、`traits` 往返通过；关闭重开后 query cache hit=true、远程调用 0 |
 | 远端故障等待有界 | 已验证 | 小窗 Explorer、catalog、comps 默认超时均为 2200ms；支持环境变量/CLI 覆盖，`/api/runtime` 与设置面板展示核心查询边界；Abort timeout 不重试，过期缓存降级测试通过 |
 | 远程 Explorer 查询目标 1-2 秒 | 环境条件 | 2026-07-11 实时 smoke：`unit_builds` 495ms，目标 2000ms 内；脚本支持 `SMOKE_REMOTE_TARGET_MS` 与严格门禁 |
@@ -80,7 +99,7 @@
 - Riot 官方 TFT 17.6 公告发布时间为 2026-06-23；腾讯官网装备目录声明 `version=16.13 / season=2026.S17 / time=2026-06-23 16:38:05`，Riot Data Dragon 固定英文版本为 `16.13.1`。`smoke:item-localization` 只作为可选网络检查，常规 `npm test` 使用离线 fixture。
 - Riot Data Dragon `zh_CN` 和 CommunityDragon 当前 `zh_cn/zh_my` 装备名为 `????` 占位符，不能作为简中 canonical 来源；当前采用腾讯官网国服目录。每次 patch 必须重新校验这些版本元数据和源 SHA-256。
 - 系统默认 Node 18.20.8 没有 `node:sqlite`，也未安装 `better-sqlite3`；该环境继续使用默认 JSON store。SQLite 发布可固定 Node 22.5+/24，或为 Node 18 安装 optional driver。
-- 独立 `npm run smoke:visual` 在未安装项目级 Playwright 时仍会明确跳过；本轮已通过桌面内置 Browser 的 Playwright API 完成同一离线 fixture 的真实渲染验收。验收首次发现 `.shell` 使用 `100vw` 时会被传统滚动条挤出 15px，改为父级可用宽度后，460px 推荐态和 360px 低样本/零结果态均通过。
+- 项目未安装项目级 Playwright 时，裸 `npm run smoke:visual` 会明确跳过；发布验收使用 `--playwright-module` 指向 bundled Playwright 的可解析入口，并由本地无头 Edge 完整执行。装备与阵容共 8 个场景通过：460px/360px、正常、缺图、stale、低样本、空结果、固定尺寸、横向溢出和紧凑文字裁切检查均已覆盖，截图保存在 `.cache/visual-smoke/`。
 - set/patch 更新后仍必须运行 `refresh:item-localization`、`audit:item-patch`、`audit:aliases` 和 `audit:items`，并人工确认新移除装备，不能仅凭 MetaTFT token 推断可用性。
 
 ## 明确非 MVP

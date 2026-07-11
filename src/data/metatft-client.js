@@ -155,6 +155,10 @@ export class MetaTFTClient {
     return this.#get("/tft-explorer-api/traits", params);
   }
 
+  async getExactUnitsTraits2(params = {}) {
+    return this.#get("/tft-explorer-api/exact_units_traits2", params);
+  }
+
   async #get(path, params) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = new URL(path, this.baseUrl);
