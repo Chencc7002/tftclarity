@@ -1,3 +1,8 @@
+import { AppShell, TitleBar } from "./app-shell.js";
+import { Composer, ConversationPane } from "./conversation-pane.js";
+import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
+import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
+
 const state = {
   minSamples: 100,
   itemPolicy: "ordinary_only",
@@ -19,7 +24,15 @@ const state = {
   aliasType: "",
   conversationId: globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`,
   currentController: null,
-  requestInFlight: false
+  requestInFlight: false,
+  requestSerial: 0,
+  progressIndex: 0,
+  resultView: { type: "empty" },
+  responseRecords: [],
+  responsesById: new Map(),
+  responseCounter: 0,
+  currentResponseId: null,
+  feedbackByCard: {}
 };
 
 const form = document.querySelector("#query-form");
@@ -49,6 +62,9 @@ const aliasNextButton = document.querySelector("#alias-next-button");
 const aliasPageLabel = document.querySelector("#alias-page-label");
 const aliasList = document.querySelector("#alias-list");
 const resultEl = document.querySelector("#result");
+const resultContentEl = document.querySelector("#result-content");
+const resultTitleEl = document.querySelector("#result-title");
+const resultRefreshButton = document.querySelector("#result-refresh-button");
 const statusEl = document.querySelector("#status");
 const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
@@ -63,20 +79,59 @@ const runtimeDetailEl = document.querySelector("#runtime-detail");
 let saveTimer = null;
 let activeResponseEl = null;
 
-function responseTarget() {
-  return activeResponseEl ?? resultEl;
-}
+const conversationPane = new ConversationPane(resultEl);
+const composer = new Composer({ form, input: queryInput });
+const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
+const titleBar = new TitleBar({
+  root: document.querySelector("#title-bar"),
+  getLocale,
+  onLocaleChange: (locale) => {
+    setLocale(locale);
+    rerenderLocalizedState();
+  }
+});
+const appShell = new AppShell({
+  shell: document.querySelector("#app-shell"),
+  workspace: document.querySelector("#workspace"),
+  resizer: document.querySelector("#column-resizer"),
+  panel: settingsPanel,
+  backdrop: document.querySelector("#settings-backdrop"),
+  settingsButton,
+  settingsClose,
+  settingsDone,
+  onSettingsOpen: () => {
+    loadRuntimeStatus();
+    loadAliases();
+  },
+  titleBar
+});
+
+// Named modules are intentionally referenced here: AppShell/TitleBar own window layout,
+// ConversationPane/Composer own chat entry, and ResultPane dispatches the three result templates.
+void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, composer];
 
 function setResponseHtml(html) {
-  responseTarget().innerHTML = html;
+  resultPane.setHtml(html);
 }
 
 function scrollConversation() {
-  resultEl.scrollTop = resultEl.scrollHeight;
+  conversationPane.scroll();
 }
 
-function setStatus(text) {
-  statusEl.textContent = text;
+function setStatus(text, stateName = "ready") {
+  state.statusKey = null;
+  state.statusParams = null;
+  state.statusText = text;
+  state.statusState = stateName;
+  statusEl.dataset.state = stateName;
+  const label = statusEl.querySelector("span:last-child");
+  if (label) label.textContent = text;
+}
+
+function setStatusKey(key, stateName = "ready", params = {}) {
+  setStatus(t(key, params), stateName);
+  state.statusKey = key;
+  state.statusParams = params;
 }
 
 function escapeHtml(value) {
@@ -142,7 +197,7 @@ async function savePreferences() {
       })
     });
   } catch {
-    setStatus("偏好未保存");
+    setStatusKey("statusNotSaved", "error");
   }
 }
 
@@ -157,37 +212,38 @@ async function loadPreferences() {
     const data = await response.json();
     if (response.ok && data.ok) applyPreferences(data.preferences);
   } catch {
-    setStatus("就绪");
+    setStatusKey("statusReady");
   }
 }
 
 function cacheStatusLabel(type) {
   return {
-    json: "JSON",
-    sqlite: "SQLite",
-    memory: "内存"
+    json: t("cacheJson"),
+    sqlite: t("cacheSqlite"),
+    memory: t("cacheMemory")
   }[type] ?? String(type ?? "-");
 }
 
 function renderRuntimeStatus(runtime = {}) {
+  state.runtimeStatus = runtime;
   const cache = runtime.cache ?? {};
   const parser = runtime.structuredParser ?? {};
   const requests = runtime.requests ?? {};
   cacheStatusEl.textContent = cacheStatusLabel(cache.type);
   llmStatusEl.textContent = parser.enabled
     ? `${parser.provider ?? "LLM"} / ${parser.mode ?? "auto"}`
-    : "关闭";
+    : t("disabled");
 
   const detail = [];
-  if (cache.persistent) detail.push(cache.pathConfigured ? "持久化" : "持久化未定");
+  if (cache.persistent) detail.push(cache.pathConfigured ? t("persistence") : t("persistenceUnset"));
   if (parser.enabled && parser.model) detail.push(parser.model);
   const explorerTimeoutMs = Number(requests.explorerTimeoutMs);
   if (requests.explorerTimeoutMs != null && Number.isFinite(explorerTimeoutMs) && explorerTimeoutMs > 0) {
-    detail.push(`查询超时 ${explorerTimeoutMs / 1000}s`);
+    detail.push(t("timeout", { seconds: explorerTimeoutMs / 1000 }));
   }
   if (parser.enabled && parser.timeoutMs) detail.push(`${parser.timeoutMs}ms`);
-  if (parser.enabled && parser.apiKeyConfigured) detail.push("已设密钥");
-  runtimeDetailEl.textContent = detail.join(" / ") || "规则优先";
+  if (parser.enabled && parser.apiKeyConfigured) detail.push(t("keyConfigured"));
+  runtimeDetailEl.textContent = detail.join(" / ") || t("rulesFirst");
 }
 
 async function loadRuntimeStatus() {
@@ -199,20 +255,12 @@ async function loadRuntimeStatus() {
   } catch {
     cacheStatusEl.textContent = "-";
     llmStatusEl.textContent = "-";
-    runtimeDetailEl.textContent = "状态不可用";
+    runtimeDetailEl.textContent = t("statusUnavailable");
   }
 }
 
 function selectedRanks() {
   return [...rankControl.querySelectorAll("input[type=checkbox]:checked")].map((input) => input.value);
-}
-
-function setSettingsOpen(open) {
-  settingsPanel.classList.toggle("hidden", !open);
-  if (open) {
-    loadRuntimeStatus();
-    loadAliases();
-  }
 }
 
 function bindSegmented(id, key, coerce = (value) => value) {
@@ -231,7 +279,7 @@ function metric(label, value) {
 }
 
 function itemPill(item) {
-  const label = item.name ?? item.apiName ?? "装备";
+  const label = localizedName(item, t("item"));
   return `<span class="item${item.locked ? " locked" : ""}${item.compared ? " compared" : ""}" title="${escapeHtml(label)}">
     ${assetThumb(item.iconUrl, label, "item-icon")}
     <span class="item-label">${escapeHtml(label)}</span>
@@ -252,61 +300,53 @@ function hasNumericValue(value) {
 }
 
 function rate(value) {
-  return hasNumericValue(value) ? `${(Number(value) * 100).toFixed(1)}%` : "不可用";
+  return hasNumericValue(value) ? `${formatNumber(Number(value) * 100, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%` : t("unavailable");
 }
 
 function placement(value) {
-  return hasNumericValue(value) ? Number(value).toFixed(2) : "不可用";
+  return hasNumericValue(value) ? formatNumber(value, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : t("unavailable");
 }
 
 function compMetricLabel(key) {
   return {
-    top4Rate: "前四率最高",
-    winRate: "登顶率最高",
-    avgPlacement: "平均名次最好",
-    popularity: "最热门"
+    top4Rate: t("top4Highest"),
+    winRate: t("winHighest"),
+    avgPlacement: t("avgBest"),
+    popularity: t("mostPopular")
   }[key] ?? key;
 }
 
 function compPrimaryMetric(key, comp) {
-  if (key === "winRate") return `登顶 ${rate(comp.stats?.winRate)}`;
-  if (key === "avgPlacement") return `均名 ${placement(comp.stats?.avgPlacement)}`;
-  if (key === "popularity") return `样本 ${Number(comp.stats?.games ?? 0).toLocaleString("zh-CN")}`;
-  return `前四 ${rate(comp.stats?.top4Rate)}`;
+  if (key === "winRate") return `${t("winShort")} ${rate(comp.stats?.winRate)}`;
+  if (key === "avgPlacement") return `${t("avgShort")} ${placement(comp.stats?.avgPlacement)}`;
+  if (key === "popularity") return `${t("samples")} ${formatNumber(comp.stats?.games ?? 0)}`;
+  return `${t("top4Short")} ${rate(comp.stats?.top4Rate)}`;
 }
 
 function compTraitLabel(trait) {
   const tier = Number(trait?.tier);
-  return Number.isInteger(tier) && tier > 0 ? `${trait.name} · ${tier}档` : trait?.name;
+  const name = localizedName(trait);
+  return Number.isInteger(tier) && tier > 0 ? `${name} · ${tier}` : name;
 }
 
 function compRankLabel(rankFilter = []) {
-  return rankFilter.length ? rankFilter.join("/") : "全部段位";
+  return rankFilter.length ? rankFilter.join("/") : t("allRanks");
 }
 
 function compUpdatedLabel(value) {
-  if (!value) return "更新时间不可用";
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return "更新时间不可用";
-  return `更新 ${new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    hour12: false
-  }).format(date)}`;
+  return value ? `${t("updated")} ${formatDate(value)}` : t("updateUnavailable");
 }
 
 function renderCompUnit(unit, expanded = false) {
   const items = expanded && unit.items?.length
-    ? `<span class="unit-items">${unit.items.map((item) => assetThumb(item.iconUrl, item.name ?? item.apiName, "tiny-item-icon")).join("")}</span>`
+    ? `<span class="unit-items">${unit.items.map((item) => assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")).join("")}</span>`
     : "";
   const averageStar = expanded && hasNumericValue(unit.avgStarLevel)
-    ? `<small class="unit-star">均 ${Number(unit.avgStarLevel).toFixed(1)}★</small>`
+    ? `<small class="unit-star">${t("avgShort")} ${formatNumber(unit.avgStarLevel, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}★</small>`
     : "";
   return `<div class="comp-unit${unit.core ? " core" : ""}">
-    ${assetThumb(unit.iconUrl, unit.name, "unit-icon")}
-    ${expanded ? `<span class="unit-name">${escapeHtml(unit.name)}</span>${averageStar}${items}` : ""}
+    ${assetThumb(unit.iconUrl, localizedName(unit), "unit-icon")}
+    ${expanded ? `<span class="unit-name">${escapeHtml(localizedName(unit))}</span>${averageStar}${items}` : ""}
   </div>`;
 }
 
@@ -318,25 +358,25 @@ function renderCompCard(comp, metricKey, index) {
     <details class="comp-card" ${index === 0 ? "open" : ""}>
       <summary>
         <div class="comp-summary-main">
-          <strong>${escapeHtml(comp.name)}</strong>
-          ${comp.lowSample ? '<span class="low-sample-label">低样本参考</span>' : ""}
+          <strong>${escapeHtml(localizedName(comp))}</strong>
+          ${comp.lowSample ? `<span class="low-sample-label">${t("lowSample")}</span>` : ""}
           <div class="trait-row">${mainTraits.map((trait) => assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")).join("")}</div>
           <div class="unit-row">${foldedUnits.map((unit) => renderCompUnit(unit)).join("")}</div>
         </div>
         <div class="comp-summary-metric">
           <b>${escapeHtml(compPrimaryMetric(metricKey, comp))}</b>
-          <span>${Number(comp.stats?.games ?? 0).toLocaleString("zh-CN")} 场</span>
+          <span>${formatNumber(comp.stats?.games ?? 0)} ${t("games")}</span>
         </div>
       </summary>
       <div class="comp-expanded">
         <div class="comp-stat-line">
-          <span>前四 ${rate(comp.stats?.top4Rate)}</span>
-          <span>登顶 ${rate(comp.stats?.winRate)}</span>
-          <span>均名 ${placement(comp.stats?.avgPlacement)}</span>
+          <span>${t("top4Short")} ${rate(comp.stats?.top4Rate)}</span>
+          <span>${t("winShort")} ${rate(comp.stats?.winRate)}</span>
+          <span>${t("avgShort")} ${placement(comp.stats?.avgPlacement)}</span>
         </div>
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, true)).join("")}</div>
         <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
-        <div class="comp-source">来源：MetaTFT exact_units_traits2${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(comp.source?.variantCount ?? 1)} 个形态 / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
+        <div class="comp-source">${t("sourceLabel")}：MetaTFT exact_units_traits2${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(comp.source?.variantCount ?? 1)} variants / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
       </div>
     </details>`;
 }
@@ -344,28 +384,28 @@ function renderCompCard(comp, metricKey, index) {
 function renderCompRankings(data) {
   const sections = Object.entries(data.rankings ?? {}).filter(([, comps]) => comps?.length);
   const references = data.references ?? [];
-  const stale = data.cache?.query?.stale ? "过期缓存" : data.cache?.query?.hit ? "缓存" : "实时";
+  const stale = data.cache?.query?.stale ? t("staleCache") : data.cache?.query?.hit ? t("localCache") : t("live");
   if (!sections.length && !references.length) {
     setResponseHtml(`
       <div class="empty-state">
-        <div>没有可用的阵容数据</div>
-        <small>近${escapeHtml(data.query?.days ?? 3)}天 · 样本>=${escapeHtml(data.query?.minSamples ?? 500)} · 段位 ${escapeHtml(compRankLabel(data.query?.rankFilter))}</small>
-        <small>未找到符合本地完整性规则的对局样本 · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
+        <div>${t("noCompData")}</div>
+        <small>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))}</small>
+        <small>${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
       </div>
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
-      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`);
+      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
     return;
   }
   setResponseHtml(`
     <div class="comp-overview">
-      <strong>当前版本阵容榜</strong>
-      <span>近${escapeHtml(data.query?.days ?? 3)}天 · 样本>=${escapeHtml(data.query?.minSamples ?? 500)} · ${escapeHtml(stale)}</span>
-      <small title="${escapeHtml(compRankLabel(data.query?.rankFilter))}">段位 ${escapeHtml(compRankLabel(data.query?.rankFilter))} · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
+      <strong>${t("currentCompRanking")}</strong>
+      <span>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${escapeHtml(stale)}</span>
+      <small title="${escapeHtml(compRankLabel(data.query?.rankFilter))}">${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))} · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
     </div>
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
-    ${references.length ? `<section class="ranking-section low-sample-section"><h2>低样本参考（不进入排名）</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
-    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`);
+    ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
+    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
 }
 
 function newResultId() {
@@ -374,11 +414,12 @@ function newResultId() {
 }
 
 function feedbackActions(cardIndex) {
+  const sentiment = state.feedbackByCard[cardIndex];
   return `
     <div class="result-feedback" data-feedback-card="${cardIndex}">
-      <button type="button" class="feedback-button" data-result-feedback="good" data-card-index="${cardIndex}" aria-label="这条建议有帮助" title="有帮助">↑</button>
-      <button type="button" class="feedback-button" data-result-feedback="bad" data-card-index="${cardIndex}" aria-label="这条建议不理想" title="不理想">↓</button>
-      <span class="feedback-status" aria-live="polite"></span>
+      <button type="button" class="feedback-button${sentiment === "good" ? " selected" : ""}" data-result-feedback="good" data-card-index="${cardIndex}" aria-label="${t("helpful")}" title="${t("helpful")}" ${sentiment ? "disabled" : ""}>↑ <span>${t("helpful")}</span></button>
+      <button type="button" class="feedback-button${sentiment === "bad" ? " selected" : ""}" data-result-feedback="bad" data-card-index="${cardIndex}" aria-label="${t("notHelpful")}" title="${t("notHelpful")}" ${sentiment ? "disabled" : ""}>↓ <span>${t("notHelpful")}</span></button>
+      <span class="feedback-status" aria-live="polite">${sentiment ? t("recorded") : ""}</span>
     </div>
   `;
 }
@@ -390,99 +431,38 @@ function compactTraitName(name) {
 }
 
 function compactTraitList(names = []) {
-  if (!names.length) return "未补羁绊";
+  if (!names.length) return t("noTraits");
   const compacted = names.map(compactTraitName);
   if (compacted.length <= 2) return compacted.join(" + ");
   return `${compacted.slice(0, 2).join(" + ")} +${compacted.length - 2}`;
 }
 
-function contextStrategyLabel(strategy) {
-  return {
-    popular: "样本优先",
-    top4: "前四优先",
-    score: "Score优先",
-    avg: "均名优先"
-  }[strategy] ?? null;
-}
-
-function defaultContextLine(summary) {
-  if (!summary?.found) return null;
-  const metrics = [];
-  if (Number.isFinite(Number(summary.count))) metrics.push(`样本 ${Number(summary.count)}`);
-  if (Number.isFinite(Number(summary.top4))) metrics.push(`前四 ${Number(summary.top4).toFixed(1)}%`);
-  if (Number.isFinite(Number(summary.avg))) metrics.push(`均名 ${Number(summary.avg).toFixed(2)}`);
-  const strategy = contextStrategyLabel(summary.strategy);
-  const source = summary.sourceDescription ? "MetaTFT /comps" : summary.sourceEndpoint;
-  const pieces = [
-    `默认阵容：${summary.label ?? summary.clusterId ?? "主流阵容"}`,
-    metrics.join(" / "),
-    strategy,
-    source
-  ].filter(Boolean);
-  return pieces.map(escapeHtml).join(" / ");
-}
-
-function defaultContextAlternativesLine(summary) {
-  const alternatives = (summary?.alternatives ?? []).slice(0, 2);
-  if (!alternatives.length) return null;
-  const labels = alternatives
-    .map((candidate) => candidate.label ?? candidate.clusterId)
-    .filter(Boolean);
-  if (!labels.length) return null;
-  return ["备选阵容：", labels.join(" / ")].map(escapeHtml).join("");
-}
-
-function defaultContextCompBuildLine(summary) {
-  const build = summary?.compBuilds?.[0];
-  const itemNames = (build?.items ?? [])
-    .map((item) => item.name)
-    .filter(Boolean);
-  if (!itemNames.length) return null;
-  const metrics = [];
-  if (Number.isFinite(Number(build.count))) metrics.push(`样本 ${Number(build.count)}`);
-  if (Number.isFinite(Number(build.avg))) metrics.push(`均名 ${Number(build.avg).toFixed(2)}`);
-  return [`阵容装备参考：${itemNames.join(" + ")}`, metrics.join(" / ")]
-    .filter(Boolean)
-    .map(escapeHtml)
-    .join(" / ");
-}
-
 function formatCacheUpdatedAt(value) {
-  if (!value) return null;
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) return null;
-  return new Intl.DateTimeFormat("zh-CN", {
-    month: "2-digit",
-    day: "2-digit",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).format(date);
+  return value ? formatDate(value) : null;
 }
 
 function queryCacheLine(cache = {}) {
-  if (!cache?.hit) return "实时";
-  const label = cache.stale ? "过期缓存" : "缓存";
+  if (!cache?.hit) return t("live");
+  const label = cache.stale ? t("staleCache") : t("localCache");
   const updatedAt = formatCacheUpdatedAt(cache.updatedAt);
-  return updatedAt ? `${label} / 更新 ${updatedAt}` : label;
+  return updatedAt ? `${label} / ${t("updated")} ${updatedAt}` : label;
 }
 
 function compConstraintLine(comp) {
   if (comp?.status === "not_available") {
-    return "Comp：未限制 · 当前条件下没有稳定 Comp";
+    return t("noStableCompLine");
   }
-  if (comp?.status !== "applied" || !comp.value) return "Comp：未限制";
+  if (comp?.status !== "applied" || !comp.value) return t("unrestrictedCompLine");
   return comp.value.selection === "explicit"
-    ? `Comp：${comp.value.name} · 用户指定`
-    : `Comp：${comp.value.name} · 系统补全，样本 ${comp.value.sampleCount}`;
+    ? t("explicitCompLine", { name: comp.value.name })
+    : t("automaticCompLine", { name: comp.value.name, samples: comp.value.sampleCount });
 }
 
 function entityTypeLabel(type) {
   return {
-    unit: "英雄",
-    item: "装备",
-    trait: "羁绊"
+    unit: t("hero"),
+    item: t("item"),
+    trait: t("trait")
   }[type] ?? type ?? "-";
 }
 
@@ -500,18 +480,18 @@ function canSaveCandidateAlias(candidate) {
   return inputFragment !== normalizeUiAlias(candidate.matchedAlias);
 }
 
-function renderSuggestionButtons(suggestions = []) {
+function renderSuggestionButtons(suggestions = [], responseId = "") {
   if (!suggestions.length) return "";
   return `
     <div class="suggestions">
       ${suggestions.map((item, index) => `
-        <button type="button" data-suggestion-index="${index}">${escapeHtml(item)}</button>
+        <button type="button" data-suggestion-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(item)}</button>
       `).join("")}
     </div>
   `;
 }
 
-function renderEntityCandidates(candidates = []) {
+function renderEntityCandidates(candidates = [], responseId = "") {
   if (!candidates.length) return "";
   return `
     <div class="entity-candidates">
@@ -523,8 +503,8 @@ function renderEntityCandidates(candidates = []) {
             <small>${escapeHtml(candidate.inputFragment ?? candidate.matchedAlias ?? "")} -> ${escapeHtml(candidate.matchedAlias ?? "")} · ${Math.round(Number(candidate.confidence ?? 0) * 100)}%</small>
           </div>
           <div class="candidate-actions">
-            <button type="button" data-candidate-action="query" data-candidate-index="${index}">查询</button>
-            ${canSaveCandidateAlias(candidate) ? `<button type="button" data-candidate-action="save" data-candidate-index="${index}">存候选</button>` : ""}
+            <button type="button" data-candidate-action="query" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${t("query")}</button>
+            ${canSaveCandidateAlias(candidate) ? `<button type="button" data-candidate-action="save" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${t("saveCandidate")}</button>` : ""}
           </div>
         </div>
       `).join("")}
@@ -534,16 +514,18 @@ function renderEntityCandidates(candidates = []) {
 
 function summaryLines(data) {
   const query = data.query ?? {};
-  const traits = compactTraitList(query.traitNames);
+  const traits = compactTraitList(getLocale() === "en-US" ? query.traitFilters : query.traitNames);
   const cache = queryCacheLine(data.cache?.query);
   const comp = compConstraintLine(query.comp);
-  const warnings = query.warnings?.length ? `提示：${query.warnings.length} 条` : null;
-  const exclusions = query.excludedItemNames?.length
-    ? `已排除：${query.excludedItemNames.join(" + ")}`
+  const warnings = query.warnings?.length ? t("notices", { count: query.warnings.length }) : null;
+  const excludedNames = getLocale() === "en-US" ? query.excludedItems : query.excludedItemNames;
+  const exclusions = excludedNames?.length
+    ? t("excludedSummary", { value: excludedNames.join(" + ") })
     : null;
+  const unitName = getLocale() === "en-US" ? query.unit : query.unitName;
 
   return [
-    `<strong>${escapeHtml(query.starLevel?.join("/") ?? "-")}星${escapeHtml(query.unitName ?? "-")}</strong> / ${escapeHtml(traits)} / 样本>=${escapeHtml(query.minSamples ?? "-")}`,
+    `<strong>${escapeHtml(t("starLevel", { value: query.starLevel?.join("/") ?? "-" }))} ${escapeHtml(unitName ?? "-")}</strong> / ${escapeHtml(traits)} / ${escapeHtml(t("samplesAtLeast", { value: query.minSamples ?? "-" }))}`,
     escapeHtml(comp),
     `${escapeHtml(cache)} / ${escapeHtml(data.meta?.durationMs ?? 0)}ms`,
     exclusions ? escapeHtml(exclusions) : null,
@@ -553,54 +535,54 @@ function summaryLines(data) {
 
 function constraintSourceLabel(source) {
   return {
-    current_input: "用户指定",
-    conversation: "沿用上轮",
-    preference: "偏好",
-    default_context: "阵容补全",
-    system_default: "系统默认",
-    user: "用户指定",
-    session: "沿用上轮",
-    default: "系统默认"
-  }[source] ?? source ?? "未知";
+    current_input: t("userSpecified"),
+    conversation: t("previousRound"),
+    preference: t("preference"),
+    default_context: t("compFilled"),
+    system_default: t("systemDefault"),
+    user: t("userSpecified"),
+    session: t("previousRound"),
+    default: t("systemDefault")
+  }[source] ?? source ?? t("unknown");
 }
 
 function itemPolicyChip(value) {
   return {
-    ordinary_only: "普通装备",
-    include_radiant: "含光明装备",
-    include_artifact: "含神器",
-    include_special: "含特殊装备"
+    ordinary_only: t("ordinaryItems"),
+    include_radiant: t("radiantItems"),
+    include_artifact: t("artifactItems"),
+    include_special: t("specialItems")
   }[value] ?? value;
 }
 
 function rankChip(values = []) {
   const labels = {
-    CHALLENGER: "王者", GRANDMASTER: "宗师", MASTER: "大师", DIAMOND: "钻石",
-    EMERALD: "翡翠", PLATINUM: "铂金", GOLD: "黄金", SILVER: "白银",
-    BRONZE: "青铜", IRON: "黑铁"
+    CHALLENGER: t("rankChallenger"), GRANDMASTER: t("rankGrandmaster"), MASTER: t("rankMaster"), DIAMOND: t("rankDiamond"),
+    EMERALD: t("rankEmerald"), PLATINUM: t("rankPlatinum"), GOLD: t("rankGold"), SILVER: t("rankSilver"),
+    BRONZE: t("rankBronze"), IRON: t("rankIron")
   };
   return values.map((value) => labels[value] ?? value).join("/");
 }
 
 function conditionChipValue(key, constraint, query) {
   const value = constraint?.value;
-  if (key === "unit") return query.unitName ?? value;
-  if (key === "star_level") return `${(value ?? []).join("/")}星`;
-  if (key === "item_count") return `${value}件完整出装`;
+  if (key === "unit") return getLocale() === "en-US" ? (query.unit ?? value) : (query.unitName ?? value);
+  if (key === "star_level") return t("starLevel", { value: (value ?? []).join("/") });
+  if (key === "item_count") return t("completedItems", { value });
   if (key === "item_policy") return itemPolicyChip(value);
   if (key === "rank_filter") return rankChip(value);
-  if (key === "days") return `近${value}天`;
-  if (key === "min_samples") return `样本≥${value}`;
-  if (key === "owned_items") return value?.length ? `已携带 ${query.ownedItemNames?.join(" + ") ?? value.join(" + ")}` : "已携带 无";
-  if (key === "excluded_items") return value?.length ? `排除 ${query.excludedItemNames?.join(" + ") ?? value.join(" + ")}` : null;
-  if (key === "trait_filters") return value?.length ? `羁绊 ${query.traitNames?.join(" + ") ?? value.join(" + ")}` : null;
+  if (key === "days") return t("daysRecent", { value });
+  if (key === "min_samples") return t("samplesAtLeast", { value });
+  if (key === "owned_items") return value?.length ? t("carriedItems", { value: (getLocale() === "en-US" ? query.ownedItems : query.ownedItemNames)?.join(" + ") ?? value.join(" + ") }) : `${t("carried")} ${t("none")}`;
+  if (key === "excluded_items") return value?.length ? t("excludedItems", { value: (getLocale() === "en-US" ? query.excludedItems : query.excludedItemNames)?.join(" + ") ?? value.join(" + ") }) : null;
+  if (key === "trait_filters") return value?.length ? t("traits", { value: (getLocale() === "en-US" ? query.traitFilters : query.traitNames)?.join(" + ") ?? value.join(" + ") }) : null;
   if (key === "comp") {
-    if (constraint?.status === "not_available") return "未限制 Comp · 当前条件下没有稳定 Comp";
+    if (constraint?.status === "not_available") return t("noStableComp");
     const comp = query.comp ?? constraint;
-    if (comp?.status !== "applied" || !comp.value) return "未限制 Comp";
+    if (comp?.status !== "applied" || !comp.value) return t("unrestrictedComp");
     return comp.value.selection === "explicit"
       ? comp.value.name
-      : `${comp.value.name} · 样本 ${comp.value.sampleCount}`;
+      : t("compSamples", { name: comp.value.name, samples: comp.value.sampleCount });
   }
   return null;
 }
@@ -617,151 +599,219 @@ function conditionChips(data) {
       ? constraint.status === "not_available"
         ? null
         : query.comp?.value?.selection === "explicit"
-          ? "用户指定"
-          : "系统补全"
+          ? t("userSpecified")
+          : t("compFilled")
       : constraintSourceLabel(constraint.source);
-    return `<button type="button" class="condition-chip" data-condition-key="${escapeHtml(key)}" data-source="${escapeHtml(constraint.source)}" title="点击后用自然语言修改">${escapeHtml(label)}${sourceLabel ? ` · ${escapeHtml(sourceLabel)}` : ""}</button>`;
+    return `<button type="button" class="condition-chip" data-condition-key="${escapeHtml(key)}" data-source="${escapeHtml(constraint.source)}">${escapeHtml(label)}${sourceLabel ? ` · ${escapeHtml(sourceLabel)}` : ""}</button>`;
   }).join("")}</div>`;
+}
+
+function conditionPanel(data) {
+  return `<section class="condition-panel"><h3>${t("conditions")}</h3>${conditionChips(data)}<div class="source-legend" aria-label="${t("conditionSources")}"><span><i></i>${t("sourceCurrent")}</span><span><i></i>${t("sourceConversation")}</span><span><i></i>${t("sourcePreference")}</span><span><i></i>${t("sourceDefault")}</span></div></section>`;
+}
+
+function sourceCacheLabel(value, fallbackCache) {
+  return {
+    live: t("live"),
+    cache: t("localCache"),
+    stale: t("staleCache")
+  }[value] ?? (value || queryCacheLine(fallbackCache));
 }
 
 function sourceAndRisk(data) {
   const source = data.source ?? {};
-  const updated = formatCacheUpdatedAt(source.updatedAt) ?? "更新时间不可用";
+  const updated = formatCacheUpdatedAt(source.updatedAt) ?? t("updateUnavailable");
   const risks = [...new Set([...(source.risks ?? []), ...(data.answer?.warnings ?? [])])];
   return `
-    <div class="source-line">来源：${escapeHtml(source.provider ?? "MetaTFT")} · ${escapeHtml(source.endpoint ?? "未知端点")} · ${escapeHtml(updated)} · ${escapeHtml(source.cache ?? queryCacheLine(data.cache?.query))}</div>
-    ${source.compCandidates ? `<div class="source-line">Comp 候选：${escapeHtml(source.compCandidates.endpoint ?? "未知端点")} · ${escapeHtml(source.compCandidates.cache ?? "live")}${source.compCandidates.stale ? " · 过期风险" : ""}</div>` : ""}
-    ${risks.length ? `<div class="risk-line">风险：${risks.map(escapeHtml).join("；")}</div>` : ""}
+    <section class="source-risk"><h3>${t("source")}</h3><div class="source-line">${escapeHtml(source.provider ?? "MetaTFT")} · ${escapeHtml(source.endpoint ?? t("unknownEndpoint"))} · ${escapeHtml(updated)} · ${escapeHtml(sourceCacheLabel(source.cache, data.cache?.query))}</div>
+    ${source.compCandidates ? `<div class="source-line">${t("compCandidates")}：${escapeHtml(source.compCandidates.endpoint ?? t("unknownEndpoint"))} · ${escapeHtml(sourceCacheLabel(source.compCandidates.cache))}${source.compCandidates.stale ? ` · ${t("staleCache")}` : ""}</div>` : ""}
+    ${risks.length ? `<div class="risk-line"><strong>${t("risk")}</strong> · ${risks.map(escapeHtml).join("；")}</div>` : ""}</section>
   `;
+}
+
+function resultHeader(title, summary, kind) {
+  return `<header class="result-header-card"><div><strong>${escapeHtml(title)}</strong><p>${escapeHtml(summary ?? "")}</p></div><span class="result-kind">${escapeHtml(kind)}</span></header>`;
+}
+
+function progressStepsHtml(activeIndex = 0) {
+  return `<div class="progress-steps"><span class="progress-step${activeIndex === 0 ? " active" : ""}">${t("understand")}</span><span class="progress-step${activeIndex === 1 ? " active" : ""}">${t("fetchData")}</span><span class="progress-step${activeIndex === 2 ? " active" : ""}">${t("calculate")}</span></div>`;
+}
+
+function renderLoadingResult(track = true) {
+  if (track) state.resultView = { type: "loading" };
+  setResponseHtml(`<section class="result-state" data-state="loading"><div class="state-orbit" aria-hidden="true">✦</div><strong>${t("loadingResult")}</strong>${progressStepsHtml(state.progressIndex)}</section>`);
+}
+
+function renderStoppedResult(track = true) {
+  if (track) state.resultView = { type: "stopped" };
+  setResponseHtml(`<section class="result-state" data-state="error"><div class="state-orbit">■</div><strong>${t("stoppedBody")}</strong></section>`);
+}
+
+function renderEmptyResult(track = true) {
+  if (track) state.resultView = { type: "empty" };
+  setResponseHtml(`<section class="result-state result-empty" data-state="empty"><div class="state-orbit" aria-hidden="true">✦</div><strong>${t("resultEmptyTitle")}</strong><p>${t("resultEmptyBody")}</p></section>`);
+}
+
+function renderErrorResult(message, track = true, messageKey = null) {
+  const displayMessage = messageKey ? t(messageKey) : message;
+  if (track) state.resultView = { type: "error", message, messageKey };
+  setResponseHtml(`${resultHeader(t("error"), displayMessage, t("error"))}<div class="error-state"><div class="state-orbit" aria-hidden="true">!</div><strong>${escapeHtml(displayMessage)}</strong><div class="state-actions"><button type="button" data-retry-result>${t("retry")}</button><button type="button" data-refresh-result>${t("refresh")}</button></div></div>`);
+}
+
+function resultKind(data) {
+  if (data?.type === CompRankingResult.type) return t("compRanking");
+  if (data?.type === ItemRankingResult.type) return t("itemRanking");
+  if (data?.clarification?.needsClarification) return t("clarification");
+  return t("recommendation");
+}
+
+function assistantResponseHtml(data, responseId = "") {
+  if (data?.clarification?.needsClarification) {
+    return `<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
+  }
+  const summary = data?.answer?.summary ?? data?.text ?? (data?.type === CompRankingResult.type ? t("currentCompRanking") : t("noResult"));
+  return `<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result>${t("resultDetails")} →</button>`;
+}
+
+function recordAssistantResponse(data) {
+  if (!activeResponseEl) return null;
+  const id = `response-${++state.responseCounter}`;
+  const record = { id, target: activeResponseEl, data };
+  activeResponseEl.innerHTML = assistantResponseHtml(data, id);
+  state.responseRecords.push(record);
+  state.responsesById.set(id, record);
+  return id;
+}
+
+function rerenderLocalizedState() {
+  applyI18n();
+  for (const record of state.responseRecords) {
+    if (record.target?.isConnected) record.target.innerHTML = assistantResponseHtml(record.data, record.id);
+  }
+  if (state.requestInFlight && activeResponseEl?.isConnected) activeResponseEl.innerHTML = progressStepsHtml(state.progressIndex);
+  if (state.resultView.type === "result" && state.resultView.data) renderCurrentResult(state.resultView.data);
+  else if (state.resultView.type === "loading") renderLoadingResult(false);
+  else if (state.resultView.type === "error") renderErrorResult(state.resultView.message, false, state.resultView.messageKey);
+  else if (state.resultView.type === "stopped") renderStoppedResult(false);
+  else renderEmptyResult(false);
+  if (state.aliases) renderAliases(state.aliases);
+  renderRuntimeStatus(state.runtimeStatus ?? {});
+  const statusKey = state.statusKey;
+  const statusParams = state.statusParams;
+  if (statusKey) setStatusKey(statusKey, state.statusState ?? "ready", statusParams ?? {});
+  else setStatus(state.statusText ?? t("statusReady"), state.statusState ?? "ready");
 }
 
 function renderItemRankings(data) {
   const rankings = data.itemRankings ?? [];
   if (!rankings.length) {
-    setResponseHtml(`<div class="answer-summary">${escapeHtml(data.answer?.summary ?? data.text ?? "无结果")}</div>${conditionChips(data)}${sourceAndRisk(data)}`);
+    setResponseHtml(`${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text ?? t("noResult"), t("noResult"))}${conditionPanel(data)}${sourceAndRisk(data)}`);
     return;
   }
   setResponseHtml(`
-    <div class="answer-summary">${escapeHtml(data.answer?.summary ?? data.text)}</div>
+    ${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text, t("itemRanking"))}
     <div class="item-ranking-list">
       ${rankings.slice(0, 5).map((item, index) => `
         <article class="item-ranking-card">
           <div class="item-ranking-head">
-            ${assetThumb(item.iconUrl, item.name, "tiny-item-icon")}
-            <strong>${index + 1}. ${escapeHtml(item.name)}</strong>
-            <span>${item.coverage === null ? "" : `${escapeHtml(item.coverage)}%覆盖`}</span>
+            ${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}
+            <strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong>
+            <span>${item.coverage === null ? "" : t("rankCoverage", { value: escapeHtml(item.coverage) })}</span>
           </div>
           <div class="stats">
-            ${metric("前四", `${item.stats.top4}%`)}
-            ${metric("登顶", `${item.stats.win}%`)}
-            ${metric("均名", item.stats.avg)}
-            ${metric("样本", item.stats.games)}
+            ${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}
+            ${metric(t("win"), `${formatNumber(item.stats.win)}%`)}
+            ${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+            ${metric(t("samples"), formatNumber(item.stats.games))}
           </div>
-          <div class="item-ranking-meta">常见搭配：${item.commonPairings?.length ? item.commonPairings.map((pairing) => `${pairing.items.map((entry) => escapeHtml(entry.name)).join(" + ")}（${pairing.games}）`).join("；") : "暂无"}</div>
-          ${item.copyCounts?.some((copy) => copy.copyCount > 1) ? `<div class="item-ranking-meta">重复件：${item.copyCounts.map((copy) => `${copy.copyCount}件 ${copy.stats.games}场`).join(" / ")}</div>` : ""}
+          <div class="item-ranking-meta">${t("commonPairings")}：${item.commonPairings?.length ? item.commonPairings.map((pairing) => `${pairing.items.map((entry) => escapeHtml(localizedName(entry))).join(" + ")}（${formatNumber(pairing.games)}）`).join("；") : t("itemUnavailable")}</div>
+          ${item.copyCounts?.some((copy) => copy.copyCount > 1) ? `<div class="item-ranking-meta">${t("duplicateItems")}：${item.copyCounts.map((copy) => `${copy.copyCount}× · ${formatNumber(copy.stats.games)} ${t("games")}`).join(" / ")}</div>` : ""}
         </article>
       `).join("")}
     </div>
-    <div class="item-ranking-meta">统计口径：${escapeHtml(data.answer?.methodology ?? "按完整出装中的装备出现聚合")}</div>
-    ${conditionChips(data)}
+    <div class="item-ranking-meta">${t("methodology")}：${escapeHtml(data.answer?.methodology ?? "")}</div>
+    ${conditionPanel(data)}
     ${sourceAndRisk(data)}
   `);
+}
+
+function recommendationCard(data, card, index) {
+  const unitLabel = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? t("hero"));
+  const comparedItem = card.items?.find((item) => item.compared);
+  const cardTitle = data.comparison
+    ? `${card.winner ? t("best") : card.lowSample ? t("lowSample") : t("alternatives")} · ${localizedName(comparedItem, card.title)}`
+    : card.winner
+      ? t("bestRecommendation")
+      : card.lowSample
+        ? t("lowSample")
+        : `${t("alternatives")} ${index}`;
+  const difference = card.difference
+    ? `<div class="difference-note">${t("relativeRecommendation")}：${card.difference.removed?.length ? `${t("replace")} ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : t("sameItems")}；${t("top4Short")} ${card.difference.top4Delta >= 0 ? "+" : ""}${formatNumber(card.difference.top4Delta)}pp，${t("samples")} ${card.difference.gamesDelta >= 0 ? "+" : ""}${formatNumber(card.difference.gamesDelta)}</div>`
+    : "";
+  return `<article class="result-card${card.winner ? " best" : ""}">
+    ${card.winner ? `<span class="best-label">${t("best")}</span>` : ""}
+    <div class="card-head"><div class="card-title-group">${assetThumb(data.unit?.iconUrl ?? data.query?.unitIconUrl, unitLabel, "equipment-unit-icon")}<div class="card-title">${escapeHtml(cardTitle)}</div></div>${card.lowSample ? `<div class="risk">${t("lowSample")}</div>` : ""}</div>
+    <div class="items">${card.items.map(itemPill).join("")}</div>
+    <div class="stats">${metric(t("top4"), `${formatNumber(card.stats.top4)}%`)}${metric(t("win"), `${formatNumber(card.stats.win)}%`)}${metric(t("avg"), formatNumber(card.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(card.stats.games))}</div>
+    ${difference}${feedbackActions(index)}
+  </article>`;
+}
+
+function renderRecommendationResult(data) {
+  if (data.clarification?.needsClarification) {
+    setResponseHtml(`${resultHeader(t("clarification"), data.clarification.question, t("clarification"))}<div class="clarification-state"><div class="state-orbit" aria-hidden="true">?</div><strong>${escapeHtml(data.clarification.question)}</strong>${renderEntityCandidates(data.clarification.entityCandidates ?? [], state.currentResponseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], state.currentResponseId)}</div>${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
+    return;
+  }
+  if (!data.cards?.length) {
+    setResponseHtml(`${resultHeader(t("noResult"), data.text ?? t("noResult"), t("noResult"))}<div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noResult"))}</strong>${data.query ? `<div class="summary">${summaryLines(data)}</div>` : ""}</div>${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
+    return;
+  }
+  const locked = data.lockedItems?.length ? data.lockedItems.map((item) => localizedName(item)).join(" + ") : t("none");
+  const commonCore = data.commonCore?.length ? data.commonCore.map((item) => localizedName(item)).join(" + ") : null;
+  const [best, ...alternatives] = data.cards;
+  setResponseHtml(`${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
+    <div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>
+    ${commonCore ? `<div class="core-line">${t("frequentCore")}：${escapeHtml(commonCore)}（${t("strictTopThree")}）</div>` : ""}
+    ${recommendationCard(data, best, 0)}
+    ${alternatives.length ? `<details class="alternatives" ${window.innerWidth >= 520 ? "open" : ""}><summary>${t("alternatives")} · ${alternatives.length}</summary><div class="alternatives-grid">${alternatives.slice(0, 2).map((card, index) => recommendationCard(data, card, index + 1)).join("")}</div></details>` : ""}
+    ${conditionPanel(data)}${sourceAndRisk(data)}`);
+}
+
+function renderCurrentResult(data) {
+  if (data.type === CompRankingResult.type) renderCompRankings(data);
+  else if (data.type === ItemRankingResult.type) renderItemRankings(data);
+  else renderRecommendationResult(data);
 }
 
 function renderResult(data) {
   state.lastResult = data;
   state.lastResultId = newResultId();
+  state.feedbackByCard = {};
   rawOutputEl.textContent = data.text ?? JSON.stringify(data, null, 2);
-
-  if (data.type === "comp_rankings") {
-    state.lastSuggestions = [];
-    state.lastEntityCandidates = [];
-    renderCompRankings(data);
-    return;
-  }
-
-  if (data.type === "unit_item_rankings") {
-    state.lastSuggestions = [];
-    state.lastEntityCandidates = [];
-    renderItemRankings(data);
-    return;
-  }
-
-  if (data.clarification?.needsClarification) {
-    state.lastSuggestions = data.clarification.suggestions ?? [];
-    state.lastEntityCandidates = data.clarification.entityCandidates ?? [];
-    setResponseHtml(`
-      <div class="clarification-state">
-        <strong>${escapeHtml(data.clarification.question)}</strong>
-        ${renderEntityCandidates(state.lastEntityCandidates)}
-        ${renderSuggestionButtons(state.lastSuggestions)}
-      </div>
-    `);
-    return;
-  }
-
-  state.lastSuggestions = [];
-  state.lastEntityCandidates = [];
-
-  if (!data.cards?.length) {
-    setResponseHtml(`
-      <div class="empty-state">
-        <div>${escapeHtml(data.text ?? "无结果")}</div>
-        ${data.query ? `<div class="summary">${summaryLines(data)}</div>` : ""}
-      </div>
-    `);
-    return;
-  }
-
-  const locked = data.lockedItems?.length
-    ? data.lockedItems.map((item) => item.name).join(" + ")
-    : "无";
-  const commonCore = data.commonCore?.length
-    ? data.commonCore.map((item) => item.name).join(" + ")
-    : null;
-  setResponseHtml(`
-    <div class="answer-summary">${escapeHtml(data.answer?.summary ?? data.text)}</div>
-    <div class="locked-line">已携带：${escapeHtml(locked)}</div>
-    ${commonCore ? `<div class="core-line">高频核心：${escapeHtml(commonCore)}（严格统计前三均出现）</div>` : ""}
-    ${data.cards.map((card, index) => `
-    <article class="result-card${card.winner ? " best" : ""}">
-      <div class="card-head">
-        <div class="card-title-group">
-          ${assetThumb(data.unit?.iconUrl ?? data.query?.unitIconUrl, data.unit?.name ?? data.query?.unitName ?? data.query?.unit ?? "英雄", "equipment-unit-icon")}
-          <div class="card-title">${escapeHtml(card.title)}</div>
-        </div>
-        ${card.lowSample ? '<div class="risk">低样本</div>' : ""}
-      </div>
-      <div class="items">${card.items.map(itemPill).join("")}</div>
-      <div class="stats">
-        ${metric("前四", `${card.stats.top4}%`)}
-        ${metric("吃鸡", `${card.stats.win}%`)}
-        ${metric("均名", card.stats.avg)}
-        ${metric("样本", card.stats.games)}
-      </div>
-      ${card.difference ? `<div class="difference-note">相对推荐：${card.difference.removed?.length ? `替换 ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : "装备相同"}；前四 ${card.difference.top4Delta >= 0 ? "+" : ""}${card.difference.top4Delta}pp，样本 ${card.difference.gamesDelta >= 0 ? "+" : ""}${card.difference.gamesDelta}</div>` : ""}
-      ${feedbackActions(index)}
-    </article>
-    `).join("")}
-    ${conditionChips(data)}
-    ${sourceAndRisk(data)}
-  `);
+  state.lastSuggestions = data.clarification?.suggestions ?? [];
+  state.lastEntityCandidates = data.clarification?.entityCandidates ?? [];
+  state.currentResponseId = recordAssistantResponse(data);
+  state.resultView = { type: "result", data };
+  renderCurrentResult(data);
+  resultRefreshButton.disabled = false;
 }
 
-function renderError(message) {
+function renderError(message, messageKey = null) {
   state.lastResult = null;
   state.lastResultId = null;
-  rawOutputEl.textContent = message;
-  setResponseHtml(`<div class="error-state">${escapeHtml(message)}</div>`);
+  const displayMessage = messageKey ? t(messageKey) : message;
+  rawOutputEl.textContent = displayMessage;
+  renderErrorResult(message, true, messageKey);
+  if (activeResponseEl) activeResponseEl.innerHTML = `<div class="error-state">${escapeHtml(displayMessage)}</div>`;
 }
 
 function aliasMeta(alias) {
   const typeLabel = {
-    unit: "英雄",
-    item: "装备",
-    trait: "羁绊"
+    unit: t("hero"),
+    item: t("item"),
+    trait: t("trait")
   }[alias.entityType] ?? alias.entityType ?? "-";
-  const stateLabel = alias.enabled ? "已启用" : "候选";
+  const stateLabel = alias.enabled ? t("enabled") : t("candidate");
   const confidence = Number.isFinite(Number(alias.confidence))
     ? Number(alias.confidence).toFixed(2)
     : "-";
@@ -795,22 +845,23 @@ function updateAliasPagination(pagination = {}) {
 }
 
 function renderAliases(aliases = []) {
+  state.aliases = aliases;
   if (!aliases.length) {
-    aliasList.innerHTML = '<div class="alias-empty">无候选</div>';
+    aliasList.innerHTML = `<div class="alias-empty">${t("noCandidates")}</div>`;
     updateAliasBatchState();
     return;
   }
 
   aliasList.innerHTML = aliases.map((alias) => `
     <div class="alias-row">
-      <input class="alias-select" type="checkbox" data-alias-select value="${escapeHtml(alias.id)}" aria-label="选择 ${escapeHtml(alias.alias)}">
+      <input class="alias-select" type="checkbox" data-alias-select value="${escapeHtml(alias.id)}" aria-label="${escapeHtml(t("selectAlias", { alias: alias.alias }))}">
       <div class="alias-main">
         <strong>${escapeHtml(alias.alias)}</strong>
         <span>${escapeHtml(alias.apiName)}</span>
         <small>${escapeHtml(aliasMeta(alias))}</small>
       </div>
       <button type="button" data-alias-id="${escapeHtml(alias.id)}" data-alias-enabled="${alias.enabled ? "false" : "true"}">
-        ${alias.enabled ? "停用" : "启用"}
+        ${alias.enabled ? t("disable") : t("enabled")}
       </button>
     </div>
   `).join("");
@@ -829,7 +880,7 @@ async function loadAliases() {
 
     const response = await fetch(`/api/entity-aliases?${params.toString()}`);
     const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error ?? "别名加载失败");
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("aliasLoadFailed"));
     renderAliases(data.aliases);
     updateAliasPagination(data.pagination);
   } catch (error) {
@@ -854,15 +905,15 @@ async function reviewAlias(id, enabled) {
     })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error ?? "别名更新失败");
+  if (!response.ok || !data.ok) throw new Error(data.error ?? t("aliasUpdateFailed"));
   await loadAliases();
-  setStatus(enabled ? "已启用" : "已停用");
+  setStatusKey(enabled ? "enabled" : "aliasDisabled");
 }
 
 async function reviewSelectedAliases(enabled) {
   const ids = selectedAliasIds();
   if (!ids.length) {
-    setStatus("未选择别名");
+    setStatusKey("noAliasSelected");
     updateAliasBatchState();
     return;
   }
@@ -880,9 +931,9 @@ async function reviewSelectedAliases(enabled) {
     })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error ?? "批量更新失败");
+  if (!response.ok || !data.ok) throw new Error(data.error ?? t("batchUpdateFailed"));
   await loadAliases();
-  setStatus(`${data.updated ?? ids.length} 条${enabled ? "已启用" : "已停用"}`);
+  setStatusKey("aliasesUpdated", "ready", { count: data.updated ?? ids.length });
 }
 
 async function clearEntityMemory() {
@@ -890,17 +941,17 @@ async function clearEntityMemory() {
     method: "POST"
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error ?? "候选记忆清理失败");
+  if (!response.ok || !data.ok) throw new Error(data.error ?? t("candidateClearFailed"));
   state.aliasOffset = 0;
   await loadAliases();
   const cleared = data.cleared ?? {};
-  setStatus(`已清候选 ${cleared.candidateAliases ?? 0} 条 / 反馈 ${cleared.feedbackEvents ?? 0} 条`);
+  setStatusKey("candidatesCleared", "ready", { count: cleared.candidateAliases ?? 0, feedback: cleared.feedbackEvents ?? 0 });
 }
 
 async function fetchAliasDraft() {
   const response = await fetch("/api/entity-aliases/export?limit=1000");
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error ?? "导出失败");
+  if (!response.ok || !data.ok) throw new Error(data.error ?? t("exportFailed"));
   return data.draft;
 }
 
@@ -908,7 +959,7 @@ async function exportAliasDraft() {
   const draft = await fetchAliasDraft();
   rawOutputEl.textContent = draft?.text ?? JSON.stringify(draft, null, 2);
   detailsEl.open = true;
-  setStatus("已导出");
+  setStatusKey("exported");
 }
 
 async function downloadAliasDraft() {
@@ -928,12 +979,12 @@ async function downloadAliasDraft() {
   link.click();
   link.remove();
   setTimeout(() => URL.revokeObjectURL(url), 0);
-  setStatus("已下载");
+  setStatusKey("downloaded");
 }
 
 async function saveEntityCandidate(candidate) {
   if (!canSaveCandidateAlias(candidate)) {
-    setStatus("候选已在字典中");
+    setStatusKey("candidateKnown");
     return;
   }
 
@@ -958,15 +1009,15 @@ async function saveEntityCandidate(candidate) {
     })
   });
   const data = await response.json();
-  if (!response.ok || !data.ok) throw new Error(data.error ?? "候选保存失败");
-  setStatus("已加入候选");
-  if (!settingsPanel.classList.contains("hidden")) await loadAliases();
+  if (!response.ok || !data.ok) throw new Error(data.error ?? t("candidateSaveFailed"));
+  setStatusKey("candidateSaved");
+  if (appShell.settings.open) await loadAliases();
 }
 
 async function sendResultFeedback(sentiment, cardIndex) {
   const data = state.lastResult;
   const card = data?.cards?.[cardIndex];
-  if (!card || !state.lastResultId) throw new Error("当前结果不可反馈");
+  if (!card || !state.lastResultId) throw new Error(t("feedbackUnavailable"));
 
   const response = await fetch("/api/feedback", {
     method: "POST",
@@ -1011,34 +1062,22 @@ async function sendResultFeedback(sentiment, cardIndex) {
     })
   });
   const payload = await response.json();
-  if (!response.ok || !payload.ok) throw new Error(payload.error ?? "反馈保存失败");
+  if (!response.ok || !payload.ok) throw new Error(payload.error ?? t("feedbackSaveFailed"));
   return payload;
 }
 
 function appendUserMessage(input) {
-  const message = document.createElement("article");
-  message.className = "message user-message";
-  message.innerHTML = `<div class="message-role">你</div><div class="message-body">${escapeHtml(input)}</div>`;
-  resultEl.append(message);
+  const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  conversationPane.appendUser(escapeHtml(input), `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
 }
 
 function appendAssistantMessage() {
-  const message = document.createElement("article");
-  message.className = "message assistant-message";
-  message.innerHTML = `
-    <div class="message-role">TFT 助手</div>
-    <div class="message-body">
-      <div class="progress-steps">
-        <span class="progress-step active">理解条件</span>
-        <span class="progress-step">查询数据</span>
-        <span class="progress-step">计算排名</span>
-      </div>
-    </div>`;
-  resultEl.append(message);
-  return message.querySelector(".message-body");
+  const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  return conversationPane.appendAssistant(progressStepsHtml(state.progressIndex), `<strong>${t("assistant")}</strong><time>${escapeHtml(time)}</time>`);
 }
 
 function updateProgress(target, index) {
+  if (target === activeResponseEl) state.progressIndex = index;
   const steps = target?.querySelectorAll?.(".progress-step") ?? [];
   steps.forEach((step, stepIndex) => step.classList.toggle("active", stepIndex === index));
 }
@@ -1047,28 +1086,35 @@ function setRequestRunning(running) {
   state.requestInFlight = running;
   stopButton.classList.toggle("hidden", !running);
   retryButton.disabled = running || !state.lastInput;
+  refreshButton.disabled = running || !state.lastInput;
+  resultRefreshButton.disabled = running || !state.lastInput;
+  form.querySelector("button[type=submit]").disabled = running;
 }
 
 async function requestRecommendation(refresh = false) {
-  const input = queryInput.value.trim() || (refresh ? state.lastInput : "");
+  const input = refresh ? state.lastInput : queryInput.value.trim();
   if (!input) {
-    renderError("请输入查询内容");
+    renderError("enterQuery", "enterQuery");
     return;
   }
 
+  state.currentController?.abort();
+  const requestId = ++state.requestSerial;
+  state.progressIndex = 0;
   state.lastInput = input;
   appendUserMessage(input);
   activeResponseEl = appendAssistantMessage();
-  queryInput.value = "";
+  const assistantTarget = activeResponseEl;
+  if (!refresh) composer.clear();
   scrollConversation();
-  setStatus(refresh ? "刷新中" : "查询中");
-  state.currentController?.abort();
+  setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
+  renderLoadingResult();
   const controller = new AbortController();
   state.currentController = controller;
   setRequestRunning(true);
   const progressTimers = [
-    setTimeout(() => updateProgress(activeResponseEl, 1), 280),
-    setTimeout(() => updateProgress(activeResponseEl, 2), 720)
+    setTimeout(() => updateProgress(assistantTarget, 1), 280),
+    setTimeout(() => updateProgress(assistantTarget, 2), 720)
   ];
 
   try {
@@ -1094,23 +1140,28 @@ async function requestRecommendation(refresh = false) {
       })
     });
     const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error ?? "查询失败");
+    if (requestId !== state.requestSerial) return;
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     renderResult(data);
-    setStatus(data.cache?.query?.stale ? "过期缓存" : data.cache?.query?.hit ? "缓存" : "完成");
+    setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
   } catch (error) {
+    if (requestId !== state.requestSerial) return;
     if (error.name === "AbortError") {
-      setResponseHtml('<div class="error-state">已停止本次查询。</div>');
-      setStatus("已停止");
+      renderStoppedResult();
+      if (activeResponseEl) activeResponseEl.innerHTML = `<div>${t("stoppedBody")}</div>`;
+      setStatusKey("statusStopped", "error");
     } else {
       renderError(error.message);
-      setStatus("失败");
+      setStatusKey("statusFailed", "error");
     }
   } finally {
     progressTimers.forEach(clearTimeout);
-    state.currentController = null;
-    setRequestRunning(false);
-    activeResponseEl = null;
-    scrollConversation();
+    if (requestId === state.requestSerial) {
+      state.currentController = null;
+      setRequestRunning(false);
+      activeResponseEl = null;
+      scrollConversation();
+    }
   }
 }
 
@@ -1172,7 +1223,19 @@ retryButton.addEventListener("click", () => {
   requestRecommendation(false);
 });
 
-resultEl.addEventListener("click", async (event) => {
+async function handleResultClick(event) {
+  if (event.target.closest("[data-view-result]")) {
+    resultPane.focus();
+    return;
+  }
+  if (event.target.closest("[data-retry-result]")) {
+    if (state.lastInput && !state.requestInFlight) requestRecommendation(false);
+    return;
+  }
+  if (event.target.closest("[data-refresh-result]")) {
+    if (state.lastInput && !state.requestInFlight) requestRecommendation(true);
+    return;
+  }
   const feedbackButton = event.target.closest("button[data-result-feedback]");
   if (feedbackButton) {
     const group = feedbackButton.closest("[data-feedback-card]");
@@ -1184,12 +1247,13 @@ resultEl.addEventListener("click", async (event) => {
         feedbackButton.dataset.resultFeedback,
         Number(feedbackButton.dataset.cardIndex)
       );
+      state.feedbackByCard[Number(feedbackButton.dataset.cardIndex)] = feedbackButton.dataset.resultFeedback;
       feedbackButton.classList.add("selected");
-      if (status) status.textContent = "已记录";
-      setStatus("反馈已记录");
+      if (status) status.textContent = t("recorded");
+      setStatusKey("statusRecorded");
     } catch (error) {
       buttons.forEach((button) => { button.disabled = false; });
-      if (status) status.textContent = "保存失败";
+      if (status) status.textContent = t("saveFailed");
       setStatus(error.message);
     }
     return;
@@ -1197,7 +1261,9 @@ resultEl.addEventListener("click", async (event) => {
 
   const candidateButton = event.target.closest("button[data-candidate-action]");
   if (candidateButton) {
-    const candidate = state.lastEntityCandidates[Number(candidateButton.dataset.candidateIndex)];
+    const responseRecord = state.responsesById.get(candidateButton.dataset.responseId);
+    const candidates = responseRecord?.data?.clarification?.entityCandidates ?? state.lastEntityCandidates;
+    const candidate = candidates[Number(candidateButton.dataset.candidateIndex)];
     if (!candidate) return;
     if (candidateButton.dataset.candidateAction === "query") {
       queryInput.value = candidateQueryText(candidate);
@@ -1221,44 +1287,61 @@ resultEl.addEventListener("click", async (event) => {
   const suggestionButton = event.target.closest("button[data-suggestion-index]");
   const conditionButton = event.target.closest("button[data-condition-key]");
   if (conditionButton) {
-    queryInput.value = `修改${conditionButton.textContent.split("·")[0].trim()}：`;
+    queryInput.value = t("editCondition", { value: conditionButton.textContent.split("·")[0].trim() });
     queryInput.focus();
     return;
   }
   if (!suggestionButton) return;
-  const suggestion = state.lastSuggestions[Number(suggestionButton.dataset.suggestionIndex)];
+  const responseRecord = state.responsesById.get(suggestionButton.dataset.responseId);
+  const suggestions = responseRecord?.data?.clarification?.suggestions ?? state.lastSuggestions;
+  const suggestion = suggestions[Number(suggestionButton.dataset.suggestionIndex)];
   if (!suggestion) return;
   queryInput.value = suggestion;
   queryInput.focus();
-});
+}
+
+resultEl.addEventListener("click", handleResultClick);
+resultContentEl.addEventListener("click", handleResultClick);
 
 refreshButton.addEventListener("click", () => {
   requestRecommendation(true);
 });
 
+resultRefreshButton.addEventListener("click", () => {
+  requestRecommendation(true);
+});
+
 clearButton.addEventListener("click", async () => {
-  await fetch("/api/session/clear", {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ conversationId: state.conversationId })
-  });
+  const previousConversationId = state.conversationId;
+  state.requestSerial += 1;
   state.currentController?.abort();
+  state.currentController = null;
+  activeResponseEl = null;
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
+  state.lastInput = "";
+  state.lastResult = null;
+  state.lastResultId = null;
+  state.lastSuggestions = [];
+  state.lastEntityCandidates = [];
+  state.responseRecords = [];
+  state.responsesById.clear();
+  state.currentResponseId = null;
+  state.feedbackByCard = {};
   rawOutputEl.textContent = "";
-  resultEl.innerHTML = '<article class="message assistant-message welcome-message"><div class="message-role">TFT 助手</div><div class="message-body">新会话已开始。直接问我英雄出装、单件装备或阵容排行。</div></article>';
-  setStatus("已清空");
-});
-
-settingsButton.addEventListener("click", () => {
-  setSettingsOpen(settingsPanel.classList.contains("hidden"));
-});
-
-settingsClose.addEventListener("click", () => {
-  setSettingsOpen(false);
-});
-
-settingsDone.addEventListener("click", () => {
-  setSettingsOpen(false);
+  resultEl.innerHTML = `<article class="message assistant-message welcome-message"><div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong>TFTAgent</strong></div><div class="message-body">${t("newConversation")}</div></article>`;
+  renderEmptyResult();
+  setRequestRunning(false);
+  setStatusKey("statusCleared");
+  try {
+    const response = await fetch("/api/session/clear", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ conversationId: previousConversationId })
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  } catch {
+    setStatusKey("sessionClearFailed", "error");
+  }
 });
 
 reloadAliasesButton.addEventListener("click", () => {
@@ -1267,7 +1350,7 @@ reloadAliasesButton.addEventListener("click", () => {
 });
 
 clearEntityMemoryButton.addEventListener("click", async () => {
-  if (!window.confirm("清空未启用候选别名和反馈记录？已启用别名会保留。")) return;
+  if (!window.confirm(t("confirmClearCandidates"))) return;
   clearEntityMemoryButton.disabled = true;
   try {
     await clearEntityMemory();
@@ -1379,32 +1462,36 @@ aliasList.addEventListener("click", async (event) => {
 });
 
 clearCacheButton.addEventListener("click", async () => {
+  if (!window.confirm(t("confirmClearHistory"))) return;
   try {
     const response = await fetch("/api/cache/clear", {
       method: "POST"
     });
     const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error ?? "清理失败");
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("clearFailed"));
     rawOutputEl.textContent = "";
-    resultEl.innerHTML = '<div class="empty-state">等待查询</div>';
-    setStatus("已清历史");
+    renderEmptyResult();
+    setStatusKey("clearHistory");
   } catch (error) {
     setStatus(error.message);
   }
 });
 
 resetPreferencesButton.addEventListener("click", async () => {
+  if (!window.confirm(t("confirmReset"))) return;
   try {
     const response = await fetch("/api/preferences", {
       method: "DELETE"
     });
     const data = await response.json();
-    if (!response.ok || !data.ok) throw new Error(data.error ?? "重置失败");
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("resetFailed"));
     applyPreferences(data.preferences);
-    setStatus("已重置");
+    setStatusKey("resetDone");
   } catch (error) {
     setStatus(error.message);
   }
 });
 
+setLocale(getLocale());
+setRequestRunning(false);
 loadPreferences();

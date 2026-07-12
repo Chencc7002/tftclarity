@@ -2,167 +2,137 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 
-const indexHtml = readFileSync(new URL("../src/app/small-window-ui/index.html", import.meta.url), "utf8");
-const appJs = readFileSync(new URL("../src/app/small-window-ui/app.js", import.meta.url), "utf8");
-const styles = readFileSync(new URL("../src/app/small-window-ui/styles.css", import.meta.url), "utf8");
+const ui = (name) => readFileSync(new URL(`../src/app/small-window-ui/${name}`, import.meta.url), "utf8");
+const indexHtml = ui("index.html");
+const appJs = ui("app.js");
+const styles = ui("styles.css");
+const i18n = ui("i18n.js");
+const appShell = ui("app-shell.js");
+const conversation = ui("conversation-pane.js");
+const resultPane = ui("result-pane.js");
 
-test("small-window settings expose entity alias review controls", () => {
-  assert.match(indexHtml, /id="alias-list"/);
-  assert.match(indexHtml, /id="export-aliases-button"/);
-  assert.match(indexHtml, /id="download-aliases-button"/);
-  assert.match(indexHtml, /id="reload-aliases-button"/);
-  assert.match(indexHtml, /id="clear-entity-memory-button"/);
-  assert.match(indexHtml, /id="alias-state-filter"/);
-  assert.match(indexHtml, /id="alias-type-filter"/);
-  assert.match(indexHtml, /id="alias-query-filter"/);
-  assert.match(indexHtml, /id="alias-select-all"/);
-  assert.match(indexHtml, /id="enable-selected-aliases-button"/);
-  assert.match(indexHtml, /id="disable-selected-aliases-button"/);
-  assert.match(indexHtml, /id="alias-prev-button"/);
-  assert.match(indexHtml, /id="alias-next-button"/);
-  assert.match(indexHtml, /id="alias-page-label"/);
-  assert.match(indexHtml, /id="cache-status"/);
-  assert.match(indexHtml, /id="llm-status"/);
-  assert.match(indexHtml, /id="runtime-detail"/);
-  assert.match(indexHtml, /id="context-strategy-select"/);
-  assert.match(indexHtml, /id="structured-parser-mode-select"/);
-  assert.match(indexHtml, /value="inherit"/);
-  assert.match(indexHtml, /value="never"/);
-  assert.match(indexHtml, /value="always"/);
-  assert.match(indexHtml, /value="popular"/);
-  assert.match(indexHtml, /稳定样本最多/);
-  assert.match(appJs, /new URLSearchParams/);
-  assert.match(appJs, /state\.aliasOffset/);
-  assert.match(appJs, /state\.defaultContextStrategy/);
-  assert.match(appJs, /state\.structuredParserMode/);
-  assert.match(appJs, /contextStrategySelect/);
-  assert.match(appJs, /structuredParserModeSelect/);
-  assert.match(appJs, /defaultContextStrategy: state\.defaultContextStrategy/);
-  assert.match(appJs, /structuredParserMode: state\.structuredParserMode/);
-  assert.match(appJs, /loadRuntimeStatus/);
-  assert.match(appJs, /\/api\/runtime/);
-  assert.match(appJs, /requests\.explorerTimeoutMs/);
-  assert.match(appJs, /查询超时/);
-  assert.match(appJs, /compConstraintLine/);
-  assert.match(appJs, /formatCacheUpdatedAt/);
-  assert.match(appJs, /queryCacheLine/);
-  assert.match(appJs, /更新 \$\{updatedAt\}/);
-  assert.match(appJs, /data\.cache\?\.query\?\.stale \? "过期缓存"/);
-  assert.match(appJs, /当前条件下没有稳定 Comp/);
-  assert.match(appJs, /系统补全，样本/);
-  assert.match(appJs, /用户指定/);
-  assert.match(appJs, /Comp 候选/);
-  assert.match(appJs, /params\.set\("query"/);
-  assert.match(appJs, /\/api\/entity-aliases\/export\?limit=1000/);
-  assert.match(appJs, /\/api\/entity-aliases\/review/);
-  assert.match(appJs, /\/api\/entity-aliases\/review-batch/);
-  assert.match(appJs, /\/api\/entity-memory\/clear/);
-  assert.match(appJs, /clearEntityMemory/);
-  assert.match(appJs, /window\.confirm/);
-  assert.match(appJs, /downloadAliasDraft/);
-  assert.match(appJs, /selectedAliasIds/);
-  assert.match(appJs, /escapeHtml/);
-  assert.match(appJs, /detailsEl\.open = true/);
-  assert.match(styles, /\.alias-row/);
-  assert.match(styles, /\.alias-actions/);
-  assert.match(styles, /\.alias-batch/);
-  assert.match(styles, /\.alias-filters/);
-  assert.match(styles, /\.alias-pagination/);
-  assert.match(styles, /\.runtime-status/);
-  assert.match(styles, /grid-template-columns: 18px 1fr 58px/);
-});
-
-test("small-window clarification renders actionable entity candidates", () => {
-  assert.match(appJs, /renderEntityCandidates/);
-  assert.match(appJs, /data-candidate-action="query"/);
-  assert.match(appJs, /data-candidate-action="save"/);
-  assert.match(appJs, /saveEntityCandidate/);
-  assert.match(appJs, /\/api\/feedback/);
-  assert.match(appJs, /feedbackType: "alias_candidate"/);
-  assert.match(appJs, /state\.lastEntityCandidates/);
-  assert.match(appJs, /escapeHtml\(data\.clarification\.question\)/);
-  assert.match(styles, /\.entity-candidates/);
-  assert.match(styles, /\.candidate-row/);
-  assert.match(styles, /\.candidate-actions/);
-});
-
-test("small-window empty results retain the structured query summary", () => {
-  assert.match(appJs, /if \(!data\.cards\?\.length\)/);
-  assert.match(appJs, /data\.query \? `<div class="summary">\$\{summaryLines\(data\)\}<\/div>`/);
-});
-
-test("small-window cards render the sample-risk marker", () => {
-  assert.match(appJs, /card\.lowSample \? '<div class="risk">低样本<\/div>'/);
-  assert.match(appJs, /query\.excludedItemNames\?\.length/);
-  assert.match(appJs, /已排除：\$\{query\.excludedItemNames\.join\(" \+ "\)\}/);
-  assert.match(styles, /\.risk/);
-});
-
-test("small-window comparison cards distinguish winners and compared items", () => {
-  assert.match(appJs, /card\.winner/);
-  assert.match(appJs, /item\.compared/);
-  assert.match(styles, /\.item\.compared/);
-});
-
-test("small-window result cards expose idempotent feedback controls", () => {
-  assert.match(appJs, /data-result-feedback="good"/);
-  assert.match(appJs, /data-result-feedback="bad"/);
-  assert.match(appJs, /sendResultFeedback/);
-  assert.match(appJs, /good_recommendation/);
-  assert.match(appJs, /bad_recommendation/);
-  assert.match(appJs, /state\.lastResultId/);
-  assert.match(styles, /\.result-feedback/);
-  assert.match(styles, /\.feedback-button/);
-});
-
-test("small-window comp rankings use expandable fixed-size icon cards", () => {
-  assert.match(appJs, /renderCompRankings/);
-  assert.match(appJs, /renderCompCard/);
-  assert.match(appJs, /<details class="comp-card"/);
-  assert.match(appJs, /低样本参考（不进入排名）/);
-  assert.match(appJs, /equipment-unit-icon/);
-  assert.match(appJs, /data\.unit\?\.iconUrl \?\? data\.query\?\.unitIconUrl/);
-  assert.match(appJs, /compTraitLabel/);
-  assert.match(appJs, /段位 \$\{escapeHtml\(compRankLabel/);
-  assert.match(appJs, /compUpdatedLabel/);
-  assert.match(appJs, /assetThumb/);
-  assert.match(appJs, /aria-label/);
-  assert.match(appJs, /不可用/);
-  assert.match(appJs, /function hasNumericValue/);
-  assert.match(appJs, /value !== null && value !== undefined && value !== ""/);
-  assert.match(styles, /\.comp-card/);
-  assert.match(styles, /\.equipment-unit-icon/);
-  assert.match(styles, /\.unit-icon/);
-  assert.match(styles, /\.trait-icon/);
-  assert.match(styles, /\.tiny-item-icon/);
-  assert.match(styles, /\.full-unit-grid \.comp-unit/);
-  assert.match(styles, /grid-template-columns: 32px minmax\(0, 1fr\) auto/);
-  assert.match(styles, /width: 32px/);
-  assert.match(styles, /@media \(max-width: 379px\)/);
-});
-
-test("small-window uses a conversational message flow and fixed composer controls", () => {
+test("desktop UI exposes the responsive AppShell structure", () => {
+  assert.match(indexHtml, /id="app-shell"/);
+  assert.match(indexHtml, /id="title-bar"/);
+  assert.match(indexHtml, /id="conversation-pane"/);
   assert.match(indexHtml, /class="conversation" id="result"/);
-  assert.match(indexHtml, /class="query-panel composer"/);
-  assert.match(indexHtml, /id="retry-button"/);
-  assert.match(indexHtml, /id="stop-button"/);
-  assert.match(indexHtml, /高级查询默认值/);
-  assert.match(appJs, /conversationId/);
-  assert.match(appJs, /appendUserMessage/);
-  assert.match(appJs, /appendAssistantMessage/);
-  assert.match(appJs, /理解条件/);
-  assert.match(appJs, /查询数据/);
-  assert.match(appJs, /计算排名/);
+  assert.match(indexHtml, /id="result-pane"/);
+  assert.match(indexHtml, /id="result-content"/);
+  assert.match(indexHtml, /id="column-resizer"/);
+  assert.match(indexHtml, /id="settings-panel"/);
+  assert.match(indexHtml, /class="resize-grip"/);
+  assert.match(appJs, /AppShell/);
+  assert.match(appJs, /TitleBar/);
+  assert.match(appJs, /ConversationPane/);
+  assert.match(appJs, /Composer/);
+  assert.match(appJs, /ResultPane/);
+  assert.match(resultPane, /class RecommendationResult/);
+  assert.match(resultPane, /class ItemRankingResult/);
+  assert.match(resultPane, /class CompRankingResult/);
+  assert.match(conversation, /class ConversationPane/);
+  assert.match(conversation, /class Composer/);
+});
+
+test("responsive layout supports three, two, single, and compact modes without a 460px cap", () => {
+  assert.doesNotMatch(styles, /width:\s*min\(100%,\s*460px\)/);
+  assert.match(styles, /grid-template-columns:\s*clamp\(320px, var\(--conversation-width\), 520px\) 9px minmax\(360px, 1fr\)/);
+  assert.match(styles, /@media \(max-width: 1099px\)/);
+  assert.match(styles, /@media \(max-width: 759px\)/);
+  assert.match(styles, /@media \(max-width: 519px\)/);
+  assert.match(styles, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /overflow-x:\s*hidden/);
+  assert.match(appShell, /tftagent\.conversationRatio/);
+  assert.match(appShell, /localStorage\.setItem\(COLUMN_STORAGE_KEY/);
+  assert.match(appShell, /ResizeObserver/);
+  assert.match(appShell, /pointerdown/);
+  assert.match(appShell, /ArrowLeft/);
+});
+
+test("language switching uses independent dictionaries and does not issue API requests", () => {
+  assert.match(indexHtml, /data-locale="zh-CN"/);
+  assert.match(indexHtml, /data-locale="en-US"/);
+  assert.match(i18n, /"zh-CN"/);
+  assert.match(i18n, /"en-US"/);
+  assert.match(i18n, /tftagent\.locale/);
+  assert.match(i18n, /localizedName/);
+  assert.match(i18n, /Intl\.NumberFormat/);
+  assert.doesNotMatch(i18n, /fetch\(/);
+  assert.match(appJs, /setLocale\(locale\)/);
+  assert.match(appJs, /rerenderLocalizedState/);
+  assert.doesNotMatch(appJs, /[\u4e00-\u9fff]/);
+});
+
+test("all existing real interactions and endpoints remain wired", () => {
+  for (const endpoint of [
+    "/api/recommend", "/api/preferences", "/api/runtime", "/api/feedback",
+    "/api/entity-aliases", "/api/entity-aliases/review", "/api/entity-aliases/review-batch",
+    "/api/entity-memory/clear", "/api/cache/clear", "/api/session/clear"
+  ]) assert.ok(appJs.includes(endpoint), `missing ${endpoint}`);
   assert.match(appJs, /event\.key === "Enter" && !event\.shiftKey/);
   assert.match(appJs, /state\.currentController\?\.abort/);
-  assert.match(appJs, /renderItemRankings/);
-  assert.match(appJs, /conditionChips/);
+  assert.match(appJs, /conversationId/);
+  assert.match(appJs, /data-result-feedback="good"/);
+  assert.match(appJs, /data-result-feedback="bad"/);
+  assert.match(appJs, /data-candidate-action="query"/);
+  assert.match(appJs, /data-candidate-action="save"/);
   assert.match(appJs, /data-condition-key/);
-  assert.match(appJs, /高频核心/);
-  assert.match(appJs, /已携带：/);
-  assert.match(styles, /\.conversation/);
-  assert.match(styles, /\.composer/);
-  assert.match(styles, /\.message/);
-  assert.match(styles, /\.condition-chip/);
-  assert.match(styles, /\.item-ranking-card/);
+});
+
+test("request lifecycle isolates refreshes, clears, and stale abort completions", () => {
+  assert.match(appJs, /const input = refresh \? state\.lastInput : queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /if \(!refresh\) composer\.clear\(\)/);
+  assert.match(appJs, /const requestId = \+\+state\.requestSerial/);
+  assert.match(appJs, /if \(requestId !== state\.requestSerial\) return/);
+  assert.match(appJs, /state\.requestSerial \+= 1/);
+  assert.match(appJs, /state\.currentController\?\.abort\(\)/);
+  assert.match(appJs, /renderEmptyResult\(\)/);
+});
+
+test("localized view state and historical clarification actions keep stable response context", () => {
+  assert.match(appJs, /resultView: \{ type: "empty" \}/);
+  assert.match(appJs, /state\.resultView\.type === "loading"/);
+  assert.match(appJs, /activeResponseEl\.innerHTML = progressStepsHtml/);
+  assert.match(appJs, /data-response-id=/);
+  assert.match(appJs, /state\.responsesById\.get\(candidateButton\.dataset\.responseId\)/);
+  assert.match(appJs, /state\.responsesById\.get\(suggestionButton\.dataset\.responseId\)/);
+  assert.match(appJs, /t\("editCondition"/);
+  assert.match(i18n, /completedItems:/);
+  assert.match(i18n, /noStableCompLine:/);
+});
+
+test("result templates cover recommendations, item rankings, comps, risks, and explicit states", () => {
+  assert.match(appJs, /function renderRecommendationResult/);
+  assert.match(appJs, /function renderItemRankings/);
+  assert.match(appJs, /function renderCompRankings/);
+  assert.match(appJs, /class="best-label"/);
+  assert.match(appJs, /class="alternatives"/);
+  assert.match(appJs, /card\.lowSample/);
+  assert.match(appJs, /item\.locked/);
+  assert.match(appJs, /item\.compared/);
+  assert.match(appJs, /card\.difference/);
+  assert.match(appJs, /class="source-risk"/);
+  assert.match(appJs, /class="condition-panel"/);
+  assert.match(appJs, /class="clarification-state"/);
+  assert.match(appJs, /class="empty-state"/);
+  assert.match(appJs, /data-state="error"/);
+  assert.match(appJs, /data-state="loading"/);
+  assert.match(appJs, /<details class="comp-card"/);
+  assert.match(styles, /\.result-card\.best/);
+  assert.match(styles, /\.low-sample-section/);
+});
+
+test("settings retain preferences, runtime details, alias review, export, clear, and reset controls", () => {
+  for (const id of [
+    "sample-control", "policy-control", "sort-select", "days-select", "context-strategy-select",
+    "structured-parser-mode-select", "rank-control", "cache-status", "llm-status", "runtime-detail",
+    "alias-list", "export-aliases-button", "download-aliases-button", "reload-aliases-button",
+    "clear-entity-memory-button", "alias-state-filter", "alias-type-filter", "alias-query-filter",
+    "alias-select-all", "enable-selected-aliases-button", "disable-selected-aliases-button",
+    "alias-prev-button", "alias-next-button", "clear-cache-button", "reset-preferences-button"
+  ]) assert.match(indexHtml, new RegExp(`id="${id}"`));
+  assert.match(appJs, /defaultContextStrategy: state\.defaultContextStrategy/);
+  assert.match(appJs, /structuredParserMode: state\.structuredParserMode/);
+  assert.match(appJs, /rankFilter: state\.rankFilter/);
+  assert.match(appJs, /window\.confirm/);
+  assert.match(appJs, /downloadAliasDraft/);
 });

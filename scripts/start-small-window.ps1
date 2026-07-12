@@ -1,7 +1,7 @@
 param(
   [string]$HostName = "127.0.0.1",
   [int]$Port = 17317,
-  [int]$Width = 460,
+  [int]$Width = 1200,
   [int]$Height = 760,
   [int]$WindowLeft = 40,
   [int]$WindowTop = 40,
@@ -109,7 +109,7 @@ function Set-TopMostWindow {
     [string]$TitlePattern = "TFTAgent",
     [int]$Left = 40,
     [int]$Top = 40,
-    [int]$TargetWidth = 460,
+    [int]$TargetWidth = 1200,
     [int]$TargetHeight = 760,
     [int]$WaitSeconds = 8
   )

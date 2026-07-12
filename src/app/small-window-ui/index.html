@@ -3,166 +3,155 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>TFTAgent</title>
+    <meta name="color-scheme" content="light">
+    <title>TFTAgent · Set 17</title>
     <link rel="stylesheet" href="/styles.css">
   </head>
   <body>
-    <main class="shell">
-      <header class="topbar">
-        <div class="brand">
-          <span class="brand-mark">TFT</span>
-          <strong>数据助手</strong>
+    <main class="shell" id="app-shell">
+      <header class="topbar" id="title-bar">
+        <div class="brand" aria-label="TFTAgent">
+          <span class="brand-mark" aria-hidden="true">
+            <svg viewBox="0 0 32 32" role="img"><path d="M16 2.7 19.4 12 29 16l-9.6 4L16 29.3 12.6 20 3 16l9.6-4L16 2.7Z"/><path d="m16 8 1.8 6.2L24 16l-6.2 1.8L16 24l-1.8-6.2L8 16l6.2-1.8L16 8Z"/></svg>
+          </span>
+          <span class="brand-copy">
+            <strong>TFTAgent</strong>
+            <small>Set 17 · <span data-i18n="seasonName">星神</span></small>
+          </span>
         </div>
+
         <div class="top-actions">
-          <button type="button" id="settings-button" title="设置">⚙</button>
-          <div class="status" id="status">就绪</div>
+          <div class="language-toggle segmented" role="group" data-i18n-aria="languageLabel" aria-label="语言">
+            <button type="button" data-locale="zh-CN" class="active" aria-pressed="true">中文</button>
+            <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
+          </div>
+          <button type="button" id="settings-button" class="icon-button" data-i18n-title="settings" data-i18n-aria="settings" title="设置" aria-label="设置" aria-expanded="false">
+            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.95 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.58 15 1.7 1.7 0 0 0 3 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.95a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.58 1.7 1.7 0 0 0 10 3h4v.08a1.7 1.7 0 0 0 1.03 1.52 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.13.38.5.95 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
+          </button>
+          <div class="status" id="status" data-state="ready" aria-live="polite"><span class="status-dot"></span><span data-i18n="statusReady">就绪</span></div>
+          <div class="window-controls" data-i18n-aria="windowControls" aria-label="窗口控制（由桌面壳提供）">
+            <button type="button" tabindex="-1" aria-disabled="true" data-i18n-title="minimize" title="最小化"><span class="window-min"></span></button>
+            <button type="button" tabindex="-1" aria-disabled="true" data-i18n-title="maximize" title="最大化"><span class="window-max"></span></button>
+            <button type="button" tabindex="-1" aria-disabled="true" data-i18n-title="close" title="关闭"><span class="window-close"></span></button>
+          </div>
         </div>
       </header>
 
-      <section class="conversation" id="result" aria-live="polite">
-        <article class="message assistant-message welcome-message">
-          <div class="message-role">TFT 助手</div>
-          <div class="message-body">
-            直接问我英雄出装、单件装备或阵容排行。你也可以连续追问，例如“近一天呢？”或“不要海妖，换一套”。
+      <div class="workspace" id="workspace">
+        <section class="conversation-pane" id="conversation-pane" aria-labelledby="conversation-title">
+          <div class="pane-heading conversation-heading">
+            <div>
+              <span class="eyebrow" data-i18n="conversationEyebrow">对话</span>
+              <h1 id="conversation-title" data-i18n="conversationTitle">战术查询</h1>
+            </div>
+            <span class="pane-hint" data-i18n="conversationHint">保留多轮条件</span>
           </div>
-        </article>
-      </section>
-
-      <form class="query-panel composer" id="query-form">
-        <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" placeholder="问问霞的装备，Enter 发送…"></textarea>
-        <div class="action-row composer-actions">
-          <button type="button" id="retry-button" title="重试上一条">重试</button>
-          <button type="button" id="stop-button" class="hidden" title="停止查询">停止</button>
-          <button type="button" id="refresh-button" title="刷新数据">刷新</button>
-          <button type="button" id="clear-button">清空</button>
-          <button class="primary send-button" type="submit">发送</button>
-        </div>
-      </form>
-
-      <section class="settings-panel hidden" id="settings-panel" aria-label="设置">
-        <div class="settings-head">
-          <strong>设置</strong>
-          <button type="button" id="settings-close" title="关闭">×</button>
-        </div>
-        <details class="advanced-query-settings">
-          <summary>高级查询默认值</summary>
-          <section class="controls" aria-label="查询条件">
-            <div class="segmented" id="sample-control" data-field="minSamples">
-              <button type="button" data-value="10">10</button>
-              <button type="button" data-value="50">50</button>
-              <button type="button" data-value="100" class="active">100</button>
-              <button type="button" data-value="500">500</button>
-              <button type="button" data-value="1000">1000</button>
-            </div>
-            <div class="segmented policy" id="policy-control" data-field="itemPolicy">
-              <button type="button" data-value="ordinary_only" class="active">普通</button>
-              <button type="button" data-value="include_radiant">光明</button>
-              <button type="button" data-value="include_artifact">神器</button>
-              <button type="button" data-value="include_special">特殊</button>
-            </div>
-            <select id="sort-select" aria-label="排序">
-              <option value="top4_first">前四</option>
-              <option value="win_first">吃鸡</option>
-              <option value="robust_first">样本</option>
-            </select>
+          <section class="conversation" id="result" aria-live="polite">
+            <article class="message assistant-message welcome-message">
+              <div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong>TFTAgent</strong></div>
+              <div class="message-body" data-i18n="welcome">直接问我英雄出装、单件装备或阵容排行。你也可以连续追问。</div>
+            </article>
           </section>
-        </details>
-        <label class="field-row">
-          <span>天数</span>
-          <select id="days-select" aria-label="天数">
-            <option value="1">1</option>
-            <option value="3">3</option>
-            <option value="7">7</option>
-            <option value="14">14</option>
-            <option value="30">30</option>
-          </select>
-        </label>
-        <label class="field-row">
-          <span>自动 Comp</span>
-          <select id="context-strategy-select" aria-label="自动 Comp 选择规则">
-            <option value="popular">稳定样本最多</option>
-          </select>
-        </label>
-        <label class="field-row">
-          <span>解析</span>
-          <select id="structured-parser-mode-select" aria-label="结构化解析策略">
-            <option value="inherit">继承</option>
-            <option value="auto">自动</option>
-            <option value="never">关闭</option>
-            <option value="always">始终</option>
-          </select>
-        </label>
-        <div class="rank-grid" id="rank-control" aria-label="段位">
-          <label><input type="checkbox" value="CHALLENGER">王者</label>
-          <label><input type="checkbox" value="GRANDMASTER">宗师</label>
-          <label><input type="checkbox" value="MASTER">大师</label>
-          <label><input type="checkbox" value="DIAMOND">钻石</label>
-          <label><input type="checkbox" value="EMERALD">翡翠</label>
-          <label><input type="checkbox" value="PLATINUM">铂金</label>
-          <label><input type="checkbox" value="GOLD">黄金</label>
-          <label><input type="checkbox" value="SILVER">白银</label>
-        </div>
-        <section class="runtime-status" aria-label="运行状态">
-          <div class="runtime-row">
-            <span>缓存</span>
-            <strong id="cache-status">-</strong>
-          </div>
-          <div class="runtime-row">
-            <span>LLM</span>
-            <strong id="llm-status">-</strong>
-          </div>
-          <small id="runtime-detail">-</small>
-        </section>
-        <section class="alias-review" aria-label="别名审核">
-          <div class="alias-head">
-            <strong>别名</strong>
-            <div class="alias-actions">
-              <button type="button" id="export-aliases-button">导出</button>
-              <button type="button" id="download-aliases-button">下载</button>
-              <button type="button" id="reload-aliases-button">刷新</button>
-              <button type="button" id="clear-entity-memory-button">清候选</button>
-            </div>
-          </div>
-          <div class="alias-filters">
-            <select id="alias-state-filter" aria-label="alias state">
-              <option value="">全部</option>
-              <option value="false">候选</option>
-              <option value="true">已启用</option>
-            </select>
-            <select id="alias-type-filter" aria-label="alias type">
-              <option value="">全部类型</option>
-              <option value="unit">英雄</option>
-              <option value="item">装备</option>
-              <option value="trait">羁绊</option>
-            </select>
-            <input id="alias-query-filter" type="search" autocomplete="off" placeholder="搜别名/API" aria-label="search aliases">
-          </div>
-          <div class="alias-batch">
-            <label><input type="checkbox" id="alias-select-all">全选</label>
-            <button type="button" id="enable-selected-aliases-button">启用选中</button>
-            <button type="button" id="disable-selected-aliases-button">停用选中</button>
-          </div>
-          <div class="alias-list" id="alias-list">
-            <div class="alias-empty">无候选</div>
-          </div>
-          <div class="alias-pagination">
-            <button type="button" id="alias-prev-button">上一页</button>
-            <span id="alias-page-label">0-0</span>
-            <button type="button" id="alias-next-button">下一页</button>
-          </div>
-        </section>
-        <div class="settings-actions">
-          <button type="button" id="clear-cache-button">清历史</button>
-          <button type="button" id="reset-preferences-button">重置</button>
-          <button type="button" class="primary" id="settings-done">完成</button>
-        </div>
-        <details class="details" id="details">
-          <summary>内部响应</summary>
-          <pre id="raw-output"></pre>
-        </details>
-      </section>
-    </main>
 
+          <form class="query-panel composer" id="query-form">
+            <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="问问霞的装备，Enter 发送…"></textarea>
+            <div class="action-row composer-actions">
+              <button type="button" id="retry-button" class="compact-action" data-i18n-title="retryTitle" title="重试上一条" disabled><span aria-hidden="true">↻</span><span data-i18n="retry">重试</span></button>
+              <button type="button" id="stop-button" class="compact-action hidden" data-i18n-title="stopTitle" title="停止查询"><span aria-hidden="true">■</span><span data-i18n="stop">停止</span></button>
+              <button type="button" id="refresh-button" class="compact-action" data-i18n-title="refreshTitle" title="刷新数据" disabled><span aria-hidden="true">⟳</span><span data-i18n="refresh">刷新</span></button>
+              <button type="button" id="clear-button" class="compact-action" data-i18n-title="clearTitle" title="清空会话"><span aria-hidden="true">⌫</span><span data-i18n="clear">清空</span></button>
+              <button class="primary send-button" type="submit" data-i18n-title="sendTitle" title="发送"><span data-i18n="send">发送</span><span aria-hidden="true">➜</span></button>
+            </div>
+          </form>
+        </section>
+
+        <div class="column-resizer" id="column-resizer" role="separator" aria-orientation="vertical" aria-valuemin="320" aria-valuemax="520" tabindex="0" data-i18n-aria="resizeColumns" aria-label="调整对话与结果列宽"><span aria-hidden="true">⋮</span></div>
+
+        <section class="result-pane" id="result-pane" aria-labelledby="result-title">
+          <div class="pane-heading result-heading">
+            <div>
+              <span class="eyebrow" data-i18n="resultEyebrow">数据结果</span>
+              <h1 id="result-title" data-i18n="resultTitle">当前推荐</h1>
+            </div>
+            <button type="button" id="result-refresh-button" class="subtle-button" data-i18n-title="refreshTitle" title="刷新数据" disabled><span aria-hidden="true">⟳</span><span data-i18n="refresh">刷新</span></button>
+          </div>
+          <div class="result-scroll" id="result-content" aria-live="polite">
+            <section class="result-state result-empty" data-state="empty">
+              <div class="state-orbit" aria-hidden="true">✦</div>
+              <strong data-i18n="resultEmptyTitle">等待你的查询</strong>
+              <p data-i18n="resultEmptyBody">推荐、单件排行和阵容榜会显示在这里。</p>
+            </section>
+          </div>
+        </section>
+
+        <div class="settings-backdrop" id="settings-backdrop" hidden></div>
+        <aside class="settings-panel" id="settings-panel" aria-labelledby="settings-title" aria-hidden="true">
+          <div class="settings-head">
+            <div><span class="eyebrow" data-i18n="preferencesEyebrow">偏好与运行</span><strong id="settings-title" data-i18n="settings">设置</strong></div>
+            <button type="button" id="settings-close" class="icon-button dark" data-i18n-title="closeSettings" data-i18n-aria="closeSettings" title="关闭设置" aria-label="关闭设置">×</button>
+          </div>
+          <div class="settings-scroll">
+            <details class="advanced-query-settings" open>
+              <summary data-i18n="advancedDefaults">高级查询默认值</summary>
+              <section class="controls" data-i18n-aria="queryConditions" aria-label="查询条件">
+                <label class="control-label"><span data-i18n="sampleThreshold">样本阈值</span>
+                  <span class="segmented sample-control" id="sample-control" data-field="minSamples">
+                    <button type="button" data-value="10">10</button><button type="button" data-value="50">50</button><button type="button" data-value="100" class="active">100</button><button type="button" data-value="500">500</button><button type="button" data-value="1000">1000</button>
+                  </span>
+                </label>
+                <label class="control-label"><span data-i18n="itemScope">装备范围</span>
+                  <span class="segmented policy" id="policy-control" data-field="itemPolicy">
+                    <button type="button" data-value="ordinary_only" data-i18n="ordinary">普通</button><button type="button" data-value="include_radiant" data-i18n="radiant">光明</button><button type="button" data-value="include_artifact" data-i18n="artifact">神器</button><button type="button" data-value="include_special" data-i18n="special">特殊</button>
+                  </span>
+                </label>
+                <label class="field-stack"><span data-i18n="sort">排序</span><select id="sort-select" data-i18n-aria="sort" aria-label="排序"><option value="top4_first" data-i18n="sortTop4">前四优先</option><option value="win_first" data-i18n="sortWin">吃鸡优先</option><option value="robust_first" data-i18n="sortRobust">稳健优先</option></select></label>
+                <label class="field-stack"><span data-i18n="days">统计天数</span><select id="days-select" data-i18n-aria="days" aria-label="统计天数"><option value="1">1</option><option value="3">3</option><option value="7">7</option><option value="14">14</option><option value="30">30</option></select></label>
+                <label class="field-stack"><span data-i18n="autoComp">自动 Comp</span><select id="context-strategy-select" data-i18n-aria="autoComp" aria-label="自动 Comp"><option value="popular" data-i18n="stableMostSamples">稳定样本最多</option></select></label>
+                <label class="field-stack"><span data-i18n="parser">结构化解析</span><select id="structured-parser-mode-select" data-i18n-aria="parser" aria-label="结构化解析"><option value="inherit" data-i18n="inherit">继承</option><option value="auto" data-i18n="automatic">自动</option><option value="never" data-i18n="off">关闭</option><option value="always" data-i18n="always">始终</option></select></label>
+              </section>
+            </details>
+
+            <section class="settings-section">
+              <h2 data-i18n="ranks">段位</h2>
+              <div class="rank-grid" id="rank-control" data-i18n-aria="ranks" aria-label="段位">
+                <label><input type="checkbox" value="CHALLENGER"><span data-i18n="rankChallenger">王者</span></label><label><input type="checkbox" value="GRANDMASTER"><span data-i18n="rankGrandmaster">宗师</span></label><label><input type="checkbox" value="MASTER"><span data-i18n="rankMaster">大师</span></label><label><input type="checkbox" value="DIAMOND"><span data-i18n="rankDiamond">钻石</span></label><label><input type="checkbox" value="EMERALD"><span data-i18n="rankEmerald">翡翠</span></label><label><input type="checkbox" value="PLATINUM"><span data-i18n="rankPlatinum">铂金</span></label><label><input type="checkbox" value="GOLD"><span data-i18n="rankGold">黄金</span></label><label><input type="checkbox" value="SILVER"><span data-i18n="rankSilver">白银</span></label>
+              </div>
+            </section>
+
+            <section class="settings-section runtime-status" data-i18n-aria="runtimeStatus" aria-label="运行状态">
+              <h2 data-i18n="runtimeStatus">数据与运行状态</h2>
+              <div class="runtime-row"><span data-i18n="cache">缓存</span><strong id="cache-status">-</strong></div>
+              <div class="runtime-row"><span>LLM</span><strong id="llm-status">-</strong></div>
+              <small id="runtime-detail">-</small>
+            </section>
+
+            <details class="settings-section alias-review">
+              <summary data-i18n="aliasReview">别名审核（高级）</summary>
+              <div class="alias-head">
+                <strong data-i18n="aliases">别名</strong>
+                <div class="alias-actions"><button type="button" id="export-aliases-button" data-i18n="export">导出</button><button type="button" id="download-aliases-button" data-i18n="download">下载</button><button type="button" id="reload-aliases-button" data-i18n="refresh">刷新</button><button type="button" id="clear-entity-memory-button" data-i18n="clearCandidates">清候选</button></div>
+              </div>
+              <div class="alias-filters">
+                <select id="alias-state-filter" data-i18n-aria="aliasState" aria-label="别名状态"><option value="" data-i18n="all">全部</option><option value="false" data-i18n="candidate">候选</option><option value="true" data-i18n="enabled">已启用</option></select>
+                <select id="alias-type-filter" data-i18n-aria="aliasType" aria-label="别名类型"><option value="" data-i18n="allTypes">全部类型</option><option value="unit" data-i18n="hero">英雄</option><option value="item" data-i18n="item">装备</option><option value="trait" data-i18n="trait">羁绊</option></select>
+                <input id="alias-query-filter" type="search" autocomplete="off" data-i18n-placeholder="searchAliases" placeholder="搜别名/API" data-i18n-aria="searchAliases" aria-label="搜索别名">
+              </div>
+              <div class="alias-batch"><label><input type="checkbox" id="alias-select-all"><span data-i18n="selectAll">全选</span></label><button type="button" id="enable-selected-aliases-button" data-i18n="enableSelected">启用选中</button><button type="button" id="disable-selected-aliases-button" data-i18n="disableSelected">停用选中</button></div>
+              <div class="alias-list" id="alias-list"><div class="alias-empty" data-i18n="noCandidates">无候选</div></div>
+              <div class="alias-pagination"><button type="button" id="alias-prev-button" data-i18n="previous">上一页</button><span id="alias-page-label">0-0</span><button type="button" id="alias-next-button" data-i18n="next">下一页</button></div>
+            </details>
+
+            <details class="details" id="details"><summary data-i18n="internalResponse">内部响应</summary><pre id="raw-output"></pre></details>
+          </div>
+          <div class="settings-actions">
+            <button type="button" id="clear-cache-button" class="danger-ghost" data-i18n="clearHistory">清历史</button>
+            <button type="button" id="reset-preferences-button" data-i18n="reset">重置</button>
+            <button type="button" class="primary" id="settings-done" data-i18n="done">完成</button>
+          </div>
+        </aside>
+      </div>
+      <div class="resize-grip" data-i18n-title="nativeResize" title="拖动窗口边缘调整大小（由桌面壳提供）" aria-hidden="true"><span></span><span></span></div>
+    </main>
     <script src="/app.js" type="module"></script>
   </body>
 </html>

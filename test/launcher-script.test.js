@@ -25,13 +25,15 @@ test("window launcher supports service-only verification mode", () => {
   assert.match(launcher, /--cache-path/);
 });
 
-test("window launcher opens a fixed-size browser app window", () => {
+test("window launcher opens a resizable browser app window at the desktop default size", () => {
   assert.match(launcher, /--app=\$Url/);
   assert.match(launcher, /--window-size=\$Width,\$Height/);
   assert.match(launcher, /\[int\]\$WindowLeft = 40/);
   assert.match(launcher, /\[int\]\$WindowTop = 40/);
   assert.match(launcher, /--window-position=\$WindowLeft,\$WindowTop/);
   assert.match(launcher, /small-window-browser-profile/);
+  assert.match(launcher, /\[int\]\$Width = 1200/);
+  assert.match(launcher, /\[int\]\$Height = 760/);
 });
 
 test("window launcher can request a topmost app window", () => {
@@ -121,8 +123,14 @@ test("visual smoke script verifies responsive result states when Playwright is a
   assert.match(visualSmoke, /unstable asset dimensions/);
   assert.match(visualSmoke, /page\.route\("https:\/\/ddragon\.leagueoflegends\.com\/\*\*"/);
   assert.match(visualSmoke, /visualFixtureIcon/);
-  assert.match(smallWindowStyles, /\.shell\s*\{[^}]*width:\s*min\(100%,\s*460px\)/s);
-  assert.doesNotMatch(smallWindowStyles, /width:\s*min\(100vw,\s*460px\)/);
+  assert.match(visualSmoke, /Visual smoke requires Playwright/);
+  assert.match(visualSmoke, /--allow-skip/);
+  assert.match(visualSmoke, /configuredPath, "index\.js"/);
+  assert.match(visualSmoke, /1200x760/);
+  assert.match(visualSmoke, /760x700/);
+  assert.match(visualSmoke, /520x700/);
+  assert.match(visualSmoke, /360x560/);
+  assert.doesNotMatch(smallWindowStyles, /width:\s*min\(100%,\s*460px\)/);
 });
 
 test("alias audit script reports missing manual override coverage without promoting candidates", () => {

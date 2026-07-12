@@ -61,16 +61,22 @@ function visualFixtureIcon(url) {
 
 async function loadPlaywright() {
   const configured = argument("--playwright-module") ?? process.env.PLAYWRIGHT_MODULE;
-  const specifier = configured
-    ? pathToFileURL(resolve(configured)).href
-    : "playwright";
+  const allowSkip = process.argv.includes("--allow-skip") || process.env.VISUAL_SMOKE_ALLOW_SKIP === "1";
+  const configuredPath = configured ? resolve(configured) : null;
+  const configuredEntry = configuredPath && existsSync(resolve(configuredPath, "index.js"))
+    ? resolve(configuredPath, "index.js")
+    : configuredPath;
+  const specifier = configuredEntry ? pathToFileURL(configuredEntry).href : "playwright";
   try {
     const loaded = await import(specifier);
     return loaded.default ?? loaded;
   } catch (error) {
-    console.log("Visual smoke skipped: Playwright is not available.");
-    console.log(error.message);
-    return null;
+    if (allowSkip) {
+      console.log("Visual smoke skipped: Playwright is not available.");
+      console.log(error.message);
+      return null;
+    }
+    throw new Error(`Visual smoke requires Playwright. Install it or pass --allow-skip explicitly. ${error.message}`);
   }
 }
 
@@ -86,7 +92,7 @@ function closeServer(server) {
 async function inspectLayout(page, label) {
   const result = await page.evaluate(() => {
     const viewportWidth = document.documentElement.clientWidth;
-    const overflowing = [...document.querySelectorAll(".shell, .query-panel, .controls, .segmented, .result-card, .comp-card, .ranking-section, .empty-state, .details, .stats")]
+    const overflowing = [...document.querySelectorAll(".shell, .topbar, .conversation-pane, .result-pane, .settings-panel, .query-panel, .controls, .segmented, .result-card, .comp-card, .ranking-section, .empty-state, .details, .stats")]
       .filter((element) => {
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && (rect.left < -1 || rect.right > viewportWidth + 1);
@@ -118,14 +124,41 @@ async function inspectLayout(page, label) {
   return result;
 }
 
+async function inspectResponsiveMode(page, label, expected) {
+  const layout = await page.evaluate(() => {
+    const rect = (selector) => {
+      const value = document.querySelector(selector)?.getBoundingClientRect();
+      return value ? { left: value.left, right: value.right, top: value.top, bottom: value.bottom, width: value.width, height: value.height } : null;
+    };
+    return {
+      conversation: rect(".conversation-pane"),
+      result: rect(".result-pane"),
+      settings: rect(".settings-panel"),
+      settingsDisplay: getComputedStyle(document.querySelector(".settings-panel")).display,
+      resizerDisplay: getComputedStyle(document.querySelector(".column-resizer")).display
+    };
+  });
+  if (expected === "three") {
+    assertSmoke(layout.conversation.right <= layout.result.left + 2, `${label} conversation/result are not columns`);
+    assertSmoke(layout.settingsDisplay !== "none" && layout.result.right <= layout.settings.left + 2, `${label} settings is not the third column`);
+  } else if (expected === "two") {
+    assertSmoke(layout.conversation.right <= layout.result.left + 2, `${label} is not two-column`);
+    assertSmoke(layout.settingsDisplay === "none" && layout.resizerDisplay !== "none", `${label} did not hide settings or show the resizer`);
+  } else {
+    assertSmoke(layout.result.top >= layout.conversation.bottom - 2, `${label} result does not follow conversation vertically`);
+    assertSmoke(layout.resizerDisplay === "none", `${label} resizer remains visible in single-column mode`);
+  }
+  return layout;
+}
+
 async function inspectAssetDimensions(page, label) {
   const result = await page.evaluate(() => {
     const expected = {
-      "equipment-unit-icon": 34,
+      "equipment-unit-icon": 38,
       "unit-icon": 32,
       "trait-icon": 22,
-      "tiny-item-icon": 18,
-      "item-icon": 24
+      "tiny-item-icon": 20,
+      "item-icon": 30
     };
     return [...document.querySelectorAll(".equipment-unit-icon, .unit-icon, .trait-icon, .tiny-item-icon, .item-icon")]
       .filter((element) => element.getBoundingClientRect().width > 0)
@@ -208,7 +241,7 @@ if (playwright) {
       headless: true
     });
     const page = await browser.newPage({
-      viewport: { width: 460, height: 760 },
+      viewport: { width: 1200, height: 760 },
       deviceScaleFactor: 1
     });
     await page.route("https://ddragon.leagueoflegends.com/**", async (route) => {
@@ -228,16 +261,27 @@ if (playwright) {
       autoCompChips.includes("观星霞 · 样本 880 · 系统补全"),
       `automatic Comp chip is missing: ${JSON.stringify(autoCompChips)}`
     );
-    const desktop = await inspectLayout(page, "desktop result");
-    const desktopAssets = await inspectAssetDimensions(page, "desktop result");
+    const desktop = await inspectLayout(page, "1200x760 three-column result");
+    const desktopMode = await inspectResponsiveMode(page, "1200x760", "three");
+    const desktopAssets = await inspectAssetDimensions(page, "1200x760 three-column result");
     await page.locator("#result").evaluate((element) => { element.scrollTop = 0; });
     await page.screenshot({
-      path: resolve(outputDir, "desktop-result.png"),
+      path: resolve(outputDir, "result-1200x760.png"),
       fullPage: true
     });
     await page.locator(".assistant-message").last().screenshot({
-      path: resolve(outputDir, "comp-auto-460.png")
+      path: resolve(outputDir, "assistant-1200x760.png")
     });
+
+    await page.setViewportSize({ width: 760, height: 700 });
+    const twoColumn = await inspectLayout(page, "760x700 two-column result");
+    const twoColumnMode = await inspectResponsiveMode(page, "760x700", "two");
+    await page.screenshot({ path: resolve(outputDir, "result-760x700.png"), fullPage: true });
+
+    await page.setViewportSize({ width: 520, height: 700 });
+    const singleColumn = await inspectLayout(page, "520x700 single-column result");
+    const singleColumnMode = await inspectResponsiveMode(page, "520x700", "single");
+    await page.screenshot({ path: resolve(outputDir, "result-520x700.png"), fullPage: true });
 
     const assistantCountBeforeFollowup = await page.locator(".assistant-message").count();
     await page.fill("#query-input", "近一天呢？");
@@ -248,24 +292,24 @@ if (playwright) {
     );
     const followupText = await page.locator(".assistant-message").last().textContent();
     assertSmoke(followupText.includes("观星霞（系统补全，样本 880）"), "days follow-up did not render the refreshed automatic Comp");
-    const longConversation = await inspectLayout(page, "460px automatic Comp days follow-up");
+    const longConversation = await inspectLayout(page, "520px automatic Comp days follow-up");
     await page.locator(".assistant-message").last().screenshot({
-      path: resolve(outputDir, "comp-auto-followup-460.png")
+      path: resolve(outputDir, "comp-auto-followup-520.png")
     });
 
     await page.fill("#query-input", "霞在观星霞阵容里什么三件装备最强？");
     await page.click("#query-form button.primary");
     await page.waitForSelector('button.condition-chip:text-is("观星霞 · 用户指定")');
-    const explicitComp = await inspectLayout(page, "460px explicit Comp result");
+    const explicitComp = await inspectLayout(page, "520px explicit Comp result");
     await page.locator("#result").evaluate((element) => {
       const messages = element.querySelectorAll(".message");
       messages[messages.length - 1]?.scrollIntoView({ block: "start" });
     });
     await page.locator(".assistant-message").last().screenshot({
-      path: resolve(outputDir, "comp-explicit-460.png")
+      path: resolve(outputDir, "comp-explicit-520.png")
     });
 
-    await page.setViewportSize({ width: 360, height: 720 });
+    await page.setViewportSize({ width: 360, height: 560 });
     await page.fill("#query-input", "近14天霞什么三件装备最强？");
     await page.click("#query-form button.primary");
     await page.waitForSelector('button.condition-chip:text-is("未限制 Comp · 当前条件下没有稳定 Comp")');
@@ -284,6 +328,9 @@ if (playwright) {
 
     await page.fill("#query-input", "霞什么三件装备最强？");
     await page.click("#settings-button");
+    await page.waitForSelector("#settings-panel[aria-hidden=\"false\"]");
+    const settingsDrawer = await inspectLayout(page, "360x560 settings drawer");
+    await page.screenshot({ path: resolve(outputDir, "settings-drawer-360x560.png"), fullPage: true });
     await page.locator("details.advanced-query-settings").evaluate((element) => { element.open = true; });
     await page.click('#sample-control button[data-value="10"]');
     await page.click("#settings-done");
@@ -309,12 +356,18 @@ if (playwright) {
       fullPage: true
     });
 
-    await page.setViewportSize({ width: 460, height: 760 });
+    await page.fill("#query-input", "霞吃鸡优先，但也要稳健高样本");
+    await page.click("#query-form button.primary");
+    await page.waitForSelector(".clarification-state");
+    const clarification = await inspectLayout(page, "360x560 clarification");
+    await page.screenshot({ path: resolve(outputDir, "clarification-360x560.png"), fullPage: true });
+
+    await page.setViewportSize({ width: 520, height: 700 });
     await page.fill("#query-input", "当前版本最强阵容有哪些？");
     await page.click("#query-form button.primary");
     await page.waitForSelector(".comp-card");
-    const compDesktop = await inspectLayout(page, "460px comp ranking");
-    const compDesktopAssets = await inspectAssetDimensions(page, "460px comp ranking");
+    const compDesktop = await inspectLayout(page, "520px comp ranking");
+    const compDesktopAssets = await inspectAssetDimensions(page, "520px comp ranking");
     const missingPlaceholders = await page.locator(".comp-card .asset-thumb:not(:has(img))").count();
     assertSmoke(missingPlaceholders >= 6, "missing-icon comp did not retain fixed placeholders");
     await page.screenshot({
@@ -322,7 +375,7 @@ if (playwright) {
       fullPage: true
     });
 
-    await page.setViewportSize({ width: 360, height: 720 });
+    await page.setViewportSize({ width: 360, height: 560 });
     const compNarrow = await inspectLayout(page, "360px comp ranking");
     const compNarrowAssets = await inspectAssetDimensions(page, "360px comp ranking");
     await page.screenshot({
@@ -361,6 +414,58 @@ if (playwright) {
       fullPage: true
     });
 
+    const lifecyclePage = await browser.newPage({
+      viewport: { width: 760, height: 700 },
+      deviceScaleFactor: 1
+    });
+    let delayNextRecommendation = false;
+    let recommendationRequests = 0;
+    await lifecyclePage.route("https://ddragon.leagueoflegends.com/**", async (route) => {
+      await route.fulfill({ status: 200, contentType: "image/svg+xml", body: visualFixtureIcon(route.request().url()) });
+    });
+    await lifecyclePage.route("**/api/recommend", async (route) => {
+      recommendationRequests += 1;
+      if (delayNextRecommendation) {
+        delayNextRecommendation = false;
+        await new Promise((resolvePromise) => setTimeout(resolvePromise, 450));
+      }
+      await route.continue().catch(() => undefined);
+    });
+    await lifecyclePage.goto(started.url, { waitUntil: "networkidle" });
+    const lifecycleQuery = "大师以上霞什么三件装备最强，样本>=10";
+    await lifecyclePage.fill("#query-input", lifecycleQuery);
+    await lifecyclePage.click("#query-form button.primary");
+    await lifecyclePage.waitForSelector(".result-card");
+
+    await lifecyclePage.fill("#query-input", "未发送草稿");
+    const usersBeforeRefresh = await lifecyclePage.locator(".user-message").count();
+    await lifecyclePage.click("#result-refresh-button");
+    await lifecyclePage.waitForFunction((count) => document.querySelectorAll(".user-message").length > count, usersBeforeRefresh);
+    await lifecyclePage.waitForSelector(".result-card");
+    assertSmoke((await lifecyclePage.locator(".user-message").last().textContent()).includes(lifecycleQuery), "refresh submitted the unsent draft instead of the last query");
+    assertSmoke(await lifecyclePage.inputValue("#query-input") === "未发送草稿", "refresh cleared the unsent draft");
+
+    delayNextRecommendation = true;
+    await lifecyclePage.fill("#query-input", "近7天霞什么三件装备最强，样本>=10");
+    await lifecyclePage.click("#query-form button.primary");
+    await lifecyclePage.waitForSelector('.result-state[data-state="loading"]');
+    await lifecyclePage.click('[data-locale="en-US"]');
+    assertSmoke((await lifecyclePage.locator("#result-content").textContent()).includes("Preparing results"), "language switch replaced or failed to localize the loading result");
+    await lifecyclePage.waitForSelector(".result-card");
+    await lifecyclePage.click('[data-locale="zh-CN"]');
+
+    delayNextRecommendation = true;
+    await lifecyclePage.fill("#query-input", "近14天霞什么三件装备最强，样本>=10");
+    await lifecyclePage.click("#query-form button.primary");
+    await lifecyclePage.waitForSelector('.result-state[data-state="loading"]');
+    await lifecyclePage.click("#clear-button");
+    await lifecyclePage.waitForTimeout(650);
+    assertSmoke(await lifecyclePage.locator("#result-content .result-empty").count() === 1, "clear was overwritten by the aborted request state");
+    assertSmoke(!(await lifecyclePage.locator("#result-content").textContent()).includes("已停止"), "clear ended in the stopped state");
+    const lifecycle = await inspectLayout(lifecyclePage, "request lifecycle regression page");
+    assertSmoke(recommendationRequests >= 4, "request lifecycle probes did not exercise all recommendation calls");
+    await lifecyclePage.close();
+
     console.log(JSON.stringify({
       ok: true,
       url: started.url,
@@ -368,11 +473,18 @@ if (playwright) {
       checks: {
         desktop,
         desktopAssets,
+        desktopMode,
+        twoColumn,
+        twoColumnMode,
+        singleColumn,
+        singleColumnMode,
         longConversation,
         explicitComp,
         noStableComp,
         narrow,
         empty,
+        settingsDrawer,
+        clarification,
         compDesktop,
         compDesktopAssets,
         compNarrow,
@@ -380,6 +492,7 @@ if (playwright) {
         compStale,
         compLowSample,
         compEmpty,
+        lifecycle,
         missingPlaceholders
       }
     }, null, 2));

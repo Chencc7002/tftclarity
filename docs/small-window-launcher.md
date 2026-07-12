@@ -42,7 +42,7 @@ powershell -ExecutionPolicy Bypass -File scripts\start-small-window.ps1
 ```powershell
 scripts\start-small-window.ps1 -NoBrowser
 scripts\start-small-window.ps1 -Port 17318
-scripts\start-small-window.ps1 -Width 460 -Height 760
+scripts\start-small-window.ps1 -Width 1200 -Height 760
 scripts\start-small-window.ps1 -TopMost -WindowLeft 1480 -WindowTop 80
 scripts\start-small-window.ps1 -BrowserPath "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe"
 scripts\start-small-window.ps1 -CacheStore sqlite -CachePath ".cache\small-window-cache.sqlite"
@@ -84,7 +84,7 @@ Windows 桌面环境可用以下命令验证辅助进程能够注册并释放全
 npm run smoke:hotkey
 ```
 
-安装了 Playwright 且本机存在 Edge/Chrome 时，可运行可选视觉 smoke。它会使用离线 fixture 检查 460px 推荐卡、360px 低样本卡和 360px 零结果摘要，并检测横向溢出与紧凑控件文字裁切：
+安装了 Playwright 且本机存在 Edge/Chrome 时，可运行可选视觉 smoke。它会使用离线 fixture 检查 1200×760 三列、760×700 双列、520×700 单列、360×560 紧凑小窗，以及推荐、低样本、澄清、空结果、阵容排行和设置抽屉，并检测横向溢出与紧凑控件文字裁切：
 
 ```powershell
 npm run smoke:visual
