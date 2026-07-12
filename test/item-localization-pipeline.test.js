@@ -151,7 +151,7 @@ test("patch audit reports additions, observations, missing localization and name
   });
 
   assert.deepEqual(report.added, ["TFT_Item_MissingZh", "TFT_Item_NewOfficial"]);
-  assert.equal(report.removed.find((entry) => entry.apiName === "TFT_Item_RunaansHurricane").availabilityDecision, "explicit_override");
+  assert.equal(report.removed.find((entry) => entry.apiName === "TFT_Item_RunaansHurricane").availabilityDecision, "manual_review_required");
   assert.equal(report.removed.find((entry) => entry.apiName === "TFT_Item_UnconfirmedRemoved").availabilityDecision, "manual_review_required");
   assert.equal(report.removed.every((entry) => entry.availabilityChanged === false), true);
   assert.deepEqual(report.missingLocalization.map((entry) => entry.apiName), ["TFT_Item_MissingZh"]);

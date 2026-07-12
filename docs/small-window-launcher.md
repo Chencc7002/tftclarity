@@ -21,6 +21,22 @@ powershell -ExecutionPolicy Bypass -File scripts\start-small-window.ps1
 - 用 Edge 或 Chrome 的 app window 模式打开固定宽度小窗。
 - 浏览器 profile 保存在 `.cache/small-window-browser-profile`。
 
+## 对话操作
+
+主界面现在是对话历史和底部固定输入框。Enter 发送，Shift+Enter 换行；查询中可停止，完成后可重试，清空会话会生成新的 conversationId 并清除短期继承条件。解析后的条件以可编辑标签展示，来源包括用户指定、沿用上轮、偏好和系统默认。原筛选、缓存与别名审核功能位于“高级设置”。
+
+普通查询可直接输入，例如：
+
+```text
+大师以上霞什么三件装备最强？
+霞在携带红霸符的前提下什么出装最强？
+霞哪个单件装备表现最好？
+近一天呢？
+不要海妖，换一套。
+```
+
+每条数据回答显示结论、推荐/阵容卡、统计证据、备选差异、生效条件来源，以及端点、更新时间、缓存状态和风险。
+
 ## 常用参数
 
 ```powershell

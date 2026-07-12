@@ -1,0 +1,208 @@
+{
+  "capture": {
+    "capturedAt": "2026-07-12T03:25:28.7739951+08:00",
+    "pageUrl": "https://www.metatft.com/explorer",
+    "frontendAsset": "https://www.metatft.com/assets/Explorer-CwdoQ3ps.js",
+    "authenticated": false,
+    "redacted": true,
+    "notes": [
+      "The current Explorer asset exposes unit, trait, item and structured and_group/or_group filters; it contains no comp or cluster_id filter type.",
+      "Structured groups are serialized with qs as sf[index][and|or][childIndex][dimension].",
+      "No cookies, account identifiers or request headers are stored in this fixture."
+    ]
+  },
+  "semantics": {
+    "version": "metatft-explorer-sf-units-traits-v1",
+    "candidateEndpoint": "/tft-explorer-api/exact_units_traits2",
+    "finalEndpoint": "/tft-explorer-api/unit_builds/TFT17_Xayah",
+    "candidateIdentityField": "units_traits",
+    "kind": "exact_units_traits2 variant signature",
+    "isClusterId": false,
+    "finalParameterShape": "sf[0][and][N][unit_unique|trait]",
+    "unitValueShape": "<unit-api-name>-1",
+    "traitValueShape": "<trait-api-name>_<tier>"
+  },
+  "common": {
+    "unit": "TFT17_Xayah",
+    "queue": "1100",
+    "patch": "current",
+    "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+    "days": "3",
+    "formatnoarray": "true",
+    "compact": "true",
+    "permit_filter_adjustment": "true",
+    "unit_tier_numitems_unique": "TFT17_Xayah-1_2_3"
+  },
+  "candidateQuery": {
+    "endpoint": "/tft-explorer-api/exact_units_traits2",
+    "params": {
+      "formatnoarray": "true",
+      "compact": "true",
+      "queue": "1100",
+      "patch": "current",
+      "days": "3",
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "permit_filter_adjustment": "true",
+      "unit_unique": "TFT17_Xayah-1"
+    },
+    "response": {
+      "filter_adjustment": { "sample_size": 6418795 },
+      "rowCount": 250
+    }
+  },
+  "comps": {
+    "A": {
+      "id": "TFT17_Aatrox&TFT17_Blitzcrank&TFT17_Jax&TFT17_Jhin&TFT17_Maokai&TFT17_Nunu&TFT17_Rhaast&TFT17_TahmKench&TFT17_Xayah|TFT17_BlitzcrankUniqueTrait_1&TFT17_DRX_1&TFT17_HPTank_1&TFT17_JhinUniqueTrait_1&TFT17_RangedTrait_1&TFT17_ResistTank_1&TFT17_RhaastUniqueTrait_1&TFT17_ShieldTank_1&TFT17_SpaceGroove_1&TFT17_Stargazer_Serpent_1&TFT17_TahmKenchUniqueTrait_1",
+      "sampleCount": 9065,
+      "placement_count": [2139, 1965, 1779, 1323, 803, 575, 316, 165]
+    },
+    "B": {
+      "id": "TFT17_Aatrox&TFT17_Blitzcrank&TFT17_Jax&TFT17_Jhin&TFT17_Maokai&TFT17_Nunu&TFT17_Rhaast&TFT17_TahmKench&TFT17_Xayah|TFT17_BlitzcrankUniqueTrait_1&TFT17_DRX_1&TFT17_HPTank_1&TFT17_JhinUniqueTrait_1&TFT17_RangedTrait_1&TFT17_ResistTank_1&TFT17_RhaastUniqueTrait_1&TFT17_ShieldTank_1&TFT17_SpaceGroove_1&TFT17_Stargazer_Shield_1&TFT17_TahmKenchUniqueTrait_1",
+      "sampleCount": 7247,
+      "placement_count": [1858, 1497, 1385, 994, 700, 414, 264, 135]
+    }
+  },
+  "finalRequestEncoding": {
+    "description": "Each complete A-E request is sharedParams merged with compParams[matrixRequests[id].compProfile] and then matrixRequests[id].overrides. This is a lossless normalized form of the captured query string.",
+    "endpoint": "/tft-explorer-api/unit_builds/TFT17_Xayah",
+    "sharedParams": {
+      "formatnoarray": "true",
+      "compact": "true",
+      "queue": "1100",
+      "patch": "current",
+      "days": "3",
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "permit_filter_adjustment": "true",
+      "unit_tier_numitems_unique": "TFT17_Xayah-1_2_3"
+    },
+    "compParams": {
+      "none": {},
+      "A": {
+        "sf[0][and][0][unit_unique]": "TFT17_Aatrox-1",
+        "sf[0][and][1][unit_unique]": "TFT17_Blitzcrank-1",
+        "sf[0][and][2][unit_unique]": "TFT17_Jax-1",
+        "sf[0][and][3][unit_unique]": "TFT17_Jhin-1",
+        "sf[0][and][4][unit_unique]": "TFT17_Maokai-1",
+        "sf[0][and][5][unit_unique]": "TFT17_Nunu-1",
+        "sf[0][and][6][unit_unique]": "TFT17_Rhaast-1",
+        "sf[0][and][7][unit_unique]": "TFT17_TahmKench-1",
+        "sf[0][and][8][unit_unique]": "TFT17_Xayah-1",
+        "sf[0][and][9][trait]": "TFT17_BlitzcrankUniqueTrait_1",
+        "sf[0][and][10][trait]": "TFT17_DRX_1",
+        "sf[0][and][11][trait]": "TFT17_HPTank_1",
+        "sf[0][and][12][trait]": "TFT17_JhinUniqueTrait_1",
+        "sf[0][and][13][trait]": "TFT17_RangedTrait_1",
+        "sf[0][and][14][trait]": "TFT17_ResistTank_1",
+        "sf[0][and][15][trait]": "TFT17_RhaastUniqueTrait_1",
+        "sf[0][and][16][trait]": "TFT17_ShieldTank_1",
+        "sf[0][and][17][trait]": "TFT17_SpaceGroove_1",
+        "sf[0][and][18][trait]": "TFT17_Stargazer_Serpent_1",
+        "sf[0][and][19][trait]": "TFT17_TahmKenchUniqueTrait_1"
+      },
+      "B": {
+        "sf[0][and][0][unit_unique]": "TFT17_Aatrox-1",
+        "sf[0][and][1][unit_unique]": "TFT17_Blitzcrank-1",
+        "sf[0][and][2][unit_unique]": "TFT17_Jax-1",
+        "sf[0][and][3][unit_unique]": "TFT17_Jhin-1",
+        "sf[0][and][4][unit_unique]": "TFT17_Maokai-1",
+        "sf[0][and][5][unit_unique]": "TFT17_Nunu-1",
+        "sf[0][and][6][unit_unique]": "TFT17_Rhaast-1",
+        "sf[0][and][7][unit_unique]": "TFT17_TahmKench-1",
+        "sf[0][and][8][unit_unique]": "TFT17_Xayah-1",
+        "sf[0][and][9][trait]": "TFT17_BlitzcrankUniqueTrait_1",
+        "sf[0][and][10][trait]": "TFT17_DRX_1",
+        "sf[0][and][11][trait]": "TFT17_HPTank_1",
+        "sf[0][and][12][trait]": "TFT17_JhinUniqueTrait_1",
+        "sf[0][and][13][trait]": "TFT17_RangedTrait_1",
+        "sf[0][and][14][trait]": "TFT17_ResistTank_1",
+        "sf[0][and][15][trait]": "TFT17_RhaastUniqueTrait_1",
+        "sf[0][and][16][trait]": "TFT17_ShieldTank_1",
+        "sf[0][and][17][trait]": "TFT17_SpaceGroove_1",
+        "sf[0][and][18][trait]": "TFT17_Stargazer_Shield_1",
+        "sf[0][and][19][trait]": "TFT17_TahmKenchUniqueTrait_1"
+      }
+    },
+    "matrixRequests": {
+      "A_none": { "compProfile": "none", "overrides": {} },
+      "B_compA": { "compProfile": "A", "overrides": {} },
+      "C_compB": { "compProfile": "B", "overrides": {} },
+      "D_compA_days1": { "compProfile": "A", "overrides": { "days": "1" } },
+      "E_compA_masterPlus": {
+        "compProfile": "A",
+        "overrides": { "rank": "CHALLENGER,GRANDMASTER,MASTER" }
+      }
+    }
+  },
+  "matrix": [
+    {
+      "id": "A_none",
+      "days": "3",
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "comp": null,
+      "response": {
+        "filter_adjustment": { "sample_size": 6418795 },
+        "rowCount": 600,
+        "first": {
+          "unit_builds": "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
+          "placement_count": [12939, 9624, 8332, 7569, 6894, 6284, 5022, 3196]
+        }
+      }
+    },
+    {
+      "id": "B_compA",
+      "days": "3",
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "comp": "A",
+      "response": {
+        "filter_adjustment": { "sample_size": 6418795 },
+        "rowCount": 600,
+        "first": {
+          "unit_builds": "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
+          "placement_count": [1531, 1207, 923, 543, 301, 170, 77, 30]
+        }
+      }
+    },
+    {
+      "id": "C_compB",
+      "days": "3",
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "comp": "B",
+      "response": {
+        "filter_adjustment": { "sample_size": 6418795 },
+        "rowCount": 600,
+        "first": {
+          "unit_builds": "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
+          "placement_count": [1286, 861, 631, 359, 226, 98, 56, 17]
+        }
+      }
+    },
+    {
+      "id": "D_compA_days1",
+      "days": "1",
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "comp": "A",
+      "response": {
+        "filter_adjustment": { "sample_size": 1998441 },
+        "rowCount": 363,
+        "first": {
+          "unit_builds": "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
+          "placement_count": [507, 408, 289, 189, 112, 67, 31, 12]
+        }
+      }
+    },
+    {
+      "id": "E_compA_masterPlus",
+      "days": "3",
+      "rank": "CHALLENGER,GRANDMASTER,MASTER",
+      "comp": "A",
+      "response": {
+        "filter_adjustment": { "sample_size": 599465 },
+        "rowCount": 236,
+        "first": {
+          "unit_builds": "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
+          "placement_count": [191, 164, 161, 99, 67, 38, 23, 5]
+        }
+      }
+    }
+  ]
+}

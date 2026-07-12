@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -334,6 +335,11 @@ function serializeDefaultContext(context, catalog) {
     specialCandidateCount: context.specialCandidateCount ?? 0,
     excludedSpecialCandidateCount: context.excludedSpecialCandidateCount ?? 0,
     specialContextFallback: Boolean(context.specialContextFallback),
+    stable: context.stable !== false,
+    lowConfidence: Boolean(context.lowConfidence),
+    confidence: Number.isFinite(Number(context.confidence)) ? Number(context.confidence) : null,
+    stabilityThreshold: Number.isFinite(Number(context.stabilityThreshold)) ? Number(context.stabilityThreshold) : null,
+    sourceScope: context.sourceScope ?? null,
     warning: context.warning ?? null,
     ambiguity: context.ambiguity ?? null,
     candidates: (context.candidates ?? []).map((candidate) => serializeDefaultContextCandidate(candidate, catalog)),
@@ -341,8 +347,137 @@ function serializeDefaultContext(context, catalog) {
   };
 }
 
+function serializeCompConstraint(comp, catalog) {
+  if (!comp) return null;
+  const value = comp.value
+    ? {
+      id: comp.value.id,
+      name: comp.value.name,
+      sampleCount: Number(comp.value.sampleCount ?? 0),
+      selection: comp.value.selection,
+      units: (comp.value.units ?? []).map((apiName) => ({
+        apiName,
+        name: unitName(apiName, catalog)
+      })),
+      traits: (comp.value.traits ?? []).map((apiName) => ({
+        apiName,
+        name: traitName(apiName, catalog)
+      })),
+      sourceEndpoint: comp.value.sourceEndpoint ?? null,
+      semanticsVersion: comp.value.semanticsVersion ?? null
+    }
+    : null;
+  return {
+    status: comp.status,
+    source: comp.source,
+    confidence: comp.confidence,
+    reason: comp.reason ?? null,
+    stabilityThreshold: comp.stabilityThreshold ?? null,
+    sourceEndpoint: comp.sourceEndpoint ?? value?.sourceEndpoint ?? null,
+    semanticsVersion: comp.semanticsVersion ?? value?.semanticsVersion ?? null,
+    value
+  };
+}
+
 function percent(value) {
   return Number((value * 100).toFixed(1));
+}
+
+function serializeItemRanking(entry, catalog) {
+  return {
+    apiName: entry.apiName,
+    name: itemName(entry.apiName, catalog),
+    iconUrl: ASSET_RESOLVER.resolveItem(entry.apiName).iconUrl,
+    stats: {
+      top4: percent(entry.stats.top4Rate),
+      win: percent(entry.stats.winRate),
+      avg: Number(entry.stats.avgPlacement.toFixed(2)),
+      games: entry.stats.games
+    },
+    coverage: Number.isFinite(entry.coverage) ? percent(entry.coverage) : null,
+    coverageDenominatorGames: entry.coverageDenominatorGames,
+    buildCount: entry.buildCount,
+    commonPairings: (entry.commonPairings ?? []).map((pairing) => ({
+      games: pairing.games,
+      items: pairing.items.map((apiName) => ({
+        apiName,
+        name: itemName(apiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
+      }))
+    })),
+    copyCounts: (entry.copyCounts ?? []).map((copy) => ({
+      copyCount: copy.copyCount,
+      buildCount: copy.buildCount,
+      stats: {
+        top4: percent(copy.stats.top4Rate),
+        win: percent(copy.stats.winRate),
+        avg: Number(copy.stats.avgPlacement.toFixed(2)),
+        games: copy.stats.games
+      }
+    }))
+  };
+}
+
+function sourcePayload(result, meta = {}) {
+  const cache = result.cache?.query ?? {};
+  const compCandidates = result.cache?.compCandidates ?? {};
+  return {
+    provider: "MetaTFT",
+    endpoint: result.plan?.path ?? (result.type === "comp_rankings"
+      ? "/tft-explorer-api/exact_units_traits2"
+      : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
+    updatedAt: cache.updatedAt ?? result.sourceUpdatedAt ?? meta.sourceUpdatedAt ?? null,
+    cache: cache.stale ? "stale" : cache.hit ? "cache" : "live",
+    stale: Boolean(cache.stale),
+    requestParams: result.plan?.params ?? null,
+    compCandidates: result.compCandidatePlan ? {
+      endpoint: result.compCandidatePlan.path,
+      params: result.compCandidatePlan.params,
+      cache: compCandidates.stale ? "stale" : compCandidates.hit ? "cache" : "live",
+      stale: Boolean(compCandidates.stale),
+      updatedAt: compCandidates.updatedAt ?? null
+    } : null,
+    risks: [
+      ...(result.query?.warnings ?? []),
+      ...(cache.stale ? ["实时数据失败，当前回答使用过期缓存"] : []),
+      ...(compCandidates.stale ? ["Comp 候选使用同口径过期缓存，阵容选择可能滞后"] : [])
+    ]
+  };
+}
+
+function compAnswerPrefix(comp) {
+  if (comp?.status === "not_available") {
+    return "当前条件下未找到稳定 Comp，以下结果未限制 Comp。";
+  }
+  if (comp?.status !== "applied" || !comp.value) return "";
+  return comp.value.selection === "explicit"
+    ? `${comp.value.name}（用户指定）条件下，`
+    : `${comp.value.name}（系统补全，样本 ${comp.value.sampleCount}）条件下，`;
+}
+
+function conversationMeta(meta = {}) {
+  return {
+    conversationId: String(meta.conversationId ?? randomUUID()),
+    messageId: String(meta.messageId ?? randomUUID())
+  };
+}
+
+function itemDifferences(reference, candidate, catalog) {
+  const remaining = (reference?.items ?? []).map((item) => item.apiName ?? item);
+  const added = [];
+  for (const item of candidate?.items ?? []) {
+    const index = remaining.indexOf(item.apiName ?? item);
+    if (index >= 0) remaining.splice(index, 1);
+    else added.push(item.apiName ?? item);
+  }
+  return {
+    removed: remaining.map((apiName) => itemName(apiName, catalog)),
+    added: added.map((apiName) => itemName(apiName, catalog)),
+    top4Delta: candidate && reference ? Number((candidate.stats.top4 - reference.stats.top4).toFixed(1)) : 0,
+    winDelta: candidate && reference ? Number((candidate.stats.win - reference.stats.win).toFixed(1)) : 0,
+    avgDelta: candidate && reference ? Number((candidate.stats.avg - reference.stats.avg).toFixed(2)) : 0,
+    gamesDelta: candidate && reference ? candidate.stats.games - reference.stats.games : 0
+  };
 }
 
 export function normalizeSmallWindowPreferences(value = {}) {
@@ -400,6 +535,52 @@ function serializeRecommendation(result, catalog, meta = {}) {
     return serializeCompRankings(result, meta);
   }
   const query = result.query ?? {};
+  if (result.type === "unit_item_rankings") {
+    const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
+    const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
+    const best = itemRankings[0] ?? null;
+    return {
+      ok: true,
+      type: "unit_item_rankings",
+      text: result.text,
+      unit: query.unit ? {
+        apiName: query.unit,
+        name: unitName(query.unit, catalog),
+        iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
+      } : null,
+      answer: {
+        summary: best
+          ? `${compAnswerPrefix(query.comp)}${best.name}在当前条件的单装备聚合中排名第一。`
+          : `${compAnswerPrefix(query.comp)}没有单件装备达到样本阈值 ${query.minSamples}。`,
+        evidence: best?.stats ?? null,
+        warnings: query.warnings ?? [],
+        methodology: "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本"
+      },
+      itemRankings,
+      itemRankingReferences: references,
+      methodology: result.itemRankingMethodology,
+      cards: [],
+      clarification: result.clarification ?? null,
+      query: {
+        ...query,
+        unitName: unitName(query.unit, catalog),
+        unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
+        traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
+        ownedItemNames: (query.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
+        excludedItemNames: (query.excludedItems ?? []).map((apiName) => itemName(apiName, catalog)),
+        comp: serializeCompConstraint(query.comp, catalog),
+        defaultContextSummary: serializeDefaultContext(query.defaultContext, catalog)
+      },
+      source: sourcePayload(result, meta),
+      cache: result.cache ?? null,
+      meta: {
+        rows: result.rows?.length ?? 0,
+        filteredBuilds: result.filteredBuilds?.length ?? 0,
+        rankedItems: itemRankings.length,
+        ...meta
+      }
+    };
+  }
   const hasLockedItems = (query.ownedItems ?? []).length > 0;
   const comparison = result.comparison ?? null;
   const cards = result.rankedBuilds.slice(0, 3).map((build, index) => {
@@ -440,6 +621,16 @@ function serializeRecommendation(result, catalog, meta = {}) {
     };
   });
 
+  const commonItemApiNames = cards.length > 1
+    ? [...new Set(cards[0].items.map((item) => item.apiName))].filter((apiName) => (
+      cards.every((card) => card.items.some((item) => item.apiName === apiName))
+    ))
+    : [];
+  const referenceCard = cards[0] ?? null;
+  cards.forEach((card, index) => {
+    card.difference = index === 0 ? null : itemDifferences(referenceCard, card, catalog);
+  });
+
   const serializedComparison = comparison
     ? {
       winner: comparison.winner,
@@ -473,13 +664,26 @@ function serializeRecommendation(result, catalog, meta = {}) {
 
   return {
     ok: true,
+    type: result.type ?? query.intent ?? "unit_build_rankings",
     text: result.text,
+    answer: {
+      summary: cards[0]
+        ? `${compAnswerPrefix(query.comp)}${cards[0].title}：${cards[0].items.map((item) => item.name).join(" + ")}。`
+        : `${compAnswerPrefix(query.comp)}${result.clarification?.question ?? result.text}`,
+      evidence: cards[0]?.stats ?? null,
+      warnings: query.warnings ?? []
+    },
     unit: query.unit ? {
       apiName: query.unit,
       name: unitName(query.unit, catalog),
       iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
     } : null,
     cards,
+    commonCore: commonItemApiNames.map((apiName) => ({
+      apiName,
+      name: itemName(apiName, catalog),
+      iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
+    })),
     comparison: serializedComparison,
     lockedItems: (query.ownedItems ?? []).map((apiName) => ({
       apiName,
@@ -497,6 +701,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
       itemPolicy: query.itemPolicy,
       ownedItems: query.ownedItems ?? [],
+      ownedItemNames: (query.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
       excludedItems: query.excludedItems ?? [],
       excludedItemNames: (query.excludedItems ?? []).map((apiName) => itemName(apiName, catalog)),
       minSamples: query.minSamples,
@@ -508,11 +713,15 @@ function serializeRecommendation(result, catalog, meta = {}) {
       comparison: query.comparison ?? null,
       warnings: query.warnings ?? [],
       assumptions: query.assumptions ?? [],
+      constraints: query.constraints ?? {},
+      constraintSources: query.constraintSources ?? {},
+      comp: serializeCompConstraint(query.comp, catalog),
       defaultContext: query.defaultContext ?? null,
       defaultContextSummary: serializeDefaultContext(query.defaultContext, catalog),
       sessionContext: query.sessionContext ?? null
     },
     cache: result.cache ?? null,
+    source: sourcePayload(result, meta),
     meta: {
       rows: result.rows?.length ?? 0,
       filteredBuilds: result.filteredBuilds?.length ?? 0,
@@ -980,6 +1189,7 @@ export async function prewarmSmallWindowCatalog(runtime) {
 export async function handleRecommendRequest(body, runtime) {
   const startedAt = Date.now();
   const input = String(body?.input ?? "").trim();
+  const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
   if (!input) {
     return {
       statusCode: 400,
@@ -1016,19 +1226,23 @@ export async function handleRecommendRequest(body, runtime) {
       strategy: preferences.defaultContextStrategy
     },
     structuredParser: runtime.structuredParser,
-    useStructuredParser: structuredParserMode
+    useStructuredParser: structuredParserMode,
+    sessionKey: conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
   if (warnings) result.query.warnings = warnings;
 
+  const payload = serializeRecommendation(result, catalog, {
+    durationMs: Date.now() - startedAt,
+    catalogWarning: warning,
+    aliasMemory,
+    preferences,
+    conversationId
+  });
+  Object.assign(payload, conversationMeta({ conversationId }));
   return {
     statusCode: 200,
-    payload: serializeRecommendation(result, catalog, {
-      durationMs: Date.now() - startedAt,
-      catalogWarning: warning,
-      aliasMemory,
-      preferences
-    })
+    payload
   };
 }
 
@@ -1298,8 +1512,9 @@ export async function handleEntityAliasBatchReviewRequest(body, runtime) {
   };
 }
 
-async function handleSessionClear(runtime) {
-  await runtime.cacheStore?.deleteSessionState?.(SESSION_LAST_QUERY_KEY);
+async function handleSessionClear(runtime, body = {}) {
+  const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim();
+  await runtime.cacheStore?.deleteSessionState?.(conversationId ? `last_query:${conversationId}` : SESSION_LAST_QUERY_KEY);
   return {
     ok: true
   };
@@ -1402,7 +1617,8 @@ export function createSmallWindowHandler(options = {}) {
       }
 
       if (req.method === "POST" && url.pathname === "/api/session/clear") {
-        return sendJson(res, 200, await handleSessionClear(runtime));
+        const body = await readJsonRequest(req);
+        return sendJson(res, 200, await handleSessionClear(runtime, body));
       }
 
       if (req.method !== "GET") {

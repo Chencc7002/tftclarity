@@ -1,6 +1,23 @@
 # MVP 验收矩阵
 
-更新时间：2026-07-11
+## 2026-07-12 单英雄 Comp 过滤验收
+
+| 要求 | 状态 | 直接证据 |
+|---|---|---|
+| Data Explorer Comp 真实契约 | 已验证 | 浏览器检查页面脚本；A–E 实时请求矩阵；`docs/metatft-data-explorer-comp-contract.md`；脱敏 fixture |
+| 显式 Comp 进入最终请求且不转 trait | 已验证 | `test/comp-filter.test.js`；HTTP smoke；最终仅有结构化 `sf` 参数，无 Comp 派生顶层 `trait` |
+| 自动候选与最终 hero/days/rank/patch/queue 同口径 | 已验证 | planner 对照测试和 `compCandidatePlan` / final `requestParams` HTTP schema |
+| 稳定候选中样本最多者被选中 | 已验证 | 多候选、低样本过滤和确定性 tie-break 单元测试 |
+| 无稳定 Comp 仅执行不带 Comp 查询 | 已验证 | 最终请求无 `sf`、无替代 `trait`；HTTP 文案与 360px 浏览器 smoke |
+| hero/days/rank/patch/queue 变化后自动重新选择 | 已验证 | 候选缓存键覆盖全部口径；变更测试；`近一天呢？` HTTP smoke |
+| 显式 Comp 跨 days/rank 追问继承且统计重查 | 已验证 | 两轮会话测试；最终 query cache key 随 days/rank 改变 |
+| Comp 与 comp=none 缓存隔离 | 已验证 | cache key 单元测试；语义版本 `metatft-explorer-sf-units-traits-v1` |
+| HTTP schema 与 UI 三态 | 已验证 | applied/not_available、source、sampleCount、候选/最终 endpoint、updatedAt、cache/stale risk；自动/用户/未补标签浏览器截图 |
+| 单装备、三件套、补齐、比较在两种口径工作 | 已验证 | `test/comp-filter.test.js` 参数化覆盖；统计仍只消费八桶 `placement_count` |
+
+本节覆盖矩阵中“默认主流羁绊来自 `/comps` Default Context Builder”的旧行；该旧行只适用于历史实现，不再作为当前单英雄验收证据。
+
+更新时间：2026-07-12
 
 本矩阵以 `goal-prompt.md`、`requirements.md` 和 `memory-llm-architecture.md` 为范围来源。`已验证` 表示已有当前代码、自动测试或实际运行输出作为直接证据；`环境条件` 表示实现已存在，但结果仍依赖外部服务或所选运行时。
 
@@ -9,7 +26,7 @@
 | 要求 | 状态 | 直接证据 |
 |---|---|---|
 | 单英雄三件套自然语言查询 | 已验证 | `QueryParser -> ContextBuilder -> QueryValidator -> QueryPlanner -> MetaTFT -> 本地过滤/排序`；`npm test` 标准霞查询 |
-| 中文名、称号、英文名和高频俗称 | 已验证 | 动态 domain/item catalog、人工 override；`npm run audit:aliases -- --limit=10` 为英雄 62/62、羁绊 100/100、装备 169/169 |
+| 中文名、称号、英文名和高频俗称 | 已验证 | 动态 domain/item catalog、人工 override；`npm run audit:aliases -- --limit=10` 为英雄 62/62、羁绊 100/100、装备 170/170 |
 | 繁体查询与高频拼音实体 | 已验证 | 全角+繁体完整查询生成相同 API 参数；种子/动态英雄和羁绊拼音测试；拼音已持有装备测试；小窗 API 混合输入测试 |
 | 1/2/3 星，默认 2 星 | 已验证 | `src/core/query-parser.js`、`src/core/context-builder.js`；标准与懒输入测试 |
 | 默认 3 件装备并生成正确 MetaTFT 参数 | 已验证 | 单星级生成 `TFT17_Xayah-1_2_3`；`1星和2星` 会展开为逗号分隔的两个 `unit_tier_numitems_unique` 值 |
@@ -18,7 +35,8 @@
 | 已持有装备锁定并只输出补齐项 | 已验证 | “霞已经有羊刀”测试；文本和小窗卡均显示“推荐补齐” |
 | 显式排除装备 | 已验证 | `不要/别带/别用/排除/剔除/去掉/换掉/避开/规避` 进入独立 `excludedItems`；本地过滤、会话冲突消解、比较项隔离、查询缓存键、LLM schema 与小窗 HTTP smoke 均有覆盖，不会误当成已持有装备 |
 | 用户指定光明、神器、纹章和特殊装备 | 已验证 | `include_radiant`、`include_artifact`、`include_special` 端到端测试与小窗 smoke |
-| 当前版本不存在装备本地裁决 | 已验证 | `TFT_Item_RunaansHurricane` 显式可用性规则；“霞能不能带分裂弓”在 `/comps` 和 Explorer 前返回 `unavailable_items` |
+| 当前装备身份与可用性由官方目录决定 | 已验证 | `RapidFireCannon -> 红霸符`、`RunaansHurricane -> 海妖之怒`、`MadredsBloodrazor -> 巨人杀手`；历史名称仍可解析；审计拒绝永久 `patch: current` 黑名单 |
+| 霞“红霸符 + 双海妖”完整链路 | 已验证 | fixture 原始行通过普通装备过滤、排序、HTTP 序列化和对话 UI；双海妖在单件聚合中组合样本只计一次，同时保留 `copyCount=2` |
 | 版本装备目录可持久化并在远程失败时恢复 | 已验证 | Memory/JSON/SQLite `item_catalog` 往返测试；同 patch 快照回退测试会重新应用本地移除硬规则，清查询历史不会删除目录 |
 | 动态装备 API ID 合并官方简中 canonical 名 | 已验证 | 腾讯官网 `equip.js` 的 `englishName -> name` 按 apiName 合并；当前 `version=16.13 / season=2026.S17` 快照覆盖实时 MetaTFT `/items` 179/179，待审 0 |
 | 官方名与人工别名职责和优先级 | 已验证 | 官方 `zhName/displayName` 优先；人工 `shortName`、俗称、缩写和历史别名保留；冲突写入 `manualNameCandidate`；离线合并测试通过 |
@@ -63,6 +81,18 @@
 | 未解析的显式装备/羁绊不能静默丢弃 | 已验证 | `unresolved_item` / `unresolved_trait` 测试；低置信装备在 `/comps` 和 Explorer 前阻断 |
 | 未知羁绊和不含目标英雄的默认 cluster 不可执行 | 已验证 | QueryValidator 严格错误与阻断测试 |
 
+## 对话意图与单装备排行
+
+| 要求 | 状态 | 直接证据 |
+|---|---|---|
+| 六类统一意图 | 已验证 | build 排行、单装备排行、已有装备补齐、装备比较、阵容排行、澄清的规则解析和响应 schema 测试 |
+| 条件优先级与来源 | 已验证 | `current_input > conversation > preference > system/default`；每个 constraint 输出 value/source/confidence，多轮“近一天呢”“不要海妖”测试通过 |
+| 段位、时间、样本和排序离线解析 | 已验证 | 大师以上、钻石到宗师、只看王者、近 N 天、样本至少 N、前四/登顶/均名/样本最多均有确定性测试 |
+| 单装备存在性聚合 | 已验证 | 八桶累计、games/top4/win/avg/coverage/commonPairings；同组合双件只计一次并保留 copyCount 测试 |
+| 无英雄泛装备问法澄清 | 已验证 | “哪个装备最厉害”返回 `missing_unit_for_item_rankings`，不会输出全英雄混合数字 |
+| 默认阵容低置信降级 | 已验证 | 稳定门槛下但有有效候选时采用最高样本并输出 warning；完全无候选才不补羁绊 |
+| `/comps` 条件边界 | 已验证 | client 与来源 schema 明示不支持 days/rank；回答不会宣称默认阵容经过这些条件过滤 |
+
 ## 记忆、LLM 与 RAG
 
 | 要求 | 状态 | 直接证据 |
@@ -84,7 +114,8 @@
 |---|---|---|
 | 输入、结果卡、阈值、装备策略、排序、刷新、反馈、条件展开 | 已验证 | `src/app/small-window-ui` 静态测试与离线 HTTP smoke |
 | 低样本风险与弱结论 | 已验证 | 小窗 API 18 场样本返回 `lowSample=true`、标题改为“低样本参考”且 `winner=false`；文本明确“仅供参考，不作稳定推荐”，比较项低于稳定门槛时 `winner=null` |
-| 460px/360px 响应式视觉状态 | 已验证 | 桌面内置 Browser 的 Playwright API 使用离线 fixture 实际渲染 460px 推荐态、360px 低样本态和 360px 零结果态；页面、面板、分段控件、统计格均无横向溢出或文字裁切，截图位于 `.cache/visual-smoke/` |
+| ChatGPT 风格对话与多轮 HTTP | 已验证 | 消息历史、底部输入框、Enter/Shift+Enter、停止、重试、清会话和阶段状态；`smoke:small-window` 覆盖霞首问、近一天追问、排除海妖和单装备排行 |
+| 460px/360px 响应式视觉状态 | 已验证 | 桌面内置 Browser 使用离线 fixture 实际渲染完整三件套、单装备榜、澄清、低样本、错误、stale 和长对话；460/360 均无横向溢出，截图位于 `.cache/visual-smoke/` |
 | 快捷键唤起和常驻小窗入口 | 已验证 | Windows app-window 启动器、全局热键 smoke |
 | 热缓存 <=100ms | 已验证 | `npm run smoke:small-window` 最近结果 4ms |
 | 本地持久缓存 <=300ms | 已验证 | JSON 文件缓存关闭重开后 6ms，且远程调用为 0 |
@@ -99,7 +130,7 @@
 - Riot 官方 TFT 17.6 公告发布时间为 2026-06-23；腾讯官网装备目录声明 `version=16.13 / season=2026.S17 / time=2026-06-23 16:38:05`，Riot Data Dragon 固定英文版本为 `16.13.1`。`smoke:item-localization` 只作为可选网络检查，常规 `npm test` 使用离线 fixture。
 - Riot Data Dragon `zh_CN` 和 CommunityDragon 当前 `zh_cn/zh_my` 装备名为 `????` 占位符，不能作为简中 canonical 来源；当前采用腾讯官网国服目录。每次 patch 必须重新校验这些版本元数据和源 SHA-256。
 - 系统默认 Node 18.20.8 没有 `node:sqlite`，也未安装 `better-sqlite3`；该环境继续使用默认 JSON store。SQLite 发布可固定 Node 22.5+/24，或为 Node 18 安装 optional driver。
-- 项目未安装项目级 Playwright 时，裸 `npm run smoke:visual` 会明确跳过；发布验收使用 `--playwright-module` 指向 bundled Playwright 的可解析入口，并由本地无头 Edge 完整执行。装备与阵容共 8 个场景通过：460px/360px、正常、缺图、stale、低样本、空结果、固定尺寸、横向溢出和紧凑文字裁切检查均已覆盖，截图保存在 `.cache/visual-smoke/`。
+- 当前项目未安装项目级 Playwright，裸 `npm run smoke:visual` 会明确跳过；本机可见的 bundled 目录也缺少 `playwright-core`，因此不能把自动视觉脚本报告为通过。本阶段改用桌面内置 Browser 对离线 fixture 做实际 460px/360px 检查并保存截图；发布环境仍应补齐 Playwright 后运行脚本门禁。
 - set/patch 更新后仍必须运行 `refresh:item-localization`、`audit:item-patch`、`audit:aliases` 和 `audit:items`，并人工确认新移除装备，不能仅凭 MetaTFT token 推断可用性。
 
 ## 明确非 MVP

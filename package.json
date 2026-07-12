@@ -12,6 +12,7 @@
     "smoke": "node test/mvp-query.test.js",
     "smoke:small-window": "node scripts/smoke-small-window.mjs",
     "smoke:visual": "node scripts/smoke-small-window-visual.mjs",
+    "visual:fixture-server": "node scripts/visual-fixture-server.mjs",
     "smoke:hotkey": "powershell -ExecutionPolicy Bypass -File scripts/smoke-small-window-hotkey.ps1",
     "smoke:metatft": "node scripts/smoke-metatft.mjs",
     "smoke:comps": "node scripts/smoke-comp-rankings.mjs",

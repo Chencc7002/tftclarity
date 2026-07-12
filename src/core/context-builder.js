@@ -1,12 +1,27 @@
 import { DEFAULT_QUERY_OPTIONS, createCatalog } from "../data/static-data.js";
 
-function sourceLabel(isUserProvided) {
-  return isUserProvided ? "user" : "default";
+function sourceLabel(isUserProvided, preferenceProvided = false) {
+  if (isUserProvided) return "current_input";
+  return preferenceProvided ? "preference" : "system_default";
 }
 
-function fieldSource(parsedQuery, key, isUserProvided) {
-  if (parsedQuery.sessionContext?.inheritedKeys?.includes(key)) return "session";
-  return sourceLabel(isUserProvided);
+function fieldSource(parsedQuery, key, isUserProvided, preferenceProvided = false) {
+  if (parsedQuery.sessionContext?.inheritedKeys?.includes(key)) return "conversation";
+  return sourceLabel(isUserProvided, preferenceProvided);
+}
+
+function confidenceForSource(source) {
+  return {
+    current_input: 1,
+    conversation: 0.96,
+    preference: 0.9,
+    default_context: 0.78,
+    system_default: 1
+  }[source] ?? 0.8;
+}
+
+function sourcedConstraint(key, value, source) {
+  return { key, value, source, confidence: confidenceForSource(source) };
 }
 
 export function buildQueryContext(parsedQuery, options = {}) {
@@ -15,19 +30,14 @@ export function buildQueryContext(parsedQuery, options = {}) {
     ...DEFAULT_QUERY_OPTIONS,
     ...(options.preferences ?? {})
   };
-  const defaultContext = options.defaultContext ?? null;
+  const comp = options.comp ?? parsedQuery.comp ?? null;
   const warnings = (parsedQuery.parser?.highConfidenceEntityResolutions ?? []).map((resolution) => (
     `已按高置信模糊匹配识别“${resolution.inputFragment}”为“${resolution.label ?? resolution.matchedAlias ?? resolution.apiName}”`
   ));
 
-  let traitFilters = parsedQuery.traitFilters ?? [];
-  let defaultContextInfo = null;
-  if (traitFilters.length === 0 && defaultContext?.found) {
-    traitFilters = defaultContext.traitFilters ?? [];
-    defaultContextInfo = defaultContext;
-    if (defaultContext.warning) warnings.push(defaultContext.warning);
-  } else if (traitFilters.length === 0 && defaultContext?.warning) {
-    warnings.push(defaultContext.warning);
+  const traitFilters = parsedQuery.traitFilters ?? [];
+  if (comp?.status === "not_available") {
+    warnings.push("当前条件下未找到达到稳定门槛的 Comp；以下结果未限制 Comp。");
   }
 
   const starLevel = parsedQuery.starLevel?.length ? parsedQuery.starLevel : [2];
@@ -40,18 +50,31 @@ export function buildQueryContext(parsedQuery, options = {}) {
   const minSamples = parsedQuery.minSamples ?? preferences.minSamples;
   const sort = parsedQuery.sort ?? preferences.sort;
 
+  const preferenceKeys = new Set(Object.keys(options.preferences ?? {}));
+  const traitSource = parsedQuery.sessionContext?.inheritedKeys?.includes("traitFilters")
+    ? "conversation"
+      : parsedQuery.traitFilters?.length
+        ? "current_input"
+        : "system_default";
   const assumptions = [
-    { key: "unit", value: parsedQuery.unit, source: fieldSource(parsedQuery, "unit", Boolean(parsedQuery.unitAlias)) },
-    { key: "star_level", value: starLevel, source: fieldSource(parsedQuery, "starLevel", Boolean(parsedQuery.starLevel?.length)) },
-    { key: "item_count", value: itemCount, source: fieldSource(parsedQuery, "itemCount", parsedQuery.itemCount !== undefined) },
-    { key: "item_policy", value: itemPolicy, source: fieldSource(parsedQuery, "itemPolicy", Boolean(parsedQuery.itemPolicy)) },
-    { key: "trait_filters", value: traitFilters, source: fieldSource(parsedQuery, "traitFilters", Boolean(parsedQuery.traitFilters?.length)) },
-    { key: "patch", value: patch, source: fieldSource(parsedQuery, "patch", Boolean(parsedQuery.patch)) },
-    { key: "days", value: days, source: fieldSource(parsedQuery, "days", Boolean(parsedQuery.days)) },
-    { key: "rank_filter", value: rankFilter, source: fieldSource(parsedQuery, "rankFilter", Boolean(parsedQuery.rankFilter)) },
-    { key: "min_samples", value: minSamples, source: fieldSource(parsedQuery, "minSamples", Boolean(parsedQuery.minSamples)) },
-    { key: "sort", value: sort, source: fieldSource(parsedQuery, "sort", Boolean(parsedQuery.sort)) }
+    sourcedConstraint("unit", parsedQuery.unit, fieldSource(parsedQuery, "unit", Boolean(parsedQuery.unitAlias))),
+    sourcedConstraint("star_level", starLevel, fieldSource(parsedQuery, "starLevel", Boolean(parsedQuery.starLevel?.length))),
+    sourcedConstraint("item_count", itemCount, fieldSource(parsedQuery, "itemCount", parsedQuery.itemCount !== undefined)),
+    sourcedConstraint("item_policy", itemPolicy, fieldSource(parsedQuery, "itemPolicy", Boolean(parsedQuery.itemPolicy), preferenceKeys.has("itemPolicy"))),
+    sourcedConstraint("trait_filters", traitFilters, traitSource),
+    sourcedConstraint("owned_items", parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "ownedItems", Boolean(parsedQuery.ownedItems?.length))),
+    sourcedConstraint("excluded_items", parsedQuery.excludedItems ?? [], fieldSource(parsedQuery, "excludedItems", Boolean(parsedQuery.excludedItems?.length))),
+    sourcedConstraint("patch", patch, fieldSource(parsedQuery, "patch", Boolean(parsedQuery.patch))),
+    sourcedConstraint("days", days, fieldSource(parsedQuery, "days", parsedQuery.days !== undefined, preferenceKeys.has("days"))),
+    sourcedConstraint("rank_filter", rankFilter, fieldSource(parsedQuery, "rankFilter", Boolean(parsedQuery.rankFilter?.length), preferenceKeys.has("rankFilter"))),
+    sourcedConstraint("min_samples", minSamples, fieldSource(parsedQuery, "minSamples", parsedQuery.minSamples !== undefined, preferenceKeys.has("minSamples"))),
+    sourcedConstraint("sort", sort, fieldSource(parsedQuery, "sort", Boolean(parsedQuery.sort), preferenceKeys.has("sort")))
   ];
+  const constraints = Object.fromEntries(assumptions.map(({ key, value, source, confidence }) => [
+    key,
+    { value, source, confidence }
+  ]));
+  if (comp) constraints.comp = { ...comp };
 
   return {
     rawInput: parsedQuery.rawInput,
@@ -61,6 +84,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     starLevel,
     itemCount,
     traitFilters,
+    comp,
     itemPolicy,
     ownedItems: parsedQuery.ownedItems ?? [],
     excludedItems: parsedQuery.excludedItems ?? [],
@@ -76,8 +100,16 @@ export function buildQueryContext(parsedQuery, options = {}) {
     minSamples,
     sort,
     assumptions,
+    constraints,
+    constraintSources: {
+      ...Object.fromEntries(assumptions.map(({ key, source, confidence }) => [
+        key,
+        { source, confidence }
+      ])),
+      ...(comp ? { comp: { source: comp.source, confidence: comp.confidence, status: comp.status } } : {})
+    },
     warnings,
-    defaultContext: defaultContextInfo,
+    defaultContext: null,
     catalogVersion: catalog.version ?? "seed"
   };
 }

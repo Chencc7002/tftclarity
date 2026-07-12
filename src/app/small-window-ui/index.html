@@ -11,7 +11,7 @@
       <header class="topbar">
         <div class="brand">
           <span class="brand-mark">TFT</span>
-          <strong>局内检索</strong>
+          <strong>数据助手</strong>
         </div>
         <div class="top-actions">
           <button type="button" id="settings-button" title="设置">⚙</button>
@@ -19,43 +19,54 @@
         </div>
       </header>
 
-      <form class="query-panel" id="query-form">
-        <textarea id="query-input" name="query" rows="2" autocomplete="off" spellcheck="false">霞带哪三件装备最好？</textarea>
-        <div class="action-row">
-          <button class="primary" type="submit">查询</button>
-          <button type="button" id="refresh-button" title="刷新结果">↻</button>
+      <section class="conversation" id="result" aria-live="polite">
+        <article class="message assistant-message welcome-message">
+          <div class="message-role">TFT 助手</div>
+          <div class="message-body">
+            直接问我英雄出装、单件装备或阵容排行。你也可以连续追问，例如“近一天呢？”或“不要海妖，换一套”。
+          </div>
+        </article>
+      </section>
+
+      <form class="query-panel composer" id="query-form">
+        <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" placeholder="问问霞的装备，Enter 发送…"></textarea>
+        <div class="action-row composer-actions">
+          <button type="button" id="retry-button" title="重试上一条">重试</button>
+          <button type="button" id="stop-button" class="hidden" title="停止查询">停止</button>
+          <button type="button" id="refresh-button" title="刷新数据">刷新</button>
           <button type="button" id="clear-button">清空</button>
+          <button class="primary send-button" type="submit">发送</button>
         </div>
       </form>
-
-      <section class="controls" aria-label="查询条件">
-        <div class="segmented" id="sample-control" data-field="minSamples">
-          <button type="button" data-value="10">10</button>
-          <button type="button" data-value="50">50</button>
-          <button type="button" data-value="100" class="active">100</button>
-          <button type="button" data-value="500">500</button>
-          <button type="button" data-value="1000">1000</button>
-        </div>
-
-        <div class="segmented policy" id="policy-control" data-field="itemPolicy">
-          <button type="button" data-value="ordinary_only" class="active">普通</button>
-          <button type="button" data-value="include_radiant">光明</button>
-          <button type="button" data-value="include_artifact">神器</button>
-          <button type="button" data-value="include_special">特殊</button>
-        </div>
-
-        <select id="sort-select" aria-label="排序">
-          <option value="top4_first">前四</option>
-          <option value="win_first">吃鸡</option>
-          <option value="robust_first">样本</option>
-        </select>
-      </section>
 
       <section class="settings-panel hidden" id="settings-panel" aria-label="设置">
         <div class="settings-head">
           <strong>设置</strong>
           <button type="button" id="settings-close" title="关闭">×</button>
         </div>
+        <details class="advanced-query-settings">
+          <summary>高级查询默认值</summary>
+          <section class="controls" aria-label="查询条件">
+            <div class="segmented" id="sample-control" data-field="minSamples">
+              <button type="button" data-value="10">10</button>
+              <button type="button" data-value="50">50</button>
+              <button type="button" data-value="100" class="active">100</button>
+              <button type="button" data-value="500">500</button>
+              <button type="button" data-value="1000">1000</button>
+            </div>
+            <div class="segmented policy" id="policy-control" data-field="itemPolicy">
+              <button type="button" data-value="ordinary_only" class="active">普通</button>
+              <button type="button" data-value="include_radiant">光明</button>
+              <button type="button" data-value="include_artifact">神器</button>
+              <button type="button" data-value="include_special">特殊</button>
+            </div>
+            <select id="sort-select" aria-label="排序">
+              <option value="top4_first">前四</option>
+              <option value="win_first">吃鸡</option>
+              <option value="robust_first">样本</option>
+            </select>
+          </section>
+        </details>
         <label class="field-row">
           <span>天数</span>
           <select id="days-select" aria-label="天数">
@@ -67,12 +78,9 @@
           </select>
         </label>
         <label class="field-row">
-          <span>阵容</span>
-          <select id="context-strategy-select" aria-label="默认阵容策略">
-            <option value="popular">样本</option>
-            <option value="top4">前四</option>
-            <option value="score">Score</option>
-            <option value="avg">均名</option>
+          <span>自动 Comp</span>
+          <select id="context-strategy-select" aria-label="自动 Comp 选择规则">
+            <option value="popular">稳定样本最多</option>
           </select>
         </label>
         <label class="field-row">
@@ -148,16 +156,11 @@
           <button type="button" id="reset-preferences-button">重置</button>
           <button type="button" class="primary" id="settings-done">完成</button>
         </div>
+        <details class="details" id="details">
+          <summary>内部响应</summary>
+          <pre id="raw-output"></pre>
+        </details>
       </section>
-
-      <section class="result" id="result">
-        <div class="empty-state">待查询</div>
-      </section>
-
-      <details class="details" id="details">
-        <summary>条件</summary>
-        <pre id="raw-output"></pre>
-      </details>
     </main>
 
     <script src="/app.js" type="module"></script>

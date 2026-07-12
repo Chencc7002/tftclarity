@@ -33,6 +33,14 @@ const compVisualResponse = {
     }
   ]
 };
+const itemCompVisualResponse = {
+  data: [{
+    units_traits: "TFT17_Aatrox&TFT17_Xayah|TFT17_Stargazer_1&TFT17_Stargazer_Serpent_1",
+    comp_name: "观星霞",
+    placement_count: [160, 150, 140, 130, 110, 80, 60, 50]
+  }],
+  filter_adjustment: { sample_size: 123456 }
+};
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -57,7 +65,8 @@ async function loadPlaywright() {
     ? pathToFileURL(resolve(configured)).href
     : "playwright";
   try {
-    return await import(specifier);
+    const loaded = await import(specifier);
+    return loaded.default ?? loaded;
   } catch (error) {
     console.log("Visual smoke skipped: Playwright is not available.");
     console.log(error.message);
@@ -154,6 +163,18 @@ if (playwright) {
       async getUnitBuilds() {
         return { data: fixtureRows };
       },
+      async getCompCandidates(plan) {
+        if (Number(plan?.params?.days) === 14) {
+          return {
+            data: [{
+              ...itemCompVisualResponse.data[0],
+              placement_count: [10, 10, 10, 10, 10, 10, 10, 10]
+            }],
+            filter_adjustment: { sample_size: 100 }
+          };
+        }
+        return itemCompVisualResponse;
+      },
       async getExactUnitsTraits2() {
         if (failCompRequest) throw new Error("visual stale-cache probe");
         if (emptyCompRequest) return { data: [] };
@@ -198,17 +219,75 @@ if (playwright) {
       });
     });
     await page.goto(started.url, { waitUntil: "networkidle" });
+    await page.fill("#query-input", "大师以上霞什么三件装备最强？");
     await page.click("#query-form button.primary");
     await page.waitForSelector(".result-card");
+    await page.waitForSelector("button.condition-chip");
+    const autoCompChips = await page.locator("button.condition-chip").allTextContents();
+    assertSmoke(
+      autoCompChips.includes("观星霞 · 样本 880 · 系统补全"),
+      `automatic Comp chip is missing: ${JSON.stringify(autoCompChips)}`
+    );
     const desktop = await inspectLayout(page, "desktop result");
     const desktopAssets = await inspectAssetDimensions(page, "desktop result");
+    await page.locator("#result").evaluate((element) => { element.scrollTop = 0; });
     await page.screenshot({
       path: resolve(outputDir, "desktop-result.png"),
       fullPage: true
     });
+    await page.locator(".assistant-message").last().screenshot({
+      path: resolve(outputDir, "comp-auto-460.png")
+    });
+
+    const assistantCountBeforeFollowup = await page.locator(".assistant-message").count();
+    await page.fill("#query-input", "近一天呢？");
+    await page.click("#query-form button.primary");
+    await page.waitForFunction(
+      (count) => document.querySelectorAll(".assistant-message").length > count,
+      assistantCountBeforeFollowup
+    );
+    const followupText = await page.locator(".assistant-message").last().textContent();
+    assertSmoke(followupText.includes("观星霞（系统补全，样本 880）"), "days follow-up did not render the refreshed automatic Comp");
+    const longConversation = await inspectLayout(page, "460px automatic Comp days follow-up");
+    await page.locator(".assistant-message").last().screenshot({
+      path: resolve(outputDir, "comp-auto-followup-460.png")
+    });
+
+    await page.fill("#query-input", "霞在观星霞阵容里什么三件装备最强？");
+    await page.click("#query-form button.primary");
+    await page.waitForSelector('button.condition-chip:text-is("观星霞 · 用户指定")');
+    const explicitComp = await inspectLayout(page, "460px explicit Comp result");
+    await page.locator("#result").evaluate((element) => {
+      const messages = element.querySelectorAll(".message");
+      messages[messages.length - 1]?.scrollIntoView({ block: "start" });
+    });
+    await page.locator(".assistant-message").last().screenshot({
+      path: resolve(outputDir, "comp-explicit-460.png")
+    });
 
     await page.setViewportSize({ width: 360, height: 720 });
+    await page.fill("#query-input", "近14天霞什么三件装备最强？");
+    await page.click("#query-form button.primary");
+    await page.waitForSelector('button.condition-chip:text-is("未限制 Comp · 当前条件下没有稳定 Comp")');
+    assertSmoke(
+      (await page.locator("#result").textContent()).includes("当前条件下未找到稳定 Comp，以下结果未限制 Comp"),
+      "no-stable Comp result did not state that the final query is unrestricted"
+    );
+    const noStableComp = await inspectLayout(page, "360px no-stable Comp result");
+    await page.locator("#result").evaluate((element) => {
+      const messages = element.querySelectorAll(".message");
+      messages[messages.length - 1]?.scrollIntoView({ block: "start" });
+    });
+    await page.locator(".assistant-message").last().screenshot({
+      path: resolve(outputDir, "comp-none-360.png")
+    });
+
+    await page.fill("#query-input", "霞什么三件装备最强？");
+    await page.click("#settings-button");
+    await page.locator("details.advanced-query-settings").evaluate((element) => { element.open = true; });
     await page.click('#sample-control button[data-value="10"]');
+    await page.click("#settings-done");
+    await page.fill("#query-input", "霞什么三件装备最强，样本>=10");
     await page.click("#query-form button.primary");
     await page.waitForSelector(".risk");
     const narrow = await inspectLayout(page, "360px low-sample result");
@@ -217,9 +296,13 @@ if (playwright) {
       fullPage: true
     });
 
+    await page.click("#settings-button");
+    await page.locator("details.advanced-query-settings").evaluate((element) => { element.open = true; });
     await page.click('#sample-control button[data-value="1000"]');
+    await page.click("#settings-done");
+    await page.fill("#query-input", "霞什么三件装备最强，样本>=1000");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".empty-state .summary");
+    await page.waitForSelector(".empty-state");
     const empty = await inspectLayout(page, "360px empty result");
     await page.screenshot({
       path: resolve(outputDir, "narrow-empty-result.png"),
@@ -249,10 +332,10 @@ if (playwright) {
 
     nowMs += 6 * 60 * 1000;
     failCompRequest = true;
-    await page.click("#query-form button.primary");
+    await page.click("#refresh-button");
     await page.waitForSelector(".comp-warning");
     const compStale = await inspectLayout(page, "360px stale comp ranking");
-    assertSmoke((await page.locator(".comp-overview").textContent()).includes("过期缓存"), "stale comp cache was not labelled");
+    assertSmoke((await page.locator(".comp-overview").last().textContent()).includes("过期缓存"), "stale comp cache was not labelled");
     await page.screenshot({
       path: resolve(outputDir, "comp-stale.png"),
       fullPage: true
@@ -285,6 +368,9 @@ if (playwright) {
       checks: {
         desktop,
         desktopAssets,
+        longConversation,
+        explicitComp,
+        noStableComp,
         narrow,
         empty,
         compDesktop,

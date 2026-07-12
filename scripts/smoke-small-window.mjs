@@ -31,8 +31,29 @@ const fixtureRows = [
   {
     unit_builds: "TFT17_Xayah&TFT_Item_InfinityEdge|TFT_Item_GiantSlayer|TFT_Item_Deathblade",
     placement_count: [90, 80, 70, 60, 40, 30, 20, 10]
+  },
+  {
+    unit_builds: "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
+    placement_count: [150, 120, 90, 70, 40, 25, 15, 10]
   }
 ];
+
+const fixtureCompId = "TFT17_Aatrox&TFT17_Xayah|TFT17_Stargazer_1&TFT17_Stargazer_Serpent_1";
+const fixtureCompCandidates = {
+  data: [
+    {
+      units_traits: fixtureCompId,
+      comp_name: "观星霞",
+      placement_count: [220, 190, 160, 130, 80, 50, 30, 20]
+    },
+    {
+      units_traits: "TFT17_Jhin&TFT17_Xayah|TFT17_RangedTrait_1&TFT17_Stargazer_Shield_1",
+      comp_name: "狙神霞",
+      placement_count: [120, 110, 100, 90, 70, 50, 30, 20]
+    }
+  ],
+  filter_adjustment: { sample_size: 123456 }
+};
 
 function assertSmoke(condition, message) {
   if (!condition) {
@@ -75,6 +96,9 @@ async function verifyPersistentLocalCacheTarget() {
       cacheStore: new JsonFileCacheStore({ filePath }),
       fetchItems: false,
       metaTFTClient: {
+        async getCompCandidates() {
+          return fixtureCompCandidates;
+        },
         async getUnitBuilds() {
           firstRemoteCalls += 1;
           return { data: fixtureRows };
@@ -91,6 +115,10 @@ async function verifyPersistentLocalCacheTarget() {
       cacheStore: new JsonFileCacheStore({ filePath }),
       fetchItems: false,
       metaTFTClient: {
+        async getCompCandidates() {
+          unexpectedRemoteCalls += 1;
+          throw new Error("persistent Comp candidate cache unexpectedly missed");
+        },
         async getUnitBuilds() {
           unexpectedRemoteCalls += 1;
           throw new Error("persistent cache unexpectedly missed");
@@ -124,11 +152,25 @@ const smokeCatalog = createCatalog({
   ]
 });
 let unitBuildCalls = 0;
+let compCandidateCalls = 0;
 const runtime = createSmallWindowRuntime({
   catalog: smokeCatalog,
   cacheStore,
   fetchItems: false,
   metaTFTClient: {
+    async getCompCandidates(plan) {
+      compCandidateCalls += 1;
+      if (plan.params.rank === "CHALLENGER") {
+        return {
+          data: [{
+            ...fixtureCompCandidates.data[0],
+            placement_count: [1, 1, 1, 1, 1, 1, 1, 1]
+          }],
+          filter_adjustment: { sample_size: 100 }
+        };
+      }
+      return fixtureCompCandidates;
+    },
     async getUnitBuilds() {
       unitBuildCalls += 1;
       return { data: fixtureRows };
@@ -371,21 +413,87 @@ try {
   assertSmoke(radiant.lockedItems?.[0]?.name === "光明羊刀", "radiant owned item was not locked");
   assertSmoke(radiant.cards?.length === 1, "radiant recommendation card was not returned");
 
-  const callsBeforeUnavailableItem = unitBuildCalls;
-  const unavailableItem = await jsonRequest(`${baseUrl}/api/recommend`, {
+  const conversationId = "small-window-multiturn-smoke";
+  const firstTurn = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({
+      conversationId,
+      input: "大师以上霞什么三件装备最强？",
+      preferences: { minSamples: 10 }
+    })
+  });
+  assertSmoke(firstTurn.query?.rankFilter?.join(",") === "CHALLENGER,GRANDMASTER,MASTER", "master-and-above rank range was not parsed");
+  assertSmoke(firstTurn.query?.comp?.status === "applied", "automatic Comp was not applied");
+  assertSmoke(firstTurn.query?.comp?.value?.selection === "automatic", "automatic Comp selection was not serialized");
+  assertSmoke(firstTurn.query?.comp?.value?.id === fixtureCompId, "highest-sample stable Comp was not selected");
+  assertSmoke(firstTurn.source?.compCandidates?.endpoint === "/tft-explorer-api/exact_units_traits2", "candidate endpoint was not exposed");
+  assertSmoke(firstTurn.source?.requestParams?.["sf[0][and][0][unit_unique]"] === "TFT17_Aatrox-1", "final request did not expose Comp sf params");
+  const secondTurn = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({
+      conversationId,
+      input: "近一天呢？",
+      preferences: { minSamples: 10 }
+    })
+  });
+  assertSmoke(secondTurn.query?.days === 1, "follow-up did not override days");
+  assertSmoke(secondTurn.query?.unit === "TFT17_Xayah", "follow-up did not inherit the unit");
+  assertSmoke(secondTurn.query?.constraints?.unit?.source === "conversation", "follow-up unit source was not serialized");
+  assertSmoke(secondTurn.query?.constraints?.days?.source === "current_input", "follow-up day source was not serialized");
+  assertSmoke(secondTurn.query?.comp?.value?.selection === "automatic", "days follow-up did not recompute automatic Comp");
+  assertSmoke(compCandidateCalls >= 2, "days follow-up reused an automatic Comp across a changed sample scope");
+
+  const explicitComp = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({
+      input: "霞在观星霞阵容里什么装备最强？",
+      conversationId: "smoke-explicit-comp",
+      preferences: { minSamples: 100 }
+    })
+  });
+  assertSmoke(explicitComp.query?.comp?.status === "applied", "explicit Comp was not applied");
+  assertSmoke(explicitComp.query?.comp?.value?.selection === "explicit", "explicit Comp selection was not serialized");
+  assertSmoke(explicitComp.query?.comp?.source === "current_input", "explicit Comp source was not current_input");
+  assertSmoke(explicitComp.source?.requestParams?.trait === undefined, "explicit Comp was converted to a top-level trait filter");
+
+  const noStableComp = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({
+      input: "只看王者霞什么三件装备最强？",
+      conversationId: "smoke-no-stable-comp",
+      preferences: { minSamples: 100 }
+    })
+  });
+  assertSmoke(noStableComp.query?.comp?.status === "not_available", "no-stable response did not expose not_available");
+  assertSmoke(noStableComp.query?.comp?.value === null, "no-stable response retained a Comp value");
+  assertSmoke(!Object.keys(noStableComp.source?.requestParams ?? {}).some((key) => key.startsWith("sf[")), "no-stable final request retained Comp sf params");
+  assertSmoke(noStableComp.source?.requestParams?.trait === undefined, "no-stable final request used a trait fallback");
+  assertSmoke(/未限制 Comp/.test(noStableComp.answer?.summary ?? ""), "no-stable answer did not state the unrestricted Comp scope");
+
+  const singleItems = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({
+      input: "霞哪个单件装备表现最好？",
+      preferences: { minSamples: 10 }
+    })
+  });
+  assertSmoke(singleItems.type === "unit_item_rankings", "single-item intent was not serialized");
+  assertSmoke(singleItems.itemRankings?.length > 0, "single-item rankings were empty");
+  const kraken = singleItems.itemRankings.find((item) => item.apiName === "TFT_Item_RunaansHurricane");
+  assertSmoke(kraken?.name === "海妖之怒", "current Kraken canonical name was lost");
+  assertSmoke(kraken?.copyCounts?.some((copy) => copy.copyCount === 2), "double-Kraken copy count evidence was lost");
+
+  const callsBeforeHistoricalAlias = unitBuildCalls;
+  const historicalAlias = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
     body: JSON.stringify({
       input: "霞能不能带分裂弓？"
     })
   });
-  assertSmoke(unavailableItem.decision?.type === "unavailable_items", "unavailable item was not decided locally");
-  assertSmoke(
-    unavailableItem.decision?.items?.[0] === "TFT_Item_RunaansHurricane",
-    "unavailable item decision did not identify Runaan's Hurricane"
-  );
-  assertSmoke(unavailableItem.text.includes("当前版本不属于可用普通装备"), "unavailable item wording was not explicit");
-  assertSmoke(unavailableItem.query?.unit === "TFT17_Xayah", "unavailable item decision did not preserve the unit");
-  assertSmoke(unitBuildCalls === callsBeforeUnavailableItem, "unavailable item decision called unit_builds");
+  assertSmoke(!historicalAlias.decision, "historical Runaan alias was still blocked");
+  assertSmoke(historicalAlias.lockedItems?.[0]?.name === "海妖之怒", "historical alias did not serialize the current canonical name");
+  assertSmoke(historicalAlias.cards?.[0]?.items?.filter((item) => item.apiName === "TFT_Item_RunaansHurricane").length === 2, "red buff plus double Kraken row was not preserved");
+  assertSmoke(unitBuildCalls > callsBeforeHistoricalAlias, "current Kraken query did not reach unit_builds");
 
   const localCacheDurationMs = await verifyPersistentLocalCacheTarget();
 

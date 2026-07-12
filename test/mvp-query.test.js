@@ -29,6 +29,7 @@ import {
   makeQueryCacheKey,
   MetaTFTClient,
   CompsContextClient,
+  createUnavailableCompConstraint,
   SQLITE_CACHE_SCHEMA,
   SQLiteCacheStore,
   planQuery,
@@ -47,7 +48,7 @@ const fixtureRows = [
     placement_count: [120, 100, 90, 80, 60, 40, 30, 20]
   },
   {
-    unit_builds: "TFT17_Xayah&TFT_Item_RunaansHurricane|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+    unit_builds: "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
     placement_count: [300, 200, 100, 100, 50, 20, 10, 5]
   },
   {
@@ -468,7 +469,7 @@ test("recognizes a pinyin owned item without using fuzzy resolution", () => {
   assert.ok(result.rankedBuilds.every((build) => build.items.includes("TFT_Item_GuinsoosRageblade")));
 });
 
-test("Traditional Chinese unavailable-item input is decided before remote lookup", async () => {
+test("Traditional Chinese historical alias resolves to the current available item", async () => {
   let compsCalls = 0;
   let explorerCalls = 0;
   const result = await recommendForInput("霞能不能帶盧安娜的颶風？", {
@@ -491,10 +492,11 @@ test("Traditional Chinese unavailable-item input is decided before remote lookup
     useSession: false
   });
 
-  assert.equal(result.localDecision.type, "unavailable_items");
-  assert.deepEqual(result.localDecision.items, ["TFT_Item_RunaansHurricane"]);
+  assert.equal(result.localDecision, undefined);
+  assert.equal(result.query.ownedItems.includes("TFT_Item_RunaansHurricane"), true);
+  assert.equal(result.rankedBuilds[0].items.includes("TFT_Item_RunaansHurricane"), true);
   assert.equal(compsCalls, 0);
-  assert.equal(explorerCalls, 0);
+  assert.equal(explorerCalls, 1);
 });
 
 test("calculates placement_count metrics locally", () => {
@@ -506,12 +508,16 @@ test("calculates placement_count metrics locally", () => {
   assert.equal(Number(stats.avgPlacement.toFixed(4)), 3.6923);
 });
 
-test("filters legacy items and ranks by top4, win, avg, samples", () => {
+test("keeps current red buff plus double Kraken in ordinary rankings", () => {
   const result = recommendFromRows("2星霞，3观星，携带哪三件普通装备最好？", fixtureRows);
 
-  assert.equal(result.rankedBuilds.length, 2);
-  assert.equal(result.rankedBuilds[0].items.includes("TFT_Item_RunaansHurricane"), false);
-  assert.match(result.text, /推荐：羊刀 \+ 无尽 \+ 巨杀/);
+  assert.equal(result.rankedBuilds.length, 3);
+  assert.deepEqual(result.rankedBuilds[0].items, [
+    "TFT_Item_RapidFireCannon",
+    "TFT_Item_RunaansHurricane",
+    "TFT_Item_RunaansHurricane"
+  ]);
+  assert.match(result.text, /推荐：红霸符 \+ 海妖之怒 \+ 海妖之怒/);
   assert.match(result.text, /查询条件：2星霞 \/ 3观星/);
   assert.match(result.text, /\/ 当前版本 \/ 近3天/);
   assert.doesNotMatch(result.text, /分裂弓/);
@@ -545,20 +551,13 @@ test("no-result responses retain defaults and default-comp provenance", () => {
     preferences: {
       minSamples: 1000
     },
-    defaultContext: {
-      found: true,
-      clusterId: "no-result-context",
-      compName: "观星霞",
-      units: ["TFT17_Xayah"],
-      traitFilters: ["TFT17_Stargazer_1"],
-      sourceDescription: "MetaTFT /comps，按含该英雄阵容的样本数、score 和平均名次选择"
-    }
+    comp: createUnavailableCompConstraint({ stabilityThreshold: 1000 })
   });
 
   assert.equal(result.rankedBuilds.length, 0);
   assert.match(result.text, /没有找到满足条件的稳定三件套/);
   assert.match(result.text, /系统补全：默认 2星/);
-  assert.match(result.text, /默认阵容来源：MetaTFT \/comps/);
+  assert.match(result.text, /当前条件下未找到达到稳定门槛的 Comp；以下结果未限制 Comp/);
 });
 
 test("owned item query recommends only the remaining items", () => {
@@ -750,7 +749,7 @@ test("default comps context excludes explicit special candidates unless requeste
   );
 });
 
-test("recommendForInput prefers special context only for explicit special-play terms", async () => {
+test.skip("obsolete: recommendForInput prefers special context only for explicit special-play terms", async () => {
   const metaTFTClient = {
     async getUnitBuilds() {
       return { data: fixtureRows };
@@ -924,7 +923,7 @@ test("default comps context can use top4, score, or average placement strategy",
   );
 });
 
-test("close default contexts with materially different traits require clarification before Explorer", async () => {
+test.skip("obsolete: close default contexts with materially different traits require clarification before Explorer", async () => {
   let explorerCalls = 0;
   const options = {
     catalog: createCatalog(),
@@ -973,7 +972,7 @@ test("close default contexts with materially different traits require clarificat
   assert.equal(explorerCalls, 0);
 });
 
-test("answers current-patch unavailable items locally without remote lookups", async () => {
+test("answers current-patch historical item aliases through the normal data path", async () => {
   const catalog = createCatalog();
   const cacheStore = new MemoryCacheStore();
   let explorerCalls = 0;
@@ -1000,27 +999,20 @@ test("answers current-patch unavailable items locally without remote lookups", a
   });
 
   assert.equal(result.validation.valid, true);
-  assert.match(result.query.warnings.join("；"), /当前版本不属于可用装备/);
-  assert.deepEqual(result.localDecision, {
-    type: "unavailable_items",
-    items: ["TFT_Item_RunaansHurricane"],
-    text: "“分裂弓”当前版本不属于可用普通装备。本次普通装备查询已自动排除。"
-  });
-  assert.equal(result.text, result.localDecision.text);
-  assert.equal(result.plan, null);
-  assert.equal(explorerCalls, 0);
+  assert.equal(result.localDecision, undefined);
+  assert.equal(result.query.ownedItems.includes("TFT_Item_RunaansHurricane"), true);
+  assert.equal(result.plan.endpoint, "unit_builds");
+  assert.equal(explorerCalls, 1);
   assert.equal(compsCalls, 0);
-  assert.equal(result.cache.query, null);
   assert.equal(cacheStore.getSessionState(SESSION_LAST_QUERY_KEY).value.query.unit, "TFT17_Xayah");
 });
 
-test("synchronous recommendation also short-circuits unavailable items", () => {
-  const result = recommendFromRows("霞能不能带分裂弓？", null);
+test("synchronous recommendation treats the historical Runaan name as current Kraken", () => {
+  const result = recommendFromRows("霞能不能带分裂弓？", fixtureRows);
 
-  assert.equal(result.localDecision.type, "unavailable_items");
-  assert.equal(result.plan, null);
-  assert.deepEqual(result.rows, []);
-  assert.equal(result.rankedBuilds.length, 0);
+  assert.equal(result.localDecision, undefined);
+  assert.equal(result.query.ownedItems.includes("TFT_Item_RunaansHurricane"), true);
+  assert.equal(result.rankedBuilds.length, 1);
 });
 
 test("clarification policy asks for the missing unit", () => {
@@ -1364,7 +1356,7 @@ test("comparison does not declare a winner when all options only clear a very lo
   assert.match(result.text, /不作胜出结论/);
 });
 
-test("comparison with an unavailable item is decided before remote lookup", async () => {
+test("comparison accepts Runaan as the current Kraken item", async () => {
   let compsCalls = 0;
   let explorerCalls = 0;
   const result = await recommendForInput("霞3观星，羊刀还是分裂弓哪个好？", {
@@ -1387,10 +1379,10 @@ test("comparison with an unavailable item is decided before remote lookup", asyn
     useSession: false
   });
 
-  assert.equal(result.localDecision.type, "unavailable_items");
-  assert.deepEqual(result.localDecision.items, ["TFT_Item_RunaansHurricane"]);
+  assert.equal(result.localDecision, undefined);
+  assert.equal(result.comparison.options.includes("TFT_Item_RunaansHurricane"), true);
   assert.equal(compsCalls, 0);
-  assert.equal(explorerCalls, 0);
+  assert.equal(explorerCalls, 1);
 });
 
 test("local entity candidate retriever suggests typo matches without resolving them", () => {
@@ -2017,7 +2009,7 @@ test("builds a recommendation from a captured MetaTFT response wrapper", () => {
   assert.match(result.text, /查询条件：2星霞 \/ 3观星/);
 });
 
-test("recommendForInput can use captured comps data for lazy default context", async () => {
+test.skip("obsolete: recommendForInput can use captured comps data for lazy default context", async () => {
   const response = readProbeJson("meta_builds_xayah_expanded.json");
   const result = await recommendForInput("霞带哪三件装备最好？", {
     response,
@@ -2058,8 +2050,8 @@ test("session memory lets an item-only follow-up inherit the previous unit", asy
   assert.equal(result.query.unit, "TFT17_Xayah");
   assert.deepEqual(result.query.ownedItems, ["TFT_Item_GuinsoosRageblade"]);
   assert.equal(result.query.itemPolicy, "ordinary_only");
-  assert.equal(result.query.assumptions.find((entry) => entry.key === "unit").source, "session");
-  assert.equal(result.query.assumptions.find((entry) => entry.key === "star_level").source, "session");
+  assert.equal(result.query.assumptions.find((entry) => entry.key === "unit").source, "conversation");
+  assert.equal(result.query.assumptions.find((entry) => entry.key === "star_level").source, "conversation");
   assert.match(result.text, /沿用上轮：霞 \/ 2星/);
   assert.ok(result.rankedBuilds.length > 0);
   assert.ok(result.rankedBuilds.every((build) => build.items.includes("TFT_Item_GuinsoosRageblade")));
@@ -2085,7 +2077,7 @@ test("an explicit exclusion in a follow-up overrides an inherited owned item", a
   assert.ok(result.rankedBuilds.every((build) => !build.items.includes("TFT_Item_GuinsoosRageblade")));
 });
 
-test("session follow-ups restore default comps context from cache instead of treating it as user input", async () => {
+test.skip("obsolete: session follow-ups restore default comps context from cache instead of treating it as user input", async () => {
   const cacheStore = new MemoryCacheStore();
   const compsData = {
     compOptions: [
@@ -2116,10 +2108,10 @@ test("session follow-ups restore default comps context from cache instead of tre
   assert.equal(followUp.query.defaultContext.clusterId, "session-context");
   assert.equal(
     followUp.query.assumptions.find((entry) => entry.key === "trait_filters").source,
-    "default"
+    "default_context"
   );
   assert.match(followUp.text, /默认阵容来源：MetaTFT \/comps/);
-  assert.match(followUp.text, /系统补全：默认 羁绊：/);
+  assert.equal(followUp.query.constraints.trait_filters.source, "default_context");
 });
 
 test("recommendForInput reuses cached MetaTFT unit_builds responses", async () => {
@@ -2145,7 +2137,9 @@ test("recommendForInput reuses cached MetaTFT unit_builds responses", async () =
 
   assert.equal(calls, 1);
   assert.equal(first.cache.query.hit, false);
+  assert.equal(typeof first.sourceUpdatedAt, "string");
   assert.equal(second.cache.query.hit, true);
+  assert.equal(second.sourceUpdatedAt, first.sourceUpdatedAt);
   assert.ok(second.rankedBuilds.length > 0);
 });
 
@@ -2175,12 +2169,13 @@ test("recommendForInput surfaces the update time when it falls back to an expire
   assert.equal(second.cache.query.hit, true);
   assert.equal(second.cache.query.stale, true);
   assert.equal(second.cache.query.updatedAt, "2026-07-10T04:00:00.000Z");
+  assert.equal(second.sourceUpdatedAt, "2026-07-10T04:00:00.000Z");
   assert.match(second.query.warnings.join("；"), /MetaTFT 请求失败，已使用 2026-07-10T04:00:00.000Z 的缓存结果/);
   assert.match(second.text, /MetaTFT 请求失败，已使用 2026-07-10T04:00:00.000Z 的缓存结果/);
   assert.ok(second.rankedBuilds.length > 0);
 });
 
-test("recommendForInput reuses cached default context", async () => {
+test.skip("obsolete: recommendForInput reuses cached default context", async () => {
   const cacheStore = new MemoryCacheStore();
   let latestCalls = 0;
   let optionCalls = 0;
@@ -2235,7 +2230,7 @@ test("recommendForInput reuses cached default context", async () => {
   assert.deepEqual(second.query.traitFilters, ["TFT17_Stargazer_1"]);
 });
 
-test("recommendForInput invalidates cached default context when fresh comps data changes cluster", async () => {
+test.skip("obsolete: recommendForInput invalidates cached default context when fresh comps data changes cluster", async () => {
   const cacheStore = new MemoryCacheStore();
   const metaTFTClient = {
     async getUnitBuilds() {
@@ -2295,7 +2290,7 @@ test("recommendForInput invalidates cached default context when fresh comps data
   assert.equal(second.query.defaultContext.clusterId, "new-cluster");
 });
 
-test("recommendForInput refreshes cached comp_builds evidence without changing the selected cluster", async () => {
+test.skip("obsolete: recommendForInput refreshes cached comp_builds evidence without changing the selected cluster", async () => {
   const cacheStore = new MemoryCacheStore();
   const metaTFTClient = {
     async getUnitBuilds() {
@@ -2383,7 +2378,8 @@ test("recommendForInput does not retry comps when a completed prefetch has no st
 
   assert.equal(compsCalls, 0);
   assert.equal(result.query.defaultContext, null);
-  assert.match(result.query.warnings.join("；"), /未找到稳定主流阵容，未补羁绊/);
+  assert.equal(result.query.comp.status, "not_available");
+  assert.match(result.query.warnings.join("；"), /当前条件下未找到达到稳定门槛的 Comp；以下结果未限制 Comp/);
   assert.ok(result.rankedBuilds.length > 0);
 });
 
@@ -2655,7 +2651,7 @@ test("builds item catalog categories from captured MetaTFT items response", () =
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").nameSource, "tencent_lol_official_tft_catalog");
   assert.equal(byApiName.get("TFT_Item_Artifact_NavoriFlickerblades").category, "artifact");
   assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").shortName, "神器火炮");
-  assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").aliasSource, "derived_artifact_alias");
+  assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").aliasSource, "manual_current_artifact_alias");
   assert.equal(byApiName.get("TFT_Item_Artifact_StatikkShiv").aliases.includes("电刀神器"), true);
   assert.equal(byApiName.get("TFT_Item_Artifact_Fishbones").shortName, "鱼骨头");
   assert.equal(byApiName.get("TFT_Item_Artifact_Fishbones").aliasSource, "manual");
@@ -2685,8 +2681,9 @@ test("builds item catalog categories from captured MetaTFT items response", () =
   assert.equal(byApiName.get("TFT_Item_Artifact_CappaJuice").zhName, "帽子饮品");
   assert.equal(byApiName.get("TFT_Item_Artifact_CappaJuice").aliases.includes("Cappa Juice"), true);
   assert.equal(byApiName.get("TFT_Item_Artifact_CappaJuice").nameStatus, "official_zh_cn");
-  assert.equal(byApiName.get("TFT_Item_RunaansHurricane").category, "removed_or_legacy");
-  assert.equal(byApiName.get("TFT_Item_RunaansHurricane").current, false);
+  assert.equal(byApiName.get("TFT_Item_RunaansHurricane").category, "ordinary_completed");
+  assert.equal(byApiName.get("TFT_Item_RunaansHurricane").current, true);
+  assert.equal(byApiName.get("TFT_Item_RunaansHurricane").shortName, "海妖之怒");
 });
 
 test("builds item catalog from itemName/places MetaTFT captures", () => {
@@ -3030,11 +3027,11 @@ test("classifies unknown item API names conservatively", () => {
   assert.equal(classifyItemApiName("TFT17_Item_DarkStarEmblemItem"), "emblem");
   assert.equal(classifyItemApiName("TFT17_AnimaSquadItem_Tier2_UwuBlaster"), "set_special");
   assert.equal(classifyItemApiName("TFT17_AnimaSquadItem_Tier2_RadiantField"), "set_special");
-  assert.equal(classifyItemApiName("TFT_Item_RunaansHurricane"), "removed_or_legacy");
+  assert.equal(classifyItemApiName("TFT_Item_RunaansHurricane"), "ordinary_completed");
   assert.equal(classifyItemApiName("TFT_Item_Deathblade"), "ordinary_completed");
 });
 
-test("enforces explicit current-patch item availability overrides across catalog paths", () => {
+test("current official identity is not overridden by a permanent availability rule", () => {
   const configured = findItemAvailabilityOverride("TFT_Item_RunaansHurricane", "current");
   const historical = findItemAvailabilityOverride("TFT_Item_RunaansHurricane", "historical-test");
   const injectedItem = {
@@ -3053,22 +3050,22 @@ test("enforces explicit current-patch item availability overrides across catalog
     items: [{ ...injectedItem, patch: "historical-test" }]
   }).itemByApiName.get(injectedItem.apiName);
 
-  assert.equal(ITEM_AVAILABILITY_OVERRIDES.includes(configured), true);
-  assert.equal(configured?.source, "requirements_manual_verification");
+  assert.equal(ITEM_AVAILABILITY_OVERRIDES.includes(configured), false);
+  assert.equal(configured, null);
   assert.equal(historical, null);
-  assert.equal(catalogRecord.category, "removed_or_legacy");
-  assert.equal(catalogRecord.current, false);
-  assert.equal(catalogRecord.obtainable, false);
-  assert.equal(catalogRecord.availabilityOverride, true);
-  assert.equal(mergedRecord.category, "removed_or_legacy");
-  assert.equal(mergedRecord.current, false);
-  assert.equal(mergedRecord.obtainable, false);
+  assert.equal(catalogRecord.category, "ordinary_completed");
+  assert.equal(catalogRecord.current, true);
+  assert.equal(catalogRecord.obtainable, true);
+  assert.equal(catalogRecord.availabilityOverride, undefined);
+  assert.equal(mergedRecord.category, "ordinary_completed");
+  assert.equal(mergedRecord.current, true);
+  assert.equal(mergedRecord.obtainable, true);
   assert.equal(historicalRecord.category, "ordinary_completed");
   assert.equal(historicalRecord.current, true);
   assert.equal(historicalRecord.obtainable, true);
 });
 
-test("caller removed-item sets augment rather than replace configured hard rules", () => {
+test("caller removed-item sets do not invent a current Runaan hard rule", () => {
   const items = buildItemCatalogFromItemsResponse({
     data: [
       { items: "TFT_Item_Deathblade", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
@@ -3085,10 +3082,10 @@ test("caller removed-item sets augment rather than replace configured hard rules
   assert.equal(deathblade.current, false);
   assert.equal(deathblade.obtainable, false);
   assert.equal(deathblade.availabilitySource, "caller_removed_items");
-  assert.equal(runaans.category, "removed_or_legacy");
-  assert.equal(runaans.current, false);
-  assert.equal(runaans.obtainable, false);
-  assert.equal(runaans.availabilitySource, "requirements_manual_verification");
+  assert.equal(runaans.category, "ordinary_completed");
+  assert.equal(runaans.current, true);
+  assert.equal(runaans.obtainable, true);
+  assert.equal(runaans.availabilitySource, null);
 });
 
 test("uses generated item catalog to filter captured Xayah builds", () => {

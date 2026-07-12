@@ -25,18 +25,82 @@ function parseMinSamples(input) {
   return match ? Number(match[1]) : undefined;
 }
 
+const RANK_ORDER = Object.freeze([
+  "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM",
+  "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"
+]);
+
+const RANK_ALIASES = Object.freeze([
+  ["黑铁", "IRON"], ["青铜", "BRONZE"], ["白银", "SILVER"],
+  ["黄金", "GOLD"], ["铂金", "PLATINUM"], ["翡翠", "EMERALD"],
+  ["钻石", "DIAMOND"], ["大师", "MASTER"], ["宗师", "GRANDMASTER"],
+  ["王者", "CHALLENGER"]
+]);
+
+function rankAtOrAbove(rank) {
+  const index = RANK_ORDER.indexOf(rank);
+  return index < 0 ? [] : RANK_ORDER.slice(index).reverse();
+}
+
+function rankRange(from, to) {
+  const start = RANK_ORDER.indexOf(from);
+  const end = RANK_ORDER.indexOf(to);
+  if (start < 0 || end < 0) return [];
+  return RANK_ORDER.slice(Math.min(start, end), Math.max(start, end) + 1).reverse();
+}
+
+export function parseRankFilter(input) {
+  const normalized = normalizeText(input);
+  const mentions = RANK_ALIASES.filter(([label]) => normalized.includes(label));
+  if (!mentions.length) return undefined;
+  const range = normalized.match(/(黑铁|青铜|白银|黄金|铂金|翡翠|钻石|大师|宗师|王者)(?:到|至|-)(黑铁|青铜|白银|黄金|铂金|翡翠|钻石|大师|宗师|王者)/);
+  if (range) {
+    const from = RANK_ALIASES.find(([label]) => label === range[1])?.[1];
+    const to = RANK_ALIASES.find(([label]) => label === range[2])?.[1];
+    return rankRange(from, to);
+  }
+  const [label, rank] = mentions[0];
+  if (normalized.includes(`${label}以上`) || normalized.includes(`${label}及以上`)) {
+    return rankAtOrAbove(rank);
+  }
+  if (normalized.includes(`只看${label}`) || normalized.includes(`仅看${label}`)) return [rank];
+  return mentions.length === 1 ? [rank] : uniqueValues(mentions.map(([, value]) => value));
+}
+
+export function parseDays(input) {
+  const normalized = normalizeText(input);
+  const match = normalized.match(/(?:近|最近)(\d{1,2}|一|二|三|两|七|十四|三十)天/);
+  if (!match) return /(?:今天|近一天|最近一天)/.test(normalized) ? 1 : undefined;
+  const chinese = { 一: 1, 二: 2, 两: 2, 三: 3, 七: 7, 十四: 14, 三十: 30 };
+  const value = Number(match[1]) || chinese[match[1]];
+  return Number.isInteger(value) && value >= 1 && value <= 30 ? value : undefined;
+}
+
+export function parseCompMention(input) {
+  const text = String(input ?? "").trim();
+  const signature = text.match(/\bcomp\s*[:：=]\s*(TFT[^\s，。！？]+\|TFT[^\s，。！？]+)/i);
+  if (signature) return signature[1];
+
+  const inComp = text.match(/在\s*([^，。！？\n]{1,60}?)\s*(?:comp|阵容)\s*(?:里|中|下)/i);
+  if (inComp) return inComp[1].trim();
+
+  const labeled = text.match(/(?:comp|阵容)\s*[:：=]\s*([^，。！？\n]{1,80}?)(?=\s*(?:里|中|下|$))/i);
+  return labeled?.[1]?.trim() || undefined;
+}
+
 function parseSort(input) {
   const normalized = normalizeText(input);
   const intents = [];
-  if (normalized.includes("前四优先") || normalized.includes("前四率优先")) {
+  if (/(前四优先|前四率优先|按前四|前四率最高)/.test(normalized)) {
     intents.push("top4_first");
   }
-  if (normalized.includes("吃鸡优先") || normalized.includes("吃鸡率优先")) {
+  if (/(吃鸡优先|吃鸡率优先|登顶优先|按登顶|登顶率最高)/.test(normalized)) {
     intents.push("win_first");
   }
-  if (normalized.includes("稳健") || normalized.includes("高样本")) {
+  if (/(稳健|高样本|样本最多|按样本|最热门)/.test(normalized)) {
     intents.push("robust_first");
   }
+  if (/(均名|平均名次)/.test(normalized)) intents.push("avg_first");
   return {
     value: intents[0],
     intents: uniqueValues(intents)
@@ -67,12 +131,26 @@ function parseItemPolicy(input, itemMatches = []) {
   return undefined;
 }
 
-function inferIntent(input) {
+function inferIntent(input, details = {}) {
   const normalized = normalizeText(input);
   if (normalized.includes("能不能带") || normalized.includes("可不可以带")) {
     return "unit_item_availability";
   }
-  return "unit_best_3_items";
+  if (details.comparison?.requested) return "unit_item_comparison";
+  if (/(单件|单装备|哪个装备|哪件装备|优先做.{0,6}装备|装备表现最好|装备最厉害)/.test(normalized)) {
+    return "unit_item_rankings";
+  }
+  if ((details.ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized)) {
+    return "unit_build_completion";
+  }
+  return "unit_build_rankings";
+}
+
+function hasExplicitIntent(input, comparison, ownedItems) {
+  const normalized = normalizeText(input);
+  return comparison?.requested
+    || /(单件|单装备|哪个装备|哪件装备|三件套|出装|一套|换一套|阵容|能不能带|可不可以带)/.test(normalized)
+    || ((ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized));
 }
 
 function exclusionFragments(input) {
@@ -213,7 +291,10 @@ export function parseQuery(input, options = {}) {
     ambiguities: exactEntities.ambiguities
   };
   const unit = entities.units[0]?.target;
-  const traitFilters = uniqueValues(entities.traits.map((trait) => trait.target));
+  const compMention = parseCompMention(input);
+  const traitFilters = compMention
+    ? []
+    : uniqueValues(entities.traits.map((trait) => trait.target));
   const allItems = uniqueValues(entities.items.map((item) => item.target));
   const excludedItems = parseExcludedItems(input, entities);
   const starLevel = parseStarLevels(input);
@@ -229,23 +310,25 @@ export function parseQuery(input, options = {}) {
 
   return {
     rawInput: String(input ?? ""),
-    intent: inferIntent(input),
+    intent: inferIntent(input, { comparison, ownedItems }),
     unit,
     unitAlias: entities.units[0]?.alias,
     starLevel: starLevel.length > 0 ? starLevel : undefined,
     itemCount,
     traitFilters,
+    compMention,
     itemPolicy: parseItemPolicy(input, activeItemMatches),
     ownedItems,
     excludedItems,
     minSamples: parseMinSamples(input),
     sort: sort.value,
-    rankFilter: undefined,
-    days: undefined,
+    rankFilter: parseRankFilter(input),
+    days: parseDays(input),
     patch: undefined,
     queue: undefined,
     parser: {
       usedLLM: false,
+      intentExplicit: hasExplicitIntent(input, comparison, ownedItems),
       constraintConflicts: sort.intents.length > 1
         ? [{ type: "sort", values: sort.intents }]
         : [],

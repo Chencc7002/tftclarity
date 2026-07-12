@@ -132,10 +132,18 @@ function compBuildEvidenceLine(query, catalog) {
 
 function appendQueryDetails(lines, query, catalog, warnings) {
   lines.push(`查询条件：${conditionLine(query, catalog)}`);
-  const defaultLine = assumptionLine(query, catalog, "default", "默认 ");
+  const defaultLine = [
+    assumptionLine(query, catalog, "system_default", "默认 "),
+    assumptionLine(query, catalog, "default", "默认 ")
+  ].filter(Boolean).join(" / ");
   if (defaultLine) lines.push(`系统补全：${defaultLine}`);
-  const sessionLine = assumptionLine(query, catalog, "session", "");
+  const sessionLine = [
+    assumptionLine(query, catalog, "conversation", ""),
+    assumptionLine(query, catalog, "session", "")
+  ].filter(Boolean).join(" / ");
   if (sessionLine) lines.push(`沿用上轮：${sessionLine}`);
+  const preferenceLine = assumptionLine(query, catalog, "preference", "");
+  if (preferenceLine) lines.push(`长期偏好：${preferenceLine}`);
   if (query.excludedItems?.length) {
     lines.push(`已排除：${query.excludedItems.map((apiName) => itemName(apiName, catalog)).join(" + ")}`);
   }

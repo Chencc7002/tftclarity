@@ -1,14 +1,7 @@
-export const ITEM_AVAILABILITY_OVERRIDES = Object.freeze([
-  Object.freeze({
-    apiName: "TFT_Item_RunaansHurricane",
-    patch: "current",
-    category: "removed_or_legacy",
-    current: false,
-    obtainable: false,
-    reason: "Runaan's Hurricane is unavailable in the current-set ordinary item pool.",
-    source: "requirements_manual_verification"
-  })
-]);
+// Availability exceptions are historical facts, not permanent namespaced-ID rules.
+// Every future entry must bind to an explicit patch and season so it expires when
+// Riot reuses an API id. The current S17 official catalog needs no deny rule.
+export const ITEM_AVAILABILITY_OVERRIDES = Object.freeze([]);
 
 function normalizePatch(value) {
   return String(value ?? "current").trim().toLowerCase() || "current";

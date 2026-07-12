@@ -48,6 +48,39 @@ function parseMinSamples(input) {
   return match ? Number(match[1]) : undefined;
 }
 
+function parseDays(input) {
+  const text = normalizeText(input);
+  const match = text.match(/(?:近|最近)(\d{1,2}|一|二|三|两|七|十四|三十)天/);
+  const chinese = { 一: 1, 二: 2, 两: 2, 三: 3, 七: 7, 十四: 14, 三十: 30 };
+  const value = match ? Number(match[1]) || chinese[match[1]] : undefined;
+  return Number.isInteger(value) ? value : undefined;
+}
+
+function parseRankFilter(input) {
+  const text = normalizeText(input);
+  const ranks = [
+    ["黑铁", "IRON"], ["青铜", "BRONZE"], ["白银", "SILVER"], ["黄金", "GOLD"],
+    ["铂金", "PLATINUM"], ["翡翠", "EMERALD"], ["钻石", "DIAMOND"], ["大师", "MASTER"],
+    ["宗师", "GRANDMASTER"], ["王者", "CHALLENGER"]
+  ];
+  const order = ranks.map(([, apiName]) => apiName);
+  const mentions = ranks.filter(([label]) => text.includes(label));
+  if (!mentions.length) return undefined;
+  const range = text.match(/(黑铁|青铜|白银|黄金|铂金|翡翠|钻石|大师|宗师|王者)(?:到|至|-)(黑铁|青铜|白银|黄金|铂金|翡翠|钻石|大师|宗师|王者)/);
+  if (range) {
+    const from = ranks.find(([label]) => label === range[1])?.[1];
+    const to = ranks.find(([label]) => label === range[2])?.[1];
+    const start = order.indexOf(from);
+    const end = order.indexOf(to);
+    return order.slice(Math.min(start, end), Math.max(start, end) + 1).reverse();
+  }
+  const [label, rank] = mentions[0];
+  if (text.includes(`${label}以上`) || text.includes(`${label}及以上`)) {
+    return order.slice(order.indexOf(rank)).reverse();
+  }
+  return text.includes(`只看${label}`) || text.includes(`仅看${label}`) ? [rank] : mentions.map(([, value]) => value);
+}
+
 export function buildCompRankingQuery(parsed = {}, options = {}) {
   const preferences = { ...DEFAULT_QUERY_OPTIONS, ...(options.preferences ?? {}) };
   const metrics = unique((parsed.metrics ?? []).filter((metric) => METRIC_SET.has(metric)));
@@ -72,6 +105,8 @@ export function parseCompRankingQuery(input, options = {}) {
     metrics: parseCompMetrics(text),
     limit: parseLimit(text) ?? options.limit,
     minSamples: parseMinSamples(text) ?? options.minSamples,
+    days: parseDays(text) ?? options.days,
+    rankFilter: parseRankFilter(text) ?? options.rankFilter,
     specialMode: /(专属强化|英雄强化|特殊玩法|赌狗|d牌|d卡|追三|reroll)/i.test(text)
       || Boolean(options.specialMode)
   }, options);

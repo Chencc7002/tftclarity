@@ -1,5 +1,18 @@
 # MVP 核心实现进度
 
+## 2026-07-12：单英雄装备默认 Comp 已端到端切换
+
+- 已实际检查 MetaTFT Data Explorer 当前脚本和请求。Comp 是 `exact_units_traits2.units_traits` 的完整变体签名，最终通过 `sf[0][and][*][unit_unique|trait]` 传给 `unit_builds`，不是 `/comps` cluster id。A–E 请求矩阵、响应摘要和脱敏 fixture 见 `docs/metatft-data-explorer-comp-contract.md` 与 `test/fixtures/comp-filter/metatft-data-explorer-comp-contract.json`。
+- 新增 `src/core/comp-filter.js` 和同口径候选 planner；自动选择仅考虑达到稳定门槛的候选，并按八桶样本和最大者确定性选择。不存在稳定候选时唯一行为是最终查询不带 Comp，不使用 trait、低样本、全局、特殊或澄清降级。
+- `recommendation-service` 已移除单英雄生产路径中的旧 `/comps -> cluster -> traitFilters` 默认上下文调用；显式 Comp 可跨仅修改 days/rank 的追问继承，自动/未补 Comp 不写入会话，口径变化会通过候选缓存键重新计算。
+- `unit_builds` 最终查询缓存键包含完整 Comp 签名或显式 `comp=none` 以及 Comp 语义版本；候选缓存键包含 hero、days、rank、patch、queue、稳定门槛和语义版本。
+- HTTP/UI 已展示用户指定、系统补全（含样本）和未限制 Comp 三种状态，以及候选/最终 endpoint、请求参数、更新时间、cache/stale 风险；未限制状态不会暗示某套阵容。
+- 新增离线 Comp 单元/HTTP 测试及 small-window smoke 场景，覆盖显式透传、自动选择、同口径、无稳定候选、追问继承、缓存隔离、四种装备意图与 HTTP schema。
+- 已用实际小窗浏览器在 460px 验证自动 Comp、用户 Comp和长对话，在 360px 验证未限制 Comp；两种宽度均无横向溢出。可读消息截图位于 `.cache/visual-smoke/comp-auto-460.png`、`comp-auto-followup-460.png`、`comp-explicit-460.png`、`comp-none-360.png`。
+- 最终回归：`npm test` 共 206 项，198 通过、0 失败、8 个旧 cluster/trait 行为用例明确标记 obsolete 并跳过；`npm run smoke:small-window`、`npm run smoke:comps`、`npm run audit:items` 通过。`smoke-small-window-visual.mjs` 使用随附 Playwright/Edge 运行时通过，自动 Comp、用户 Comp、无稳定 Comp、days 追问长对话、低样本、空结果、stale 和全局阵容场景在 460px/360px 均无横向溢出或紧凑文本裁切；项目未安装 Playwright 时，普通 `npm run smoke:visual` 仍会按设计提示跳过。
+
+旧 `default-context-builder` 仅保留给全局阵容元数据和兼容诊断；其 cluster/trait 策略不再描述单英雄装备查询的现行行为。
+
 更新时间：2026-07-11
 
 ## 已完成
@@ -124,7 +137,7 @@
   - 新增 `src/data/item-alias-overrides.js` 作为高置信装备俗称/缩写/历史别名维护文件，可给动态 item API id 补 `shortName`、aliases、source 和 confidence；当前覆盖法爆、泰坦、饮血、蓝 buff、反甲、龙牙、石像鬼、离子、鬼书、帽子、红 buff、电刀、血手、狂徒、大天使、组件、自然之力、正义、日炎、复活甲、鱼骨头、巫妖、卢登、纳沃利、暗爪、三相、死亡之舞、金身等常见入口。旧有人工 `zhName` 仍作为 alias/冲突记录输入，不再高于官方 canonical 名。
   - 新增 item catalog 派生别名：`TFT17_Item_*EmblemItem` 会从当前羁绊字典自动生成“纹章/转/转职”入口；缺少 trait 映射的纹章会保留英文 token 兜底（如 `Pulsefire Emblem`），不伪造中文名；`TFT5_Item_*Radiant` 会从普通装备别名自动生成“光明 + 装备名/俗称”入口，例如“暗星转”“观星者纹章”“光明蓝 buff”“光明泰坦”；Set17 幻灵战队装备、灵能特工改件、英雄专属神器和艾克异常道具也有 token-derived 中文兜底名，例如“战斗兔弩”“光明无人机改件”“阿狸神器”“艾克异常”。
   - 新增 `npm run audit:aliases`，默认读取本地 `.probe` 抓包审计当前 set 的英雄、羁绊、装备人工别名覆盖率，并可用 `--write` 生成 `CANDIDATE_*_ALIAS_OVERRIDES` 草稿；候选草稿只用于人工审核，不会自动写入主字典。
-  - 新增 `src/data/item-availability-overrides.js` 作为按 patch 维护的显式装备可用性清单；清单优先级高于动态 MetaTFT 行、本地种子状态、目录合并结果和调用方附加 denylist，当前已记录需求文档明确的 `TFT_Item_RunaansHurricane` 当前版本移除规则，并保留 reason/source 审计信息。
+  - 新增 `src/data/item-availability-overrides.js` 作为按 patch 维护的显式装备可用性清单；后续例外必须绑定明确 patch 和 season。已删除错误的永久 `TFT_Item_RunaansHurricane` 移除规则，当前身份和可用性改由同 patch 官方目录决定。
   - 新增 `npm run audit:items`，检查显式清单的必填字段、重复项和冲突状态，并用当前 `.probe/meta_items_expanded.json` 与合成动态行验证规则最终落为 `removed_or_legacy && current=false && obtainable=false`。
   - 小窗成功刷新 `/items` 后会把合并后的当前 patch 装备目录写入持久化 store；刷新失败或返回空目录时优先恢复同 patch 快照，只有没有快照才退回种子字典。恢复快照后仍会重新应用 `item-availability-overrides`，旧快照不能把分裂弓等硬移除项重新放行。
 - 实现装备官方简中本地化与 patch 更新流水线：
@@ -175,7 +188,7 @@
 
 ## 最新验证
 
-- `npm test`：187/187 通过。
+- `npm test`：194/194 通过（2026-07-12）。
 - `npm run smoke:comps`：最终版本通过，覆盖前四/登顶独立榜首、缓存复用、零 `unit_builds` 调用、小窗 HTTP 响应、核心英雄装备归属和原始名次桶不泄露。
 - `npm run smoke:small-window`：最终版本通过；热缓存 4ms、本地持久缓存 6ms。
 - `npm run smoke:comps:live`：最终版本通过；250 行 exact 数据、当前 cluster 定义、样本范围 6,446,912，聚合后 70 个稳定 cluster/指纹组。
@@ -279,10 +292,20 @@ availabilityPolicy=item-availability-overrides-only
 - 最终视觉截图保存在 `.cache/visual-smoke/`：装备为 `desktop-result.png`、`narrow-low-sample.png`、`narrow-empty-result.png`；阵容为 `comp-desktop.png`、`comp-narrow.png`、`comp-stale.png`、`comp-low-sample.png`、`comp-empty.png`。脚本用本地图块拦截 CDN，并通过 `--playwright-module` 使用 bundled Playwright 在本地无头 Edge 中完成全部断言。
 - `scripts/start-small-window.ps1 -NoBrowser -Port 17319` 可启动临时服务，通过 `/api/health` 检查后按 PID 清理。
 
+## 2026-07-12 对话式数据助手增量
+
+- 完成 P0 装备身份修复：`TFT_Item_RapidFireCannon -> 红霸符`、`TFT_Item_RunaansHurricane -> 海妖之怒`、`TFT_Item_MadredsBloodrazor -> 巨人杀手`；火炮、分裂弓/飓风、红叉/麦瑞德保留为历史别名。霞“红霸符 + 双海妖”进入普通装备候选、HTTP schema 和前端卡片。
+- 完成统一意图和约束来源模型。确定性解析覆盖英雄、星级、件数、已持有/排除/比较/指定装备、装备类别、段位区间、近 N 天、样本阈值、排序和四类核心意图；自由口语仍可由受控 LLM 补充，但统计数字只由本地八桶计算。
+- 完成单装备聚合榜、copyCount、覆盖率和常见搭配；无英雄的泛化“哪个装备最厉害”返回澄清。
+- 完成默认阵容稳定/低置信降级，统一查询与默认阵容样本门槛；多羁绊只选保守主羁绊子集，且明确 `/comps` 不接受 days/rank。
+- 完成 ChatGPT 风格小窗、对话 session、多轮 HTTP、阶段状态、条件标签、严格前三/差异备选、共同核心、来源/更新时间/cache/stale 风险。
+- 最新离线结果：`npm test` 194/194，`smoke:small-window` 通过（热缓存 2ms、本地重开 4ms），`smoke:comps`、`audit:items`、`audit:item-patch`、`audit:aliases` 通过。
+- 实际视觉检查：460px/360px 均无横向溢出；完整三件套、单装备榜、澄清、低样本、错误、stale、长会话截图保存在 `.cache/visual-smoke/`。裸 `smoke:visual` 因 Playwright 未安装而跳过。
+
 ## 当前限制
 
 - 装备 catalog 已能从 MetaTFT items 抓包生成，并已接入同 patch 的腾讯官网简中目录、Riot Data Dragon 英文回退、人工俗称覆盖、派生别名和覆盖审计。2026-07-11 实时动态装备为 179/179 官方简中，人工入口为 169/169；`TFT_Item_Artifact_CappaJuice` 已由腾讯官网 `version=16.13 / season=2026.S17` 确认为“帽子饮品”，同时保留 `Cappa Juice`。后续 patch 仍需重新刷新并审计，不能把本次满覆盖永久外推。
-- legacy/removed 判断已有分类规则和按 patch 的显式可用性清单，动态 API、种子目录、目录合并与调用方附加 denylist 都不能覆盖内置硬规则；当前清单只收录已由需求文档确认的 `TFT_Item_RunaansHurricane`，后续仍需在每次 set/patch 更新时运行 `npm run audit:items` 并人工维护新增移除项，不能凭 API token 猜测。
+- legacy/removed 判断已有分类规则和按 patch 的显式可用性清单；当前清单为空。未来规则必须绑定明确 patch/season，审计会拒绝 `patch: current` 和 `*`。当前官方目录决定 `RapidFireCannon -> 红霸符`、`RunaansHurricane -> 海妖之怒`、`MadredsBloodrazor -> 巨人杀手`，历史名称只进入别名。
 - 英雄/羁绊 API id 已能从 Explorer 聚合端点和 `/comps` 抓包动态生成到当前 set，并按 patch 持久化到 JSON/SQLite；刷新失败时可按实体侧恢复动态快照，`latest_cluster_info` 单独成功也能继续补目录。已有高置信中文别名覆盖文件和覆盖审计脚本；当前 `.probe` 英雄人工别名覆盖 62/62，羁绊覆盖 100/100。英雄专属 trait 和观星子类型已用低/中置信 token-derived 中文兜底名覆盖，后续版本变更时仍需用审计脚本复核。
 - `Default Context Builder` 已能消费真实 `/comps` 抓包结构，支持样本/前四/score/均名四种默认阵容策略，并保留前 3 个候选阵容用于展示“狙神霞/观星霞”这类多候选默认上下文；候选羁绊形态不同会进入 warning。`/comp_builds` 已接入为目标英雄/目标 cluster 的辅助装备构建参考，但最终推荐仍以 Explorer `unit_builds` 和本地过滤/排序为准。当前 `/comp_options` 若没有前四率字段，前四策略会按 score、样本数、均名兜底。默认模式会排除 traits 带 `UniqueTrait` 或 `Augment` 的明确专属玩法 cluster，仅在没有普通候选时降级使用；显式输入专属强化、英雄强化、赌狗、D牌/D卡、追三或 `reroll` 时优先选择特殊候选，且选择模式会隔离默认阵容缓存。该模块已接入缓存接口；当 fresh `/comps` 数据可用时，已按 cluster 指纹校验并失效旧默认阵容。SQLite schema/store 起步版已实现，但小窗默认仍使用 JSON store。
 - `MetaTFTClient` 已封装请求，服务入口也能消费真实响应结构；已提供实时 smoke，但常规测试仍以 `.probe` 抓包为准，避免非官方 API 与网络环境影响离线验证。

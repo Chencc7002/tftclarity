@@ -46,6 +46,10 @@ function validateOverrideShape(override, index, errors) {
   if (!override.reason || !override.source) {
     errors.push(`override[${index}] must include reason and source`);
   }
+  if (["current", "*"].includes(String(override.patch).trim().toLowerCase())) {
+    errors.push(`override[${index}] must bind to an explicit patch, not ${override.patch}`);
+  }
+  if (!override.season) errors.push(`override[${index}] is missing season`);
 }
 
 const options = parseArgs(process.argv.slice(2));

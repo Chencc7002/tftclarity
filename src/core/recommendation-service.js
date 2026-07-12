@@ -3,14 +3,10 @@ import {
   createCatalog
 } from "../data/static-data.js";
 import {
-  makeDefaultContextCacheKey,
+  makeCompCandidateCacheKey,
   makeQueryCacheKey
 } from "../data/cache-store.js";
 import {
-  normalizeCompsData,
-  normalizeCompBuildsResponse,
-  normalizeCompOptionsResponse,
-  normalizeLatestClusterInfoResponse,
   normalizeUnitBuildRows
 } from "../data/metatft-response-adapter.js";
 import {
@@ -19,18 +15,20 @@ import {
 } from "../data/domain-catalog.js";
 import { buildQueryContext } from "./context-builder.js";
 import { evaluateClarification } from "./clarification-policy.js";
-import {
-  normalizeDefaultContextStrategy,
-  normalizeSpecialContextMode,
-  selectDefaultContextForUnit,
-  validateDefaultContextCache
-} from "./default-context-builder.js";
 import { filterBuildRows } from "./item-policy-filter.js";
 import { parseQuery } from "./query-parser.js";
-import { planMetaTFTUnitBuilds } from "./query-planner.js";
+import { planMetaTFTCompCandidates, planMetaTFTUnitBuilds } from "./query-planner.js";
+import {
+  COMP_FILTER_SEMANTICS_VERSION,
+  createAppliedCompConstraint,
+  createUnavailableCompConstraint,
+  resolveExplicitComp
+} from "./comp-filter.js";
+import { buildDefaultCompContext } from "./default-context-builder.js";
 import { validateQueryContext } from "./query-validator.js";
 import { rankBuilds } from "./ranker.js";
 import { compareItemOptions, comparisonRankedBuilds } from "./item-comparison.js";
+import { aggregateUnitItemRankings } from "./item-ranking.js";
 import { formatRecommendation } from "./response-formatter.js";
 import { normalizeAlias } from "./normalizer.js";
 import {
@@ -80,6 +78,27 @@ function unavailableItemDecision(query, catalog) {
   };
 }
 
+function responseTypeForQuery(query, clarification = null) {
+  if (clarification?.needsClarification) return "clarification";
+  return query?.intent ?? "unit_build_rankings";
+}
+
+function itemLabel(apiName, catalog) {
+  const item = catalog.itemByApiName.get(apiName);
+  return item?.zhName ?? item?.shortName ?? apiName;
+}
+
+function formatItemRankingText(aggregation, query, catalog) {
+  const best = aggregation.rankings[0];
+  if (!best) return `没有单件装备达到样本阈值 ${query.minSamples}。`;
+  const stats = best.stats;
+  return [
+    `结论：${itemLabel(best.apiName, catalog)}在当前口径的单装备聚合中排名第一。`,
+    `证据：前四率 ${(stats.top4Rate * 100).toFixed(1)}% / 登顶率 ${(stats.winRate * 100).toFixed(1)}% / 均名 ${stats.avgPlacement.toFixed(2)} / 样本 ${stats.games}。`,
+    "口径：按合法完整三件套是否包含该装备聚合；同一组合中的重复装备只计一次组合样本。"
+  ].join("\n");
+}
+
 function preferencesFor(options) {
   return {
     ...DEFAULT_QUERY_OPTIONS,
@@ -96,20 +115,12 @@ function catalogFor(options = {}) {
   });
 }
 
-function specialContextModeFor(parsed, defaultContextOptions = {}) {
-  if (defaultContextOptions.specialContextMode !== undefined) {
-    return normalizeSpecialContextMode(defaultContextOptions.specialContextMode);
-  }
-  if (defaultContextOptions.allowSpecialContexts === true) return "include";
-
-  const input = String(parsed?.rawInput ?? "").toLowerCase();
-  return /(?:\u4e13\u5c5e(?:\u5f3a\u5316|\u73a9\u6cd5|\u9635\u5bb9)?|\u82f1\u96c4\u5f3a\u5316|\u8d4c\u72d7|\bd\s*(?:\u724c|\u5361)\b|\u8ffd\u4e09|reroll)/i.test(input)
-    ? "prefer"
-    : "exclude";
-}
-
 function sessionStoreFor(options) {
   return options.sessionStore ?? options.cacheStore ?? null;
+}
+
+function sessionKeyFor(options = {}) {
+  return String(options.sessionKey ?? SESSION_LAST_QUERY_KEY);
 }
 
 async function getStoreEntry(store, method, ...args) {
@@ -403,10 +414,18 @@ function inheritParsedFromSession(parsed, sessionValue) {
 
   next.unit = lastQuery.unit;
   inheritedKeys.push("unit");
+  if (!parsed.parser?.intentExplicit && lastQuery.intent) {
+    next.intent = lastQuery.intent;
+    inheritedKeys.push("intent");
+  }
   inheritArray("starLevel", "starLevel", "star_level");
   inheritScalar("itemCount", "itemCount", "item_count");
   if (!lastQuery.defaultContext) {
     inheritArray("traitFilters", "traitFilters", "trait_filters");
+  }
+  if (!next.compMention && lastQuery.comp?.status === "applied" && lastQuery.comp?.value?.selection === "explicit") {
+    next.comp = lastQuery.comp;
+    inheritedKeys.push("comp");
   }
   inheritArray("ownedItems", "ownedItems", "owned_items");
   inheritArray("excludedItems", "excludedItems", "excluded_items");
@@ -441,10 +460,14 @@ function inheritParsedFromSession(parsed, sessionValue) {
 
 function serializeQueryForSession(query) {
   return {
+    intent: query.intent,
     unit: query.unit,
     starLevel: query.starLevel,
     itemCount: query.itemCount,
     traitFilters: query.traitFilters,
+    comp: query.comp?.status === "applied" && query.comp?.value?.selection === "explicit"
+      ? query.comp
+      : null,
     ownedItems: query.ownedItems,
     excludedItems: query.excludedItems,
     itemPolicy: query.itemPolicy,
@@ -466,6 +489,145 @@ function serializeQueryForSession(query) {
   };
 }
 
+async function resolveCompConstraint(query, parsed, options, catalog) {
+  if (options.comp !== undefined) {
+    return { value: options.comp, cache: null, plan: null };
+  }
+
+  const explicitValue = parsed.comp?.value ?? parsed.compMention;
+  const explicitSource = parsed.sessionContext?.inheritedKeys?.includes("comp")
+    ? "conversation"
+    : "current_input";
+  const directExplicit = explicitValue
+    ? resolveExplicitComp(explicitValue, [], { unit: query.unit, catalog })
+    : null;
+  if (directExplicit) {
+    return {
+      value: createAppliedCompConstraint(directExplicit, {
+        selection: "explicit",
+        source: explicitSource
+      }),
+      cache: null,
+      plan: null
+    };
+  }
+
+  const plan = planMetaTFTCompCandidates(query);
+  const cacheStore = options.cacheStore ?? null;
+  const cacheKey = makeCompCandidateCacheKey({
+    unit: query.unit,
+    days: query.days,
+    rankFilter: query.rankFilter,
+    patch: query.patch,
+    queue: query.queue,
+    minSamples: query.minSamples,
+    semanticsVersion: COMP_FILTER_SEMANTICS_VERSION
+  });
+  let response = options.compCandidatesResponse;
+  let cache = { key: cacheKey, hit: false, stale: false };
+  const warnings = [];
+
+  if (response === undefined && !options.bypassDefaultContextCache) {
+    const cached = await getStoreEntry(cacheStore, "getDefaultContext", cacheKey);
+    if (cached?.value?.response !== undefined) {
+      response = cached.value.response;
+      cache = {
+        key: cacheKey,
+        hit: true,
+        stale: false,
+        updatedAt: cached.updatedAt,
+        expiresAt: cached.expiresAt
+      };
+    }
+  }
+
+  if (response === undefined && options.metaTFTClient) {
+    try {
+      response = typeof options.metaTFTClient.getCompCandidates === "function"
+        ? await options.metaTFTClient.getCompCandidates(plan)
+        : await options.metaTFTClient.getExactUnitsTraits2(plan.params);
+      const stored = await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, {
+        request: plan,
+        response,
+        source: "metatft",
+        semanticsVersion: COMP_FILTER_SEMANTICS_VERSION
+      }, { ttlMs: options.defaultContextTtlMs });
+      cache.updatedAt = stored?.updatedAt ?? response?.capture?.capturedAt ?? new Date().toISOString();
+      cache.expiresAt = stored?.expiresAt ?? null;
+    } catch (error) {
+      const stale = await getStoreEntry(cacheStore, "getDefaultContext", cacheKey, { allowExpired: true });
+      if (stale?.value?.response !== undefined) {
+        response = stale.value.response;
+        cache = {
+          key: cacheKey,
+          hit: true,
+          stale: true,
+          updatedAt: stale.updatedAt,
+          expiresAt: stale.expiresAt
+        };
+        warnings.push(`Comp 候选实时请求失败，已使用 ${stale.updatedAt} 的同口径过期缓存。`);
+      } else {
+        warnings.push(`Comp 候选请求失败：${error.message}`);
+      }
+    }
+  }
+
+  if (response === undefined) {
+    return {
+      value: createUnavailableCompConstraint({
+        reason: "candidate_fetch_failed",
+        stabilityThreshold: query.minSamples
+      }),
+      cache,
+      plan,
+      warnings,
+      error: explicitValue ? `未能解析用户指定的 Comp“${explicitValue}”` : null
+    };
+  }
+
+  const defaultComp = buildDefaultCompContext(response, {
+    unit: query.unit,
+    minSamples: query.minSamples,
+    catalog
+  });
+  const selection = defaultComp.selection;
+  if (explicitValue) {
+    const explicit = resolveExplicitComp(explicitValue, selection.candidates, {
+      unit: query.unit,
+      catalog
+    });
+    if (!explicit) {
+      return {
+        value: createUnavailableCompConstraint({
+          reason: "explicit_comp_not_found",
+          stabilityThreshold: query.minSamples
+        }),
+        cache,
+        plan,
+        warnings,
+        error: `未找到与“${explicitValue}”匹配且包含当前英雄的 Comp`
+      };
+    }
+    return {
+      value: createAppliedCompConstraint(explicit, {
+        selection: "explicit",
+        source: explicitSource
+      }),
+      cache,
+      plan,
+      warnings
+    };
+  }
+
+  return {
+    value: defaultComp.constraint,
+    cache,
+    plan,
+    warnings,
+    selection
+  };
+}
+
 function serializeResultIds(rankedBuilds) {
   return rankedBuilds
     .slice(0, 3)
@@ -476,148 +638,13 @@ async function writeLastQuerySession(result, options) {
   if (options.useSession === false) return null;
   if (!result.validation?.valid) return null;
 
-  return setStoreEntry(sessionStoreFor(options), "setSessionState", SESSION_LAST_QUERY_KEY, {
+  return setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
     query: serializeQueryForSession(result.query),
     lastResultIds: serializeResultIds(result.rankedBuilds),
     updatedAt: new Date().toISOString()
   }, {
     ttlMs: options.sessionTtlMs
   });
-}
-
-async function resolveDefaultContext(parsed, options) {
-  if (options.defaultContext !== undefined) {
-    return {
-      value: options.defaultContext,
-      cache: null
-    };
-  }
-
-  if (!parsed.unit || parsed.traitFilters?.length) {
-    return {
-      value: null,
-      cache: null
-    };
-  }
-
-  const preferences = preferencesFor(options);
-  const cacheStore = options.cacheStore ?? null;
-  const minClusterSamples = options.defaultContextOptions?.minClusterSamples ?? 100;
-  const defaultContextStrategy = normalizeDefaultContextStrategy(options.defaultContextOptions?.strategy);
-  const defaultContextOptions = {
-    ...(options.defaultContextOptions ?? {}),
-    specialContextMode: specialContextModeFor(parsed, options.defaultContextOptions)
-  };
-  const cacheKey = makeDefaultContextCacheKey({
-    unit: parsed.unit,
-    patch: parsed.patch ?? preferences.patch,
-    queue: parsed.queue ?? preferences.queue,
-    days: parsed.days ?? preferences.days,
-    rankFilter: parsed.rankFilter ?? preferences.rankFilter,
-    minClusterSamples,
-    strategy: defaultContextStrategy,
-    specialContextMode: defaultContextOptions.specialContextMode
-  });
-
-  const cached = options.bypassDefaultContextCache
-    ? null
-    : await getStoreEntry(cacheStore, "getDefaultContext", cacheKey);
-  if (cached) {
-    if (options.compsData) {
-      const normalizedCompsData = normalizeCompsData(options.compsData);
-      const validation = validateDefaultContextCache(
-        cached.value,
-        parsed.unit,
-        normalizedCompsData,
-        {
-          ...defaultContextOptions,
-          compBuildsProvided: Object.hasOwn(options.compsData, "compBuilds")
-        }
-      );
-      if (!validation.valid) {
-        const context = validation.currentContext;
-        if (context) {
-          await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, context, {
-            ttlMs: options.defaultContextTtlMs
-          });
-        }
-
-        return {
-          value: context,
-          cache: context
-            ? {
-              key: cacheKey,
-              hit: false,
-              invalidated: true,
-              invalidationReason: validation.reason,
-              previousClusterId: cached.value?.clusterId ?? null,
-              clusterId: context.clusterId ?? null
-            }
-            : null
-        };
-      }
-    }
-
-    return {
-      value: cached.value,
-      cache: {
-        key: cacheKey,
-        hit: true,
-        validated: Boolean(options.compsData),
-        updatedAt: cached.updatedAt,
-        expiresAt: cached.expiresAt
-      }
-    };
-  }
-
-  let context = null;
-  if (options.compsData) {
-    context = selectDefaultContextForUnit(parsed.unit, normalizeCompsData(options.compsData), defaultContextOptions);
-  } else if (options.compsClient) {
-    const [latestClusterInfo, compOptions] = await Promise.all([
-      options.compsClient.getLatestClusterInfo?.({
-        queue: preferences.queue,
-        patch: preferences.patch
-      }) ?? [],
-      options.compsClient.getCompOptions?.({
-        queue: preferences.queue,
-        patch: preferences.patch
-      }) ?? []
-    ]);
-    let compBuilds = [];
-    if (defaultContextOptions.useCompBuilds !== false && typeof options.compsClient.getCompBuilds === "function") {
-      try {
-        compBuilds = normalizeCompBuildsResponse(await options.compsClient.getCompBuilds({
-          queue: preferences.queue,
-          patch: preferences.patch
-        }));
-      } catch {
-        compBuilds = [];
-      }
-    }
-
-    context = selectDefaultContextForUnit(parsed.unit, {
-      clusterInfo: normalizeLatestClusterInfoResponse(latestClusterInfo),
-      compOptions: normalizeCompOptionsResponse(compOptions),
-      compBuilds
-    }, defaultContextOptions);
-  }
-
-  if (context) {
-    await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, context, {
-      ttlMs: options.defaultContextTtlMs
-    });
-  }
-
-  return {
-    value: context,
-    cache: context
-      ? {
-        key: cacheKey,
-        hit: false
-      }
-      : null
-  };
 }
 
 export function createRecommendationFromRows(input, responseOrRows, options = {}) {
@@ -629,7 +656,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
   const query = buildQueryContext(parsed, {
     catalog,
     preferences: options.preferences,
-    defaultContext: options.defaultContext
+    comp: options.comp
   });
   const validation = validateQueryContext(query, { catalog });
   const validatedQuery = {
@@ -651,6 +678,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 
   if (!validation.valid || clarification.blocking) {
     return {
+      type: responseTypeForQuery(validatedQuery, clarification),
       parsed,
       query: validatedQuery,
       validation,
@@ -667,6 +695,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
   const localDecision = unavailableItemDecision(validatedQuery, catalog);
   if (localDecision) {
     return {
+      type: responseTypeForQuery(validatedQuery),
       parsed,
       query: validatedQuery,
       validation,
@@ -682,17 +711,25 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 
   const rows = normalizeUnitBuildRows(responseOrRows);
   const filtered = filterBuildRows(rows, validatedQuery, { catalog });
+  const itemRanking = validatedQuery.intent === "unit_item_rankings"
+    ? aggregateUnitItemRankings(filtered.builds, validatedQuery)
+    : null;
   const comparison = compareItemOptions(filtered.builds, validatedQuery, { catalog });
-  const rankedBuilds = comparison
+  const rankedBuilds = itemRanking
+    ? []
+    : comparison
     ? comparisonRankedBuilds(comparison)
     : rankBuilds(filtered.builds, validatedQuery);
-  const text = formatRecommendation(rankedBuilds, validatedQuery, {
-    catalog,
-    warnings: filtered.warnings,
-    comparison
-  });
+  const text = itemRanking
+    ? formatItemRankingText(itemRanking, validatedQuery, catalog)
+    : formatRecommendation(rankedBuilds, validatedQuery, {
+      catalog,
+      warnings: filtered.warnings,
+      comparison
+    });
 
   return {
+    type: responseTypeForQuery(validatedQuery),
     parsed,
     query: validatedQuery,
     validation,
@@ -701,6 +738,14 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
     rows,
     filteredBuilds: filtered.builds,
     rankedBuilds,
+    itemRankings: itemRanking?.rankings ?? [],
+    itemRankingReferences: itemRanking?.references ?? [],
+    itemRankingMethodology: itemRanking ? {
+      methodology: itemRanking.methodology,
+      totalGames: itemRanking.totalGames,
+      completeBuildCount: itemRanking.completeBuildCount,
+      coverageReliable: itemRanking.coverageReliable
+    } : null,
     comparison,
     text
   };
@@ -801,7 +846,7 @@ export async function recommendForInput(input, options = {}) {
 
   const sessionEntry = options.useSession === false
     ? null
-    : await getStoreEntry(sessionStoreFor(options), "getSessionState", SESSION_LAST_QUERY_KEY);
+    : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options));
   const sessionMerge = inheritParsedFromSession(parsedInput, sessionEntry?.value);
   const parsed = sessionMerge.parsed;
   const parsedUnavailableItems = unavailableItemRecords(referencedItemApiNames(parsed), catalog);
@@ -809,24 +854,101 @@ export async function recommendForInput(input, options = {}) {
     unit: parsed.unit
   }, catalog, options);
   const hasUnresolvedEntityHints = (parsed.parser?.unresolvedEntityHints ?? []).length > 0;
-  const defaultContextResult = parsedUnavailableItems.length > 0 || hasUnresolvedEntityHints
-    ? { value: null, cache: null }
-    : await resolveDefaultContext(parsed, options);
-  const defaultContext = defaultContextResult.value;
+  const preflightQuery = buildQueryContext(parsed, {
+    catalog,
+    preferences: options.preferences
+  });
+  const preflightValidation = validateQueryContext(preflightQuery, { catalog });
+  const preflightValidatedQuery = {
+    ...preflightQuery,
+    validation: preflightValidation,
+    sessionContext: parsed.sessionContext ?? null,
+    warnings: [...preflightQuery.warnings, ...preflightValidation.warnings]
+  };
+  const entityCandidates = preflightEntityCandidates;
+  const preflightClarification = evaluateClarification(parsed, preflightValidatedQuery, preflightValidation, {
+    catalog,
+    entityCandidates
+  });
+
+  if (!preflightValidation.valid || preflightClarification.blocking) {
+    return {
+      type: responseTypeForQuery(preflightValidatedQuery, preflightClarification),
+      parsed,
+      query: preflightValidatedQuery,
+      validation: preflightValidation,
+      plan: null,
+      clarification: preflightClarification,
+      filteredBuilds: [],
+      rankedBuilds: [],
+      cache: {
+        session: {
+          inherited: sessionMerge.inherited,
+          inheritedKeys: sessionMerge.inheritedKeys,
+          updatedAt: sessionEntry?.updatedAt
+        },
+        compCandidates: null,
+        query: null
+      },
+      text: preflightClarification.needsClarification
+        ? preflightClarification.question
+        : `无法查询：${preflightValidation.errors.join("；")}`
+    };
+  }
+
+  const localDecision = unavailableItemDecision(preflightValidatedQuery, catalog);
+  if (localDecision) {
+    const result = {
+      type: responseTypeForQuery(preflightValidatedQuery),
+      parsed,
+      query: preflightValidatedQuery,
+      validation: preflightValidation,
+      plan: null,
+      clarification: preflightClarification,
+      localDecision,
+      rows: [],
+      filteredBuilds: [],
+      rankedBuilds: [],
+      cache: {
+        session: {
+          inherited: sessionMerge.inherited,
+          inheritedKeys: sessionMerge.inheritedKeys,
+          updatedAt: sessionEntry?.updatedAt
+        },
+        compCandidates: null,
+        query: null
+      },
+      text: localDecision.text
+    };
+    const sessionWrite = await writeLastQuerySession(result, options);
+    if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    return result;
+  }
+
+  const compResult = parsedUnavailableItems.length > 0 || hasUnresolvedEntityHints
+    ? { value: null, cache: null, warnings: [] }
+    : await resolveCompConstraint(preflightValidatedQuery, parsed, options, catalog);
   const query = buildQueryContext(parsed, {
     catalog,
     preferences: options.preferences,
-    defaultContext
+    comp: compResult.value
   });
   const validation = validateQueryContext(query, { catalog });
+  if (compResult.error) {
+    validation.valid = false;
+    validation.errors = [...validation.errors, compResult.error];
+  }
   const validatedQuery = {
     ...query,
     validation,
     sessionContext: parsed.sessionContext ?? null,
-    warnings: [...query.warnings, ...validation.warnings]
+    warnings: [
+      ...query.warnings,
+      ...validation.warnings,
+      ...(compResult.warnings ?? [])
+    ]
   };
   const plan = validation.valid ? planMetaTFTUnitBuilds(validatedQuery) : null;
-  const entityCandidates = preflightEntityCandidates;
   const clarification = evaluateClarification(parsed, validatedQuery, validation, {
     catalog,
     entityCandidates
@@ -834,6 +956,7 @@ export async function recommendForInput(input, options = {}) {
 
   if (!validation.valid || clarification.blocking) {
     return {
+      type: responseTypeForQuery(validatedQuery, clarification),
       parsed,
       query: validatedQuery,
       validation,
@@ -847,41 +970,13 @@ export async function recommendForInput(input, options = {}) {
           inheritedKeys: sessionMerge.inheritedKeys,
           updatedAt: sessionEntry?.updatedAt
         },
-        defaultContext: defaultContextResult.cache,
+        compCandidates: compResult.cache,
         query: null
       },
       text: clarification.needsClarification
         ? clarification.question
         : `无法查询：${validation.errors.join("；")}`
     };
-  }
-
-  const localDecision = unavailableItemDecision(validatedQuery, catalog);
-  if (localDecision) {
-    const result = {
-      parsed,
-      query: validatedQuery,
-      validation,
-      plan: null,
-      clarification,
-      localDecision,
-      rows: [],
-      filteredBuilds: [],
-      rankedBuilds: [],
-      cache: {
-        session: {
-          inherited: sessionMerge.inherited,
-          inheritedKeys: sessionMerge.inheritedKeys,
-          updatedAt: sessionEntry?.updatedAt
-        },
-        defaultContext: null,
-        query: null
-      },
-      text: localDecision.text
-    };
-    const sessionWrite = await writeLastQuerySession(result, options);
-    if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
-    return result;
   }
 
   const queryCacheKey = makeQueryCacheKey(validatedQuery);
@@ -909,7 +1004,7 @@ export async function recommendForInput(input, options = {}) {
     try {
       response = await options.metaTFTClient?.getUnitBuilds(plan);
       if (response !== undefined) {
-        await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
+        const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
           request: plan,
           response,
           source: "metatft",
@@ -917,6 +1012,14 @@ export async function recommendForInput(input, options = {}) {
         }, {
           ttlMs: options.queryTtlMs
         });
+        queryCache = {
+          ...queryCache,
+          updatedAt: stored?.updatedAt
+            ?? response.capture?.capturedAt
+            ?? response.capture?.captured_at
+            ?? new Date().toISOString(),
+          expiresAt: stored?.expiresAt ?? null
+        };
       }
     } catch (error) {
       const stale = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, {
@@ -944,9 +1047,15 @@ export async function recommendForInput(input, options = {}) {
     catalog,
     parsed,
     preferences: options.preferences,
-    defaultContext,
-    additionalWarnings
+    comp: validatedQuery.comp,
+    additionalWarnings: [...(compResult.warnings ?? []), ...additionalWarnings]
   });
+  result.sourceUpdatedAt = response.capture?.capturedAt
+    ?? response.capture?.captured_at
+    ?? queryCache.updatedAt
+    ?? options.sourceUpdatedAt
+    ?? null;
+  result.compCandidatePlan = compResult.plan ?? null;
 
   result.cache = {
     session: {
@@ -954,7 +1063,7 @@ export async function recommendForInput(input, options = {}) {
       inheritedKeys: sessionMerge.inheritedKeys,
       updatedAt: sessionEntry?.updatedAt
     },
-    defaultContext: defaultContextResult.cache,
+    compCandidates: compResult.cache,
     query: queryCache
   };
 

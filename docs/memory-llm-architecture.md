@@ -1,5 +1,32 @@
 # 记忆系统与大模型框架设计
 
+## 2026-07-12 Comp 上下文架构覆盖
+
+本节覆盖下文仍保留的旧 `default_context_cache`、`/comps cluster -> traits_list -> trait_filters` 设计。当前单英雄装备热路径为：
+
+```text
+规则/受控 LLM 解析 hero + 显式 Comp（可选）
+  -> 生成 hero/days/rank/patch/queue 基础口径
+  -> 无显式 Comp：exact_units_traits2 同口径候选查询
+  -> 只在达到稳定门槛的候选中选八桶样本最多者
+  -> 将完整 units_traits 变体签名展开成 unit_builds 的 sf AND 条件
+  -> 无稳定候选：unit_builds 不带 sf Comp 条件
+  -> 本地过滤、统计和排序
+```
+
+Comp 的身份和记忆规则：
+
+- Comp id 是 Data Explorer `units_traits` 完整变体签名；不是 `/comps` cluster id，也不是 trait 列表。
+- 用户显式 Comp 可作为 `source=current_input|conversation` 写入 session；只修改 days/rank 时可继承，但最终统计必须重查。
+- 自动 Comp 是 `source=system_default` 的单次派生条件，不写入 session。自动选择失败的 `not_available` 也不得被记成默认 Comp。
+- hero、days、rank、patch、queue 或影响样本口径的模式变化，会产生新的候选缓存键并重新选择。
+- 候选缓存键：`hero + days + rank + patch + queue + minStableSamples + compSemanticsVersion`。
+- 最终查询缓存键：完整请求条件 + `comp=<signature>` 或 `comp=none` + `compSemanticsVersion`。
+- stale 只允许复用完全相同候选/最终缓存键的旧数据，且必须在 HTTP/UI 标记；禁止用全局、低样本、特殊 Comp、trait 或澄清代替。
+- LLM 只可解析用户表达的 Comp 名称/签名，不选择候选、不计算样本、不生成最终 `sf` 参数。
+
+旧 `/comps` cluster 数据仍可服务全局 `comp_rankings`、目录和兼容诊断，但不再参与单英雄默认 Comp 补全。
+
 ## 1. 设计结论
 
 本产品不应该设计成“一个带长期记忆的聊天机器人”，而应该设计成：
@@ -157,7 +184,7 @@
 
 - 这是硬规则，不交给 LLM 判断。
 - 普通装备查询只允许 `category=ordinary_completed && current=true && obtainable=true`。
-- 例如当前版本没有“分裂弓”，即使 MetaTFT 返回 `TFT_Item_RunaansHurricane`，也必须剔除。
+- 当前 patch 官方目录决定同一 API ID 的当前身份：`TFT_Item_RunaansHurricane` 当前是普通可用装备“海妖之怒”，“分裂弓/飓风”只作为历史别名。只有绑定明确 patch/season 的人工可用性例外才允许覆盖目录，禁止永久 `patch: current` 黑名单。
 
 ### 2.5 查询缓存 Query Cache
 

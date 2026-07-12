@@ -1061,3 +1061,253 @@ pre {
     grid-column: 1 / -1;
   }
 }
+
+/* Conversational shell */
+.shell {
+  height: 100vh;
+  min-height: 560px;
+  padding: 10px;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.conversation {
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scroll-behavior: smooth;
+  padding: 6px 2px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.message {
+  min-width: 0;
+  display: grid;
+  gap: 5px;
+}
+
+.user-message {
+  align-self: flex-end;
+  width: min(88%, 370px);
+}
+
+.user-message .message-body {
+  padding: 10px 12px;
+  border-radius: 14px 14px 4px 14px;
+  background: var(--accent);
+  color: white;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.assistant-message {
+  align-self: stretch;
+}
+
+.assistant-message .message-body {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 4px 14px 14px 14px;
+  background: var(--panel);
+  box-shadow: 0 6px 18px rgba(31, 41, 35, 0.07);
+  overflow-wrap: anywhere;
+}
+
+.message-role {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.user-message .message-role {
+  text-align: right;
+}
+
+.welcome-message .message-body {
+  color: var(--muted);
+}
+
+.composer {
+  position: relative;
+  z-index: 4;
+  padding: 8px;
+  border-radius: 14px;
+  box-shadow: 0 -8px 30px rgba(31, 41, 35, 0.1);
+}
+
+.composer textarea {
+  min-height: 42px;
+  max-height: 126px;
+  resize: none;
+  border: 0;
+  background: transparent;
+}
+
+.composer-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.composer-actions button {
+  min-height: 32px;
+  padding: 0 10px;
+  font-size: 12px;
+}
+
+.composer-actions .send-button {
+  margin-left: auto;
+  min-width: 62px;
+}
+
+.settings-panel {
+  position: fixed;
+  z-index: 20;
+  inset: 54px max(8px, calc((100vw - 460px) / 2 + 8px)) 8px;
+  overflow-y: auto;
+  border-radius: 14px;
+}
+
+.advanced-query-settings {
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+}
+
+.advanced-query-settings > summary {
+  cursor: pointer;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.advanced-query-settings .controls {
+  margin-top: 9px;
+}
+
+.answer-summary {
+  margin-bottom: 10px;
+  font-weight: 750;
+  line-height: 1.5;
+}
+
+.condition-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  margin: 9px 0;
+}
+
+.condition-chip {
+  max-width: 100%;
+  min-height: 26px;
+  padding: 4px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: #f7faf7;
+  color: var(--muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
+.condition-chip[data-source="current_input"] {
+  border-color: #63a98d;
+  background: var(--accent-soft);
+  color: var(--accent-dark);
+}
+
+.condition-chip[data-source="conversation"] {
+  border-color: #8aa4c6;
+  background: #edf3fb;
+}
+
+.condition-chip[data-source="preference"] {
+  border-color: #c5a76e;
+  background: #fff8e9;
+}
+
+.progress-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.progress-step.active {
+  color: var(--accent-dark);
+  font-weight: 700;
+}
+
+.item-ranking-list {
+  display: grid;
+  gap: 8px;
+}
+
+.item-ranking-card {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: #fbfcfa;
+}
+
+.item-ranking-head {
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.item-ranking-head img {
+  width: 28px;
+  height: 28px;
+  border-radius: 5px;
+}
+
+.item-ranking-meta,
+.difference-note,
+.source-line,
+.risk-line,
+.locked-line,
+.core-line {
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.source-line,
+.risk-line {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed var(--line);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 379px) {
+  .shell {
+    padding: 8px;
+  }
+
+  .composer-actions {
+    gap: 4px;
+  }
+
+  .composer-actions button {
+    padding: 0 7px;
+    font-size: 11px;
+  }
+
+  .user-message {
+    width: 92%;
+  }
+
+  .stats {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}

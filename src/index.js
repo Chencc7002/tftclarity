@@ -25,7 +25,19 @@ export {
 export { evaluateClarification } from "./core/clarification-policy.js";
 export { buildQueryContext } from "./core/context-builder.js";
 export { validateQueryContext } from "./core/query-validator.js";
-export { planMetaTFTUnitBuilds, buildUrl } from "./core/query-planner.js";
+export { planMetaTFTCompCandidates, planMetaTFTUnitBuilds, buildUrl } from "./core/query-planner.js";
+export {
+  COMP_CANDIDATE_ENDPOINT,
+  COMP_FILTER_SEMANTICS_VERSION,
+  COMP_FINAL_ENDPOINT,
+  compStructuredFilterParams,
+  createAppliedCompConstraint,
+  createUnavailableCompConstraint,
+  normalizeCompCandidateRows,
+  parseCompSignature,
+  resolveExplicitComp,
+  selectStableCompCandidate
+} from "./core/comp-filter.js";
 export { calculatePlacementStats } from "./core/stats-calculator.js";
 export {
   COMP_METRICS,
@@ -44,6 +56,7 @@ export {
   stableSampleThreshold
 } from "./core/ranker.js";
 export { compareItemOptions, comparisonRankedBuilds } from "./core/item-comparison.js";
+export { aggregateUnitItemRankings } from "./core/item-ranking.js";
 export { formatRecommendation } from "./core/response-formatter.js";
 export {
   normalizeCompBuildsResponse,
@@ -106,6 +119,7 @@ export {
   DEFAULT_CACHE_TTL_MS,
   JsonFileCacheStore,
   MemoryCacheStore,
+  makeCompCandidateCacheKey,
   makeDefaultContextCacheKey,
   makeQueryCacheKey
 } from "./data/cache-store.js";
@@ -147,7 +161,7 @@ export function planQuery(input, options = {}) {
   const query = buildQueryContext(parsed, {
     catalog,
     preferences: options.preferences,
-    defaultContext: options.defaultContext
+    comp: options.comp
   });
   const validation = validateQueryContext(query, { catalog });
   const validatedQuery = {

@@ -69,18 +69,18 @@ export const ITEMS = [
   },
   {
     apiName: "TFT_Item_RapidFireCannon",
-    zhName: "疾射火炮",
-    shortName: "火炮",
-    aliases: ["火炮", "疾射火炮", "RFC", "rapidfirecannon"],
+    zhName: "红霸符",
+    shortName: "红霸符",
+    aliases: ["红霸符", "火炮", "疾射火炮", "RFC", "rapidfirecannon"],
     category: "ordinary_completed",
     current: true,
     obtainable: true
   },
   {
     apiName: "TFT_Item_MadredsBloodrazor",
-    zhName: "麦瑞德裂血手套",
-    shortName: "红叉",
-    aliases: ["麦瑞德", "裂血手套", "红叉", "madreds"],
+    zhName: "巨人杀手",
+    shortName: "巨人杀手",
+    aliases: ["巨人杀手", "麦瑞德", "裂血手套", "红叉", "madreds"],
     category: "ordinary_completed",
     current: true,
     obtainable: true
@@ -150,9 +150,12 @@ export const ITEMS = [
   },
   {
     apiName: "TFT_Item_RunaansHurricane",
-    zhName: "卢安娜的飓风",
-    shortName: "分裂弓",
-    aliases: ["分裂弓", "飓风", "卢安娜", "runaan"]
+    zhName: "海妖之怒",
+    shortName: "海妖之怒",
+    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "runaan"],
+    category: "ordinary_completed",
+    current: true,
+    obtainable: true
   }
 ];
 

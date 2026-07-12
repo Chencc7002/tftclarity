@@ -16,13 +16,18 @@ const state = {
   aliasHasMore: false,
   aliasQuery: "",
   aliasState: "",
-  aliasType: ""
+  aliasType: "",
+  conversationId: globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`,
+  currentController: null,
+  requestInFlight: false
 };
 
 const form = document.querySelector("#query-form");
 const queryInput = document.querySelector("#query-input");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
+const retryButton = document.querySelector("#retry-button");
+const stopButton = document.querySelector("#stop-button");
 const settingsButton = document.querySelector("#settings-button");
 const settingsPanel = document.querySelector("#settings-panel");
 const settingsClose = document.querySelector("#settings-close");
@@ -56,6 +61,19 @@ const cacheStatusEl = document.querySelector("#cache-status");
 const llmStatusEl = document.querySelector("#llm-status");
 const runtimeDetailEl = document.querySelector("#runtime-detail");
 let saveTimer = null;
+let activeResponseEl = null;
+
+function responseTarget() {
+  return activeResponseEl ?? resultEl;
+}
+
+function setResponseHtml(html) {
+  responseTarget().innerHTML = html;
+}
+
+function scrollConversation() {
+  resultEl.scrollTop = resultEl.scrollHeight;
+}
 
 function setStatus(text) {
   statusEl.textContent = text;
@@ -328,17 +346,17 @@ function renderCompRankings(data) {
   const references = data.references ?? [];
   const stale = data.cache?.query?.stale ? "过期缓存" : data.cache?.query?.hit ? "缓存" : "实时";
   if (!sections.length && !references.length) {
-    resultEl.innerHTML = `
+    setResponseHtml(`
       <div class="empty-state">
         <div>没有可用的阵容数据</div>
         <small>近${escapeHtml(data.query?.days ?? 3)}天 · 样本>=${escapeHtml(data.query?.minSamples ?? 500)} · 段位 ${escapeHtml(compRankLabel(data.query?.rankFilter))}</small>
         <small>未找到符合本地完整性规则的对局样本 · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
       </div>
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
-      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`;
+      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`);
     return;
   }
-  resultEl.innerHTML = `
+  setResponseHtml(`
     <div class="comp-overview">
       <strong>当前版本阵容榜</strong>
       <span>近${escapeHtml(data.query?.days ?? 3)}天 · 样本>=${escapeHtml(data.query?.minSamples ?? 500)} · ${escapeHtml(stale)}</span>
@@ -347,7 +365,7 @@ function renderCompRankings(data) {
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
     ${references.length ? `<section class="ranking-section low-sample-section"><h2>低样本参考（不进入排名）</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
-    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`;
+    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? "外部数据仅供参考")}</div>`);
 }
 
 function newResultId() {
@@ -450,6 +468,16 @@ function queryCacheLine(cache = {}) {
   return updatedAt ? `${label} / 更新 ${updatedAt}` : label;
 }
 
+function compConstraintLine(comp) {
+  if (comp?.status === "not_available") {
+    return "Comp：未限制 · 当前条件下没有稳定 Comp";
+  }
+  if (comp?.status !== "applied" || !comp.value) return "Comp：未限制";
+  return comp.value.selection === "explicit"
+    ? `Comp：${comp.value.name} · 用户指定`
+    : `Comp：${comp.value.name} · 系统补全，样本 ${comp.value.sampleCount}`;
+}
+
 function entityTypeLabel(type) {
   return {
     unit: "英雄",
@@ -508,9 +536,7 @@ function summaryLines(data) {
   const query = data.query ?? {};
   const traits = compactTraitList(query.traitNames);
   const cache = queryCacheLine(data.cache?.query);
-  const defaultSource = defaultContextLine(query.defaultContextSummary);
-  const defaultAlternatives = defaultContextAlternativesLine(query.defaultContextSummary);
-  const defaultCompBuild = defaultContextCompBuildLine(query.defaultContextSummary);
+  const comp = compConstraintLine(query.comp);
   const warnings = query.warnings?.length ? `提示：${query.warnings.length} 条` : null;
   const exclusions = query.excludedItemNames?.length
     ? `已排除：${query.excludedItemNames.join(" + ")}`
@@ -518,13 +544,128 @@ function summaryLines(data) {
 
   return [
     `<strong>${escapeHtml(query.starLevel?.join("/") ?? "-")}星${escapeHtml(query.unitName ?? "-")}</strong> / ${escapeHtml(traits)} / 样本>=${escapeHtml(query.minSamples ?? "-")}`,
+    escapeHtml(comp),
     `${escapeHtml(cache)} / ${escapeHtml(data.meta?.durationMs ?? 0)}ms`,
-    defaultSource,
-    defaultCompBuild,
-    defaultAlternatives,
     exclusions ? escapeHtml(exclusions) : null,
     warnings
   ].filter(Boolean).map((line) => `<div>${line}</div>`).join("");
+}
+
+function constraintSourceLabel(source) {
+  return {
+    current_input: "用户指定",
+    conversation: "沿用上轮",
+    preference: "偏好",
+    default_context: "阵容补全",
+    system_default: "系统默认",
+    user: "用户指定",
+    session: "沿用上轮",
+    default: "系统默认"
+  }[source] ?? source ?? "未知";
+}
+
+function itemPolicyChip(value) {
+  return {
+    ordinary_only: "普通装备",
+    include_radiant: "含光明装备",
+    include_artifact: "含神器",
+    include_special: "含特殊装备"
+  }[value] ?? value;
+}
+
+function rankChip(values = []) {
+  const labels = {
+    CHALLENGER: "王者", GRANDMASTER: "宗师", MASTER: "大师", DIAMOND: "钻石",
+    EMERALD: "翡翠", PLATINUM: "铂金", GOLD: "黄金", SILVER: "白银",
+    BRONZE: "青铜", IRON: "黑铁"
+  };
+  return values.map((value) => labels[value] ?? value).join("/");
+}
+
+function conditionChipValue(key, constraint, query) {
+  const value = constraint?.value;
+  if (key === "unit") return query.unitName ?? value;
+  if (key === "star_level") return `${(value ?? []).join("/")}星`;
+  if (key === "item_count") return `${value}件完整出装`;
+  if (key === "item_policy") return itemPolicyChip(value);
+  if (key === "rank_filter") return rankChip(value);
+  if (key === "days") return `近${value}天`;
+  if (key === "min_samples") return `样本≥${value}`;
+  if (key === "owned_items") return value?.length ? `已携带 ${query.ownedItemNames?.join(" + ") ?? value.join(" + ")}` : "已携带 无";
+  if (key === "excluded_items") return value?.length ? `排除 ${query.excludedItemNames?.join(" + ") ?? value.join(" + ")}` : null;
+  if (key === "trait_filters") return value?.length ? `羁绊 ${query.traitNames?.join(" + ") ?? value.join(" + ")}` : null;
+  if (key === "comp") {
+    if (constraint?.status === "not_available") return "未限制 Comp · 当前条件下没有稳定 Comp";
+    const comp = query.comp ?? constraint;
+    if (comp?.status !== "applied" || !comp.value) return "未限制 Comp";
+    return comp.value.selection === "explicit"
+      ? comp.value.name
+      : `${comp.value.name} · 样本 ${comp.value.sampleCount}`;
+  }
+  return null;
+}
+
+function conditionChips(data) {
+  const query = data.query ?? {};
+  const constraints = query.constraints ?? {};
+  const order = ["unit", "star_level", "rank_filter", "days", "comp", "item_policy", "owned_items", "excluded_items", "trait_filters", "min_samples"];
+  return `<div class="condition-chips">${order.map((key) => {
+    const constraint = constraints[key];
+    const label = conditionChipValue(key, constraint, query);
+    if (!constraint || !label) return "";
+    const sourceLabel = key === "comp"
+      ? constraint.status === "not_available"
+        ? null
+        : query.comp?.value?.selection === "explicit"
+          ? "用户指定"
+          : "系统补全"
+      : constraintSourceLabel(constraint.source);
+    return `<button type="button" class="condition-chip" data-condition-key="${escapeHtml(key)}" data-source="${escapeHtml(constraint.source)}" title="点击后用自然语言修改">${escapeHtml(label)}${sourceLabel ? ` · ${escapeHtml(sourceLabel)}` : ""}</button>`;
+  }).join("")}</div>`;
+}
+
+function sourceAndRisk(data) {
+  const source = data.source ?? {};
+  const updated = formatCacheUpdatedAt(source.updatedAt) ?? "更新时间不可用";
+  const risks = [...new Set([...(source.risks ?? []), ...(data.answer?.warnings ?? [])])];
+  return `
+    <div class="source-line">来源：${escapeHtml(source.provider ?? "MetaTFT")} · ${escapeHtml(source.endpoint ?? "未知端点")} · ${escapeHtml(updated)} · ${escapeHtml(source.cache ?? queryCacheLine(data.cache?.query))}</div>
+    ${source.compCandidates ? `<div class="source-line">Comp 候选：${escapeHtml(source.compCandidates.endpoint ?? "未知端点")} · ${escapeHtml(source.compCandidates.cache ?? "live")}${source.compCandidates.stale ? " · 过期风险" : ""}</div>` : ""}
+    ${risks.length ? `<div class="risk-line">风险：${risks.map(escapeHtml).join("；")}</div>` : ""}
+  `;
+}
+
+function renderItemRankings(data) {
+  const rankings = data.itemRankings ?? [];
+  if (!rankings.length) {
+    setResponseHtml(`<div class="answer-summary">${escapeHtml(data.answer?.summary ?? data.text ?? "无结果")}</div>${conditionChips(data)}${sourceAndRisk(data)}`);
+    return;
+  }
+  setResponseHtml(`
+    <div class="answer-summary">${escapeHtml(data.answer?.summary ?? data.text)}</div>
+    <div class="item-ranking-list">
+      ${rankings.slice(0, 5).map((item, index) => `
+        <article class="item-ranking-card">
+          <div class="item-ranking-head">
+            ${assetThumb(item.iconUrl, item.name, "tiny-item-icon")}
+            <strong>${index + 1}. ${escapeHtml(item.name)}</strong>
+            <span>${item.coverage === null ? "" : `${escapeHtml(item.coverage)}%覆盖`}</span>
+          </div>
+          <div class="stats">
+            ${metric("前四", `${item.stats.top4}%`)}
+            ${metric("登顶", `${item.stats.win}%`)}
+            ${metric("均名", item.stats.avg)}
+            ${metric("样本", item.stats.games)}
+          </div>
+          <div class="item-ranking-meta">常见搭配：${item.commonPairings?.length ? item.commonPairings.map((pairing) => `${pairing.items.map((entry) => escapeHtml(entry.name)).join(" + ")}（${pairing.games}）`).join("；") : "暂无"}</div>
+          ${item.copyCounts?.some((copy) => copy.copyCount > 1) ? `<div class="item-ranking-meta">重复件：${item.copyCounts.map((copy) => `${copy.copyCount}件 ${copy.stats.games}场`).join(" / ")}</div>` : ""}
+        </article>
+      `).join("")}
+    </div>
+    <div class="item-ranking-meta">统计口径：${escapeHtml(data.answer?.methodology ?? "按完整出装中的装备出现聚合")}</div>
+    ${conditionChips(data)}
+    ${sourceAndRisk(data)}
+  `);
 }
 
 function renderResult(data) {
@@ -539,16 +680,23 @@ function renderResult(data) {
     return;
   }
 
+  if (data.type === "unit_item_rankings") {
+    state.lastSuggestions = [];
+    state.lastEntityCandidates = [];
+    renderItemRankings(data);
+    return;
+  }
+
   if (data.clarification?.needsClarification) {
     state.lastSuggestions = data.clarification.suggestions ?? [];
     state.lastEntityCandidates = data.clarification.entityCandidates ?? [];
-    resultEl.innerHTML = `
+    setResponseHtml(`
       <div class="clarification-state">
         <strong>${escapeHtml(data.clarification.question)}</strong>
         ${renderEntityCandidates(state.lastEntityCandidates)}
         ${renderSuggestionButtons(state.lastSuggestions)}
       </div>
-    `;
+    `);
     return;
   }
 
@@ -556,16 +704,26 @@ function renderResult(data) {
   state.lastEntityCandidates = [];
 
   if (!data.cards?.length) {
-    resultEl.innerHTML = `
+    setResponseHtml(`
       <div class="empty-state">
         <div>${escapeHtml(data.text ?? "无结果")}</div>
         ${data.query ? `<div class="summary">${summaryLines(data)}</div>` : ""}
       </div>
-    `;
+    `);
     return;
   }
 
-  resultEl.innerHTML = data.cards.map((card, index) => `
+  const locked = data.lockedItems?.length
+    ? data.lockedItems.map((item) => item.name).join(" + ")
+    : "无";
+  const commonCore = data.commonCore?.length
+    ? data.commonCore.map((item) => item.name).join(" + ")
+    : null;
+  setResponseHtml(`
+    <div class="answer-summary">${escapeHtml(data.answer?.summary ?? data.text)}</div>
+    <div class="locked-line">已携带：${escapeHtml(locked)}</div>
+    ${commonCore ? `<div class="core-line">高频核心：${escapeHtml(commonCore)}（严格统计前三均出现）</div>` : ""}
+    ${data.cards.map((card, index) => `
     <article class="result-card${card.winner ? " best" : ""}">
       <div class="card-head">
         <div class="card-title-group">
@@ -581,17 +739,20 @@ function renderResult(data) {
         ${metric("均名", card.stats.avg)}
         ${metric("样本", card.stats.games)}
       </div>
+      ${card.difference ? `<div class="difference-note">相对推荐：${card.difference.removed?.length ? `替换 ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : "装备相同"}；前四 ${card.difference.top4Delta >= 0 ? "+" : ""}${card.difference.top4Delta}pp，样本 ${card.difference.gamesDelta >= 0 ? "+" : ""}${card.difference.gamesDelta}</div>` : ""}
       ${feedbackActions(index)}
-      ${index === 0 ? `<div class="summary">${summaryLines(data)}</div>` : ""}
     </article>
-  `).join("");
+    `).join("")}
+    ${conditionChips(data)}
+    ${sourceAndRisk(data)}
+  `);
 }
 
 function renderError(message) {
   state.lastResult = null;
   state.lastResultId = null;
   rawOutputEl.textContent = message;
-  resultEl.innerHTML = `<div class="error-state">${escapeHtml(message)}</div>`;
+  setResponseHtml(`<div class="error-state">${escapeHtml(message)}</div>`);
 }
 
 function aliasMeta(alias) {
@@ -854,24 +1015,72 @@ async function sendResultFeedback(sentiment, cardIndex) {
   return payload;
 }
 
+function appendUserMessage(input) {
+  const message = document.createElement("article");
+  message.className = "message user-message";
+  message.innerHTML = `<div class="message-role">你</div><div class="message-body">${escapeHtml(input)}</div>`;
+  resultEl.append(message);
+}
+
+function appendAssistantMessage() {
+  const message = document.createElement("article");
+  message.className = "message assistant-message";
+  message.innerHTML = `
+    <div class="message-role">TFT 助手</div>
+    <div class="message-body">
+      <div class="progress-steps">
+        <span class="progress-step active">理解条件</span>
+        <span class="progress-step">查询数据</span>
+        <span class="progress-step">计算排名</span>
+      </div>
+    </div>`;
+  resultEl.append(message);
+  return message.querySelector(".message-body");
+}
+
+function updateProgress(target, index) {
+  const steps = target?.querySelectorAll?.(".progress-step") ?? [];
+  steps.forEach((step, stepIndex) => step.classList.toggle("active", stepIndex === index));
+}
+
+function setRequestRunning(running) {
+  state.requestInFlight = running;
+  stopButton.classList.toggle("hidden", !running);
+  retryButton.disabled = running || !state.lastInput;
+}
+
 async function requestRecommendation(refresh = false) {
-  const input = queryInput.value.trim();
+  const input = queryInput.value.trim() || (refresh ? state.lastInput : "");
   if (!input) {
     renderError("请输入查询内容");
     return;
   }
 
   state.lastInput = input;
+  appendUserMessage(input);
+  activeResponseEl = appendAssistantMessage();
+  queryInput.value = "";
+  scrollConversation();
   setStatus(refresh ? "刷新中" : "查询中");
+  state.currentController?.abort();
+  const controller = new AbortController();
+  state.currentController = controller;
+  setRequestRunning(true);
+  const progressTimers = [
+    setTimeout(() => updateProgress(activeResponseEl, 1), 280),
+    setTimeout(() => updateProgress(activeResponseEl, 2), 720)
+  ];
 
   try {
     const response = await fetch("/api/recommend", {
       method: "POST",
+      signal: controller.signal,
       headers: {
         "content-type": "application/json"
       },
       body: JSON.stringify({
         input,
+        conversationId: state.conversationId,
         refresh,
         preferences: {
           minSamples: state.minSamples,
@@ -889,8 +1098,19 @@ async function requestRecommendation(refresh = false) {
     renderResult(data);
     setStatus(data.cache?.query?.stale ? "过期缓存" : data.cache?.query?.hit ? "缓存" : "完成");
   } catch (error) {
-    renderError(error.message);
-    setStatus("失败");
+    if (error.name === "AbortError") {
+      setResponseHtml('<div class="error-state">已停止本次查询。</div>');
+      setStatus("已停止");
+    } else {
+      renderError(error.message);
+      setStatus("失败");
+    }
+  } finally {
+    progressTimers.forEach(clearTimeout);
+    state.currentController = null;
+    setRequestRunning(false);
+    activeResponseEl = null;
+    scrollConversation();
   }
 }
 
@@ -932,6 +1152,23 @@ rankControl.addEventListener("change", () => {
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
+  requestRecommendation(false);
+});
+
+queryInput.addEventListener("keydown", (event) => {
+  if (event.key === "Enter" && !event.shiftKey) {
+    event.preventDefault();
+    if (!state.requestInFlight) requestRecommendation(false);
+  }
+});
+
+stopButton.addEventListener("click", () => {
+  state.currentController?.abort();
+});
+
+retryButton.addEventListener("click", () => {
+  if (!state.lastInput || state.requestInFlight) return;
+  queryInput.value = state.lastInput;
   requestRecommendation(false);
 });
 
@@ -982,6 +1219,12 @@ resultEl.addEventListener("click", async (event) => {
   }
 
   const suggestionButton = event.target.closest("button[data-suggestion-index]");
+  const conditionButton = event.target.closest("button[data-condition-key]");
+  if (conditionButton) {
+    queryInput.value = `修改${conditionButton.textContent.split("·")[0].trim()}：`;
+    queryInput.focus();
+    return;
+  }
   if (!suggestionButton) return;
   const suggestion = state.lastSuggestions[Number(suggestionButton.dataset.suggestionIndex)];
   if (!suggestion) return;
@@ -995,10 +1238,14 @@ refreshButton.addEventListener("click", () => {
 
 clearButton.addEventListener("click", async () => {
   await fetch("/api/session/clear", {
-    method: "POST"
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ conversationId: state.conversationId })
   });
+  state.currentController?.abort();
+  state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   rawOutputEl.textContent = "";
-  resultEl.innerHTML = '<div class="empty-state">待查询</div>';
+  resultEl.innerHTML = '<article class="message assistant-message welcome-message"><div class="message-role">TFT 助手</div><div class="message-body">新会话已开始。直接问我英雄出装、单件装备或阵容排行。</div></article>';
   setStatus("已清空");
 });
 

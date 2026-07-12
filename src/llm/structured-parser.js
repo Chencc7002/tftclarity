@@ -1,6 +1,11 @@
 const VALID_INTENTS = new Set([
   "unit_best_3_items",
   "unit_item_availability",
+  "unit_build_rankings",
+  "unit_item_rankings",
+  "unit_build_completion",
+  "unit_item_comparison",
+  "clarification",
   "comp_rankings"
 ]);
 
@@ -21,7 +26,8 @@ const VALID_ITEM_POLICIES = new Set([
 const VALID_SORTS = new Set([
   "top4_first",
   "win_first",
-  "robust_first"
+  "robust_first",
+  "avg_first"
 ]);
 
 const VALID_RANKS = new Set([

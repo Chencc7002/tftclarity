@@ -50,6 +50,18 @@ Riot Data Dragon 的 `zh_CN/tft-item.json` 及 CommunityDragon 对应 `zh_cn/zh_
 
 `TFT_Item_Artifact_CappaJuice` 在当前腾讯官方目录中的简中名为“帽子饮品”；Riot Data Dragon 英文名为 `Cappa Juice`。因此当前快照使用“帽子饮品”作为 canonical 中文名，并保留 `Cappa Juice` 英文别名。
 
+## 当前 ID 复用规则
+
+同一个 Riot API ID 可能跨赛季复用，不能靠旧人工名称推断当前身份。当前目录已确认：
+
+```text
+TFT_Item_RapidFireCannon  -> 红霸符
+TFT_Item_RunaansHurricane -> 海妖之怒（普通、当前、可用）
+TFT_Item_MadredsBloodrazor -> 巨人杀手
+```
+
+“火炮”“分裂弓/飓风”“红叉/麦瑞德”只作为历史别名。人工 availability override 必须绑定明确 patch 和 season；`npm run audit:items` 会拒绝 `patch: current`、`patch: *` 或缺少 season 的规则。官方目录优先于人工 canonical 名，手工配置只维护俗称、拼音、缩写和经过审核的版本例外。
+
 ## 刷新流程
 
 离线 fixture 或预先下载的源文件：

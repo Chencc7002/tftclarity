@@ -1,4 +1,6 @@
-# 下一阶段开发 Agent Prompt
+# 下一阶段开发 Agent Prompt（历史阶段）
+
+> 当前下一阶段目标已更新为“对话式数据助手”。请优先阅读并执行 [`next-stage-conversational-development.md`](./next-stage-conversational-development.md)。本文保留为上一阶段“阵容排行榜 + 图标化展示”的历史开发约束。
 
 你现在接手项目：云顶之弈局内数据检索 Agent / 小窗插件。
 

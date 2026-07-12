@@ -156,6 +156,16 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
   }
 
   if (!query.unit) {
+    if (query.intent === "unit_item_rankings") {
+      return buildClarification(
+        "missing_unit_for_item_rankings",
+        "想看哪个英雄的单装备表现？装备强度会随英雄和阵容变化。",
+        {
+          suggestions: catalog.units.slice(0, 5).map((unit) => `${unit.zhName ?? unit.apiName}哪个单件装备表现最好？`),
+          entityCandidates: unitCandidates
+        }
+      );
+    }
     if (ownedItems.length > 0 || hasEntityMatch(parsed, "item")) {
       const names = itemDisplayNames(ownedItems, catalog);
       return buildClarification(

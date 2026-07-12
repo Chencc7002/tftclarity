@@ -1,3 +1,27 @@
+// Legacy /comps cluster helpers retained for global composition metadata and
+// backward-compatible diagnostics. Single-unit recommendations no longer use
+// clusters or traits as their automatic context; see comp-filter.js instead.
+
+import {
+  createAppliedCompConstraint,
+  createUnavailableCompConstraint,
+  selectStableCompCandidate
+} from "./comp-filter.js";
+
+export function buildDefaultCompContext(response, options = {}) {
+  const selection = selectStableCompCandidate(response, options);
+  return {
+    selection,
+    constraint: selection.candidate
+      ? createAppliedCompConstraint(selection.candidate, { selection: "automatic" })
+      : createUnavailableCompConstraint({
+        reason: "no_stable_candidate",
+        stabilityThreshold: selection.stabilityThreshold,
+        sourceEndpoint: selection.sourceEndpoint
+      })
+  };
+}
+
 function listFromApiValue(value) {
   if (!value) return [];
   if (Array.isArray(value)) return value;
@@ -112,6 +136,13 @@ function specialContextTraits(traits = []) {
   return traits.filter((trait) => /(?:UniqueTrait|Augment)(?:_|$)/i.test(String(trait)));
 }
 
+function primaryTraitFilters(traits = [], limit = 2) {
+  const eligible = traits.filter((trait) => !/(?:UniqueTrait|Augment)(?:_|$)/i.test(String(trait)));
+  const generic = /(?:RangedTrait|MeleeTrait|ManaTrait|SummonTrait|AssassinTrait|Class)(?:_|$)/i;
+  return [...eligible.filter((trait) => !generic.test(String(trait))), ...eligible.filter((trait) => generic.test(String(trait)))]
+    .slice(0, Math.max(1, limit));
+}
+
 function compareDefaultContextCandidates(strategy, a, b) {
   if (strategy === "top4") {
     if (b.top4Rate !== a.top4Rate) return b.top4Rate - a.top4Rate;
@@ -150,7 +181,7 @@ function summarizeCandidate(candidate = {}) {
     compName: candidate.compName,
     units: candidate.units,
     traits: candidate.traits,
-    traitFilters: candidate.traits,
+    traitFilters: candidate.traitFilters ?? primaryTraitFilters(candidate.traits),
     sourceEndpoint: candidate.sourceEndpoint,
     count: candidate.count,
     score: candidate.score,
@@ -301,6 +332,7 @@ export function selectDefaultContextForUnit(unitApiName, data = {}, options = {}
         compName: option.comp_name ?? option.name_string ?? info?.name_string ?? null,
         units,
         traits,
+        traitFilters: primaryTraitFilters(traits, options.maxTraitFilters ?? 2),
         count,
         score,
         avg,
@@ -311,13 +343,16 @@ export function selectDefaultContextForUnit(unitApiName, data = {}, options = {}
       };
     })
     .filter((candidate) => candidate.units.includes(unitApiName))
-    .filter((candidate) => candidate.count >= minClusterSamples);
+    .filter((candidate) => candidate.count > 0);
 
   allCandidates.sort((a, b) => compareDefaultContextCandidates(strategy, a, b));
 
-  const specialCandidates = allCandidates.filter((candidate) => candidate.specialContext);
-  const ordinaryCandidates = allCandidates.filter((candidate) => !candidate.specialContext);
-  let candidates = allCandidates;
+  const stableCandidates = allCandidates.filter((candidate) => candidate.count >= minClusterSamples);
+  const selectionPool = stableCandidates.length > 0 ? stableCandidates : allCandidates;
+
+  const specialCandidates = selectionPool.filter((candidate) => candidate.specialContext);
+  const ordinaryCandidates = selectionPool.filter((candidate) => !candidate.specialContext);
+  let candidates = selectionPool;
   let specialContextFallback = false;
 
   if (specialContextMode === "prefer" && specialCandidates.length) {
@@ -333,9 +368,11 @@ export function selectDefaultContextForUnit(unitApiName, data = {}, options = {}
     return {
       found: false,
       traitFilters: [],
-      warning: "未找到稳定主流阵容，未补羁绊"
+      warning: "没有找到包含目标英雄的有效阵容，未补羁绊"
     };
   }
+
+  const lowConfidence = stableCandidates.length === 0;
 
   const context = {
     found: true,
@@ -343,7 +380,7 @@ export function selectDefaultContextForUnit(unitApiName, data = {}, options = {}
     compName: selected.compName,
     units: selected.units,
     traits: selected.traits,
-    traitFilters: selected.traits,
+    traitFilters: selected.traitFilters,
     sourceEndpoint: selected.sourceEndpoint,
     strategy,
     specialContextMode,
@@ -358,15 +395,31 @@ export function selectDefaultContextForUnit(unitApiName, data = {}, options = {}
     score: selected.score,
     avg: selected.avg,
     top4Rate: selected.top4Rate ?? null,
+    stabilityThreshold: minClusterSamples,
+    stable: !lowConfidence,
+    lowConfidence,
+    confidence: lowConfidence ? 0.62 : 0.9,
+    sourceScope: {
+      endpoint: "tft-comps-api/comp_options",
+      supportsDays: false,
+      supportsRank: false,
+      note: "/comps 默认阵容候选未按 Explorer 的天数和段位条件过滤"
+    },
     compBuilds: summarizeCompBuildEvidence(unitApiName, selected.clusterId, compBuilds, options.compBuildLimit ?? 3),
     candidates: candidates.slice(0, candidateLimit).map(summarizeCandidate),
     alternatives: candidates
       .filter((candidate) => candidate.clusterId !== selected.clusterId)
       .slice(0, Math.max(0, candidateLimit - 1))
       .map(summarizeCandidate),
-    sourceDescription: strategySourceDescription(strategy)
+    sourceDescription: `${strategySourceDescription(strategy)}；该 /comps 口径未按 days/rank 过滤`
   };
   const warnings = [];
+  if (lowConfidence) {
+    warnings.push(`没有阵容达到稳定门槛 ${minClusterSamples}，已采用样本最高的有效候选（${selected.count} 场）作为低置信默认阵容。`);
+  }
+  if (selected.traitFilters.length < selected.traits.length) {
+    warnings.push(`Explorer 仅采用 ${selected.traitFilters.length} 个主要羁绊，未把阵容全部 ${selected.traits.length} 个标签作为强过滤条件。`);
+  }
   if (context.excludedSpecialCandidateCount > 0) {
     warnings.push(`\u5df2\u6392\u9664 ${context.excludedSpecialCandidateCount} \u4e2a\u5e26\u660e\u786e\u4e13\u5c5e\u73a9\u6cd5\u6807\u8bb0\u7684\u5019\u9009\u9635\u5bb9\u3002`);
   }

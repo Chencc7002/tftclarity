@@ -139,6 +139,12 @@ export class MetaTFTClient {
     return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
   }
 
+  async getCompCandidates(plan) {
+    if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
+    const url = buildUrl(this.baseUrl, plan);
+    return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
+  }
+
   async getItems(params = {}) {
     return this.#get("/tft-explorer-api/items", params);
   }

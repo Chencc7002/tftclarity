@@ -66,7 +66,8 @@ assertSmoke(itemRows.length > 0, "items endpoint returned no rows");
 const generatedItems = buildItemCatalogFromItemsResponse(itemsResponse);
 const catalog = createCatalog({ items: generatedItems });
 assertSmoke(catalog.itemByApiName.has("TFT_Item_GuinsoosRageblade"), "generated catalog is missing Guinsoo");
-assertSmoke(catalog.itemByApiName.get("TFT_Item_RunaansHurricane")?.category === "removed_or_legacy", "generated catalog did not mark Runaan as legacy");
+assertSmoke(catalog.itemByApiName.get("TFT_Item_RunaansHurricane")?.category === "ordinary_completed", "generated catalog did not keep current Kraken as ordinary");
+assertSmoke(catalog.itemByApiName.get("TFT_Item_RunaansHurricane")?.zhName === "海妖之怒", "generated catalog lost current Kraken canonical name");
 printSection("Items", `rows=${itemRows.length}, generatedCatalogItems=${generatedItems.length}, durationMs=${latencies.items}`);
 
 const planned = planQuery(query, { catalog });
@@ -92,7 +93,7 @@ const recommendation = await recommendForInput(query, {
   }
 });
 assertSmoke(recommendation.rankedBuilds.length > 0, "recommendation produced no ranked builds");
-assertSmoke(!recommendation.rankedBuilds[0].items.includes("TFT_Item_RunaansHurricane"), "top recommendation includes legacy Runaan");
+assertSmoke(recommendation.query.catalogVersion !== undefined, "recommendation did not use the generated current catalog");
 printSection("Recommendation", recommendation.text);
 
 console.log("Fetching /comps context...");

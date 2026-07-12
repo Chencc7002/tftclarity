@@ -42,7 +42,7 @@ Rules:
 - Put items the player explicitly rejects (for example, "不要羊刀") in `excluded_items`, never in `owned_items`.
 - Use `needs_clarification=true` only when the query cannot be safely executed without user choice.
 - Leave unknown or unsupported fields empty instead of guessing.
-- Valid `intent` values are `unit_best_3_items`, `unit_item_availability`, and `comp_rankings`.
+- Valid `intent` values are `unit_build_rankings`, `unit_item_rankings`, `unit_build_completion`, `unit_item_comparison`, `unit_item_availability`, `clarification`, and `comp_rankings`. `unit_best_3_items` remains a legacy-compatible alias for `unit_build_rankings`.
 - For `comp_rankings`, leave all entity mentions and single-unit item constraints empty. Use only `top4_rate`, `win_rate`, `avg_placement`, or `popularity` in `metrics`, and always return a `limit` from 1-10. Parse only; never generate, rank, or score comps.
 - For non-comp intents, leave `metrics` empty and `limit` null.
 - Valid `item_policy` values are `ordinary_only`, `include_radiant`, `include_artifact`, and `include_special`.

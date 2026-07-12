@@ -25,11 +25,35 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_RapidFireCannon",
-    zhName: "疾射火炮",
-    shortName: "火炮",
-    aliases: ["火炮", "疾射火炮", "rfc", "rapid firecannon", "rapid fire cannon"],
+    zhName: "红霸符",
+    shortName: "红霸符",
+    aliases: ["红霸符", "火炮", "疾射火炮", "rfc", "rapid firecannon", "rapid fire cannon"],
     confidence: 1,
-    source: "manual"
+    source: "manual_historical_aliases"
+  },
+  {
+    apiName: "TFT_Item_RunaansHurricane",
+    zhName: "海妖之怒",
+    shortName: "海妖之怒",
+    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "runaan", "runaan's hurricane"],
+    confidence: 1,
+    source: "manual_historical_aliases"
+  },
+  {
+    apiName: "TFT_Item_MadredsBloodrazor",
+    zhName: "巨人杀手",
+    shortName: "巨人杀手",
+    aliases: ["巨人杀手", "红叉", "麦瑞德", "裂血手套", "madreds"],
+    confidence: 1,
+    source: "manual_historical_aliases"
+  },
+  {
+    apiName: "TFT_Item_Artifact_RapidFirecannon",
+    zhName: "疾射火炮",
+    shortName: "神器火炮",
+    aliases: ["神器火炮", "火炮神器", "artifact rapid firecannon"],
+    confidence: 1,
+    source: "manual_current_artifact_alias"
   },
   {
     apiName: "TFT_Item_Bloodthirster",
