@@ -21,59 +21,74 @@ function parseItemCount(input) {
 
 function parseMinSamples(input) {
   const normalized = normalizeText(input);
-  const match = normalized.match(/样本(?:>=|大于等于|不少于|至少)?(\d{1,5})/);
+  const match = normalized.match(/样本(?:>=|大于等于|不少于|至少)?(\d{1,6})/);
   return match ? Number(match[1]) : undefined;
 }
 
-const RANK_ORDER = Object.freeze([
-  "IRON", "BRONZE", "SILVER", "GOLD", "PLATINUM",
-  "EMERALD", "DIAMOND", "MASTER", "GRANDMASTER", "CHALLENGER"
-]);
+const RANK_ORDER = [
+  "CHALLENGER",
+  "GRANDMASTER",
+  "MASTER",
+  "DIAMOND",
+  "EMERALD",
+  "PLATINUM",
+  "GOLD",
+  "SILVER",
+  "BRONZE",
+  "IRON"
+];
 
-const RANK_ALIASES = Object.freeze([
-  ["黑铁", "IRON"], ["青铜", "BRONZE"], ["白银", "SILVER"],
-  ["黄金", "GOLD"], ["铂金", "PLATINUM"], ["翡翠", "EMERALD"],
-  ["钻石", "DIAMOND"], ["大师", "MASTER"], ["宗师", "GRANDMASTER"],
-  ["王者", "CHALLENGER"]
-]);
+const RANK_ALIASES = [
+  ["CHALLENGER", /(?:王者|最强王者|challenger)/i],
+  ["GRANDMASTER", /(?:宗师|\bgrandmaster\b)/i],
+  ["MASTER", /(?:大师|\bmaster\b)/i],
+  ["DIAMOND", /(?:钻石|diamond)/i],
+  ["EMERALD", /(?:翡翠|emerald)/i],
+  ["PLATINUM", /(?:铂金|白金|platinum)/i],
+  ["GOLD", /(?:黄金|gold)/i],
+  ["SILVER", /(?:白银|silver)/i],
+  ["BRONZE", /(?:青铜|bronze)/i],
+  ["IRON", /(?:黑铁|iron)/i]
+];
 
-function rankAtOrAbove(rank) {
-  const index = RANK_ORDER.indexOf(rank);
-  return index < 0 ? [] : RANK_ORDER.slice(index).reverse();
-}
-
-function rankRange(from, to) {
-  const start = RANK_ORDER.indexOf(from);
-  const end = RANK_ORDER.indexOf(to);
-  if (start < 0 || end < 0) return [];
-  return RANK_ORDER.slice(Math.min(start, end), Math.max(start, end) + 1).reverse();
+function rankMentions(input) {
+  const text = normalizeText(input);
+  return RANK_ALIASES
+    .filter(([, pattern]) => pattern.test(text))
+    .map(([rank]) => rank);
 }
 
 export function parseRankFilter(input) {
-  const normalized = normalizeText(input);
-  const mentions = RANK_ALIASES.filter(([label]) => normalized.includes(label));
-  if (!mentions.length) return undefined;
-  const range = normalized.match(/(黑铁|青铜|白银|黄金|铂金|翡翠|钻石|大师|宗师|王者)(?:到|至|-)(黑铁|青铜|白银|黄金|铂金|翡翠|钻石|大师|宗师|王者)/);
-  if (range) {
-    const from = RANK_ALIASES.find(([label]) => label === range[1])?.[1];
-    const to = RANK_ALIASES.find(([label]) => label === range[2])?.[1];
-    return rankRange(from, to);
+  const text = normalizeText(input);
+  const mentions = rankMentions(text);
+  if (mentions.length === 0) return undefined;
+
+  const indexes = mentions.map((rank) => RANK_ORDER.indexOf(rank));
+  if (/(?:以上|及以上|或以上|往上|起步)/.test(text)) {
+    const lowestIncluded = Math.max(...indexes);
+    return RANK_ORDER.slice(0, lowestIncluded + 1);
   }
-  const [label, rank] = mentions[0];
-  if (normalized.includes(`${label}以上`) || normalized.includes(`${label}及以上`)) {
-    return rankAtOrAbove(rank);
+  if (/(?:以下|及以下|或以下|往下)/.test(text)) {
+    const highestIncluded = Math.min(...indexes);
+    return RANK_ORDER.slice(highestIncluded);
   }
-  if (normalized.includes(`只看${label}`) || normalized.includes(`仅看${label}`)) return [rank];
-  return mentions.length === 1 ? [rank] : uniqueValues(mentions.map(([, value]) => value));
+  if (mentions.length >= 2 && /(?:到|至|~|～|-)/.test(text)) {
+    const start = Math.min(...indexes);
+    const end = Math.max(...indexes);
+    return RANK_ORDER.slice(start, end + 1);
+  }
+  return uniqueValues(mentions);
 }
 
 export function parseDays(input) {
-  const normalized = normalizeText(input);
-  const match = normalized.match(/(?:近|最近)(\d{1,2}|一|二|三|两|七|十四|三十)天/);
-  if (!match) return /(?:今天|近一天|最近一天)/.test(normalized) ? 1 : undefined;
-  const chinese = { 一: 1, 二: 2, 两: 2, 三: 3, 七: 7, 十四: 14, 三十: 30 };
-  const value = Number(match[1]) || chinese[match[1]];
-  return Number.isInteger(value) && value >= 1 && value <= 30 ? value : undefined;
+  const text = normalizeText(input);
+  const match = text.match(/(?:近|最近|过去)?(\d{1,2}|一|二|三|两|七|十四|三十)天/);
+  if (match) {
+    const chinese = { 一: 1, 二: 2, 两: 2, 三: 3, 七: 7, 十四: 14, 三十: 30 };
+    const days = Number(match[1]) || chinese[match[1]];
+    return days >= 1 && days <= 30 ? days : undefined;
+  }
+  return /(?:今天|近一天|最近一天|过去一天)/.test(text) ? 1 : undefined;
 }
 
 export function parseCompMention(input) {
@@ -143,6 +158,16 @@ function inferIntent(input, details = {}) {
   if ((details.ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized)) {
     return "unit_build_completion";
   }
+  if (/(?:装备|出装|神装|怎么带|带什么|给什么|合成|配方)/.test(normalized)) {
+    return "unit_build_rankings";
+  }
+  if (
+    /(?:阵容|阵容榜|上分阵容|热门体系)/.test(normalized)
+    && /(?:推荐|热门|排行|排名|强势|上分|哪些|什么)/.test(normalized)
+  ) {
+    return "comp_rankings";
+  }
+  if (isCompRankingInput(input)) return "comp_rankings";
   return "unit_build_rankings";
 }
 
@@ -156,8 +181,8 @@ function hasExplicitIntent(input, comparison, ownedItems) {
 function exclusionFragments(input) {
   const normalized = normalizeText(input);
   const fragments = [];
-  const prefixPattern = /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要)([^，。！？?；;]*)/g;
-  const suffixPattern = /([^，。！？?；;]{1,32}?)(?:都)?(?:不要|不带了|不用了|排除掉|剔除掉|去掉|换掉)(?:了)?(?=[，。！？?；;]|$)/g;
+  const prefixPattern = /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要)([^,，。！？?；;]*)/g;
+  const suffixPattern = /([^,，。！？?；;]{1,32}?)(?:都)?(?:不要|不带了|不用了|排除掉|剔除掉|去掉|换掉)(?:了)?(?=[,，。！？?；;]|$)/g;
 
   for (const match of normalized.matchAll(prefixPattern)) {
     if (match[1]) fragments.push(normalizeAlias(match[1]));
@@ -183,7 +208,11 @@ function hasExclusionIntent(input) {
 
 function parseComparison(input, entities, excludedItems = []) {
   const normalized = normalizeText(input);
-  const requested = /(比较|对比|哪个(?:更)?好|哪个更强|哪件(?:更)?好|谁更好|更适合|二选一|还是)/.test(normalized);
+  const relationshipRequested = /(比较|对比|哪个(?:更)?好|哪个更强|哪件(?:更)?好|谁更好|谁更强|更适合|二选一|还是|选一个|选哪个|选择哪个|\bvs\.?\b)/i.test(normalized);
+  const itemContext = entities.items.length > 0
+    || /(?:装备|出装|神器|纹章|特殊装备|铁砧)/.test(normalized)
+    || (entities.units.length === 1 && /(?:还是|二选一|\bvs\.?\b)/i.test(normalized));
+  const requested = relationshipRequested && itemContext;
   const excluded = new Set(excludedItems);
   const ownership = requested
     ? normalized.match(/(?:已经有|已有|有了|带着|拿了|锁定|有)(.{1,32}?)(?=，|,|。|；|;|然后|比较|对比|$)/)
@@ -205,13 +234,36 @@ function parseComparison(input, entities, excludedItems = []) {
   };
 }
 
+function parseComparisonMetric(input, requested) {
+  if (!requested) return { value: undefined, intents: [] };
+  const normalized = normalizeText(input);
+  const intents = [];
+  if (/(更稳|上分|前四)/.test(normalized)) intents.push("top4Rate");
+  if (/(上限|吃鸡|登顶|第一)/.test(normalized)) intents.push("winRate");
+  if (/(平均表现|平均名次|平均排名)/.test(normalized)) intents.push("avgPlacement");
+  if (/(更常用|常用|热门|使用更多|样本更多|选择率)/.test(normalized)) intents.push("games");
+  const uniqueIntents = uniqueValues(intents);
+  return {
+    value: uniqueIntents[0] ?? "top4Rate",
+    intents: uniqueIntents
+  };
+}
+
+function comparisonSort(primaryMetric) {
+  if (!primaryMetric) return undefined;
+  if (primaryMetric === "winRate") return "win_first";
+  if (primaryMetric === "avgPlacement") return "avg_first";
+  if (primaryMetric === "games") return "games_first";
+  return "top4_first";
+}
+
 function cleanUnresolvedFragment(value, entities) {
   let fragment = normalizeAlias(value);
   for (const match of entities.all ?? []) {
     const alias = normalizeAlias(match.alias);
     if (alias) fragment = fragment.replaceAll(alias, "");
   }
-  return fragment.replace(/(?:一个|一件|两件|三件|那个|普通|光明|神器|特殊|装备|羁绊|已经|当前|版本|什么|怎么|如何|可以|能不能|可不可以|不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要|前四|吃鸡|稳健|高样本|样本|优先|吗|呢|呀|啊|的)/g, "");
+  return fragment.replace(/(?:一个|一件|两件|三件|那个|普通|光明|神器|特殊|装备|羁绊|已经|当前|版本|什么|怎么|如何|可以|能不能|可不可以|不要|别带|别用|不用|排除|剔除|去掉|换掉|换成|替换成|改成|把|避开|规避|不考虑|不想要|不需要|前四|吃鸡|稳健|高样本|样本|优先|吗|呢|呀|啊|的)/g, "");
 }
 
 function inferUnresolvedEntityHints(input, entities) {
@@ -243,23 +295,6 @@ function inferUnresolvedEntityHints(input, entities) {
 }
 
 export function parseQuery(input, options = {}) {
-  if (isCompRankingInput(input)) {
-    const compQuery = parseCompRankingQuery(input, options.compQuery);
-    return {
-      rawInput: String(input ?? ""),
-      ...compQuery,
-      unit: undefined,
-      unitAlias: undefined,
-      parser: {
-        usedLLM: false,
-        constraintConflicts: [],
-        unresolvedEntityHints: [],
-        entityAmbiguities: [],
-        entityMatches: []
-      },
-      defaults: DEFAULT_QUERY_OPTIONS
-    };
-  }
   const catalog = options.catalog ?? createCatalog();
   const exactEntities = resolveEntities(input, { catalog });
   const initialUnresolvedEntityHints = inferUnresolvedEntityHints(input, exactEntities);
@@ -302,15 +337,33 @@ export function parseQuery(input, options = {}) {
   const sort = parseSort(input);
   const comparison = parseComparison(input, entities, excludedItems);
   const excludedItemSet = new Set(excludedItems);
-  const ownedItems = comparison.requested
+  const comparisonItems = comparison.itemApiNames;
+  const lockedItems = comparison.requested
     ? comparison.ownedItemApiNames
     : allItems.filter((apiName) => !excludedItemSet.has(apiName));
+  const ownedItems = lockedItems;
+  const comparisonMetric = parseComparisonMetric(input, comparison.requested);
+  const primaryMetric = comparisonMetric.value;
   const activeItemMatches = entities.items.filter((item) => !excludedItemSet.has(item.target));
   const unresolvedEntityHints = inferUnresolvedEntityHints(input, entities);
+  const genericEmblemRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}纹章/.test(normalizeText(input))
+    && !activeItemMatches.some((item) => item.record?.category === "emblem");
+  const genericSpecialComparisonRequested = comparison.requested
+    && /(?:神器|纹章|特殊装备|铁砧)/.test(normalizeText(input))
+    && comparisonItems.length < 2;
+  const multipleItemRelationAmbiguous = !comparison.requested
+    && allItems.length >= 2
+    && !/(带|用|给|装备|已有|已经有|有了|拿了|锁定|不要|排除|剔除|去掉|换掉)/.test(normalizeText(input));
+  const intent = comparison.requested
+    ? "unit_item_comparison"
+    : inferIntent(input, { comparison, ownedItems });
+  const compQuery = intent === "comp_rankings"
+    ? parseCompRankingQuery(input, options.compQuery)
+    : null;
 
   return {
     rawInput: String(input ?? ""),
-    intent: inferIntent(input, { comparison, ownedItems }),
+    intent,
     unit,
     unitAlias: entities.units[0]?.alias,
     starLevel: starLevel.length > 0 ? starLevel : undefined,
@@ -318,21 +371,34 @@ export function parseQuery(input, options = {}) {
     traitFilters,
     compMention,
     itemPolicy: parseItemPolicy(input, activeItemMatches),
+    lockedItems,
+    comparisonItems,
+    comparisonMode: comparison.requested ? "exclusive_presence" : undefined,
+    primaryMetric,
     ownedItems,
     excludedItems,
     minSamples: parseMinSamples(input),
-    sort: sort.value,
+    sort: sort.value ?? comparisonSort(primaryMetric),
     rankFilter: parseRankFilter(input),
     days: parseDays(input),
-    patch: undefined,
+    patch: /当前版本|当前patch|current patch/i.test(normalizeText(input)) ? "current" : undefined,
     queue: undefined,
+    metrics: compQuery?.metrics,
+    limit: compQuery?.limit,
+    specialMode: compQuery?.specialMode,
     parser: {
       usedLLM: false,
       intentExplicit: hasExplicitIntent(input, comparison, ownedItems),
-      constraintConflicts: sort.intents.length > 1
-        ? [{ type: "sort", values: sort.intents }]
-        : [],
+      constraintConflicts: [
+        ...(sort.intents.length > 1 ? [{ type: "sort", values: sort.intents }] : []),
+        ...(comparisonMetric.intents.length > 1
+          ? [{ type: "primary_metric", values: comparisonMetric.intents }]
+          : [])
+      ],
       comparison,
+      genericEmblemRequested,
+      genericSpecialComparisonRequested,
+      multipleItemRelationAmbiguous,
       exclusion: {
         requested: hasExclusionIntent(input),
         itemApiNames: excludedItems

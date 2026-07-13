@@ -56,6 +56,15 @@ function sortLabel(value) {
   return "前四优先";
 }
 
+function metricLabel(value) {
+  return {
+    top4Rate: "前四率",
+    winRate: "吃鸡率",
+    avgPlacement: "平均名次",
+    games: "样本量"
+  }[value] ?? value;
+}
+
 function defaultContextCandidateLabel(candidate = {}) {
   return candidate.compName ?? (candidate.clusterId ? `cluster ${candidate.clusterId}` : "主流阵容");
 }
@@ -100,6 +109,33 @@ function defaultContextClarification(query, catalog) {
 
 export function evaluateClarification(parsed, query, validation, options = {}) {
   const catalog = options.catalog ?? createCatalog();
+
+  if (parsed.parser?.genericEmblemRequested) {
+    return buildClarification(
+      "missing_specific_emblem",
+      "请指定要加入的具体纹章或羁绊，例如“观星者纹章”。"
+    );
+  }
+  if (parsed.parser?.genericSpecialComparisonRequested) {
+    return buildClarification(
+      "missing_specific_comparison_items",
+      "请指定要比较的两到五件具体装备；仅说神器、纹章或铁砧选项还不能建立候选组。"
+    );
+  }
+  if (parsed.parser?.multipleItemRelationAmbiguous) {
+    return buildClarification(
+      "ambiguous_multiple_item_relation",
+      "识别到了多件装备。你是要把它们同时锁定，还是要在它们之间比较？",
+      { suggestions: ["同时锁定这些装备", "比较这些装备哪个好"] }
+    );
+  }
+  if (parsed.parser?.comparisonReplacementAmbiguous) {
+    const names = itemDisplayNames(parsed.parser.comparisonReplacementCandidates ?? [], catalog);
+    return buildClarification(
+      "ambiguous_comparison_replacement",
+      `要换成${names.length ? ` ${names.join(" / ")}` : "新候选"}，但还不清楚要替换原来的哪一件装备。请说明“把 A 换成 B”。`
+    );
+  }
   const errors = validation?.errors ?? [];
   const ownedItems = query.ownedItems ?? [];
   const structuredParser = parsed.parser?.structuredParser;
@@ -109,6 +145,8 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
   const matchedUnits = explicitUnitCandidates(parsed, catalog);
   const sortConflict = (parsed.parser?.constraintConflicts ?? [])
     .find((conflict) => conflict.type === "sort" && conflict.values?.length > 1);
+  const metricConflict = (parsed.parser?.constraintConflicts ?? [])
+    .find((conflict) => conflict.type === "primary_metric" && conflict.values?.length > 1);
 
   if (matchedUnits.length > 1) {
     const labels = candidateLabels(matchedUnits);
@@ -215,8 +253,24 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
   }
 
   const comparison = parsed.parser?.comparison;
-  if (comparison?.requested && comparison.itemApiNames?.length < 2) {
-    const [name] = itemDisplayNames(comparison.itemApiNames ?? [], catalog);
+  const comparisonItems = query.comparisonItems ?? comparison?.itemApiNames ?? [];
+  if ((query.intent === "unit_item_comparison" || comparison?.requested) && comparisonItems.length > 5) {
+    return buildClarification(
+      "too_many_comparison_options",
+      `一次最多比较五件装备，当前有 ${comparisonItems.length} 件。请删减候选。`
+    );
+  }
+
+  if (metricConflict) {
+    const labels = metricConflict.values.map(metricLabel);
+    return buildClarification(
+      "conflicting_primary_metric",
+      `同时识别到多个比较主指标：${labels.join(" / ")}。请指定本次以哪一个为准。`,
+      { suggestions: labels }
+    );
+  }
+  if ((query.intent === "unit_item_comparison" || comparison?.requested) && comparisonItems.length < 2) {
+    const [name] = itemDisplayNames(comparisonItems, catalog);
     return buildClarification(
       "missing_comparison_option",
       name
@@ -228,6 +282,27 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
           "补充另一个装备名"
         ]
       }
+    );
+  }
+  const unavailableComparisonItems = comparisonItems
+    .map((apiName) => catalog.itemByApiName.get(apiName))
+    .filter((item) => item && (!item.current || !item.obtainable));
+  if (unavailableComparisonItems.length > 0) {
+    const names = unavailableComparisonItems.map((item) => item.shortName ?? item.zhName ?? item.apiName);
+    return buildClarification(
+      "unavailable_comparison_item",
+      `“${names.join(" / ")}”当前版本不可用于比较。请更换候选或确认名称。`
+    );
+  }
+  const comparisonValidationErrors = errors.filter((error) => (
+    error.includes("参与比较")
+    || error.includes("比较候选")
+    || error.includes("完整出装没有剩余候选位置")
+  ));
+  if (comparisonValidationErrors.length > 0) {
+    return buildClarification(
+      "comparison_set_conflict",
+      `比较条件存在冲突：${comparisonValidationErrors.join("；")}。请调整锁定、排除项或装备策略。`
     );
   }
 

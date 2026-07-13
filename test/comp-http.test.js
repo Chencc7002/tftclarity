@@ -69,4 +69,3 @@ test("HTTP schema exposes not_available and an unrestricted final request", asyn
   assert.equal(payload.source.requestParams.trait, undefined);
   assert.match(payload.answer.summary, /未找到稳定 Comp，以下结果未限制 Comp/);
 });
-

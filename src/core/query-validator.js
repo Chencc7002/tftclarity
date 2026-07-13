@@ -7,6 +7,13 @@ const VALID_ITEM_POLICIES = new Set([
   "include_special"
 ]);
 
+const POLICY_CATEGORIES = {
+  ordinary_only: new Set(["ordinary_completed"]),
+  include_radiant: new Set(["ordinary_completed", "radiant"]),
+  include_artifact: new Set(["ordinary_completed", "artifact"]),
+  include_special: new Set(["ordinary_completed", "radiant", "artifact", "emblem", "support", "set_special"])
+};
+
 export function validateQueryContext(query, options = {}) {
   const catalog = options.catalog ?? createCatalog();
   const errors = [];
@@ -36,9 +43,11 @@ export function validateQueryContext(query, options = {}) {
     }
   }
 
+  const lockedItems = query.lockedItems ?? query.ownedItems ?? [];
+  const comparisonItems = query.comparisonItems ?? query.comparison?.itemApiNames ?? [];
   const referencedItems = [...new Set([
-    ...(query.ownedItems ?? []),
-    ...(query.comparison?.itemApiNames ?? []),
+    ...lockedItems,
+    ...comparisonItems,
     ...(query.excludedItems ?? [])
   ])];
   for (const itemApiName of referencedItems) {
@@ -48,24 +57,46 @@ export function validateQueryContext(query, options = {}) {
       continue;
     }
     const excludedOnly = (query.excludedItems ?? []).includes(itemApiName)
-      && !(query.ownedItems ?? []).includes(itemApiName)
-      && !(query.comparison?.itemApiNames ?? []).includes(itemApiName);
+      && !lockedItems.includes(itemApiName)
+      && !comparisonItems.includes(itemApiName);
     if ((!item.current || !item.obtainable) && !excludedOnly) {
       warnings.push(`“${item.shortName ?? item.zhName}”当前版本不属于可用装备`);
     }
     if (query.itemPolicy === "ordinary_only" && item.category !== "ordinary_completed" && !excludedOnly) {
       warnings.push(`普通装备查询中不会混入“${item.shortName ?? item.zhName}”这类 ${item.category} 装备`);
     }
+    if (
+      comparisonItems.includes(itemApiName)
+      && !POLICY_CATEGORIES[query.itemPolicy]?.has(item.category)
+    ) {
+      errors.push(`比较候选“${item.shortName ?? item.zhName}”不属于当前装备策略 ${query.itemPolicy}`);
+    }
   }
 
-  const conflictingItems = (query.ownedItems ?? []).filter((item) => (query.excludedItems ?? []).includes(item));
+  const conflictingItems = lockedItems.filter((item) => (query.excludedItems ?? []).includes(item));
   if (conflictingItems.length > 0) {
     errors.push(`装备不能同时锁定和排除：${conflictingItems.join(",")}`);
   }
-  const excludedComparisonItems = (query.comparison?.itemApiNames ?? [])
+  const excludedComparisonItems = comparisonItems
     .filter((item) => (query.excludedItems ?? []).includes(item));
   if (excludedComparisonItems.length > 0) {
     errors.push(`装备不能同时参与比较和排除：${excludedComparisonItems.join(",")}`);
+  }
+  const lockedComparisonItems = comparisonItems.filter((item) => lockedItems.includes(item));
+  if (lockedComparisonItems.length > 0) {
+    errors.push(`装备不能同时锁定和参与比较：${lockedComparisonItems.join(",")}`);
+  }
+  if (query.intent === "unit_item_comparison" && comparisonItems.length < 2) {
+    errors.push("装备比较至少需要两个候选");
+  }
+  if (comparisonItems.length > 5) {
+    errors.push("装备比较最多支持五个候选");
+  }
+  if (comparisonItems.length > 0 && query.comparisonMode !== "exclusive_presence") {
+    errors.push(`装备比较模式不合法：${query.comparisonMode ?? "missing"}`);
+  }
+  if (comparisonItems.length > 0 && lockedItems.length + 1 > query.itemCount) {
+    errors.push(`已锁定 ${lockedItems.length} 件装备，完整出装没有剩余候选位置`);
   }
 
   if (query.defaultContext) {

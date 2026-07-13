@@ -20,6 +20,10 @@ const fixtureRows = [
   {
     unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_Deathblade",
     placement_count: [5, 4, 3, 2, 1, 1, 1, 1]
+  },
+  {
+    unit_builds: "TFT17_Xayah&TFT_Item_InfinityEdge|TFT_Item_LastWhisper|TFT_Item_Deathblade",
+    placement_count: [70, 60, 50, 40, 40, 30, 20, 10]
   }
 ];
 const compFixture = JSON.parse(await readFile(new URL("../test/fixtures/comp-rankings/exact-units-traits2-minimal.json", import.meta.url), "utf8"));
@@ -92,7 +96,7 @@ function closeServer(server) {
 async function inspectLayout(page, label) {
   const result = await page.evaluate(() => {
     const viewportWidth = document.documentElement.clientWidth;
-    const overflowing = [...document.querySelectorAll(".shell, .topbar, .conversation-pane, .result-pane, .settings-panel, .query-panel, .controls, .segmented, .result-card, .comp-card, .ranking-section, .empty-state, .details, .stats")]
+    const overflowing = [...document.querySelectorAll(".shell, .topbar, .conversation-pane, .result-pane, .settings-panel, .query-panel, .controls, .segmented, .result-card, .comp-card, .ranking-section, .empty-state, .details, .stats, .comparison-decision, .comparison-grid, .comparison-primary")]
       .filter((element) => {
         const rect = element.getBoundingClientRect();
         return rect.width > 0 && (rect.left < -1 || rect.right > viewportWidth + 1);
@@ -192,6 +196,10 @@ if (playwright) {
     catalog: createCatalog(),
     cacheStore,
     fetchItems: false,
+    officialItemDetails: new Map([
+      ["TFT_Item_GuinsoosRageblade", { iconUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' fill='%2311835b'/%3E%3C/svg%3E" }],
+      ["TFT_Item_InfinityEdge", { iconUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Crect width='32' height='32' fill='%23b87918'/%3E%3C/svg%3E" }]
+    ]),
     metaTFTClient: {
       async getUnitBuilds() {
         return { data: fixtureRows };
@@ -307,6 +315,24 @@ if (playwright) {
     });
     await page.locator(".assistant-message").last().screenshot({
       path: resolve(outputDir, "comp-explicit-520.png")
+    });
+
+    await page.setViewportSize({ width: 460, height: 720 });
+    await page.fill("#query-input", "霞比较羊刀和无尽哪个好？");
+    await page.click("#query-form button.primary");
+    await page.waitForSelector(".comparison-decision");
+    assertSmoke(await page.locator(".comparison-name img").count() === 2, "comparison icons were not rendered");
+    const comparison460 = await inspectLayout(page, "460px item comparison");
+    await page.screenshot({
+      path: resolve(outputDir, "comparison-460.png"),
+      fullPage: true
+    });
+
+    await page.setViewportSize({ width: 360, height: 720 });
+    const comparison360 = await inspectLayout(page, "360px item comparison");
+    await page.screenshot({
+      path: resolve(outputDir, "comparison-360.png"),
+      fullPage: true
     });
 
     await page.setViewportSize({ width: 360, height: 560 });
@@ -472,6 +498,8 @@ if (playwright) {
       outputDir,
       checks: {
         desktop,
+        comparison460,
+        comparison360,
         desktopAssets,
         desktopMode,
         twoColumn,

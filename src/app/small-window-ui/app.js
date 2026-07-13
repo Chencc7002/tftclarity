@@ -22,6 +22,7 @@ const state = {
   aliasQuery: "",
   aliasState: "",
   aliasType: "",
+  itemAuditLoaded: false,
   conversationId: globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`,
   currentController: null,
   requestInFlight: false,
@@ -76,7 +77,24 @@ const rankControl = document.querySelector("#rank-control");
 const cacheStatusEl = document.querySelector("#cache-status");
 const llmStatusEl = document.querySelector("#llm-status");
 const runtimeDetailEl = document.querySelector("#runtime-detail");
+const openItemAuditButton = document.querySelector("#open-item-audit-button");
+const itemAuditPanel = document.querySelector("#item-audit-panel");
+const itemAuditClose = document.querySelector("#item-audit-close");
+const itemAuditMeta = document.querySelector("#item-audit-meta");
+const itemAuditQuery = document.querySelector("#item-audit-query");
+const itemAuditPatch = document.querySelector("#item-audit-patch");
+const itemAuditSource = document.querySelector("#item-audit-source");
+const itemAuditCategory = document.querySelector("#item-audit-category");
+const itemAuditStatus = document.querySelector("#item-audit-status");
+const itemAuditAvailability = document.querySelector("#item-audit-availability");
+const itemAuditIssues = document.querySelector("#item-audit-issues");
+const itemAuditSummary = document.querySelector("#item-audit-summary");
+const itemAuditList = document.querySelector("#item-audit-list");
+const itemAuditReload = document.querySelector("#item-audit-reload");
+const itemAuditExportJson = document.querySelector("#item-audit-export-json");
+const itemAuditExportCsv = document.querySelector("#item-audit-export-csv");
 let saveTimer = null;
+let itemAuditTimer = null;
 let activeResponseEl = null;
 
 const conversationPane = new ConversationPane(resultEl);
@@ -522,15 +540,131 @@ function summaryLines(data) {
   const exclusions = excludedNames?.length
     ? t("excludedSummary", { value: excludedNames.join(" + ") })
     : null;
+  const locked = query.lockedItemNames?.length
+    ? t("lockedSummary", { value: query.lockedItemNames.join(" + ") })
+    : null;
+  const comparisonAssumption = query.assumptions?.find((entry) => entry.key === "comparison_items");
+  const comparisonOrigins = comparisonAssumption?.value?.length
+    ? comparisonAssumption.origins ?? (comparisonAssumption.origin ? [comparisonAssumption.origin] : [])
+    : [];
+  const comparisonSource = comparisonOrigins.length
+    ? t("candidateSource", { value: comparisonOrigins.map(constraintSourceLabel).join(" + ") })
+    : null;
   const unitName = getLocale() === "en-US" ? query.unit : query.unitName;
 
   return [
     `<strong>${escapeHtml(t("starLevel", { value: query.starLevel?.join("/") ?? "-" }))} ${escapeHtml(unitName ?? "-")}</strong> / ${escapeHtml(traits)} / ${escapeHtml(t("samplesAtLeast", { value: query.minSamples ?? "-" }))}`,
     escapeHtml(comp),
     `${escapeHtml(cache)} / ${escapeHtml(data.meta?.durationMs ?? 0)}ms`,
+    locked ? escapeHtml(locked) : null,
     exclusions ? escapeHtml(exclusions) : null,
+    comparisonSource ? escapeHtml(comparisonSource) : null,
     warnings
   ].filter(Boolean).map((line) => `<div>${line}</div>`).join("");
+}
+
+function renderItemDetails(data) {
+  const item = data.item ?? {};
+  const recipe = item.recipe ?? [];
+  const recipeHtml = recipe.length
+    ? `<div class="items">${recipe.map(itemPill).join('<span class="recipe-plus">+</span>')}</div>`
+    : `<div class="detail-muted">${escapeHtml(t("notCraftable"))}</div>`;
+  const effect = escapeHtml(item.effect ?? t("missingOfficialItemDetails")).replace(/\n/g, "<br>");
+
+  setResponseHtml(`
+    <article class="result-card item-detail-card">
+      <div class="card-head"><div class="card-title">${escapeHtml(item.name ?? t("itemDetails"))}</div><div class="detail-category">${escapeHtml(item.category ?? "")}</div></div>
+      <strong class="detail-label">${escapeHtml(t("recipeRoute"))}</strong>${recipeHtml}
+      <strong class="detail-label">${escapeHtml(t("effectAndStats"))}</strong><div class="detail-effect">${effect}</div>
+    </article>
+  `);
+}
+
+function comparisonMetricLabel(metricName) {
+  return {
+    top4Rate: t("metricTop4Rate"),
+    winRate: t("metricWinRate"),
+    avgPlacement: t("metricAvgPlacement"),
+    games: t("metricSamples")
+  }[metricName] ?? t("metricTop4Rate");
+}
+
+function comparisonMetricValue(entry, metricName) {
+  if (!entry?.stats?.games) return "-";
+  if (metricName === "winRate") return `${entry.stats.win}%`;
+  if (metricName === "avgPlacement") return entry.stats.avg;
+  if (metricName === "games") return entry.stats.games;
+  return `${entry.stats.top4}%`;
+}
+
+function comparisonReasonText(reason) {
+  return {
+    insufficient_sample: t("reasonInsufficientSample"),
+    low_sample: t("reasonLowSample"),
+    difference_too_small: t("reasonDifferenceTooSmall"),
+    metric_unavailable: t("reasonMetricUnavailable"),
+    overlap_too_high: t("reasonOverlapTooHigh"),
+    stale_evidence: t("reasonStaleEvidence")
+  }[reason] ?? t("reasonInsufficientEvidence");
+}
+
+function renderItemComparison(data) {
+  const comparison = data.comparison ?? {};
+  const inputEntries = comparison.entries ?? data.results ?? [];
+  const entries = inputEntries.length >= 3
+    ? comparison.rankedEntries ?? inputEntries
+    : inputEntries;
+  const metricName = comparison.primaryMetric ?? data.query?.primaryMetric ?? "top4Rate";
+  const winnerName = comparison.winnerName;
+  const headline = winnerName
+    ? t("comparisonWinner", { name: winnerName })
+    : t("comparisonNoWinner", { reason: comparisonReasonText(comparison.decision?.reason) });
+  const overlap = comparison.overlap;
+  const overlapLine = overlap
+    ? t("comparisonOverlap", { games: overlap.games, rate: (Number(overlap.rate ?? 0) * 100).toFixed(1) })
+    : t("comparisonOverlapZero");
+
+  setResponseHtml(`
+    <section class="comparison-decision${winnerName ? " has-winner" : ""}">
+      <strong>${escapeHtml(headline)}</strong>
+      <span>${escapeHtml(t("primaryMetric", { value: comparisonMetricLabel(metricName) }))} · ${escapeHtml(overlapLine)}</span>
+    </section>
+    <section class="comparison-grid${entries.length === 2 ? " comparison-grid-two" : " comparison-grid-ranked"}">
+      ${entries.map((entry, index) => {
+        const common = entry.commonBuilds?.[0]?.items?.map((item) => item.name).join(" + ") ?? t("noStablePairing");
+        return `
+          <article class="result-card comparison-card${entry.apiName === comparison.winner ? " best" : ""}">
+            <div class="card-head">
+              <div class="comparison-name">
+                ${entry.iconUrl ? `<img src="${escapeHtml(entry.iconUrl)}" alt="" loading="lazy">` : ""}
+                <div><small>#${index + 1}</small><div class="card-title">${escapeHtml(entry.name)}</div></div>
+              </div>
+              ${entry.lowSample ? `<div class="risk">${escapeHtml(t("lowSample"))}</div>` : ""}
+            </div>
+            <div class="comparison-primary">
+              <b>${escapeHtml(comparisonMetricLabel(metricName))}</b>
+              <strong>${escapeHtml(comparisonMetricValue(entry, metricName))}</strong>
+              <span>${escapeHtml(t("exclusiveSamples", { value: entry.stats?.games ?? 0 }))}</span>
+            </div>
+            <div class="stats comparison-stats">
+              ${metric(t("top4Short"), entry.stats?.games ? `${entry.stats.top4}%` : "-")}
+              ${metric(t("winShort"), entry.stats?.games ? `${entry.stats.win}%` : "-")}
+              ${metric(t("avgShort"), entry.stats?.games ? entry.stats.avg : "-")}
+              ${metric(t("metricSamples"), entry.stats?.games ?? 0)}
+            </div>
+            <div class="comparison-build"><b>${escapeHtml(t("commonFullBuild"))}</b><span>${escapeHtml(common)}</span></div>
+          </article>
+        `;
+      }).join("")}
+    </section>
+    <div class="summary comparison-summary">
+      <div>${escapeHtml(overlapLine)}</div>
+      ${(comparison.warnings ?? []).map((warning) => `<div>${escapeHtml(warning)}</div>`).join("")}
+      ${summaryLines(data)}
+    </div>
+    ${conditionPanel(data)}
+    ${sourceAndRisk(data)}
+  `);
 }
 
 function constraintSourceLabel(source) {
@@ -574,6 +708,9 @@ function conditionChipValue(key, constraint, query) {
   if (key === "days") return t("daysRecent", { value });
   if (key === "min_samples") return t("samplesAtLeast", { value });
   if (key === "owned_items") return value?.length ? t("carriedItems", { value: (getLocale() === "en-US" ? query.ownedItems : query.ownedItemNames)?.join(" + ") ?? value.join(" + ") }) : `${t("carried")} ${t("none")}`;
+  if (key === "locked_items") return value?.length ? t("lockedSummary", { value: (getLocale() === "en-US" ? query.lockedItems : query.lockedItemNames)?.join(" + ") ?? value.join(" + ") }) : null;
+  if (key === "comparison_items") return value?.length ? t("comparisonItems", { value: (getLocale() === "en-US" ? query.comparisonItems : query.comparisonItemNames)?.join(" + ") ?? value.join(" + ") }) : null;
+  if (key === "primary_metric") return value ? t("primaryMetric", { value: comparisonMetricLabel(value) }) : null;
   if (key === "excluded_items") return value?.length ? t("excludedItems", { value: (getLocale() === "en-US" ? query.excludedItems : query.excludedItemNames)?.join(" + ") ?? value.join(" + ") }) : null;
   if (key === "trait_filters") return value?.length ? t("traits", { value: (getLocale() === "en-US" ? query.traitFilters : query.traitNames)?.join(" + ") ?? value.join(" + ") }) : null;
   if (key === "comp") {
@@ -590,7 +727,7 @@ function conditionChipValue(key, constraint, query) {
 function conditionChips(data) {
   const query = data.query ?? {};
   const constraints = query.constraints ?? {};
-  const order = ["unit", "star_level", "rank_filter", "days", "comp", "item_policy", "owned_items", "excluded_items", "trait_filters", "min_samples"];
+  const order = ["unit", "star_level", "rank_filter", "days", "comp", "item_policy", "owned_items", "locked_items", "comparison_items", "excluded_items", "trait_filters", "primary_metric", "min_samples"];
   return `<div class="condition-chips">${order.map((key) => {
     const constraint = constraints[key];
     const label = conditionChipValue(key, constraint, query);
@@ -778,7 +915,9 @@ function renderRecommendationResult(data) {
 }
 
 function renderCurrentResult(data) {
-  if (data.type === CompRankingResult.type) renderCompRankings(data);
+  if (data.type === "item_details") renderItemDetails(data);
+  else if (data.type === "unit_item_comparison") renderItemComparison(data);
+  else if (data.type === CompRankingResult.type) renderCompRankings(data);
   else if (data.type === ItemRankingResult.type) renderItemRankings(data);
   else renderRecommendationResult(data);
 }
@@ -866,6 +1005,98 @@ function renderAliases(aliases = []) {
     </div>
   `).join("");
   updateAliasBatchState();
+}
+
+function auditParams(format = "") {
+  const params = new URLSearchParams();
+  if (itemAuditQuery.value.trim()) params.set("query", itemAuditQuery.value.trim());
+  if (itemAuditPatch.value.trim()) params.set("patch", itemAuditPatch.value.trim());
+  if (itemAuditSource.value.trim()) params.set("source", itemAuditSource.value.trim());
+  if (itemAuditCategory.value) params.set("category", itemAuditCategory.value);
+  if (itemAuditStatus.value) params.set("status", itemAuditStatus.value);
+  if (itemAuditAvailability.value) params.set("availability", itemAuditAvailability.value);
+  if (itemAuditIssues.value) params.set("issues", itemAuditIssues.value);
+  if (format) params.set("format", format);
+  return params;
+}
+
+function auditIssueLabel(issue) {
+  return {
+    missing_canonical_zh_name: t("auditMissingCanonicalName"),
+    unknown_category: t("auditUnknownCategory"),
+    missing_official_details: t("auditMissingOfficialDetails"),
+    missing_official_effect: t("auditMissingOfficialEffect"),
+    missing_recipe_components: t("auditMissingRecipe"),
+    unversioned_availability_override: t("auditUnversionedAvailability"),
+    official_manual_name_conflict: t("auditNameConflict"),
+    catalog_cache_fallback: t("auditCatalogFallback"),
+    official_details_source_error: t("auditOfficialSourceError")
+  }[issue] ?? issue;
+}
+
+function renderItemAudit(data) {
+  const records = data.report?.records ?? [];
+  const report = data.report ?? {};
+  const catalog = report.catalog ?? {};
+  const details = report.officialDetails ?? {};
+  itemAuditMeta.textContent = t("auditMeta", { patch: report.patch ?? "current", catalogStatus: catalog.status ?? "-", catalogSource: catalog.source ?? "-", detailStatus: details.status ?? "-" });
+  itemAuditSummary.textContent = t("auditSummary", { returned: data.summary?.returned ?? records.length, total: data.summary?.total ?? records.length, issues: data.summary?.withIssues ?? 0 });
+  itemAuditList.innerHTML = records.length ? records.map((record) => {
+    const effect = record.completeness?.status ?? "unknown";
+    const recipe = record.completeness?.recipeStatus ?? "unknown";
+    const override = record.overrides?.availability ?? record.overrides?.alias;
+    return `
+      <article class="audit-row">
+        <div class="audit-icon">${record.iconUrl ? `<img src="${escapeHtml(record.iconUrl)}" alt="">` : escapeHtml(t("noImage"))}</div>
+        <div class="audit-main">
+          <div class="audit-title"><strong>${escapeHtml(record.canonicalName)}</strong><span>${escapeHtml(record.shortName ?? t("noShortName"))}</span></div>
+          <code>${escapeHtml(record.apiName)}</code>
+          <small>${escapeHtml(record.historicalAliases.join(" / ") || t("noHistoricalAliases"))}</small>
+          <div class="audit-tags">
+            <span>${escapeHtml(record.category)}</span>
+            <span>${escapeHtml(record.current && record.obtainable ? t("available") : t("unavailable"))}</span>
+            <span>${escapeHtml(record.catalogStatus)}/${escapeHtml(record.catalogSource)}</span>
+            <span>${escapeHtml(t("effectStatus", { value: effect }))}</span>
+            <span>${escapeHtml(t("recipeStatus", { value: recipe }))}</span>
+          </div>
+          <small>${escapeHtml(t("auditNameSource", { source: record.nameSource ?? "-", override: override ? `${override.source ?? "-"} / ${override.patch ?? override.season ?? t("unversioned")}` : t("noAuditOverride") }))}</small>
+          <div class="audit-issues">${record.issues.length ? record.issues.map((issue) => `<span>${escapeHtml(auditIssueLabel(issue))}</span>`).join("") : `<span class="clean">${escapeHtml(t("noAuditIssues"))}</span>`}</div>
+        </div>
+      </article>
+    `;
+  }).join("") : `<div class="audit-empty">${escapeHtml(t("noAuditResults"))}</div>`;
+}
+
+async function loadItemAudit(options = {}) {
+  itemAuditList.innerHTML = `<div class="audit-empty">${escapeHtml(t("auditLoading"))}</div>`;
+  const params = auditParams();
+  if (options.refresh) params.set("refresh", "1");
+  const response = await fetch(`/api/item-catalog-audit?${params.toString()}`);
+  const data = await response.json();
+  if (!response.ok || !data.ok) throw new Error(data.error ?? t("auditLoadFailed"));
+  state.itemAuditLoaded = true;
+  renderItemAudit(data);
+}
+
+function downloadText(filename, content, type) {
+  const blob = new Blob([content], { type });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+async function exportItemAudit(format) {
+  const response = await fetch(`/api/item-catalog-audit?${auditParams(format).toString()}`);
+  const data = await response.json();
+  if (!response.ok || !data.ok || !data.export) throw new Error(data.error ?? t("auditExportFailed"));
+  downloadText(
+    data.export.filename,
+    data.export.content,
+    format === "csv" ? "text/csv;charset=utf-8" : "application/json;charset=utf-8"
+  );
 }
 
 async function loadAliases() {
@@ -1343,6 +1574,40 @@ clearButton.addEventListener("click", async () => {
     setStatusKey("sessionClearFailed", "error");
   }
 });
+
+openItemAuditButton.addEventListener("click", async () => {
+  appShell.settings.setOpen(false);
+  itemAuditPanel.classList.remove("hidden");
+  try {
+    await loadItemAudit();
+  } catch (error) {
+    itemAuditList.innerHTML = `<div class="audit-empty">${escapeHtml(error.message)}</div>`;
+  }
+});
+
+itemAuditClose.addEventListener("click", () => {
+  itemAuditPanel.classList.add("hidden");
+});
+
+for (const control of [itemAuditCategory, itemAuditStatus, itemAuditAvailability, itemAuditIssues]) {
+  control.addEventListener("change", () => loadItemAudit().catch((error) => {
+    itemAuditList.innerHTML = `<div class="audit-empty">${escapeHtml(error.message)}</div>`;
+  }));
+}
+
+for (const input of [itemAuditQuery, itemAuditPatch, itemAuditSource]) input.addEventListener("input", () => {
+  clearTimeout(itemAuditTimer);
+  itemAuditTimer = setTimeout(() => loadItemAudit().catch((error) => {
+    itemAuditList.innerHTML = `<div class="audit-empty">${escapeHtml(error.message)}</div>`;
+  }), 180);
+});
+
+itemAuditReload.addEventListener("click", () => loadItemAudit({ refresh: true }).catch((error) => {
+  itemAuditList.innerHTML = `<div class="audit-empty">${escapeHtml(error.message)}</div>`;
+}));
+
+itemAuditExportJson.addEventListener("click", () => exportItemAudit("json").catch((error) => setStatus(error.message)));
+itemAuditExportCsv.addEventListener("click", () => exportItemAudit("csv").catch((error) => setStatus(error.message)));
 
 reloadAliasesButton.addEventListener("click", () => {
   state.aliasOffset = 0;

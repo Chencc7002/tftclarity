@@ -436,7 +436,16 @@ export function buildItemCatalogFromItemsResponse(response, options = {}) {
 
   for (const seed of ITEMS) {
     if (!itemsByApiName.has(seed.apiName)) {
-      itemsByApiName.set(seed.apiName, itemFromApiName(seed.apiName, options));
+      const unobserved = itemFromApiName(seed.apiName, options);
+      itemsByApiName.set(seed.apiName, {
+        ...unobserved,
+        category: "removed_or_legacy",
+        current: false,
+        obtainable: false,
+        availabilityOverride: false,
+        availabilityReason: "Not observed in the current MetaTFT /items snapshot.",
+        availabilitySource: "metatft_items_snapshot_absence"
+      });
     }
   }
 
@@ -448,10 +457,11 @@ export function mergeCatalogItems(baseItems, generatedItems, options = {}) {
   for (const item of baseItems ?? []) merged.set(item.apiName, item);
   for (const item of generatedItems ?? []) {
     const existing = merged.get(item.apiName);
+    const incomingManualAlias = String(item.source ?? "").includes("alias_override") && Boolean(item.shortName);
     merged.set(item.apiName, existing ? {
       ...item,
       zhName: existing.zhName ?? item.zhName,
-      shortName: existing.shortName ?? item.shortName,
+      shortName: incomingManualAlias ? item.shortName : existing.shortName ?? item.shortName,
       aliases: compact([...(existing.aliases ?? []), ...(item.aliases ?? [])])
     } : item);
   }

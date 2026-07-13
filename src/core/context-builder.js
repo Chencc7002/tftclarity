@@ -24,18 +24,33 @@ function sourcedConstraint(key, value, source) {
   return { key, value, source, confidence: confidenceForSource(source) };
 }
 
+function originLabel(source) {
+  if (source === "session") return "conversation";
+  if (source === "user") return "current_input";
+  if (source === "preference") return "preference";
+  return "system_default";
+}
+
 export function buildQueryContext(parsedQuery, options = {}) {
   const catalog = options.catalog ?? createCatalog();
   const preferences = {
     ...DEFAULT_QUERY_OPTIONS,
     ...(options.preferences ?? {})
   };
+  const preferenceKeys = new Set(Object.keys(options.preferences ?? {}));
+  const defaultContext = options.defaultContext ?? null;
   const comp = options.comp ?? parsedQuery.comp ?? null;
   const warnings = (parsedQuery.parser?.highConfidenceEntityResolutions ?? []).map((resolution) => (
     `已按高置信模糊匹配识别“${resolution.inputFragment}”为“${resolution.label ?? resolution.matchedAlias ?? resolution.apiName}”`
   ));
 
-  const traitFilters = parsedQuery.traitFilters ?? [];
+  const explicitTraitFilters = parsedQuery.traitFilters ?? [];
+  const automaticCompTraits = comp?.status === "applied"
+    && comp.value?.selection === "automatic"
+    && explicitTraitFilters.length === 0
+    ? comp.value.traits ?? []
+    : [];
+  const traitFilters = explicitTraitFilters;
   if (comp?.status === "not_available") {
     warnings.push("当前条件下未找到达到稳定门槛的 Comp；以下结果未限制 Comp。");
   }
@@ -50,10 +65,9 @@ export function buildQueryContext(parsedQuery, options = {}) {
   const minSamples = parsedQuery.minSamples ?? preferences.minSamples;
   const sort = parsedQuery.sort ?? preferences.sort;
 
-  const preferenceKeys = new Set(Object.keys(options.preferences ?? {}));
   const traitSource = parsedQuery.sessionContext?.inheritedKeys?.includes("traitFilters")
     ? "conversation"
-      : parsedQuery.traitFilters?.length
+      : explicitTraitFilters.length
         ? "current_input"
         : "system_default";
   const assumptions = [
@@ -62,14 +76,38 @@ export function buildQueryContext(parsedQuery, options = {}) {
     sourcedConstraint("item_count", itemCount, fieldSource(parsedQuery, "itemCount", parsedQuery.itemCount !== undefined)),
     sourcedConstraint("item_policy", itemPolicy, fieldSource(parsedQuery, "itemPolicy", Boolean(parsedQuery.itemPolicy), preferenceKeys.has("itemPolicy"))),
     sourcedConstraint("trait_filters", traitFilters, traitSource),
-    sourcedConstraint("owned_items", parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "ownedItems", Boolean(parsedQuery.ownedItems?.length))),
+    sourcedConstraint("owned_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
+    sourcedConstraint("locked_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
+    sourcedConstraint("comparison_items", parsedQuery.comparisonItems ?? [], fieldSource(parsedQuery, "comparisonItems", Boolean(parsedQuery.comparisonItems?.length))),
     sourcedConstraint("excluded_items", parsedQuery.excludedItems ?? [], fieldSource(parsedQuery, "excludedItems", Boolean(parsedQuery.excludedItems?.length))),
+    sourcedConstraint("primary_metric", parsedQuery.primaryMetric, fieldSource(parsedQuery, "primaryMetric", Boolean(parsedQuery.primaryMetric))),
     sourcedConstraint("patch", patch, fieldSource(parsedQuery, "patch", Boolean(parsedQuery.patch))),
     sourcedConstraint("days", days, fieldSource(parsedQuery, "days", parsedQuery.days !== undefined, preferenceKeys.has("days"))),
     sourcedConstraint("rank_filter", rankFilter, fieldSource(parsedQuery, "rankFilter", Boolean(parsedQuery.rankFilter?.length), preferenceKeys.has("rankFilter"))),
     sourcedConstraint("min_samples", minSamples, fieldSource(parsedQuery, "minSamples", parsedQuery.minSamples !== undefined, preferenceKeys.has("minSamples"))),
     sourcedConstraint("sort", sort, fieldSource(parsedQuery, "sort", Boolean(parsedQuery.sort), preferenceKeys.has("sort")))
-  ];
+  ].map((entry) => {
+    const parsedKey = {
+      star_level: "starLevel",
+      item_count: "itemCount",
+      item_policy: "itemPolicy",
+      trait_filters: "traitFilters",
+      rank_filter: "rankFilter",
+      min_samples: "minSamples",
+      locked_items: "lockedItems",
+      comparison_items: "comparisonItems",
+      excluded_items: "excludedItems",
+      primary_metric: "primaryMetric"
+    }[entry.key] ?? entry.key;
+    const origins = parsedQuery.sessionContext?.fieldOrigins?.[parsedKey] ?? [entry.source];
+    return { ...entry, origin: origins[0], origins };
+  });
+  const lockedItems = parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [];
+  const comparisonItems = parsedQuery.comparisonItems
+    ?? parsedQuery.parser?.comparison?.itemApiNames
+    ?? [];
+  const comparisonMode = parsedQuery.comparisonMode
+    ?? (parsedQuery.parser?.comparison?.requested ? "exclusive_presence" : undefined);
   const constraints = Object.fromEntries(assumptions.map(({ key, value, source, confidence }) => [
     key,
     { value, source, confidence }
@@ -86,12 +124,17 @@ export function buildQueryContext(parsedQuery, options = {}) {
     traitFilters,
     comp,
     itemPolicy,
-    ownedItems: parsedQuery.ownedItems ?? [],
+    lockedItems,
+    comparisonItems,
+    comparisonMode,
+    primaryMetric: parsedQuery.primaryMetric,
+    pendingComparison: Boolean(parsedQuery.pendingComparison),
+    ownedItems: lockedItems,
     excludedItems: parsedQuery.excludedItems ?? [],
     comparison: parsedQuery.parser?.comparison ?? {
-      requested: false,
-      itemApiNames: [],
-      ownedItemApiNames: []
+      requested: comparisonItems.length > 0,
+      itemApiNames: comparisonItems,
+      ownedItemApiNames: lockedItems
     },
     rankFilter,
     days,
@@ -106,10 +149,24 @@ export function buildQueryContext(parsedQuery, options = {}) {
         key,
         { source, confidence }
       ])),
+      locked_items: assumptions.find((entry) => entry.key === "locked_items")?.origins ?? [],
+      comparison_items: assumptions.find((entry) => entry.key === "comparison_items")?.origins ?? [],
+      excluded_items: assumptions.find((entry) => entry.key === "excluded_items")?.origins ?? [],
+      primary_metric: assumptions.find((entry) => entry.key === "primary_metric")?.origins ?? [],
       ...(comp ? { comp: { source: comp.source, confidence: comp.confidence, status: comp.status } } : {})
     },
     warnings,
-    defaultContext: null,
+    defaultContext: defaultContext ?? (automaticCompTraits.length > 0
+      ? {
+        found: true,
+        clusterId: comp.value.id,
+        compName: comp.value.name,
+        units: comp.value.units,
+        traitFilters: automaticCompTraits,
+        sourceEndpoint: comp.value.sourceEndpoint,
+        source: "system_default"
+      }
+      : null),
     catalogVersion: catalog.version ?? "seed"
   };
 }

@@ -33,6 +33,45 @@ test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(conversation, /class Composer/);
 });
 
+test("small-window maintenance exposes a separate filterable item catalog audit", () => {
+  assert.match(indexHtml, /id="open-item-audit-button"/);
+  assert.match(indexHtml, /id="item-audit-panel"/);
+  assert.match(indexHtml, /id="item-audit-query"/);
+  assert.match(indexHtml, /id="item-audit-patch"/);
+  assert.match(indexHtml, /id="item-audit-source"/);
+  assert.match(indexHtml, /id="item-audit-category"/);
+  assert.match(indexHtml, /id="item-audit-status"/);
+  assert.match(indexHtml, /id="item-audit-availability"/);
+  assert.match(indexHtml, /id="item-audit-issues"/);
+  assert.match(indexHtml, /id="item-audit-export-json"/);
+  assert.match(indexHtml, /id="item-audit-export-csv"/);
+  assert.match(appJs, /\/api\/item-catalog-audit/);
+  assert.match(appJs, /loadItemAudit\(\{ refresh: true \}\)/);
+  assert.match(appJs, /appShell\.settings\.setOpen\(false\)/);
+  assert.doesNotMatch(appJs, /setSettingsOpen\(/);
+  assert.match(appJs, /metric\(t\("winShort"\)/);
+  assert.match(appJs, /renderItemAudit/);
+  assert.match(appJs, /downloadText/);
+  assert.match(styles, /\.maintenance-panel/);
+  assert.match(styles, /\.audit-row/);
+  assert.match(styles, /overflow-wrap: anywhere/);
+  assert.match(styles, /@media \(max-width: 400px\)/);
+});
+
+test("small-window clarification renders actionable entity candidates", () => {
+  assert.match(appJs, /renderEntityCandidates/);
+  assert.match(appJs, /data-candidate-action="query"/);
+  assert.match(appJs, /data-candidate-action="save"/);
+  assert.match(appJs, /saveEntityCandidate/);
+  assert.match(appJs, /\/api\/feedback/);
+  assert.match(appJs, /feedbackType: "alias_candidate"/);
+  assert.match(appJs, /state\.lastEntityCandidates/);
+  assert.match(appJs, /escapeHtml\(data\.clarification\.question\)/);
+  assert.match(styles, /\.entity-candidates/);
+  assert.match(styles, /\.candidate-row/);
+  assert.match(styles, /\.candidate-actions/);
+});
+
 test("responsive layout supports three, two, single, and compact modes without a 460px cap", () => {
   assert.doesNotMatch(styles, /width:\s*min\(100%,\s*460px\)/);
   assert.match(styles, /grid-template-columns:\s*clamp\(320px, var\(--conversation-width\), 520px\) 9px minmax\(360px, 1fr\)/);
@@ -60,6 +99,31 @@ test("language switching uses independent dictionaries and does not issue API re
   assert.match(appJs, /setLocale\(locale\)/);
   assert.match(appJs, /rerenderLocalizedState/);
   assert.doesNotMatch(appJs, /[\u4e00-\u9fff]/);
+});
+
+test("small-window cards render the sample-risk marker", () => {
+  assert.match(appJs, /card\.lowSample/);
+  assert.match(appJs, /query\.excludedItemNames/);
+  assert.match(appJs, /excludedSummary/);
+  assert.match(styles, /\.risk/);
+});
+
+test("small-window comparison cards distinguish winners and compared items", () => {
+  assert.match(appJs, /card\.winner/);
+  assert.match(appJs, /item\.compared/);
+  assert.match(styles, /\.item\.compared/);
+});
+
+test("small-window renders dedicated responsive item comparison evidence", () => {
+  assert.match(appJs, /data\.type === "unit_item_comparison"/);
+  assert.match(appJs, /renderItemComparison/);
+  assert.match(appJs, /comparison\.primaryMetric/);
+  assert.match(appJs, /comparisonOverlap/);
+  assert.match(appJs, /commonFullBuild/);
+  assert.match(styles, /\.comparison-grid-two/);
+  assert.match(styles, /@media \(min-width: 401px\) and \(max-width: 520px\)/);
+  assert.match(styles, /@media \(max-width: 400px\)/);
+  assert.match(styles, /grid-template-columns: 1fr/);
 });
 
 test("all existing real interactions and endpoints remain wired", () => {

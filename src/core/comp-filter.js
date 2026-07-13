@@ -174,4 +174,3 @@ export function compStructuredFilterParams(compConstraint) {
     filter.value
   ]));
 }
-

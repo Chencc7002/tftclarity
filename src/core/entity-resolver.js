@@ -99,7 +99,15 @@ function findMatches(input, candidates) {
     if (overlaps) continue;
 
     const spanKey = `${match.start}:${match.end}`;
-    const sameSpan = matchesBySpan.get(spanKey) ?? [match];
+    const rawSameSpan = matchesBySpan.get(spanKey) ?? [match];
+    const currentItemMatches = rawSameSpan.filter((candidate) => (
+      candidate.entityType === "item"
+      && candidate.record?.current
+      && candidate.record?.obtainable
+    ));
+    const sameSpan = currentItemMatches.length > 0
+      ? rawSameSpan.filter((candidate) => candidate.entityType !== "item" || currentItemMatches.includes(candidate))
+      : rawSameSpan;
     const candidatesByTarget = new Map();
     for (const candidate of sameSpan) {
       const targetKey = ambiguityTargetKey(candidate);
@@ -125,7 +133,7 @@ function findMatches(input, candidates) {
     for (let index = match.start; index < match.end; index += 1) {
       occupied.add(index);
     }
-    accepted.push(match);
+    accepted.push(sameSpan[0] ?? match);
   }
 
   return {

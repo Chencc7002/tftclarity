@@ -152,7 +152,7 @@ export const ITEMS = [
     apiName: "TFT_Item_RunaansHurricane",
     zhName: "海妖之怒",
     shortName: "海妖之怒",
-    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "runaan"],
+    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "卢安娜的飓风", "runaan"],
     category: "ordinary_completed",
     current: true,
     obtainable: true

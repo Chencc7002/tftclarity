@@ -685,52 +685,59 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_Stargazer_Fountain",
-    zhName: "观星泉水",
-    aliases: ["观星泉水", "泉水观星", "stargazer_fountain", "stargazer fountain"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "泉水",
+    displayName: "泉水观星",
+    aliases: ["泉水", "观星泉水", "泉水观星", "stargazer_fountain", "stargazer fountain"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   },
   {
     apiName: "TFT17_Stargazer_Huntress",
-    zhName: "观星猎手",
-    aliases: ["观星猎手", "观星女猎手", "猎手观星", "stargazer_huntress", "stargazer huntress"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "女猎手",
+    displayName: "女猎手观星",
+    aliases: ["女猎手", "观星女猎手", "女猎手观星", "stargazer_huntress", "stargazer huntress"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   },
   {
     apiName: "TFT17_Stargazer_Medallion",
-    zhName: "观星勋章",
-    aliases: ["观星勋章", "勋章观星", "stargazer_medallion", "stargazer medallion"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "勋章",
+    displayName: "勋章观星",
+    aliases: ["勋章", "观星勋章", "勋章观星", "stargazer_medallion", "stargazer medallion"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   },
   {
     apiName: "TFT17_Stargazer_Mountain",
-    zhName: "观星山脉",
-    aliases: ["观星山脉", "山脉观星", "stargazer_mountain", "stargazer mountain"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "秀山",
+    displayName: "秀山观星",
+    aliases: ["秀山", "观星秀山", "秀山观星", "stargazer_mountain", "stargazer mountain"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   },
   {
     apiName: "TFT17_Stargazer_Serpent",
-    zhName: "观星灵蛇",
-    aliases: ["观星灵蛇", "观星蛇", "灵蛇观星", "stargazer_serpent", "stargazer serpent"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "蟒蛇",
+    displayName: "蟒蛇观星",
+    aliases: ["蟒蛇", "观星蟒蛇", "蟒蛇观星", "stargazer_serpent", "stargazer serpent"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   },
   {
     apiName: "TFT17_Stargazer_Shield",
-    zhName: "观星护盾",
-    aliases: ["观星护盾", "护盾观星", "stargazer_shield", "stargazer shield"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "圣坛",
+    displayName: "圣坛观星",
+    aliases: ["圣坛", "观星圣坛", "圣坛观星", "stargazer_shield", "stargazer shield"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   },
   {
     apiName: "TFT17_Stargazer_Wolf",
-    zhName: "观星狼灵",
-    aliases: ["观星狼灵", "观星狼", "狼灵观星", "stargazer_wolf", "stargazer wolf"],
-    confidence: 0.65,
-    source: "trait_token_mapping"
+    zhName: "野猪",
+    displayName: "野猪观星",
+    aliases: ["野猪", "观星野猪", "野猪观星", "stargazer_wolf", "stargazer wolf"],
+    confidence: 1,
+    source: "set17_verified_stargazer_mapping"
   }
 ];
 
