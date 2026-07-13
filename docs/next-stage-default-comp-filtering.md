@@ -1,5 +1,7 @@
 # 下一阶段目标：默认 Comp 补全与 MetaTFT 检索语义对齐
 
+> 历史设计说明：自 2026-07-13 起，本文件中的“自动 Comp”方案不再是当前产品行为。单英雄查询只有在用户显式输入阵容时才应用 Comp；未指定阵容时不请求候选、不附加 Comp `sf`，也不产生“系统补全”或“无稳定 Comp”状态。现行规则以 `docs/current-stage-requirements.md` 顶部的 2026-07-13 覆盖条款为准。
+
 > 实施状态（2026-07-12）：已完成端到端实现。真实请求契约与 A–E 证据见 `docs/metatft-data-explorer-comp-contract.md`，离线 fixture 见 `test/fixtures/comp-filter/metatft-data-explorer-comp-contract.json`。现行语义版本为 `metatft-explorer-sf-units-traits-v1`。
 
 更新时间：2026-07-12
@@ -186,7 +188,7 @@ hero + days + rank + patch + queue + Comp 语义版本 + 稳定门槛
 - `src/app/small-window-server.js` 与 `src/app/small-window-ui`：展示 Comp 的 applied/not_available 状态、来源、样本和最终 endpoint/参数范围。
 - 会话合并、cache key、HTTP schema、文案与 fixture：删除或迁移“默认 trait 过滤”和“低置信 Comp 自动采用”的旧假设。
 
-不要删除阵容排行榜 `comp_rankings` 功能；它可继续使用 `exact_units_traits2` 的原始阵容行和 cluster 对照，仅与单英雄装备查询的默认 Comp 补全解耦。
+不要删除阵容排行榜 `comp_rankings` 功能；它使用 MetaTFT 页面同源的 `/comps_data` 与 `/comps_stats`，并继续与单英雄装备查询基于 `exact_units_traits2` 的默认 Comp 补全解耦。
 
 ## 7. 测试要求
 

@@ -26,16 +26,36 @@ const fixtureRows = [
     placement_count: [70, 60, 50, 40, 40, 30, 20, 10]
   }
 ];
-const compFixture = JSON.parse(await readFile(new URL("../test/fixtures/comp-rankings/exact-units-traits2-minimal.json", import.meta.url), "utf8"));
+const compFixture = JSON.parse(await readFile(new URL("../test/fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url), "utf8"));
+const compContextFixture = JSON.parse(await readFile(new URL("../test/fixtures/comp-rankings/exact-units-traits2-minimal.json", import.meta.url), "utf8"));
 const compVisualResponse = {
-  ...compFixture,
-  data: [
-    ...compFixture.data,
-    {
-      units_traits: "TFT17_MissingA&TFT17_MissingB&TFT17_MissingC&TFT17_MissingD&TFT17_MissingE&TFT17_MissingF|TFT17_MissingTrait_1",
-      placement_count: [1000, 900, 800, 700, 100, 80, 60, 40]
+  compsData: {
+    ...compFixture.compsData,
+    results: {
+      data: {
+        ...compFixture.compsData.results.data,
+        cluster_details: {
+          ...compFixture.compsData.results.data.cluster_details,
+          "409093": {
+            Cluster: 409093,
+            centroid: [2],
+            units_string: "TFT17_MissingA, TFT17_MissingB, TFT17_MissingC, TFT17_MissingD, TFT17_MissingE, TFT17_MissingF",
+            traits_string: "TFT17_MissingTrait_1",
+            name: [{ name: "TFT17_MissingA", type: "unit", score: 1 }],
+            name_string: "TFT17_MissingA",
+            builds: []
+          }
+        }
+      }
     }
-  ]
+  },
+  compsStats: {
+    ...compFixture.compsStats,
+    results: [
+      ...compFixture.compsStats.results,
+      { cluster: "409093", places: [1000, 900, 800, 700, 100, 80, 60, 40, 3680] }
+    ]
+  }
 };
 const itemCompVisualResponse = {
   data: [{
@@ -216,17 +236,22 @@ if (playwright) {
         }
         return itemCompVisualResponse;
       },
-      async getExactUnitsTraits2() {
+    },
+    compsClient: {
+      async getCompsData() {
         if (failCompRequest) throw new Error("visual stale-cache probe");
-        if (emptyCompRequest) return { data: [] };
-        return compVisualResponse;
+        if (emptyCompRequest) return { results: { data: { cluster_id: 409, cluster_details: {} } } };
+        return compVisualResponse.compsData;
+      },
+      async getCompsStats() {
+        if (emptyCompRequest) return { cluster_id: 409, results: [{ cluster: "", places: [0] }] };
+        return compVisualResponse.compsStats;
       }
     },
-    compsClient: {},
     recommendForInputImpl: (input, options) => recommendForInput(input, {
       ...options,
       compsData: {
-        clusterInfo: compFixture.clusters,
+        clusterInfo: compContextFixture.clusters,
         compBuilds: [{
           clusterId: "409002",
           unitApiName: "TFT17_Nunu",
@@ -264,10 +289,10 @@ if (playwright) {
     await page.click("#query-form button.primary");
     await page.waitForSelector(".result-card");
     await page.waitForSelector("button.condition-chip");
-    const autoCompChips = await page.locator("button.condition-chip").allTextContents();
+    const unrestrictedChips = await page.locator("button.condition-chip").allTextContents();
     assertSmoke(
-      autoCompChips.includes("观星霞 · 样本 880 · 系统补全"),
-      `automatic Comp chip is missing: ${JSON.stringify(autoCompChips)}`
+      !unrestrictedChips.some((chip) => chip.includes("系统补全") || chip.includes("system selected")),
+      `unspecified Comp was rendered as system-selected: ${JSON.stringify(unrestrictedChips)}`
     );
     const desktop = await inspectLayout(page, "1200x760 three-column result");
     const desktopMode = await inspectResponsiveMode(page, "1200x760", "three");
@@ -299,10 +324,10 @@ if (playwright) {
       assistantCountBeforeFollowup
     );
     const followupText = await page.locator(".assistant-message").last().textContent();
-    assertSmoke(followupText.includes("观星霞（系统补全，样本 880）"), "days follow-up did not render the refreshed automatic Comp");
-    const longConversation = await inspectLayout(page, "520px automatic Comp days follow-up");
+    assertSmoke(!followupText.includes("系统补全"), "days follow-up rendered an unspecified Comp");
+    const longConversation = await inspectLayout(page, "520px unrestricted days follow-up");
     await page.locator(".assistant-message").last().screenshot({
-      path: resolve(outputDir, "comp-auto-followup-520.png")
+      path: resolve(outputDir, "unrestricted-followup-520.png")
     });
 
     await page.fill("#query-input", "霞在观星霞阵容里什么三件装备最强？");
@@ -338,18 +363,18 @@ if (playwright) {
     await page.setViewportSize({ width: 360, height: 560 });
     await page.fill("#query-input", "近14天霞什么三件装备最强？");
     await page.click("#query-form button.primary");
-    await page.waitForSelector('button.condition-chip:text-is("未限制 Comp · 当前条件下没有稳定 Comp")');
+    await page.waitForSelector(".result-card");
     assertSmoke(
-      (await page.locator("#result").textContent()).includes("当前条件下未找到稳定 Comp，以下结果未限制 Comp"),
-      "no-stable Comp result did not state that the final query is unrestricted"
+      !(await page.locator("#result").textContent()).includes("系统补全"),
+      "unrestricted result rendered a system-selected Comp"
     );
-    const noStableComp = await inspectLayout(page, "360px no-stable Comp result");
+    const unrestrictedResult = await inspectLayout(page, "360px unrestricted result");
     await page.locator("#result").evaluate((element) => {
       const messages = element.querySelectorAll(".message");
       messages[messages.length - 1]?.scrollIntoView({ block: "start" });
     });
     await page.locator(".assistant-message").last().screenshot({
-      path: resolve(outputDir, "comp-none-360.png")
+      path: resolve(outputDir, "unrestricted-360.png")
     });
 
     await page.fill("#query-input", "霞什么三件装备最强？");
@@ -508,7 +533,7 @@ if (playwright) {
         singleColumnMode,
         longConversation,
         explicitComp,
-        noStableComp,
+        unrestrictedResult,
         narrow,
         empty,
         settingsDrawer,

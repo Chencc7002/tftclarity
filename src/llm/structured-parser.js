@@ -330,7 +330,7 @@ export function validateStructuredParserOutput(rawValue) {
         errors
       ),
       minSamples: readInteger(constraints.min_samples ?? constraints.minSamples, "constraints.min_samples", errors, {
-        min: 1,
+        min: 0,
         max: 100000
       }),
       sort,

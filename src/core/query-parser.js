@@ -21,11 +21,28 @@ function parseItemCount(input) {
 
 function parseMinSamples(input) {
   const normalized = normalizeText(input);
+  if (/(?:移除|取消|关闭|不要|不设|不设置|去掉)(?:最低)?样本(?:下限|门槛|限制)|(?:无|没有)样本(?:下限|门槛|限制)|样本(?:不限|无下限)/.test(normalized)) {
+    return 0;
+  }
   const match = normalized.match(/样本(?:>=|大于等于|不少于|至少)?(\d{1,6})/);
   return match ? Number(match[1]) : undefined;
 }
 
-const RANK_ORDER = [
+function mentionsArtifactCategory(input) {
+  const normalized = normalizeText(input);
+  return normalized.includes("神器") || /奥恩装(?!备)/.test(normalized);
+}
+
+function parseItemCategories(input) {
+  const normalized = normalizeText(input);
+  const categories = [];
+  if (normalized.includes("纹章")) categories.push("emblem");
+  if (mentionsArtifactCategory(normalized)) categories.push("artifact");
+  if (normalized.includes("光明")) categories.push("radiant");
+  return uniqueValues(categories);
+}
+
+const RANK_ORDER = Object.freeze([
   "CHALLENGER",
   "GRANDMASTER",
   "MASTER",
@@ -36,7 +53,7 @@ const RANK_ORDER = [
   "SILVER",
   "BRONZE",
   "IRON"
-];
+]);
 
 const RANK_ALIASES = [
   ["CHALLENGER", /(?:王者|最强王者|challenger)/i],
@@ -140,7 +157,8 @@ function parseItemPolicy(input, itemMatches = []) {
   const normalized = normalizeText(input);
   if (/(?:只看|仅看|只要|仅要|只用|仅用)普通/.test(normalized)) return "ordinary_only";
   if (normalized.includes("特殊")) return "include_special";
-  if (normalized.includes("神器") || normalized.includes("奥恩")) return "include_artifact";
+  if (normalized.includes("纹章")) return "include_special";
+  if (mentionsArtifactCategory(normalized)) return "include_artifact";
   if (normalized.includes("光明")) return "include_radiant";
   if (normalized.includes("普通") || categories.has("ordinary_completed")) return "ordinary_only";
   return undefined;
@@ -152,6 +170,10 @@ function inferIntent(input, details = {}) {
     return "unit_item_availability";
   }
   if (details.comparison?.requested) return "unit_item_comparison";
+  if ((details.itemCategories?.length ?? 0) > 0
+    && /(哪个|哪件|什么).{0,8}(好|最好|最强|更好|优先)|(?:好|最好|最强|更好|优先).{0,8}(哪个|哪件|什么)/.test(normalized)) {
+    return "unit_item_rankings";
+  }
   if (/(单件|单装备|哪个装备|哪件装备|优先做.{0,6}装备|装备表现最好|装备最厉害)/.test(normalized)) {
     return "unit_item_rankings";
   }
@@ -171,9 +193,11 @@ function inferIntent(input, details = {}) {
   return "unit_build_rankings";
 }
 
-function hasExplicitIntent(input, comparison, ownedItems) {
+function hasExplicitIntent(input, comparison, ownedItems, itemCategories = []) {
   const normalized = normalizeText(input);
   return comparison?.requested
+    || ((itemCategories?.length ?? 0) > 0
+      && /(哪个|哪件|什么).{0,8}(好|最好|最强|更好|优先)|(?:好|最好|最强|更好|优先).{0,8}(哪个|哪件|什么)/.test(normalized))
     || /(单件|单装备|哪个装备|哪件装备|三件套|出装|一套|换一套|阵容|能不能带|可不可以带)/.test(normalized)
     || ((ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized));
 }
@@ -206,13 +230,18 @@ function hasExclusionIntent(input) {
     .test(normalizeText(input));
 }
 
-function parseComparison(input, entities, excludedItems = []) {
+function parseComparison(input, entities, excludedItems = [], itemCategories = []) {
   const normalized = normalizeText(input);
+  const categoryRankingWithoutNamedItems = itemCategories.length > 0 && entities.items.length === 0;
   const relationshipRequested = /(比较|对比|哪个(?:更)?好|哪个更强|哪件(?:更)?好|谁更好|谁更强|更适合|二选一|还是|选一个|选哪个|选择哪个|\bvs\.?\b)/i.test(normalized);
+  const genericSpecialChoiceRequested = categoryRankingWithoutNamedItems
+    && /(?:比较|对比|二选一|铁砧|铁毡|选一个|选哪个|选择哪个)/.test(normalized);
   const itemContext = entities.items.length > 0
     || /(?:装备|出装|神器|纹章|特殊装备|铁砧)/.test(normalized)
     || (entities.units.length === 1 && /(?:还是|二选一|\bvs\.?\b)/i.test(normalized));
-  const requested = relationshipRequested && itemContext;
+  const requested = relationshipRequested
+    && itemContext
+    && (!categoryRankingWithoutNamedItems || genericSpecialChoiceRequested);
   const excluded = new Set(excludedItems);
   const ownership = requested
     ? normalized.match(/(?:已经有|已有|有了|带着|拿了|锁定|有)(.{1,32}?)(?=，|,|。|；|;|然后|比较|对比|$)/)
@@ -335,7 +364,8 @@ export function parseQuery(input, options = {}) {
   const starLevel = parseStarLevels(input);
   const itemCount = parseItemCount(input);
   const sort = parseSort(input);
-  const comparison = parseComparison(input, entities, excludedItems);
+  const itemCategories = parseItemCategories(input);
+  const comparison = parseComparison(input, entities, excludedItems, itemCategories);
   const excludedItemSet = new Set(excludedItems);
   const comparisonItems = comparison.itemApiNames;
   const lockedItems = comparison.requested
@@ -356,7 +386,7 @@ export function parseQuery(input, options = {}) {
     && !/(带|用|给|装备|已有|已经有|有了|拿了|锁定|不要|排除|剔除|去掉|换掉)/.test(normalizeText(input));
   const intent = comparison.requested
     ? "unit_item_comparison"
-    : inferIntent(input, { comparison, ownedItems });
+    : inferIntent(input, { comparison, ownedItems, itemCategories });
   const compQuery = intent === "comp_rankings"
     ? parseCompRankingQuery(input, options.compQuery)
     : null;
@@ -371,6 +401,7 @@ export function parseQuery(input, options = {}) {
     traitFilters,
     compMention,
     itemPolicy: parseItemPolicy(input, activeItemMatches),
+    itemCategories,
     lockedItems,
     comparisonItems,
     comparisonMode: comparison.requested ? "exclusive_presence" : undefined,
@@ -388,7 +419,7 @@ export function parseQuery(input, options = {}) {
     specialMode: compQuery?.specialMode,
     parser: {
       usedLLM: false,
-      intentExplicit: hasExplicitIntent(input, comparison, ownedItems),
+      intentExplicit: hasExplicitIntent(input, comparison, ownedItems, itemCategories),
       constraintConflicts: [
         ...(sort.intents.length > 1 ? [{ type: "sort", values: sort.intents }] : []),
         ...(comparisonMetric.intents.length > 1

@@ -37,35 +37,32 @@ function runtimeFor(candidatePlacementCount) {
   });
 }
 
-test("HTTP schema exposes applied Comp, source, sample, actual endpoints, and cache risk", async () => {
+test("HTTP schema exposes an explicitly supplied Comp and never labels it automatic", async () => {
   const { payload } = await handleRecommendRequest({
-    input: "霞什么三件装备最强？",
+    input: `Comp: ${compId}，霞什么三件装备最强？`,
     conversationId: "http-auto-comp",
     preferences: { minSamples: 100 }
   }, runtimeFor([220, 190, 160, 130, 80, 50, 30, 20]));
 
   assert.equal(payload.query.comp.status, "applied");
-  assert.equal(payload.query.comp.source, "system_default");
-  assert.equal(payload.query.comp.value.selection, "automatic");
-  assert.equal(payload.query.comp.value.sampleCount, 880);
+  assert.equal(payload.query.comp.source, "current_input");
+  assert.equal(payload.query.comp.value.selection, "explicit");
   assert.equal(payload.source.endpoint, "/tft-explorer-api/unit_builds/TFT17_Xayah");
-  assert.equal(payload.source.compCandidates.endpoint, "/tft-explorer-api/exact_units_traits2");
-  assert.equal(payload.source.compCandidates.stale, false);
+  assert.equal(payload.source.compCandidates, null);
   assert.equal(payload.source.requestParams["sf[0][and][0][unit_unique]"], "TFT17_Aatrox-1");
-  assert.match(payload.answer.summary, /系统补全，样本 880/);
+  assert.match(payload.answer.summary, /用户指定/);
 });
 
-test("HTTP schema exposes not_available and an unrestricted final request", async () => {
+test("HTTP schema keeps an unspecified Comp absent and executes an unrestricted request", async () => {
   const { payload } = await handleRecommendRequest({
     input: "霞什么三件装备最强？",
     conversationId: "http-no-comp",
     preferences: { minSamples: 100 }
   }, runtimeFor([1, 1, 1, 1, 1, 1, 1, 1]));
 
-  assert.equal(payload.query.comp.status, "not_available");
-  assert.equal(payload.query.comp.value, null);
-  assert.equal(payload.query.constraints.comp.status, "not_available");
+  assert.equal(payload.query.comp, null);
+  assert.equal(payload.query.constraints.comp, undefined);
   assert.equal(Object.keys(payload.source.requestParams).some((key) => key.startsWith("sf[")), false);
   assert.equal(payload.source.requestParams.trait, undefined);
-  assert.match(payload.answer.summary, /未找到稳定 Comp，以下结果未限制 Comp/);
+  assert.doesNotMatch(payload.answer.summary, /Comp/);
 });

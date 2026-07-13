@@ -6,6 +6,14 @@ const VALID_ITEM_POLICIES = new Set([
   "include_artifact",
   "include_special"
 ]);
+const VALID_ITEM_CATEGORIES = new Set([
+  "ordinary_completed",
+  "radiant",
+  "artifact",
+  "emblem",
+  "support",
+  "set_special"
+]);
 
 const POLICY_CATEGORIES = {
   ordinary_only: new Set(["ordinary_completed"]),
@@ -35,6 +43,9 @@ export function validateQueryContext(query, options = {}) {
 
   if (!VALID_ITEM_POLICIES.has(query.itemPolicy)) {
     errors.push(`装备策略不合法：${query.itemPolicy}`);
+  }
+  for (const category of query.itemCategories ?? []) {
+    if (!VALID_ITEM_CATEGORIES.has(category)) errors.push(`装备类别不合法：${category}`);
   }
 
   for (const traitFilter of query.traitFilters ?? []) {

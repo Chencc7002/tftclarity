@@ -1,61 +1,67 @@
-# 阵容排行榜数据来源与口径
+# 阵容排行榜数据源与口径
 
-更新时间：2026-07-11
+更新时间：2026-07-13
 
-## 已验证来源
+## 与 MetaTFT `/comps` 一致的数据契约
 
-阵容统计使用 MetaTFT 非官方 Explorer 接口：
+阵容排行榜必须复用 MetaTFT 页面本身使用的两个结构化接口，不抓取网页 HTML，也不再使用 `exact_units_traits2` 结算棋盘做相似度聚类：
 
 ```text
-GET https://api-hc.metatft.com/tft-explorer-api/exact_units_traits2
-formatnoarray=true
-compact=true
+GET https://api-hc.metatft.com/tft-comps-api/comps_data
+queue=1100
+
+GET https://api-hc.metatft.com/tft-comps-api/comps_stats
 queue=1100
 patch=current
 days=3
 rank=CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM
+permit_filter_adjustment=true
+cluster_id=<comps_data.results.data.cluster_id>
 ```
 
-2026-07-11T06:05:30.0264699Z 的实际响应证据包含 250 行，`filter_adjustment.override_applied=false`、`rank_filter` 与请求一致、`sample_size=6339248`。每行包含 `units_traits`、`placement_count` 和可选 `avg_unit_N_tier`。最小脱敏证据保存在 `test/fixtures/comp-rankings/exact-units-traits2-minimal.json`；完整实时响应只保存在被 Git 忽略的 `.cache`。同日最终人工发布 smoke 再次成功，实时样本范围更新为 6,446,912；该变化只作为外部状态证据，不回写离线 fixture。
+`comps_data` 是阵容身份、英雄、羁绊、名称提示和核心出装的权威来源；`comps_stats` 是当前筛选条件下名次分布和榜单统计的权威来源。两者的 `cluster_id` 必须一致。若 MetaTFT 正在切换 cluster，客户端会重新获取一次两份数据；仍不一致时不得把不同版本的数据拼在一起。
 
-`placement_count` 必须是八个非负名次桶，统计统一复用本地 `calculatePlacementStats`：
+2026-07-13 的发布核对中，当前 cluster 为 `409`，`comps_data` 有 69 个阵容定义；同筛选的 `comps_stats` 有 69 个有效阵容统计行，总对局数为 6,516,732。外部数据会持续变化，这些数字只作为发布证据，不写入业务常量。
+
+## 指标转换
+
+MetaTFT 每个阵容返回九个 `places` 值：前八项是第一至第八名数量，第九项是该行总样本。页面实际按前八项求和，并用全局空 cluster 行的 `places[0]` 计算登场率：
 
 ```text
-games = sum(placement_count)
-top4Rate = sum(placement_count[0..3]) / games
-winRate = placement_count[0] / games
-avgPlacement = sum((index + 1) * placement_count[index]) / games
+games = sum(places[0..7])
+top4Rate = sum(places[0..3]) / games
+winRate = places[0] / games
+avgPlacement = sum((index + 1) * places[index]) / games
+pickRate = games / overallGames
 ```
 
-没有完整八桶分布的行不会生成前四率或登顶率。`avg`、`score`、样本数和 LLM 输出都不会用于反推这些指标。
+本地适配器只做上述确定性转换。LLM 不得生成或修补阵容名称、英雄、羁绊、名次分布或统计数据。
 
-## 阵容定义与异常过滤
+## 页面默认可见范围与排序
 
-稳定阵容定义优先匹配：
+默认结果与 MetaTFT `/comps` 的公开页面一致：
+
+- 只保留同时存在于 `comps_data.cluster_details` 和 `comps_stats.results` 的 cluster；
+- 排除空 cluster 和 `-1`；
+- 隐藏 `centroid` 最大值小于 1 的阵容；
+- 默认隐藏 `name_string` 中带 `Augment` 的情境阵容；用户明确查询特殊玩法时才显示；
+- 应用页面默认 `min_playrate=0.01`，即隐藏 `pickRate * 8 < 0.01` 的阵容；
+- 平均名次按升序，其余指标按降序；完全相同时保持 API 原始顺序，与浏览器稳定排序一致。
+
+页面默认 `sortOn` 是 `Avg Placement`。TFTAgent 允许用户明确选择前四率、登顶率、平均名次或热门度；每个列表都必须与页面选择同一指标后的 cluster 顺序相同。输出中禁止出现 `fingerprint:*` 等本地推导阵容身份。
+
+## 缓存、超时与失败处理
+
+`comps_data` 冷请求实测可能超过原来的 2.2 秒小窗上下文超时，因此排行榜接口有独立的 8 秒默认超时，可通过 `TFT_AGENT_COMP_RANKINGS_TIMEOUT_MS` 或 `--comp-rankings-timeout-ms` 调整。`latest_cluster_info`、`comp_options` 和 `comp_builds` 的上下文请求仍使用原来的 `TFT_AGENT_COMPS_TIMEOUT_MS`，避免扩大其他热路径等待时间。
+
+查询缓存把两份同 cluster 响应作为一个快照存储。实时刷新失败时允许使用过期快照，但 API 和 UI 必须显示 stale 状态与更新时间，不能静默切回 `exact_units_traits2` 或混用旧 cluster。
+
+## 验证
+
+默认单元测试使用脱敏的离线 fixture：
 
 ```text
-GET https://api-hc.metatft.com/tft-comps-api/latest_cluster_info
-queue=1100
-patch=current
+test/fixtures/comp-rankings/metatft-comps-page-minimal.json
 ```
 
-同日实际响应为 TFTSet17、cluster id 409，共 69 个 cluster。匹配成功使用稳定 `cluster:<id>`；否则使用排序后的英雄与基础羁绊指纹。只有同一稳定 id/指纹的细微变体才合并，并逐桶求和。
-
-实时数据中确实观察到 PvE ElderDragon、单英雄、重复英雄、召唤物/小兵等异常形态。本地默认规则会：
-
-- 去掉明确的召唤物/小兵 token；
-- 排除 PvE、重复英雄、少于 6 或多于 10 个可购买英雄的棋盘；
-- 排除 cluster 名称明确标记的英雄强化/专属玩法；
-- 仅在玩家显式请求特殊玩法时放宽上述棋盘规则。
-
-最低样本阈值以内的数据只进入“低样本参考（不进入排名）”，不会获得 S/A 等等级标签。
-
-## 图标来源
-
-英雄、装备和羁绊图标 manifest 来自 Riot Data Dragon `16.13.1` 的 `tft-champion.json`、`tft-item.json`、`tft-trait.json`。生成文件只提交 apiName/filterId、版本、来源和版本化 CDN URL，不提交整套图片。后端仅允许 `https://ddragon.leagueoflegends.com`；未知或不合规 URL 返回固定尺寸 fallback。`npm run refresh:assets` 本地缓存优先，缓存缺失时获取固定版本官方源；`npm run audit:assets` 忽略生成时间，仅检查版本、来源和 662 条资产内容漂移。
-
-## 缓存与风险
-
-查询缓存键包含 intent、指标、limit、patch、queue、days、rank、minSamples、specialMode 和数据版本。实时请求失败时允许回退过期缓存，但 API/UI 必须显示更新时间和 stale warning。
-
-MetaTFT 是非官方接口，结构、限流和可用性都可能变化。默认测试只使用离线 fixture；人工发布前可运行 `npm run smoke:comps:live`，该命令不会加入默认测试。
+`npm run smoke:comps` 验证离线服务与 HTTP 序列化；`npm run smoke:comps:live` 才访问实时 MetaTFT，并以独立参考转换逐项比较四种指标的 cluster 顺序。实时检查只作发布证据，不加入默认 `npm test`。

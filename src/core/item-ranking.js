@@ -94,29 +94,33 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
   }
 
   const minSamples = Number(query.minSamples ?? 100);
-  const rankings = [...buckets.values()].map((bucket) => {
-    const stats = calculatePlacementStats(bucket.placementCount);
-    return {
-      apiName: bucket.apiName,
-      stats,
-      placementCount: bucket.placementCount,
-      buildCount: bucket.buildCount,
-      coverage: totalGames > 0 ? stats.games / totalGames : null,
-      coverageDenominatorGames: totalGames,
-      commonPairings: [...bucket.pairings.values()]
-        .sort((a, b) => b.games - a.games || pairingKey(a.items).localeCompare(pairingKey(b.items)))
-        .slice(0, options.pairingLimit ?? 3),
-      copyCounts: [...bucket.copyCounts.values()]
-        .map((entry) => ({
-          copyCount: entry.copyCount,
-          buildCount: entry.buildCount,
-          stats: calculatePlacementStats(entry.placementCount),
-          placementCount: entry.placementCount
-        }))
-        .sort((a, b) => a.copyCount - b.copyCount),
-      qualified: stats.games >= minSamples
-    };
-  });
+  const requestedCategories = new Set(query.itemCategories ?? []);
+  const rankings = [...buckets.values()]
+    .filter((bucket) => requestedCategories.size === 0
+      || requestedCategories.has(options.catalog?.itemByApiName?.get(bucket.apiName)?.category))
+    .map((bucket) => {
+      const stats = calculatePlacementStats(bucket.placementCount);
+      return {
+        apiName: bucket.apiName,
+        stats,
+        placementCount: bucket.placementCount,
+        buildCount: bucket.buildCount,
+        coverage: totalGames > 0 ? stats.games / totalGames : null,
+        coverageDenominatorGames: totalGames,
+        commonPairings: [...bucket.pairings.values()]
+          .sort((a, b) => b.games - a.games || pairingKey(a.items).localeCompare(pairingKey(b.items)))
+          .slice(0, options.pairingLimit ?? 3),
+        copyCounts: [...bucket.copyCounts.values()]
+          .map((entry) => ({
+            copyCount: entry.copyCount,
+            buildCount: entry.buildCount,
+            stats: calculatePlacementStats(entry.placementCount),
+            placementCount: entry.placementCount
+          }))
+          .sort((a, b) => a.copyCount - b.copyCount),
+        qualified: stats.games >= minSamples
+      };
+    });
 
   rankings.sort((left, right) => {
     if (left.qualified !== right.qualified) return left.qualified ? -1 : 1;

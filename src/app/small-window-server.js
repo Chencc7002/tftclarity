@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import {
   CompsContextClient,
+  CURRENT_ITEM_LOCALIZATION,
   DEFAULT_QUERY_OPTIONS,
   JsonFileCacheStore,
   MetaTFTClient,
@@ -37,6 +38,7 @@ import {
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17317;
 export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
+export const DEFAULT_COMP_RANKINGS_TIMEOUT_MS = 8000;
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url));
@@ -60,12 +62,6 @@ const VALID_SORTS = new Set([
   "robust_first",
   "avg_first",
   "games_first"
-]);
-const VALID_DEFAULT_CONTEXT_STRATEGIES = new Set([
-  "popular",
-  "top4",
-  "score",
-  "avg"
 ]);
 const VALID_STRUCTURED_PARSER_MODES = new Set([
   "inherit",
@@ -100,7 +96,6 @@ export const DEFAULT_SMALL_WINDOW_PREFERENCES = {
   sort: DEFAULT_QUERY_OPTIONS.sort,
   days: DEFAULT_QUERY_OPTIONS.days,
   rankFilter: DEFAULT_QUERY_OPTIONS.rankFilter,
-  defaultContextStrategy: "popular",
   structuredParserMode: "inherit"
 };
 
@@ -142,6 +137,10 @@ export function resolveSmallWindowRequestTimeouts(options = {}, env = process.en
     ),
     compsTimeoutMs: positiveTimeout(
       options.compsTimeoutMs ?? env.TFT_AGENT_COMPS_TIMEOUT_MS
+    ),
+    compRankingsTimeoutMs: positiveTimeout(
+      options.compRankingsTimeoutMs ?? env.TFT_AGENT_COMP_RANKINGS_TIMEOUT_MS,
+      DEFAULT_COMP_RANKINGS_TIMEOUT_MS
     )
   };
 }
@@ -243,7 +242,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
     requests: {
       explorerTimeoutMs: runtime.requestTimeouts?.explorerTimeoutMs ?? null,
       catalogTimeoutMs: runtime.requestTimeouts?.catalogTimeoutMs ?? null,
-      compsTimeoutMs: runtime.requestTimeouts?.compsTimeoutMs ?? null
+      compsTimeoutMs: runtime.requestTimeouts?.compsTimeoutMs ?? null,
+      compRankingsTimeoutMs: runtime.requestTimeouts?.compRankingsTimeoutMs ?? null
     }
   };
 }
@@ -618,12 +618,9 @@ function itemDifferences(reference, candidate, catalog) {
 export function normalizeSmallWindowPreferences(value = {}) {
   const preferences = {};
   const minSamples = Number(value.minSamples);
-  if (Number.isInteger(minSamples) && minSamples > 0) preferences.minSamples = minSamples;
+  if (Number.isInteger(minSamples) && minSamples >= 0) preferences.minSamples = minSamples;
   if (VALID_ITEM_POLICIES.has(value.itemPolicy)) preferences.itemPolicy = value.itemPolicy;
   if (VALID_SORTS.has(value.sort)) preferences.sort = value.sort;
-  if (VALID_DEFAULT_CONTEXT_STRATEGIES.has(value.defaultContextStrategy)) {
-    preferences.defaultContextStrategy = value.defaultContextStrategy;
-  }
   if (VALID_STRUCTURED_PARSER_MODES.has(value.structuredParserMode)) {
     preferences.structuredParserMode = value.structuredParserMode;
   }
@@ -702,7 +699,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       answer: {
         summary: best
           ? `${compAnswerPrefix(query.comp)}${best.name}在当前条件的单装备聚合中排名第一。`
-          : `${compAnswerPrefix(query.comp)}没有单件装备达到样本阈值 ${query.minSamples}。`,
+          : `${compAnswerPrefix(query.comp)}${result.text}`,
         evidence: best?.stats ?? null,
         warnings: query.warnings ?? [],
         methodology: "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本"
@@ -1013,7 +1010,8 @@ export function createSmallWindowRuntime(options = {}) {
     });
   const compsClient = options.compsClient ?? new CompsContextClient({
     ...compsOptions,
-    timeoutMs: compsOptions.timeoutMs ?? requestTimeouts.compsTimeoutMs
+    timeoutMs: compsOptions.timeoutMs ?? requestTimeouts.compsTimeoutMs,
+    rankingsTimeoutMs: compsOptions.rankingsTimeoutMs ?? requestTimeouts.compRankingsTimeoutMs
   });
   const cacheStore = options.cacheStore ?? createSmallWindowCacheStore(options);
   const cacheStoreInfo = summarizeCacheStore(options, cacheStore);
@@ -1027,7 +1025,8 @@ export function createSmallWindowRuntime(options = {}) {
     requestTimeouts: {
       explorerTimeoutMs: metaTFTClient.timeoutMs ?? requestTimeouts.explorerTimeoutMs,
       catalogTimeoutMs: catalogMetaTFTClient.timeoutMs ?? requestTimeouts.catalogTimeoutMs,
-      compsTimeoutMs: compsClient.timeoutMs ?? requestTimeouts.compsTimeoutMs
+      compsTimeoutMs: compsClient.timeoutMs ?? requestTimeouts.compsTimeoutMs,
+      compRankingsTimeoutMs: compsClient.rankingsTimeoutMs ?? requestTimeouts.compRankingsTimeoutMs
     },
     catalog: options.catalog ?? null,
     catalogCache: new Map(),
@@ -1268,12 +1267,18 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           };
           warnings.push(`已使用 ${persistedItemCatalog.updatedAt ?? "未知时间"} 的持久化装备目录`);
         } else {
+          const snapshotItems = buildItemCatalogFromItemsResponse({
+            data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
+          }, { patch });
+          catalogOverrides.items = snapshotItems;
           entry.itemCatalogMemory = {
-            source: "seed",
-            items: createCatalog().items.length,
-            updatedAt: null
+            source: "official_snapshot",
+            items: snapshotItems.length,
+            updatedAt: CURRENT_ITEM_LOCALIZATION.metadata?.generatedAt ?? null
           };
-          warnings.push("未找到持久化装备目录，已使用本地种子字典");
+          warnings.push(
+            `未找到持久化装备目录，已使用本地官方目录快照（${CURRENT_ITEM_LOCALIZATION.metadata?.sourcePatch ?? "版本未知"}）`
+          );
         }
       }
 
@@ -1316,7 +1321,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           : traitsFromComps;
       }
       if (compOptions.status !== "fulfilled") {
-        warnings.push(`默认阵容上下文刷新失败，动态目录将继续使用 Explorer、latest cluster 或持久化字典：${compOptions.reason.message}`);
+        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${compOptions.reason.message}`);
       }
 
       const remoteUnitsAvailable = hasDynamicCatalogRecords(catalogOverrides.units);
@@ -1328,15 +1333,35 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       let unitSource = remoteUnitsAvailable ? "remote" : "seed";
       let traitSource = remoteTraitsAvailable ? "remote" : "seed";
 
-      if (!remoteUnitsAvailable && persistedUnitsAvailable) {
-        catalogOverrides.units = persistedUnits;
-        unitSource = "persistent";
-        warnings.push(`已使用 ${persistedDomainCatalog.updatedAt ?? "未知时间"} 的持久化英雄目录`);
+      if (persistedUnitsAvailable) {
+        const refreshedPersistedUnits = mergeCatalogUnits(
+          buildUnitCatalogFromExplorerRows({
+            data: persistedUnits.map((unit) => ({ units_unique: `${unit.apiName}-1` }))
+          }, { patch }),
+          persistedUnits
+        );
+        catalogOverrides.units = remoteUnitsAvailable
+          ? mergeCatalogUnits(refreshedPersistedUnits, catalogOverrides.units)
+          : refreshedPersistedUnits;
+        if (!remoteUnitsAvailable) {
+          unitSource = "persistent";
+          warnings.push(`已使用 ${persistedDomainCatalog.updatedAt ?? "未知时间"} 的持久化英雄目录`);
+        }
       }
-      if (!remoteTraitsAvailable && persistedTraitsAvailable) {
-        catalogOverrides.traits = persistedTraits;
-        traitSource = "persistent";
-        warnings.push(`已使用 ${persistedDomainCatalog.updatedAt ?? "未知时间"} 的持久化羁绊目录`);
+      if (persistedTraitsAvailable) {
+        const refreshedPersistedTraits = mergeCatalogTraits(
+          buildTraitCatalogFromExplorerRows({
+            data: persistedTraits.map((trait) => ({ traits: trait.filterId }))
+          }, { patch }),
+          persistedTraits
+        );
+        catalogOverrides.traits = remoteTraitsAvailable
+          ? mergeCatalogTraits(refreshedPersistedTraits, catalogOverrides.traits)
+          : refreshedPersistedTraits;
+        if (!remoteTraitsAvailable) {
+          traitSource = "persistent";
+          warnings.push(`已使用 ${persistedDomainCatalog.updatedAt ?? "未知时间"} 的持久化羁绊目录`);
+        }
       }
 
       const finalUnits = catalogOverrides.units ?? createCatalog().units;
@@ -1451,10 +1476,6 @@ export async function handleRecommendRequest(body, runtime) {
     explicitPreferences,
     bypassQueryCache: Boolean(body.refresh),
     bypassDefaultContextCache: Boolean(body.refresh),
-    defaultContextOptions: {
-      ...(runtime.defaultContextOptions ?? {}),
-      strategy: preferences.defaultContextStrategy
-    },
     structuredParser: runtime.structuredParser,
     useStructuredParser: structuredParserMode,
     sessionKey: conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`
@@ -2038,6 +2059,11 @@ function parseCliOptions(args) {
       index += 1;
     } else if (arg.startsWith("--comps-timeout-ms=")) {
       options.compsTimeoutMs = Number(arg.slice("--comps-timeout-ms=".length));
+    } else if (arg === "--comp-rankings-timeout-ms" && args[index + 1]) {
+      options.compRankingsTimeoutMs = Number(args[index + 1]);
+      index += 1;
+    } else if (arg.startsWith("--comp-rankings-timeout-ms=")) {
+      options.compRankingsTimeoutMs = Number(arg.slice("--comp-rankings-timeout-ms=".length));
     } else if (arg === "--llm-provider" && args[index + 1]) {
       options.llmProvider = args[index + 1];
       index += 1;

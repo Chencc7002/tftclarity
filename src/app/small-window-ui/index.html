@@ -96,7 +96,7 @@
               <section class="controls" data-i18n-aria="queryConditions" aria-label="查询条件">
                 <label class="control-label"><span data-i18n="sampleThreshold">样本阈值</span>
                   <span class="segmented sample-control" id="sample-control" data-field="minSamples">
-                    <button type="button" data-value="10">10</button><button type="button" data-value="50">50</button><button type="button" data-value="100" class="active">100</button><button type="button" data-value="500">500</button><button type="button" data-value="1000">1000</button>
+                    <button type="button" data-value="0" data-i18n="noThreshold">无下限</button><button type="button" data-value="10">10</button><button type="button" data-value="50">50</button><button type="button" data-value="100" class="active">100</button><button type="button" data-value="500">500</button><button type="button" data-value="1000">1000</button>
                   </span>
                 </label>
                 <label class="control-label"><span data-i18n="itemScope">装备范围</span>
@@ -106,7 +106,6 @@
                 </label>
                 <label class="field-stack"><span data-i18n="sort">排序</span><select id="sort-select" data-i18n-aria="sort" aria-label="排序"><option value="top4_first" data-i18n="sortTop4">前四优先</option><option value="win_first" data-i18n="sortWin">吃鸡优先</option><option value="robust_first" data-i18n="sortRobust">稳健优先</option></select></label>
                 <label class="field-stack"><span data-i18n="days">统计天数</span><select id="days-select" data-i18n-aria="days" aria-label="统计天数"><option value="1">1</option><option value="3">3</option><option value="7">7</option><option value="14">14</option><option value="30">30</option></select></label>
-                <label class="field-stack"><span data-i18n="autoComp">自动 Comp</span><select id="context-strategy-select" data-i18n-aria="autoComp" aria-label="自动 Comp"><option value="popular" data-i18n="stableMostSamples">稳定样本最多</option></select></label>
                 <label class="field-stack"><span data-i18n="parser">结构化解析</span><select id="structured-parser-mode-select" data-i18n-aria="parser" aria-label="结构化解析"><option value="inherit" data-i18n="inherit">继承</option><option value="auto" data-i18n="automatic">自动</option><option value="never" data-i18n="off">关闭</option><option value="always" data-i18n="always">始终</option></select></label>
               </section>
             </details>

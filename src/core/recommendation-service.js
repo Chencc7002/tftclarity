@@ -9,6 +9,7 @@ import {
 import {
   normalizeUnitBuildRows
 } from "../data/metatft-response-adapter.js";
+import { createCompsPageSnapshot } from "../data/comp-response-adapter.js";
 import {
   buildTraitCatalogFromCompsData,
   buildUnitCatalogFromCompsData
@@ -37,9 +38,8 @@ import {
   validateStructuredParserOutput
 } from "../llm/structured-parser.js";
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
-import { buildCompRankingQuery } from "./comp-query.js";
+import { buildCompRankingQuery, isCompRankingFollowUp } from "./comp-query.js";
 import { buildCompRankings } from "./comp-ranking-service.js";
-import { isCompRankingFollowUp } from "./comp-rankings.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
@@ -100,7 +100,24 @@ function itemLabel(apiName, catalog) {
 
 function formatItemRankingText(aggregation, query, catalog) {
   const best = aggregation.rankings[0];
-  if (!best) return `没有单件装备达到样本阈值 ${query.minSamples}。`;
+  if (!best) {
+    if ((aggregation.references ?? []).length === 0) {
+      const categoryLabels = {
+        radiant: "光明装备",
+        artifact: "神器",
+        emblem: "纹章",
+        support: "辅助装备",
+        set_special: "赛季特殊装备"
+      };
+      const scope = (query.itemCategories ?? [])
+        .map((category) => categoryLabels[category] ?? category)
+        .join("或");
+      return scope
+        ? `当前查询条件下没有${scope}的单件携带样本。`
+        : "当前查询条件下没有可用的单件装备携带样本。";
+    }
+    return `没有单件装备达到样本阈值 ${query.minSamples}。`;
+  }
   const stats = best.stats;
   return [
     `结论：${itemLabel(best.apiName, catalog)}在当前口径的单装备聚合中排名第一。`,
@@ -363,12 +380,16 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
   return next;
 }
 
-async function parseQueryWithOptionalStructuredParser(input, options, catalog) {
-  const parsed = parseQuery(input, {
+function parseQueryDeterministically(input, options, catalog) {
+  return parseQuery(input, {
     catalog,
     highConfidenceFuzzy: options.highConfidenceFuzzy,
     compQuery: options.preferences
   });
+}
+
+async function parseQueryWithOptionalStructuredParser(input, options, catalog, parsedSeed = null) {
+  const parsed = parsedSeed ?? parseQueryDeterministically(input, options, catalog);
   if (!shouldUseStructuredParser(parsed, options)) return parsed;
 
   const result = await callStructuredParser(input, parsed, options, catalog);
@@ -665,11 +686,16 @@ function inheritParsedFromSession(parsed, sessionValue) {
       .filter((item) => !explicitlyLockedItems.includes(item));
   }
   inheritScalar("itemPolicy", "itemPolicy", "item_policy");
+  inheritArray("itemCategories", "itemCategories", "item_categories");
   inheritArray("rankFilter", "rankFilter", "rank");
   inheritScalar("days");
   inheritScalar("patch");
   inheritScalar("queue");
-  inheritScalar("minSamples", "minSamples", "min_samples");
+  const currentInputHasSpecialScope = parsed.itemPolicy && parsed.itemPolicy !== "ordinary_only";
+  const previousMinSamplesSource = fieldValue(lastQuery, "minSamplesSource", "min_samples_source");
+  if (!currentInputHasSpecialScope || ["current_input", "conversation"].includes(previousMinSamplesSource)) {
+    inheritScalar("minSamples", "minSamples", "min_samples");
+  }
   inheritScalar("sort");
 
   if (!comparisonContinuation && asArray(next.comparisonItems).length > 0) {
@@ -713,6 +739,23 @@ function inheritParsedFromSession(parsed, sessionValue) {
   };
 }
 
+function canPreinheritUnitFollowUp(parsed) {
+  if (parsed?.unit || parsed?.intent === "comp_rankings") return false;
+  if ((parsed?.parser?.entityAmbiguities ?? []).length > 0) return false;
+  return (parsed?.ownedItems ?? []).length > 0
+    || (parsed?.excludedItems ?? []).length > 0
+    || (parsed?.itemCategories ?? []).length > 0
+    || (parsed?.traitFilters ?? []).length > 0
+    || parsed?.minSamples !== undefined
+    || parsed?.days !== undefined
+    || (parsed?.rankFilter ?? []).length > 0
+    || parsed?.sort !== undefined
+    || Boolean(parsed?.parser?.comparison?.requested)
+    || (parsed?.parser?.unresolvedEntityHints ?? []).some((hint) => (
+      hint.entityType === "item" || hint.entityType === "trait"
+    ));
+}
+
 function serializeQueryForSession(query) {
   return {
     intent: query.intent,
@@ -731,11 +774,13 @@ function serializeQueryForSession(query) {
     ownedItems: query.ownedItems,
     excludedItems: query.excludedItems,
     itemPolicy: query.itemPolicy,
+    itemCategories: query.itemCategories,
     rankFilter: query.rankFilter,
     days: query.days,
     patch: query.patch,
     queue: query.queue,
     minSamples: query.minSamples,
+    minSamplesSource: query.constraintSources?.min_samples?.source ?? null,
     sort: query.sort,
     defaultContext: query.defaultContext
       ? {
@@ -755,6 +800,9 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
   }
 
   const explicitValue = parsed.comp?.value ?? parsed.compMention;
+  if (!explicitValue) {
+    return { value: null, cache: null, plan: null, warnings: [] };
+  }
   const explicitSource = parsed.sessionContext?.inheritedKeys?.includes("comp")
     ? "conversation"
     : "current_input";
@@ -987,7 +1035,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
     materialThresholds: options.comparisonOptions?.materialThresholds
   });
   const itemRanking = validatedQuery.intent === "unit_item_rankings"
-    ? aggregateUnitItemRankings(filtered.builds, validatedQuery)
+    ? aggregateUnitItemRankings(filtered.builds, validatedQuery, { catalog })
     : null;
   const rankedBuilds = itemRanking
     ? []
@@ -1038,11 +1086,36 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
-  let parsedInput = await parseQueryWithOptionalStructuredParser(input, options, catalog);
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options));
-  const compSessionMerge = inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
+  const deterministicParsed = parseQueryDeterministically(input, options, catalog);
+  const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
+  const initialCompSessionMerge = inheritCompRankingFromSession(
+    deterministicParsed,
+    initialSessionEntry?.value,
+    options
+  );
+  const initialUnitSessionMerge = initialCompSessionMerge.parsed.intent !== "comp_rankings"
+    && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
+    ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
+    : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
+  let parsedInput = await parseQueryWithOptionalStructuredParser(
+    input,
+    {
+      ...options,
+      forceStructuredParser: Boolean(options.forceStructuredParser || structuredParserNeededBeforeSession)
+    },
+    catalog,
+    initialUnitSessionMerge.parsed
+  );
+  const compSessionMerge = initialCompSessionMerge.inherited
+    ? {
+      parsed: parsedInput,
+      inherited: true,
+      inheritedKeys: initialCompSessionMerge.inheritedKeys
+    }
+    : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
   parsedInput = compSessionMerge.parsed;
 
   if (parsedInput.intent === "comp_rankings") {
@@ -1075,19 +1148,54 @@ export async function recommendForInput(input, options = {}) {
     }
 
     if (response === undefined) {
-      const params = {
-        formatnoarray: "true",
-        compact: "true",
+      const dataParams = { queue: query.queue };
+      const statsParams = {
         queue: query.queue,
         patch: query.patch,
         days: query.days,
-        rank: query.rankFilter.join(",")
+        permit_filter_adjustment: "true"
       };
+      if (query.queue === "1100" && query.rankFilter.length > 0) {
+        statsParams.rank = [...query.rankFilter].sort().join(",");
+      }
       try {
-        response = await options.metaTFTClient?.getExactUnitsTraits2(params);
+        const client = options.compsClient;
+        if (typeof client?.getCompsData !== "function" || typeof client?.getCompsStats !== "function") {
+          throw new Error("comp rankings require a comps client with getCompsData() and getCompsStats()");
+        }
+        let compsData = await client.getCompsData(dataParams);
+        let dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+        let compsStats = await client.getCompsStats({
+          ...statsParams,
+          ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+        });
+        const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+        if (dataClusterId !== undefined && statsClusterId !== undefined
+          && String(dataClusterId) !== String(statsClusterId)) {
+          compsData = await client.getCompsData(dataParams);
+          dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+          compsStats = await client.getCompsStats({
+            ...statsParams,
+            ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+          });
+        }
+        const finalStatsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+        if (dataClusterId !== undefined && finalStatsClusterId !== undefined
+          && String(dataClusterId) !== String(finalStatsClusterId)) {
+          throw new Error(`MetaTFT comps cluster mismatch after retry: data=${dataClusterId}, stats=${finalStatsClusterId}`);
+        }
+        response = createCompsPageSnapshot(compsData, compsStats);
         if (response !== undefined) {
           const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
-            request: { endpoint: "/tft-explorer-api/exact_units_traits2", params },
+            request: {
+              endpoint: "/tft-comps-api/comps_stats",
+              definitionEndpoint: "/tft-comps-api/comps_data",
+              dataParams,
+              statsParams: {
+                ...statsParams,
+                ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+              }
+            },
             response,
             source: "metatft",
             patch: query.patch
@@ -1113,20 +1221,10 @@ export async function recommendForInput(input, options = {}) {
       }
     }
 
-    if (!response) throw new Error("comp rankings require exact_units_traits2 response or a MetaTFT client");
-    const sourceUpdatedAt = response.capture?.capturedAt
-      ?? queryCache.updatedAt
-      ?? options.compsData?.updatedAt
-      ?? options.compsData?.updated
-      ?? options.sourceUpdatedAt
-      ?? null;
+    if (!response) throw new Error("comp rankings require comps_data/comps_stats responses or a MetaTFT comps client");
     const result = buildCompRankings(response, {
       query,
       catalog,
-      clusterResponse: options.compsData?.clusterInfo ?? options.clusterResponse,
-      compBuildsResponse: options.compsData?.compBuilds ?? options.compBuildsResponse,
-      sampleSize: Number(response.filter_adjustment?.sample_size ?? response.capture?.filterAdjustment?.sample_size),
-      updatedAt: sourceUpdatedAt,
       warnings
     });
     const decorated = decorateCompAssets(result, {
@@ -1158,7 +1256,13 @@ export async function recommendForInput(input, options = {}) {
   }
 
   const sessionEntry = initialSessionEntry;
-  const sessionMerge = inheritParsedFromSession(parsedInput, sessionEntry?.value);
+  const sessionMerge = initialUnitSessionMerge.inherited
+    ? {
+      parsed: parsedInput,
+      inherited: true,
+      inheritedKeys: initialUnitSessionMerge.inheritedKeys
+    }
+    : inheritParsedFromSession(parsedInput, sessionEntry?.value);
   const parsed = sessionMerge.parsed;
   const parsedUnavailableItems = unavailableItemRecords(referencedItemApiNames(parsed), catalog);
   const preflightEntityCandidates = buildClarificationEntityCandidates(input, parsed, {

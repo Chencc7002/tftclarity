@@ -1,5 +1,28 @@
 # MVP 核心实现进度
 
+## 2026-07-13：特殊装备单件排行、零样本阈值与显式 Comp
+
+- “移除/取消样本下限”现为显式 `minSamples=0`，可跨单英雄追问继承目标英雄，不再被偏好值或 `?? 100` 覆盖；小窗样本设置新增“无下限”。
+- “霞的光明装备/神器/纹章哪个最好”进入单件装备排行，先按官方 catalog 类别筛选再统计；特殊装备查询未显式指定门槛时默认从 0 开始，用户明确门槛仍优先。
+- 单英雄查询已取消系统自动 Comp 补全：未显式输入阵容时不请求 `exact_units_traits2` 候选、不生成 Comp 状态、不携带 Comp `sf`；只有玩家输入的阵容名称或签名才会应用及安全继承。
+- 设置面板移除自动 Comp 策略，HTTP/UI 查询条件新增特殊装备类别来源；离线测试覆盖显式零值、三类特殊装备排行、会话追问和无阵容自动补全。
+
+## 2026-07-13：斗士纹章与羁绊追问修复
+
+- 修复“易怎么出装？”后追问“如果携带了斗士纹章呢？”仍被结构化 LLM 要求补英雄的问题：规则已识别到具体装备/羁绊时，先继承已验证的上一轮英雄，再决定是否调用 LLM；不同意图和实体歧义仍不会继承。
+- `TFT17_HPTank` 已按 16.13 中文客户端数据校正为“斗士”，并将 2/4/6 斗士分别映射为 MetaTFT 的 `_1/_2/_3`；“如果开了4斗士羁绊呢？”会生成 `TFT17_HPTank_2`。
+- 只取得 latest cluster 的部分羁绊目录时，会用持久化目录补齐缺失档位并重新应用当前审核别名；没有持久化装备目录且实时 `/items` 失败时，改用版本绑定的本地官方目录快照，不再退化到少量种子装备。
+- 新增离线会话、纹章锁定、精确羁绊档位、持久化目录补全和官方装备快照回退测试。
+
+## 2026-07-13：阵容榜与 MetaTFT `/comps` 同源
+
+- 全局 `comp_rankings` 已改为使用页面同源的 `/tft-comps-api/comps_data` 与 `/tft-comps-api/comps_stats`；`exact_units_traits2` 只继续服务单英雄装备查询的 Comp 条件，不再生成全局阵容榜。
+- 阵容身份完全采用 MetaTFT cluster，不再做 Jaccard 匹配或生成 `fingerprint:*`；前四率、登顶率、平均名次和登场率按页面 `places` 口径确定性转换。
+- 默认可见范围复现页面的 centroid、情境阵容和 `min_playrate` 过滤；四种指标分别按页面方向排序，并在并列时保持 API 原始顺序。
+- `/comps_data` 与 `/comps_stats` 必须绑定同一 cluster；切换期间重试一次，仍不一致则拒绝混用并按既有规则回退过期的成对快照。
+- 排行榜冷请求使用独立 8 秒超时，不扩大其他 `/comps` 上下文的 2.2 秒热路径；查询缓存只保存可复现榜单所需的精简字段。
+- 补充离线页面契约 fixture、四指标顺序、页面可见性、cluster 竞态、缓存快照、会话追问和 HTTP 序列化测试；`smoke:comps:live` 会逐项对照实时页面数据顺序并在不一致时失败。
+
 ## 2026-07-12：单英雄装备默认 Comp 已端到端切换
 
 - 已实际检查 MetaTFT Data Explorer 当前脚本和请求。Comp 是 `exact_units_traits2.units_traits` 的完整变体签名，最终通过 `sf[0][and][*][unit_unique|trait]` 传给 `unit_builds`，不是 `/comps` cluster id。A–E 请求矩阵、响应摘要和脱敏 fixture 见 `docs/metatft-data-explorer-comp-contract.md` 与 `test/fixtures/comp-filter/metatft-data-explorer-comp-contract.json`。

@@ -301,7 +301,7 @@ test("a specified Stargazer effect remains user-sourced instead of using default
   assert.equal(result.query.assumptions.find((entry) => entry.key === "trait_filters").source, "current_input");
 });
 
-test("an unspecified Stargazer effect shows the adopted effect as a system default", async () => {
+test("an unspecified Stargazer effect does not synthesize a comp or trait constraint", async () => {
   const compsData = {
     compOptions: [{
       cluster: "mountain-default",
@@ -327,9 +327,9 @@ test("an unspecified Stargazer effect shows the adopted effect as a system defau
   });
   const response = await handleRecommendRequest({ input: "霞什么装备最好？" }, runtime);
 
-  assert.deepEqual(response.payload.query.traitNames, ["秀山观星"]);
-  assert.equal(response.payload.query.traitSource, "system_default");
-  assert.equal(response.payload.query.defaultContextSummary.compName, "秀山霞");
+  assert.deepEqual(response.payload.query.traitNames, []);
+  assert.equal(response.payload.query.traitSource, null);
+  assert.equal(response.payload.query.defaultContextSummary, null);
 });
 
 test("emblems use the shared item catalog for details, locking, policy, and generic clarification", async () => {

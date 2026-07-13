@@ -149,7 +149,7 @@ test("no stable Comp produces comp=none with no sf or trait fallback and isolate
   assert.notEqual(makeQueryCacheKey(baseQuery(applied)), makeQueryCacheKey(baseQuery(unavailable)));
 });
 
-test("automatic Comp selection is a real preflight request and the highest stable sample reaches unit_builds", async () => {
+test("unrestricted unit queries skip Comp preflight and call unit_builds directly", async () => {
   const calls = [];
   const result = await recommendForInput("大师以上霞什么三件装备最强？", {
     useSession: false,
@@ -167,24 +167,22 @@ test("automatic Comp selection is a real preflight request and the highest stabl
   });
 
   assert.equal(result.validation.valid, true);
-  assert.equal(result.query.comp.status, "applied");
-  assert.equal(result.query.comp.value.selection, "automatic");
-  assert.equal(result.query.comp.value.id, contract.comps.A.id);
-  assert.equal(calls.length, 2);
-  for (const key of ["days", "rank", "patch", "queue"]) {
-    assert.deepEqual(calls[0].plan.params[key], calls[1].plan.params[key]);
-  }
-  assert.equal(calls[1].plan.params.trait, undefined);
-  assert.equal(calls[1].plan.params["sf[0][and][18][trait]"], "TFT17_Stargazer_Serpent_1");
+  assert.equal(result.query.comp, null);
+  assert.equal(calls.length, 1);
+  assert.equal(calls[0].type, "final");
+  assert.equal(calls[0].plan.params.trait, undefined);
+  assert.equal(Object.keys(calls[0].plan.params).some((key) => key.startsWith("sf[")), false);
 });
 
-test("automatic Comp miss executes the final query without Comp and states the unrestricted scope", async () => {
+test("unrestricted unit queries expose no synthetic unavailable Comp constraint", async () => {
+  let candidateCalls = 0;
   let finalPlan;
   const result = await recommendForInput("霞什么三件装备最强？", {
     useSession: false,
     preferences: { minSamples: 100 },
     metaTFTClient: {
       async getCompCandidates() {
+        candidateCalls += 1;
         return {
           data: [{ units_traits: contract.comps.A.id, placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }]
         };
@@ -195,11 +193,11 @@ test("automatic Comp miss executes the final query without Comp and states the u
       }
     }
   });
-  assert.equal(result.query.comp.status, "not_available");
-  assert.equal(result.query.comp.value, null);
+  assert.equal(result.query.comp, null);
+  assert.equal(candidateCalls, 0);
   assert.equal(finalPlan.params.trait, undefined);
   assert.equal(Object.keys(finalPlan.params).some((key) => key.startsWith("sf[")), false);
-  assert.match(result.text, /当前条件下未找到达到稳定门槛的 Comp；以下结果未限制 Comp/);
+  assert.doesNotMatch(result.text, /Comp/);
 });
 
 test("an explicit named Comp is inherited across a days follow-up while final stats are re-queried", async () => {
@@ -262,7 +260,7 @@ test("Comp candidate cache keys change for every sample-scope dimension", () => 
   }
 });
 
-test("automatic Comp is fetched again when hero, days, rank, patch, or queue changes", async () => {
+test("unrestricted queries never fetch Comp when hero, days, rank, patch, or queue changes", async () => {
   const cacheStore = new MemoryCacheStore();
   const catalog = createCatalog({
     units: [
@@ -319,29 +317,14 @@ test("automatic Comp is fetched again when hero, days, rank, patch, or queue cha
       metaTFTClient: client,
       preferences
     });
-    assert.equal(result.query.comp?.status, "applied", `${input}:${JSON.stringify(preferences)}:${JSON.stringify(result.validation)}`);
-    assert.equal(result.query.comp.value.selection, "automatic");
+    assert.equal(result.query.comp, null, `${input}:${JSON.stringify(preferences)}:${JSON.stringify(result.validation)}`);
   }
 
-  assert.equal(candidatePlans.length, runs.length);
+  assert.equal(candidatePlans.length, 0);
   assert.equal(finalPlans.length, runs.length);
-  assert.deepEqual(candidatePlans.map((plan) => ({
-    unit: plan.params.unit_unique,
-    days: plan.params.days,
-    rank: plan.params.rank,
-    patch: plan.params.patch,
-    queue: plan.params.queue
-  })), [
-    { unit: "TFT17_Xayah-1", days: "3", rank: "MASTER", patch: "current", queue: "1100" },
-    { unit: "TFT17_Xayah-1", days: "1", rank: "MASTER", patch: "current", queue: "1100" },
-    { unit: "TFT17_Xayah-1", days: "3", rank: "CHALLENGER", patch: "current", queue: "1100" },
-    { unit: "TFT17_Xayah-1", days: "3", rank: "MASTER", patch: "17.7", queue: "1100" },
-    { unit: "TFT17_Xayah-1", days: "3", rank: "MASTER", patch: "current", queue: "PBE" },
-    { unit: "TFT17_Nunu-1", days: "3", rank: "MASTER", patch: "current", queue: "1100" }
-  ]);
 });
 
-test("a no-Comp result is not inherited and the next scope can select a fresh automatic Comp", async () => {
+test("an unrestricted follow-up remains unrestricted", async () => {
   const cacheStore = new MemoryCacheStore();
   let candidateCalls = 0;
   const client = {
@@ -373,11 +356,10 @@ test("a no-Comp result is not inherited and the next scope can select a fresh au
     preferences: { minSamples: 100 }
   });
 
-  assert.equal(first.query.comp.status, "not_available");
+  assert.equal(first.query.comp, null);
   assert.equal(second.query.days, 1);
-  assert.equal(second.query.comp.status, "applied");
-  assert.equal(second.query.comp.value.selection, "automatic");
-  assert.equal(candidateCalls, 2);
+  assert.equal(second.query.comp, null);
+  assert.equal(candidateCalls, 0);
 });
 
 test("build ranking, single-item, completion, and comparison work with applied and unrestricted Comp scopes", () => {

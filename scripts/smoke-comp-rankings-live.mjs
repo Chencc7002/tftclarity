@@ -1,58 +1,76 @@
 import {
   CompsContextClient,
-  MetaTFTClient,
   buildCompRankings,
-  createCatalog
+  createCatalog,
+  normalizeCompsPageDataResponse,
+  normalizeCompsStatsResponse
 } from "../src/index.js";
 
 const rankFilter = ["CHALLENGER", "DIAMOND", "EMERALD", "GRANDMASTER", "MASTER", "PLATINUM"];
-const params = {
-  formatnoarray: "true",
-  compact: "true",
+const client = new CompsContextClient({ timeoutMs: 15000, rankingsTimeoutMs: 15000 });
+const dataParams = { queue: "1100" };
+const compsData = await client.getCompsData(dataParams);
+const clusterId = compsData?.results?.data?.cluster_id;
+const statsParams = {
   queue: "1100",
   patch: "current",
   days: 3,
-  rank: rankFilter.join(",")
+  rank: [...rankFilter].sort().join(","),
+  permit_filter_adjustment: "true",
+  cluster_id: clusterId
 };
-const [response, clusterResponse] = await Promise.all([
-  new MetaTFTClient({ timeoutMs: 15000 }).getExactUnitsTraits2(params),
-  new CompsContextClient({ timeoutMs: 15000 }).getLatestClusterInfo({ queue: "1100", patch: "current" })
-]);
-const adjustment = response?.filter_adjustment ?? response?.filterAdjustment ?? {};
-const result = buildCompRankings(response, {
-  query: {
-    metrics: ["top4_rate", "win_rate", "avg_placement", "popularity"],
-    limit: 3,
-    minSamples: 500,
-    patch: "current",
-    rankFilter,
-    days: 3,
-    queue: "1100"
-  },
-  catalog: createCatalog(),
-  clusterResponse,
-  sampleSize: adjustment.sample_size
-});
+const compsStats = await client.getCompsStats(statsParams);
+const query = {
+  metrics: ["top4_rate", "win_rate", "avg_placement", "popularity"],
+  limit: 10,
+  minSamples: 1,
+  patch: "current",
+  queue: "1100",
+  rankFilter,
+  specialMode: false
+};
+const result = buildCompRankings({ compsData, compsStats }, { query, catalog: createCatalog() });
 
-if (result.diagnostics.inputRows === 0) throw new Error("exact_units_traits2 returned no rows");
-if (result.rankings.popularity.length === 0) throw new Error("no eligible normal comp rows after local filtering");
+const definitions = new Map(normalizeCompsPageDataResponse(compsData).definitions.map((row) => [row.clusterId, row]));
+const stats = normalizeCompsStatsResponse(compsStats);
+const visible = stats.rows.filter((row) => {
+  const definition = definitions.get(row.clusterId);
+  return definition
+    && !(definition.centroidMax !== null && definition.centroidMax < 1)
+    && !definition.situational
+    && !(Number.isFinite(row.stats.pickRate) && row.stats.pickRate * 8 < 0.01);
+});
+const expected = {
+  top4Rate: [...visible].sort((a, b) => b.stats.top4Rate - a.stats.top4Rate || a.sourceIndex - b.sourceIndex),
+  winRate: [...visible].sort((a, b) => b.stats.winRate - a.stats.winRate || a.sourceIndex - b.sourceIndex),
+  avgPlacement: [...visible].sort((a, b) => a.stats.avgPlacement - b.stats.avgPlacement || a.sourceIndex - b.sourceIndex),
+  popularity: [...visible].sort((a, b) => b.stats.pickRate - a.stats.pickRate || a.sourceIndex - b.sourceIndex)
+};
+
+for (const [metric, rows] of Object.entries(expected)) {
+  const expectedIds = rows.slice(0, query.limit).map((row) => row.clusterId);
+  const actualIds = result.rankings[metric].map((row) => row.source.clusterId);
+  if (JSON.stringify(actualIds) !== JSON.stringify(expectedIds)) {
+    throw new Error(`${metric} diverged from MetaTFT /comps order: expected=${expectedIds.join(",")} actual=${actualIds.join(",")}`);
+  }
+}
+if (String(result.source.clusterId) !== String(clusterId)) {
+  throw new Error(`cluster mismatch: data=${clusterId} result=${result.source.clusterId}`);
+}
+if (result.diagnostics.acceptedGroups !== visible.length) {
+  throw new Error(`visible comp mismatch: page=${visible.length} result=${result.diagnostics.acceptedGroups}`);
+}
 
 console.log(JSON.stringify({
   ok: true,
-  endpoint: "/tft-explorer-api/exact_units_traits2",
-  params,
-  inputRows: result.diagnostics.inputRows,
-  acceptedGroups: result.diagnostics.acceptedGroups,
-  rejectedRows: result.diagnostics.rejected.length,
-  matchedLeaders: {
-    top4Rate: result.rankings.top4Rate[0]?.source?.matched ?? false,
-    winRate: result.rankings.winRate[0]?.source?.matched ?? false,
-    popularity: result.rankings.popularity[0]?.source?.matched ?? false
-  },
-  sampleSize: adjustment.sample_size ?? null,
-  leaders: {
-    top4Rate: result.rankings.top4Rate[0]?.compId ?? null,
-    winRate: result.rankings.winRate[0]?.compId ?? null,
-    popularity: result.rankings.popularity[0]?.compId ?? null
-  }
+  dataEndpoint: "/tft-comps-api/comps_data",
+  statsEndpoint: "/tft-comps-api/comps_stats",
+  dataParams,
+  statsParams,
+  clusterId,
+  updated: result.source.updatedAt,
+  sampleSize: result.source.sampleSize,
+  definitions: definitions.size,
+  visibleRows: visible.length,
+  leaders: Object.fromEntries(Object.entries(result.rankings).map(([metric, rows]) => [metric, rows[0]?.source.clusterId ?? null]))
 }, null, 2));

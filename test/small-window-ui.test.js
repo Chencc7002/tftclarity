@@ -187,14 +187,15 @@ test("result templates cover recommendations, item rankings, comps, risks, and e
 
 test("settings retain preferences, runtime details, alias review, export, clear, and reset controls", () => {
   for (const id of [
-    "sample-control", "policy-control", "sort-select", "days-select", "context-strategy-select",
+    "sample-control", "policy-control", "sort-select", "days-select",
     "structured-parser-mode-select", "rank-control", "cache-status", "llm-status", "runtime-detail",
     "alias-list", "export-aliases-button", "download-aliases-button", "reload-aliases-button",
     "clear-entity-memory-button", "alias-state-filter", "alias-type-filter", "alias-query-filter",
     "alias-select-all", "enable-selected-aliases-button", "disable-selected-aliases-button",
     "alias-prev-button", "alias-next-button", "clear-cache-button", "reset-preferences-button"
   ]) assert.match(indexHtml, new RegExp(`id="${id}"`));
-  assert.match(appJs, /defaultContextStrategy: state\.defaultContextStrategy/);
+  assert.doesNotMatch(indexHtml, /context-strategy-select/);
+  assert.match(indexHtml, /data-value="0" data-i18n="noThreshold"/);
   assert.match(appJs, /structuredParserMode: state\.structuredParserMode/);
   assert.match(appJs, /rankFilter: state\.rankFilter/);
   assert.match(appJs, /window\.confirm/);

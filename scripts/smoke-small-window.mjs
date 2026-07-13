@@ -29,6 +29,10 @@ const fixtureRows = [
     placement_count: [160, 140, 120, 100, 80, 60, 40, 20]
   },
   {
+    unit_builds: "TFT17_Xayah&TFT17_Item_HPTankEmblemItem|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+    placement_count: [8, 6, 4, 3, 2, 1, 1, 0]
+  },
+  {
     unit_builds: "TFT17_Xayah&TFT_Item_InfinityEdge|TFT_Item_GiantSlayer|TFT_Item_Deathblade",
     placement_count: [90, 80, 70, 60, 40, 30, 20, 10]
   },
@@ -149,6 +153,18 @@ const smokeCatalog = createCatalog({
       zhName: "亚托克斯",
       aliases: ["亚托克斯", "剑魔", "aatrox"]
     }
+  ],
+  items: [
+    ...seedCatalog.items,
+    {
+      apiName: "TFT17_Item_HPTankEmblemItem",
+      zhName: "斗士纹章",
+      shortName: "斗士纹章",
+      aliases: ["斗士纹章", "斗士转"],
+      category: "emblem",
+      current: true,
+      obtainable: true
+    }
   ]
 });
 let unitBuildCalls = 0;
@@ -210,7 +226,6 @@ try {
     body: JSON.stringify({
       preferences: {
         minSamples: 500,
-        defaultContextStrategy: "score",
         structuredParserMode: "never",
         rankFilter: ["MASTER", "DIAMOND"]
       }
@@ -218,7 +233,6 @@ try {
   });
   const preferences = await jsonRequest(`${baseUrl}/api/preferences`);
   assertSmoke(preferences.preferences.minSamples === 500, "preferences did not persist");
-  assertSmoke(preferences.preferences.defaultContextStrategy === "score", "default context strategy did not persist");
   assertSmoke(preferences.preferences.structuredParserMode === "never", "structured parser mode did not persist");
 
   const callsBeforeMultipleUnits = unitBuildCalls;
@@ -424,6 +438,7 @@ try {
     })
   });
   assertSmoke(radiant.query?.itemPolicy === "include_radiant", "radiant item policy was not inferred");
+  assertSmoke(radiant.query?.minSamples === 0, "special owned item did not default to zero samples");
   assertSmoke(radiant.lockedItems?.[0]?.name === "光明羊刀", "radiant owned item was not locked");
   assertSmoke(radiant.cards?.length === 1, "radiant recommendation card was not returned");
 
@@ -437,11 +452,9 @@ try {
     })
   });
   assertSmoke(firstTurn.query?.rankFilter?.join(",") === "CHALLENGER,GRANDMASTER,MASTER", "master-and-above rank range was not parsed");
-  assertSmoke(firstTurn.query?.comp?.status === "applied", "automatic Comp was not applied");
-  assertSmoke(firstTurn.query?.comp?.value?.selection === "automatic", "automatic Comp selection was not serialized");
-  assertSmoke(firstTurn.query?.comp?.value?.id === fixtureCompId, "highest-sample stable Comp was not selected");
-  assertSmoke(firstTurn.source?.compCandidates?.endpoint === "/tft-explorer-api/exact_units_traits2", "candidate endpoint was not exposed");
-  assertSmoke(firstTurn.source?.requestParams?.["sf[0][and][0][unit_unique]"] === "TFT17_Aatrox-1", "final request did not expose Comp sf params");
+  assertSmoke(firstTurn.query?.comp === null, "unspecified Comp was synthesized");
+  assertSmoke(firstTurn.source?.compCandidates === null, "unrestricted query exposed a Comp candidate request");
+  assertSmoke(!Object.keys(firstTurn.source?.requestParams ?? {}).some((key) => key.startsWith("sf[")), "unrestricted query retained Comp sf params");
   const secondTurn = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
     body: JSON.stringify({
@@ -454,8 +467,8 @@ try {
   assertSmoke(secondTurn.query?.unit === "TFT17_Xayah", "follow-up did not inherit the unit");
   assertSmoke(secondTurn.query?.constraints?.unit?.source === "conversation", "follow-up unit source was not serialized");
   assertSmoke(secondTurn.query?.constraints?.days?.source === "current_input", "follow-up day source was not serialized");
-  assertSmoke(secondTurn.query?.comp?.value?.selection === "automatic", "days follow-up did not recompute automatic Comp");
-  assertSmoke(compCandidateCalls >= 2, "days follow-up reused an automatic Comp across a changed sample scope");
+  assertSmoke(secondTurn.query?.comp === null, "days follow-up synthesized a Comp");
+  assertSmoke(compCandidateCalls === 0, "unrestricted turns fetched Comp candidates");
 
   const explicitComp = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
@@ -470,7 +483,7 @@ try {
   assertSmoke(explicitComp.query?.comp?.source === "current_input", "explicit Comp source was not current_input");
   assertSmoke(explicitComp.source?.requestParams?.trait === undefined, "explicit Comp was converted to a top-level trait filter");
 
-  const noStableComp = await jsonRequest(`${baseUrl}/api/recommend`, {
+  const unrestricted = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
     body: JSON.stringify({
       input: "只看王者霞什么三件装备最强？",
@@ -478,11 +491,26 @@ try {
       preferences: { minSamples: 100 }
     })
   });
-  assertSmoke(noStableComp.query?.comp?.status === "not_available", "no-stable response did not expose not_available");
-  assertSmoke(noStableComp.query?.comp?.value === null, "no-stable response retained a Comp value");
-  assertSmoke(!Object.keys(noStableComp.source?.requestParams ?? {}).some((key) => key.startsWith("sf[")), "no-stable final request retained Comp sf params");
-  assertSmoke(noStableComp.source?.requestParams?.trait === undefined, "no-stable final request used a trait fallback");
-  assertSmoke(/未限制 Comp/.test(noStableComp.answer?.summary ?? ""), "no-stable answer did not state the unrestricted Comp scope");
+  assertSmoke(unrestricted.query?.comp === null, "unrestricted response synthesized Comp state");
+  assertSmoke(!Object.keys(unrestricted.source?.requestParams ?? {}).some((key) => key.startsWith("sf[")), "unrestricted final request retained Comp sf params");
+  assertSmoke(unrestricted.source?.requestParams?.trait === undefined, "unrestricted final request used a trait fallback");
+
+  const radiantItems = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({ input: "霞的光明装备哪个最好？" })
+  });
+  assertSmoke(radiantItems.type === "unit_item_rankings", "radiant category did not use item rankings");
+  assertSmoke(radiantItems.query?.minSamples === 0, "radiant category did not default to zero samples");
+  assertSmoke(radiantItems.query?.itemCategories?.join(",") === "radiant", "radiant category constraint was lost");
+  assertSmoke(radiantItems.itemRankings?.every((item) => item.apiName.includes("Radiant")), "radiant ranking mixed ordinary items");
+
+  const emblemItems = await jsonRequest(`${baseUrl}/api/recommend`, {
+    method: "POST",
+    body: JSON.stringify({ input: "霞的纹章哪个最好？" })
+  });
+  assertSmoke(emblemItems.type === "unit_item_rankings", "emblem category did not use item rankings");
+  assertSmoke(emblemItems.query?.minSamples === 0, "emblem category did not default to zero samples");
+  assertSmoke(emblemItems.itemRankings?.[0]?.apiName === "TFT17_Item_HPTankEmblemItem", "emblem ranking did not return emblem data");
 
   const singleItems = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",

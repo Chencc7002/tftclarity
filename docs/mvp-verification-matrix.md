@@ -55,11 +55,11 @@
 |---|---|---|
 | 标准阵容问法无需 LLM | 已验证 | 最强/前四/登顶/热门/均名/上分/稳+吃鸡规则测试；装备意图不回归 |
 | 随意问法进入受控结构化意图 | 已验证 | 假 LLM `comp_rankings` schema 测试；未知指标和字段被拒绝，排序仍由本地 service 完成 |
-| 真实名次分布与本地统计 | 已验证 | `exact_units_traits2` 2026-07-11 实际响应证据、最小 fixture、八桶校验和 `StatsCalculator` |
-| 稳定阵容聚合和异常过滤 | 已验证 | cluster id/指纹、变体逐桶求和、PvE/重复/异常人口/专属玩法过滤测试 |
-| 前四、登顶、均名、热门独立排序 | 已验证 | fixture 返回不同榜首；均名升序、热门按样本、确定性 tie-break 测试 |
+| 真实名次分布与本地统计 | 已验证 | `/comps_stats` 2026-07-13 实际响应证据、最小 fixture 与 `places` 八名次校验 |
+| 页面 cluster 与默认可见性 | 已验证 | `/comps_data` cluster id、centroid、情境阵容、最低登场率及缺失定义过滤测试 |
+| 前四、登顶、均名、热门独立排序 | 已验证 | fixture 返回不同榜首；排序方向与稳定并列顺序逐项对照 MetaTFT 页面 |
 | 低样本只作参考 | 已验证 | 未达阈值阵容不进入 rankings，只进入 `references` 且 `lowSample=true`；UI 明示“不进入排名” |
-| 无八桶分布不生成率指标 | 已验证 | 缺 `placement_count` 行被拒绝，前四与登顶榜为空 |
+| 无完整名次分布不生成率指标 | 已验证 | 缺少八个有效 `places` 的行被拒绝，不生成前四或登顶率 |
 | 统一 patch-aware 图标层 | 已验证 | Riot Data Dragon 16.13.1、662 条 manifest、unit/item/trait resolver 和 host allowlist 测试 |
 | 资产 manifest 可重建与审计 | 已验证 | `refresh:assets` 支持缓存优先/固定版本远程回源；`audit:assets` 对 662 条内容做漂移检查 |
 | 缺图与任意 URL 安全降级 | 已验证 | 未知 apiName 返回固定 fallback，非 `ddragon.leagueoflegends.com` URL 被拒绝，后端不泄露原始 payload |

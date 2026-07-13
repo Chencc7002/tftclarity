@@ -24,11 +24,16 @@ function sourcedConstraint(key, value, source) {
   return { key, value, source, confidence: confidenceForSource(source) };
 }
 
-function originLabel(source) {
-  if (source === "session") return "conversation";
-  if (source === "user") return "current_input";
-  if (source === "preference") return "preference";
-  return "system_default";
+function hasSpecialItemScope(parsedQuery, catalog) {
+  if ((parsedQuery.itemCategories ?? []).some((category) => category !== "ordinary_completed")) return true;
+  const itemApiNames = [
+    ...(parsedQuery.ownedItems ?? []),
+    ...(parsedQuery.parser?.comparison?.itemApiNames ?? [])
+  ];
+  return itemApiNames.some((apiName) => {
+    const category = catalog.itemByApiName.get(apiName)?.category;
+    return category && category !== "ordinary_completed";
+  });
 }
 
 export function buildQueryContext(parsedQuery, options = {}) {
@@ -58,11 +63,17 @@ export function buildQueryContext(parsedQuery, options = {}) {
   const starLevel = parsedQuery.starLevel?.length ? parsedQuery.starLevel : [2];
   const itemCount = parsedQuery.itemCount ?? 3;
   const itemPolicy = parsedQuery.itemPolicy ?? preferences.itemPolicy;
+  const itemCategories = parsedQuery.itemCategories ?? [];
   const rankFilter = parsedQuery.rankFilter ?? preferences.rankFilter;
   const days = parsedQuery.days ?? preferences.days;
   const patch = parsedQuery.patch ?? preferences.patch;
   const queue = parsedQuery.queue ?? preferences.queue;
-  const minSamples = parsedQuery.minSamples ?? preferences.minSamples;
+  const specialItemScope = hasSpecialItemScope(parsedQuery, catalog);
+  const comparisonPreferenceOverridesSpecialDefault = parsedQuery.intent === "unit_item_comparison"
+    && preferenceKeys.has("minSamples")
+    && options.preferences?.minSamples !== DEFAULT_QUERY_OPTIONS.minSamples;
+  const useSpecialItemDefault = specialItemScope && !comparisonPreferenceOverridesSpecialDefault;
+  const minSamples = parsedQuery.minSamples ?? (useSpecialItemDefault ? 0 : preferences.minSamples);
   const sort = parsedQuery.sort ?? preferences.sort;
 
   const traitSource = parsedQuery.sessionContext?.inheritedKeys?.includes("traitFilters")
@@ -75,6 +86,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     sourcedConstraint("star_level", starLevel, fieldSource(parsedQuery, "starLevel", Boolean(parsedQuery.starLevel?.length))),
     sourcedConstraint("item_count", itemCount, fieldSource(parsedQuery, "itemCount", parsedQuery.itemCount !== undefined)),
     sourcedConstraint("item_policy", itemPolicy, fieldSource(parsedQuery, "itemPolicy", Boolean(parsedQuery.itemPolicy), preferenceKeys.has("itemPolicy"))),
+    sourcedConstraint("item_categories", itemCategories, fieldSource(parsedQuery, "itemCategories", Boolean(parsedQuery.itemCategories?.length))),
     sourcedConstraint("trait_filters", traitFilters, traitSource),
     sourcedConstraint("owned_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
     sourcedConstraint("locked_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
@@ -84,7 +96,15 @@ export function buildQueryContext(parsedQuery, options = {}) {
     sourcedConstraint("patch", patch, fieldSource(parsedQuery, "patch", Boolean(parsedQuery.patch))),
     sourcedConstraint("days", days, fieldSource(parsedQuery, "days", parsedQuery.days !== undefined, preferenceKeys.has("days"))),
     sourcedConstraint("rank_filter", rankFilter, fieldSource(parsedQuery, "rankFilter", Boolean(parsedQuery.rankFilter?.length), preferenceKeys.has("rankFilter"))),
-    sourcedConstraint("min_samples", minSamples, fieldSource(parsedQuery, "minSamples", parsedQuery.minSamples !== undefined, preferenceKeys.has("minSamples"))),
+    sourcedConstraint(
+      "min_samples",
+      minSamples,
+      parsedQuery.minSamples !== undefined
+        ? fieldSource(parsedQuery, "minSamples", true, preferenceKeys.has("minSamples"))
+        : useSpecialItemDefault
+          ? "system_default"
+          : fieldSource(parsedQuery, "minSamples", false, preferenceKeys.has("minSamples"))
+    ),
     sourcedConstraint("sort", sort, fieldSource(parsedQuery, "sort", Boolean(parsedQuery.sort), preferenceKeys.has("sort")))
   ].map((entry) => {
     const parsedKey = {
@@ -124,6 +144,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     traitFilters,
     comp,
     itemPolicy,
+    itemCategories,
     lockedItems,
     comparisonItems,
     comparisonMode,

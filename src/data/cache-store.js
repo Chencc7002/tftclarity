@@ -107,6 +107,7 @@ export function makeQueryCacheKey(query) {
     owned_items: sortStrings(query.ownedItems ?? query.owned_items),
     excluded_items: sortStrings(query.excludedItems ?? query.excluded_items),
     item_policy: query.itemPolicy ?? query.item_policy ?? null,
+    item_categories: sortStrings(query.itemCategories ?? query.item_categories),
     rank: sortStrings(query.rankFilter ?? query.rank),
     days: query.days ?? null,
     patch: query.patch ?? null,

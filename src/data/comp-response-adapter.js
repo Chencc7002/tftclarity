@@ -72,3 +72,155 @@ export function normalizeCompBuildEvidence(response) {
   }
   return rows;
 }
+
+function finiteNumber(value, fallback = null) {
+  if (value === undefined || value === null || value === "") return fallback;
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
+}
+
+function normalizePageBuilds(value) {
+  return asArray(value).map((row) => ({
+    clusterId: String(row.cluster ?? row.cluster_id ?? row.clusterId ?? ""),
+    unitApiName: String(row.unit ?? row.unit_api_name ?? row.unitApiName ?? ""),
+    items: asArray(row.buildName ?? row.items).map(String),
+    games: finiteNumber(row.count ?? row.games, 0),
+    avgPlacement: finiteNumber(row.avg ?? row.avgPlacement),
+    score: finiteNumber(row.score),
+    placeChange: finiteNumber(row.place_change ?? row.placeChange)
+  })).filter((row) => row.unitApiName && row.items.length > 0);
+}
+
+export function normalizeCompsPageDataResponse(response = {}) {
+  const root = response?.results?.data ?? response?.data?.results?.data ?? response?.data ?? response;
+  const details = root?.cluster_details ?? root?.clusterDetails ?? response?.cluster_details ?? {};
+  const entries = Array.isArray(details)
+    ? details.map((row) => [String(row.Cluster ?? row.cluster ?? row.cluster_id ?? row.clusterId ?? ""), row])
+    : Object.entries(details ?? {});
+  const definitions = entries.map(([key, row = {}], sourceIndex) => {
+    const clusterId = String(row.Cluster ?? row.cluster ?? row.cluster_id ?? row.clusterId ?? key);
+    const nameEntries = asArray(row.name);
+    const nameTokens = nameEntries.length > 0
+      ? nameEntries.map((entry) => typeof entry === "string" ? entry : entry?.name).filter(Boolean)
+      : splitTokens(row.name_string ?? row.comp_name ?? row.name);
+    const centroid = asArray(row.centroid).map(Number).filter(Number.isFinite);
+    return {
+      clusterId,
+      units: splitTokens(row.units_string ?? row.units ?? row.units_list),
+      traits: splitTokens(row.traits_string ?? row.traits ?? row.traits_list),
+      nameTokens,
+      nameString: String(row.name_string ?? row.comp_name ?? ""),
+      situational: String(row.name_string ?? row.comp_name ?? "").includes("Augment"),
+      centroidMax: centroid.length > 0 ? Math.max(...centroid) : null,
+      builds: normalizePageBuilds(row.builds).map((build) => ({
+        ...build,
+        clusterId: build.clusterId || clusterId
+      })),
+      sourceIndex,
+      raw: row
+    };
+  }).filter((row) => row.clusterId);
+
+  return {
+    clusterId: String(root?.cluster_id ?? root?.clusterId ?? response?.cluster_id ?? ""),
+    updatedAt: response?.updated ?? root?.updated ?? null,
+    tftSet: root?.tft_set ?? root?.tftSet ?? response?.tft_set ?? null,
+    queue: String(response?.queue_id ?? root?.queue_id ?? root?.queue ?? ""),
+    definitions
+  };
+}
+
+function placementStats(places, totalGames) {
+  const placementCount = asArray(places).slice(0, 8).map(Number);
+  if (placementCount.length !== 8
+    || placementCount.some((value) => !Number.isFinite(value) || value < 0)) return null;
+  const games = placementCount.reduce((sum, value) => sum + value, 0);
+  if (!(games > 0)) return null;
+  const top4 = placementCount.slice(0, 4).reduce((sum, value) => sum + value, 0);
+  const placementSum = placementCount.reduce((sum, value, index) => sum + value * (index + 1), 0);
+  return {
+    games,
+    top4Rate: top4 / games,
+    winRate: placementCount[0] / games,
+    avgPlacement: placementSum / games,
+    pickRate: Number.isFinite(totalGames) && totalGames > 0 ? games / totalGames : null,
+    placementCount
+  };
+}
+
+export function normalizeCompsStatsResponse(response = {}) {
+  const results = asArray(response?.results ?? response?.data?.results);
+  const totalRow = results.find((row) => String(row?.cluster ?? row?.DB_Cluster ?? "") === "");
+  const totalGames = finiteNumber(totalRow?.places?.[0]);
+  const rejected = [];
+  const rows = [];
+
+  results.forEach((row = {}, sourceIndex) => {
+    const clusterId = String(row.cluster ?? row.DB_Cluster ?? "");
+    if (!clusterId || clusterId === "-1") return;
+    const stats = placementStats(row.places ?? row.placement_count, totalGames);
+    if (!stats) {
+      rejected.push({ clusterId, reason: "invalid_placement_distribution", sourceIndex });
+      return;
+    }
+    rows.push({ clusterId, sourceIndex, stats, raw: row });
+  });
+
+  return {
+    clusterId: String(response?.cluster_id ?? response?.clusterId ?? response?.data?.cluster_id ?? ""),
+    updatedAt: response?.updated ?? response?.data?.updated ?? null,
+    totalGames,
+    rows,
+    rejected
+  };
+}
+
+export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsResponse = {}) {
+  const data = normalizeCompsPageDataResponse(compsDataResponse);
+  const stats = normalizeCompsStatsResponse(compsStatsResponse);
+  const clusterDetails = Object.fromEntries(data.definitions.map((definition) => [
+    definition.clusterId,
+    {
+      Cluster: definition.clusterId,
+      centroid: definition.centroidMax === null ? [] : [definition.centroidMax],
+      units_string: definition.units.join(", "),
+      traits_string: definition.traits.join(", "),
+      name: definition.nameTokens,
+      name_string: definition.nameString,
+      builds: definition.builds.map((build) => ({
+        cluster: build.clusterId,
+        unit: build.unitApiName,
+        buildName: build.items,
+        count: build.games,
+        avg: build.avgPlacement,
+        score: build.score,
+        place_change: build.placeChange
+      }))
+    }
+  ]));
+
+  return {
+    compsData: {
+      updated: data.updatedAt,
+      queue_id: data.queue || undefined,
+      results: {
+        data: {
+          cluster_id: data.clusterId,
+          tft_set: data.tftSet,
+          cluster_details: clusterDetails
+        }
+      }
+    },
+    compsStats: {
+      cluster_id: stats.clusterId,
+      updated: stats.updatedAt,
+      results: [
+        { cluster: "", places: [stats.totalGames] },
+        ...stats.rows.map((row) => ({
+          cluster: row.clusterId,
+          places: [...row.stats.placementCount, row.stats.games]
+        }))
+      ]
+    }
+  };
+}

@@ -1,0 +1,127 @@
+{
+  "capture": {
+    "capturedAt": "2026-07-13T08:04:22.735Z",
+    "page": "https://www.metatft.com/comps",
+    "dataEndpoint": "/tft-comps-api/comps_data",
+    "statsEndpoint": "/tft-comps-api/comps_stats",
+    "params": {
+      "queue": "1100",
+      "patch": "current",
+      "days": 3,
+      "rank": "CHALLENGER,DIAMOND,EMERALD,GRANDMASTER,MASTER,PLATINUM",
+      "permit_filter_adjustment": "true",
+      "cluster_id": "409"
+    },
+    "pageDefaults": {
+      "sortOn": "Avg Placement",
+      "ascending": true,
+      "minPlayrate": 0.01,
+      "situationalComps": false
+    }
+  },
+  "compsData": {
+    "updated": 1783929721948,
+    "queue_id": 1100,
+    "results": {
+      "data": {
+        "cluster_id": 409,
+        "tft_set": "TFTSet17",
+        "cluster_details": {
+          "409002": {
+            "Cluster": 409002,
+            "centroid": [2.2],
+            "units_string": "TFT17_Illaoi, TFT17_Karma, TFT17_Nunu, TFT17_Bard, TFT17_Blitzcrank, TFT17_Sona, TFT17_Vex",
+            "traits_string": "TFT17_DarkStar_1, TFT17_ManaTrait_1, TFT17_ShieldTank_2, TFT17_SpaceGroove_1",
+            "name": [
+              { "name": "TFT17_ShieldTank", "type": "trait", "score": 1 },
+              { "name": "TFT17_Nunu", "type": "unit", "score": 2 }
+            ],
+            "name_string": "TFT17_ShieldTank, TFT17_Nunu",
+            "builds": [
+              {
+                "cluster": "409002",
+                "unit": "TFT17_Nunu",
+                "buildName": ["TFT_Item_WarmogsArmor", "TFT_Item_GargoyleStoneplate", "TFT_Item_DragonsClaw"],
+                "count": 900,
+                "avg": 4.1
+              }
+            ]
+          },
+          "409003": {
+            "Cluster": 409003,
+            "centroid": [1.8],
+            "units_string": "TFT17_Aatrox, TFT17_Belveth, TFT17_MissFortune, TFT17_Maokai, TFT17_Urgot, TFT17_Ornn, TFT17_Rhaast, TFT17_Kindred",
+            "traits_string": "TFT17_ASTrait_3, TFT17_DRX_1, TFT17_HPTank_1, TFT17_ResistTank_1",
+            "name": [
+              { "name": "TFT17_ASTrait", "type": "trait", "score": 1 },
+              { "name": "TFT17_MissFortune", "type": "unit", "score": 2 }
+            ],
+            "name_string": "TFT17_ASTrait, TFT17_MissFortune",
+            "builds": []
+          },
+          "409019": {
+            "Cluster": 409019,
+            "centroid": [2.5],
+            "units_string": "TFT17_Briar, TFT17_Caitlyn, TFT17_Aatrox, TFT17_RekSai, TFT17_Belveth, TFT17_Akali, TFT17_Maokai, TFT17_Kindred",
+            "traits_string": "TFT17_ASTrait_1, TFT17_DRX_2, TFT17_HPTank_1, TFT17_Primordian_2",
+            "name": [
+              { "name": "TFT17_DRX", "type": "trait", "score": 1 },
+              { "name": "TFT17_Belveth", "type": "unit", "score": 2 }
+            ],
+            "name_string": "TFT17_DRX, TFT17_Belveth",
+            "builds": []
+          },
+          "409090": {
+            "Cluster": 409090,
+            "centroid": [2.7],
+            "units_string": "TFT17_Jax, TFT17_Lulu, TFT17_Milio, TFT17_Pantheon, TFT17_TwistedFate, TFT17_Aatrox",
+            "traits_string": "TFT17_Stargazer_Medallion_1, TFT17_ResistTank_1",
+            "name": [{ "name": "TFT17_Pantheon", "type": "unit", "score": 2 }],
+            "name_string": "TFT17_Augment_JaxCarry, TFT17_Pantheon",
+            "builds": []
+          },
+          "409091": {
+            "Cluster": 409091,
+            "centroid": [0.9],
+            "units_string": "TFT17_Aatrox, TFT17_Jax, TFT17_Lulu, TFT17_Milio, TFT17_Pantheon, TFT17_TwistedFate",
+            "traits_string": "TFT17_Stargazer_Mountain_1, TFT17_ResistTank_1",
+            "name": [{ "name": "TFT17_Stargazer_Mountain", "type": "trait", "score": 2 }],
+            "name_string": "TFT17_Stargazer_Mountain, TFT17_Pantheon",
+            "builds": []
+          },
+          "409092": {
+            "Cluster": 409092,
+            "centroid": [1.3],
+            "units_string": "TFT17_Aatrox, TFT17_Jax, TFT17_Lulu, TFT17_Milio, TFT17_Pantheon, TFT17_TwistedFate",
+            "traits_string": "TFT17_Stargazer_Wolf_1, TFT17_ResistTank_1",
+            "name": [{ "name": "TFT17_Stargazer_Wolf", "type": "trait", "score": 2 }],
+            "name_string": "TFT17_Stargazer_Wolf, TFT17_Pantheon",
+            "builds": []
+          }
+        }
+      }
+    }
+  },
+  "compsStats": {
+    "cluster_id": 409,
+    "updated": 1783929862735,
+    "results": [
+      { "cluster": "", "places": [100000, 0, 0, 0, 0, 0, 0, 0, 100000] },
+      { "cluster": "409002", "places": [100, 200, 300, 400, 400, 300, 200, 100, 2000] },
+      { "cluster": "409003", "places": [360, 120, 120, 120, 120, 120, 120, 120, 1200] },
+      { "cluster": "409019", "places": [200, 200, 200, 200, 50, 50, 50, 50, 1000] },
+      { "cluster": "409090", "places": [1000, 900, 800, 700, 600, 500, 300, 200, 5000] },
+      { "cluster": "409091", "places": [1200, 1100, 1000, 900, 800, 500, 300, 200, 6000] },
+      { "cluster": "409092", "places": [20, 30, 40, 50, 50, 40, 30, 40, 300] },
+      { "cluster": "409999", "places": [200, 200, 200, 200, 200, 200, 200, 200, 1600] },
+      { "cluster": "-1", "places": [100, 100, 100, 100, 100, 100, 100, 100, 800] }
+    ]
+  },
+  "expected": {
+    "visibleClusterIds": ["409002", "409003", "409019", "409092"],
+    "avgPlacement": ["409019", "409003", "409002", "409092"],
+    "top4Rate": ["409019", "409003", "409002", "409092"],
+    "winRate": ["409003", "409019", "409092", "409002"],
+    "popularity": ["409002", "409003", "409019", "409092"]
+  }
+}

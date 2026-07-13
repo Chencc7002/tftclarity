@@ -676,6 +676,117 @@ test("user-specified radiant, artifact, and emblem items widen the local item po
   assert.match(mixedSpecial.text, /含特殊装备/);
 });
 
+test("radiant, artifact, and emblem questions rank only the requested item category with zero default threshold", () => {
+  const apiNames = [
+    "TFT_Item_GuinsoosRageblade",
+    "TFT_Item_InfinityEdge",
+    "TFT5_Item_GuinsoosRagebladeRadiant",
+    "TFT5_Item_InfinityEdgeRadiant",
+    "TFT4_Item_OrnnDeathsDefiance",
+    "TFT4_Item_OrnnInfinityForce",
+    "TFT17_Item_HPTankEmblemItem",
+    "TFT17_Item_StargazerEmblemItem"
+  ];
+  const catalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({
+      data: apiNames.map((items) => ({ items }))
+    })
+  });
+  const rows = [
+    {
+      unit_builds: "TFT17_Xayah&TFT5_Item_GuinsoosRagebladeRadiant|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [8, 6, 4, 2, 1, 1, 0, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT5_Item_InfinityEdgeRadiant|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [3, 3, 2, 2, 2, 1, 1, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT4_Item_OrnnDeathsDefiance|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [6, 5, 4, 3, 2, 1, 1, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT4_Item_OrnnInfinityForce|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [2, 2, 2, 2, 1, 1, 1, 1]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT17_Item_HPTankEmblemItem|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [5, 4, 3, 2, 1, 1, 1, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT17_Item_StargazerEmblemItem|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [2, 2, 2, 1, 1, 1, 1, 1]
+    }
+  ];
+  const cases = [
+    ["霞的光明装备哪个最好？", "radiant", "include_radiant"],
+    ["霞的神器哪个好？", "artifact", "include_artifact"],
+    ["霞的纹章哪个最好？", "emblem", "include_special"]
+  ];
+
+  for (const [input, category, itemPolicy] of cases) {
+    const result = recommendFromRows(input, rows, {
+      catalog,
+      preferences: { minSamples: 100 }
+    });
+    assert.equal(result.type, "unit_item_rankings", `${input}:${JSON.stringify({
+      clarification: result.clarification,
+      unit: result.query.unit,
+      ambiguities: result.parsed.parser.entityAmbiguities,
+      hints: result.parsed.parser.unresolvedEntityHints
+    })}`);
+    assert.equal(result.query.itemPolicy, itemPolicy, input);
+    assert.deepEqual(result.query.itemCategories, [category], input);
+    assert.equal(result.query.minSamples, 0, input);
+    assert.equal(result.query.constraints.min_samples.source, "system_default", input);
+    assert.equal(result.itemRankings.length, 2, input);
+    assert.equal(result.itemRankingReferences.length, 0, input);
+    assert.ok(result.itemRankings.every((entry) => (
+      catalog.itemByApiName.get(entry.apiName)?.category === category
+    )), input);
+  }
+
+  const explicitThreshold = recommendFromRows("霞的纹章哪个最好，样本>=20？", rows, {
+    catalog,
+    preferences: { minSamples: 100 }
+  });
+  assert.equal(explicitThreshold.query.minSamples, 20);
+  assert.equal(explicitThreshold.query.constraints.min_samples.source, "current_input");
+  assert.equal(explicitThreshold.itemRankings.length, 0);
+  assert.equal(explicitThreshold.itemRankingReferences.length, 2);
+
+  const noRadiantSamples = recommendFromRows("霞的光明装备哪个最好？", fixtureRows, {
+    catalog,
+    preferences: { minSamples: 100 }
+  });
+  assert.equal(noRadiantSamples.itemRankings.length, 0);
+  assert.equal(noRadiantSamples.itemRankingReferences.length, 0);
+  assert.match(noRadiantSamples.text, /没有光明装备的单件携带样本/);
+});
+
+test("removing the sample threshold in a follow-up keeps the unit and uses zero", async () => {
+  const cacheStore = new MemoryCacheStore();
+  await recommendForInput("霞什么装备最好？", {
+    cacheStore,
+    response: fixtureRows,
+    preferences: { minSamples: 100 }
+  });
+  const result = await recommendForInput("移除样本下限", {
+    cacheStore,
+    response: fixtureRows,
+    preferences: { minSamples: 100 }
+  });
+
+  assert.equal(result.query.unit, "TFT17_Xayah");
+  assert.equal(result.query.minSamples, 0);
+  assert.equal(result.query.constraints.min_samples.source, "current_input");
+  assert.equal(result.cache.session.inherited, true);
+  assert.equal(result.cache.session.inheritedKeys.includes("unit"), true);
+  assert.equal(result.rankedBuilds.length, fixtureRows.length);
+  assert.equal(result.query.comp, null);
+  assert.equal(Object.keys(result.plan.params).some((key) => key.startsWith("sf[")), false);
+});
+
 test("selects a default comps context containing the target unit", () => {
   const context = selectDefaultContextForUnit("TFT17_Xayah", {
     compOptions: [
@@ -1851,6 +1962,23 @@ test("structured parser schema accepts explicit excluded item mentions", () => {
   assert.deepEqual(validation.value.constraints.excludedItemMentions, ["羊刀"]);
 });
 
+test("structured parser schema accepts an explicit zero sample threshold", () => {
+  const validation = validateStructuredParserOutput({
+    intent: "unit_build_rankings",
+    entities: {
+      unit_mentions: ["霞"]
+    },
+    constraints: {
+      min_samples: 0
+    },
+    needs_clarification: false,
+    clarification_question: null
+  });
+
+  assert.equal(validation.valid, true);
+  assert.equal(validation.value.constraints.minSamples, 0);
+});
+
 test("structured parser schema rejects unknown root, entity, and constraint fields", () => {
   const validation = validateStructuredParserOutput({
     intent: "unit_best_3_items",
@@ -2055,6 +2183,155 @@ test("session memory lets an item-only follow-up inherit the previous unit", asy
   assert.match(result.text, /沿用上轮：霞 \/ 2星/);
   assert.ok(result.rankedBuilds.length > 0);
   assert.ok(result.rankedBuilds.every((build) => build.items.includes("TFT_Item_GuinsoosRageblade")));
+});
+
+test("an emblem follow-up gives the inherited unit to the LLM before clarification", async () => {
+  const base = createCatalog();
+  const catalog = createCatalog({
+    units: [
+      ...base.units,
+      {
+        apiName: "TFT17_MasterYi",
+        zhName: "易",
+        aliases: ["易", "剑圣", "master yi", "yi"]
+      }
+    ],
+    traits: buildTraitCatalogFromExplorerRows({
+      data: [
+        { traits: "TFT17_HPTank_1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
+        { traits: "TFT17_HPTank_2", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
+        { traits: "TFT17_HPTank_3", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }
+      ]
+    }),
+    items: buildItemCatalogFromItemsResponse({
+      data: [
+        {
+          items: "TFT17_Item_HPTankEmblemItem",
+          placement_count: [1, 1, 1, 1, 1, 1, 1, 1]
+        },
+        {
+          items: "TFT_Item_GuinsoosRageblade",
+          placement_count: [1, 1, 1, 1, 1, 1, 1, 1]
+        },
+        {
+          items: "TFT_Item_GiantSlayer",
+          placement_count: [1, 1, 1, 1, 1, 1, 1, 1]
+        },
+        {
+          items: "TFT_Item_InfinityEdge",
+          placement_count: [1, 1, 1, 1, 1, 1, 1, 1]
+        }
+      ]
+    })
+  });
+  const rows = [
+    {
+      unit_builds: "TFT17_MasterYi&TFT17_Item_HPTankEmblemItem|TFT_Item_GuinsoosRageblade|TFT_Item_GiantSlayer",
+      placement_count: [120, 100, 90, 80, 60, 40, 30, 20]
+    },
+    {
+      unit_builds: "TFT17_MasterYi&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+      placement_count: [100, 90, 80, 70, 60, 50, 40, 30]
+    }
+  ];
+  const cacheStore = new MemoryCacheStore();
+  let structuredParserCalls = 0;
+
+  await recommendForInput("易怎么出装？", { catalog, response: rows, cacheStore });
+  const result = await recommendForInput("如果携带了斗士纹章呢？", {
+    catalog,
+    response: rows,
+    cacheStore,
+    useStructuredParser: "auto",
+    structuredParser: async ({ parsed }) => {
+      structuredParserCalls += 1;
+      assert.equal(parsed.unit, "TFT17_MasterYi");
+      assert.equal(parsed.sessionContext.inherited, true);
+      return {
+        intent: "unit_build_completion",
+        entities: {
+          unit_mentions: [],
+          item_mentions: ["斗士纹章"],
+          trait_mentions: []
+        },
+        constraints: {
+          owned_items: ["斗士纹章"]
+        },
+        needs_clarification: false,
+        clarification_question: null
+      };
+    }
+  });
+
+  assert.equal(structuredParserCalls, 1);
+  assert.equal(result.cache.session.inherited, true);
+  assert.equal(result.cache.session.inheritedKeys.includes("unit"), true);
+  assert.equal(result.query.unit, "TFT17_MasterYi");
+  assert.deepEqual(result.query.ownedItems, ["TFT17_Item_HPTankEmblemItem"]);
+  assert.equal(result.query.itemPolicy, "include_special");
+  assert.equal(result.clarification.needsClarification, false);
+  assert.ok(result.rankedBuilds.length > 0);
+  assert.ok(result.rankedBuilds.every((build) => build.items.includes("TFT17_Item_HPTankEmblemItem")));
+});
+
+test("a four-Brawler follow-up maps to the second current trait tier and inherits the unit", async () => {
+  const base = createCatalog();
+  const traits = buildTraitCatalogFromExplorerRows({
+    data: [
+      { traits: "TFT17_HPTank_1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }
+    ]
+  });
+  const catalog = createCatalog({
+    units: [
+      ...base.units,
+      {
+        apiName: "TFT17_MasterYi",
+        zhName: "易",
+        aliases: ["易", "剑圣", "master yi", "yi"]
+      }
+    ],
+    traits
+  });
+  const rows = [{
+    unit_builds: "TFT17_MasterYi&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+    placement_count: [120, 100, 90, 80, 60, 40, 30, 20]
+  }];
+  const cacheStore = new MemoryCacheStore();
+  let structuredParserCalls = 0;
+
+  await recommendForInput("易怎么出装？", { catalog, response: rows, cacheStore });
+  const result = await recommendForInput("如果开了4斗士羁绊呢？", {
+    catalog,
+    response: rows,
+    cacheStore,
+    useStructuredParser: "auto",
+    structuredParser: async ({ parsed }) => {
+      structuredParserCalls += 1;
+      assert.equal(parsed.unit, "TFT17_MasterYi");
+      assert.deepEqual(parsed.traitFilters, ["TFT17_HPTank_2"]);
+      return {
+        intent: "unit_build_rankings",
+        entities: {
+          unit_mentions: [],
+          item_mentions: [],
+          trait_mentions: ["4斗士"]
+        },
+        constraints: {},
+        needs_clarification: false,
+        clarification_question: null
+      };
+    }
+  });
+
+  assert.equal(traits.find((trait) => trait.filterId === "TFT17_HPTank_1").displayName, "2斗士");
+  assert.equal(traits.find((trait) => trait.filterId === "TFT17_HPTank_2").displayName, "4斗士");
+  assert.equal(traits.find((trait) => trait.filterId === "TFT17_HPTank_3").displayName, "6斗士");
+  assert.equal(structuredParserCalls, 1);
+  assert.equal(result.cache.session.inherited, true);
+  assert.equal(result.query.unit, "TFT17_MasterYi");
+  assert.deepEqual(result.query.traitFilters, ["TFT17_HPTank_2"]);
+  assert.deepEqual(result.plan.params.trait, ["TFT17_HPTank_2"]);
+  assert.equal(result.clarification.needsClarification, false);
 });
 
 test("an explicit exclusion in a follow-up overrides an inherited owned item", async () => {
@@ -2354,7 +2631,7 @@ test.skip("obsolete: recommendForInput refreshes cached comp_builds evidence wit
   ]);
 });
 
-test("recommendForInput does not retry comps when a completed prefetch has no stable context", async () => {
+test("recommendForInput ignores prefetched Comp context unless the user specifies a Comp", async () => {
   let compsCalls = 0;
   const result = await recommendForInput("xayah", {
     response: fixtureRows,
@@ -2378,8 +2655,8 @@ test("recommendForInput does not retry comps when a completed prefetch has no st
 
   assert.equal(compsCalls, 0);
   assert.equal(result.query.defaultContext, null);
-  assert.equal(result.query.comp.status, "not_available");
-  assert.match(result.query.warnings.join("；"), /当前条件下未找到达到稳定门槛的 Comp；以下结果未限制 Comp/);
+  assert.equal(result.query.comp, null);
+  assert.doesNotMatch(result.query.warnings.join("；"), /Comp/);
   assert.ok(result.rankedBuilds.length > 0);
 });
 
@@ -2899,6 +3176,12 @@ test("generated domain catalog recognizes expanded Chinese unit aliases", () => 
     assert.equal(planned.query.unit, expectedUnit, input);
     assert.equal(planned.parsed.unitAlias, expectedAlias, input);
   }
+
+  const ornnEquipment = planQuery("奥恩什么装备最好", { catalog });
+  assert.equal(ornnEquipment.query.unit, "TFT17_Ornn");
+  assert.equal(ornnEquipment.query.intent, "unit_build_rankings");
+  assert.equal(ornnEquipment.query.itemPolicy, "ordinary_only");
+  assert.deepEqual(ornnEquipment.query.itemCategories, []);
 });
 
 test("generated item catalog lets parser recognize manual Chinese item aliases", () => {
@@ -3114,6 +3397,7 @@ test("MetaTFT clients default to the API host, not the website host", () => {
   assert.equal(new MetaTFTClient().baseUrl, "https://api-hc.metatft.com");
   assert.equal(new CompsContextClient().baseUrl, "https://api-hc.metatft.com");
   assert.equal(new CompsContextClient().timeoutMs, 2200);
+  assert.equal(new CompsContextClient().rankingsTimeoutMs, 8000);
   assert.equal(new MetaTFTClient().maxRetries, 1);
   assert.equal(new CompsContextClient().maxRetries, 1);
 });

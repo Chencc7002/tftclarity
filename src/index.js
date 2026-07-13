@@ -14,8 +14,7 @@ export { parseQuery } from "./core/query-parser.js";
 export { parseRankFilter } from "./core/query-parser.js";
 export {
   buildCompRankings as buildCompsContextRankings,
-  hasUnsupportedCompRankingEntities,
-  isCompRankingFollowUp
+  hasUnsupportedCompRankingEntities
 } from "./core/comp-rankings.js";
 export {
   DEFAULT_HIGH_CONFIDENCE_FUZZY_OPTIONS,
@@ -49,10 +48,14 @@ export {
   COMP_METRICS,
   buildCompRankingQuery,
   isCompRankingInput,
+  isCompRankingFollowUp,
   parseCompMetrics,
   parseCompRankingQuery
 } from "./core/comp-query.js";
-export { buildCompRankings } from "./core/comp-ranking-service.js";
+export {
+  METATFT_DEFAULT_MIN_PLAYRATE,
+  buildCompRankings
+} from "./core/comp-ranking-service.js";
 export { filterBuildRows } from "./core/item-policy-filter.js";
 export {
   compareRankedBuilds,
@@ -74,8 +77,11 @@ export {
   normalizeUnitBuildRows
 } from "./data/metatft-response-adapter.js";
 export {
+  createCompsPageSnapshot,
   normalizeClusterDefinitions,
   normalizeCompBuildEvidence,
+  normalizeCompsPageDataResponse,
+  normalizeCompsStatsResponse,
   normalizeExactUnitsTraitsResponse,
   parseExactCompRow
 } from "./data/comp-response-adapter.js";

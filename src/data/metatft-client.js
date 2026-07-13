@@ -184,6 +184,7 @@ export class CompsContextClient {
     this.baseUrl = options.baseUrl ?? "https://api-hc.metatft.com";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? 2200;
+    this.rankingsTimeoutMs = options.rankingsTimeoutMs ?? 8000;
     assignRetryOptions(this, options);
   }
 
@@ -199,12 +200,23 @@ export class CompsContextClient {
     return this.#get("/tft-comps-api/comp_builds", params);
   }
 
-  async #get(path, params) {
+  async getCompsData(params = {}) {
+    return this.#get("/tft-comps-api/comps_data", params, this.rankingsTimeoutMs);
+  }
+
+  async getCompsStats(params = {}) {
+    return this.#get("/tft-comps-api/comps_stats", params, this.rankingsTimeoutMs);
+  }
+
+  async #get(path, params, timeoutMs = this.timeoutMs) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = new URL(path, this.baseUrl);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
-    return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
+    return fetchJsonWithRetry(this.fetchImpl, url, {
+      ...requestOptions(this),
+      timeoutMs
+    });
   }
 }

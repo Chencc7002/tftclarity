@@ -48,6 +48,8 @@ Rules:
 - Map "哪个好/更强/更稳/上分" to `top4Rate`, "上限/吃鸡" to `winRate`, "平均表现" to `avgPlacement`, and "更常用" to `games`.
 - Put items the player explicitly rejects (for example, "不要羊刀") in `excluded_items`, never in `locked_items` or `comparison_items`.
 - Use `needs_clarification=true` only when the query cannot be safely executed without user choice.
+- Treat fields already present in `already_parsed` as available context; they may come from the current input or a validated conversation follow-up. Do not ask for a unit, item, trait, or constraint that is already present there.
+- Use `min_samples=0` when the user explicitly removes or disables the sample threshold. Do not replace an explicit zero with a default value.
 - Leave unknown or unsupported fields empty instead of guessing.
 - Valid `intent` values are `unit_build_rankings`, `unit_item_rankings`, `unit_build_completion`, `unit_item_comparison`, `unit_item_availability`, `clarification`, and `comp_rankings`. `unit_best_3_items` remains a legacy-compatible alias for `unit_build_rankings`.
 - For `comp_rankings`, leave all entity mentions and single-unit item constraints empty. Use only `top4_rate`, `win_rate`, `avg_placement`, or `popularity` in `metrics`, and always return a `limit` from 1-10. Parse only; never generate, rank, or score comps.

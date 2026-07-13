@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { readFile } from "node:fs/promises";
 import {
   MemoryCacheStore,
   SESSION_LAST_QUERY_KEY,
@@ -42,6 +43,11 @@ const fixtureRows = [
     placement_count: [60, 55, 50, 50, 40, 30, 20, 10]
   }
 ];
+
+const compPageFixture = JSON.parse(await readFile(
+  new URL("./fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url),
+  "utf8"
+));
 
 function deferred() {
   let resolvePromise;
@@ -172,7 +178,6 @@ test("normalizes small-window preference payloads", () => {
     itemPolicy: "include_artifact",
     sort: "win_first",
     days: "7",
-    defaultContextStrategy: "top4",
     structuredParserMode: "always",
     rankFilter: ["PLATINUM", "diamond", "NOPE"],
     ignored: true
@@ -181,10 +186,10 @@ test("normalizes small-window preference payloads", () => {
     itemPolicy: "include_artifact",
     sort: "win_first",
     days: 7,
-    defaultContextStrategy: "top4",
     structuredParserMode: "always",
     rankFilter: ["PLATINUM", "DIAMOND"]
   });
+  assert.equal(normalizeSmallWindowPreferences({ minSamples: 0 }).minSamples, 0);
 });
 
 test("normalizes and resolves small-window cache store options", () => {
@@ -204,18 +209,21 @@ test("resolves bounded small-window request timeouts from options and environmen
   assert.deepEqual(resolveSmallWindowRequestTimeouts({}, {}), {
     explorerTimeoutMs: 2200,
     catalogTimeoutMs: 2200,
-    compsTimeoutMs: 2200
+    compsTimeoutMs: 2200,
+    compRankingsTimeoutMs: 8000
   });
   assert.deepEqual(resolveSmallWindowRequestTimeouts({
     explorerTimeoutMs: 1800
   }, {
     TFT_AGENT_EXPLORER_TIMEOUT_MS: "3000",
     TFT_AGENT_CATALOG_TIMEOUT_MS: "2400",
-    TFT_AGENT_COMPS_TIMEOUT_MS: "2600"
+    TFT_AGENT_COMPS_TIMEOUT_MS: "2600",
+    TFT_AGENT_COMP_RANKINGS_TIMEOUT_MS: "9000"
   }), {
     explorerTimeoutMs: 1800,
     catalogTimeoutMs: 2400,
-    compsTimeoutMs: 2600
+    compsTimeoutMs: 2600,
+    compRankingsTimeoutMs: 9000
   });
 });
 
@@ -299,7 +307,8 @@ test("small-window runtime status exposes safe cache and LLM metadata", async ()
   assert.deepEqual(status.runtime.requests, {
     explorerTimeoutMs: 2200,
     catalogTimeoutMs: 2200,
-    compsTimeoutMs: 2200
+    compsTimeoutMs: 2200,
+    compRankingsTimeoutMs: 8000
   });
   assert.equal("endpoint" in status.runtime.structuredParser, false);
   assert.equal("apiKey" in status.runtime.structuredParser, false);
@@ -439,24 +448,26 @@ test("handleRecommendRequest returns the conversational item-ranking schema", as
   assert.equal(payload.source.endpoint, "/tft-explorer-api/unit_builds/TFT17_Xayah");
   assert.equal(kraken.name, "海妖之怒");
   assert.equal(kraken.copyCounts.some((copy) => copy.copyCount === 2), true);
+
+  const { payload: emptySpecialPayload } = await handleRecommendRequest({
+    conversationId: "empty-special-category",
+    input: "霞的光明装备哪个最好？",
+    preferences: { minSamples: 100 }
+  }, runtime);
+  assert.equal(emptySpecialPayload.query.minSamples, 0);
+  assert.match(emptySpecialPayload.answer.summary, /没有光明装备的单件携带样本/);
 });
 
 test("handleRecommendRequest serializes comp rankings without leaking raw rows", async () => {
-  const compResponse = {
-    data: [{
-      units_traits: "TFT17_Aatrox&TFT17_Belveth&TFT17_Kindred&TFT17_Maokai&TFT17_MissFortune&TFT17_Ornn&TFT17_Rhaast&TFT17_Urgot|TFT17_ASTrait_2&TFT17_DRX_1&TFT17_HPTank_1&TFT17_MeleeTrait_1&TFT17_ResistTank_1",
-      placement_count: [100, 90, 80, 70, 60, 50, 40, 30]
-    }],
-    filter_adjustment: { sample_size: 10000 }
-  };
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
-    metaTFTClient: {
-      getExactUnitsTraits2: async () => compResponse
+    metaTFTClient: {},
+    compsClient: {
+      getCompsData: async () => compPageFixture.compsData,
+      getCompsStats: async () => compPageFixture.compsStats
     },
-    compsClient: {}
   });
 
   const { statusCode, payload } = await handleRecommendRequest({
@@ -466,8 +477,8 @@ test("handleRecommendRequest serializes comp rankings without leaking raw rows",
 
   assert.equal(statusCode, 200);
   assert.equal(payload.type, "comp_rankings");
-  assert.equal(payload.rankings.popularity.length, 1);
-  assert.equal(payload.rankings.popularity[0].stats.games, 520);
+  assert.equal(payload.rankings.popularity.length, 3);
+  assert.equal(payload.rankings.popularity[0].stats.games, 2000);
   assert.ok(payload.rankings.popularity[0].traits.some((trait) => trait.tier === 2));
   assert.deepEqual(payload.references, []);
   assert.equal("raw" in payload.rankings.popularity[0], false);
@@ -478,8 +489,8 @@ test("handleRecommendRequest serializes comp rankings without leaking raw rows",
     preferences: { minSamples: 100000 }
   }, runtime);
   assert.equal(lowSample.payload.rankings.popularity.length, 0);
-  assert.equal(lowSample.payload.references.length, 1);
-  assert.equal(lowSample.payload.references[0].lowSample, true);
+  assert.equal(lowSample.payload.references.length, 3);
+  assert.ok(lowSample.payload.references.every((comp) => comp.lowSample));
 });
 
 test("handleRecommendRequest serializes item comparison cards and aggregate stats", async () => {
@@ -961,6 +972,45 @@ test("small-window runtime lets current official identity supersede a stale pers
   assert.match(entry.warning, /持久化羁绊目录/);
 });
 
+test("small-window runtime keeps the official emblem catalog when the live item endpoint is unavailable", async () => {
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: true,
+    metaTFTClient: {
+      async getItems() {
+        throw new Error("items timeout");
+      },
+      async getUnitsUnique() {
+        return { data: [] };
+      },
+      async getTraits() {
+        return { data: [] };
+      }
+    },
+    compsClient: {
+      async getLatestClusterInfo() {
+        return [];
+      },
+      async getCompOptions() {
+        return [];
+      },
+      async getCompBuilds() {
+        return [];
+      }
+    }
+  });
+
+  const entry = await loadRuntimeCatalog(runtime, {});
+  const emblem = entry.catalog.itemByApiName.get("TFT17_Item_HPTankEmblemItem");
+
+  assert.equal(entry.itemCatalogMemory.source, "official_snapshot");
+  assert.equal(entry.itemCatalogMemory.items >= 170, true);
+  assert.equal(emblem.zhName, "斗士纹章");
+  assert.equal(emblem.category, "emblem");
+  assert.equal(emblem.current, true);
+  assert.match(entry.warning, /本地官方目录快照/);
+});
+
 test("concurrent cold catalog loads share one request batch", async () => {
   const gate = deferred();
   const calls = {};
@@ -1238,6 +1288,7 @@ test("small-window runtime bounds core Explorer, catalog, and comps timeouts", (
   assert.equal(runtime.metaTFTClient.timeoutMs, 2200);
   assert.equal(runtime.catalogMetaTFTClient.timeoutMs, 2200);
   assert.equal(runtime.compsClient.timeoutMs, 2200);
+  assert.equal(runtime.compsClient.rankingsTimeoutMs, 8000);
 });
 
 test("async small-window runtime applies environment timeout overrides", async () => {
@@ -1247,12 +1298,14 @@ test("async small-window runtime applies environment timeout overrides", async (
   }, {
     TFT_AGENT_EXPLORER_TIMEOUT_MS: "1900",
     TFT_AGENT_CATALOG_TIMEOUT_MS: "2100",
-    TFT_AGENT_COMPS_TIMEOUT_MS: "2300"
+    TFT_AGENT_COMPS_TIMEOUT_MS: "2300",
+    TFT_AGENT_COMP_RANKINGS_TIMEOUT_MS: "9100"
   });
 
   assert.equal(runtime.metaTFTClient.timeoutMs, 1900);
   assert.equal(runtime.catalogMetaTFTClient.timeoutMs, 2100);
   assert.equal(runtime.compsClient.timeoutMs, 2300);
+  assert.equal(runtime.compsClient.rankingsTimeoutMs, 9100);
 });
 
 test("small-window runtime keeps Explorer domain catalog when comps context fails", async () => {
@@ -1298,7 +1351,7 @@ test("small-window runtime keeps Explorer domain catalog when comps context fail
 
   const { catalog, warning, compsData } = await loadRuntimeCatalog(runtime, {});
 
-  assert.match(warning, /默认阵容上下文刷新失败/);
+  assert.match(warning, /阵容目录辅助端点刷新失败/);
   assert.deepEqual(compsCalls, {
     latest: 1,
     options: 1
@@ -1353,6 +1406,70 @@ test("small-window runtime builds domain catalog from latest cluster when comp o
   assert.equal(entry.catalog.traitByFilterId.has("TFT17_RangedTrait_1"), true);
   assert.equal(persisted.units.some((unit) => unit.apiName === "TFT17_Aatrox"), true);
   assert.equal(persisted.traits.some((trait) => trait.filterId === "TFT17_RangedTrait_1"), true);
+  assert.match(entry.warning, /comp_options invalid JSON/);
+});
+
+test("small-window runtime fills missing trait tiers from persistent data and reapplies current aliases", async () => {
+  const cacheStore = new MemoryCacheStore();
+  cacheStore.setDomainCatalog("current", {
+    units: [{
+      apiName: "TFT17_MasterYi",
+      zhName: "易",
+      aliases: ["易", "剑圣"],
+      current: true,
+      patch: "current",
+      source: "metatft_explorer"
+    }],
+    traits: [1, 2, 3].map((tier) => ({
+      filterId: `TFT17_HPTank_${tier}`,
+      apiName: "TFT17_HPTank",
+      zhName: "生命坦克",
+      displayName: "生命坦克",
+      aliases: ["生命坦克"],
+      current: true,
+      patch: "current",
+      source: "metatft_explorer"
+    }))
+  });
+  const runtime = createSmallWindowRuntime({
+    cacheStore,
+    fetchItems: true,
+    metaTFTClient: {
+      async getItems() {
+        return { data: [] };
+      },
+      async getUnitsUnique() {
+        throw new Error("units timeout");
+      },
+      async getTraits() {
+        throw new Error("traits timeout");
+      }
+    },
+    compsClient: {
+      async getLatestClusterInfo() {
+        return [{
+          cluster: "latest-partial",
+          units_list: "TFT17_MasterYi",
+          traits_list: "TFT17_HPTank_1",
+          count: 320,
+          score: 86,
+          avg: 3.92
+        }];
+      },
+      async getCompOptions() {
+        throw new Error("comp_options invalid JSON");
+      }
+    }
+  });
+
+  const entry = await loadRuntimeCatalog(runtime, {});
+
+  assert.equal(entry.domainCatalogMemory.traitSource, "remote");
+  assert.equal(entry.catalog.traitByFilterId.get("TFT17_HPTank_1").displayName, "2斗士");
+  assert.equal(entry.catalog.traitByFilterId.get("TFT17_HPTank_2").displayName, "4斗士");
+  assert.equal(entry.catalog.traitByFilterId.get("TFT17_HPTank_3").displayName, "6斗士");
+  assert.equal(entry.catalog.traitByFilterId.get("TFT17_HPTank_2").aliases.includes("4斗士"), true);
+  assert.match(entry.warning, /traits timeout/);
   assert.match(entry.warning, /comp_options invalid JSON/);
 });
 
@@ -1878,7 +1995,6 @@ test("small-window can export entity alias override drafts for manual review", a
 });
 
 test("handleRecommendRequest uses saved preferences unless request overrides them", async () => {
-  const capturedStrategies = [];
   const capturedParserModes = [];
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
@@ -1887,7 +2003,6 @@ test("handleRecommendRequest uses saved preferences unless request overrides the
     metaTFTClient: {},
     compsClient: {},
     recommendForInputImpl: (input, options) => {
-      capturedStrategies.push(options.defaultContextOptions?.strategy);
       capturedParserModes.push(options.useStructuredParser);
       return recommendForInput(input, {
         ...options,
@@ -1900,7 +2015,6 @@ test("handleRecommendRequest uses saved preferences unless request overrides the
     preferences: {
       minSamples: 500,
       days: 7,
-      defaultContextStrategy: "score",
       structuredParserMode: "never",
       rankFilter: ["MASTER", "DIAMOND"]
     }
@@ -1913,7 +2027,6 @@ test("handleRecommendRequest uses saved preferences unless request overrides the
     input: "xayah",
     preferences: {
       minSamples: 100,
-      defaultContextStrategy: "avg",
       structuredParserMode: "always"
     }
   }, runtime);
@@ -1924,7 +2037,6 @@ test("handleRecommendRequest uses saved preferences unless request overrides the
   assert.equal(savedOnly.payload.meta.rankedBuilds, 1);
   assert.equal(overridden.payload.query.minSamples, 100);
   assert.equal(overridden.payload.meta.rankedBuilds, 2);
-  assert.deepEqual(capturedStrategies, ["score", "avg"]);
   assert.deepEqual(capturedParserModes, ["never", "always"]);
 });
 

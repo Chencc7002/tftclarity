@@ -100,7 +100,7 @@ test("small-window smoke script verifies local API flows without network", () =>
   assert.match(smallWindowSmoke, /\/api\/runtime/);
   assert.match(smallWindowSmoke, /explorerTimeoutMs/);
   assert.match(smallWindowSmoke, /\/api\/preferences/);
-  assert.match(smallWindowSmoke, /defaultContextStrategy/);
+  assert.doesNotMatch(smallWindowSmoke, /defaultContextStrategy/);
   assert.match(smallWindowSmoke, /catalogPrewarm/);
   assert.match(smallWindowSmoke, /SMOKE_HOT_CACHE_MAX_MS/);
   assert.match(smallWindowSmoke, /SMOKE_LOCAL_CACHE_MAX_MS/);

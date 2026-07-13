@@ -33,6 +33,23 @@ function traitApiNameFromFilterId(filterId) {
   return String(filterId ?? "").replace(/_[0-9]+$/, "");
 }
 
+function traitTierOverride(filterId, override) {
+  const tier = String(filterId ?? "").match(/_(\d+)$/)?.[1];
+  return tier ? override?.tiers?.[tier] ?? null : null;
+}
+
+function expandVerifiedTraitTiers(filterIds) {
+  const expanded = new Set(filterIds);
+  for (const filterId of filterIds) {
+    const apiName = traitApiNameFromFilterId(filterId);
+    const override = traitAliasOverrideByApiName.get(apiName);
+    for (const tier of Object.keys(override?.tiers ?? {})) {
+      expanded.add(`${apiName}_${tier}`);
+    }
+  }
+  return [...expanded].sort();
+}
+
 function unitApiNameFromExplorerValue(value) {
   return String(value ?? "").replace(/-[0-9]+$/, "");
 }
@@ -72,17 +89,27 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
   const apiName = traitApiNameFromFilterId(filterId);
   const seed = seedTraitByFilterId.get(filterId) ?? seedTraitByApiName.get(apiName);
   const override = traitAliasOverrideByFilterId.get(filterId) ?? traitAliasOverrideByApiName.get(apiName);
+  const tierOverride = traitTierOverride(filterId, override);
   const token = apiToken(filterId);
   return {
     apiName: override?.apiName ?? seed?.apiName ?? apiName,
     filterId,
-    zhName: override?.zhName ?? seed?.zhName ?? null,
-    displayName: override?.displayName ?? seed?.displayName ?? override?.zhName ?? seed?.zhName ?? token,
+    zhName: tierOverride?.zhName ?? override?.zhName ?? seed?.zhName ?? null,
+    displayName: tierOverride?.displayName
+      ?? override?.displayName
+      ?? seed?.displayName
+      ?? tierOverride?.zhName
+      ?? override?.zhName
+      ?? seed?.zhName
+      ?? token,
     aliases: compact([
+      tierOverride?.zhName,
+      tierOverride?.displayName,
       override?.zhName,
       override?.displayName,
       seed?.zhName,
       seed?.displayName,
+      ...(tierOverride?.aliases ?? []),
       ...(override?.aliases ?? []),
       ...(seed?.aliases ?? []),
       filterId,
@@ -182,7 +209,7 @@ export function buildTraitCatalogFromCompsData(data = {}, options = {}) {
   const { traits } = collectCompsApiNames(data);
   const byFilterId = new Map();
 
-  for (const filterId of traits) {
+  for (const filterId of expandVerifiedTraitTiers(traits)) {
     byFilterId.set(filterId, traitRecord(filterId, options, "metatft_comps"));
   }
 
@@ -199,7 +226,7 @@ export function buildTraitCatalogFromExplorerRows(response = {}, options = {}) {
   const traits = collectExplorerTraitFilterIds(response);
   const byFilterId = new Map();
 
-  for (const filterId of traits) {
+  for (const filterId of expandVerifiedTraitTiers(traits)) {
     byFilterId.set(filterId, traitRecord(filterId, options, "metatft_explorer"));
   }
 

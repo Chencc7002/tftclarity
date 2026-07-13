@@ -517,10 +517,24 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_HPTank",
-    zhName: "生命坦克",
-    aliases: ["生命坦克", "血量坦", "hptank", "hp tank"],
-    confidence: 0.75,
-    source: "trait_token_mapping"
+    zhName: "斗士",
+    aliases: ["斗士", "brawler", "hptank", "hp tank"],
+    tiers: {
+      1: {
+        displayName: "2斗士",
+        aliases: ["2斗士", "二斗士"]
+      },
+      2: {
+        displayName: "4斗士",
+        aliases: ["4斗士", "四斗士"]
+      },
+      3: {
+        displayName: "6斗士",
+        aliases: ["6斗士", "六斗士"]
+      }
+    },
+    confidence: 1,
+    source: "riot_client_16.13_zh_cn"
   },
   {
     apiName: "TFT17_ManaTrait",

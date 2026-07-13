@@ -69,6 +69,7 @@ scripts\start-small-window.ps1 -Hotkey "Ctrl+Alt+Space"
 $env:TFT_AGENT_EXPLORER_TIMEOUT_MS = "2200"
 $env:TFT_AGENT_CATALOG_TIMEOUT_MS = "2200"
 $env:TFT_AGENT_COMPS_TIMEOUT_MS = "2200"
+$env:TFT_AGENT_COMP_RANKINGS_TIMEOUT_MS = "8000"
 npm run window:server
 ```
 
@@ -182,9 +183,9 @@ npm run smoke:sqlite
 
 有 `node:sqlite` 或 `better-sqlite3` 时，脚本会创建 SQLite 文件并覆盖 `user_preferences`、`session_state`、`query_cache`、`default_context_cache`、`item_catalog`、`units`、`traits`、`entity_aliases` 和 `feedback_events` 的读写清理链路；没有 driver 时会输出 `SQLite smoke skipped` 并保持 0 退出码，表示当前环境仍应使用默认 JSON store。
 
-小窗设置面板里的“阵容”可切换懒输入默认阵容策略：`样本` 优先选择样本数最高的主流阵容，`前四` 优先选择前四率更高的阵容，`Score` 优先选择 MetaTFT score 更高的阵容，`均名` 优先选择平均名次更低的阵容。当前 `/comp_options` 若没有前四率字段，`前四` 会按 score、样本数、平均名次兜底。该策略会写入 `small_window` 长期偏好，并进入默认阵容缓存 key。
+自 2026-07-13 起，小窗已移除“阵容”自动补全策略。单英雄查询只有在玩家输入阵容名称或完整阵容签名时才会携带 Comp 条件；未输入阵容时不会从 `/comp_options` 或 `exact_units_traits2` 自动选择候选。`/comp_options` 仍可作为动态英雄/羁绊目录的辅助来源，但不得转化为查询条件。
 
-默认阵容会排除 `/comps` `traits_list` 中带 `UniqueTrait` 或 `Augment` 标记的明确专属玩法候选；普通查询只有这类候选时才会降级使用。输入包含“专属强化”“英雄强化”“赌狗”“D牌/D卡”“追三”或 `reroll` 时，会优先选择特殊候选；该模式会使用独立默认阵容缓存 key。
+样本设置支持 `0 / 无下限`。输入“移除样本下限”会得到显式 `minSamples=0`；查询光明装备、神器或纹章且没有指定门槛时，也默认使用 0，以避免低获得率装备被通用样本门槛提前过滤。
 
 小窗设置面板里的“清历史”会调用 `POST /api/cache/clear`，清理 query/default-context/session 短期缓存和运行时 catalog cache，但保留 `small_window` 长期偏好，以及按 patch 保存的装备、英雄和羁绊目录。
 

@@ -44,7 +44,11 @@ function parseLimit(input) {
 }
 
 function parseMinSamples(input) {
-  const match = normalizeText(input).match(/样本(?:>=|大于等于|不少于|至少)?(\d{1,6})/);
+  const normalized = normalizeText(input);
+  if (/(?:移除|取消|关闭|不要|不设|不设置|去掉)(?:最低)?样本(?:下限|门槛|限制)|(?:无|没有)样本(?:下限|门槛|限制)|样本(?:不限|无下限)/.test(normalized)) {
+    return 0;
+  }
+  const match = normalized.match(/样本(?:>=|大于等于|不少于|至少)?(\d{1,6})/);
   return match ? Number(match[1]) : undefined;
 }
 
@@ -88,13 +92,13 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     intent: "comp_rankings",
     metrics: metrics.length > 0 ? metrics : ["top4_rate", "win_rate"],
     limit: Math.min(10, Math.max(1, Number(parsed.limit ?? 3))),
-    minSamples: Math.max(1, Number(parsed.minSamples ?? options.minSamples ?? preferences.minSamples ?? 500)),
+    minSamples: Math.max(0, Number(parsed.minSamples ?? options.minSamples ?? preferences.minSamples ?? 500)),
     days: Number(parsed.days ?? preferences.days ?? 3),
     patch: String(parsed.patch ?? preferences.patch ?? "current"),
     queue: String(parsed.queue ?? preferences.queue ?? "1100"),
     rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
     specialMode: Boolean(parsed.specialMode),
-    dataVersion: String(options.dataVersion ?? "exact-units-traits2-v1")
+    dataVersion: String(options.dataVersion ?? "metatft-comps-page-v1")
   };
 }
 
@@ -110,4 +114,19 @@ export function parseCompRankingQuery(input, options = {}) {
     specialMode: /(专属强化|英雄强化|特殊玩法|赌狗|d牌|d卡|追三|reroll)/i.test(text)
       || Boolean(options.specialMode)
   }, options);
+}
+
+export function isCompRankingFollowUp(parsed, previousQuery) {
+  if (previousQuery?.intent !== "comp_rankings") return false;
+  if (parsed?.unit
+    || (parsed?.ownedItems ?? []).length > 0
+    || (parsed?.excludedItems ?? []).length > 0
+    || (parsed?.traitFilters ?? []).length > 0
+    || parsed?.parser?.comparison?.requested
+    || (parsed?.parser?.unresolvedEntityHints ?? []).length > 0
+    || (parsed?.parser?.entityAmbiguities ?? []).length > 0) return false;
+  if (/(?:装备|英雄|纹章|效果|合成|配方)/u.test(parsed?.rawInput ?? "")) return false;
+  if (parsed?.intent === "comp_rankings") return true;
+  return ["rankFilter", "days", "patch", "minSamples", "sort"].some((key) => parsed?.[key] !== undefined)
+    || /(?:呢|再看|换成|改成|如果|那)/u.test(parsed?.rawInput ?? "");
 }

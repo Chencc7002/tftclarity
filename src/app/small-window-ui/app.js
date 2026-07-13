@@ -8,7 +8,6 @@ const state = {
   itemPolicy: "ordinary_only",
   sort: "top4_first",
   days: 3,
-  defaultContextStrategy: "popular",
   structuredParserMode: "inherit",
   rankFilter: [],
   lastInput: "",
@@ -71,7 +70,6 @@ const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
 const sortSelect = document.querySelector("#sort-select");
 const daysSelect = document.querySelector("#days-select");
-const contextStrategySelect = document.querySelector("#context-strategy-select");
 const structuredParserModeSelect = document.querySelector("#structured-parser-mode-select");
 const rankControl = document.querySelector("#rank-control");
 const cacheStatusEl = document.querySelector("#cache-status");
@@ -176,11 +174,10 @@ function setActiveButton(group, value) {
 }
 
 function applyPreferences(preferences = {}) {
-  if (preferences.minSamples) state.minSamples = Number(preferences.minSamples);
+  if (preferences.minSamples !== undefined) state.minSamples = Number(preferences.minSamples);
   if (preferences.itemPolicy) state.itemPolicy = preferences.itemPolicy;
   if (preferences.sort) state.sort = preferences.sort;
   if (preferences.days) state.days = Number(preferences.days);
-  if (preferences.defaultContextStrategy) state.defaultContextStrategy = preferences.defaultContextStrategy;
   if (preferences.structuredParserMode) state.structuredParserMode = preferences.structuredParserMode;
   if (Array.isArray(preferences.rankFilter)) state.rankFilter = preferences.rankFilter;
 
@@ -188,7 +185,6 @@ function applyPreferences(preferences = {}) {
   setActiveButton(document.querySelector("#policy-control"), state.itemPolicy);
   sortSelect.value = state.sort;
   daysSelect.value = String(state.days);
-  contextStrategySelect.value = state.defaultContextStrategy;
   structuredParserModeSelect.value = state.structuredParserMode;
   for (const input of rankControl.querySelectorAll("input[type=checkbox]")) {
     input.checked = state.rankFilter.includes(input.value);
@@ -208,7 +204,6 @@ async function savePreferences() {
           itemPolicy: state.itemPolicy,
           sort: state.sort,
           days: state.days,
-          defaultContextStrategy: state.defaultContextStrategy,
           structuredParserMode: state.structuredParserMode,
           rankFilter: state.rankFilter
         }
@@ -394,7 +389,7 @@ function renderCompCard(comp, metricKey, index) {
         </div>
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, true)).join("")}</div>
         <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
-        <div class="comp-source">${t("sourceLabel")}：MetaTFT exact_units_traits2${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(comp.source?.variantCount ?? 1)} variants / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
+        <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
       </div>
     </details>`;
 }
@@ -704,6 +699,10 @@ function conditionChipValue(key, constraint, query) {
   if (key === "star_level") return t("starLevel", { value: (value ?? []).join("/") });
   if (key === "item_count") return t("completedItems", { value });
   if (key === "item_policy") return itemPolicyChip(value);
+  if (key === "item_categories") {
+    const labels = { radiant: t("radiant"), artifact: t("artifact"), emblem: t("emblem") };
+    return (Array.isArray(value) ? value : [value]).map((category) => labels[category] ?? category).join("/");
+  }
   if (key === "rank_filter") return rankChip(value);
   if (key === "days") return t("daysRecent", { value });
   if (key === "min_samples") return t("samplesAtLeast", { value });
@@ -727,7 +726,14 @@ function conditionChipValue(key, constraint, query) {
 function conditionChips(data) {
   const query = data.query ?? {};
   const constraints = query.constraints ?? {};
-  const order = ["unit", "star_level", "rank_filter", "days", "comp", "item_policy", "owned_items", "locked_items", "comparison_items", "excluded_items", "trait_filters", "primary_metric", "min_samples"];
+  const itemConditionKeys = data.type === "unit_item_comparison"
+    ? ["locked_items", "comparison_items", "primary_metric"]
+    : ["owned_items"];
+  const order = [
+    "unit", "star_level", "rank_filter", "days", "comp", "item_policy", "item_categories",
+    ...itemConditionKeys,
+    "excluded_items", "trait_filters", "min_samples"
+  ];
   return `<div class="condition-chips">${order.map((key) => {
     const constraint = constraints[key];
     const label = conditionChipValue(key, constraint, query);
@@ -1364,7 +1370,6 @@ async function requestRecommendation(refresh = false) {
           itemPolicy: state.itemPolicy,
           sort: state.sort,
           days: state.days,
-          defaultContextStrategy: state.defaultContextStrategy,
           structuredParserMode: state.structuredParserMode,
           rankFilter: state.rankFilter
         }
@@ -1409,10 +1414,6 @@ daysSelect.addEventListener("change", () => {
   scheduleSavePreferences();
 });
 
-contextStrategySelect.addEventListener("change", () => {
-  state.defaultContextStrategy = contextStrategySelect.value;
-  scheduleSavePreferences();
-});
 
 structuredParserModeSelect.addEventListener("change", () => {
   state.structuredParserMode = structuredParserModeSelect.value;
