@@ -13,6 +13,7 @@ import {
   SQLiteCacheStore,
   applyEnabledEntityAliasesFromStore,
   buildEntityAliasOverrideDraft,
+  buildItemCatalogAudit,
   buildItemCatalogFromItemsResponse,
   buildTraitCatalogFromCompsData,
   buildTraitCatalogFromExplorerRows,
@@ -21,9 +22,14 @@ import {
   createCatalog,
   createAssetResolver,
   createStructuredParserFromConfig,
+  fetchOfficialTftItemDetails,
+  filterItemCatalogAudit,
+  hasUnsupportedCompRankingEntities,
   mergeCatalogTraits,
   mergeCatalogUnits,
   isLowSampleBuild,
+  itemCatalogAuditToCsv,
+  parseQuery,
   recommendForInput,
   resolveStructuredParserConfig
 } from "../index.js";
@@ -51,7 +57,9 @@ const VALID_ITEM_POLICIES = new Set([
 const VALID_SORTS = new Set([
   "top4_first",
   "win_first",
-  "robust_first"
+  "robust_first",
+  "avg_first",
+  "games_first"
 ]);
 const VALID_DEFAULT_CONTEXT_STRATEGIES = new Set([
   "popular",
@@ -270,6 +278,129 @@ function itemName(apiName, catalog) {
   return item?.shortName ?? item?.zhName ?? apiName;
 }
 
+function isItemDetailsInput(input, parsed) {
+  const text = String(input ?? "");
+  const items = parsed?.ownedItems ?? [];
+  return items.length === 1
+    && !parsed?.unit
+    && /(是什么(?:装备|道具)?|装备(?:效果|属性|说明|介绍)|(?:效果|属性|合成路线|怎么合成|配方))/u.test(text);
+}
+
+async function loadOfficialItemDetails(runtime) {
+  if (runtime.officialItemDetails) return runtime.officialItemDetails;
+  if (!runtime.officialItemDetailsPromise) {
+    runtime.officialItemDetailsPromise = runtime.fetchOfficialItemDetails({
+      fetchImpl: runtime.officialItemDetailsFetch,
+      url: runtime.officialItemDetailsUrl,
+      timeoutMs: runtime.officialItemDetailsTimeoutMs
+    }).then((details) => {
+      runtime.officialItemDetails = details;
+      runtime.officialItemDetailsLoadedAt = new Date().toISOString();
+      return details;
+    }).finally(() => {
+      runtime.officialItemDetailsPromise = null;
+    });
+  }
+  return runtime.officialItemDetailsPromise;
+}
+
+async function serializeItemDetailsQuery(input, catalog, runtime) {
+  const parsed = parseQuery(input, { catalog });
+  if (!isItemDetailsInput(input, parsed)) return null;
+  const apiName = parsed.ownedItems[0];
+  const catalogItem = catalog.itemByApiName.get(apiName);
+  const details = await loadOfficialItemDetails(runtime);
+  const item = details.get(apiName);
+  if (!item) {
+    return {
+      ok: true,
+      type: "item_details",
+      text: `${itemName(apiName, catalog)}暂无官方装备说明。`,
+      answer: { summary: `${itemName(apiName, catalog)}暂无官方装备说明。` },
+      item: {
+        apiName,
+        name: itemName(apiName, catalog),
+        iconUrl: null,
+        category: catalogItem?.category ?? "unknown",
+        effect: null,
+        recipe: []
+      }
+    };
+  }
+  const name = item.name ?? itemName(apiName, catalog);
+  return {
+    ok: true,
+    type: "item_details",
+    text: `${name}：${item.effect || "暂无效果说明"}`,
+    answer: {
+      summary: `${name}的装备说明`,
+      methodology: "官方当前版本装备目录"
+    },
+    item: {
+      ...item,
+      name,
+      category: catalogItem?.category ?? "unknown",
+      iconUrl: item.iconUrl ?? null,
+      recipe: item.recipe.map((component) => ({
+        ...component,
+        iconUrl: component.iconUrl ?? null
+      }))
+    }
+  };
+}
+
+function serializeCompRankingEntityClarification(parsed, catalog) {
+  if (parsed?.intent !== "comp_rankings" || !hasUnsupportedCompRankingEntities(parsed)) return null;
+  if (parsed.parser?.genericEmblemRequested) {
+    const question = "请指定要加入的具体纹章或羁绊，例如“观星者纹章”。";
+    return {
+      ok: true,
+      type: "clarification",
+      text: question,
+      answer: { summary: question },
+      query: { intent: "clarification", requestedIntent: "comp_rankings", warnings: [] },
+      clarification: {
+        needsClarification: true,
+        blocking: true,
+        reason: "missing_specific_emblem",
+        question,
+        suggestions: []
+      }
+    };
+  }
+  const constraints = [
+    parsed.unit ? unitName(parsed.unit, catalog) : null,
+    ...(parsed.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
+    ...(parsed.excludedItems ?? []).map((apiName) => `排除 ${itemName(apiName, catalog)}`),
+    ...(parsed.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
+    ...(parsed.parser?.unresolvedEntityHints ?? []).map((hint) => hint.inputFragment),
+    ...(parsed.parser?.entityAmbiguities ?? []).map((ambiguity) => ambiguity.inputFragment)
+  ].filter(Boolean);
+  const question = `当前阵容榜只支持全局排行，不能静默套用“${constraints.join("、")}”筛选。你想查看全局热门阵容，还是改查指定英雄的装备？`;
+  return {
+    ok: true,
+    type: "clarification",
+    text: question,
+    answer: { summary: question },
+    query: {
+      intent: "clarification",
+      requestedIntent: "comp_rankings",
+      unit: parsed.unit ?? null,
+      ownedItems: parsed.ownedItems ?? [],
+      excludedItems: parsed.excludedItems ?? [],
+      traitFilters: parsed.traitFilters ?? [],
+      warnings: []
+    },
+    clarification: {
+      needsClarification: true,
+      blocking: true,
+      reason: "unsupported_comp_entity_filter",
+      question,
+      suggestions: ["查看全局热门阵容"]
+    }
+  };
+}
+
 function traitName(filterId, catalog) {
   const trait = catalog.traitByFilterId.get(filterId);
   return trait?.displayName ?? trait?.zhName ?? filterId;
@@ -423,12 +554,16 @@ function sourcePayload(result, meta = {}) {
   const compCandidates = result.cache?.compCandidates ?? {};
   return {
     provider: "MetaTFT",
-    endpoint: result.plan?.path ?? (result.type === "comp_rankings"
-      ? "/tft-explorer-api/exact_units_traits2"
-      : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
+    endpoint: result.type === "unit_item_comparison"
+      ? result.source?.endpoint ?? "tft-explorer-api/unit_builds"
+      : result.plan?.path ?? (result.type === "comp_rankings"
+        ? "/tft-explorer-api/exact_units_traits2"
+        : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
+    patch: result.query?.patch ?? null,
     updatedAt: cache.updatedAt ?? result.sourceUpdatedAt ?? meta.sourceUpdatedAt ?? null,
     cache: cache.stale ? "stale" : cache.hit ? "cache" : "live",
     stale: Boolean(cache.stale),
+    cacheDetail: result.cache?.query ?? null,
     requestParams: result.plan?.params ?? null,
     compCandidates: result.compCandidatePlan ? {
       endpoint: result.compCandidatePlan.path,
@@ -510,19 +645,34 @@ export function completeSmallWindowPreferences(value = {}) {
   };
 }
 
+function preferenceOverrides(value = {}) {
+  const normalized = normalizeSmallWindowPreferences(value);
+  return Object.fromEntries(Object.entries(normalized).filter(([key, entry]) => {
+    const defaultValue = DEFAULT_SMALL_WINDOW_PREFERENCES[key];
+    if (Array.isArray(entry) || Array.isArray(defaultValue)) {
+      return JSON.stringify(entry ?? null) !== JSON.stringify(defaultValue ?? null);
+    }
+    return entry !== defaultValue;
+  }));
+}
+
 export async function loadSmallWindowPreferences(runtime) {
+  return completeSmallWindowPreferences(await loadStoredSmallWindowPreferences(runtime));
+}
+
+async function loadStoredSmallWindowPreferences(runtime) {
   const entry = await runtime.cacheStore?.getUserPreference?.(SMALL_WINDOW_PREFERENCES_KEY);
-  return completeSmallWindowPreferences(entry?.value);
+  return preferenceOverrides(entry?.value);
 }
 
 export async function saveSmallWindowPreferences(runtime, value = {}) {
-  const current = await loadSmallWindowPreferences(runtime);
-  const next = completeSmallWindowPreferences({
+  const current = await loadStoredSmallWindowPreferences(runtime);
+  const nextOverrides = preferenceOverrides({
     ...current,
     ...normalizeSmallWindowPreferences(value)
   });
-  await runtime.cacheStore?.setUserPreference?.(SMALL_WINDOW_PREFERENCES_KEY, next);
-  return next;
+  await runtime.cacheStore?.setUserPreference?.(SMALL_WINDOW_PREFERENCES_KEY, nextOverrides);
+  return completeSmallWindowPreferences(nextOverrides);
 }
 
 export async function resetSmallWindowPreferences(runtime) {
@@ -531,8 +681,9 @@ export async function resetSmallWindowPreferences(runtime) {
 }
 
 function serializeRecommendation(result, catalog, meta = {}) {
+  const { itemDetails, ...publicMeta } = meta;
   if (result.type === "comp_rankings") {
-    return serializeCompRankings(result, meta);
+    return serializeCompRankings(result, publicMeta);
   }
   const query = result.query ?? {};
   if (result.type === "unit_item_rankings") {
@@ -577,20 +728,22 @@ function serializeRecommendation(result, catalog, meta = {}) {
         rows: result.rows?.length ?? 0,
         filteredBuilds: result.filteredBuilds?.length ?? 0,
         rankedItems: itemRankings.length,
-        ...meta
+        ...publicMeta
       }
     };
   }
-  const hasLockedItems = (query.ownedItems ?? []).length > 0;
+  const lockedItemApiNames = query.lockedItems ?? query.ownedItems ?? [];
+  const hasLockedItems = lockedItemApiNames.length > 0;
   const comparison = result.comparison ?? null;
-  const cards = result.rankedBuilds.slice(0, 3).map((build, index) => {
+  const isItemComparison = query.intent === "unit_item_comparison" || Boolean(comparison);
+  const cards = (result.rankedBuilds ?? []).slice(0, 3).map((build, index) => {
     const lowSample = comparison
       ? build.comparisonStable === false
       : isLowSampleBuild(build, query);
     const comparedItemName = comparison ? itemName(build.comparisonOption, catalog) : null;
     const title = comparison
       ? comparison.winner === build.comparisonOption
-        ? `更优：${comparedItemName}`
+        ? `样本领先：${comparedItemName}`
         : `${lowSample ? "低样本" : "对比"}：${comparedItemName}`
       : lowSample
         ? (index === 0
@@ -607,8 +760,8 @@ function serializeRecommendation(result, catalog, meta = {}) {
       items: build.items.map((apiName) => ({
         apiName,
         name: itemName(apiName, catalog),
+        locked: lockedItemApiNames.includes(apiName),
         iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
-        locked: (query.ownedItems ?? []).includes(apiName),
         compared: build.comparisonOption === apiName
       })),
       stats: {
@@ -621,6 +774,40 @@ function serializeRecommendation(result, catalog, meta = {}) {
     };
   });
 
+  const serializeComparisonEntry = (entry) => ({
+    apiName: entry.apiName,
+    name: itemName(entry.apiName, catalog),
+    canonicalName: entry.canonicalName,
+    category: entry.category,
+    iconUrl: itemDetails?.get?.(entry.apiName)?.iconUrl ?? entry.iconUrl,
+    current: entry.current,
+    obtainable: entry.obtainable,
+    nameSource: entry.nameSource,
+    availabilitySource: entry.availabilitySource,
+    statSource: entry.statSource,
+    qualified: entry.qualified,
+    stable: entry.stable,
+    isolation: entry.isolation,
+    buildCount: entry.buildCount,
+    placementCount: entry.placementCount,
+    overlapGames: entry.overlapGames,
+    lowSample: entry.lowSample,
+    stats: {
+      top4: percent(entry.stats.top4Rate),
+      win: percent(entry.stats.winRate),
+      avg: Number(entry.stats.avgPlacement.toFixed(2)),
+      games: entry.stats.games
+    },
+    representativeItems: (entry.representativeBuild?.items ?? []).map((apiName) => ({
+      apiName,
+      name: itemName(apiName, catalog)
+    })),
+    commonBuilds: (entry.commonBuilds ?? []).map((build) => ({
+      items: build.items.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+      placementCount: build.placementCount,
+      stats: build.stats
+    }))
+  });
   const commonItemApiNames = cards.length > 1
     ? [...new Set(cards[0].items.map((item) => item.apiName))].filter((apiName) => (
       cards.every((card) => card.items.some((item) => item.apiName === apiName))
@@ -638,29 +825,30 @@ function serializeRecommendation(result, catalog, meta = {}) {
       allQualified: comparison.allQualified,
       allStable: comparison.allStable,
       sort: comparison.sort,
+      mode: comparison.mode,
+      primaryMetric: comparison.primaryMetric,
       minSamples: comparison.minSamples,
       stabilityMinSamples: comparison.stabilityMinSamples,
       warnings: comparison.warnings,
-      entries: comparison.entries.map((entry) => ({
-        apiName: entry.apiName,
-        name: itemName(entry.apiName, catalog),
-        qualified: entry.qualified,
-        stable: entry.stable,
-        isolation: entry.isolation,
-        buildCount: entry.buildCount,
-        stats: {
-          top4: percent(entry.stats.top4Rate),
-          win: percent(entry.stats.winRate),
-          avg: Number(entry.stats.avgPlacement.toFixed(2)),
-          games: entry.stats.games
-        },
-        representativeItems: (entry.representativeBuild?.items ?? []).map((apiName) => ({
-          apiName,
-          name: itemName(apiName, catalog)
-        }))
-      }))
+      decision: comparison.decision,
+      overlap: comparison.overlap
+        ? {
+          games: comparison.overlap.games,
+          rate: comparison.overlap.rate,
+          buildCount: comparison.overlap.buildCount,
+          placementCount: comparison.overlap.placementCount,
+          commonBuilds: comparison.overlap.commonBuilds
+        }
+        : null,
+      entries: comparison.entries.map(serializeComparisonEntry),
+      rankedEntries: (comparison.rankedEntries ?? comparison.entries).map(serializeComparisonEntry)
     }
     : null;
+  const displayTraitFilters = query.traitFilters?.length
+    ? query.traitFilters
+    : query.comp?.status === "applied" && query.comp.value?.selection === "automatic"
+      ? query.comp.value.traits ?? []
+      : [];
 
   return {
     ok: true,
@@ -685,21 +873,36 @@ function serializeRecommendation(result, catalog, meta = {}) {
       iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
     })),
     comparison: serializedComparison,
-    lockedItems: (query.ownedItems ?? []).map((apiName) => ({
+    results: serializedComparison?.entries ?? [],
+    overlap: serializedComparison?.overlap ?? null,
+    lockedItems: lockedItemApiNames.map((apiName) => ({
       apiName,
       name: itemName(apiName, catalog)
     })),
-    decision: result.localDecision ?? null,
+    decision: serializedComparison?.decision ?? result.localDecision ?? null,
     clarification: result.clarification ?? null,
     query: {
+      intent: query.intent,
       unit: query.unit,
       unitName: unitName(query.unit, catalog),
       unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
       starLevel: query.starLevel,
       itemCount: query.itemCount,
-      traitFilters: query.traitFilters,
-      traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
+      traitFilters: displayTraitFilters,
+      traitNames: displayTraitFilters.map((filterId) => traitName(filterId, catalog)),
+      traitSource: query.traitFilters?.length
+        ? (query.assumptions ?? []).find((entry) => entry.key === "trait_filters")?.source ?? null
+        : displayTraitFilters.length
+          ? "system_default"
+          : null,
       itemPolicy: query.itemPolicy,
+      lockedItems: lockedItemApiNames,
+      lockedItemNames: lockedItemApiNames.map((apiName) => itemName(apiName, catalog)),
+      comparisonItems: query.comparisonItems ?? [],
+      comparisonItemNames: (query.comparisonItems ?? []).map((apiName) => itemName(apiName, catalog)),
+      comparisonMode: query.comparisonMode ?? null,
+      primaryMetric: query.primaryMetric ?? null,
+      pendingComparison: Boolean(query.pendingComparison),
       ownedItems: query.ownedItems ?? [],
       ownedItemNames: (query.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
       excludedItems: query.excludedItems ?? [],
@@ -714,11 +917,15 @@ function serializeRecommendation(result, catalog, meta = {}) {
       warnings: query.warnings ?? [],
       assumptions: query.assumptions ?? [],
       constraints: query.constraints ?? {},
-      constraintSources: query.constraintSources ?? {},
+      constraintSources: query.constraintSources ?? Object.fromEntries((query.assumptions ?? []).map((entry) => [
+        entry.key,
+        entry.origins ?? [entry.origin ?? entry.source]
+      ])),
       comp: serializeCompConstraint(query.comp, catalog),
       defaultContext: query.defaultContext ?? null,
       defaultContextSummary: serializeDefaultContext(query.defaultContext, catalog),
-      sessionContext: query.sessionContext ?? null
+      sessionContext: query.sessionContext ?? null,
+      catalogVersion: query.catalogVersion ?? null
     },
     cache: result.cache ?? null,
     source: sourcePayload(result, meta),
@@ -726,7 +933,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       rows: result.rows?.length ?? 0,
       filteredBuilds: result.filteredBuilds?.length ?? 0,
       rankedBuilds: result.rankedBuilds?.length ?? 0,
-      ...meta
+      ...publicMeta
     }
   };
 }
@@ -827,7 +1034,15 @@ export function createSmallWindowRuntime(options = {}) {
     catalogLoadPromises: new Map(),
     catalogGeneration: 0,
     catalogKeyGenerations: new Map(),
+    officialItemDetails: options.officialItemDetails ?? null,
+    officialItemDetailsPromise: null,
+    officialItemDetailsLoadedAt: options.officialItemDetailsLoadedAt ?? null,
+    officialItemDetailsFetch: options.officialItemDetailsFetch ?? options.fetchImpl,
+    officialItemDetailsUrl: options.officialItemDetailsUrl,
+    officialItemDetailsTimeoutMs: options.officialItemDetailsTimeoutMs ?? 10000,
+    fetchOfficialItemDetails: options.fetchOfficialItemDetails ?? fetchOfficialTftItemDetails,
     fetchItems: options.fetchItems ?? true,
+    compsData: options.compsData ?? null,
     defaultContextOptions: options.defaultContextOptions ?? {},
     structuredParser: options.structuredParser ?? null,
     useStructuredParser: options.useStructuredParser ?? "auto",
@@ -958,7 +1173,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
 
   if (runtime.catalog) return applyAliasMemory(runtime.catalog, {
     warning: null,
-    compsData: null
+    compsData: runtime.compsData
   });
 
   const key = runtimeCatalogKey(preferences);
@@ -1000,9 +1215,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         formatnoarray: "true",
         compact: "true",
         patch,
-        queue: preferences.queue ?? "1100",
-        days: preferences.days ?? 3,
-        rank: (preferences.rankFilter ?? []).join(",")
+        queue: preferences.queue ?? "1100"
       };
       const compsParams = {
         queue: preferences.queue ?? "1100",
@@ -1200,15 +1413,31 @@ export async function handleRecommendRequest(body, runtime) {
     };
   }
 
-  const storedPreferences = await loadSmallWindowPreferences(runtime);
-  const preferences = completeSmallWindowPreferences({
+  const storedPreferences = await loadStoredSmallWindowPreferences(runtime);
+  const explicitPreferences = preferenceOverrides({
     ...storedPreferences,
     ...normalizeSmallWindowPreferences(body.preferences)
   });
+  const preferences = completeSmallWindowPreferences(explicitPreferences);
   if (body.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
   const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const itemDetailsPayload = await serializeItemDetailsQuery(input, catalog, runtime);
+  if (itemDetailsPayload) {
+    return { statusCode: 200, payload: itemDetailsPayload };
+  }
+  const parsedForIntent = parseQuery(input, { catalog });
+  const compEntityClarification = serializeCompRankingEntityClarification(parsedForIntent, catalog);
+  if (compEntityClarification) {
+    compEntityClarification.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return { statusCode: 200, payload: compEntityClarification };
+  }
   const structuredParserMode = preferences.structuredParserMode === "inherit"
     ? runtime.useStructuredParser
     : preferences.structuredParserMode;
@@ -1219,6 +1448,7 @@ export async function handleRecommendRequest(body, runtime) {
     compsData,
     cacheStore: runtime.cacheStore,
     preferences,
+    explicitPreferences,
     bypassQueryCache: Boolean(body.refresh),
     bypassDefaultContextCache: Boolean(body.refresh),
     defaultContextOptions: {
@@ -1231,13 +1461,24 @@ export async function handleRecommendRequest(body, runtime) {
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
   if (warnings) result.query.warnings = warnings;
+  let comparisonItemDetails = runtime.officialItemDetails;
+  if (result.comparison && !comparisonItemDetails) {
+    try {
+      comparisonItemDetails = await loadOfficialItemDetails(runtime);
+    } catch (error) {
+      const detailWarning = `官方装备图标加载失败：${error.message}`;
+      result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
+      result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+    }
+  }
 
   const payload = serializeRecommendation(result, catalog, {
     durationMs: Date.now() - startedAt,
     catalogWarning: warning,
     aliasMemory,
     preferences,
-    conversationId
+    conversationId,
+    itemDetails: comparisonItemDetails
   });
   Object.assign(payload, conversationMeta({ conversationId }));
   return {
@@ -1527,6 +1768,87 @@ export async function handleRuntimeStatusRequest(runtime) {
   };
 }
 
+export async function handleItemCatalogAuditRequest(runtime, options = {}) {
+  const preferences = completeSmallWindowPreferences(await loadSmallWindowPreferences(runtime));
+  if (options.refresh) {
+    invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+    if (runtime.officialItemDetailsPromise) {
+      try {
+        await runtime.officialItemDetailsPromise;
+      } catch {
+        // A failed in-flight load must not prevent an explicit refresh attempt.
+      }
+    }
+    runtime.officialItemDetails = null;
+    runtime.officialItemDetailsLoadedAt = null;
+  }
+  const entry = await loadRuntimeCatalog(runtime, preferences);
+  const detailsWereCached = Boolean(runtime.officialItemDetails);
+  let details = new Map();
+  let detailsState = {
+    status: "fresh",
+    cache: detailsWereCached ? "memory" : "loaded",
+    source: runtime.officialItemDetailsUrl ?? "tencent_official_tft_catalog",
+    updatedAt: runtime.officialItemDetailsLoadedAt ?? null
+  };
+  try {
+    details = await loadOfficialItemDetails(runtime);
+    detailsState.updatedAt = runtime.officialItemDetailsLoadedAt ?? null;
+  } catch (error) {
+    detailsState = {
+      status: "error",
+      cache: "unavailable",
+      source: runtime.officialItemDetailsUrl ?? "tencent_official_tft_catalog",
+      error: error.message
+    };
+  }
+  const itemMemory = entry.itemCatalogMemory ?? {};
+  const catalogSource = itemMemory.source ?? (runtime.catalog ? "injected" : "seed");
+  const catalogStatus = catalogSource === "remote" || catalogSource === "injected"
+    ? "fresh"
+    : catalogSource === "persistent"
+      ? "fallback"
+      : "fallback";
+  const report = buildItemCatalogAudit(entry.catalog, details, {
+    patch: preferences.patch ?? "current",
+    catalogState: {
+      status: catalogStatus,
+      source: catalogSource,
+      updatedAt: itemMemory.updatedAt ?? null,
+      warning: entry.warning ?? null
+    },
+    detailsState
+  });
+  const records = filterItemCatalogAudit(report.records, options);
+  const payload = {
+    ok: true,
+    report: {
+      ...report,
+      records
+    },
+    filters: options,
+    summary: {
+      total: report.records.length,
+      returned: records.length,
+      withIssues: records.filter((record) => record.issues.length > 0).length
+    }
+  };
+  if (options.format === "csv") {
+    payload.export = {
+      format: "csv",
+      filename: `tft-item-catalog-audit-${report.patch}.csv`,
+      content: itemCatalogAuditToCsv(records)
+    };
+  } else if (options.format === "json") {
+    payload.export = {
+      format: "json",
+      filename: `tft-item-catalog-audit-${report.patch}.json`,
+      content: JSON.stringify({ ...report, records }, null, 2)
+    };
+  }
+  return payload;
+}
+
 export function createSmallWindowHandler(options = {}) {
   const runtime = options.runtime ?? createSmallWindowRuntime(options);
 
@@ -1542,6 +1864,20 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {
         return sendJson(res, 200, await handleRuntimeStatusRequest(runtime));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/item-catalog-audit") {
+        return sendJson(res, 200, await handleItemCatalogAuditRequest(runtime, {
+          query: url.searchParams.get("query") ?? undefined,
+          patch: url.searchParams.get("patch") ?? undefined,
+          category: url.searchParams.get("category") ?? undefined,
+          source: url.searchParams.get("source") ?? undefined,
+          status: url.searchParams.get("status") ?? undefined,
+          availability: url.searchParams.get("availability") ?? undefined,
+          issues: url.searchParams.get("issues") ?? undefined,
+          format: url.searchParams.get("format") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
       }
 
       if (req.method === "POST" && url.pathname === "/api/recommend") {

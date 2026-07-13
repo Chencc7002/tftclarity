@@ -35,7 +35,7 @@ export const ITEM_ALIAS_OVERRIDES = [
     apiName: "TFT_Item_RunaansHurricane",
     zhName: "海妖之怒",
     shortName: "海妖之怒",
-    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "runaan", "runaan's hurricane"],
+    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "卢安娜的飓风", "runaan", "runaan's hurricane"],
     confidence: 1,
     source: "manual_historical_aliases"
   },
@@ -50,10 +50,10 @@ export const ITEM_ALIAS_OVERRIDES = [
   {
     apiName: "TFT_Item_Artifact_RapidFirecannon",
     zhName: "疾射火炮",
-    shortName: "神器火炮",
-    aliases: ["神器火炮", "火炮神器", "artifact rapid firecannon"],
+    shortName: "疾射火炮",
+    aliases: ["神器火炮", "火炮神器", "神器疾射火炮", "rapid firecannon artifact", "artifact rapid firecannon"],
     confidence: 1,
-    source: "manual_current_artifact_alias"
+    source: "manual_official_name_with_historical_aliases"
   },
   {
     apiName: "TFT_Item_Bloodthirster",
@@ -385,11 +385,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_NavoriFlickerblades",
-    zhName: "纳沃利闪刃",
-    shortName: "纳沃利",
-    aliases: ["纳沃利", "纳沃利闪刃", "navori", "navori flickerblades"],
+    zhName: "烁刃",
+    shortName: "烁刃",
+    aliases: ["烁刃", "纳沃利", "纳沃利闪刃", "navori", "navori flickerblades"],
     confidence: 1,
-    source: "manual"
+    source: "manual_official_name_with_historical_aliases"
   },
   {
     apiName: "TFT_Item_Artifact_ProwlersClaw",
@@ -426,10 +426,10 @@ export const ITEM_ALIAS_OVERRIDES = [
   {
     apiName: "TFT_Item_Artifact_TitanicHydra",
     zhName: "巨型九头蛇",
-    shortName: "九头蛇",
-    aliases: ["九头蛇", "巨型九头蛇", "hydra", "titanic hydra"],
+    shortName: "巨型九头蛇",
+    aliases: ["巨九", "九头蛇", "巨型九头蛇", "hydra", "titanic hydra"],
     confidence: 1,
-    source: "manual"
+    source: "manual_official_name_with_historical_aliases"
   },
   {
     apiName: "TFT_Item_Artifact_VoidGauntlet",
@@ -521,11 +521,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_UnstableConcoction",
-    zhName: "不稳定合剂",
-    shortName: "合剂",
-    aliases: ["合剂", "不稳定合剂", "不稳定药剂", "unstable concoction"],
-    confidence: 0.8,
-    source: "manual"
+    zhName: "正义之手",
+    shortName: "正义",
+    aliases: ["正义", "正义之手", "合剂", "不稳定合剂", "不稳定药剂", "unstable concoction"],
+    confidence: 1,
+    source: "manual_historical_aliases"
   },
   {
     apiName: "TFT_Item_Artifact_AegisOfDawn",

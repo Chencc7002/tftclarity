@@ -39,6 +39,7 @@ import {
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
 import { buildCompRankingQuery } from "./comp-query.js";
 import { buildCompRankings } from "./comp-ranking-service.js";
+import { isCompRankingFollowUp } from "./comp-rankings.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
@@ -59,7 +60,9 @@ function unavailableItemRecords(apiNames, catalog) {
 
 function referencedItemApiNames(query) {
   return uniqueArray([
+    ...(query?.lockedItems ?? []),
     ...(query?.ownedItems ?? []),
+    ...(query?.comparisonItems ?? []),
     ...(query?.comparison?.itemApiNames ?? []),
     ...(query?.parser?.comparison?.itemApiNames ?? [])
   ]);
@@ -70,6 +73,13 @@ function unavailableItemDecision(query, catalog) {
   if (items.length === 0) return null;
 
   const names = items.map((item) => item.shortName ?? item.zhName ?? item.apiName);
+  if (query.intent === "unit_item_comparison") {
+    return {
+      type: "unavailable_comparison_items",
+      items: items.map((item) => item.apiName),
+      text: `“${names.join(" / ")}”当前版本不属于可用装备，无法参与比较。请更换候选或确认名称。`
+    };
+  }
   const ordinaryOnly = query.itemPolicy === "ordinary_only";
   return {
     type: "unavailable_items",
@@ -135,6 +145,41 @@ async function setStoreEntry(store, method, ...args) {
 
 function lastQueryFromSession(value) {
   return value?.query ?? value?.last_query ?? value ?? null;
+}
+
+function inheritCompRankingFromSession(parsed, sessionValue, options = {}) {
+  const previousQuery = lastQueryFromSession(sessionValue);
+  if (previousQuery?.intent !== "comp_rankings" || !isCompRankingFollowUp(parsed, previousQuery)) {
+    return { parsed, inherited: false, inheritedKeys: [] };
+  }
+
+  const next = { ...parsed, intent: "comp_rankings" };
+  const inheritedKeys = [];
+  for (const key of ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit", "specialMode"]) {
+    const current = next[key];
+    const missing = current === undefined || (Array.isArray(current) && current.length === 0);
+    if (!missing || previousQuery[key] === undefined || Object.hasOwn(options.explicitPreferences ?? {}, key)) continue;
+    next[key] = Array.isArray(previousQuery[key]) ? [...previousQuery[key]] : previousQuery[key];
+    inheritedKeys.push(key);
+  }
+  if (parsed.sort === "win_first") next.metrics = ["win_rate"];
+  if (parsed.sort === "top4_first") next.metrics = ["top4_rate"];
+  if (parsed.sort === "avg_first") next.metrics = ["avg_placement"];
+  if (parsed.sort === "games_first" || parsed.sort === "robust_first") next.metrics = ["popularity"];
+  next.sessionContext = {
+    inherited: inheritedKeys.length > 0,
+    sourceKey: SESSION_LAST_QUERY_KEY,
+    inheritedKeys,
+    fieldOrigins: Object.fromEntries(inheritedKeys.map((key) => [key, ["conversation"]]))
+  };
+  return { parsed: next, inherited: inheritedKeys.length > 0, inheritedKeys };
+}
+
+function compConstraintSource(parsed, options, key) {
+  const origins = parsed.sessionContext?.fieldOrigins?.[key];
+  if (origins?.includes("conversation")) return "conversation";
+  if (parsed[key] !== undefined && !parsed.sessionContext?.inheritedKeys?.includes(key)) return "current_input";
+  return Object.hasOwn(options.explicitPreferences ?? {}, key) ? "preference" : "system_default";
 }
 
 function structuredParserFor(options) {
@@ -237,7 +282,42 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     applied.push("unit");
   }
   applyArray("traitFilters", uniqueArray([...(parsed.traitFilters ?? []), ...(reparsed.traitFilters ?? [])]));
-  applyArray("ownedItems", uniqueArray([...(parsed.ownedItems ?? []), ...(reparsed.ownedItems ?? [])]));
+  const structuredLockedItems = resolvedItemApiNamesForMentions(
+    structured.constraints.lockedItemMentions,
+    reparsed
+  );
+  const structuredComparisonItems = resolvedItemApiNamesForMentions(
+    structured.constraints.comparisonItemMentions,
+    reparsed
+  );
+  const reclassifyAmbiguousItems = parsed.parser?.multipleItemRelationAmbiguous
+    && structured.intent === "unit_item_comparison";
+  const lockedItems = uniqueArray([
+    ...(reclassifyAmbiguousItems ? [] : (parsed.lockedItems ?? parsed.ownedItems ?? [])),
+    ...(reclassifyAmbiguousItems ? [] : (reparsed.lockedItems ?? reparsed.ownedItems ?? [])),
+    ...structuredLockedItems
+  ]);
+  const comparisonItems = uniqueArray([
+    ...(parsed.comparisonItems ?? []),
+    ...(reparsed.comparisonItems ?? []),
+    ...structuredComparisonItems
+  ]).filter((item) => !lockedItems.includes(item));
+  if (lockedItems.length > 0 || reclassifyAmbiguousItems) {
+    next.lockedItems = lockedItems;
+    next.ownedItems = lockedItems;
+    applied.push("lockedItems");
+  }
+  if (comparisonItems.length > 0) {
+    next.comparisonItems = comparisonItems;
+    next.comparisonMode = structured.constraints.comparisonMode ?? "exclusive_presence";
+    next.intent = "unit_item_comparison";
+    next.parser.comparison = {
+      requested: true,
+      itemApiNames: comparisonItems,
+      ownedItemApiNames: lockedItems
+    };
+    applied.push("comparisonItems");
+  }
   const structuredExcludedItems = resolvedItemApiNamesForMentions(
     structured.constraints.excludedItemMentions,
     reparsed
@@ -249,7 +329,9 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
   ]);
   if (excludedItems.length > 0) {
     next.excludedItems = excludedItems;
-    next.ownedItems = asArray(next.ownedItems).filter((item) => !excludedItems.includes(item));
+    next.lockedItems = asArray(next.lockedItems ?? next.ownedItems).filter((item) => !excludedItems.includes(item));
+    next.ownedItems = next.lockedItems;
+    next.comparisonItems = asArray(next.comparisonItems).filter((item) => !excludedItems.includes(item));
     applied.push("excludedItems");
   }
   applyScalar("intent", structured.intent);
@@ -262,6 +344,19 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
   applyScalar("queue", structured.constraints.queue);
   applyScalar("minSamples", structured.constraints.minSamples);
   applyScalar("sort", structured.constraints.sort);
+  applyScalar("primaryMetric", structured.constraints.primaryMetric);
+
+  if (
+    structured.intent === "unit_best_3_items"
+    && lockedItems.length > 0
+    && comparisonItems.length === 0
+  ) {
+    next.parser.multipleItemRelationAmbiguous = false;
+  }
+  if (structured.intent === "unit_item_comparison" && comparisonItems.length >= 2) {
+    next.parser.multipleItemRelationAmbiguous = false;
+    next.parser.genericSpecialComparisonRequested = false;
+  }
   applyArray("metrics", structured.constraints.metrics);
   applyScalar("limit", structured.constraints.limit);
 
@@ -359,6 +454,26 @@ function fieldValue(query, camelKey, snakeKey) {
   return query?.[camelKey] ?? query?.[snakeKey];
 }
 
+function comparisonContinuationPolicy(parsed, lastQuery) {
+  if (/(?:只看|仅看|只用|仅用|只要|仅要)/.test(String(parsed.rawInput ?? ""))) {
+    return parsed.itemPolicy ?? lastQuery.itemPolicy;
+  }
+  const candidates = new Set([parsed.itemPolicy, lastQuery.itemPolicy].filter(Boolean));
+  if (candidates.has("include_special")) return "include_special";
+  if (candidates.has("include_artifact") && candidates.has("include_radiant")) return "include_special";
+  if (candidates.has("include_artifact")) return "include_artifact";
+  if (candidates.has("include_radiant")) return "include_radiant";
+  return parsed.itemPolicy ?? lastQuery.itemPolicy;
+}
+
+function primaryMetricForSort(sort) {
+  if (sort === "win_first") return "winRate";
+  if (sort === "avg_first") return "avgPlacement";
+  if (sort === "games_first" || sort === "robust_first") return "games";
+  if (sort === "top4_first") return "top4Rate";
+  return undefined;
+}
+
 function inheritParsedFromSession(parsed, sessionValue) {
   if (parsed.unit) {
     return {
@@ -377,7 +492,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
   }
 
   const lastQuery = lastQueryFromSession(sessionValue);
-  if (!lastQuery?.unit) {
+  if (!lastQuery?.unit || lastQuery.intent === "comp_rankings") {
     return {
       parsed,
       inherited: false,
@@ -386,7 +501,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
   }
 
   const inheritedKeys = [];
-  const explicitlyOwnedItems = asArray(parsed.ownedItems);
+  const explicitlyLockedItems = asArray(parsed.lockedItems ?? parsed.ownedItems);
   const explicitlyExcludedItems = asArray(parsed.excludedItems);
   const next = {
     ...parsed,
@@ -412,6 +527,113 @@ function inheritParsedFromSession(parsed, sessionValue) {
     inheritedKeys.push(key);
   };
 
+  const lastComparisonItems = uniqueArray([
+    ...asArray(fieldValue(lastQuery, "comparisonItems", "comparison_items")),
+    ...asArray(lastQuery.comparison?.itemApiNames)
+  ]);
+  const lastLockedItems = asArray(fieldValue(lastQuery, "lockedItems", "locked_items"));
+  const previousLockedItems = lastLockedItems.length > 0
+    ? lastLockedItems
+    : asArray(fieldValue(lastQuery, "ownedItems", "owned_items"));
+  const inputText = normalizeAlias(parsed.rawInput);
+  const currentComparisonItems = asArray(parsed.comparisonItems);
+  const currentResolvedItems = uniqueArray([
+    ...currentComparisonItems,
+    ...explicitlyLockedItems
+  ]).filter((item) => !explicitlyExcludedItems.includes(item));
+  const continuesComparison = lastQuery.intent === "unit_item_comparison"
+    && lastComparisonItems.length >= 1;
+  let comparisonContinuation = false;
+  let comparisonContinuationKind = null;
+
+  if (continuesComparison) {
+    const replacement = /(?:换成|替换成|改成)/.test(inputText);
+    const ownership = /(?:已经有|已有|我有|有了|带着|拿了|锁定)/.test(inputText);
+    const removal = explicitlyExcludedItems.length > 0;
+    const append = /^(?:那|再看|加上|加入|还有)/.test(inputText)
+      || lastQuery.pendingComparison === true;
+    const explicitComparison = currentComparisonItems.length > 0;
+    const constraintFollowUp = [
+      parsed.rankFilter,
+      parsed.days,
+      parsed.patch,
+      parsed.minSamples,
+      parsed.sort
+    ].some((value) => value !== undefined);
+
+    if (replacement && currentResolvedItems.length > 0) {
+      const replacementTargets = currentResolvedItems.filter((item) => lastComparisonItems.includes(item));
+      const replacementCandidates = currentResolvedItems.filter((item) => !lastComparisonItems.includes(item));
+      next.lockedItems = [...previousLockedItems];
+      next.ownedItems = next.lockedItems;
+      if (replacementTargets.length === 1 && replacementCandidates.length === 1) {
+        next.comparisonItems = lastComparisonItems.map((item) => (
+          item === replacementTargets[0] ? replacementCandidates[0] : item
+        ));
+        comparisonContinuationKind = "targeted_replacement";
+      } else {
+        next.comparisonItems = [...lastComparisonItems];
+        next.parser.comparisonReplacementAmbiguous = true;
+        next.parser.comparisonReplacementCandidates = replacementCandidates.length
+          ? replacementCandidates
+          : currentResolvedItems;
+        comparisonContinuationKind = "replacement";
+      }
+      comparisonContinuation = true;
+    } else if (removal) {
+      next.comparisonItems = lastComparisonItems.filter((item) => !explicitlyExcludedItems.includes(item));
+      next.lockedItems = previousLockedItems.filter((item) => !explicitlyExcludedItems.includes(item));
+      next.ownedItems = next.lockedItems;
+      comparisonContinuation = true;
+      comparisonContinuationKind = "removal";
+    } else if (ownership && currentResolvedItems.length > 0) {
+      next.comparisonItems = [...lastComparisonItems];
+      next.lockedItems = uniqueArray([...previousLockedItems, ...currentResolvedItems]);
+      next.ownedItems = next.lockedItems;
+      comparisonContinuation = true;
+      comparisonContinuationKind = "ownership";
+    } else if (explicitComparison) {
+      next.comparisonItems = [...currentComparisonItems];
+      next.lockedItems = explicitlyLockedItems.length > 0 ? explicitlyLockedItems : previousLockedItems;
+      next.ownedItems = next.lockedItems;
+      comparisonContinuation = true;
+      comparisonContinuationKind = "explicit";
+    } else if (append && currentResolvedItems.length > 0) {
+      next.comparisonItems = uniqueArray([...lastComparisonItems, ...currentResolvedItems]);
+      next.lockedItems = [...previousLockedItems];
+      next.ownedItems = next.lockedItems;
+      comparisonContinuation = true;
+      comparisonContinuationKind = "append";
+    } else if (constraintFollowUp) {
+      next.comparisonItems = [...lastComparisonItems];
+      next.lockedItems = [...previousLockedItems];
+      next.ownedItems = next.lockedItems;
+      comparisonContinuation = true;
+      comparisonContinuationKind = "constraint";
+    }
+
+    if (comparisonContinuation) {
+      next.intent = "unit_item_comparison";
+      next.pendingComparison = false;
+      next.comparisonMode = "exclusive_presence";
+      next.primaryMetric = parsed.primaryMetric
+        ?? primaryMetricForSort(parsed.sort)
+        ?? lastQuery.primaryMetric
+        ?? "top4Rate";
+      next.sort = parsed.sort ?? lastQuery.sort;
+      next.itemPolicy = comparisonContinuationPolicy(parsed, lastQuery);
+      next.parser.multipleItemRelationAmbiguous = false;
+      next.parser.comparison = {
+        requested: true,
+        itemApiNames: next.comparisonItems,
+        ownedItemApiNames: next.lockedItems
+      };
+      inheritedKeys.push("comparisonItems", "comparisonMode");
+      if (next.lockedItems.length > explicitlyLockedItems.length) inheritedKeys.push("lockedItems");
+      inheritedKeys.push("primaryMetric");
+    }
+  }
+
   next.unit = lastQuery.unit;
   inheritedKeys.push("unit");
   if (!parsed.parser?.intentExplicit && lastQuery.intent) {
@@ -423,19 +645,24 @@ function inheritParsedFromSession(parsed, sessionValue) {
   if (!lastQuery.defaultContext) {
     inheritArray("traitFilters", "traitFilters", "trait_filters");
   }
+  inheritArray("lockedItems", "lockedItems", "locked_items");
+  if (asArray(next.lockedItems).length === 0) {
+    inheritArray("lockedItems", "ownedItems", "owned_items");
+  }
+  next.ownedItems = asArray(next.lockedItems);
   if (!next.compMention && lastQuery.comp?.status === "applied" && lastQuery.comp?.value?.selection === "explicit") {
     next.comp = lastQuery.comp;
     inheritedKeys.push("comp");
   }
-  inheritArray("ownedItems", "ownedItems", "owned_items");
   inheritArray("excludedItems", "excludedItems", "excluded_items");
   if (explicitlyExcludedItems.length > 0) {
-    next.ownedItems = asArray(next.ownedItems)
+    next.lockedItems = asArray(next.lockedItems)
       .filter((item) => !explicitlyExcludedItems.includes(item));
+    next.ownedItems = next.lockedItems;
   }
-  if (explicitlyOwnedItems.length > 0) {
+  if (explicitlyLockedItems.length > 0) {
     next.excludedItems = asArray(next.excludedItems)
-      .filter((item) => !explicitlyOwnedItems.includes(item));
+      .filter((item) => !explicitlyLockedItems.includes(item));
   }
   inheritScalar("itemPolicy", "itemPolicy", "item_policy");
   inheritArray("rankFilter", "rankFilter", "rank");
@@ -445,10 +672,38 @@ function inheritParsedFromSession(parsed, sessionValue) {
   inheritScalar("minSamples", "minSamples", "min_samples");
   inheritScalar("sort");
 
+  if (!comparisonContinuation && asArray(next.comparisonItems).length > 0) {
+    next.comparisonMode = next.comparisonMode ?? "exclusive_presence";
+    next.primaryMetric = next.primaryMetric ?? "top4Rate";
+    next.parser.comparison = {
+      requested: true,
+      itemApiNames: next.comparisonItems,
+      ownedItemApiNames: next.lockedItems
+    };
+  }
+
   next.sessionContext = {
     inherited: true,
     sourceKey: SESSION_LAST_QUERY_KEY,
-    inheritedKeys
+    inheritedKeys,
+    fieldOrigins: {
+      unit: ["conversation"],
+      ...(comparisonContinuation
+        ? {
+          comparisonItems: comparisonContinuationKind === "explicit"
+            ? ["current_input"]
+            : ["append", "removal", "targeted_replacement"].includes(comparisonContinuationKind)
+              ? ["conversation", "current_input"]
+              : ["conversation"],
+          lockedItems: comparisonContinuationKind === "ownership"
+            ? ["conversation", "current_input"]
+            : ["conversation"],
+          primaryMetric: parsed.primaryMetric || primaryMetricForSort(parsed.sort)
+            ? ["current_input"]
+            : ["conversation"]
+        }
+        : {})
+    }
   };
 
   return {
@@ -465,6 +720,11 @@ function serializeQueryForSession(query) {
     starLevel: query.starLevel,
     itemCount: query.itemCount,
     traitFilters: query.traitFilters,
+    lockedItems: query.lockedItems ?? query.ownedItems,
+    comparisonItems: query.comparisonItems,
+    comparisonMode: query.comparisonMode,
+    primaryMetric: query.primaryMetric,
+    pendingComparison: Boolean(query.pendingComparison),
     comp: query.comp?.status === "applied" && query.comp?.value?.selection === "explicit"
       ? query.comp
       : null,
@@ -636,7 +896,10 @@ function serializeResultIds(rankedBuilds) {
 
 async function writeLastQuerySession(result, options) {
   if (options.useSession === false) return null;
-  if (!result.validation?.valid) return null;
+  const pendingComparison = options.allowPendingComparison === true
+    && result.query?.intent === "unit_item_comparison"
+    && Boolean(result.query?.unit);
+  if (!result.validation?.valid && !pendingComparison) return null;
 
   return setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
     query: serializeQueryForSession(result.query),
@@ -686,6 +949,9 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       clarification,
       filteredBuilds: [],
       rankedBuilds: [],
+      results: [],
+      overlap: null,
+      decision: null,
       text: clarification.needsClarification
         ? clarification.question
         : `无法查询：${validation.errors.join("；")}`
@@ -705,16 +971,24 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       rows: [],
       filteredBuilds: [],
       rankedBuilds: [],
+      results: [],
+      overlap: null,
+      decision: localDecision,
       text: localDecision.text
     };
   }
 
   const rows = normalizeUnitBuildRows(responseOrRows);
   const filtered = filterBuildRows(rows, validatedQuery, { catalog });
+  const comparison = compareItemOptions(filtered.builds, validatedQuery, {
+    catalog,
+    evidenceReliable: options.evidenceReliable !== false,
+    maxOverlapRate: options.comparisonOptions?.maxOverlapRate,
+    materialThresholds: options.comparisonOptions?.materialThresholds
+  });
   const itemRanking = validatedQuery.intent === "unit_item_rankings"
     ? aggregateUnitItemRankings(filtered.builds, validatedQuery)
     : null;
-  const comparison = compareItemOptions(filtered.builds, validatedQuery, { catalog });
   const rankedBuilds = itemRanking
     ? []
     : comparison
@@ -747,6 +1021,16 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       coverageReliable: itemRanking.coverageReliable
     } : null,
     comparison,
+    results: comparison?.entries ?? [],
+    overlap: comparison?.overlap ?? null,
+    decision: comparison?.decision ?? null,
+    source: {
+      provider: "MetaTFT",
+      endpoint: "tft-explorer-api/unit_builds",
+      patch: validatedQuery.patch ?? null,
+      updatedAt: null,
+      cache: "provided"
+    },
     text
   };
 }
@@ -754,13 +1038,24 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
-  const parsedInput = await parseQueryWithOptionalStructuredParser(input, options, catalog);
+  let parsedInput = await parseQueryWithOptionalStructuredParser(input, options, catalog);
+  const initialSessionEntry = options.useSession === false
+    ? null
+    : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options));
+  const compSessionMerge = inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
+  parsedInput = compSessionMerge.parsed;
 
   if (parsedInput.intent === "comp_rankings") {
     const query = buildCompRankingQuery(parsedInput, {
       preferences: options.preferences,
       dataVersion: options.compDataVersion
     });
+    query.sort = parsedInput.sort;
+    query.sessionContext = parsedInput.sessionContext ?? null;
+    query.constraintSources = Object.fromEntries(
+      ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit"]
+        .map((key) => [key, compConstraintSource(parsedInput, options, key)])
+    );
     const queryCacheKey = makeQueryCacheKey(query);
     let response = options.compResponse ?? options.response;
     let queryCache = { key: queryCacheKey, hit: false };
@@ -839,14 +1134,30 @@ export async function recommendForInput(input, options = {}) {
       catalog
     });
     decorated.parsed = parsedInput;
-    decorated.cache = { query: queryCache };
+    const sessionWrite = options.useSession === false
+      ? null
+      : await setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
+        query: decorated.query,
+        lastResultIds: Object.values(decorated.rankings ?? {})
+          .flat()
+          .slice(0, 10)
+          .map((comp) => comp.compId),
+        updatedAt: new Date().toISOString()
+      }, { ttlMs: options.sessionTtlMs });
+    decorated.cache = {
+      query: queryCache,
+      session: {
+        inherited: compSessionMerge.inherited,
+        inheritedKeys: compSessionMerge.inheritedKeys,
+        updatedAt: initialSessionEntry?.updatedAt ?? null,
+        writtenAt: sessionWrite?.updatedAt ?? null
+      }
+    };
     decorated.text = "";
     return decorated;
   }
 
-  const sessionEntry = options.useSession === false
-    ? null
-    : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options));
+  const sessionEntry = initialSessionEntry;
   const sessionMerge = inheritParsedFromSession(parsedInput, sessionEntry?.value);
   const parsed = sessionMerge.parsed;
   const parsedUnavailableItems = unavailableItemRecords(referencedItemApiNames(parsed), catalog);
@@ -872,7 +1183,10 @@ export async function recommendForInput(input, options = {}) {
   });
 
   if (!preflightValidation.valid || preflightClarification.blocking) {
-    return {
+    const pendingComparison = preflightValidatedQuery.intent === "unit_item_comparison"
+      && Boolean(preflightValidatedQuery.unit);
+    if (pendingComparison) preflightValidatedQuery.pendingComparison = true;
+    const result = {
       type: responseTypeForQuery(preflightValidatedQuery, preflightClarification),
       parsed,
       query: preflightValidatedQuery,
@@ -894,6 +1208,12 @@ export async function recommendForInput(input, options = {}) {
         ? preflightClarification.question
         : `无法查询：${preflightValidation.errors.join("；")}`
     };
+    const sessionWrite = await writeLastQuerySession(result, {
+      ...options,
+      allowPendingComparison: pendingComparison
+    });
+    if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    return result;
   }
 
   const localDecision = unavailableItemDecision(preflightValidatedQuery, catalog);
@@ -955,7 +1275,10 @@ export async function recommendForInput(input, options = {}) {
   });
 
   if (!validation.valid || clarification.blocking) {
-    return {
+    const pendingComparison = validatedQuery.intent === "unit_item_comparison"
+      && Boolean(validatedQuery.unit);
+    if (pendingComparison) validatedQuery.pendingComparison = true;
+    const result = {
       type: responseTypeForQuery(validatedQuery, clarification),
       parsed,
       query: validatedQuery,
@@ -964,6 +1287,9 @@ export async function recommendForInput(input, options = {}) {
       clarification,
       filteredBuilds: [],
       rankedBuilds: [],
+      results: [],
+      overlap: null,
+      decision: null,
       cache: {
         session: {
           inherited: sessionMerge.inherited,
@@ -977,6 +1303,12 @@ export async function recommendForInput(input, options = {}) {
         ? clarification.question
         : `无法查询：${validation.errors.join("；")}`
     };
+    const sessionWrite = await writeLastQuerySession(result, {
+      ...options,
+      allowPendingComparison: pendingComparison
+    });
+    if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    return result;
   }
 
   const queryCacheKey = makeQueryCacheKey(validatedQuery);
@@ -1047,6 +1379,8 @@ export async function recommendForInput(input, options = {}) {
     catalog,
     parsed,
     preferences: options.preferences,
+    evidenceReliable: queryCache.stale !== true,
+    comparisonOptions: options.comparisonOptions,
     comp: validatedQuery.comp,
     additionalWarnings: [...(compResult.warnings ?? []), ...additionalWarnings]
   });
@@ -1065,6 +1399,14 @@ export async function recommendForInput(input, options = {}) {
     },
     compCandidates: compResult.cache,
     query: queryCache
+  };
+  result.source = {
+    provider: "MetaTFT",
+    endpoint: "tft-explorer-api/unit_builds",
+    patch: result.query?.patch ?? null,
+    updatedAt: queryCache.updatedAt ?? null,
+    cache: queryCache.stale ? "stale" : queryCache.hit ? "cache" : "live",
+    cacheDetail: queryCache
   };
 
   const sessionWrite = await writeLastQuerySession(result, options);

@@ -1243,7 +1243,7 @@ test("comparison queries with only one recognized item ask for the missing optio
     itemApiNames: ["TFT_Item_GuinsoosRageblade"],
     ownedItemApiNames: []
   });
-  assert.equal(result.validation.valid, true);
+  assert.equal(result.validation.valid, false);
   assert.equal(result.clarification.reason, "missing_comparison_option");
   assert.match(result.clarification.question, /羊刀/);
   assert.equal(result.clarification.blocking, true);
@@ -1286,8 +1286,8 @@ test("recognized comparison options are aggregated separately instead of locked 
   assert.equal(result.comparison.entries[0].stats.games, 440);
   assert.equal(result.comparison.entries[1].stats.games, 320);
   assert.equal(result.rankedBuilds[0].comparisonOption, "TFT_Item_GuinsoosRageblade");
-  assert.match(result.text, /对比结论：羊刀更优/);
-  assert.match(result.text, /口径：聚合包含各选项/);
+  assert.match(result.text, /当前条件的互斥完整出装样本中，羊刀表现领先/);
+  assert.match(result.text, /每个候选只聚合包含自身且不含其他候选/);
 });
 
 test("comparison keeps explicit owned items separate from the alternatives", () => {
@@ -1331,7 +1331,7 @@ test("comparison does not declare a winner when one option is below the sample t
   assert.equal(result.comparison.winner, null);
   assert.equal(result.comparison.allQualified, false);
   assert.equal(result.comparison.entries.find((entry) => entry.apiName === "TFT_Item_InfinityEdge").qualified, false);
-  assert.match(result.text, /暂不能给出稳定对比结论/);
+  assert.match(result.text, /暂不判断胜者：部分候选未达到最低样本门槛/);
   assert.match(result.text, /无尽.*低于样本>=100/);
 });
 
@@ -1352,8 +1352,7 @@ test("comparison does not declare a winner when all options only clear a very lo
   assert.equal(result.comparison.allStable, false);
   assert.equal(result.comparison.stabilityMinSamples, 200);
   assert.equal(result.comparison.winner, null);
-  assert.match(result.text, /^低样本参考：/);
-  assert.match(result.text, /不作胜出结论/);
+  assert.match(result.text, /^暂不判断胜者：部分候选样本不足以形成稳定结论/);
 });
 
 test("comparison accepts Runaan as the current Kraken item", async () => {
@@ -1380,6 +1379,7 @@ test("comparison accepts Runaan as the current Kraken item", async () => {
   });
 
   assert.equal(result.localDecision, undefined);
+  assert.equal(result.comparison.entries.some((entry) => entry.apiName === "TFT_Item_RunaansHurricane"), true);
   assert.equal(result.comparison.options.includes("TFT_Item_RunaansHurricane"), true);
   assert.equal(compsCalls, 0);
   assert.equal(explorerCalls, 1);
@@ -2650,8 +2650,8 @@ test("builds item catalog categories from captured MetaTFT items response", () =
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").aliasSource, "derived_radiant_alias");
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").nameSource, "tencent_lol_official_tft_catalog");
   assert.equal(byApiName.get("TFT_Item_Artifact_NavoriFlickerblades").category, "artifact");
-  assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").shortName, "神器火炮");
-  assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").aliasSource, "manual_current_artifact_alias");
+  assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").shortName, "疾射火炮");
+  assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").aliasSource, "manual_official_name_with_historical_aliases");
   assert.equal(byApiName.get("TFT_Item_Artifact_StatikkShiv").aliases.includes("电刀神器"), true);
   assert.equal(byApiName.get("TFT_Item_Artifact_Fishbones").shortName, "鱼骨头");
   assert.equal(byApiName.get("TFT_Item_Artifact_Fishbones").aliasSource, "manual");
@@ -2819,12 +2819,12 @@ test("generated domain catalog recognizes api-level Chinese trait aliases", () =
   assert.equal(traitByFilterId.get("TFT17_DarkStar_4").displayName, "暗星");
   assert.equal(traitByFilterId.get("TFT17_AnimaSquad_2").zhName, "幻灵战队");
   assert.equal(traitByFilterId.get("TFT17_BlitzcrankUniqueTrait_1").zhName, "布里茨专属");
-  assert.equal(traitByFilterId.get("TFT17_Stargazer_Mountain_6").displayName, "观星山脉");
-  assert.equal(traitByFilterId.get("TFT17_Stargazer_Wolf_4").zhName, "观星狼灵");
+  assert.equal(traitByFilterId.get("TFT17_Stargazer_Mountain_6").displayName, "秀山观星");
+  assert.equal(traitByFilterId.get("TFT17_Stargazer_Wolf_4").zhName, "野猪");
 
   const darkStar = planQuery("暗星霞三件套", { catalog });
   const animaSquad = planQuery("幻灵霞三件套", { catalog });
-  const mountain = planQuery("观星山脉霞三件套", { catalog });
+  const mountain = planQuery("秀山观星霞三件套", { catalog });
   const uniqueTrait = planQuery("机器人专属霞三件套", { catalog });
 
   assert.equal(darkStar.validation.valid, true);

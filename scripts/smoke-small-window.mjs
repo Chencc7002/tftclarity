@@ -157,6 +157,7 @@ const runtime = createSmallWindowRuntime({
   catalog: smokeCatalog,
   cacheStore,
   fetchItems: false,
+  officialItemDetails: new Map(),
   metaTFTClient: {
     async getCompCandidates(plan) {
       compCandidateCalls += 1;
@@ -254,6 +255,13 @@ try {
   );
   assertSmoke(unitBuildCalls === callsBeforeMissingComparison, "missing comparison option called unit_builds");
 
+  // The comparison clarification intentionally persists its pending unit/items.
+  // Start the independent typo-candidate scenario with a clean conversation.
+  const clearedPendingComparison = await jsonRequest(`${baseUrl}/api/session/clear`, {
+    method: "POST"
+  });
+  assertSmoke(clearedPendingComparison.ok === true, "pending comparison session was not cleared");
+
   const clarification = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
     body: JSON.stringify({
@@ -345,9 +353,15 @@ try {
     })
   });
   assertSmoke(comparison.comparison?.allQualified === true, "item comparison did not qualify both options");
+  assertSmoke(comparison.type === "unit_item_comparison", "item comparison response type was not serialized");
+  assertSmoke(comparison.results?.length === 2, "formal comparison results were not serialized");
+  assertSmoke(comparison.overlap?.games === 540, "shared-candidate fixture was not isolated as overlap games");
+  assertSmoke(comparison.decision?.primaryMetric === "top4Rate", "comparison primary metric was not serialized");
+  assertSmoke(comparison.source?.endpoint === "tft-explorer-api/unit_builds", "comparison source endpoint was not serialized");
   assertSmoke(comparison.comparison?.entries?.length === 2, "item comparison did not return two entries");
   assertSmoke(comparison.cards?.length === 2, "item comparison did not return two cards");
-  assertSmoke(comparison.cards.some((card) => card.winner), "item comparison did not mark a winner");
+  assertSmoke(comparison.cards.every((card) => !card.winner), "overlap-gated comparison incorrectly marked a winner");
+  assertSmoke(comparison.decision?.reason === "overlap_too_high", "comparison did not explain the winner gate");
   assertSmoke(comparison.cards.every((card) => card.items.some((item) => item.compared)), "comparison cards did not mark compared items");
   assertSmoke(comparison.lockedItems?.length === 0, "comparison options were incorrectly serialized as locked items");
 
@@ -490,7 +504,12 @@ try {
       input: "霞能不能带分裂弓？"
     })
   });
-  assertSmoke(!historicalAlias.decision, "historical Runaan alias was still blocked");
+  assertSmoke(
+    historicalAlias.query?.ownedItems?.includes("TFT_Item_RunaansHurricane"),
+    "historical Runaan alias did not resolve to the current item"
+  );
+  assertSmoke(historicalAlias.decision == null, "historical Runaan alias was incorrectly marked unavailable");
+  assertSmoke(historicalAlias.query?.unit === "TFT17_Xayah", "historical alias query did not preserve the unit");
   assertSmoke(historicalAlias.lockedItems?.[0]?.name === "海妖之怒", "historical alias did not serialize the current canonical name");
   assertSmoke(historicalAlias.cards?.[0]?.items?.filter((item) => item.apiName === "TFT_Item_RunaansHurricane").length === 2, "red buff plus double Kraken row was not preserved");
   assertSmoke(unitBuildCalls > callsBeforeHistoricalAlias, "current Kraken query did not reach unit_builds");

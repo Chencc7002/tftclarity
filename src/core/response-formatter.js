@@ -49,6 +49,8 @@ function buildLine(build, catalog, ownedItems = []) {
 
 function comparisonSortLabel(sort) {
   if (sort === "win_first") return "吃鸡率优先";
+  if (sort === "avg_first") return "平均名次优先";
+  if (sort === "games_first") return "样本量优先";
   if (sort === "robust_first") return "高样本优先";
   return "前四率优先";
 }
@@ -56,11 +58,18 @@ function comparisonSortLabel(sort) {
 function formatComparison(comparison, query, catalog, warnings) {
   const lines = [];
   if (comparison.winner) {
-    lines.push(`对比结论：${itemName(comparison.winner, catalog)}更优（${comparisonSortLabel(comparison.sort)}）`);
-  } else if (comparison.allQualified && !comparison.allStable) {
-    lines.push("低样本参考：对比项虽达到所选阈值，但未全部达到稳定展示门槛，不作胜出结论。");
+    lines.push(`对比结论：当前条件的互斥完整出装样本中，${itemName(comparison.winner, catalog)}表现领先（${comparisonSortLabel(comparison.sort)}）。`);
   } else {
-    lines.push("暂不能给出稳定对比结论：对比项未全部达到样本阈值。");
+    const reason = comparison.decision?.reason;
+    const reasonText = {
+      insufficient_sample: "部分候选未达到最低样本门槛",
+      low_sample: "部分候选样本不足以形成稳定结论",
+      difference_too_small: "主指标差距接近",
+      metric_unavailable: "主指标缺失",
+      overlap_too_high: "候选共同出现的样本占比过高",
+      stale_evidence: "数据时效不足"
+    }[reason] ?? "证据不足";
+    lines.push(`暂不判断胜者：${reasonText}。`);
   }
 
   for (const entry of comparison.entries) {
@@ -70,14 +79,19 @@ function formatComparison(comparison, query, catalog, warnings) {
         ? `（低样本，稳定门槛>=${comparison.stabilityMinSamples}）`
         : "";
     lines.push(
-      `${itemName(entry.apiName, catalog)}：前四 ${percent(entry.stats.top4Rate)} / 吃鸡 ${percent(entry.stats.winRate)} / 均名 ${entry.stats.avgPlacement.toFixed(2)} / 聚合样本 ${entry.stats.games}${sampleWarning}`
+      `${itemName(entry.apiName, catalog)}：前四 ${entry.top4Rate === null ? "缺失" : percent(entry.top4Rate)} / 吃鸡 ${entry.winRate === null ? "缺失" : percent(entry.winRate)} / 均名 ${entry.avgPlacement === null ? "缺失" : entry.avgPlacement.toFixed(2)} / 互斥样本 ${entry.stats.games}${sampleWarning}`
     );
     if (entry.representativeBuild) {
       lines.push(`代表三件套：${buildLine(entry.representativeBuild, catalog, query.ownedItems)}`);
     }
   }
 
-  lines.push("", "口径：聚合包含各选项且尽量排除其他对比项的三件套 placement_count。", "");
+  lines.push(
+    "",
+    `重叠样本：${comparison.overlap?.games ?? 0}（占候选相关样本 ${percent(comparison.overlap?.rate ?? 0)}），只展示、不进入胜负判断。`,
+    "口径：每个候选只聚合包含自身且不含其他候选的完整出装 placement_count；结论描述相关表现，不代表装备造成指标变化。",
+    ""
+  );
   appendQueryDetails(lines, query, catalog, [
     ...warnings,
     ...(comparison.warnings ?? [])

@@ -27,8 +27,12 @@ const VALID_SORTS = new Set([
   "top4_first",
   "win_first",
   "robust_first",
-  "avg_first"
+  "avg_first",
+  "games_first"
 ]);
+
+const VALID_COMPARISON_MODES = new Set(["exclusive_presence"]);
+const VALID_PRIMARY_METRICS = new Set(["top4Rate", "winRate", "avgPlacement", "games"]);
 
 const VALID_RANKS = new Set([
   "CHALLENGER",
@@ -71,6 +75,14 @@ const ALLOWED_CONSTRAINT_KEYS = new Set([
   "itemPolicy",
   "owned_items",
   "ownedItems",
+  "locked_items",
+  "lockedItems",
+  "comparison_items",
+  "comparisonItems",
+  "comparison_mode",
+  "comparisonMode",
+  "primary_metric",
+  "primaryMetric",
   "excluded_items",
   "excludedItems",
   "min_samples",
@@ -101,6 +113,10 @@ const CONSTRAINT_ALIAS_PAIRS = [
   ["item_count", "itemCount"],
   ["item_policy", "itemPolicy"],
   ["owned_items", "ownedItems"],
+  ["locked_items", "lockedItems"],
+  ["comparison_items", "comparisonItems"],
+  ["comparison_mode", "comparisonMode"],
+  ["primary_metric", "primaryMetric"],
   ["excluded_items", "excludedItems"],
   ["min_samples", "minSamples"],
   ["rank_filter", "rankFilter"]
@@ -257,6 +273,18 @@ export function validateStructuredParserOutput(rawValue) {
     VALID_ITEM_POLICIES
   );
   const sort = readString(constraints.sort, "constraints.sort", errors, VALID_SORTS);
+  const comparisonMode = readString(
+    constraints.comparison_mode ?? constraints.comparisonMode,
+    "constraints.comparison_mode",
+    errors,
+    VALID_COMPARISON_MODES
+  );
+  const primaryMetric = readString(
+    constraints.primary_metric ?? constraints.primaryMetric,
+    "constraints.primary_metric",
+    errors,
+    VALID_PRIMARY_METRICS
+  );
   const patch = readString(constraints.patch, "constraints.patch", errors);
   const queue = readString(constraints.queue, "constraints.queue", errors);
   const needsClarification = readBoolean(
@@ -284,11 +312,18 @@ export function validateStructuredParserOutput(rawValue) {
         max: 3
       }),
       itemPolicy,
-      ownedItemMentions: readArray(
-        constraints.owned_items ?? constraints.ownedItems,
-        "constraints.owned_items",
+      lockedItemMentions: readArray(
+        constraints.locked_items ?? constraints.lockedItems ?? constraints.owned_items ?? constraints.ownedItems,
+        "constraints.locked_items",
         errors
       ),
+      comparisonItemMentions: readArray(
+        constraints.comparison_items ?? constraints.comparisonItems,
+        "constraints.comparison_items",
+        errors
+      ),
+      comparisonMode,
+      primaryMetric,
       excludedItemMentions: readArray(
         constraints.excluded_items ?? constraints.excludedItems,
         "constraints.excluded_items",
@@ -322,7 +357,8 @@ export function validateStructuredParserOutput(rawValue) {
       ...value.entities.unitMentions,
       ...value.entities.itemMentions,
       ...value.entities.traitMentions,
-      ...value.constraints.ownedItemMentions,
+      ...value.constraints.lockedItemMentions,
+      ...value.constraints.comparisonItemMentions,
       ...value.constraints.excludedItemMentions
     ];
     if (entityMentions.length > 0) {
@@ -347,6 +383,20 @@ export function validateStructuredParserOutput(rawValue) {
   if (needsClarification && !clarificationQuestion) {
     errors.push("clarification_question is required when needs_clarification is true");
   }
+  if (intent === "unit_item_comparison" && value.constraints.comparisonItemMentions.length > 5) {
+    errors.push("constraints.comparison_items must contain at most 5 entries");
+  }
+  const entityMentions = [
+    ...value.entities.unitMentions,
+    ...value.entities.itemMentions,
+    ...value.entities.traitMentions,
+    ...value.constraints.lockedItemMentions,
+    ...value.constraints.comparisonItemMentions,
+    ...value.constraints.excludedItemMentions
+  ];
+  if (entityMentions.some((mention) => /^TFT\d*_/i.test(mention))) {
+    errors.push("entity mentions must be player-facing catalog lookup text, not API IDs");
+  }
 
   return {
     valid: errors.length === 0,
@@ -361,7 +411,8 @@ export function buildStructuredParserExpansion(value) {
     ...(value.entities?.unitMentions ?? []),
     ...(value.entities?.itemMentions ?? []),
     ...(value.entities?.traitMentions ?? []),
-    ...(value.constraints?.ownedItemMentions ?? []),
+    ...(value.constraints?.lockedItemMentions ?? []),
+    ...(value.constraints?.comparisonItemMentions ?? []),
     ...(value.constraints?.excludedItemMentions ?? [])
   ]).join(" ");
 }
@@ -375,5 +426,7 @@ export function shouldUseStructuredParser(parsed, options = {}) {
   if ((parsed.parser?.entityAmbiguities ?? []).length > 0) return false;
   if ((parsed.parser?.unresolvedEntityHints ?? []).length > 0) return true;
   if (parsed.parser?.exclusion?.requested && (parsed.excludedItems ?? []).length === 0) return true;
+  if (parsed.parser?.multipleItemRelationAmbiguous) return true;
+  if (parsed.parser?.comparison?.requested && (parsed.comparisonItems ?? []).length < 2) return true;
   return !parsed.unit;
 }

@@ -50,9 +50,7 @@ const baseParams = {
   formatnoarray: "true",
   compact: "true",
   queue: DEFAULT_QUERY_OPTIONS.queue,
-  patch: DEFAULT_QUERY_OPTIONS.patch,
-  days: DEFAULT_QUERY_OPTIONS.days,
-  rank: DEFAULT_QUERY_OPTIONS.rankFilter.join(",")
+  patch: DEFAULT_QUERY_OPTIONS.patch
 };
 
 console.log(`MetaTFT smoke baseUrl=${baseUrl}`);
@@ -93,6 +91,9 @@ const recommendation = await recommendForInput(query, {
   }
 });
 assertSmoke(recommendation.rankedBuilds.length > 0, "recommendation produced no ranked builds");
+if (recommendation.rankedBuilds[0].items.includes("TFT_Item_RunaansHurricane")) {
+  assertSmoke(catalog.itemByApiName.get("TFT_Item_RunaansHurricane")?.shortName === "海妖之怒", "current Runaan result did not use the verified display name");
+}
 assertSmoke(recommendation.query.catalogVersion !== undefined, "recommendation did not use the generated current catalog");
 printSection("Recommendation", recommendation.text);
 

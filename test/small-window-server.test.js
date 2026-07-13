@@ -367,6 +367,45 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(localized.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
 });
 
+test("handleRecommendRequest returns official item encyclopedia details before recommendation logic", async () => {
+  const catalog = createCatalog({
+    items: [{
+      apiName: "TFT_Item_UnstableConcoction",
+      zhName: "正义之手",
+      shortName: "正义",
+      aliases: ["正义", "正义之手", "合剂"],
+      category: "ordinary_completed",
+      current: true,
+      obtainable: true
+    }]
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialItemDetails: new Map([["TFT_Item_UnstableConcoction", {
+      apiName: "TFT_Item_UnstableConcoction",
+      name: "正义之手",
+      effect: "获得伤害增幅和全能吸血",
+      recipe: [{ apiName: "TFT_Item_TearOfTheGoddess", name: "女神之泪", iconUrl: null }],
+      iconUrl: null,
+      craftable: true,
+      sourceUrl: "https://example.test/equip.js"
+    }]]),
+    recommendForInputImpl: () => {
+      throw new Error("item encyclopedia must not call recommendation logic");
+    }
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({ input: "合剂是什么装备？" }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.type, "item_details");
+  assert.equal(payload.item.name, "正义之手");
+  assert.equal(payload.item.effect, "获得伤害增幅和全能吸血");
+  assert.equal(payload.item.recipe[0].name, "女神之泪");
+});
+
 test("handleRecommendRequest returns the conversational item-ranking schema", async () => {
   const itemRows = [...fixtureRows, {
     unit_builds: "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
@@ -444,6 +483,7 @@ test("handleRecommendRequest serializes comp rankings without leaking raw rows",
 });
 
 test("handleRecommendRequest serializes item comparison cards and aggregate stats", async () => {
+  let detailFetches = 0;
   const comparisonRows = [
     {
       unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_GiantSlayer|TFT_Item_Deathblade",
@@ -458,6 +498,13 @@ test("handleRecommendRequest serializes item comparison cards and aggregate stat
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
+    fetchOfficialItemDetails: async () => {
+      detailFetches += 1;
+      return new Map([
+        ["TFT_Item_GuinsoosRageblade", { iconUrl: "https://example.test/guinsoo.png" }],
+        ["TFT_Item_InfinityEdge", { iconUrl: "https://example.test/ie.png" }]
+      ]);
+    },
     metaTFTClient: {},
     compsClient: {},
     recommendForInputImpl: (input, options) => recommendForInput(input, {
@@ -471,16 +518,66 @@ test("handleRecommendRequest serializes item comparison cards and aggregate stat
   }, runtime);
 
   assert.equal(statusCode, 200);
+  assert.equal(payload.type, "unit_item_comparison");
+  assert.equal(payload.query.intent, "unit_item_comparison");
   assert.equal(payload.comparison.winner, "TFT_Item_GuinsoosRageblade");
   assert.equal(payload.comparison.winnerName, "羊刀");
   assert.equal(payload.comparison.entries[0].stats.games, 440);
+  assert.equal(detailFetches, 1);
+  assert.match(payload.comparison.entries[0].iconUrl, /^https:\/\/example\.test\//);
   assert.deepEqual(payload.lockedItems, []);
-  assert.equal(payload.cards[0].title, "更优：羊刀");
+  assert.equal(payload.results.length, 2);
+  assert.equal(payload.overlap.games, 0);
+  assert.equal(payload.decision.primaryMetric, "top4Rate");
+  assert.equal(payload.source.endpoint, "tft-explorer-api/unit_builds");
+  assert.deepEqual(payload.query.constraintSources.comparison_items, ["current_input"]);
+  assert.equal(payload.cards[0].title, "样本领先：羊刀");
   assert.equal(payload.cards[0].winner, true);
   assert.equal(payload.cards[0].items.find((item) => item.compared)?.name, "羊刀");
   assert.equal(payload.cards[0].items.some((item) => item.locked), false);
   assert.equal(payload.cards[1].title, "对比：无尽");
   assert.equal(payload.cards[1].winner, false);
+});
+
+test("handleRecommendRequest keeps three-candidate comparison order stable", async () => {
+  const rows = [
+    {
+      unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_Deathblade|TFT_Item_LastWhisper",
+      placement_count: [90, 80, 70, 60, 30, 25, 20, 15]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT_Item_InfinityEdge|TFT_Item_Deathblade|TFT_Item_LastWhisper",
+      placement_count: [50, 50, 50, 50, 50, 50, 50, 50]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT_Item_GiantSlayer|TFT_Item_Deathblade|TFT_Item_LastWhisper",
+      placement_count: [20, 25, 30, 35, 60, 60, 55, 55]
+    }
+  ];
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialItemDetails: new Map(),
+    metaTFTClient: {},
+    compsClient: {},
+    recommendForInputImpl: (input, options) => recommendForInput(input, {
+      ...options,
+      response: rows
+    })
+  });
+
+  const { payload } = await handleRecommendRequest({
+    input: "霞比较羊刀、无尽和巨杀哪个好？"
+  }, runtime);
+
+  assert.equal(payload.type, "unit_item_comparison");
+  assert.equal(payload.results.length, 3);
+  assert.deepEqual(payload.results.map((entry) => entry.apiName), [
+    "TFT_Item_GuinsoosRageblade",
+    "TFT_Item_InfinityEdge",
+    "TFT_Item_GiantSlayer"
+  ]);
 });
 
 test("handleRecommendRequest marks low-sample cards explicitly", async () => {

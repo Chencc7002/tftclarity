@@ -125,6 +125,14 @@
               <small id="runtime-detail">-</small>
             </section>
 
+            <section class="settings-section maintenance-entry" aria-label="维护">
+              <div>
+                <strong>装备目录审核</strong>
+                <small>检查名称、来源、可用性、详情与 override</small>
+              </div>
+              <button type="button" id="open-item-audit-button">打开</button>
+            </section>
+
             <details class="settings-section alias-review">
               <summary data-i18n="aliasReview">别名审核（高级）</summary>
               <div class="alias-head">
@@ -149,6 +157,38 @@
             <button type="button" class="primary" id="settings-done" data-i18n="done">完成</button>
           </div>
         </aside>
+
+        <section class="maintenance-panel hidden" id="item-audit-panel" aria-label="装备目录审核">
+          <div class="maintenance-head">
+            <div>
+              <strong>装备目录审核</strong>
+              <small id="item-audit-meta">正在读取目录状态…</small>
+            </div>
+            <button type="button" id="item-audit-close" title="关闭">×</button>
+          </div>
+          <div class="audit-filters">
+            <input id="item-audit-query" type="search" placeholder="名称 / API ID / 别名" aria-label="搜索装备目录">
+            <input id="item-audit-patch" type="search" placeholder="Patch，例如 current" aria-label="筛选 patch">
+            <input id="item-audit-source" type="search" placeholder="来源，例如 tencent" aria-label="筛选来源">
+            <select id="item-audit-category" aria-label="装备类别">
+              <option value="">全部类别</option><option value="ordinary_completed">普通成装</option><option value="component">组件</option><option value="emblem">纹章</option><option value="radiant">光明</option><option value="artifact">神器</option><option value="support">辅助</option><option value="set_special">赛季特殊</option><option value="unknown">未知</option>
+            </select>
+            <select id="item-audit-status" aria-label="来源与缓存状态">
+              <option value="">全部状态</option><option value="fresh">Fresh</option><option value="stale">Stale</option><option value="fallback">Fallback</option><option value="error">Error</option>
+            </select>
+            <select id="item-audit-availability" aria-label="可用性">
+              <option value="">全部可用性</option><option value="available">当前可用</option><option value="unavailable">当前不可用</option>
+            </select>
+            <select id="item-audit-issues" aria-label="审核问题">
+              <option value="">全部审核状态</option><option value="with_issues">仅有问题</option><option value="clean">仅无问题</option>
+            </select>
+          </div>
+          <div class="audit-toolbar">
+            <span id="item-audit-summary">0 条</span>
+            <div><button type="button" id="item-audit-reload">刷新</button><button type="button" id="item-audit-export-json">导出 JSON</button><button type="button" id="item-audit-export-csv">导出 CSV</button></div>
+          </div>
+          <div class="audit-list" id="item-audit-list"><div class="audit-empty">暂无数据</div></div>
+        </section>
       </div>
       <div class="resize-grip" data-i18n-title="nativeResize" title="拖动窗口边缘调整大小（由桌面壳提供）" aria-hidden="true"><span></span><span></span></div>
     </main>

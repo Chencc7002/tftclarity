@@ -11,6 +11,12 @@ export {
   DEFAULT_RANK_FILTER
 } from "./data/static-data.js";
 export { parseQuery } from "./core/query-parser.js";
+export { parseRankFilter } from "./core/query-parser.js";
+export {
+  buildCompRankings as buildCompsContextRankings,
+  hasUnsupportedCompRankingEntities,
+  isCompRankingFollowUp
+} from "./core/comp-rankings.js";
 export {
   DEFAULT_HIGH_CONFIDENCE_FUZZY_OPTIONS,
   resolveHighConfidenceEntityCandidates
@@ -93,7 +99,18 @@ export {
   mergeOfficialItemLocalization
 } from "./data/item-localization.js";
 export { CURRENT_ITEM_LOCALIZATION_SOURCE } from "./data/item-localization-sources.js";
+export {
+  OFFICIAL_TFT_EQUIPMENT_URL,
+  buildOfficialTftItemDetailsCatalog,
+  fetchOfficialTftItemDetails,
+  parseOfficialTftEquipmentPayload
+} from "./data/official-item-details.js";
 export { auditItemPatchChanges } from "./data/item-patch-audit.js";
+export {
+  buildItemCatalogAudit,
+  filterItemCatalogAudit,
+  itemCatalogAuditToCsv
+} from "./data/item-catalog-audit.js";
 export {
   applyItemAvailabilityOverride,
   findItemAvailabilityOverride,

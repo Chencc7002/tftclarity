@@ -18,6 +18,9 @@ export function compareRankedBuilds(a, b, query = {}) {
   if (sort === "robust_first" && b.stats.games !== a.stats.games) {
     return b.stats.games - a.stats.games;
   }
+  if (sort === "games_first" && b.stats.games !== a.stats.games) {
+    return b.stats.games - a.stats.games;
+  }
   if (sort === "avg_first" && a.stats.avgPlacement !== b.stats.avgPlacement) {
     return a.stats.avgPlacement - b.stats.avgPlacement;
   }
