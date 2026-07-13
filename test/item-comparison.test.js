@@ -80,6 +80,14 @@ test("artifact anvil wording treats named drops as alternatives, not joint filte
   assert.equal(result.query.itemPolicy, "include_artifact");
 });
 
+test("artifact anvil wording with plain 拿哪个 still creates an exclusive comparison", () => {
+  const result = planQuery("我神器铁砧开到了烁刃和巨九，霞拿哪个？", { catalog });
+
+  assert.equal(result.parsed.intent, "unit_item_comparison");
+  assert.deepEqual(result.query.comparisonItems, [NAVORI, HYDRA]);
+  assert.deepEqual(result.query.lockedItems, []);
+});
+
 test("owned equipment stays locked while alternatives remain separate", () => {
   const result = planQuery("霞已有羊刀，烁刃还是巨九更强？", { catalog });
 
@@ -490,6 +498,26 @@ test("structured parser can reclassify a complex anvil choice without inventing 
   assert.equal(result.clarification.needsClarification, false);
 });
 
+test("structured parser timeout and HTTP failures fall back to deterministic comparison parsing", async () => {
+  for (const failure of ["timeout", "401", "500"]) {
+    const result = await recommendForInput("霞用烁刃还是巨九？", {
+      catalog,
+      useSession: false,
+      response: baseRows,
+      structuredParser: async () => {
+        throw new Error(failure);
+      },
+      useStructuredParser: "always"
+    });
+
+    assert.equal(result.query.intent, "unit_item_comparison", failure);
+    assert.deepEqual(result.query.comparisonItems, [NAVORI, HYDRA], failure);
+    assert.equal(result.clarification.needsClarification, false, failure);
+    assert.equal(result.parsed.parser.structuredParser.valid, false, failure);
+    assert.match(result.parsed.parser.structuredParser.errors.join("\n"), new RegExp(failure), failure);
+  }
+});
+
 test("conversation inherits the unit for an item-only comparison", async () => {
   const cacheStore = new MemoryCacheStore();
   await recommendForInput("霞带什么装备？", { catalog, cacheStore, response: baseRows });
@@ -514,6 +542,27 @@ test("comparison constraint follow-ups retain candidates and update only the req
   assert.equal(winFirst.query.sort, "win_first");
 });
 
+test("natural comparison metric follow-ups retain candidates for all supported metrics", async () => {
+  const cases = [
+    ["哪个更稳？", "top4Rate", "top4_first"],
+    ["哪个吃鸡上限高？", "winRate", "win_first"],
+    ["平均名次呢？", "avgPlacement", "avg_first"],
+    ["哪个样本更多？", "games", "games_first"]
+  ];
+
+  for (const [input, primaryMetric, sort] of cases) {
+    const cacheStore = new MemoryCacheStore();
+    await recommendForInput("霞烁刃还是巨九哪个好？", { catalog, cacheStore, response: baseRows });
+    const result = await recommendForInput(input, { catalog, cacheStore, response: baseRows });
+
+    assert.equal(result.query.intent, "unit_item_comparison", input);
+    assert.deepEqual(result.query.comparisonItems, [NAVORI, HYDRA], input);
+    assert.equal(result.query.primaryMetric, primaryMetric, input);
+    assert.equal(result.query.sort, sort, input);
+    assert.equal(result.clarification.needsClarification, false, input);
+  }
+});
+
 test("conversation appends a new candidate and can add a locked item", async () => {
   const cacheStore = new MemoryCacheStore();
   await recommendForInput("霞烁刃还是巨九哪个好？", { catalog, cacheStore, response: baseRows });
@@ -536,6 +585,52 @@ test("conversation appends a new candidate and can add a locked item", async () 
   assert.deepEqual(locked.query.comparisonItems, [NAVORI, HYDRA, DEFIANCE]);
   assert.deepEqual(locked.query.lockedItems, [RAGEBLADE]);
   assert.equal(locked.query.itemPolicy, "include_artifact");
+});
+
+test("再加 wording appends a comparison candidate instead of replacing the candidate set", async () => {
+  const cacheStore = new MemoryCacheStore();
+  await recommendForInput("霞烁刃还是巨九哪个好？", { catalog, cacheStore, response: baseRows });
+  const result = await recommendForInput("再加死亡之蔑呢？", { catalog, cacheStore, response: baseRows });
+
+  assert.deepEqual(result.query.comparisonItems, [NAVORI, HYDRA, DEFIANCE]);
+  assert.deepEqual(result.query.lockedItems, []);
+  assert.equal(result.clarification.needsClarification, false);
+});
+
+test("a unit-only follow-up replaces the hero while retaining comparison candidates", async () => {
+  const comparisonCatalog = createCatalog({
+    units: [
+      ...catalog.units,
+      { apiName: "TFT17_Kaisa", zhName: "卡莎", aliases: ["卡莎", "kaisa"] }
+    ],
+    items: catalog.items
+  });
+  const cacheStore = new MemoryCacheStore();
+  await recommendForInput("霞用烁刃还是巨九？", {
+    catalog: comparisonCatalog,
+    cacheStore,
+    response: baseRows
+  });
+  const result = await recommendForInput("那卡莎呢？", {
+    catalog: comparisonCatalog,
+    cacheStore,
+    response: [
+      {
+        unit_builds: `TFT17_Kaisa&${NAVORI}|${INFINITY_EDGE}|${GIANT_SLAYER}`,
+        placement_count: strong
+      },
+      {
+        unit_builds: `TFT17_Kaisa&${HYDRA}|${INFINITY_EDGE}|${GIANT_SLAYER}`,
+        placement_count: weak
+      }
+    ]
+  });
+
+  assert.equal(result.query.intent, "unit_item_comparison");
+  assert.equal(result.query.unit, "TFT17_Kaisa");
+  assert.deepEqual(result.query.comparisonItems, [NAVORI, HYDRA]);
+  assert.equal(result.query.constraintSources.unit.source, "current_input");
+  assert.equal(result.clarification.needsClarification, false);
 });
 
 test("conversation clarifies when appending a sixth candidate", async () => {

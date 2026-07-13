@@ -1,9 +1,52 @@
-import { MemoryCacheStore, createCatalog } from "../src/index.js";
+import { readFileSync } from "node:fs";
+import {
+  CURRENT_ITEM_LOCALIZATION,
+  MemoryCacheStore,
+  buildItemCatalogFromItemsResponse,
+  buildUnitCatalogFromExplorerRows,
+  createCatalog
+} from "../src/index.js";
 import { createSmallWindowRuntime, startSmallWindowServer } from "../src/app/small-window-server.js";
 
 const portArg = process.argv.find((value) => value.startsWith("--port="));
 const port = Number(portArg?.slice("--port=".length) ?? 17329);
+const NAVORI = "TFT_Item_Artifact_NavoriFlickerblades";
+const HYDRA = "TFT_Item_Artifact_TitanicHydra";
+const RAGEBLADE = "TFT_Item_GuinsoosRageblade";
+const INFINITY_EDGE = "TFT_Item_InfinityEdge";
+const STARGAZER_EMBLEM = "TFT17_Item_StargazerEmblemItem";
+const compPageFixture = JSON.parse(readFileSync(
+  new URL("../test/fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url),
+  "utf8"
+));
+const visualCatalog = createCatalog({
+  units: buildUnitCatalogFromExplorerRows({
+    data: ["TFT17_Xayah", "TFT17_Kaisa", "TFT17_Aatrox"].map((apiName) => ({
+      units_unique: `${apiName}-1`,
+      placement_count: [20, 18, 16, 14, 12, 10, 8, 6]
+    }))
+  }, { patch: "current" }),
+  items: buildItemCatalogFromItemsResponse({
+    data: CURRENT_ITEM_LOCALIZATION.items.map((item) => ({ items: item.apiName }))
+  }, { patch: "current" })
+});
 const rows = [
+  {
+    unit_builds: `TFT17_Xayah&${NAVORI}|${RAGEBLADE}|${INFINITY_EDGE}`,
+    placement_count: [190, 100, 80, 60, 40, 25, 15, 10]
+  },
+  {
+    unit_builds: `TFT17_Xayah&${HYDRA}|${RAGEBLADE}|${INFINITY_EDGE}`,
+    placement_count: [150, 100, 80, 60, 40, 25, 15, 10]
+  },
+  {
+    unit_builds: `TFT17_Xayah&${NAVORI}|${HYDRA}|${RAGEBLADE}`,
+    placement_count: [90, 70, 50, 40, 25, 15, 7, 3]
+  },
+  {
+    unit_builds: `TFT17_Xayah&${STARGAZER_EMBLEM}|${RAGEBLADE}|${INFINITY_EDGE}`,
+    placement_count: [100, 80, 60, 45, 30, 20, 10, 5]
+  },
   {
     unit_builds: "TFT17_Xayah&TFT_Item_RapidFireCannon|TFT_Item_RunaansHurricane|TFT_Item_RunaansHurricane",
     placement_count: [150, 120, 90, 70, 40, 25, 15, 10]
@@ -31,9 +74,19 @@ const cacheStore = new MemoryCacheStore({
 });
 
 const runtime = createSmallWindowRuntime({
-  catalog: createCatalog(),
+  catalog: visualCatalog,
   cacheStore,
   fetchItems: false,
+  officialItemDetails: new Map([[STARGAZER_EMBLEM, {
+    apiName: STARGAZER_EMBLEM,
+    name: "观星者纹章",
+    effect: "携带者获得观星者羁绊。",
+    attributes: [],
+    recipe: [],
+    craftable: false,
+    iconUrl: "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='12' fill='%235b6fe8'/%3E%3Cpath d='M32 8l6 18 18 6-18 6-6 18-6-18-18-6 18-6z' fill='white'/%3E%3C/svg%3E",
+    sourceUrl: "https://game.gtimg.cn/images/lol/act/img/tft/equip.js"
+  }]]),
   metaTFTClient: {
     async getCompCandidates(plan) {
       const days = Number(plan?.params?.days ?? 3);
@@ -58,7 +111,14 @@ const runtime = createSmallWindowRuntime({
       return { data: rows, capture: { capturedAt: "2026-07-12T10:00:00+08:00" } };
     }
   },
-  compsClient: {}
+  compsClient: {
+    async getCompsData() {
+      return compPageFixture.compsData;
+    },
+    async getCompsStats() {
+      return compPageFixture.compsStats;
+    }
+  }
 });
 
 const started = await startSmallWindowServer({

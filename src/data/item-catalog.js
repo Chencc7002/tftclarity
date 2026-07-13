@@ -388,6 +388,7 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
     apiName,
     zhName: override?.zhName ?? seed?.zhName ?? derived?.zhName ?? null,
     shortName: override?.shortName ?? seed?.shortName ?? derived?.shortName ?? token,
+    preferredDisplayName: override?.preferredDisplayName ?? seed?.preferredDisplayName ?? null,
     aliases: compact([
       override?.zhName,
       override?.shortName,

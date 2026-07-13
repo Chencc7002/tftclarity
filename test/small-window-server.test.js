@@ -382,6 +382,7 @@ test("handleRecommendRequest returns official item encyclopedia details before r
       apiName: "TFT_Item_UnstableConcoction",
       zhName: "正义之手",
       shortName: "正义",
+      preferredDisplayName: "正义",
       aliases: ["正义", "正义之手", "合剂"],
       category: "ordinary_completed",
       current: true,
@@ -410,9 +411,48 @@ test("handleRecommendRequest returns official item encyclopedia details before r
 
   assert.equal(statusCode, 200);
   assert.equal(payload.type, "item_details");
-  assert.equal(payload.item.name, "正义之手");
+  assert.equal(payload.item.name, "正义");
+  assert.equal(payload.item.officialName, "正义之手");
   assert.equal(payload.item.effect, "获得伤害增幅和全能吸血");
   assert.equal(payload.item.recipe[0].name, "女神之泪");
+});
+
+test("unknown item detail wording clarifies before recommendation logic", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialItemDetails: new Map(),
+    recommendForInputImpl: () => {
+      throw new Error("unknown item details must not enter recommendation logic");
+    }
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({
+    input: "量子神剑有什么效果？"
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.type, "clarification");
+  assert.equal(payload.clarification.reason, "unknown_item_details");
+  assert.match(payload.text, /量子神剑/);
+});
+
+test("broad comp-ranking wording with 装备效果 is not intercepted as unknown item details", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialItemDetails: new Map(),
+    recommendForInputImpl: () => {
+      throw new Error("recommendation route reached");
+    }
+  });
+
+  await assert.rejects(
+    handleRecommendRequest({ input: "当前版本什么阵容装备效果强？" }, runtime),
+    /recommendation route reached/
+  );
 });
 
 test("handleRecommendRequest returns the conversational item-ranking schema", async () => {

@@ -278,12 +278,27 @@ function itemName(apiName, catalog) {
   return item?.shortName ?? item?.zhName ?? apiName;
 }
 
-function isItemDetailsInput(input, parsed) {
+function itemDetailsName(apiName, catalog) {
+  const item = catalog.itemByApiName.get(apiName);
+  return item?.preferredDisplayName ?? item?.zhName ?? item?.shortName ?? apiName;
+}
+
+function isItemDetailsQuestion(input) {
   const text = String(input ?? "");
-  const items = parsed?.ownedItems ?? [];
-  return items.length === 1
-    && !parsed?.unit
-    && /(是什么(?:装备|道具)?|装备(?:效果|属性|说明|介绍)|(?:效果|属性|合成路线|怎么合成|配方))/u.test(text);
+  return /(是什么(?:装备|道具)?|装备(?:效果|属性|说明|介绍)|(?:有什么)?(?:效果|属性)|合成路线|怎么合成|配方)/u.test(text);
+}
+
+function isUnknownItemDetailsQuestion(input) {
+  const text = String(input ?? "");
+  return /(有什么(?:效果|属性)|是什么(?:装备|道具)?|怎么合成|合成路线|配方(?:是什么|呢|吗|？|\?|$))/u.test(text)
+    && !/(哪个|哪件|最好|最强|排行|排名|推荐|阵容)/u.test(text);
+}
+
+function itemDetailsNameHint(input) {
+  return String(input ?? "")
+    .replace(/(?:是什么(?:装备|道具)?|装备(?:效果|属性|说明|介绍)|有什么(?:效果|属性)|效果|属性|合成路线|怎么合成|配方)/gu, "")
+    .replace(/[，。！？?；;：:\s]/gu, "")
+    .trim();
 }
 
 async function loadOfficialItemDetails(runtime) {
@@ -306,8 +321,31 @@ async function loadOfficialItemDetails(runtime) {
 
 async function serializeItemDetailsQuery(input, catalog, runtime) {
   const parsed = parseQuery(input, { catalog });
-  if (!isItemDetailsInput(input, parsed)) return null;
-  const apiName = parsed.ownedItems[0];
+  if (!isItemDetailsQuestion(input) || parsed.unit) return null;
+  const itemApiNames = parsed.ownedItems ?? [];
+  if (itemApiNames.length === 0 && !isUnknownItemDetailsQuestion(input)) return null;
+  if (itemApiNames.length !== 1) {
+    const hint = itemDetailsNameHint(input);
+    const unknown = itemApiNames.length === 0;
+    const question = unknown
+      ? `没有在当前版本装备目录中识别到“${hint || "该名称"}”。请确认装备名称。`
+      : "识别到了多件装备，请指定要查看详情的其中一件。";
+    return {
+      ok: true,
+      type: "clarification",
+      text: question,
+      answer: { summary: question },
+      query: { intent: "clarification", requestedIntent: "item_details", warnings: [] },
+      clarification: {
+        needsClarification: true,
+        blocking: true,
+        reason: unknown ? "unknown_item_details" : "multiple_item_details",
+        question,
+        suggestions: []
+      }
+    };
+  }
+  const apiName = itemApiNames[0];
   const catalogItem = catalog.itemByApiName.get(apiName);
   const details = await loadOfficialItemDetails(runtime);
   const item = details.get(apiName);
@@ -315,19 +353,26 @@ async function serializeItemDetailsQuery(input, catalog, runtime) {
     return {
       ok: true,
       type: "item_details",
-      text: `${itemName(apiName, catalog)}暂无官方装备说明。`,
-      answer: { summary: `${itemName(apiName, catalog)}暂无官方装备说明。` },
+      text: `${itemDetailsName(apiName, catalog)}暂无官方装备说明。`,
+      answer: { summary: `${itemDetailsName(apiName, catalog)}暂无官方装备说明。` },
       item: {
         apiName,
-        name: itemName(apiName, catalog),
+        name: itemDetailsName(apiName, catalog),
         iconUrl: null,
         category: catalogItem?.category ?? "unknown",
+        current: Boolean(catalogItem?.current),
+        obtainable: Boolean(catalogItem?.obtainable),
         effect: null,
-        recipe: []
+        recipe: [],
+        provenance: {
+          catalog: catalogItem?.source ?? null,
+          details: null
+        }
       }
     };
   }
-  const name = item.name ?? itemName(apiName, catalog);
+  const name = itemDetailsName(apiName, catalog);
+  const officialName = item.name ?? name;
   return {
     ok: true,
     type: "item_details",
@@ -339,12 +384,20 @@ async function serializeItemDetailsQuery(input, catalog, runtime) {
     item: {
       ...item,
       name,
+      officialName,
       category: catalogItem?.category ?? "unknown",
-      iconUrl: item.iconUrl ?? null,
-      recipe: item.recipe.map((component) => ({
+      current: Boolean(catalogItem?.current),
+      obtainable: Boolean(catalogItem?.obtainable),
+      iconUrl: item.iconUrl ?? catalogItem?.iconUrl ?? null,
+      recipe: (item.recipe ?? []).map((component) => ({
         ...component,
         iconUrl: component.iconUrl ?? null
-      }))
+      })),
+      provenance: {
+        catalog: catalogItem?.source ?? null,
+        name: catalogItem?.nameSource ?? catalogItem?.source ?? null,
+        details: item.sourceUrl ?? null
+      }
     }
   };
 }

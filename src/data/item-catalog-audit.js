@@ -82,8 +82,9 @@ export function buildItemCatalogAudit(catalog, officialDetails = new Map(), opti
   const records = (catalog?.items ?? []).map((item) => {
     const detail = officialDetails.get(item.apiName) ?? null;
     const overrides = overrideMetadata(item);
-    const canonical = item.zhName ?? item.displayName ?? item.apiName;
-    const aliases = compact(item.aliases).filter((alias) => ![canonical, item.shortName, item.apiName].includes(alias));
+    const canonical = item.preferredDisplayName ?? item.zhName ?? item.displayName ?? item.apiName;
+    const aliases = compact(item.aliases)
+      .filter((alias) => ![canonical, item.zhName, item.shortName, item.apiName].includes(alias));
     return {
       patch: item.patch ?? options.patch ?? "current",
       catalogStatus: catalogState.status ?? "fresh",
@@ -91,6 +92,7 @@ export function buildItemCatalogAudit(catalog, officialDetails = new Map(), opti
       catalogUpdatedAt: catalogState.updatedAt ?? null,
       apiName: item.apiName,
       canonicalName: canonical,
+      officialName: item.zhName ?? null,
       shortName: item.shortName ?? null,
       historicalAliases: aliases,
       category: item.category ?? "unknown",
@@ -158,7 +160,7 @@ function csvCell(value) {
 
 export function itemCatalogAuditToCsv(records = []) {
   const columns = [
-    "patch", "catalogStatus", "catalogSource", "apiName", "canonicalName", "shortName",
+    "patch", "catalogStatus", "catalogSource", "apiName", "canonicalName", "officialName", "shortName",
     "historicalAliases", "category", "current", "obtainable", "iconUrl", "nameSource",
     "namePatch", "detailsStatus", "effectStatus", "recipeStatus", "overridePatch", "overrideSeason", "issues"
   ];

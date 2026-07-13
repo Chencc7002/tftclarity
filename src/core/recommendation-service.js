@@ -496,7 +496,24 @@ function primaryMetricForSort(sort) {
 }
 
 function inheritParsedFromSession(parsed, sessionValue) {
-  if (parsed.unit) {
+  const lastQuery = lastQueryFromSession(sessionValue);
+  const priorComparisonItems = uniqueArray([
+    ...asArray(fieldValue(lastQuery, "comparisonItems", "comparison_items")),
+    ...asArray(lastQuery?.comparison?.itemApiNames)
+  ]);
+  const unitOnlyComparisonFollowUp = Boolean(
+    parsed.unit
+    && !parsed.parser?.intentExplicit
+    && lastQuery?.intent === "unit_item_comparison"
+    && priorComparisonItems.length >= 2
+    && asArray(parsed.lockedItems ?? parsed.ownedItems).length === 0
+    && asArray(parsed.excludedItems).length === 0
+    && asArray(parsed.traitFilters).length === 0
+    && asArray(parsed.itemCategories).length === 0
+    && !parsed.compMention
+  );
+
+  if (parsed.unit && !unitOnlyComparisonFollowUp) {
     return {
       parsed,
       inherited: false,
@@ -512,7 +529,6 @@ function inheritParsedFromSession(parsed, sessionValue) {
     };
   }
 
-  const lastQuery = lastQueryFromSession(sessionValue);
   if (!lastQuery?.unit || lastQuery.intent === "comp_rankings") {
     return {
       parsed,
@@ -571,7 +587,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
     const replacement = /(?:换成|替换成|改成)/.test(inputText);
     const ownership = /(?:已经有|已有|我有|有了|带着|拿了|锁定)/.test(inputText);
     const removal = explicitlyExcludedItems.length > 0;
-    const append = /^(?:那|再看|加上|加入|还有)/.test(inputText)
+    const append = /^(?:那|再看|再加|加上|加入|还有)/.test(inputText)
       || lastQuery.pendingComparison === true;
     const explicitComparison = currentComparisonItems.length > 0;
     const constraintFollowUp = [
@@ -631,6 +647,12 @@ function inheritParsedFromSession(parsed, sessionValue) {
       next.ownedItems = next.lockedItems;
       comparisonContinuation = true;
       comparisonContinuationKind = "constraint";
+    } else if (unitOnlyComparisonFollowUp) {
+      next.comparisonItems = [...lastComparisonItems];
+      next.lockedItems = [...previousLockedItems];
+      next.ownedItems = next.lockedItems;
+      comparisonContinuation = true;
+      comparisonContinuationKind = "unit";
     }
 
     if (comparisonContinuation) {
@@ -655,8 +677,10 @@ function inheritParsedFromSession(parsed, sessionValue) {
     }
   }
 
-  next.unit = lastQuery.unit;
-  inheritedKeys.push("unit");
+  if (!next.unit) {
+    next.unit = lastQuery.unit;
+    inheritedKeys.push("unit");
+  }
   if (!parsed.parser?.intentExplicit && lastQuery.intent) {
     next.intent = lastQuery.intent;
     inheritedKeys.push("intent");
@@ -713,7 +737,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
     sourceKey: SESSION_LAST_QUERY_KEY,
     inheritedKeys,
     fieldOrigins: {
-      unit: ["conversation"],
+      unit: parsed.unit ? ["current_input"] : ["conversation"],
       ...(comparisonContinuation
         ? {
           comparisonItems: comparisonContinuationKind === "explicit"

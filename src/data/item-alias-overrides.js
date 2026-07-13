@@ -523,9 +523,12 @@ export const ITEM_ALIAS_OVERRIDES = [
     apiName: "TFT_Item_UnstableConcoction",
     zhName: "正义之手",
     shortName: "正义",
+    preferredDisplayName: "正义",
     aliases: ["正义", "正义之手", "合剂", "不稳定合剂", "不稳定药剂", "unstable concoction"],
     confidence: 1,
-    source: "manual_historical_aliases"
+    source: "manual_historical_aliases",
+    season: "TFT17",
+    expiresWhen: "The official current display name or supported historical inputs change."
   },
   {
     apiName: "TFT_Item_Artifact_AegisOfDawn",

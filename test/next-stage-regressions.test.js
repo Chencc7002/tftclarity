@@ -332,6 +332,44 @@ test("an unspecified Stargazer effect does not synthesize a comp or trait constr
   assert.equal(response.payload.query.defaultContextSummary, null);
 });
 
+test("an unknown Stargazer child effect clarifies instead of falling back to generic Stargazer", async () => {
+  const suffixes = ["Medallion", "Shield", "Huntress", "Fountain", "Mountain", "Serpent", "Wolf"];
+  const catalog = createCatalog({
+    traits: buildTraitCatalogFromCompsData({
+      compOptions: suffixes.map((suffix) => ({
+        cluster: suffix,
+        units_list: "TFT17_Xayah",
+        traits_list: `TFT17_Stargazer_${suffix}_1`,
+        count: 200
+      }))
+    })
+  });
+  let calls = 0;
+  const result = await recommendForInput("霞用火龙观星怎么出装？", {
+    catalog,
+    useSession: false,
+    metaTFTClient: {
+      async getUnitBuilds() {
+        calls += 1;
+        return { data: buildRows };
+      }
+    }
+  });
+
+  assert.equal(result.clarification.reason, "unknown_stargazer_effect");
+  assert.match(result.clarification.question, /火龙/);
+  assert.equal(calls, 0);
+});
+
+test("a named Stargazer comp is not misread as an unknown Stargazer child effect", () => {
+  const parsed = parseQuery("霞在观星霞阵容里什么装备最强？", {
+    catalog: createCatalog()
+  });
+
+  assert.equal(parsed.compMention, "观星霞");
+  assert.equal(parsed.parser.unknownStargazerEffectRequested, null);
+});
+
 test("emblems use the shared item catalog for details, locking, policy, and generic clarification", async () => {
   const emblemApiName = "TFT17_Item_StargazerEmblemItem";
   const items = buildItemCatalogFromItemsResponse({
@@ -371,6 +409,75 @@ test("emblems use the shared item catalog for details, locking, policy, and gene
   assert.equal(generic.clarification.blocking, true);
 });
 
+test("all-emblem wording clarifies while an explicitly excluded emblem remains an exclusion", async () => {
+  const emblemApiName = "TFT17_Item_StargazerEmblemItem";
+  const catalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({ data: [{ items: emblemApiName }] })
+  });
+  let calls = 0;
+  const generic = await recommendForInput("霞把所有纹章都考虑进去", {
+    catalog,
+    useSession: false,
+    metaTFTClient: {
+      async getUnitBuilds() {
+        calls += 1;
+        return { data: buildRows };
+      }
+    }
+  });
+  assert.equal(generic.clarification.reason, "missing_specific_emblem");
+  assert.equal(calls, 0);
+  for (const input of [
+    "霞不要观星者纹章怎么出装？",
+    "霞别用观星者纹章怎么出装？",
+    "霞不想要观星者纹章怎么出装？"
+  ]) {
+    const excluded = planQuery(input, { catalog });
+    assert.equal(excluded.parsed.parser.genericEmblemRequested, false, input);
+    assert.deepEqual(excluded.query.ownedItems, [], input);
+    assert.deepEqual(excluded.query.excludedItems, [emblemApiName], input);
+  }
+});
+
+test("an excluded emblem does not satisfy a separate generic request to add an emblem", async () => {
+  const emblemApiName = "TFT17_Item_StargazerEmblemItem";
+  const catalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({ data: [{ items: emblemApiName }] })
+  });
+  let calls = 0;
+  for (const input of [
+    "霞加入纹章，但不要观星者纹章",
+    "霞不要观星者纹章但加入别的纹章"
+  ]) {
+    const result = await recommendForInput(input, {
+      catalog,
+      useSession: false,
+      metaTFTClient: {
+        async getUnitBuilds() {
+          calls += 1;
+          return { data: buildRows };
+        }
+      }
+    });
+
+    assert.equal(result.clarification.reason, "missing_specific_emblem", input);
+    assert.deepEqual(result.query.excludedItems, [emblemApiName], input);
+  }
+  assert.equal(calls, 0);
+});
+
+test("targetless constraint follow-ups in a new session ask which query type to continue", async () => {
+  for (const input of ["大师以上呢？", "近一天呢？"]) {
+    const result = await recommendForInput(input, {
+      cacheStore: new MemoryCacheStore(),
+      response: buildRows
+    });
+
+    assert.equal(result.clarification.reason, "missing_query_target", input);
+    assert.match(result.clarification.question, /阵容榜.*英雄装备/, input);
+  }
+});
+
 test("catalog audit transformation exposes completeness, version binding, issues, filters, and export", async () => {
   const items = buildItemCatalogFromItemsResponse({
     data: [
@@ -406,6 +513,17 @@ test("catalog audit transformation exposes completeness, version binding, issues
   assert.equal(overrideSourceFiltered.some((record) => record.apiName === "TFT_Item_RapidFireCannon"), true);
   assert.match(csv, /TFT17_Item_StargazerEmblemItem/);
   assert.match(csv, /观星者纹章/);
+
+  const justiceCatalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({ data: [{ items: "TFT_Item_UnstableConcoction" }] })
+  });
+  const justiceAudit = buildItemCatalogAudit(justiceCatalog, new Map()).records
+    .find((record) => record.apiName === "TFT_Item_UnstableConcoction");
+  assert.equal(justiceAudit.canonicalName, "正义");
+  assert.equal(justiceAudit.officialName, "正义之手");
+  assert.equal(justiceAudit.historicalAliases.includes("合剂"), true);
+  assert.equal(justiceAudit.historicalAliases.includes("正义之手"), false);
+  assert.equal(justiceAudit.overrides.alias.season, "TFT17");
 
   const runtime = createSmallWindowRuntime({
     catalog,

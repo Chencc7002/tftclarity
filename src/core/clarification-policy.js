@@ -110,6 +110,14 @@ function defaultContextClarification(query, catalog) {
 export function evaluateClarification(parsed, query, validation, options = {}) {
   const catalog = options.catalog ?? createCatalog();
 
+  if (parsed.parser?.unknownStargazerEffectRequested) {
+    const fragment = parsed.parser.unknownStargazerEffectRequested.inputFragment;
+    return buildClarification(
+      "unknown_stargazer_effect",
+      `没有识别到“${fragment}”对应的当前版本观星效果。请从勋章、圣坛、女猎手、泉水、秀山、蟒蛇或野猪中确认。`,
+      { suggestions: ["勋章观星", "圣坛观星", "女猎手观星", "泉水观星", "秀山观星", "蟒蛇观星", "野猪观星"] }
+    );
+  }
   if (parsed.parser?.genericEmblemRequested) {
     return buildClarification(
       "missing_specific_emblem",
@@ -194,6 +202,19 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
   }
 
   if (!query.unit) {
+    const targetlessConstraintFollowUp = !parsed.parser?.intentExplicit
+      && (parsed.ownedItems ?? []).length === 0
+      && (parsed.excludedItems ?? []).length === 0
+      && (parsed.traitFilters ?? []).length === 0
+      && [parsed.rankFilter, parsed.days, parsed.patch, parsed.minSamples, parsed.sort]
+        .some((value) => value !== undefined);
+    if (targetlessConstraintFollowUp) {
+      return buildClarification(
+        "missing_query_target",
+        "还不清楚要继续哪类查询：要查阵容榜，还是英雄装备？",
+        { suggestions: ["查看当前版本热门阵容", "查询英雄装备"] }
+      );
+    }
     if (query.intent === "unit_item_rankings") {
       return buildClarification(
         "missing_unit_for_item_rankings",

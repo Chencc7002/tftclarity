@@ -27,7 +27,7 @@ function itemRecord(apiName, catalog) {
   return {
     apiName,
     name: item?.shortName ?? item?.zhName ?? apiName,
-    canonicalName: item?.zhName ?? item?.displayName ?? null,
+    canonicalName: item?.preferredDisplayName ?? item?.zhName ?? item?.displayName ?? null,
     category: item?.category ?? null,
     iconUrl: item?.iconUrl ?? item?.icon ?? null,
     current: item?.current ?? null,

@@ -1,6 +1,10 @@
 import { loadLocalEnvironment } from "../src/config/load-env.js";
 import {
+  CURRENT_ITEM_LOCALIZATION,
+  buildItemCatalogFromItemsResponse,
+  createCatalog,
   createStructuredParserFromConfig,
+  parseQuery,
   resolveStructuredParserConfig,
   validateStructuredParserOutput
 } from "../src/index.js";
@@ -12,25 +16,45 @@ if (!config.enabled) {
 }
 
 const parser = createStructuredParserFromConfig(config);
+const defaultInput = "霞带羊刀，推荐另外两件普通装备";
+const input = process.env.SMOKE_LLM_QUERY ?? defaultInput;
+const expectedIntent = process.env.SMOKE_LLM_EXPECT_INTENT;
+const catalog = createCatalog({
+  items: buildItemCatalogFromItemsResponse({
+    data: CURRENT_ITEM_LOCALIZATION.items.map((item) => ({ items: item.apiName }))
+  }, { patch: "current" })
+});
+const deterministicParsed = parseQuery(input, { catalog });
+const relevantItemApiNames = [
+  ...(deterministicParsed.lockedItems ?? []),
+  ...(deterministicParsed.comparisonItems ?? []),
+  ...(deterministicParsed.excludedItems ?? [])
+];
+const relevantUnit = deterministicParsed.unit
+  ? catalog.unitByApiName.get(deterministicParsed.unit)
+  : null;
+const relevantItems = relevantItemApiNames
+  .map((apiName) => catalog.itemByApiName.get(apiName))
+  .filter(Boolean);
 const response = await parser({
-  input: "霞带羊刀，推荐另外两件普通装备",
-  parsed: {
-    intent: "unit_best_3_items",
-    unit: "TFT17_Xayah",
-    itemCount: 3,
-    itemPolicy: "ordinary_only",
-    ownedItems: ["TFT_Item_GuinsoosRageblade"],
-    parser: { entityMatches: [] }
-  },
+  input,
+  parsed: deterministicParsed,
   catalogSummary: {
-    unitAliases: ["霞", "Xayah"],
-    itemAliases: ["羊刀", "鬼索的狂暴之刃", "Guinsoo's Rageblade"],
+    unitAliases: relevantUnit
+      ? [relevantUnit.zhName, relevantUnit.shortName, ...(relevantUnit.aliases ?? [])].filter(Boolean)
+      : [],
+    itemAliases: relevantItems
+      .flatMap((item) => [item.zhName, item.shortName, ...(item.aliases ?? [])])
+      .filter(Boolean),
     traitAliases: []
   }
 });
 const validation = validateStructuredParserOutput(response);
 if (!validation.valid) {
   throw new Error(`LLM returned invalid structured output: ${validation.errors.join("; ")}`);
+}
+if (expectedIntent && validation.value.intent !== expectedIntent) {
+  throw new Error(`LLM returned intent ${validation.value.intent}; expected ${expectedIntent}`);
 }
 
 console.log(JSON.stringify({
@@ -39,5 +63,8 @@ console.log(JSON.stringify({
   model: config.model,
   endpointHost: new URL(config.endpoint).host,
   mode: config.mode,
-  intent: validation.value.intent
+  intent: validation.value.intent,
+  customInput: input !== defaultInput,
+  unitMentions: validation.value.entities.unitMentions.length,
+  itemMentions: validation.value.entities.itemMentions.length
 }, null, 2));

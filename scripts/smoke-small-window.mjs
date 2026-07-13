@@ -478,7 +478,10 @@ try {
       preferences: { minSamples: 100 }
     })
   });
-  assertSmoke(explicitComp.query?.comp?.status === "applied", "explicit Comp was not applied");
+  assertSmoke(
+    explicitComp.query?.comp?.status === "applied",
+    `explicit Comp was not applied: ${JSON.stringify({ query: explicitComp.query, clarification: explicitComp.clarification })}`
+  );
   assertSmoke(explicitComp.query?.comp?.value?.selection === "explicit", "explicit Comp selection was not serialized");
   assertSmoke(explicitComp.query?.comp?.source === "current_input", "explicit Comp source was not current_input");
   assertSmoke(explicitComp.source?.requestParams?.trait === undefined, "explicit Comp was converted to a top-level trait filter");

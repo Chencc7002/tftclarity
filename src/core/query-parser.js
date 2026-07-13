@@ -123,11 +123,14 @@ export function parseCompMention(input) {
 function parseSort(input) {
   const normalized = normalizeText(input);
   const intents = [];
-  if (/(前四优先|前四率优先|按前四|前四率最高)/.test(normalized)) {
+  if (/(前四优先|前四率优先|按前四|前四率最高|哪个(?:更)?稳|哪件(?:更)?稳|谁更稳)/.test(normalized)) {
     intents.push("top4_first");
   }
-  if (/(吃鸡优先|吃鸡率优先|登顶优先|按登顶|登顶率最高)/.test(normalized)) {
+  if (/(吃鸡优先|吃鸡率优先|登顶优先|按登顶|登顶率最高|吃鸡.{0,6}上限|上限.{0,6}吃鸡)/.test(normalized)) {
     intents.push("win_first");
+  }
+  if (/(样本更多)/.test(normalized)) {
+    intents.push("games_first");
   }
   if (/(稳健|高样本|样本最多|按样本|最热门)/.test(normalized)) {
     intents.push("robust_first");
@@ -233,7 +236,7 @@ function hasExclusionIntent(input) {
 function parseComparison(input, entities, excludedItems = [], itemCategories = []) {
   const normalized = normalizeText(input);
   const categoryRankingWithoutNamedItems = itemCategories.length > 0 && entities.items.length === 0;
-  const relationshipRequested = /(比较|对比|哪个(?:更)?好|哪个更强|哪件(?:更)?好|谁更好|谁更强|更适合|二选一|还是|选一个|选哪个|选择哪个|\bvs\.?\b)/i.test(normalized);
+  const relationshipRequested = /(比较|对比|哪个(?:更)?好|哪个更强|哪件(?:更)?好|谁更好|谁更强|更适合|二选一|还是|选一个|选哪个|选择哪个|拿哪个|用哪个|拿哪件|用哪件|选哪件|\bvs\.?\b)/i.test(normalized);
   const genericSpecialChoiceRequested = categoryRankingWithoutNamedItems
     && /(?:比较|对比|二选一|铁砧|铁毡|选一个|选哪个|选择哪个)/.test(normalized);
   const itemContext = entities.items.length > 0
@@ -323,6 +326,31 @@ function inferUnresolvedEntityHints(input, entities) {
   return hints;
 }
 
+function parseUnknownStargazerEffect(input, entities) {
+  let normalized = normalizeText(input);
+  for (const item of entities.items) {
+    const alias = normalizeText(item.alias);
+    if (alias) normalized = normalized.replaceAll(alias, "");
+  }
+  if (!normalized.includes("观星")) return null;
+  const hasVerifiedChild = entities.traits.some((trait) => (
+    /^TFT17_Stargazer_(?:Medallion|Shield|Huntress|Fountain|Mountain|Serpent|Wolf)(?:_|$)/
+      .test(String(trait.target ?? ""))
+  ));
+  if (hasVerifiedChild) return null;
+
+  const match = normalized.match(/([\p{Script=Han}a-z]{1,16})\s*观星/iu);
+  if (!match?.[1]) return null;
+  let fragment = normalizeAlias(match[1]);
+  for (const unit of entities.units) {
+    const alias = normalizeAlias(unit.alias);
+    if (alias) fragment = fragment.replaceAll(alias, "");
+  }
+  fragment = fragment.replace(/^(?:(?:怎么|如何|想要|我想|我要|这局|再|那|改成|换成|用|带|玩|走|开|要|给|让|把|的|有|在))+/, "");
+  if (!fragment) return null;
+  return { inputFragment: fragment };
+}
+
 export function parseQuery(input, options = {}) {
   const catalog = options.catalog ?? createCatalog();
   const exactEntities = resolveEntities(input, { catalog });
@@ -376,8 +404,18 @@ export function parseQuery(input, options = {}) {
   const primaryMetric = comparisonMetric.value;
   const activeItemMatches = entities.items.filter((item) => !excludedItemSet.has(item.target));
   const unresolvedEntityHints = inferUnresolvedEntityHints(input, entities);
-  const genericEmblemRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}纹章/.test(normalizeText(input))
-    && !activeItemMatches.some((item) => item.record?.category === "emblem");
+  const normalizedInput = normalizeText(input);
+  const positiveEmblemScopeText = normalizedInput.replace(
+    /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要).*?(?=但是|但|不过|然后|再|[,，。！？?；;]|$)/g,
+    ""
+  );
+  const genericEmblemActionRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}纹章/
+    .test(positiveEmblemScopeText);
+  const genericEmblemRequested = (
+    genericEmblemActionRequested
+    || /(?:所有|全部|任意|任何|随便).{0,3}纹章/.test(positiveEmblemScopeText)
+  ) && !activeItemMatches.some((item) => item.record?.category === "emblem");
+  const unknownStargazerEffectRequested = parseUnknownStargazerEffect(input, entities);
   const genericSpecialComparisonRequested = comparison.requested
     && /(?:神器|纹章|特殊装备|铁砧)/.test(normalizeText(input))
     && comparisonItems.length < 2;
@@ -428,6 +466,7 @@ export function parseQuery(input, options = {}) {
       ],
       comparison,
       genericEmblemRequested,
+      unknownStargazerEffectRequested,
       genericSpecialComparisonRequested,
       multipleItemRelationAmbiguous,
       exclusion: {
