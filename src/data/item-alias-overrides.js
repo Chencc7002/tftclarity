@@ -24,18 +24,10 @@ export const ITEM_ALIAS_OVERRIDES = [
     source: "manual"
   },
   {
-    apiName: "TFT_Item_RapidFireCannon",
-    zhName: "红霸符",
-    shortName: "红霸符",
-    aliases: ["红霸符", "火炮", "疾射火炮", "rfc", "rapid firecannon", "rapid fire cannon"],
-    confidence: 1,
-    source: "manual_historical_aliases"
-  },
-  {
     apiName: "TFT_Item_RunaansHurricane",
     zhName: "海妖之怒",
     shortName: "海妖之怒",
-    aliases: ["海妖", "海妖之怒", "分裂弓", "飓风", "卢安娜", "卢安娜的飓风", "runaan", "runaan's hurricane"],
+    aliases: ["海妖", "海妖之怒", "Kraken's Fury"],
     confidence: 1,
     source: "manual_historical_aliases"
   },
@@ -43,7 +35,7 @@ export const ITEM_ALIAS_OVERRIDES = [
     apiName: "TFT_Item_MadredsBloodrazor",
     zhName: "巨人杀手",
     shortName: "巨人杀手",
-    aliases: ["巨人杀手", "红叉", "麦瑞德", "裂血手套", "madreds"],
+    aliases: ["巨人杀手","Giant Slayer"],
     confidence: 1,
     source: "manual_historical_aliases"
   },
@@ -137,17 +129,17 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Redemption",
-    zhName: "救赎",
-    shortName: "救赎",
-    aliases: ["救赎", "redemption"],
+    zhName: "振奋盔甲",
+    shortName: "振奋",
+    aliases: ["救赎", "救赎","Spirit Visage"],
     confidence: 1,
     source: "manual"
   },
   {
     apiName: "TFT_Item_StatikkShiv",
-    zhName: "斯塔缇克电刃",
+    zhName: "虚空之杖",
     shortName: "电刀",
-    aliases: ["电刀", "斯塔缇克电刃", "statikk", "shiv", "statikk shiv"],
+    aliases: ["电刀", "法穿", "statikk", "shiv", "Void Staff"],
     confidence: 1,
     source: "manual"
   },
@@ -297,17 +289,17 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_FrozenHeart",
-    zhName: "冰霜之心",
-    shortName: "冰心",
-    aliases: ["冰心", "冰霜之心", "frozen heart"],
+    zhName: "圣盾使的誓约",
+    shortName: "冰甲",
+    aliases: ["冰心", "圣盾使的誓约", "冰甲","frozen heart"],
     confidence: 1,
     source: "manual"
   },
   {
     apiName: "TFT_Item_GuardianAngel",
-    zhName: "守护天使",
-    shortName: "复活甲",
-    aliases: ["复活甲", "守护天使", "ga", "guardian angel"],
+    zhName: "夜之锋刃",
+    shortName: "夜刃",
+    aliases: ["复活甲", "夜刃", "ga", "Edge of Night"],
     confidence: 1,
     source: "manual"
   },
@@ -321,10 +313,10 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_NightHarvester",
-    zhName: "暗夜收割者",
-    shortName: "夜收",
-    aliases: ["夜收", "暗夜收割者", "night harvester"],
-    confidence: 0.9,
+    zhName: "坚定之心",
+    shortName: "心之钢",
+    aliases: ["心钢", "心之钢", "坚定之心","night harvester"],
+    confidence: 1,
     source: "manual"
   },
   {
@@ -337,11 +329,32 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_TrapClaw",
-    zhName: "女妖之爪",
-    shortName: "女妖",
-    aliases: ["女妖", "女妖之爪", "伏击之爪", "trap claw"],
+    zhName: "伏击之爪",
+    shortName: "伏击",
+    aliases: ["伏击", "伏击之爪", "trap claw"],
     confidence: 1,
-    source: "manual"
+    source: "manual_historical_aliases"
+  },
+  {
+    apiName: "TFT_Item_PowerGauntlet",
+    zhName: "强袭者的链枷",
+    shortName: "破防",
+    aliases: ["破防", "强袭者的链枷", "striker's flail", "power gauntlet"],
+    confidence: 1,
+    source: "manual_player_alias",
+    season: "TFT17",
+    expiresWhen: "The official item identity or common player shorthand changes."
+  },
+  {
+    apiName: "TFT5_Item_TrapClawRadiant",
+    zhName: "光明版强袭者的链枷",
+    shortName: "光破防",
+    aliases: ["光破防", "光明破防", "光明版强袭者的链枷", "radiant striker's flail"],
+    suppressDerivedAliases: true,
+    confidence: 1,
+    source: "manual_player_alias",
+    season: "TFT17",
+    expiresWhen: "The official item identity or common player shorthand changes."
   },
   {
     apiName: "TFT_Item_TacticiansRing",
@@ -409,9 +422,9 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_SilvermereDawn",
-    zhName: "银色黎明",
-    shortName: "银色黎明",
-    aliases: ["银色黎明", "silvermere dawn"],
+    zhName: "秘银黎明",
+    shortName: "秘银黎明",
+    aliases: ["秘银黎明", "秘银","silvermere dawn"],
     confidence: 1,
     source: "manual"
   },

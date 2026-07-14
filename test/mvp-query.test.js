@@ -41,6 +41,10 @@ import {
   validateQueryContext,
   validateStructuredParserOutput
 } from "../src/index.js";
+import {
+  TRAIT_ALIAS_OVERRIDES,
+  TRAIT_TIER_COUNTS
+} from "../src/data/domain-alias-overrides.js";
 
 const fixtureRows = [
   {
@@ -2924,8 +2928,18 @@ test("builds item catalog categories from captured MetaTFT items response", () =
   assert.equal(byApiName.get("TFT5_Item_GuinsoosRagebladeRadiant").category, "radiant");
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").zhName, "光明版蓝霸符");
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").aliases.includes("光明蓝buff"), true);
+  assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").aliases.includes("光蓝"), true);
+  assert.equal(byApiName.get("TFT5_Item_GuinsoosRagebladeRadiant").aliases.includes("光羊刀"), true);
+  assert.equal(byApiName.get("TFT5_Item_JeweledGauntletRadiant").aliases.includes("光法爆"), true);
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").aliasSource, "derived_radiant_alias");
   assert.equal(byApiName.get("TFT5_Item_BlueBuffRadiant").nameSource, "tencent_lol_official_tft_catalog");
+  assert.equal(byApiName.get("TFT_Item_PowerGauntlet").shortName, "破防");
+  assert.equal(byApiName.get("TFT_Item_PowerGauntlet").aliases.includes("强袭者的链枷"), true);
+  assert.equal(byApiName.get("TFT5_Item_TrapClawRadiant").shortName, "光破防");
+  assert.equal(byApiName.get("TFT5_Item_TrapClawRadiant").aliases.includes("光破防"), true);
+  assert.equal(byApiName.get("TFT5_Item_TrapClawRadiant").aliases.includes("光明女妖"), false);
+  assert.equal(byApiName.get("TFT5_Item_TrapClawRadiant").aliases.includes("光明女妖之爪"), false);
+  assert.equal(byApiName.get("TFT5_Item_TrapClawRadiant").aliasSource, "manual_player_alias");
   assert.equal(byApiName.get("TFT_Item_Artifact_NavoriFlickerblades").category, "artifact");
   assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").shortName, "疾射火炮");
   assert.equal(byApiName.get("TFT_Item_Artifact_RapidFirecannon").aliasSource, "manual_official_name_with_historical_aliases");
@@ -3023,8 +3037,8 @@ test("builds unit and trait catalogs from Explorer aggregate rows", () => {
   assert.equal(unitByApiName.get("TFT17_TwistedFate").aliases.includes("卡牌"), true);
   assert.equal(unitByApiName.get("TFT17_Xayah").zhName, "霞");
   assert.equal(traitByFilterId.has("TFT17_RangedTrait_1"), true);
-  assert.equal(traitByFilterId.get("TFT17_RangedTrait_1").zhName, "远程");
-  assert.equal(traitByFilterId.get("TFT17_RangedTrait_1").displayName, "远程");
+  assert.equal(traitByFilterId.get("TFT17_RangedTrait_1").zhName, "狙神");
+  assert.equal(traitByFilterId.get("TFT17_RangedTrait_1").displayName, "2狙神");
   assert.equal(traitByFilterId.get("TFT17_RangedTrait_1").aliasSource, "trait_token_mapping");
   assert.equal(traitByFilterId.get("TFT17_Stargazer_1").displayName, "3观星");
 });
@@ -3093,26 +3107,57 @@ test("generated domain catalog recognizes api-level Chinese trait aliases", () =
   const traitByFilterId = catalog.traitByFilterId;
 
   assert.equal(traitByFilterId.get("TFT17_DarkStar_4").zhName, "暗星");
-  assert.equal(traitByFilterId.get("TFT17_DarkStar_4").displayName, "暗星");
+  assert.equal(traitByFilterId.get("TFT17_DarkStar_4").displayName, "9暗星");
   assert.equal(traitByFilterId.get("TFT17_AnimaSquad_2").zhName, "幻灵战队");
-  assert.equal(traitByFilterId.get("TFT17_BlitzcrankUniqueTrait_1").zhName, "布里茨专属");
-  assert.equal(traitByFilterId.get("TFT17_Stargazer_Mountain_6").displayName, "秀山观星");
+  assert.equal(traitByFilterId.get("TFT17_BlitzcrankUniqueTrait_1").zhName, "汪星机器人");
+  assert.equal(traitByFilterId.get("TFT17_Stargazer_Mountain_6").displayName, "8秀山观星");
   assert.equal(traitByFilterId.get("TFT17_Stargazer_Wolf_4").zhName, "野猪");
+  assert.equal(traitByFilterId.get("TFT17_Stargazer_Wolf_4").displayName, "6野猪观星");
 
   const darkStar = planQuery("暗星霞三件套", { catalog });
+  const fourDarkStar = planQuery("加入4暗星的霞三件套", { catalog });
+  const sixDarkStar = planQuery("加入6暗星的霞三件套", { catalog });
   const animaSquad = planQuery("幻灵霞三件套", { catalog });
   const mountain = planQuery("秀山观星霞三件套", { catalog });
+  const fourWolf = planQuery("4野猪观星霞三件套", { catalog });
+  const sixWolf = planQuery("6野猪观星霞三件套", { catalog });
   const uniqueTrait = planQuery("机器人专属霞三件套", { catalog });
 
   assert.equal(darkStar.validation.valid, true);
   assert.equal(darkStar.query.unit, "TFT17_Xayah");
   assert.deepEqual(darkStar.query.traitFilters, ["TFT17_DarkStar_1"]);
+  assert.equal(fourDarkStar.validation.valid, true);
+  assert.deepEqual(fourDarkStar.query.traitFilters, ["TFT17_DarkStar_2"]);
+  assert.equal(sixDarkStar.validation.valid, true);
+  assert.deepEqual(sixDarkStar.query.traitFilters, ["TFT17_DarkStar_3"]);
   assert.equal(animaSquad.validation.valid, true);
-  assert.deepEqual(animaSquad.query.traitFilters, ["TFT17_AnimaSquad_2"]);
+  assert.deepEqual(animaSquad.query.traitFilters, ["TFT17_AnimaSquad_1"]);
   assert.equal(mountain.validation.valid, true);
-  assert.deepEqual(mountain.query.traitFilters, ["TFT17_Stargazer_Mountain_6"]);
+  assert.deepEqual(mountain.query.traitFilters, ["TFT17_Stargazer_Mountain_1"]);
+  assert.equal(fourWolf.validation.valid, true);
+  assert.deepEqual(fourWolf.query.traitFilters, ["TFT17_Stargazer_Wolf_2"]);
+  assert.equal(sixWolf.validation.valid, true);
+  assert.deepEqual(sixWolf.query.traitFilters, ["TFT17_Stargazer_Wolf_4"]);
   assert.equal(uniqueTrait.validation.valid, true);
   assert.deepEqual(uniqueTrait.query.traitFilters, ["TFT17_BlitzcrankUniqueTrait_1"]);
+});
+
+test("all current trait overrides export their Chinese names and MetaTFT tier aliases", () => {
+  for (const override of TRAIT_ALIAS_OVERRIDES) {
+    assert.equal(
+      override.aliases.includes(override.zhName),
+      true,
+      `${override.apiName} must include zhName in aliases`
+    );
+
+    const counts = TRAIT_TIER_COUNTS[override.apiName];
+    if (!counts) continue;
+    assert.equal(Object.keys(override.tiers).length, counts.length);
+    counts.forEach((count, index) => {
+      const tier = override.tiers[String(index + 1)];
+      assert.equal(tier.aliases.some((alias) => alias.startsWith(String(count))), true);
+    });
+  }
 });
 
 test("generated domain catalog recognizes expanded Chinese unit aliases", () => {
@@ -3145,7 +3190,7 @@ test("generated domain catalog recognizes expanded Chinese unit aliases", () => 
     ["派克带什么", "TFT17_Pyke", "派克"],
     ["龙龟三件套", "TFT17_Rammus", "龙龟"],
     ["挖掘机带什么", "TFT17_RekSai", "挖掘机"],
-    ["红凯三件套", "TFT17_Rhaast", "红凯"],
+    ["凯隐三件套", "TFT17_Rhaast", "凯隐"],
     ["锐雯带什么", "TFT17_Riven", "锐雯"],
     ["莎弥拉三件套", "TFT17_Samira", "莎弥拉"],
     ["慎带什么", "TFT17_Shen", "慎"],
@@ -3204,6 +3249,7 @@ test("generated item catalog lets parser recognize derived emblem and radiant al
     items: buildItemCatalogFromItemsResponse(readProbeJson("meta_items_expanded.json"))
   });
   const planned = planQuery("霞已经有暗星转和光明蓝buff，剩下一件怎么带？", { catalog });
+  const shortRadiantAliases = planQuery("霞已经有光羊刀、光法爆和光蓝", { catalog });
 
   assert.equal(planned.validation.valid, true);
   assert.deepEqual(planned.query.ownedItems, [
@@ -3212,6 +3258,14 @@ test("generated item catalog lets parser recognize derived emblem and radiant al
   ]);
   assert.equal(planned.parsed.parser.entityMatches.some((match) => match.alias === "暗星转"), true);
   assert.equal(planned.parsed.parser.entityMatches.some((match) => match.alias === "光明蓝buff"), true);
+  assert.deepEqual(shortRadiantAliases.query.ownedItems, [
+    "TFT5_Item_GuinsoosRagebladeRadiant",
+    "TFT5_Item_JeweledGauntletRadiant",
+    "TFT5_Item_BlueBuffRadiant"
+  ]);
+  assert.equal(shortRadiantAliases.parsed.parser.entityMatches.some((match) => match.alias === "光羊刀"), true);
+  assert.equal(shortRadiantAliases.parsed.parser.entityMatches.some((match) => match.alias === "光法爆"), true);
+  assert.equal(shortRadiantAliases.parsed.parser.entityMatches.some((match) => match.alias === "光蓝"), true);
 });
 
 test("generated item catalog lets parser recognize artifact and support aliases", () => {

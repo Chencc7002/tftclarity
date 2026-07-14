@@ -101,6 +101,10 @@ function compact(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function containsHan(value) {
+  return /[\u3400-\u9fff]/u.test(String(value ?? ""));
+}
+
 function normalizeLookupToken(value) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -168,6 +172,10 @@ function deriveRadiantAlias(apiName) {
 
   const baseLongName = baseAlias.zhName ?? baseAlias.shortName;
   const baseShortName = baseAlias.shortName ?? baseAlias.zhName;
+  const baseChineseAliases = compact([
+    baseAlias.shortName,
+    ...(baseAlias.aliases ?? [])
+  ]).filter((alias) => containsHan(alias) && !/^(?:光明|光)/u.test(alias));
 
   return {
     zhName: `光明${baseLongName}`,
@@ -175,7 +183,10 @@ function deriveRadiantAlias(apiName) {
     aliases: compact([
       `光明${baseLongName}`,
       `光明${baseShortName}`,
-      baseShortName ? `光明${baseShortName}` : null,
+      ...baseChineseAliases.flatMap((alias) => [
+        `光明${alias}`,
+        `光${alias}`
+      ]),
       `${baseToken}radiant`,
       `${baseToken} radiant`,
       token
@@ -382,7 +393,9 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
     ?? seed?.obtainable
     ?? (category !== "removed_or_legacy" && category !== "unknown");
   const token = apiToken(apiName);
-  const derived = deriveItemAlias(apiName, category);
+  const derived = override?.suppressDerivedAliases
+    ? null
+    : deriveItemAlias(apiName, category);
 
   return applyOfficialItemLocalization({
     apiName,

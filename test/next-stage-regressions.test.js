@@ -274,7 +274,8 @@ test("all seven verified Stargazer names map to their exact API suffix", () => {
     const parsed = parseQuery(`霞 ${name}观星 装备`, { catalog });
     assert.deepEqual(parsed.traitFilters, [`TFT17_Stargazer_${suffix}_1`], name);
     const trait = catalog.traitByFilterId.get(parsed.traitFilters[0]);
-    assert.equal(trait.displayName, `${name}观星`);
+    const hasMultipleTiers = !["Medallion", "Shield"].includes(suffix);
+    assert.equal(trait.displayName, `${hasMultipleTiers ? "3" : ""}${name}观星`);
     assert.equal(trait.aliasSource, "set17_verified_stargazer_mapping");
   }
 });
@@ -510,7 +511,7 @@ test("catalog audit transformation exposes completeness, version binding, issues
   assert.equal(emblem.completeness.hasEffect, true);
   assert.equal(emblem.completeness.recipeStatus, "not_craftable");
   assert.equal(filtered.length, 1);
-  assert.equal(overrideSourceFiltered.some((record) => record.apiName === "TFT_Item_RapidFireCannon"), true);
+  assert.equal(overrideSourceFiltered.some((record) => record.apiName === "TFT_Item_RunaansHurricane"), true);
   assert.match(csv, /TFT17_Item_StargazerEmblemItem/);
   assert.match(csv, /观星者纹章/);
 
@@ -557,6 +558,35 @@ test("catalog audit refresh invalidates official detail memory before reloading"
   assert.equal(first.report.officialDetails.cache, "loaded");
   assert.equal(cached.report.officialDetails.cache, "memory");
   assert.equal(refreshed.report.officialDetails.cache, "loaded");
+});
+
+test("current Striker's Flail aliases replace the obsolete TrapClaw radiant derivation", () => {
+  const legacyApiName = "TFT_Item_TrapClaw";
+  const ordinaryApiName = "TFT_Item_PowerGauntlet";
+  const radiantApiName = "TFT5_Item_TrapClawRadiant";
+  const catalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({
+      data: [{ items: legacyApiName }, { items: ordinaryApiName }, { items: radiantApiName }]
+    })
+  });
+  const legacy = catalog.itemByApiName.get(legacyApiName);
+  const ordinary = catalog.itemByApiName.get(ordinaryApiName);
+  const radiant = catalog.itemByApiName.get(radiantApiName);
+  const radiantAudit = buildItemCatalogAudit(catalog, new Map()).records
+    .find((record) => record.apiName === radiantApiName);
+
+  assert.equal(legacy.zhName, "伏击之爪");
+  assert.equal(legacy.shortName, "伏击");
+  assert.equal(legacy.aliases.some((alias) => alias.includes("女妖")), false);
+  assert.equal(ordinary.shortName, "破防");
+  assert.equal(radiant.shortName, "光破防");
+  assert.equal(radiant.aliases.includes("光明女妖"), false);
+  assert.equal(radiant.aliases.includes("光明女妖之爪"), false);
+  assert.deepEqual(parseQuery("霞已经有破防", { catalog }).ownedItems, [ordinaryApiName]);
+  assert.deepEqual(parseQuery("霞已经有光破防", { catalog }).ownedItems, [radiantApiName]);
+  assert.equal(radiantAudit.officialName, "光明版强袭者的链枷");
+  assert.equal(radiantAudit.shortName, "光破防");
+  assert.equal(radiantAudit.issues.includes("official_manual_name_conflict"), false);
 });
 
 test("availability overrides never use permanent current or wildcard bindings", () => {
