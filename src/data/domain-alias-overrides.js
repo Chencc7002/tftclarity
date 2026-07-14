@@ -51,14 +51,14 @@ export const UNIT_ALIAS_OVERRIDES = [
   {
     apiName: "TFT17_Milio",
     zhName: "米利欧",
-    aliases: ["米利欧", "米利奥", "milio"],
+    aliases: ["米利欧", "丁真", "milio"],
     confidence: 1,
     source: "lol_champion_name"
   },
   {
     apiName: "TFT17_Akali",
     zhName: "阿卡丽",
-    aliases: ["阿卡丽", "离群之刺", "akali"],
+    aliases: ["阿卡丽", "离群之刺","akl", "akali"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -71,8 +71,8 @@ export const UNIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_Aurora",
-    zhName: "欧洛拉",
-    aliases: ["欧洛拉", "aurora"],
+    zhName: "阿罗拉",
+    aliases: ["阿罗拉","兔子", "aurora"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -86,7 +86,7 @@ export const UNIT_ALIAS_OVERRIDES = [
   {
     apiName: "TFT17_Belveth",
     zhName: "卑尔维斯",
-    aliases: ["卑尔维斯", "女皇", "belveth", "bel'veth"],
+    aliases: ["卑尔维斯", "大卑", "belveth", "bel'veth"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -156,7 +156,7 @@ export const UNIT_ALIAS_OVERRIDES = [
   {
     apiName: "TFT17_Galio",
     zhName: "加里奥",
-    aliases: ["加里奥", "galio"],
+    aliases: ["加里奥","里奥", "galio"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -191,7 +191,7 @@ export const UNIT_ALIAS_OVERRIDES = [
   {
     apiName: "TFT17_Illaoi",
     zhName: "俄洛伊",
-    aliases: ["俄洛伊", "illaoi"],
+    aliases: ["俄洛伊","大根", "illaoi"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -338,7 +338,7 @@ export const UNIT_ALIAS_OVERRIDES = [
   {
     apiName: "TFT17_Rhaast",
     zhName: "拉亚斯特",
-    aliases: ["拉亚斯特", "红凯", "rhaast"],
+    aliases: ["拉亚斯特", "凯隐", "rhaast"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -408,7 +408,7 @@ export const UNIT_ALIAS_OVERRIDES = [
   {
     apiName: "TFT17_Vex",
     zhName: "薇古丝",
-    aliases: ["薇古丝", "vex"],
+    aliases: ["薇古丝","熬夜波比", "vex"],
     confidence: 1,
     source: "lol_champion_name"
   },
@@ -435,7 +435,90 @@ export const UNIT_ALIAS_OVERRIDES = [
   }
 ];
 
-export const TRAIT_ALIAS_OVERRIDES = [
+// MetaTFT uses the numeric suffix as a tier index rather than as the number of
+// active units. These activation counts come from the current Set 17 client
+// trait effects, while the generated filter ids keep MetaTFT's `_1`, `_2`, ...
+// convention. Keep this table patch-scoped when Set 17 is replaced.
+export const TRAIT_TIER_COUNTS = Object.freeze({
+  TFT17_ADMIN: [2, 3],
+  TFT17_AnimaSquad: [3, 6],
+  TFT17_APTrait: [2, 4],
+  TFT17_AssassinTrait: [2, 3, 4, 5],
+  TFT17_ASTrait: [2, 3, 4, 5],
+  TFT17_Astronaut: [3, 5, 7, 10],
+  TFT17_DarkStar: [2, 4, 6, 9],
+  TFT17_DRX: [2, 5],
+  TFT17_Fateweaver: [2, 4],
+  TFT17_FlexTrait: [2, 3, 4, 5, 6],
+  TFT17_HPTank: [2, 4, 6],
+  TFT17_ManaTrait: [2, 3, 4, 5],
+  TFT17_Mecha: [3, 4, 6],
+  TFT17_MeleeTrait: [2, 4, 6],
+  TFT17_Primordian: [2, 3],
+  TFT17_PsyOps: [2, 4],
+  TFT17_RangedTrait: [2, 3, 4],
+  TFT17_ResistTank: [2, 4, 6],
+  TFT17_ShieldTank: [2, 4, 6],
+  TFT17_SpaceGroove: [1, 3, 5, 7, 10],
+  TFT17_SummonTrait: [3, 5, 7],
+  TFT17_Timebreaker: [2, 3, 4],
+  TFT17_BlitzcrankUniqueTrait: [1],
+  TFT17_FioraUniqueTrait: [1],
+  TFT17_GravesTrait: [1],
+  TFT17_JhinUniqueTrait: [1],
+  TFT17_MissFortuneUniqueTrait: [1],
+  TFT17_MorganaUniqueTrait: [1],
+  TFT17_RhaastUniqueTrait: [1],
+  TFT17_ShenUniqueTrait: [1],
+  TFT17_SonaUniqueTrait: [1],
+  TFT17_TahmKenchUniqueTrait: [1],
+  TFT17_VexUniqueTrait: [1],
+  TFT17_ZedUniqueTrait: [1],
+  TFT17_Stargazer_Fountain: [3, 5],
+  TFT17_Stargazer_Huntress: [3, 5, 7],
+  TFT17_Stargazer_Medallion: [3],
+  TFT17_Stargazer_Mountain: [3, 4, 5, 6, 7, 8, 9, 10, 11],
+  TFT17_Stargazer_Serpent: [3, 5, 7],
+  TFT17_Stargazer_Shield: [3],
+  TFT17_Stargazer_Wolf: [3, 4, 5, 6]
+});
+
+const CHINESE_COUNT_DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"];
+
+function chineseCount(value) {
+  if (value < 10) return CHINESE_COUNT_DIGITS[value];
+  if (value === 10) return "十";
+  if (value < 20) return `十${CHINESE_COUNT_DIGITS[value - 10]}`;
+  const tens = Math.floor(value / 10);
+  const ones = value % 10;
+  return `${CHINESE_COUNT_DIGITS[tens]}十${ones ? CHINESE_COUNT_DIGITS[ones] : ""}`;
+}
+
+function compactAliases(values) {
+  return [...new Set(values.filter(Boolean))];
+}
+
+function createTraitTiers(override, counts) {
+  const names = compactAliases([override.displayName, override.zhName]);
+  const displayBase = names[0];
+  const keepBaseDisplayName = counts.length === 1;
+  return Object.fromEntries(counts.map((count, index) => {
+    const arabicAliases = names.flatMap((name) => [
+      `${count}${name}`,
+      `${name}${count}`
+    ]);
+    const chineseAliases = names.flatMap((name) => [
+      `${chineseCount(count)}${name}`,
+      `${name}${chineseCount(count)}`
+    ]);
+    return [String(index + 1), {
+      displayName: keepBaseDisplayName ? displayBase : `${count}${displayBase}`,
+      aliases: compactAliases([...arabicAliases, ...chineseAliases])
+    }];
+  }));
+}
+
+const TRAIT_ALIAS_DEFINITIONS = [
   {
     apiName: "TFT17_Stargazer",
     filterId: "TFT17_Stargazer_1",
@@ -447,9 +530,9 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_ADMIN",
-    zhName: "AI程序",
-    aliases: ["AI程序", "管理员", "admin"],
-    confidence: 0.9,
+    zhName: "法官",
+    aliases: ["AI", "法官", "Arbiter","ai"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
@@ -461,29 +544,29 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_APTrait",
-    zhName: "法术",
-    aliases: ["法术", "法强", "aptrait", "ap trait"],
+    zhName: "魔术师",
+    aliases: ["魔术师", "aptrait", "ap trait"],
     confidence: 0.8,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_AssassinTrait",
-    zhName: "刺客",
-    aliases: ["刺客", "assassintrait", "assassin trait"],
+    zhName: "游侠",
+    aliases: ["游侠", "assassintrait", "assassin trait"],
     confidence: 0.9,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_ASTrait",
-    zhName: "攻速",
-    aliases: ["攻速", "攻击速度", "astrait", "as trait"],
-    confidence: 0.8,
+    zhName: "挑战者",
+    aliases: ["挑战", "挑战者", "astrait", "as trait"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_Astronaut",
-    zhName: "宇航员",
-    aliases: ["宇航员", "astronaut"],
+    zhName: "木灵族",
+    aliases: ["木灵族","木灵","astronaut"],
     confidence: 1,
     source: "trait_token_mapping"
   },
@@ -496,51 +579,37 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_DRX",
-    zhName: "DRX",
-    aliases: ["DRX", "drx"],
+    zhName: "新星特工队",
+    aliases: ["DRX", "drx","新星特工队","新星"],
     confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_Fateweaver",
-    zhName: "命运编织者",
-    aliases: ["命运编织者", "命运", "fateweaver"],
-    confidence: 0.8,
+    zhName: "织命人",
+    aliases: ["织命", "织命人", "fateweaver"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_FlexTrait",
-    zhName: "多面手",
-    aliases: ["多面手", "灵活", "flextrait", "flex trait"],
-    confidence: 0.7,
+    zhName: "旅人",
+    aliases: ["旅人", "flextrait", "flex trait"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_HPTank",
     zhName: "斗士",
     aliases: ["斗士", "brawler", "hptank", "hp tank"],
-    tiers: {
-      1: {
-        displayName: "2斗士",
-        aliases: ["2斗士", "二斗士"]
-      },
-      2: {
-        displayName: "4斗士",
-        aliases: ["4斗士", "四斗士"]
-      },
-      3: {
-        displayName: "6斗士",
-        aliases: ["6斗士", "六斗士"]
-      }
-    },
     confidence: 1,
     source: "riot_client_16.13_zh_cn"
   },
   {
     apiName: "TFT17_ManaTrait",
-    zhName: "法力",
-    aliases: ["法力", "回蓝", "manatrait", "mana trait"],
-    confidence: 0.8,
+    zhName: "神谕者",
+    aliases: ["神谕", "神谕者", "manatrait", "mana trait"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
@@ -552,15 +621,15 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_MeleeTrait",
-    zhName: "近战",
-    aliases: ["近战", "meleetrait", "melee trait"],
-    confidence: 0.85,
+    zhName: "狂战士",
+    aliases: ["狂战", "meleetrait", "狂战士"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_Primordian",
-    zhName: "原初",
-    aliases: ["原初", "primordian"],
+    zhName: "海魔人",
+    aliases: ["海魔","海魔人", "primordian"],
     confidence: 0.8,
     source: "trait_token_mapping"
   },
@@ -573,126 +642,126 @@ export const TRAIT_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT17_RangedTrait",
-    zhName: "远程",
-    aliases: ["远程", "rangedtrait", "ranged trait"],
+    zhName: "狙神",
+    aliases: ["狙神", "rangedtrait", "ranged trait"],
     confidence: 0.85,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_ResistTank",
-    zhName: "抗性坦克",
-    aliases: ["抗性坦克", "抗性坦", "resisttank", "resist tank"],
-    confidence: 0.75,
+    zhName: "堡垒卫士",
+    aliases: ["堡垒", "堡垒卫士", "resisttank", "resist tank"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_ShieldTank",
-    zhName: "护盾坦克",
-    aliases: ["护盾坦克", "护盾坦", "shieldtank", "shield tank"],
-    confidence: 0.75,
+    zhName: "重装战士",
+    aliases: ["重装战士", "重装", "shieldtank", "shield tank"],
+    confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_SpaceGroove",
     zhName: "太空律动",
-    aliases: ["太空律动", "spacegroove", "space groove"],
+    aliases: ["太空律动","律动", "spacegroove", "space groove"],
     confidence: 1,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_SummonTrait",
-    zhName: "召唤",
-    aliases: ["召唤", "summontrait", "summon trait"],
+    zhName: "牧羊人",
+    aliases: ["牧羊人","牧羊", "summontrait", "summon trait"],
     confidence: 0.85,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_Timebreaker",
-    zhName: "时间破坏者",
-    aliases: ["时间破坏者", "破时者", "timebreaker"],
+    zhName: "未来战士",
+    aliases: ["未来战士", "未来", "timebreaker"],
     confidence: 0.8,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_BlitzcrankUniqueTrait",
-    zhName: "布里茨专属",
+    zhName: "汪星机器人",
     aliases: ["布里茨专属", "机器人专属", "blitzcrankuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_FioraUniqueTrait",
-    zhName: "菲奥娜专属",
+    zhName: "斗神",
     aliases: ["菲奥娜专属", "剑姬专属", "fiorauniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_GravesTrait",
-    zhName: "格雷福斯羁绊",
+    zhName: "军工1号",
     aliases: ["格雷福斯羁绊", "男枪羁绊", "gravestrait"],
     confidence: 0.7,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_JhinUniqueTrait",
-    zhName: "烬专属",
+    zhName: "灭星尊",
     aliases: ["烬专属", "戏命师专属", "jhinuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_MissFortuneUniqueTrait",
-    zhName: "厄运小姐专属",
+    zhName: "武装战姬",
     aliases: ["厄运小姐专属", "女枪专属", "missfortuneuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_MorganaUniqueTrait",
-    zhName: "莫甘娜专属",
+    zhName: "灭世魔女",
     aliases: ["莫甘娜专属", "morganauniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_RhaastUniqueTrait",
-    zhName: "拉亚斯特专属",
+    zhName: "救世主",
     aliases: ["拉亚斯特专属", "红凯专属", "rhaastuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_ShenUniqueTrait",
-    zhName: "慎专属",
+    zhName: "暮光铁壁",
     aliases: ["慎专属", "shenuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_SonaUniqueTrait",
-    zhName: "娑娜专属",
+    zhName: "最高指挥官",
     aliases: ["娑娜专属", "琴女专属", "sonauniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_TahmKenchUniqueTrait",
-    zhName: "塔姆专属",
+    zhName: "命运祭司",
     aliases: ["塔姆专属", "塔姆肯奇专属", "tahmkenchuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_VexUniqueTrait",
-    zhName: "薇古丝专属",
+    zhName: "末日使者",
     aliases: ["薇古丝专属", "vexuniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
   },
   {
     apiName: "TFT17_ZedUniqueTrait",
-    zhName: "劫专属",
+    zhName: "天煞",
     aliases: ["劫专属", "zeduniquetrait"],
     confidence: 0.75,
     source: "trait_token_mapping"
@@ -709,7 +778,7 @@ export const TRAIT_ALIAS_OVERRIDES = [
     apiName: "TFT17_Stargazer_Huntress",
     zhName: "女猎手",
     displayName: "女猎手观星",
-    aliases: ["女猎手", "观星女猎手", "女猎手观星", "stargazer_huntress", "stargazer huntress"],
+    aliases: ["女猎手", "观星女猎手", "女猎手观星", "女猎","stargazer_huntress", "stargazer huntress"],
     confidence: 1,
     source: "set17_verified_stargazer_mapping"
   },
@@ -754,6 +823,15 @@ export const TRAIT_ALIAS_OVERRIDES = [
     source: "set17_verified_stargazer_mapping"
   }
 ];
+
+export const TRAIT_ALIAS_OVERRIDES = TRAIT_ALIAS_DEFINITIONS.map((override) => {
+  const counts = TRAIT_TIER_COUNTS[override.apiName];
+  return {
+    ...override,
+    aliases: compactAliases([override.zhName, ...(override.aliases ?? [])]),
+    ...(counts ? { tiers: createTraitTiers(override, counts) } : {})
+  };
+});
 
 export const unitAliasOverrideByApiName = new Map(
   UNIT_ALIAS_OVERRIDES.map((override) => [override.apiName, override])
