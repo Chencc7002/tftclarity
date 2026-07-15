@@ -15,6 +15,12 @@ npm start
 
 Open `http://127.0.0.1:17317/` after starting the small-window server.
 
+## Public web V1
+
+The production profile supports anonymous, isolated browser sessions and bounded LLM usage without requiring user accounts. Docker Compose runs the Node service behind Caddy with automatic HTTPS.
+
+See [the Tencent Cloud deployment guide](docs/deploy-tencent-cloud-v1.md) and copy `.env.production.example` to `.env.production` before deployment.
+
 ## Scope
 
 - Structured query parsing and local ranking remain deterministic.

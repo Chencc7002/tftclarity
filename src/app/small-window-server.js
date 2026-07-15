@@ -5,6 +5,10 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import {
+  anonymousScopeKey,
+  createAnonymousAccessService
+} from "../access/anonymous-access.js";
+import {
   CompsContextClient,
   CURRENT_ITEM_LOCALIZATION,
   DEFAULT_QUERY_OPTIONS,
@@ -322,9 +326,16 @@ function sendJson(res, statusCode, payload) {
   res.end(body);
 }
 
-async function readJsonRequest(req) {
+async function readJsonRequest(req, maxBytes = 32 * 1024) {
   const chunks = [];
-  for await (const chunk of req) chunks.push(chunk);
+  let size = 0;
+  for await (const chunk of req) {
+    size += chunk.length;
+    if (size > maxBytes) {
+      throw Object.assign(new Error("Request body is too large"), { statusCode: 413 });
+    }
+    chunks.push(chunk);
+  }
   if (chunks.length === 0) return {};
   const raw = Buffer.concat(chunks).toString("utf8");
   return JSON.parse(raw);
@@ -772,27 +783,31 @@ function preferenceOverrides(value = {}) {
   }));
 }
 
-export async function loadSmallWindowPreferences(runtime) {
-  return completeSmallWindowPreferences(await loadStoredSmallWindowPreferences(runtime));
+function preferenceKey(scope) {
+  return scope ? anonymousScopeKey(scope, SMALL_WINDOW_PREFERENCES_KEY) : SMALL_WINDOW_PREFERENCES_KEY;
 }
 
-async function loadStoredSmallWindowPreferences(runtime) {
-  const entry = await runtime.cacheStore?.getUserPreference?.(SMALL_WINDOW_PREFERENCES_KEY);
+export async function loadSmallWindowPreferences(runtime, scope = null) {
+  return completeSmallWindowPreferences(await loadStoredSmallWindowPreferences(runtime, scope));
+}
+
+async function loadStoredSmallWindowPreferences(runtime, scope = null) {
+  const entry = await runtime.cacheStore?.getUserPreference?.(preferenceKey(scope));
   return preferenceOverrides(entry?.value);
 }
 
-export async function saveSmallWindowPreferences(runtime, value = {}) {
-  const current = await loadStoredSmallWindowPreferences(runtime);
+export async function saveSmallWindowPreferences(runtime, value = {}, scope = null) {
+  const current = await loadStoredSmallWindowPreferences(runtime, scope);
   const nextOverrides = preferenceOverrides({
     ...current,
     ...normalizeSmallWindowPreferences(value)
   });
-  await runtime.cacheStore?.setUserPreference?.(SMALL_WINDOW_PREFERENCES_KEY, nextOverrides);
+  await runtime.cacheStore?.setUserPreference?.(preferenceKey(scope), nextOverrides);
   return completeSmallWindowPreferences(nextOverrides);
 }
 
-export async function resetSmallWindowPreferences(runtime) {
-  await runtime.cacheStore?.deleteUserPreference?.(SMALL_WINDOW_PREFERENCES_KEY);
+export async function resetSmallWindowPreferences(runtime, scope = null) {
+  await runtime.cacheStore?.deleteUserPreference?.(preferenceKey(scope));
   return completeSmallWindowPreferences();
 }
 
@@ -1177,6 +1192,7 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParserConfig: options.structuredParserConfig ?? null,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
+    accessService: options.accessService ?? null,
     recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput
   };
 }
@@ -1210,11 +1226,17 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ...conclusionRuntime
   };
 
-  if (options.cacheStore) return createSmallWindowRuntime(runtimeOptions);
+  const finalizeRuntime = (runtime) => {
+    runtime.accessService = options.accessService
+      ?? createAnonymousAccessService(runtime, options.publicAccess ?? {}, env);
+    return runtime;
+  };
+
+  if (options.cacheStore) return finalizeRuntime(createSmallWindowRuntime(runtimeOptions));
 
   const { type, cachePath } = resolveSmallWindowCacheOptions(options, env);
   if (type !== "sqlite") {
-    return createSmallWindowRuntime({
+    return finalizeRuntime(createSmallWindowRuntime({
       ...runtimeOptions,
       cachePath,
       cacheStoreInfo: {
@@ -1222,7 +1244,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
         cachePath,
         persistent: true
       }
-    });
+    }));
   }
 
   const cacheStore = options.sqliteDatabase
@@ -1235,7 +1257,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       ttlMs: options.cacheTtlMs
     });
 
-  return createSmallWindowRuntime({
+  return finalizeRuntime(createSmallWindowRuntime({
     ...runtimeOptions,
     cacheStore,
     cacheStoreInfo: {
@@ -1243,7 +1265,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       cachePath,
       persistent: true
     }
-  });
+  }));
 }
 
 function runtimeCatalogKey(preferences = {}) {
@@ -1557,10 +1579,28 @@ export async function prewarmSmallWindowCatalog(runtime) {
   };
 }
 
-export async function handleRecommendRequest(body, runtime) {
+function quotaWrappedCallable(callable, accessService, visitor) {
+  if (!callable || !accessService?.config?.enabled) return callable;
+  const wrapped = async (...args) => {
+    accessService.reserveLlmUse(visitor);
+    return callable(...args);
+  };
+  Object.assign(wrapped, callable);
+  return wrapped;
+}
+
+export async function handleRecommendRequest(body, runtime, context = {}) {
   const startedAt = Date.now();
   const input = String(body?.input ?? "").trim();
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
+  const scope = context.visitor?.scope ?? null;
+  const requestRuntime = context.accessService?.config?.enabled
+    ? {
+      ...runtime,
+      structuredParser: quotaWrappedCallable(runtime.structuredParser, context.accessService, context.visitor),
+      conclusionProvider: quotaWrappedCallable(runtime.conclusionProvider, context.accessService, context.visitor)
+    }
+    : runtime;
   if (!input) {
     return {
       statusCode: 400,
@@ -1571,7 +1611,7 @@ export async function handleRecommendRequest(body, runtime) {
     };
   }
 
-  const storedPreferences = await loadStoredSmallWindowPreferences(runtime);
+  const storedPreferences = await loadStoredSmallWindowPreferences(runtime, scope);
   const explicitPreferences = preferenceOverrides({
     ...storedPreferences,
     ...normalizeSmallWindowPreferences(body.preferences)
@@ -1599,11 +1639,12 @@ export async function handleRecommendRequest(body, runtime) {
   const structuredParserMode = preferences.structuredParserMode === "inherit"
     ? runtime.useStructuredParser
     : preferences.structuredParserMode;
-  const sessionKey = conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`;
-  const previousSessionEntry = runtime.conclusionGeneratorConfig?.enabled && preferences.conclusionMode !== "off"
+  const localSessionKey = conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`;
+  const sessionKey = scope ? anonymousScopeKey(scope, localSessionKey) : localSessionKey;
+  const previousSessionEntry = requestRuntime.conclusionGeneratorConfig?.enabled && preferences.conclusionMode !== "off"
     ? await runtime.cacheStore?.getSessionState?.(sessionKey)
     : null;
-  const result = await runtime.recommendForInputImpl(input, {
+  const result = await requestRuntime.recommendForInputImpl(input, {
     catalog,
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
@@ -1613,7 +1654,7 @@ export async function handleRecommendRequest(body, runtime) {
     explicitPreferences,
     bypassQueryCache: Boolean(body.refresh),
     bypassDefaultContextCache: Boolean(body.refresh),
-    structuredParser: runtime.structuredParser,
+    structuredParser: requestRuntime.structuredParser,
     useStructuredParser: structuredParserMode,
     sessionKey
   });
@@ -1635,8 +1676,8 @@ export async function handleRecommendRequest(body, runtime) {
     catalog,
     input,
     previousQuery: previousSessionEntry?.value?.query ?? previousSessionEntry?.value ?? null,
-    config: runtime.conclusionGeneratorConfig,
-    provider: runtime.conclusionProvider,
+    config: requestRuntime.conclusionGeneratorConfig,
+    provider: requestRuntime.conclusionProvider,
     cacheStore: runtime.cacheStore,
     requestEnabled: preferences.conclusionMode !== "off",
     bypassCache: Boolean(body.refresh)
@@ -1655,23 +1696,26 @@ export async function handleRecommendRequest(body, runtime) {
     generatedConclusion
   };
   Object.assign(payload, conversationMeta({ conversationId }));
+  if (context.accessService && context.visitor) {
+    payload.access = context.accessService.publicStatus(context.visitor);
+  }
   return {
     statusCode: 200,
     payload
   };
 }
 
-export async function handlePreferencesRequest(body, runtime) {
+export async function handlePreferencesRequest(body, runtime, scope = null) {
   return {
     ok: true,
-    preferences: await saveSmallWindowPreferences(runtime, body?.preferences ?? body ?? {})
+    preferences: await saveSmallWindowPreferences(runtime, body?.preferences ?? body ?? {}, scope)
   };
 }
 
-export async function handlePreferencesResetRequest(runtime) {
+export async function handlePreferencesResetRequest(runtime, scope = null) {
   return {
     ok: true,
-    preferences: await resetSmallWindowPreferences(runtime)
+    preferences: await resetSmallWindowPreferences(runtime, scope)
   };
 }
 
@@ -1927,9 +1971,10 @@ export async function handleEntityAliasBatchReviewRequest(body, runtime) {
   };
 }
 
-async function handleSessionClear(runtime, body = {}) {
+async function handleSessionClear(runtime, body = {}, scope = null) {
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim();
-  await runtime.cacheStore?.deleteSessionState?.(conversationId ? `last_query:${conversationId}` : SESSION_LAST_QUERY_KEY);
+  const key = conversationId ? `last_query:${conversationId}` : SESSION_LAST_QUERY_KEY;
+  await runtime.cacheStore?.deleteSessionState?.(scope ? anonymousScopeKey(scope, key) : key);
   return {
     ok: true
   };
@@ -2023,11 +2068,41 @@ export async function handleItemCatalogAuditRequest(runtime, options = {}) {
   return payload;
 }
 
+function applySecurityHeaders(res) {
+  res.setHeader("x-content-type-options", "nosniff");
+  res.setHeader("referrer-policy", "strict-origin-when-cross-origin");
+  res.setHeader("permissions-policy", "camera=(), microphone=(), geolocation=()");
+  res.setHeader(
+    "content-security-policy",
+    "default-src 'self'; img-src 'self' https: data:; style-src 'self'; script-src 'self'; connect-src 'self'; object-src 'none'; base-uri 'self'; frame-ancestors 'none'"
+  );
+}
+
+function enforceSameOrigin(req) {
+  if (!["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) return;
+  const origin = String(req.headers.origin ?? "").trim();
+  if (!origin) return;
+  const expected = `http://${req.headers.host ?? "localhost"}`;
+  const forwardedProto = String(req.headers["x-forwarded-proto"] ?? "").split(",")[0].trim();
+  const publicExpected = forwardedProto ? `${forwardedProto}://${req.headers.host ?? "localhost"}` : expected;
+  if (origin !== expected && origin !== publicExpected) {
+    throw Object.assign(new Error("Cross-origin request rejected"), { statusCode: 403 });
+  }
+}
+
+function isPublicMaintenanceRoute(pathname) {
+  return pathname.startsWith("/api/entity-") || pathname === "/api/item-catalog-audit";
+}
+
 export function createSmallWindowHandler(options = {}) {
   const runtime = options.runtime ?? createSmallWindowRuntime(options);
+  const accessService = options.accessService
+    ?? runtime.accessService
+    ?? createAnonymousAccessService(runtime, { enabled: false }, {});
 
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
+    applySecurityHeaders(res);
 
     try {
       if (req.method === "GET" && url.pathname === "/api/health") {
@@ -2036,8 +2111,28 @@ export function createSmallWindowHandler(options = {}) {
         });
       }
 
+      enforceSameOrigin(req);
+      const visitor = accessService.identify(req, res);
+      if (url.pathname.startsWith("/api/") && url.pathname !== "/api/access") {
+        accessService.enforceRequestRate(visitor);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/access") {
+        return sendJson(res, 200, {
+          ok: true,
+          access: accessService.publicStatus(visitor)
+        });
+      }
+
+      if (accessService.config.enabled && isPublicMaintenanceRoute(url.pathname)) {
+        return sendJson(res, 404, { ok: false, error: "Not found" });
+      }
+
       if (req.method === "GET" && url.pathname === "/api/runtime") {
-        return sendJson(res, 200, await handleRuntimeStatusRequest(runtime));
+        const payload = await handleRuntimeStatusRequest(runtime);
+        payload.runtime.publicMode = accessService.config.enabled;
+        payload.access = accessService.publicStatus(visitor);
+        return sendJson(res, 200, payload);
       }
 
       if (req.method === "GET" && url.pathname === "/api/item-catalog-audit") {
@@ -2056,27 +2151,36 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/recommend") {
         const body = await readJsonRequest(req);
-        const { statusCode, payload } = await handleRecommendRequest(body, runtime);
+        const { statusCode, payload } = await handleRecommendRequest(body, runtime, {
+          visitor,
+          accessService
+        });
         return sendJson(res, statusCode, payload);
       }
 
       if (req.method === "GET" && url.pathname === "/api/preferences") {
         return sendJson(res, 200, {
           ok: true,
-          preferences: await loadSmallWindowPreferences(runtime)
+          preferences: await loadSmallWindowPreferences(runtime, visitor.scope)
         });
       }
 
       if (req.method === "POST" && url.pathname === "/api/preferences") {
         const body = await readJsonRequest(req);
-        return sendJson(res, 200, await handlePreferencesRequest(body, runtime));
+        return sendJson(res, 200, await handlePreferencesRequest(body, runtime, visitor.scope));
       }
 
       if (req.method === "DELETE" && url.pathname === "/api/preferences") {
-        return sendJson(res, 200, await handlePreferencesResetRequest(runtime));
+        return sendJson(res, 200, await handlePreferencesResetRequest(runtime, visitor.scope));
       }
 
       if (req.method === "POST" && url.pathname === "/api/cache/clear") {
+        if (accessService.config.enabled) {
+          return sendJson(res, 200, {
+            ok: true,
+            cleared: { queryCache: 0, defaultContextCache: 0, sessionState: 0, catalogCache: 0 }
+          });
+        }
         return sendJson(res, 200, await handleCacheClearRequest(runtime));
       }
 
@@ -2128,7 +2232,7 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/session/clear") {
         const body = await readJsonRequest(req);
-        return sendJson(res, 200, await handleSessionClear(runtime, body));
+        return sendJson(res, 200, await handleSessionClear(runtime, body, visitor.scope));
       }
 
       if (req.method !== "GET") {
@@ -2161,7 +2265,7 @@ export function createSmallWindowHandler(options = {}) {
         });
       }
 
-      return sendJson(res, 500, {
+      return sendJson(res, error.statusCode ?? 500, {
         ok: false,
         error: error.message
       });

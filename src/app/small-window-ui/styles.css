@@ -176,6 +176,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .language-toggle button.active { color: #365dc8; background: #fff; box-shadow: 0 2px 8px rgba(36, 55, 112, .18); }
 
 .status { max-width: 130px; min-height: 29px; padding: 0 10px; display: flex; align-items: center; gap: 6px; border: 1px solid rgba(255,255,255,.2); border-radius: 999px; background: rgba(16, 42, 82, .15); font-size: 11px; white-space: nowrap; overflow: hidden; }
+.ai-quota { min-height: 29px; padding: 0 10px; display: inline-flex; align-items: center; border: 1px solid rgba(255,255,255,.25); border-radius: 999px; color: #fff; background: rgba(15,43,90,.14); font-size: 11px; white-space: nowrap; }
+.ai-quota[data-empty="true"] { color: #734515; background: #fff2d4; border-color: rgba(255,226,166,.9); }
 .status > span:last-child { overflow: hidden; text-overflow: ellipsis; }
 .status-dot { width: 7px; height: 7px; flex: 0 0 7px; border-radius: 50%; background: var(--success); box-shadow: 0 0 0 3px rgba(57,185,120,.16); }
 .status[data-state="loading"] .status-dot { background: #fff; animation: pulse 1s infinite; }

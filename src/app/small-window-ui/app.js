@@ -69,6 +69,7 @@ const resultContentEl = document.querySelector("#result-content");
 const resultTitleEl = document.querySelector("#result-title");
 const resultRefreshButton = document.querySelector("#result-refresh-button");
 const statusEl = document.querySelector("#status");
+const aiQuotaEl = document.querySelector("#ai-quota");
 const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
 const sortSelect = document.querySelector("#sort-select");
@@ -127,9 +128,9 @@ const appShell = new AppShell({
   settingsButton,
   settingsClose,
   settingsDone,
-  onSettingsOpen: () => {
-    loadRuntimeStatus();
-    loadAliases();
+  onSettingsOpen: async () => {
+    await loadRuntimeStatus();
+    if (!state.runtimeStatus?.publicMode) await loadAliases();
   },
   titleBar
 });
@@ -276,6 +277,33 @@ function renderRuntimeStatus(runtime = {}) {
   if (parser.enabled && parser.timeoutMs) detail.push(`${parser.timeoutMs}ms`);
   if (parser.enabled && parser.apiKeyConfigured) detail.push(t("keyConfigured"));
   runtimeDetailEl.textContent = detail.join(" / ") || t("rulesFirst");
+  for (const element of document.querySelectorAll(".admin-only")) {
+    element.classList.toggle("hidden", Boolean(runtime.publicMode));
+  }
+}
+
+function renderAccessStatus(access = {}) {
+  state.access = access;
+  const quota = access.quota ?? {};
+  if (!quota.enabled) {
+    aiQuotaEl.classList.add("hidden");
+    return;
+  }
+  aiQuotaEl.classList.remove("hidden");
+  aiQuotaEl.dataset.empty = quota.remaining === 0 ? "true" : "false";
+  aiQuotaEl.textContent = quota.remaining === 0
+    ? t("aiQuotaEmpty")
+    : t("aiQuotaRemaining", { remaining: quota.remaining, limit: quota.limit });
+}
+
+async function loadAccessStatus() {
+  try {
+    const response = await fetch("/api/access");
+    const data = await response.json();
+    if (response.ok && data.ok) renderAccessStatus(data.access);
+  } catch {
+    aiQuotaEl.classList.add("hidden");
+  }
 }
 
 async function loadRuntimeStatus() {
@@ -1451,6 +1479,7 @@ async function requestRecommendation(refresh = false) {
     const data = await response.json();
     if (requestId !== state.requestSerial) return;
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    if (data.access) renderAccessStatus(data.access);
     renderResult(data);
     setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
   } catch (error) {
@@ -1861,3 +1890,4 @@ setLocale(getLocale());
 wallpaperController.refreshLocale();
 setRequestRunning(false);
 loadPreferences();
+loadAccessStatus();
