@@ -3,7 +3,10 @@ export const LOCALE_STORAGE_KEY = "tftagent.locale";
 
 export const messages = {
   "zh-CN": {
-    seasonName: "星神", languageLabel: "语言", settings: "设置", statusReady: "就绪", statusQuerying: "查询中", statusRefreshing: "刷新中", statusLive: "实时",
+    seasonName: "星神", languageLabel: "语言", settings: "设置",
+    wallpaper: "壁纸", wallpaperOn: "开启", wallpaperOff: "关闭", wallpaperEnableTitle: "开启赛季壁纸", wallpaperDisableTitle: "关闭赛季壁纸",
+    wallpaperChoice: "选择赛季壁纸", wallpaperCosmicCourt: "星神 · 光辉盛典", wallpaperStargazerConvergence: "星神 · 群星汇聚",
+    statusReady: "就绪", statusQuerying: "查询中", statusRefreshing: "刷新中", statusLive: "实时",
     statusCache: "本地缓存", statusStale: "过期缓存", statusFailed: "失败", statusStopped: "已停止", statusCleared: "已清空",
     statusSaved: "已保存", statusNotSaved: "偏好未保存", statusUnavailable: "状态不可用", statusRecorded: "反馈已记录",
     conversationEyebrow: "对话", conversationTitle: "战术查询", conversationHint: "保留多轮条件", resultEyebrow: "数据结果", resultTitle: "当前推荐",
@@ -57,7 +60,10 @@ export const messages = {
     dataInterpretation: "数据解读", generatedFromEvidence: "由数据生成", templateFallback: "已使用模板回退", nextAction: "下一步", explanationHelpful: "解读有帮助", explanationNotHelpful: "解读需改进", cachedConclusion: "结论缓存"
   },
   "en-US": {
-    seasonName: "Cosmic", languageLabel: "Language", settings: "Settings", statusReady: "Ready", statusQuerying: "Querying", statusRefreshing: "Refreshing", statusLive: "Live",
+    seasonName: "Cosmic", languageLabel: "Language", settings: "Settings",
+    wallpaper: "Wallpaper", wallpaperOn: "On", wallpaperOff: "Off", wallpaperEnableTitle: "Enable season wallpaper", wallpaperDisableTitle: "Disable season wallpaper",
+    wallpaperChoice: "Choose season wallpaper", wallpaperCosmicCourt: "Cosmic · Radiant Court", wallpaperStargazerConvergence: "Cosmic · Stargazer Convergence",
+    statusReady: "Ready", statusQuerying: "Querying", statusRefreshing: "Refreshing", statusLive: "Live",
     statusCache: "Local cache", statusStale: "Stale cache", statusFailed: "Failed", statusStopped: "Stopped", statusCleared: "Cleared",
     statusSaved: "Saved", statusNotSaved: "Preferences not saved", statusUnavailable: "Status unavailable", statusRecorded: "Feedback recorded",
     conversationEyebrow: "Conversation", conversationTitle: "Tactical query", conversationHint: "Multi-turn context", resultEyebrow: "Data result", resultTitle: "Current result",

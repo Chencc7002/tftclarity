@@ -2,6 +2,7 @@ import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
+import { WallpaperController } from "./wallpaper-controller.js";
 
 const state = {
   minSamples: 100,
@@ -101,11 +102,19 @@ let activeResponseEl = null;
 const conversationPane = new ConversationPane(resultEl);
 const composer = new Composer({ form, input: queryInput });
 const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
+const wallpaperController = new WallpaperController({
+  shell: document.querySelector("#app-shell"),
+  canvas: document.querySelector("#particle-layer"),
+  control: document.querySelector("#wallpaper-control"),
+  toggle: document.querySelector("#wallpaper-toggle"),
+  select: document.querySelector("#wallpaper-select")
+});
 const titleBar = new TitleBar({
   root: document.querySelector("#title-bar"),
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
+    wallpaperController.refreshLocale();
     rerenderLocalizedState();
   }
 });
@@ -127,7 +136,7 @@ const appShell = new AppShell({
 
 // Named modules are intentionally referenced here: AppShell/TitleBar own window layout,
 // ConversationPane/Composer own chat entry, and ResultPane dispatches the three result templates.
-void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, composer];
+void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, composer, wallpaperController];
 
 function setResponseHtml(html) {
   resultPane.setHtml(html);
@@ -1849,5 +1858,6 @@ resetPreferencesButton.addEventListener("click", async () => {
 });
 
 setLocale(getLocale());
+wallpaperController.refreshLocale();
 setRequestRunning(false);
 loadPreferences();

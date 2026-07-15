@@ -55,6 +55,37 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   background-size: 37px 37px, 53px 53px, auto;
 }
 
+.wallpaper-layer,
+.particle-layer {
+  position: absolute;
+  top: var(--title-height);
+  right: 0;
+  bottom: 0;
+  left: 0;
+  pointer-events: none;
+}
+.wallpaper-layer {
+  z-index: 0;
+  opacity: 0;
+  overflow: hidden;
+  background-color: #d8d4ee;
+  background-image: linear-gradient(rgba(245,248,255,.24), rgba(235,239,255,.3)), var(--wallpaper-image);
+  background-position: center, var(--wallpaper-position, center center);
+  background-repeat: no-repeat;
+  background-size: cover, var(--wallpaper-focus-size, cover);
+  filter: saturate(.92) brightness(.98) contrast(.96);
+  transition: opacity 420ms ease;
+}
+.shell.wallpaper-enabled .wallpaper-layer { opacity: 1; }
+.particle-layer {
+  z-index: 1;
+  width: 100%;
+  height: calc(100% - var(--title-height));
+  opacity: 0;
+  transition: opacity 780ms ease;
+}
+.shell.wallpaper-enabled .particle-layer.is-active { opacity: .94; }
+
 .topbar {
   position: relative;
   z-index: 40;
@@ -91,6 +122,39 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .brand-copy small { padding: 5px 9px; border: 1px solid rgba(255,255,255,.28); border-radius: 999px; background: rgba(255,255,255,.13); font-size: 11px; white-space: nowrap; }
 .top-actions { min-width: 0; gap: 9px; }
 
+.wallpaper-control { min-width: 0; display: flex; align-items: center; gap: 5px; }
+.wallpaper-toggle {
+  min-width: 78px;
+  min-height: 31px;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  color: rgba(255,255,255,.84);
+  background: rgba(19,41,84,.16);
+  font-size: 10px;
+}
+.wallpaper-toggle:hover { background: rgba(255,255,255,.18); }
+.wallpaper-toggle svg { width: 15px; height: 15px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.wallpaper-toggle .wallpaper-state { opacity: .76; }
+.wallpaper-toggle[aria-checked="true"] { color: #365dc8; background: #fff; box-shadow: 0 2px 8px rgba(36,55,112,.18); }
+.wallpaper-toggle[aria-checked="true"] .wallpaper-state { color: #218b75; opacity: 1; }
+.wallpaper-select {
+  width: 136px;
+  min-height: 31px;
+  padding: 0 24px 0 8px;
+  border: 1px solid rgba(255,255,255,.22);
+  border-radius: 999px;
+  color: #fff;
+  background: rgba(19,41,84,.2);
+  font-size: 10px;
+}
+.wallpaper-select option { color: var(--ink); background: #fff; }
+.wallpaper-select:disabled { display: none; }
+
 .icon-button {
   width: 34px;
   height: 34px;
@@ -121,7 +185,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 
 .workspace {
   position: relative;
-  z-index: 1;
+  z-index: 2;
   min-width: 0;
   min-height: 0;
   display: grid;
@@ -375,7 +439,113 @@ body.resizing-columns { user-select: none; cursor: col-resize; }
 .resize-grip span { display: block; height: 1px; background: #9aa6bb; transform: rotate(-45deg); transform-origin: right center; }
 .resize-grip span:first-child { width: 13px; }.resize-grip span:last-child { width: 7px; }
 
+/* Wallpaper mode is opt-in. Without this class the existing UI remains unchanged. */
+.shell.wallpaper-enabled .conversation-pane,
+.shell.wallpaper-enabled .result-pane,
+.shell.wallpaper-enabled .settings-panel {
+  /* Keep the season poster legible across the whole workspace. Large panes
+     tint the art but deliberately do not blur it; blur is reserved for the
+     smaller foreground surfaces below. */
+  background: rgba(248,250,255,.12);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+.shell.wallpaper-enabled .pane-heading,
+.shell.wallpaper-enabled .query-panel,
+.shell.wallpaper-enabled .settings-head,
+.shell.wallpaper-enabled .settings-actions {
+  border-color: rgba(193,224,243,.56);
+  background: rgba(252,253,255,.46);
+  -webkit-backdrop-filter: blur(3px) saturate(1.04);
+  backdrop-filter: blur(3px) saturate(1.04);
+}
+.shell.wallpaper-enabled .assistant-message .message-body,
+.shell.wallpaper-enabled .user-message .message-body,
+.shell.wallpaper-enabled .result-header-card,
+.shell.wallpaper-enabled .result-card,
+.shell.wallpaper-enabled .item-ranking-card,
+.shell.wallpaper-enabled .comp-overview,
+.shell.wallpaper-enabled .comp-card,
+.shell.wallpaper-enabled .comp-warning,
+.shell.wallpaper-enabled .comp-footnote,
+.shell.wallpaper-enabled .source-risk,
+.shell.wallpaper-enabled .clarification-state,
+.shell.wallpaper-enabled .empty-state,
+.shell.wallpaper-enabled .error-state,
+.shell.wallpaper-enabled .advanced-query-settings,
+.shell.wallpaper-enabled .settings-section,
+.shell.wallpaper-enabled .details {
+  border-color: rgba(169,216,241,.62);
+  background: rgba(255,255,255,.54);
+  -webkit-backdrop-filter: blur(4px) saturate(1.04);
+  backdrop-filter: blur(4px) saturate(1.04);
+  box-shadow: 0 10px 30px rgba(45,58,103,.14), inset 0 1px rgba(255,255,255,.58);
+}
+.shell.wallpaper-enabled .user-message .message-body { background: rgba(227,246,255,.62); }
+.shell.wallpaper-enabled .result-card.best {
+  border-color: rgba(235,190,91,.74);
+  background: linear-gradient(145deg, rgba(255,255,255,.62), rgba(255,248,225,.5));
+}
+.shell.wallpaper-enabled .composer textarea,
+.shell.wallpaper-enabled .subtle-button,
+.shell.wallpaper-enabled .state-actions button,
+.shell.wallpaper-enabled .item,
+.shell.wallpaper-enabled .stat,
+.shell.wallpaper-enabled .feedback-button,
+.shell.wallpaper-enabled .condition-chip,
+.shell.wallpaper-enabled .candidate-row,
+.shell.wallpaper-enabled .comp-expanded,
+.shell.wallpaper-enabled .comp-stat-line span,
+.shell.wallpaper-enabled .field-stack select,
+.shell.wallpaper-enabled .alias-filters select,
+.shell.wallpaper-enabled .alias-filters input,
+.shell.wallpaper-enabled .segmented,
+.shell.wallpaper-enabled .rank-grid label,
+.shell.wallpaper-enabled .alias-actions button,
+.shell.wallpaper-enabled .alias-batch button,
+.shell.wallpaper-enabled .alias-pagination button,
+.shell.wallpaper-enabled .alias-row,
+.shell.wallpaper-enabled .alias-row button,
+.shell.wallpaper-enabled .settings-actions button,
+.shell.wallpaper-enabled .column-resizer span {
+  border-color: rgba(178,217,239,.66);
+  background: rgba(255,255,255,.7);
+  -webkit-backdrop-filter: blur(2px) saturate(1.02);
+  backdrop-filter: blur(2px) saturate(1.02);
+}
+.shell.wallpaper-enabled .composer textarea:focus { background: rgba(255,255,255,.82); }
+.shell.wallpaper-enabled .column-resizer { border-color: rgba(175,213,235,.62); background: rgba(239,247,252,.42); }
+.shell.wallpaper-enabled .settings-backdrop { background: rgba(29,39,78,.22); backdrop-filter: blur(3px); }
+.shell.wallpaper-enabled .state-orbit { background: rgba(242,252,255,.66); backdrop-filter: blur(3px); }
+.shell.wallpaper-enabled .result-empty strong {
+  color: #1d2c48;
+  text-shadow: 0 1px 3px rgba(255,255,255,.98);
+}
+.shell.wallpaper-enabled .result-empty p {
+  color: #344763;
+  font-weight: 600;
+  text-shadow: 0 1px 3px rgba(255,255,255,.98);
+}
+.shell.wallpaper-enabled .result-kind,
+.shell.wallpaper-enabled .view-result,
+.shell.wallpaper-enabled .item.locked { background: rgba(224,247,255,.5); }
+.shell.wallpaper-enabled .risk,
+.shell.wallpaper-enabled .low-sample-label,
+.shell.wallpaper-enabled .cache-badge,
+.shell.wallpaper-enabled .item.compared,
+.shell.wallpaper-enabled .risk-line { background: rgba(255,243,211,.56); }
+.shell.wallpaper-enabled .message-meta,
+.shell.wallpaper-enabled .difference-note,
+.shell.wallpaper-enabled .locked-line,
+.shell.wallpaper-enabled .core-line,
+.shell.wallpaper-enabled .item-ranking-meta,
+.shell.wallpaper-enabled .alternatives > summary {
+  color: #354056;
+  text-shadow: 0 1px 2px rgba(255,255,255,.94);
+}
+
 @media (max-width: 1099px) {
+  .wallpaper-select { display: none; }
   .workspace, .shell.settings-open .workspace { grid-template-columns: clamp(320px, var(--conversation-width), 520px) 9px minmax(360px, 1fr); }
   .settings-panel { position: absolute; inset: 0 0 0 auto; width: min(320px, 92vw); }
   .shell.settings-open .settings-backdrop:not([hidden]) { display: block; }
@@ -386,6 +556,7 @@ body.resizing-columns { user-select: none; cursor: col-resize; }
   .topbar { padding: 0 10px; gap: 8px; }
   .brand-copy { gap: 6px; }.brand-copy strong { font-size: 15px; }.brand-copy small { padding: 4px 7px; }
   .top-actions { gap: 5px; }.status { max-width: 84px; padding: 0 7px; }.language-toggle button { min-width: 40px; padding: 0 6px; }
+  .wallpaper-toggle { min-width: 66px; padding-inline: 6px; }
   .workspace, .shell.settings-open .workspace { grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(230px, 46%) minmax(0, 54%); }
   .conversation-pane { grid-row: 1; border-right: 0; border-bottom: 1px solid var(--line-strong); }
   .result-pane { grid-row: 2; }
@@ -405,6 +576,7 @@ body.resizing-columns { user-select: none; cursor: col-resize; }
 
 @media (max-width: 519px) {
   .brand-copy small { display: none; }
+  .wallpaper-toggle { width: 31px; min-width: 31px; height: 31px; padding: 0; }.wallpaper-toggle > span { display: none; }
   .status { min-width: 31px; width: 31px; padding: 0; justify-content: center; }.status > span:last-child { display: none; }
   .icon-button { width: 31px; height: 31px; min-height: 31px; }.brand-mark { width: 27px; height: 27px; flex-basis: 27px; }.brand-mark svg { width: 24px; height: 24px; }
   .language-toggle button { min-width: 35px; font-size: 10px; }
@@ -506,4 +678,9 @@ body.resizing-columns { user-select: none; cursor: col-resize; }
   .comparison-primary strong { font-size: 20px; }
   .audit-row { grid-template-columns: 36px minmax(0, 1fr); }
   .audit-icon { width: 36px; height: 36px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .particle-layer { display: none; }
+  .wallpaper-layer { transition: none; }
 }

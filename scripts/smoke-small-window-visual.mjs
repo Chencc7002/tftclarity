@@ -300,6 +300,64 @@ if (playwright) {
       });
     });
     await page.goto(started.url, { waitUntil: "networkidle" });
+    await page.waitForTimeout(120);
+    const initialWallpaper = await page.evaluate(async () => {
+      const shell = document.querySelector("#app-shell");
+      const layer = document.querySelector(".wallpaper-layer");
+      const canvas = document.querySelector("#particle-layer");
+      const wallpaperStyle = getComputedStyle(layer);
+      const imageUrl = wallpaperStyle.backgroundImage.match(/url\(["']?([^"')]+)/)?.[1];
+      let imageLoaded = false;
+      if (imageUrl) {
+        imageLoaded = await new Promise((resolvePromise) => {
+          const image = new Image();
+          image.onload = () => resolvePromise(true);
+          image.onerror = () => resolvePromise(false);
+          image.src = imageUrl;
+        });
+      }
+      const pixels = canvas.getContext("2d").getImageData(0, 0, canvas.width, canvas.height).data;
+      let particleInk = 0;
+      for (let index = 3; index < pixels.length; index += 4) {
+        if (pixels[index] > 0) particleInk += 1;
+      }
+      const emptyTitle = document.querySelector(".result-empty strong");
+      const emptyBody = document.querySelector(".result-empty p");
+      return {
+        enabled: shell.classList.contains("wallpaper-enabled"),
+        particleActive: canvas.classList.contains("is-active"),
+        particleInk,
+        focusSize: getComputedStyle(shell).getPropertyValue("--wallpaper-focus-size").trim(),
+        backgroundSize: wallpaperStyle.backgroundSize,
+        imageLayerCount: wallpaperStyle.backgroundImage.match(/url\(/g)?.length ?? 0,
+        windowControlCount: document.querySelectorAll(".window-controls").length,
+        emptyTitleColor: getComputedStyle(emptyTitle).color,
+        emptyBodyColor: getComputedStyle(emptyBody).color,
+        imageLoaded,
+        toggleChecked: document.querySelector("#wallpaper-toggle").getAttribute("aria-checked")
+      };
+    });
+    assertSmoke(initialWallpaper.enabled && initialWallpaper.imageLoaded, "season wallpaper did not load by default");
+    assertSmoke(initialWallpaper.particleActive, "idle particles did not start on page load");
+    assertSmoke(initialWallpaper.particleInk > 100, `enhanced particles did not paint visibly: ${initialWallpaper.particleInk}`);
+    assertSmoke(initialWallpaper.focusSize === "cover", "stargazer wallpaper did not use its edge-to-edge crop");
+    assertSmoke(initialWallpaper.backgroundSize.split(",").at(-1)?.trim() === "cover", `wallpaper can leave empty edges: ${initialWallpaper.backgroundSize}`);
+    assertSmoke(initialWallpaper.imageLayerCount === 1, `wallpaper repeats image resources: ${initialWallpaper.imageLayerCount}`);
+    assertSmoke(initialWallpaper.windowControlCount === 0, "decorative window controls returned to the top bar");
+    assertSmoke(initialWallpaper.emptyTitleColor === "rgb(29, 44, 72)", `empty-state title contrast regressed: ${initialWallpaper.emptyTitleColor}`);
+    assertSmoke(initialWallpaper.emptyBodyColor === "rgb(52, 71, 99)", `empty-state body contrast regressed: ${initialWallpaper.emptyBodyColor}`);
+    assertSmoke(initialWallpaper.toggleChecked === "true", "wallpaper toggle state is not exposed");
+    await page.screenshot({
+      path: resolve(outputDir, "empty-wallpaper-1200x760.png"),
+      fullPage: true
+    });
+
+    await page.click("#wallpaper-toggle");
+    assertSmoke(!(await page.locator("#app-shell").evaluate((element) => element.classList.contains("wallpaper-enabled"))), "wallpaper toggle did not restore the original UI");
+    assertSmoke(await page.locator("#particle-layer.is-active").count() === 0, "particles kept running after wallpaper was disabled");
+    await page.click("#wallpaper-toggle");
+    await page.waitForSelector("#app-shell.wallpaper-enabled");
+
     await page.fill("#query-input", "大师以上霞什么三件装备最强？");
     await page.click("#query-form button.primary");
     await page.waitForSelector(".result-card");
@@ -313,9 +371,37 @@ if (playwright) {
     const desktop = await inspectLayout(page, "1200x760 three-column result");
     const desktopMode = await inspectResponsiveMode(page, "1200x760", "three");
     const desktopAssets = await inspectAssetDimensions(page, "1200x760 three-column result");
+    const activeGlass = await page.evaluate(() => {
+      const card = document.querySelector(".result-card");
+      const cardStyle = getComputedStyle(card);
+      const paneStyle = getComputedStyle(document.querySelector(".result-pane"));
+      return {
+        background: cardStyle.backgroundColor,
+        backdropFilter: cardStyle.backdropFilter || cardStyle.webkitBackdropFilter,
+        paneBackground: paneStyle.backgroundColor,
+        paneBackdropFilter: paneStyle.backdropFilter || paneStyle.webkitBackdropFilter,
+        particleActive: document.querySelector("#particle-layer").classList.contains("is-active")
+      };
+    });
+    assertSmoke(activeGlass.backdropFilter.includes("blur"), "wallpaper result cards are not frosted glass");
+    assertSmoke(
+      activeGlass.paneBackground.endsWith(", 0.12)"),
+      `wallpaper poster tint is too opaque: ${activeGlass.paneBackground}`
+    );
+    assertSmoke(
+      activeGlass.paneBackdropFilter === "none",
+      `wallpaper poster is blurred behind the main content: ${activeGlass.paneBackdropFilter}`
+    );
+    assertSmoke(!activeGlass.particleActive, "particles did not stop after user activity");
     await page.locator("#result").evaluate((element) => { element.scrollTop = 0; });
     await page.screenshot({
       path: resolve(outputDir, "result-1200x760.png"),
+      fullPage: true
+    });
+    await page.waitForTimeout(7100);
+    assertSmoke(await page.locator("#particle-layer.is-active").count() === 1, "idle particles did not fade back in after seven seconds");
+    await page.screenshot({
+      path: resolve(outputDir, "wallpaper-idle-1200x760.png"),
       fullPage: true
     });
     await page.locator(".assistant-message").last().screenshot({
@@ -323,6 +409,10 @@ if (playwright) {
     });
 
     await page.setViewportSize({ width: 760, height: 700 });
+    await page.waitForFunction(() => {
+      const value = parseFloat(getComputedStyle(document.querySelector("#app-shell")).getPropertyValue("--conversation-width"));
+      return Number.isFinite(value) && value <= 320;
+    });
     const twoColumn = await inspectLayout(page, "760x700 two-column result");
     const twoColumnMode = await inspectResponsiveMode(page, "760x700", "two");
     await page.screenshot({ path: resolve(outputDir, "result-760x700.png"), fullPage: true });
@@ -545,6 +635,8 @@ if (playwright) {
         comparison360,
         desktopAssets,
         desktopMode,
+        initialWallpaper,
+        activeGlass,
         twoColumn,
         twoColumnMode,
         singleColumn,

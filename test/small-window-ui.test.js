@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 
 const ui = (name) => readFileSync(new URL(`../src/app/small-window-ui/${name}`, import.meta.url), "utf8");
 const indexHtml = ui("index.html");
@@ -10,6 +10,8 @@ const i18n = ui("i18n.js");
 const appShell = ui("app-shell.js");
 const conversation = ui("conversation-pane.js");
 const resultPane = ui("result-pane.js");
+const wallpaperController = ui("wallpaper-controller.js");
+const wallpaperCatalog = ui("wallpaper-catalog.js");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /id="app-shell"/);
@@ -124,6 +126,43 @@ test("small-window renders dedicated responsive item comparison evidence", () =>
   assert.match(styles, /@media \(min-width: 401px\) and \(max-width: 520px\)/);
   assert.match(styles, /@media \(max-width: 400px\)/);
   assert.match(styles, /grid-template-columns: 1fr/);
+});
+
+test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware", () => {
+  assert.match(indexHtml, /id="wallpaper-toggle"/);
+  assert.match(indexHtml, /role="switch"/);
+  assert.match(indexHtml, /id="wallpaper-select"/);
+  assert.match(indexHtml, /id="particle-layer"/);
+  assert.match(appJs, /WallpaperController/);
+  assert.match(wallpaperCatalog, /"set-17"/);
+  assert.match(wallpaperCatalog, /cosmic-court\.jpg/);
+  assert.match(wallpaperCatalog, /stargazer-convergence\.jpg/);
+  assert.match(wallpaperCatalog, /focusSize: "cover"/);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/cosmic-court.jpg", import.meta.url)).size > 100_000);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/stargazer-convergence.jpg", import.meta.url)).size > 100_000);
+  assert.match(wallpaperController, /tftagent\.wallpaperEnabled/);
+  assert.match(wallpaperController, /tftagent\.wallpaperId/);
+  assert.match(wallpaperController, /WALLPAPER_IDLE_MS = 7000/);
+  assert.match(wallpaperController, /document\.addEventListener\("keydown"/);
+  assert.match(wallpaperController, /document\.addEventListener\("mousemove"/);
+  assert.match(wallpaperController, /document\.addEventListener\("click"/);
+  assert.match(wallpaperController, /setTimeout\(\(\) => this\.enterIdleMode\(\), this\.idleMs\)/);
+  assert.match(wallpaperController, /requestAnimationFrame/);
+  assert.match(wallpaperController, /Math\.min\(130/);
+  assert.match(wallpaperController, /globalCompositeOperation = "lighter"/);
+  assert.match(styles, /\.shell\.wallpaper-enabled \.wallpaper-layer/);
+  assert.match(styles, /var\(--wallpaper-focus-size, cover\)/);
+  assert.doesNotMatch(styles, /\.wallpaper-layer::after/);
+  assert.doesNotMatch(wallpaperController, /wallpaper-focus-opacity/);
+  assert.match(styles, /opacity: \.94/);
+  assert.match(styles, /background: rgba\(248,250,255,\.12\)/);
+  assert.match(styles, /backdrop-filter: none/);
+  assert.match(styles, /backdrop-filter: blur\(4px\)/);
+  assert.match(styles, /\.shell\.wallpaper-enabled \.assistant-message \.message-body/);
+  assert.match(styles, /\.shell\.wallpaper-enabled \.result-card/);
+  assert.match(styles, /\.shell\.wallpaper-enabled \.result-empty strong/);
+  assert.doesNotMatch(indexHtml, /class="window-controls"/);
+  assert.doesNotMatch(styles, /\.shell\.wallpaper-enabled \.topbar/);
 });
 
 test("all existing real interactions and endpoints remain wired", () => {
