@@ -48,6 +48,12 @@ CREATE TABLE IF NOT EXISTS default_context_cache (
   updated_at TEXT NOT NULL
 );
 
+CREATE TABLE IF NOT EXISTS comp_trend_history (
+  history_key TEXT PRIMARY KEY,
+  value_json TEXT NOT NULL,
+  updated_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS entity_aliases (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   alias TEXT NOT NULL,
@@ -982,6 +988,38 @@ export class SQLiteCacheStore {
     return this._clearStore("session");
   }
 
+  getCompTrendHistory(key) {
+    const row = bindGet(this.database.prepare(`
+      SELECT value_json, updated_at
+      FROM comp_trend_history
+      WHERE history_key = ?
+    `), [String(key)]);
+    if (!row) return null;
+    return {
+      value: JSON.parse(row.value_json),
+      updatedAt: row.updated_at,
+      expiresAt: null,
+      expired: false
+    };
+  }
+
+  setCompTrendHistory(key, value) {
+    const updatedAt = new Date(this.now()).toISOString();
+    bindRun(this.database.prepare(`
+      INSERT INTO comp_trend_history (history_key, value_json, updated_at)
+      VALUES (?, ?, ?)
+      ON CONFLICT(history_key) DO UPDATE SET
+        value_json = excluded.value_json,
+        updated_at = excluded.updated_at
+    `), [String(key), JSON.stringify(cloneValue(value)), updatedAt]);
+    return {
+      value: cloneValue(value),
+      updatedAt,
+      expiresAt: null,
+      expired: false
+    };
+  }
+
   clearQueryHistory() {
     return {
       queryCache: this.clearQueryCache(),
@@ -1014,5 +1052,6 @@ export class SQLiteCacheStore {
     bindRun(this.database.prepare("DELETE FROM units"));
     bindRun(this.database.prepare("DELETE FROM traits"));
     bindRun(this.database.prepare("DELETE FROM feedback_events"));
+    bindRun(this.database.prepare("DELETE FROM comp_trend_history"));
   }
 }

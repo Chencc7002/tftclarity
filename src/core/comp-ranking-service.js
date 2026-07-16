@@ -139,6 +139,13 @@ export function buildCompRankings(response = {}, options = {}) {
       })),
       coreBuilds: summarizeBuilds(definition),
       stats: row.stats,
+      trend: {
+        avgPlacementChange: definition.avgPlacementChange,
+        source: definition.trendSource,
+        comparedAt: definition.trendComparedAt,
+        // MetaTFT shows the blue arrow only below -0.10 over the last 3 days.
+        improving: Number.isFinite(definition.avgPlacementChange) && definition.avgPlacementChange < -0.1
+      },
       pageOrder: row.sourceIndex,
       source: {
         endpoint: "/tft-comps-api/comps_stats",
@@ -153,6 +160,16 @@ export function buildCompRankings(response = {}, options = {}) {
 
   const minSamples = Math.max(0, Number(query.minSamples ?? 0));
   const eligible = comps.filter((comp) => comp.stats.games >= minSamples);
+  const improving = comps
+    .filter((comp) => comp.trend.improving)
+    // MetaTFT's /comps page is ordered by average placement by default. The
+    // trend summary takes the first three blue-arrow rows in that same order,
+    // rather than selecting unstable low-tier comps by largest raw swing.
+    .sort((left, right) => left.stats.avgPlacement - right.stats.avgPlacement
+      || right.stats.games - left.stats.games
+      || left.pageOrder - right.pageOrder)
+    .slice(0, 3)
+    .map((comp) => ({ ...comp, lowSample: comp.stats.games < minSamples }));
   const references = comps
     .filter((comp) => comp.stats.games < minSamples)
     .sort((a, b) => b.stats.games - a.stats.games || a.pageOrder - b.pageOrder)
@@ -176,7 +193,18 @@ export function buildCompRankings(response = {}, options = {}) {
   return {
     type: "comp_rankings",
     rankings,
+    improving,
     references,
+    trend: response?.trend ?? {
+      status: pageData.definitions.some((definition) => Number.isFinite(definition.avgPlacementChange))
+        ? "upstream"
+        : "unavailable",
+      source: pageData.definitions.some((definition) => Number.isFinite(definition.avgPlacementChange))
+        ? "metatft"
+        : null,
+      windowHours: 72,
+      threshold: 0.1
+    },
     query,
     source: {
       endpoint: "/tft-comps-api/comps_stats",

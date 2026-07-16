@@ -394,11 +394,12 @@ test("emblems use the shared item catalog for details, locking, policy, and gene
 
   const details = await handleRecommendRequest({ input: "观星者纹章有什么效果？" }, runtime);
   const locked = planQuery("霞加入观星者纹章", { catalog });
-  const generic = await recommendForInput("霞加入纹章", {
+  const genericInputs = ["霞加入纹章", "霞加入转职"];
+  const genericResults = await Promise.all(genericInputs.map((input) => recommendForInput(input, {
     catalog,
     response: buildRows,
     useSession: false
-  });
+  })));
 
   assert.equal(catalog.itemByApiName.get(emblemApiName).category, "emblem");
   assert.equal(details.payload.type, "item_details");
@@ -406,8 +407,10 @@ test("emblems use the shared item catalog for details, locking, policy, and gene
   assert.equal(details.payload.item.effect, "携带者获得观星者羁绊。");
   assert.deepEqual(locked.query.ownedItems, [emblemApiName]);
   assert.equal(locked.query.itemPolicy, "include_special");
-  assert.equal(generic.clarification.reason, "missing_specific_emblem");
-  assert.equal(generic.clarification.blocking, true);
+  for (const [index, generic] of genericResults.entries()) {
+    assert.equal(generic.clarification.reason, "missing_specific_emblem", genericInputs[index]);
+    assert.equal(generic.clarification.blocking, true, genericInputs[index]);
+  }
 });
 
 test("all-emblem wording clarifies while an explicitly excluded emblem remains an exclusion", async () => {

@@ -38,6 +38,7 @@
           <button type="button" id="settings-button" class="icon-button" data-i18n-title="settings" data-i18n-aria="settings" title="设置" aria-label="设置" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.95 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.58 15 1.7 1.7 0 0 0 3 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.95a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.58 1.7 1.7 0 0 0 10 3h4v.08a1.7 1.7 0 0 0 1.03 1.52 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.13.38.5.95 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
           </button>
+          <div class="ai-quota hidden" id="ai-quota" aria-live="polite"></div>
           <div class="status" id="status" data-state="ready" aria-live="polite"><span class="status-dot"></span><span data-i18n="statusReady">就绪</span></div>
         </div>
       </header>
@@ -130,7 +131,7 @@
               <small id="runtime-detail">-</small>
             </section>
 
-            <section class="settings-section maintenance-entry" aria-label="维护">
+            <section class="settings-section maintenance-entry admin-only" aria-label="维护">
               <div>
                 <strong>装备目录审核</strong>
                 <small>检查名称、来源、可用性、详情与 override</small>
@@ -138,7 +139,7 @@
               <button type="button" id="open-item-audit-button">打开</button>
             </section>
 
-            <details class="settings-section alias-review">
+            <details class="settings-section alias-review admin-only">
               <summary data-i18n="aliasReview">别名审核（高级）</summary>
               <div class="alias-head">
                 <strong data-i18n="aliases">别名</strong>

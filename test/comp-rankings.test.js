@@ -66,6 +66,88 @@ test("page response adapters preserve cluster identity and compute the same publ
   assert.equal(row.stats.pickRate, 0.01);
 });
 
+test("page stats adapter accepts MetaTFT's current space-delimited placement payload", () => {
+  const response = structuredClone(fixture.compsStats);
+  response.results = response.results.map((row) => ({
+    ...row,
+    places: Array.isArray(row.places) ? row.places.join(" ") : row.places
+  }));
+  const stats = normalizeCompsStatsResponse(response);
+  const row = stats.rows.find((entry) => entry.clusterId === "409019");
+
+  assert.equal(stats.totalGames, 100000);
+  assert.equal(row.stats.games, 1000);
+  assert.equal(row.stats.avgPlacement, 3.3);
+  assert.equal(row.stats.pickRate, 0.01);
+});
+
+test("comp rankings preserve MetaTFT's per-comp three-day placement change and select its improving rows", () => {
+  const response = structuredClone(fixture);
+  response.compsData.results.data.comps = {
+    "409002": { "Average Placement Change": -0.31 },
+    "409003": { "Average Placement Change": -0.11 },
+    "409019": { "Average Placement Change": -0.1 },
+    "409092": { "Average Placement Change": 0.27 }
+  };
+  const normalized = normalizeCompsPageDataResponse(response.compsData);
+  assert.equal(normalized.definitions.find((row) => row.clusterId === "409002").avgPlacementChange, -0.31);
+
+  const result = buildCompRankings(response, { query: query({ minSamples: 1 }), catalog: createCatalog() });
+  assert.deepEqual(ids(result.improving), ["409003", "409002"]);
+  assert.equal(result.improving[0].trend.improving, true);
+  assert.equal(result.improving.find((comp) => comp.source.clusterId === "409002").trend.avgPlacementChange, -0.31);
+  assert.equal(result.improving.some((comp) => comp.source.clusterId === "409019"), false);
+});
+
+test("daily comp trends reproduce MetaTFT's cold-start three-day improvement values", () => {
+  const response = structuredClone(fixture);
+  delete response.compsData.results.data.comps;
+  const changes = {
+    "409019": [4.51, 4.13],
+    "409002": [4.47, 4.22],
+    "409003": [4.49, 4.31]
+  };
+  for (const [clusterId, [baseline, latest]] of Object.entries(changes)) {
+    response.compsData.results.data.cluster_details[clusterId].trends = [
+      { day: "2026-07-13T00:00:00.000Z", count: 1000, avg: baseline },
+      { day: "2026-07-14T00:00:00.000Z", count: 1100, avg: baseline - 0.03 },
+      { day: "2026-07-15T00:00:00.000Z", count: 1200, avg: latest + 0.04 },
+      { day: "2026-07-16T00:00:00.000Z", count: 1300, avg: latest }
+    ];
+  }
+
+  const normalized = normalizeCompsPageDataResponse(response.compsData);
+  const delta = (clusterId) => normalized.definitions
+    .find((row) => row.clusterId === clusterId).avgPlacementChange;
+  assert.equal(Number(delta("409019").toFixed(2)), -0.38);
+  assert.equal(Number(delta("409002").toFixed(2)), -0.25);
+  assert.equal(Number(delta("409003").toFixed(2)), -0.18);
+
+  const result = buildCompRankings(response, { query: query({ minSamples: 1 }), catalog: createCatalog() });
+  assert.deepEqual(ids(result.improving), ["409019", "409003", "409002"]);
+  assert.ok(result.improving.every((comp) => comp.trend.source === "metatft"));
+  assert.ok(result.improving.every((comp) => comp.trend.comparedAt === "2026-07-13T00:00:00.000Z"));
+
+  const snapshot = createCompsPageSnapshot(response.compsData, response.compsStats);
+  assert.equal(Number(snapshot.compsData.results.data.comps["409019"]["Average Placement Change"].toFixed(2)), -0.38);
+  assert.equal(JSON.stringify(snapshot).includes("trends"), false);
+});
+
+test("daily comp trends match MetaTFT's incomplete-current-day fallback", () => {
+  const response = structuredClone(fixture.compsData);
+  delete response.results.data.comps;
+  response.results.data.cluster_details["409019"].trends = [
+    { day: "2026-07-13T00:00:00.000Z", count: 1000, avg: 4.5, patch: "17.7", b_patch_version: 0 },
+    { day: "2026-07-14T00:00:00.000Z", count: 1100, avg: 4.4, patch: "17.7", b_patch_version: 0 },
+    { day: "2026-07-15T00:00:00.000Z", count: 1000, avg: 4.2, patch: "17.7", b_patch_version: 0 },
+    { day: "2026-07-16T00:00:00.000Z", count: 100, avg: 3.0, patch: "17.7", b_patch_version: 0 }
+  ];
+
+  const definition = normalizeCompsPageDataResponse(response).definitions
+    .find((row) => row.clusterId === "409019");
+  assert.equal(Number(definition.avgPlacementChange.toFixed(2)), -0.3);
+});
+
 test("cache snapshot keeps only fields required to reproduce the page leaderboard", () => {
   const snapshot = createCompsPageSnapshot(fixture.compsData, fixture.compsStats);
   const serialized = JSON.stringify(snapshot);
@@ -153,6 +235,60 @@ test("comp recommendation caches one paired page response and never calls Explor
   assert.equal(dataCalls, 1);
   assert.equal(statsCalls, 1);
   assert.equal(explorerCalls, 0);
+});
+
+test("a cold-start comp trend query immediately exposes MetaTFT's official top three", async () => {
+  const compsData = structuredClone(fixture.compsData);
+  compsData.results.data.comps = {
+    "409002": { "Average Placement Change": -0.31 },
+    "409003": { "Average Placement Change": -0.22 },
+    "409019": { "Average Placement Change": -0.14 },
+    "409092": { "Average Placement Change": -0.09 }
+  };
+  const cacheStore = new MemoryCacheStore();
+  const result = await recommendForInput("当前版本阵容趋势", {
+    cacheStore,
+    catalog: createCatalog(),
+    preferences: { minSamples: 1 },
+    compsClient: {
+      async getCompsData() {
+        return compsData;
+      },
+      async getCompsStats() {
+        return fixture.compsStats;
+      }
+    }
+  });
+
+  assert.equal(result.type, "comp_rankings");
+  assert.equal(result.cache.query.hit, false);
+  assert.equal(result.trend.status, "upstream");
+  assert.deepEqual(ids(result.improving), ["409019", "409003", "409002"]);
+  assert.deepEqual(
+    Object.fromEntries(result.improving.map((comp) => [comp.source.clusterId, comp.trend.avgPlacementChange])),
+    { "409019": -0.14, "409003": -0.22, "409002": -0.31 }
+  );
+  assert.ok(result.improving.every((comp) => comp.trend.source === "metatft"));
+});
+
+test("an explicit version-trend question uses MetaTFT's three-day page window", async () => {
+  let requestedDays = null;
+  const result = await recommendForInput("当前版本阵容趋势", {
+    cacheStore: new MemoryCacheStore(),
+    catalog: createCatalog(),
+    preferences: { minSamples: 1, days: 1 },
+    compsClient: {
+      async getCompsData() { return fixture.compsData; },
+      async getCompsStats(params) {
+        requestedDays = params.days;
+        return fixture.compsStats;
+      }
+    }
+  });
+
+  assert.equal(result.query.trendRequested, true);
+  assert.equal(result.query.days, 3);
+  assert.equal(requestedDays, 3);
 });
 
 test("a rank-only follow-up inherits comp_rankings intent without leaking other intents", async () => {

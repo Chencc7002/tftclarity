@@ -69,6 +69,7 @@ const resultContentEl = document.querySelector("#result-content");
 const resultTitleEl = document.querySelector("#result-title");
 const resultRefreshButton = document.querySelector("#result-refresh-button");
 const statusEl = document.querySelector("#status");
+const aiQuotaEl = document.querySelector("#ai-quota");
 const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
 const sortSelect = document.querySelector("#sort-select");
@@ -127,9 +128,9 @@ const appShell = new AppShell({
   settingsButton,
   settingsClose,
   settingsDone,
-  onSettingsOpen: () => {
-    loadRuntimeStatus();
-    loadAliases();
+  onSettingsOpen: async () => {
+    await loadRuntimeStatus();
+    if (!state.runtimeStatus?.publicMode) await loadAliases();
   },
   titleBar
 });
@@ -276,6 +277,33 @@ function renderRuntimeStatus(runtime = {}) {
   if (parser.enabled && parser.timeoutMs) detail.push(`${parser.timeoutMs}ms`);
   if (parser.enabled && parser.apiKeyConfigured) detail.push(t("keyConfigured"));
   runtimeDetailEl.textContent = detail.join(" / ") || t("rulesFirst");
+  for (const element of document.querySelectorAll(".admin-only")) {
+    element.classList.toggle("hidden", Boolean(runtime.publicMode));
+  }
+}
+
+function renderAccessStatus(access = {}) {
+  state.access = access;
+  const quota = access.quota ?? {};
+  if (!quota.enabled) {
+    aiQuotaEl.classList.add("hidden");
+    return;
+  }
+  aiQuotaEl.classList.remove("hidden");
+  aiQuotaEl.dataset.empty = quota.remaining === 0 ? "true" : "false";
+  aiQuotaEl.textContent = quota.remaining === 0
+    ? t("aiQuotaEmpty")
+    : t("aiQuotaRemaining", { remaining: quota.remaining, limit: quota.limit });
+}
+
+async function loadAccessStatus() {
+  try {
+    const response = await fetch("/api/access");
+    const data = await response.json();
+    if (response.ok && data.ok) renderAccessStatus(data.access);
+  } catch {
+    aiQuotaEl.classList.add("hidden");
+  }
 }
 
 async function loadRuntimeStatus() {
@@ -369,6 +397,28 @@ function compUpdatedLabel(value) {
   return value ? `${t("updated")} ${formatDate(value)}` : t("updateUnavailable");
 }
 
+function renderCompTrendNotice(data, improving) {
+  if (improving.length) return "";
+  const status = data.trend?.status;
+  let message = "";
+  if (status === "warming") {
+    message = data.trend?.readyAt
+      ? t("trendWarmingReady", { value: escapeHtml(formatDate(data.trend.readyAt)) })
+      : t("trendWarming");
+  } else if (status === "local" || status === "mixed") {
+    message = t("trendNoneLocal");
+  } else if (status === "upstream") {
+    message = t("trendNoneUpstream");
+  } else if (status === "unavailable") {
+    message = t("trendUnavailable");
+  }
+  return message ? `<div class="comp-trend-notice" data-trend-status="${escapeHtml(status)}">${message}</div>` : "";
+}
+
+function compTrendSourceLabel(comp) {
+  return comp.trend?.source === "local_72h" ? t("trendSourceLocal") : t("trendSourceOfficial");
+}
+
 function renderCompUnit(unit, expanded = false) {
   const items = expanded && unit.items?.length
     ? `<span class="unit-items">${unit.items.map((item) => assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")).join("")}</span>`
@@ -416,6 +466,7 @@ function renderCompCard(comp, metricKey, index) {
 function renderCompRankings(data) {
   const sections = Object.entries(data.rankings ?? {}).filter(([, comps]) => comps?.length);
   const references = data.references ?? [];
+  const improving = data.improving ?? [];
   const stale = data.cache?.query?.stale ? t("staleCache") : data.cache?.query?.hit ? t("localCache") : t("live");
   if (!sections.length && !references.length) {
     setResponseHtml(`
@@ -425,6 +476,7 @@ function renderCompRankings(data) {
         <small>${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
       </div>
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
+      ${renderCompTrendNotice(data, improving)}
       <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
     return;
   }
@@ -435,6 +487,8 @@ function renderCompRankings(data) {
       <small title="${escapeHtml(compRankLabel(data.query?.rankFilter))}">${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))} · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
     </div>
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
+    ${renderCompTrendNotice(data, improving)}
+    ${improving.length ? `<section class="ranking-section improving-section"><h2>${t("improvingComps")}</h2>${improving.map((comp) => `<div class="improving-comp"><span class="improving-arrow" aria-hidden="true">↟</span><strong>${escapeHtml(localizedName(comp))}</strong><span>${t("avgPlacementImproved", { value: escapeHtml(Math.abs(comp.trend?.avgPlacementChange ?? 0).toFixed(2)) })}</span><small class="trend-source">${escapeHtml(compTrendSourceLabel(comp))}</small>${comp.lowSample ? `<small>${t("lowSample")}</small>` : ""}</div>`).join("")}</section>` : ""}
     ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
     ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
     ${generatedConclusionCard(data)}
@@ -1451,6 +1505,7 @@ async function requestRecommendation(refresh = false) {
     const data = await response.json();
     if (requestId !== state.requestSerial) return;
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    if (data.access) renderAccessStatus(data.access);
     renderResult(data);
     setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
   } catch (error) {
@@ -1861,3 +1916,4 @@ setLocale(getLocale());
 wallpaperController.refreshLocale();
 setRequestRunning(false);
 loadPreferences();
+loadAccessStatus();

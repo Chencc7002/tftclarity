@@ -123,6 +123,8 @@ function buildQuery(result, catalog) {
     rankFilter: asArray(query.rankFilter).slice(0, 10).map(String),
     minSamples: finite(query.minSamples),
     sort: query.sort ?? null,
+    metrics: asArray(query.metrics).map(String).slice(0, 4),
+    limit: finite(query.limit),
     assumptions: asArray(query.assumptions).map(assumptionText).filter(Boolean).slice(0, 12)
   };
 }
@@ -211,7 +213,7 @@ function buildItemSignals(recommendations) {
 }
 
 function buildItemRankings(result, catalog) {
-  return asArray(result?.itemRankings).slice(0, 3).map((entry, index) => {
+  return asArray(result?.itemRankings).slice(0, 5).map((entry, index) => {
     const lowSample = Boolean(entry.lowSample || lowSampleFor(entry.stats, result?.query));
     return {
       evidenceId: `item:${index + 1}`,
@@ -221,9 +223,14 @@ function buildItemRankings(result, catalog) {
       stable: !lowSample,
       lowSample,
       coverage: finite(entry.coverage),
-      commonPairings: asArray(entry.commonPairings).slice(0, 2).map((pairing) => ({
+      commonPairings: asArray(entry.commonPairings).slice(0, 3).map((pairing) => ({
         items: asArray(pairing.items).slice(0, 3).map((apiName) => itemRecord(apiName?.apiName ?? apiName, catalog)),
         games: finite(pairing.games)
+      })),
+      copyCounts: asArray(entry.copyCounts).slice(0, 3).map((copy) => ({
+        copyCount: finite(copy.copyCount),
+        buildCount: finite(copy.buildCount),
+        games: finite(copy.stats?.games)
       }))
     };
   });
@@ -265,59 +272,86 @@ function buildComparison(result, catalog) {
 
 function buildCompRankings(result) {
   const records = [];
-  const seen = new Set();
-  for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
-    for (const comp of asArray(comps)) {
-      if (records.length >= 3) break;
-      const key = String(comp.compId ?? comp.name ?? `${metric}:${records.length}`);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      records.push({
+  const byCompId = new Map();
+  const add = (comp, metric, rank, section = "ranking") => {
+    const key = String(comp?.compId ?? comp?.name ?? `${metric}:${rank}`);
+    let record = byCompId.get(key);
+    if (!record) {
+      record = {
         evidenceId: `comp:${records.length + 1}`,
         rank: records.length + 1,
         rankingMetric: metric,
-        compId: clipped(comp.compId ?? key, 120),
-        name: clipped(comp.name ?? comp.compId ?? key, 120),
-        stats: statsRecord(comp.stats),
-        stable: !comp.lowSample,
-        lowSample: Boolean(comp.lowSample),
-        units: asArray(comp.units).slice(0, 9).map((unit) => ({
-          apiName: String(unit.apiName),
-          name: clipped(unit.name ?? unit.apiName, 80),
-          starLevel: finite(unit.starLevel),
-          core: Boolean(unit.core),
-          items: asArray(unit.items).slice(0, 3).map((item) => ({
-            apiName: String(item.apiName ?? item),
-            name: clipped(item.name ?? item.apiName ?? item, 80)
-          }))
+        compId: clipped(comp?.compId ?? key, 120),
+        name: clipped(comp?.name ?? comp?.compId ?? key, 120),
+        stats: statsRecord(comp?.stats),
+        trend: Number.isFinite(comp?.trend?.avgPlacementChange) ? {
+          avgPlacementChange: comp.trend.avgPlacementChange,
+          improving: Boolean(comp.trend.improving),
+          source: comp.trend.source ?? null,
+          comparedAt: comp.trend.comparedAt ?? null
+        } : null,
+        stable: !comp?.lowSample,
+        lowSample: Boolean(comp?.lowSample),
+        displayRanks: [],
+        units: asArray(comp?.units).slice(0, 9).map((unit) => ({
+          name: clipped(unit?.name ?? unit?.apiName, 80),
+          starLevel: finite(unit?.starLevel),
+          avgStarLevel: finite(unit?.avgStarLevel),
+          core: Boolean(unit?.core)
         })),
-        traits: asArray(comp.traits).slice(0, 8).map((trait) => ({
-          apiName: String(trait.apiName ?? trait.filterId),
-          filterId: String(trait.filterId ?? trait.apiName),
-          name: clipped(trait.name ?? trait.apiName ?? trait.filterId, 80),
-          tier: finite(trait.tier)
+        traits: asArray(comp?.traits).slice(0, 8).map((trait) => ({
+          name: clipped(trait?.name ?? trait?.apiName ?? trait?.filterId, 80),
+          tier: finite(trait?.tier)
         }))
-      });
+      };
+      byCompId.set(key, record);
+      records.push(record);
     }
-    if (records.length >= 3) break;
-  }
-  if (records.length === 0) {
-    for (const comp of asArray(result?.references).slice(0, 3)) {
-      records.push({
-        evidenceId: `comp:${records.length + 1}`,
-        rank: records.length + 1,
-        rankingMetric: "reference",
-        compId: clipped(comp.compId ?? comp.name, 120),
-        name: clipped(comp.name ?? comp.compId, 120),
-        stats: statsRecord(comp.stats),
-        stable: false,
-        lowSample: true,
-        units: [],
-        traits: []
-      });
+    record.stable = record.stable && !comp?.lowSample;
+    record.lowSample = record.lowSample || Boolean(comp?.lowSample);
+    if (Number.isFinite(comp?.trend?.avgPlacementChange)) {
+      record.trend = {
+        avgPlacementChange: comp.trend.avgPlacementChange,
+        improving: Boolean(comp.trend.improving),
+        source: comp.trend.source ?? null,
+        comparedAt: comp.trend.comparedAt ?? null
+      };
     }
+    record.displayRanks.push({ metric, rank, section });
+  };
+
+  for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
+    asArray(comps).forEach((comp, index) => add(comp, metric, index + 1));
   }
+  asArray(result?.references).forEach((comp, index) => add({ ...comp, lowSample: true }, "reference", index + 1, "reference"));
+  asArray(result?.improving).forEach((comp, index) => add(comp, "avgPlacementChange", index + 1, "improving"));
   return records;
+}
+
+function buildCompRankingContext(result, recommendations) {
+  if ((result?.type ?? result?.query?.intent) !== "comp_rankings") return null;
+  const metricLeaders = [];
+  for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
+    const first = asArray(comps)[0];
+    const record = recommendations.find((entry) => entry.compId === first?.compId);
+    if (record) metricLeaders.push({ metric, evidenceId: record.evidenceId });
+  }
+  const displayedCardCount = Object.values(result?.rankings ?? {})
+    .reduce((count, comps) => count + asArray(comps).length, 0)
+    + asArray(result?.references).length
+    + asArray(result?.improving).length;
+  return {
+    displayedCardCount,
+    displayedCandidateCount: recommendations.length,
+    requestedMetrics: asArray(result?.query?.metrics).map(String).slice(0, 4),
+    trendStatus: result?.trend ?? null,
+    metricLeaders,
+    stableEvidenceIds: recommendations.filter((entry) => entry.stable).map((entry) => entry.evidenceId),
+    lowSampleEvidenceIds: recommendations.filter((entry) => entry.lowSample).map((entry) => entry.evidenceId),
+    directAnalysisEvidenceIds: recommendations.length <= 12
+      ? recommendations.map((entry) => entry.evidenceId)
+      : [...new Set(metricLeaders.map((entry) => entry.evidenceId))]
+  };
 }
 
 export function buildConclusionEvidence({ result, catalog, input = "", locale = "zh-CN", previousQuery = null } = {}) {
@@ -336,6 +370,7 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
       ? buildCompRankings(result)
       : comparison?.options ?? buildRecommendations(result, catalog);
   const itemSignals = intent === "unit_build_rankings" ? buildItemSignals(recommendations) : [];
+  const compRankingContext = intent === "comp_rankings" ? buildCompRankingContext(result, recommendations) : null;
   const dataStatus = sourceState(result);
   const warnings = buildWarnings(result);
   const hasLowSample = recommendations.some((entry) => entry.lowSample);
@@ -346,13 +381,28 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     request: {
       intent,
       requestedIntent: resultIntent,
-      userGoal: result?.query?.sort ?? result?.query?.primaryMetric ?? null,
+      userGoal: asArray(result?.query?.metrics).length > 0
+        ? asArray(result?.query?.metrics).map(String).slice(0, 4)
+        : result?.query?.sort ?? result?.query?.primaryMetric ?? null,
       inputSummary: clipped(input, 240),
       preferenceChanges: buildPreferenceChanges(previousQuery, result?.query, catalog)
     },
     query: buildQuery(result, catalog),
     recommendations,
     itemSignals,
+    itemRankingContext: intent === "unit_item_rankings" ? {
+      displayedCount: recommendations.length,
+      methodology: clipped(result?.itemRankingMethodology ?? "presence_once_per_complete_build", 160),
+      stableEvidenceIds: recommendations.filter((entry) => entry.stable).map((entry) => entry.evidenceId),
+      lowSampleEvidenceIds: recommendations.filter((entry) => entry.lowSample).map((entry) => entry.evidenceId),
+      stableTopHalfEvidenceIds: recommendations
+        .filter((entry) => entry.stable && entry.stats.avgPlacement !== null && entry.stats.avgPlacement < 4)
+        .map((entry) => entry.evidenceId),
+      stableBottomHalfEvidenceIds: recommendations
+        .filter((entry) => entry.stable && entry.stats.avgPlacement !== null && entry.stats.avgPlacement >= 4)
+        .map((entry) => entry.evidenceId)
+    } : null,
+    compRankingContext,
     comparison,
     warnings,
     dataStatus,
@@ -361,6 +411,10 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
       forbidCausalClaims: true,
       coreClaimsRequireItemSignal: true,
       mustQualifyUnstableCore: itemSignals.some((entry) => entry.core && !entry.stable),
+      mustAnalyzeAllDisplayedItemRankings: intent === "unit_item_rankings",
+      mustDistinguishMetricRankFromReliability: intent === "unit_item_rankings",
+      mustAnalyzeDisplayedCompRankings: intent === "comp_rankings",
+      mustAlignCompRecommendationWithRequestedMetrics: intent === "comp_rankings",
       mustMentionLowSample: hasLowSample,
       mustMentionStaleData: dataStatus.cache === "stale",
       mustAvoidWinnerClaim: unresolvedComparison

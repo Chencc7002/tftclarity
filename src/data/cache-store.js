@@ -166,6 +166,7 @@ export class MemoryCacheStore {
     this.userPreferences = new Map();
     this.itemCatalogs = new Map();
     this.domainCatalogs = new Map();
+    this.compTrendHistories = new Map();
     this.entityAliases = [];
     this.feedbackEvents = [];
     this.nextEntityAliasId = 1;
@@ -226,6 +227,14 @@ export class MemoryCacheStore {
 
   setUserPreference(key, value) {
     return this._set(this.userPreferences, key, value, null);
+  }
+
+  getCompTrendHistory(key, options = {}) {
+    return this._get(this.compTrendHistories, String(key), options);
+  }
+
+  setCompTrendHistory(key, value) {
+    return this._set(this.compTrendHistories, String(key), value, null);
   }
 
   deleteUserPreference(key) {
@@ -465,6 +474,7 @@ export class MemoryCacheStore {
     this.userPreferences.clear();
     this.itemCatalogs.clear();
     this.domainCatalogs.clear();
+    this.compTrendHistories.clear();
     this.entityAliases = [];
     this.feedbackEvents = [];
     this.nextEntityAliasId = 1;
@@ -494,6 +504,7 @@ export class JsonFileCacheStore extends MemoryCacheStore {
       this.userPreferences = hydrateMap(data.userPreferences);
       this.itemCatalogs = hydrateMap(data.itemCatalogs);
       this.domainCatalogs = hydrateMap(data.domainCatalogs);
+      this.compTrendHistories = hydrateMap(data.compTrendHistories);
       this.entityAliases = Array.isArray(data.entityAliases) ? data.entityAliases : [];
       this.feedbackEvents = Array.isArray(data.feedbackEvents) ? data.feedbackEvents : [];
       this.nextEntityAliasId = positiveInteger(data.nextEntityAliasId, this.entityAliases.length + 1);
@@ -507,13 +518,14 @@ export class JsonFileCacheStore extends MemoryCacheStore {
 
   async _persist() {
     const payload = {
-      version: 2,
+      version: 3,
       queryCache: serializeMap(this.queryCache),
       defaultContextCache: serializeMap(this.defaultContextCache),
       sessionState: serializeMap(this.sessionState),
       userPreferences: serializeMap(this.userPreferences),
       itemCatalogs: serializeMap(this.itemCatalogs),
       domainCatalogs: serializeMap(this.domainCatalogs),
+      compTrendHistories: serializeMap(this.compTrendHistories),
       entityAliases: this.entityAliases,
       feedbackEvents: this.feedbackEvents,
       nextEntityAliasId: this.nextEntityAliasId,
@@ -589,6 +601,18 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     const deleted = super.deleteUserPreference(key);
     await this._persistQueued();
     return deleted;
+  }
+
+  async getCompTrendHistory(key, options = {}) {
+    await this._ensureLoaded();
+    return super.getCompTrendHistory(key, options);
+  }
+
+  async setCompTrendHistory(key, value) {
+    await this._ensureLoaded();
+    const entry = super.setCompTrendHistory(key, value);
+    await this._persistQueued();
+    return entry;
   }
 
   async getItemCatalog(patch = "current", options = {}) {

@@ -33,10 +33,15 @@ function mentionsArtifactCategory(input) {
   return normalized.includes("神器") || /奥恩装(?!备)/.test(normalized);
 }
 
+function mentionsEmblemCategory(input) {
+  const normalized = normalizeText(input);
+  return normalized.includes("纹章") || normalized.includes("转职");
+}
+
 function parseItemCategories(input) {
   const normalized = normalizeText(input);
   const categories = [];
-  if (normalized.includes("纹章")) categories.push("emblem");
+  if (mentionsEmblemCategory(normalized)) categories.push("emblem");
   if (mentionsArtifactCategory(normalized)) categories.push("artifact");
   if (normalized.includes("光明")) categories.push("radiant");
   return uniqueValues(categories);
@@ -160,7 +165,7 @@ function parseItemPolicy(input, itemMatches = []) {
   const normalized = normalizeText(input);
   if (/(?:只看|仅看|只要|仅要|只用|仅用)普通/.test(normalized)) return "ordinary_only";
   if (normalized.includes("特殊")) return "include_special";
-  if (normalized.includes("纹章")) return "include_special";
+  if (mentionsEmblemCategory(normalized)) return "include_special";
   if (mentionsArtifactCategory(normalized)) return "include_artifact";
   if (normalized.includes("光明")) return "include_radiant";
   if (normalized.includes("普通") || categories.has("ordinary_completed")) return "ordinary_only";
@@ -240,7 +245,7 @@ function parseComparison(input, entities, excludedItems = [], itemCategories = [
   const genericSpecialChoiceRequested = categoryRankingWithoutNamedItems
     && /(?:比较|对比|二选一|铁砧|铁毡|选一个|选哪个|选择哪个)/.test(normalized);
   const itemContext = entities.items.length > 0
-    || /(?:装备|出装|神器|纹章|特殊装备|铁砧)/.test(normalized)
+    || /(?:装备|出装|神器|纹章|转职|特殊装备|铁砧)/.test(normalized)
     || (entities.units.length === 1 && /(?:还是|二选一|\bvs\.?\b)/i.test(normalized));
   const requested = relationshipRequested
     && itemContext
@@ -409,15 +414,20 @@ export function parseQuery(input, options = {}) {
     /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要).*?(?=但是|但|不过|然后|再|[,，。！？?；;]|$)/g,
     ""
   );
-  const genericEmblemActionRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}纹章/
+  const emblemCategoryRankingRequested = itemCategories.includes("emblem")
+    && /(?:哪个|哪件|什么).{0,8}(?:好|最好|最强|更好|优先)|(?:好|最好|最强|更好|优先).{0,8}(?:哪个|哪件|什么)/
+      .test(normalizedInput);
+  const genericEmblemActionRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}(?:纹章|转职)/
     .test(positiveEmblemScopeText);
   const genericEmblemRequested = (
     genericEmblemActionRequested
-    || /(?:所有|全部|任意|任何|随便).{0,3}纹章/.test(positiveEmblemScopeText)
-  ) && !activeItemMatches.some((item) => item.record?.category === "emblem");
+    || /(?:所有|全部|任意|任何|随便).{0,3}(?:纹章|转职)/.test(positiveEmblemScopeText)
+  )
+    && !emblemCategoryRankingRequested
+    && !activeItemMatches.some((item) => item.record?.category === "emblem");
   const unknownStargazerEffectRequested = parseUnknownStargazerEffect(input, entities);
   const genericSpecialComparisonRequested = comparison.requested
-    && /(?:神器|纹章|特殊装备|铁砧)/.test(normalizeText(input))
+    && /(?:神器|纹章|转职|特殊装备|铁砧)/.test(normalizeText(input))
     && comparisonItems.length < 2;
   const multipleItemRelationAmbiguous = !comparison.requested
     && allItems.length >= 2
@@ -455,6 +465,7 @@ export function parseQuery(input, options = {}) {
     metrics: compQuery?.metrics,
     limit: compQuery?.limit,
     specialMode: compQuery?.specialMode,
+    trendRequested: compQuery?.trendRequested,
     parser: {
       usedLLM: false,
       intentExplicit: hasExplicitIntent(input, comparison, ownedItems, itemCategories),

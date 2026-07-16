@@ -60,6 +60,9 @@ if (String(result.source.clusterId) !== String(clusterId)) {
 if (result.diagnostics.acceptedGroups !== visible.length) {
   throw new Error(`visible comp mismatch: page=${visible.length} result=${result.diagnostics.acceptedGroups}`);
 }
+if (!definitions.size || result.trend.status !== "upstream") {
+  throw new Error(`official comp trends were not derived on cold start: status=${result.trend.status}`);
+}
 
 console.log(JSON.stringify({
   ok: true,
@@ -72,5 +75,11 @@ console.log(JSON.stringify({
   sampleSize: result.source.sampleSize,
   definitions: definitions.size,
   visibleRows: visible.length,
+  improving: result.improving.map((comp) => ({
+    clusterId: comp.source.clusterId,
+    name: comp.name,
+    avgPlacementChange: Number(comp.trend.avgPlacementChange.toFixed(2)),
+    comparedAt: comp.trend.comparedAt
+  })),
   leaders: Object.fromEntries(Object.entries(result.rankings).map(([metric, rows]) => [metric, rows[0]?.source.clusterId ?? null]))
 }, null, 2));

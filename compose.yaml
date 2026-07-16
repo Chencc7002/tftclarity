@@ -1,0 +1,47 @@
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: 17317
+      TFT_AGENT_CACHE_STORE: sqlite
+      TFT_AGENT_CACHE_PATH: /app/.cache/tft-agent.sqlite
+      TFT_AGENT_PUBLIC_MODE: "true"
+      TFT_AGENT_SECURE_COOKIES: "true"
+      TFT_AGENT_TRUST_PROXY: "true"
+    volumes:
+      - tft_data:/app/.cache
+    expose:
+      - "17317"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    env_file:
+      - .env.production
+    ports:
+      - "80:80"
+      - "443:443"
+      - "443:443/udp"
+    volumes:
+      - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
+volumes:
+  tft_data:
+  caddy_data:
+  caddy_config:

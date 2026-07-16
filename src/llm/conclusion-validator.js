@@ -23,7 +23,15 @@ function unknownKeys(value, allowed, path, errors) {
 
 function naturalizeTechnicalTerms(value) {
   return String(value)
-    .replace(/\s*[（(]\s*(?:(?:build|item-signal):\d+\s*(?:[;,，；、/]|与|和)?\s*)+[)）]/giu, "")
+    .replace(/\bgames\s*=\s*(\d+)\b/giu, "$1场")
+    .replace(/\btop4Rate\s*=\s*(\d+(?:\.\d+)?)\s*%/giu, "前四率$1%")
+    .replace(/\bwinRate\s*=\s*(\d+(?:\.\d+)?)\s*%/giu, "登顶率$1%")
+    .replace(/\bavgPlacement\s*=\s*(\d+(?:\.\d+)?)/giu, "平均名次$1")
+    .replace(/\bcoverage\s*=\s*(\d+(?:\.\d+)?)\s*%/giu, "覆盖率$1%")
+    .replace(/\b(?:build|item(?:-signal)?):\d+\b/giu, "")
+    .replace(/\bavgPlacementChange\s*[:=]?\s*(-?\d+(?:\.\d+)?)/giu, "近3天平均名次变化 $1")
+    .replace(/[（(]\s*(?:分别)?\s*(?:见|引用|来自)?\s*(?:与|和|及|、|,|，|\s)*[)）]/gu, "")
+    .replace(/([,，、；;:：])\s*([)）])/gu, "$2")
     .replace(/\s*[（(]\s*core\s*=\s*(?:true|false)\s*[)）]/giu, "")
     .replace(/(?:为\s*)?core\s*=\s*true\b/giu, "属于核心信号")
     .replace(/(?:为\s*)?core\s*=\s*false\b/giu, "属于非核心信号")
@@ -32,16 +40,31 @@ function naturalizeTechnicalTerms(value) {
     .replace(/\bstable\s*(?:=|为)\s*(?:true|真)(?=$|[\s,，。；;）)])/giu, "被标记为稳定")
     .replace(/\bstable\s*(?:=|为)\s*(?:false|假)(?=$|[\s,，。；;）)])/giu, "被标记为不稳定")
     .replace(/\blowSample\s*(?:=|为)\s*(?:true|真)(?=$|[\s,，。；;）)])/giu, "被标记为低样本")
-    .replace(/\blowSample\s*(?:=|为)\s*(?:false|假)(?=$|[\s,，。；;）)])/giu, "未标记为低样本");
+    .replace(/\blowSample\s*(?:=|为)\s*(?:false|假)(?=$|[\s,，。；;）)])/giu, "未标记为低样本")
+    .replace(/标记为\s*unstable\b/giu, "标记为不稳定")
+    .replace(/标记为\s*stable\b/giu, "标记为稳定")
+    .replace(/\blowSample\b/gu, "低样本")
+    .replace(/\bunstable\b/gu, "不稳定")
+    .replace(/\bstable\b/gu, "稳定")
+    .replace(/被标(?:记)?为\s+(稳定|不稳定|低样本)/gu, "被标记为$1");
 }
 
-function readText(value, path, limit, errors, { nullable = false } = {}) {
+function naturalizeEvidenceReferences(value, records) {
+  let text = String(value ?? "");
+  for (const [evidenceId, record] of records ?? []) {
+    if (!record?.name || !String(evidenceId).startsWith("comp:")) continue;
+    text = text.replace(new RegExp(`(?<![A-Za-z0-9_-])${escapedPattern(evidenceId)}(?![A-Za-z0-9_-])`, "gu"), record.name);
+  }
+  return text;
+}
+
+function readText(value, path, limit, errors, { nullable = false, records = null } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string") {
     errors.push(`${path} must be a string${nullable ? " or null" : ""}`);
     return "";
   }
-  const text = naturalizeTechnicalTerms(value).trim();
+  const text = naturalizeEvidenceReferences(naturalizeTechnicalTerms(value), records).trim();
   if (!text) errors.push(`${path} must not be empty`);
   if (text.length > limit) errors.push(`${path} exceeds ${limit} characters`);
   return text;
@@ -78,6 +101,9 @@ function recordNames(record) {
   collect(record?.item);
   for (const item of record?.items ?? []) collect(item);
   for (const item of record?.representativeItems ?? []) collect(item);
+  for (const pairing of record?.commonPairings ?? []) {
+    for (const item of pairing?.items ?? []) collect(item);
+  }
   if (record?.compId) names.push(record.compId);
   if (record?.name) names.push(record.name);
   for (const unit of record?.units ?? []) {
@@ -123,15 +149,25 @@ function statsFor(records) {
 function validateNumbers(text, records, path, errors) {
   const stats = statsFor(records);
   const rates = stats.flatMap((entry) => [entry.top4Rate, entry.winRate, entry.pickRate])
-    .concat([...records].map((record) => record?.appearanceRate))
+    .concat([...records].flatMap((record) => [record?.appearanceRate, record?.coverage]))
     .filter(Number.isFinite)
     .map((value) => Number((value * 100).toFixed(1)));
-  const games = stats.map((entry) => Number(entry.games)).filter(Number.isFinite);
+  const games = stats.map((entry) => Number(entry.games))
+    .concat([...records].flatMap((record) => [
+      ...(record?.commonPairings ?? []).map((pairing) => Number(pairing?.games)),
+      ...(record?.copyCounts ?? []).map((copy) => Number(copy?.games))
+    ]))
+    .filter(Number.isFinite);
   const placements = stats.map((entry) => Number(entry.avgPlacement)).filter(Number.isFinite);
 
   for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*%/gu)) {
     const value = Number(match[1]);
-    if (!rates.some((allowed) => Math.abs(allowed - value) <= 0.051)) {
+    const approximateInteger = !match[1].includes(".")
+      && /(?:约|大约|接近|近)\s*$/u.test(text.slice(Math.max(0, match.index - 4), match.index));
+    const supported = rates.some((allowed) => approximateInteger
+      ? Math.round(allowed) === value
+      : Math.abs(allowed - value) <= 0.051);
+    if (!supported) {
       errors.push(`${path} contains unsupported percentage: ${match[0]}`);
     }
   }
@@ -159,6 +195,29 @@ function validateNames(text, names, knownCatalogNames, path, errors) {
   for (const match of text.matchAll(QUOTED_ENTITY)) {
     if (!names.has(match[1])) errors.push(`${path} contains a quoted entity absent from evidence: ${match[1]}`);
   }
+}
+
+function primaryRecordNames(record) {
+  return [
+    record?.item?.apiName,
+    record?.item?.name,
+    record?.compId,
+    record?.name
+  ].filter(Boolean).map(String);
+}
+
+function inferEvidenceIds(entry, records) {
+  const ids = Array.isArray(entry?.evidenceIds)
+    ? [...new Set(entry.evidenceIds.map(String))]
+    : [];
+  const text = String(entry?.text ?? "");
+  for (const [id, record] of records) {
+    const explicitlyReferenced = new RegExp(`(?<![A-Za-z0-9_-])${escapedPattern(id)}(?![A-Za-z0-9_-])`, "u").test(text);
+    const candidateNamed = record?.kind !== "item_core_signal" && primaryRecordNames(record)
+      .some((name) => name.length >= 2 && text.includes(name));
+    if ((explicitlyReferenced || candidateNamed) && !ids.includes(id)) ids.push(id);
+  }
+  return ids;
 }
 
 function escapedPattern(value) {
@@ -209,18 +268,17 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
       return null;
     }
     unknownKeys(entry, ENTRY_KEYS, entryPath, errors);
-    if (!Array.isArray(entry.evidenceIds) || entry.evidenceIds.length === 0 || entry.evidenceIds.length > 3) {
+    const inferredIds = inferEvidenceIds(entry, records);
+    if (!Array.isArray(entry.evidenceIds) || inferredIds.length === 0 || inferredIds.length > 3) {
       errors.push(`${entryPath}.evidenceIds must contain 1 to 3 entries`);
     }
-    const ids = Array.isArray(entry.evidenceIds)
-      ? [...new Set(entry.evidenceIds.map(String))].slice(0, 3)
-      : [];
+    const ids = inferredIds.slice(0, 3);
     const linkedRecords = [];
     for (const id of ids) {
       if (!records.has(id)) errors.push(`${entryPath}.evidenceIds contains unknown evidence: ${id}`);
       else linkedRecords.push(records.get(id));
     }
-    const text = readText(entry.text, `${entryPath}.text`, 220, errors);
+    const text = readText(entry.text, `${entryPath}.text`, 220, errors, { records });
     validateTextFacts(text, linkedRecords, evidence, catalog, `${entryPath}.text`, errors);
     return { evidenceIds: ids, text };
   }).filter(Boolean);
@@ -236,18 +294,38 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   }
 
   const records = evidenceRecords(evidence);
-  const headline = readText(rawValue.headline, "headline", 80, errors);
-  const summary = readText(rawValue.summary, "summary", 300, errors);
+  const headline = readText(rawValue.headline, "headline", 80, errors, { records });
+  const summary = readText(rawValue.summary, "summary", 300, errors, { records });
   const reasons = readEntries(rawValue.reasons, "reasons", 4, records, evidence, options.catalog, errors);
   const alternatives = readEntries(rawValue.alternatives, "alternatives", 3, records, evidence, options.catalog, errors);
-  const nextAction = readText(rawValue.nextAction, "nextAction", 200, errors);
-  const riskNotice = readText(rawValue.riskNotice, "riskNotice", 180, errors, { nullable: true });
+  const nextAction = readText(rawValue.nextAction, "nextAction", 200, errors, { records });
+  const riskNotice = readText(rawValue.riskNotice, "riskNotice", 180, errors, { nullable: true, records });
 
   const globalRecords = [...records.values()];
   for (const [path, text] of [["headline", headline], ["summary", summary], ["nextAction", nextAction], ["riskNotice", riskNotice ?? ""]]) {
     validateTextFacts(text, globalRecords, evidence, options.catalog, path, errors);
   }
   const combined = [headline, summary, nextAction, riskNotice, ...reasons.map((entry) => entry.text), ...alternatives.map((entry) => entry.text)].filter(Boolean).join("\n");
+  if (evidence?.generationRules?.mustAnalyzeAllDisplayedItemRankings) {
+    const referencedIds = new Set([...reasons, ...alternatives].flatMap((entry) => entry.evidenceIds));
+    const missing = (evidence?.recommendations ?? []).filter((record) => {
+      if (referencedIds.has(record.evidenceId)) return false;
+      return ![record?.item?.name, record?.item?.apiName]
+        .filter(Boolean)
+        .some((name) => combined.includes(name));
+    });
+    if (missing.length > 0) {
+      errors.push(`item-ranking conclusion omits displayed evidence: ${missing.map((record) => record.evidenceId).join(", ")}`);
+    }
+  }
+  if (evidence?.generationRules?.mustAnalyzeDisplayedCompRankings) {
+    const referencedIds = new Set([...reasons, ...alternatives].flatMap((entry) => entry.evidenceIds));
+    const requiredIds = evidence?.compRankingContext?.directAnalysisEvidenceIds ?? [];
+    const missing = requiredIds.filter((evidenceId) => !referencedIds.has(evidenceId));
+    if (missing.length > 0) {
+      errors.push(`comp-ranking conclusion omits displayed evidence: ${missing.join(",")}`);
+    }
+  }
   if (evidence?.generationRules?.mustMentionLowSample && !/(?:低样本|样本不足|仅供参考|不稳定)/u.test(combined)) {
     errors.push("low-sample evidence requires a risk notice");
   }

@@ -725,7 +725,8 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
   const cases = [
     ["霞的光明装备哪个最好？", "radiant", "include_radiant"],
     ["霞的神器哪个好？", "artifact", "include_artifact"],
-    ["霞的纹章哪个最好？", "emblem", "include_special"]
+    ["霞的纹章哪个最好？", "emblem", "include_special"],
+    ["霞携带什么转职最强？", "emblem", "include_special"]
   ];
 
   for (const [input, category, itemPolicy] of cases) {
@@ -766,6 +767,64 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
   assert.equal(noRadiantSamples.itemRankings.length, 0);
   assert.equal(noRadiantSamples.itemRankingReferences.length, 0);
   assert.match(noRadiantSamples.text, /没有光明装备的单件携带样本/);
+});
+
+test("Brawler emblem shorthand locks the emblem and keeps Master Yi across follow-ups", async () => {
+  const emblemApiName = "TFT17_Item_HPTankEmblemItem";
+  const catalog = createCatalog({
+    units: [{
+      apiName: "TFT17_MasterYi",
+      zhName: "易",
+      aliases: ["易", "剑圣", "无极剑圣", "master yi", "yi"]
+    }],
+    items: buildItemCatalogFromItemsResponse({
+      data: [
+        { items: emblemApiName },
+        { items: "TFT_Item_GuinsoosRageblade" },
+        { items: "TFT_Item_GiantSlayer" },
+        { items: "TFT_Item_InfinityEdge" }
+      ]
+    })
+  });
+  const rows = [
+    {
+      unit_builds: `TFT17_MasterYi&${emblemApiName}|TFT_Item_GuinsoosRageblade|TFT_Item_GiantSlayer`,
+      placement_count: [20, 18, 14, 10, 7, 5, 3, 2]
+    },
+    {
+      unit_builds: "TFT17_MasterYi&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+      placement_count: [120, 100, 90, 80, 60, 40, 30, 20]
+    }
+  ];
+  const cacheStore = new MemoryCacheStore();
+  const emblem = catalog.itemByApiName.get(emblemApiName);
+
+  assert.equal(emblem.zhName, "斗士纹章");
+  assert.equal(emblem.aliases.includes("斗转"), true);
+
+  const explicit = await recommendForInput("剑圣携带斗转", {
+    catalog,
+    response: rows,
+    cacheStore
+  });
+  assert.equal(explicit.query.unit, "TFT17_MasterYi");
+  assert.deepEqual(explicit.query.ownedItems, [emblemApiName]);
+  assert.equal(explicit.query.itemPolicy, "include_special");
+  assert.equal(explicit.query.minSamples, 0);
+  assert.equal(explicit.clarification.needsClarification, false);
+  assert.equal(explicit.rankedBuilds.length, 1);
+
+  const followUp = await recommendForInput("携带斗转", {
+    catalog,
+    response: rows,
+    cacheStore
+  });
+  assert.equal(followUp.cache.session.inherited, true);
+  assert.equal(followUp.cache.session.inheritedKeys.includes("unit"), true);
+  assert.equal(followUp.query.unit, "TFT17_MasterYi");
+  assert.deepEqual(followUp.query.ownedItems, [emblemApiName]);
+  assert.equal(followUp.clarification.needsClarification, false);
+  assert.equal(followUp.rankedBuilds.length, 1);
 });
 
 test("removing the sample threshold in a follow-up keeps the unit and uses zero", async () => {

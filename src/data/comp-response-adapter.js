@@ -79,6 +79,38 @@ function finiteNumber(value, fallback = null) {
   return Number.isFinite(number) ? number : fallback;
 }
 
+function normalizeDailyTrends(value) {
+  return asArray(value).map((row) => ({
+    day: row?.day ?? row?.date ?? null,
+    avgPlacement: finiteNumber(row?.avg ?? row?.avg_placement ?? row?.avgPlacement),
+    games: finiteNumber(row?.count ?? row?.games, 0),
+    patch: row?.patch,
+    bPatchVersion: row?.b_patch_version ?? row?.bPatchVersion
+  })).filter((row) => Number.isFinite(Date.parse(row.day))
+    && Number.isFinite(row.avgPlacement));
+}
+
+function threeDayPlacementChange(value) {
+  const trends = normalizeDailyTrends(value)
+    .sort((left, right) => Date.parse(left.day) - Date.parse(right.day));
+  if (trends.length <= 2) return null;
+  const baseline = trends[trends.length - Math.min(trends.length, 4)];
+  const latest = trends.at(-1);
+  const previous = trends.at(-2);
+  // Match MetaTFT's page logic for an incomplete current day. When yesterday
+  // has more than four times today's samples within the same patch, the page
+  // treats yesterday as the latest complete point.
+  const endpoint = previous.games > latest.games * 4
+    && previous.patch === latest.patch
+    && previous.bPatchVersion === latest.bPatchVersion
+    ? previous
+    : latest;
+  return {
+    avgPlacementChange: endpoint.avgPlacement - baseline.avgPlacement,
+    comparedAt: baseline.day
+  };
+}
+
 function normalizePageBuilds(value) {
   return asArray(value).map((row) => ({
     clusterId: String(row.cluster ?? row.cluster_id ?? row.clusterId ?? ""),
@@ -94,11 +126,28 @@ function normalizePageBuilds(value) {
 export function normalizeCompsPageDataResponse(response = {}) {
   const root = response?.results?.data ?? response?.data?.results?.data ?? response?.data ?? response;
   const details = root?.cluster_details ?? root?.clusterDetails ?? response?.cluster_details ?? {};
+  // MetaTFT keeps the three-day placement delta beside the comp definitions,
+  // not in /comps_stats. It is optional, so never infer one from current stats.
+  const trendRows = root?.comps ?? root?.comp_data?.comps ?? response?.comps ?? {};
+  const trendByCluster = new Map(Object.entries(trendRows ?? {}).map(([clusterId, row]) => [
+    String(clusterId),
+    {
+      avgPlacementChange: finiteNumber(row?.["Average Placement Change"] ?? row?.average_placement_change ?? row?.placement_change),
+      source: row?.["Trend Source"] ?? row?.trend_source ?? row?.trendSource ?? "metatft",
+      comparedAt: row?.["Compared At"] ?? row?.compared_at ?? row?.comparedAt ?? null
+    }
+  ]));
   const entries = Array.isArray(details)
     ? details.map((row) => [String(row.Cluster ?? row.cluster ?? row.cluster_id ?? row.clusterId ?? ""), row])
     : Object.entries(details ?? {});
   const definitions = entries.map(([key, row = {}], sourceIndex) => {
     const clusterId = String(row.Cluster ?? row.cluster ?? row.cluster_id ?? row.clusterId ?? key);
+    const explicitTrend = trendByCluster.get(clusterId);
+    const hasExplicitTrend = Number.isFinite(explicitTrend?.avgPlacementChange);
+    // The current MetaTFT /comps response may omit the legacy top-level
+    // `comps` delta map. The same official value is reproducible from each
+    // cluster's daily `trends` by mirroring the page's four-point calculation.
+    const dailyTrend = hasExplicitTrend ? null : threeDayPlacementChange(row.trends);
     const nameEntries = asArray(row.name);
     const nameTokens = nameEntries.length > 0
       ? nameEntries.map((entry) => typeof entry === "string" ? entry : entry?.name).filter(Boolean)
@@ -112,6 +161,11 @@ export function normalizeCompsPageDataResponse(response = {}) {
       nameString: String(row.name_string ?? row.comp_name ?? ""),
       situational: String(row.name_string ?? row.comp_name ?? "").includes("Augment"),
       centroidMax: centroid.length > 0 ? Math.max(...centroid) : null,
+      avgPlacementChange: hasExplicitTrend
+        ? explicitTrend.avgPlacementChange
+        : dailyTrend?.avgPlacementChange ?? null,
+      trendSource: hasExplicitTrend ? explicitTrend.source : dailyTrend ? "metatft" : null,
+      trendComparedAt: hasExplicitTrend ? explicitTrend.comparedAt : dailyTrend?.comparedAt ?? null,
       builds: normalizePageBuilds(row.builds).map((build) => ({
         ...build,
         clusterId: build.clusterId || clusterId
@@ -131,7 +185,11 @@ export function normalizeCompsPageDataResponse(response = {}) {
 }
 
 function placementStats(places, totalGames) {
-  const placementCount = asArray(places).slice(0, 8).map(Number);
+  const placementCount = (Array.isArray(places)
+    ? places
+    : String(places ?? "").trim().split(/[\s,]+/).filter(Boolean))
+    .slice(0, 8)
+    .map(Number);
   if (placementCount.length !== 8
     || placementCount.some((value) => !Number.isFinite(value) || value < 0)) return null;
   const games = placementCount.reduce((sum, value) => sum + value, 0);
@@ -151,7 +209,10 @@ function placementStats(places, totalGames) {
 export function normalizeCompsStatsResponse(response = {}) {
   const results = asArray(response?.results ?? response?.data?.results);
   const totalRow = results.find((row) => String(row?.cluster ?? row?.DB_Cluster ?? "") === "");
-  const totalGames = finiteNumber(totalRow?.places?.[0]);
+  const totalPlaces = Array.isArray(totalRow?.places)
+    ? totalRow.places
+    : String(totalRow?.places ?? "").trim().split(/[\s,]+/).filter(Boolean);
+  const totalGames = finiteNumber(totalPlaces[0]);
   const rejected = [];
   const rows = [];
 
@@ -207,7 +268,14 @@ export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsRespon
         data: {
           cluster_id: data.clusterId,
           tft_set: data.tftSet,
-          cluster_details: clusterDetails
+          cluster_details: clusterDetails,
+          comps: Object.fromEntries(data.definitions
+            .filter((definition) => Number.isFinite(definition.avgPlacementChange))
+            .map((definition) => [definition.clusterId, {
+              "Average Placement Change": definition.avgPlacementChange,
+              "Trend Source": definition.trendSource ?? "metatft",
+              ...(definition.trendComparedAt ? { "Compared At": definition.trendComparedAt } : {})
+            }]))
         }
       }
     },

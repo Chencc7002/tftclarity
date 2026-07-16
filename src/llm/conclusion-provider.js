@@ -120,7 +120,7 @@ export function resolveConclusionProviderConfig(options = {}, env = process.env)
     useMaxCompletionTokens: options.useMaxCompletionTokens ?? usesReasoningCompletionTokens(model),
     useStructuredOutput: options.useStructuredOutput ?? usesReasoningCompletionTokens(model),
     includeResponseFormat: options.includeResponseFormat ?? true,
-    promptVersion: String(options.promptVersion ?? "generate-conclusion.v4"),
+    promptVersion: String(options.promptVersion ?? "generate-conclusion.v8"),
     cacheTtlMs: positiveNumber(options.cacheTtlMs, 30 * 60 * 1000),
     onEvent: options.onEvent
   };

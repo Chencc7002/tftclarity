@@ -1,5 +1,13 @@
 export const ITEM_ALIAS_OVERRIDES = [
   {
+    apiName: "TFT17_Item_HPTankEmblemItem",
+    shortName: "斗士转",
+    aliases: ["斗转", "斗士转", "斗士转职", "斗士纹章"],
+    confidence: 1,
+    source: "manual_current_set_player_aliases",
+    season: "TFT17"
+  },
+  {
     apiName: "TFT_Item_GuinsoosRageblade",
     zhName: "鬼索的狂暴之刃",
     shortName: "羊刀",

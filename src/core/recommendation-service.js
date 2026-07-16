@@ -40,6 +40,7 @@ import {
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
 import { buildCompRankingQuery, isCompRankingFollowUp } from "./comp-query.js";
 import { buildCompRankings } from "./comp-ranking-service.js";
+import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
@@ -1209,6 +1210,24 @@ export async function recommendForInput(input, options = {}) {
           throw new Error(`MetaTFT comps cluster mismatch after retry: data=${dataClusterId}, stats=${finalStatsClusterId}`);
         }
         response = createCompsPageSnapshot(compsData, compsStats);
+        try {
+          response = await enrichCompResponseWithTrendHistory(response, {
+            query,
+            cacheStore,
+            now: options.now,
+            recordSnapshot: true
+          });
+        } catch (trendError) {
+          response.trend = {
+            status: "unavailable",
+            source: null,
+            windowHours: 72,
+            threshold: 0.1,
+            officialCount: 0,
+            localCount: 0
+          };
+          warnings.push(`阵容趋势历史暂不可用：${trendError.message}`);
+        }
         if (response !== undefined) {
           const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
             request: {

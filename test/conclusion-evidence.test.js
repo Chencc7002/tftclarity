@@ -13,6 +13,41 @@ const buildResult = (overrides = {}) => ({ ...structuredClone(resultFixture), ..
 
 const catalog = createCatalog();
 
+function itemRankingResult() {
+  const entries = [
+    ["TFT_Item_GuinsoosRageblade", 51, 0.961, 0.804, 1.45, 0.002],
+    ["TFT_Item_InfinityEdge", 16, 0.688, 0.063, 3.5, 0.001],
+    ["TFT_Item_GiantSlayer", 832, 0.633, 0.196, 3.78, 0.034],
+    ["TFT_Item_LastWhisper", 2437, 0.628, 0.102, 3.93, 0.1],
+    ["TFT_Item_Deathblade", 1111, 0.545, 0.075, 4.29, 0.045],
+    ["TFT_Item_RunaansHurricane", 24, 0.5, 0.208, 4.25, 0.001]
+  ];
+  return {
+    type: "unit_item_rankings",
+    query: {
+      intent: "unit_item_rankings",
+      unit: "TFT17_Xayah",
+      minSamples: 0,
+      sort: "top4_first",
+      itemPolicy: "include_special"
+    },
+    itemRankings: entries.map(([apiName, games, top4Rate, winRate, avgPlacement, coverage]) => ({
+      apiName,
+      stats: { games, top4Rate, winRate, avgPlacement },
+      coverage,
+      commonPairings: [
+        { items: [apiName, "TFT_Item_GiantSlayer"], games: 12 },
+        { items: [apiName, "TFT_Item_LastWhisper"], games: 9 },
+        { items: [apiName, "TFT_Item_Deathblade"], games: 8 }
+      ],
+      copyCounts: [{ copyCount: 1, buildCount: 4, stats: { games } }]
+    })),
+    itemRankingMethodology: "presence_once_per_complete_build",
+    source: { provider: "MetaTFT", cache: "live" },
+    cache: { query: { hit: false } }
+  };
+}
+
 test("buildConclusionEvidence creates a bounded whitelist pack with raw metrics", () => {
   const evidence = buildConclusionEvidence({
     result: buildResult({ source: { provider: "https://secret.example/api", cache: "live" } }),
@@ -55,6 +90,24 @@ test("buildConclusionEvidence marks repeated items as low-sample core trends whe
   assert.equal(evidence.itemSignals[0].lowSample, true);
   assert.equal(evidence.generationRules.mustQualifyUnstableCore, true);
   assert.equal(evidence.generationRules.mustMentionLowSample, true);
+});
+
+test("item-ranking evidence mirrors every candidate and detail displayed by the frontend", () => {
+  const evidence = buildConclusionEvidence({ result: itemRankingResult(), catalog, input: "霞带什么转职？" });
+  assert.equal(evidence.recommendations.length, 5);
+  assert.deepEqual(evidence.recommendations.map((entry) => entry.evidenceId), ["item:1", "item:2", "item:3", "item:4", "item:5"]);
+  assert.equal(evidence.recommendations[0].lowSample, true);
+  assert.equal(evidence.recommendations[2].stable, true);
+  assert.equal(evidence.recommendations[0].coverage, 0.002);
+  assert.equal(evidence.recommendations[0].commonPairings.length, 3);
+  assert.equal(evidence.recommendations[0].copyCounts[0].games, 51);
+  assert.equal(evidence.itemRankingContext.displayedCount, 5);
+  assert.deepEqual(evidence.itemRankingContext.lowSampleEvidenceIds, ["item:1", "item:2"]);
+  assert.deepEqual(evidence.itemRankingContext.stableEvidenceIds, ["item:3", "item:4", "item:5"]);
+  assert.deepEqual(evidence.itemRankingContext.stableTopHalfEvidenceIds, ["item:3", "item:4"]);
+  assert.deepEqual(evidence.itemRankingContext.stableBottomHalfEvidenceIds, ["item:5"]);
+  assert.equal(evidence.generationRules.mustAnalyzeAllDisplayedItemRankings, true);
+  assert.equal(evidence.generationRules.mustDistinguishMetricRankFromReliability, true);
 });
 
 test("buildConclusionEvidence only includes requested comparison options and preserves no-winner state", () => {
@@ -110,6 +163,36 @@ test("buildConclusionEvidence has a separate comp-ranking evidence shape", () =>
   assert.equal(evidence.recommendations[0].evidenceId, "comp:1");
   assert.equal(evidence.recommendations[0].rankingMetric, "top4Rate");
   assert.equal(evidence.recommendations[0].units[0].name, "霞");
+});
+
+test("comp-ranking evidence includes every displayed metric card and improving card", () => {
+  const comp = (compId, name, avgPlacementChange = null) => ({
+    compId,
+    name,
+    stats: { games: 1200, top4Rate: 0.6, winRate: 0.15, avgPlacement: 3.9 },
+    units: [],
+    traits: [],
+    trend: avgPlacementChange === null ? null : { avgPlacementChange, improving: avgPlacementChange < -0.1 }
+  });
+  const evidence = buildConclusionEvidence({
+    result: {
+      type: "comp_rankings",
+      query: { intent: "comp_rankings", metrics: ["top4_rate", "win_rate"], limit: 3, minSamples: 500 },
+      rankings: { top4Rate: [comp("comp-a", "阵容甲")], winRate: [comp("comp-b", "阵容乙")] },
+      references: [],
+      improving: [comp("comp-b", "阵容乙", -0.24)],
+      source: {},
+      warnings: [],
+      cache: { query: { hit: false } }
+    },
+    catalog,
+    input: "当前版本阵容趋势"
+  });
+
+  assert.equal(evidence.recommendations.length, 2);
+  assert.deepEqual(evidence.recommendations[1].displayRanks.map((entry) => entry.section), ["ranking", "improving"]);
+  assert.equal(evidence.recommendations[1].trend.avgPlacementChange, -0.24);
+  assert.deepEqual(evidence.compRankingContext.directAnalysisEvidenceIds, ["comp:1", "comp:2"]);
 });
 
 test("buildConclusionEvidence summarizes only verified query-field changes from the previous turn", () => {

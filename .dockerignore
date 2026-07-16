@@ -1,0 +1,13 @@
+.git
+.agents
+.cache
+.probe
+node_modules
+coverage
+dist
+.env
+.env.*
+!.env.example
+*.log
+*.sqlite*
+*.db*
