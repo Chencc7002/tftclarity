@@ -601,7 +601,7 @@ test("exclusions stay separate from comparison options and do not widen ordinary
 
   assert.deepEqual(compared.query.comparison.itemApiNames, [
     "TFT_Item_InfinityEdge",
-    "TFT_Item_GiantSlayer"
+    "TFT_Item_MadredsBloodrazor"
   ]);
   assert.deepEqual(compared.query.excludedItems, ["TFT_Item_GuinsoosRageblade"]);
   assert.deepEqual(compared.query.ownedItems, []);
@@ -1474,7 +1474,7 @@ test("comparison keeps explicit owned items separate from the alternatives", () 
       placement_count: [90, 80, 70, 60, 40, 30, 20, 10]
     },
     {
-      unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_GiantSlayer|TFT_Item_Deathblade",
+      unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_MadredsBloodrazor|TFT_Item_Deathblade",
       placement_count: [60, 55, 50, 45, 40, 30, 20, 10]
     }
   ];
@@ -1483,7 +1483,7 @@ test("comparison keeps explicit owned items separate from the alternatives", () 
   assert.deepEqual(result.query.ownedItems, ["TFT_Item_GuinsoosRageblade"]);
   assert.deepEqual(result.query.comparison.itemApiNames, [
     "TFT_Item_InfinityEdge",
-    "TFT_Item_GiantSlayer"
+    "TFT_Item_MadredsBloodrazor"
   ]);
   assert.equal(result.comparison.winner, "TFT_Item_InfinityEdge");
   assert.ok(result.filteredBuilds.every((build) => build.items.includes("TFT_Item_GuinsoosRageblade")));

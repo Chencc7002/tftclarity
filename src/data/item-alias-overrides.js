@@ -43,7 +43,7 @@ export const ITEM_ALIAS_OVERRIDES = [
     apiName: "TFT_Item_MadredsBloodrazor",
     zhName: "巨人杀手",
     shortName: "巨人杀手",
-    aliases: ["巨人杀手","Giant Slayer"],
+    aliases: ["巨杀", "巨人杀手", "Giant Slayer"],
     confidence: 1,
     source: "manual_historical_aliases"
   },

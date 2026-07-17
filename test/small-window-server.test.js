@@ -745,7 +745,7 @@ test("handleRecommendRequest keeps three-candidate comparison order stable", asy
       placement_count: [50, 50, 50, 50, 50, 50, 50, 50]
     },
     {
-      unit_builds: "TFT17_Xayah&TFT_Item_GiantSlayer|TFT_Item_Deathblade|TFT_Item_LastWhisper",
+      unit_builds: "TFT17_Xayah&TFT_Item_MadredsBloodrazor|TFT_Item_Deathblade|TFT_Item_LastWhisper",
       placement_count: [20, 25, 30, 35, 60, 60, 55, 55]
     }
   ];
@@ -771,7 +771,7 @@ test("handleRecommendRequest keeps three-candidate comparison order stable", asy
   assert.deepEqual(payload.results.map((entry) => entry.apiName), [
     "TFT_Item_GuinsoosRageblade",
     "TFT_Item_InfinityEdge",
-    "TFT_Item_GiantSlayer"
+    "TFT_Item_MadredsBloodrazor"
   ]);
 });
 

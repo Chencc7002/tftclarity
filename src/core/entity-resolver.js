@@ -3,8 +3,14 @@ import { normalizeAlias } from "./normalizer.js";
 
 function buildAliasCandidates(records, entityType, getTarget) {
   const candidates = [];
+  const recordsByApiName = entityType === "item"
+    ? new Map(records.map((record) => [record.apiName, record]))
+    : null;
   for (const record of records) {
-    const aliases = [record.zhName, record.shortName, record.displayName, ...(record.aliases ?? [])]
+    const replacement = recordsByApiName?.get(record.supersededBy);
+    const aliases = (replacement?.current && replacement?.obtainable
+      ? [record.apiName]
+      : [record.zhName, record.shortName, record.displayName, ...(record.aliases ?? [])])
       .filter(Boolean);
     for (const alias of aliases) {
       candidates.push({
