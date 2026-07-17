@@ -80,6 +80,21 @@ test("comp ranking follow-up keeps the intent and only replaces the rank constra
     compsData: { compOptions },
     cacheStore,
     metaTFTClient: exactCompClient(),
+    compsClient: {
+      async getCompsData() {
+        return {
+          results: {
+            data: {
+              cluster_id: 409,
+              cluster_details: {}
+            }
+          }
+        };
+      },
+      async getCompsStats() {
+        return { results: { data: {} } };
+      }
+    },
     fetchItems: false
   });
 

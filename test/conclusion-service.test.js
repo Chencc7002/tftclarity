@@ -5,7 +5,8 @@ import test from "node:test";
 import {
   MemoryCacheStore,
   createCatalog,
-  generateEvidenceBackedConclusion
+  generateEvidenceBackedConclusion,
+  makeConclusionCacheKey
 } from "../src/index.js";
 
 const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fixture.json", import.meta.url), "utf8"));
@@ -37,7 +38,22 @@ test("conclusion service validates, caches, and reuses generated content", async
   const cacheStore = new MemoryCacheStore();
   let calls = 0;
   const provider = async () => { calls += 1; return output(); };
-  const args = { result: buildResult(), catalog, input: "霞已有羊刀怎么补？", config, provider, cacheStore };
+  const args = {
+    result: buildResult(),
+    catalog,
+    input: "霞已有羊刀怎么补？",
+    config,
+    provider,
+    cacheStore,
+    semanticEvidence: [{
+      id: "item-description:rageblade",
+      documentType: "item_description",
+      text: "鬼索的狂暴之刃是当前版本目录中的装备。",
+      source: "official_catalog",
+      patch: "current",
+      visible: true
+    }]
+  };
   const first = await generateEvidenceBackedConclusion(args);
   const second = await generateEvidenceBackedConclusion(args);
   assert.equal(first.status, "generated");
@@ -45,6 +61,8 @@ test("conclusion service validates, caches, and reuses generated content", async
   assert.equal(second.cached, true);
   assert.equal(calls, 1);
   assert.equal(first.content.headline, output().headline);
+  assert.equal(first.supportingEvidence.length, 1);
+  assert.deepEqual(second.supportingEvidence, first.supportingEvidence);
 });
 
 test("conclusion service falls back on invalid output without changing the recommendation", async () => {
@@ -83,7 +101,7 @@ test("conclusion service retries once with validator feedback and accepts the co
   });
   assert.equal(conclusion.status, "generated");
   assert.equal(calls.length, 2);
-  assert.match(calls[1].validationFeedback.join("\n"), /unsupported percentage/u);
+  assert.match(JSON.stringify(calls[1].validationFeedback), /unsupported percentage/u);
 });
 
 test("conclusion service classifies non-JSON provider output as invalid output", async () => {
@@ -124,4 +142,35 @@ test("conclusion service reports disabled mode without calling a provider", asyn
   });
   assert.equal(conclusion.status, "disabled");
   assert.equal(called, false);
+});
+
+test("conclusion cache keys isolate evidence, model, base prompt and the selected intent prompt version", () => {
+  const evidence = {
+    schemaVersion: "llm_evidence_pack.v2",
+    request: { intent: "unit_item_rankings", requestedIntent: "unit_item_rankings" },
+    recommendations: []
+  };
+  const baseline = makeConclusionCacheKey(evidence, {
+    model: "model-a",
+    promptVersion: "provider.v1",
+    basePromptVersion: "base.v1",
+    intentPromptVersion: "unit-item.v1"
+  });
+  for (const config of [
+    { model: "model-b", promptVersion: "provider.v1", basePromptVersion: "base.v1", intentPromptVersion: "unit-item.v1" },
+    { model: "model-a", promptVersion: "provider.v2", basePromptVersion: "base.v1", intentPromptVersion: "unit-item.v1" },
+    { model: "model-a", promptVersion: "provider.v1", basePromptVersion: "base.v2", intentPromptVersion: "unit-item.v1" },
+    { model: "model-a", promptVersion: "provider.v1", basePromptVersion: "base.v1", intentPromptVersion: "unit-item.v2" }
+  ]) {
+    assert.notEqual(makeConclusionCacheKey(evidence, config), baseline);
+  }
+  assert.notEqual(
+    makeConclusionCacheKey({ ...evidence, schemaVersion: "llm_evidence_pack.v3" }, {
+      model: "model-a",
+      promptVersion: "provider.v1",
+      basePromptVersion: "base.v1",
+      intentPromptVersion: "unit-item.v1"
+    }),
+    baseline
+  );
 });

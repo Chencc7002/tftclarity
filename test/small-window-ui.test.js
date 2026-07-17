@@ -128,6 +128,15 @@ test("small-window renders dedicated responsive item comparison evidence", () =>
   assert.match(styles, /grid-template-columns: 1fr/);
 });
 
+test("LLM static evidence used by a conclusion is expandable in the UI", () => {
+  assert.match(appJs, /conclusion\.supportingEvidence/);
+  assert.match(appJs, /conclusion-supporting-evidence/);
+  assert.match(appJs, /t\("staticEvidence"\)/);
+  assert.match(styles, /\.conclusion-supporting-evidence/);
+  assert.match(i18n, /可展开的静态证据/);
+  assert.match(i18n, /Expandable static evidence/);
+});
+
 test("small-window renders unit and trait encyclopedia result types", () => {
   assert.match(appJs, /function renderUnitDetails/);
   assert.match(appJs, /function renderTraitDetails/);

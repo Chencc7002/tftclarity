@@ -1,4 +1,17 @@
 export const CONCLUSION_SCHEMA_VERSION = "llm_conclusion.v1";
+export const CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION = "conclusion_validation_feedback.v1";
+
+export const CONCLUSION_ERROR_CATEGORIES = Object.freeze([
+  "format_error",
+  "unsupported_number",
+  "unsupported_entity",
+  "missing_coverage",
+  "missing_risk_notice",
+  "analysis_boundary",
+  "stale_or_missing_evidence",
+  "intent_or_entity_error",
+  "provider_unavailable"
+]);
 
 const ROOT_KEYS = new Set([
   "schemaVersion", "status", "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
@@ -72,6 +85,9 @@ function readText(value, path, limit, errors, { nullable = false, records = null
 
 function evidenceRecords(evidence) {
   const records = new Map();
+  for (const record of evidence?.structuredEvidence ?? []) {
+    if (record?.evidenceId) records.set(record.evidenceId, record);
+  }
   for (const record of evidence?.recommendations ?? []) {
     if (record?.evidenceId) records.set(record.evidenceId, record);
   }
@@ -79,6 +95,9 @@ function evidenceRecords(evidence) {
     if (record?.evidenceId) records.set(record.evidenceId, record);
   }
   for (const record of evidence?.comparison?.options ?? []) {
+    if (record?.evidenceId) records.set(record.evidenceId, record);
+  }
+  for (const record of evidence?.semanticEvidence ?? []) {
     if (record?.evidenceId) records.set(record.evidenceId, record);
   }
   return records;
@@ -99,6 +118,10 @@ function recordNames(record) {
     if (typeof value.name === "string") names.push(value.name);
   };
   collect(record?.item);
+  collect(record);
+  collect(record?.metadata);
+  if (record?.metadata?.canonicalName) names.push(record.metadata.canonicalName);
+  for (const alias of record?.metadata?.aliases ?? []) names.push(alias);
   for (const item of record?.items ?? []) collect(item);
   for (const item of record?.representativeItems ?? []) collect(item);
   for (const pairing of record?.commonPairings ?? []) {
@@ -177,12 +200,85 @@ function statsFor(records) {
   return [...records].map((record) => record?.stats).filter(Boolean);
 }
 
-function validateNumbers(text, records, path, errors) {
+function collectNumericValues(value, output = new Set(), seen = new Set()) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    output.add(value);
+    return output;
+  }
+  if (!value || typeof value !== "object" || seen.has(value)) return output;
+  seen.add(value);
+  if (Array.isArray(value)) {
+    value.forEach((entry) => collectNumericValues(entry, output, seen));
+  } else {
+    Object.values(value).forEach((entry) => collectNumericValues(entry, output, seen));
+  }
+  return output;
+}
+
+function textNumericValues(value, output = new Set()) {
+  for (const match of String(value ?? "").matchAll(/(?<![A-Za-z0-9_])(-?\d+(?:\.\d+)?)(?![A-Za-z0-9_])/gu)) {
+    output.add(Number(match[1]));
+  }
+  return output;
+}
+
+function allowedNumericValues(records, evidence) {
+  const values = new Set();
+  for (const record of records) {
+    collectNumericValues(record, values);
+    if (record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))) {
+      textNumericValues(record?.text, values);
+    }
+  }
+  collectNumericValues(evidence?.query, values);
+  return values;
+}
+
+function matchesAllowedNumber(value, allowed) {
+  for (const candidate of allowed) {
+    const representations = [
+      candidate,
+      ...[0, 1, 2, 3, 4].map((digits) => Number(candidate.toFixed(digits)))
+    ];
+    if (candidate >= 0 && candidate <= 1) {
+      const percentage = candidate * 100;
+      representations.push(percentage, ...[0, 1, 2].map((digits) => Number(percentage.toFixed(digits))));
+    }
+    if (representations.some((entry) => Math.abs(entry - value) <= 0.00005)) return true;
+  }
+  return false;
+}
+
+function validateGenericNumbers(text, records, evidence, path, errors) {
+  let remaining = String(text ?? "")
+    .replace(/\d+(?:\.\d+)?\s*%/gu, " ")
+    .replace(/\d+\s*(?:场|局|个?样本)/gu, " ")
+    .replace(/(?:均名|平均名次)\s*(?:为|是|[:：])?\s*\d+(?:\.\d+)?/gu, " ")
+    .replace(/(?:提升|改善)(?:幅度)?\s*(?:为|是|[:：])?\s*\d+(?:\.\d+)?/gu, " ");
+  for (const name of [...records].flatMap(recordNames).filter((name) => /\d/u.test(name))) {
+    remaining = remaining.replace(new RegExp(escapedPattern(name), "gu"), " ");
+  }
+  const allowed = allowedNumericValues(records, evidence);
+  for (const match of remaining.matchAll(/(?<![A-Za-z0-9_])(-?\d+(?:\.\d+)?)(?![A-Za-z0-9_])/gu)) {
+    const value = Number(match[1]);
+    if (!matchesAllowedNumber(value, allowed)) {
+      errors.push(`${path} contains unsupported number: ${match[0]}`);
+    }
+  }
+}
+
+function validateNumbers(text, records, evidence, path, errors) {
   const stats = statsFor(records);
+  const semanticRates = [...records].flatMap((record) => (
+    record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))
+      ? [...String(record?.text ?? "").matchAll(/(\d+(?:\.\d+)?)\s*%/gu)].map((match) => Number(match[1]))
+      : []
+  ));
   const rates = stats.flatMap((entry) => [entry.top4Rate, entry.winRate, entry.pickRate])
     .concat([...records].flatMap((record) => [record?.appearanceRate, record?.coverage]))
     .filter(Number.isFinite)
-    .map((value) => Number((value * 100).toFixed(1)));
+    .map((value) => Number((value * 100).toFixed(1)))
+    .concat(semanticRates);
   const games = stats.map((entry) => Number(entry.games))
     .concat([...records].flatMap((record) => [
       ...(record?.commonPairings ?? []).map((pairing) => Number(pairing?.games)),
@@ -190,6 +286,9 @@ function validateNumbers(text, records, path, errors) {
     ]))
     .filter(Number.isFinite);
   const placements = stats.map((entry) => Number(entry.avgPlacement)).filter(Number.isFinite);
+  const improvements = [...records]
+    .map((record) => Number(record?.trend?.placementImprovement))
+    .filter(Number.isFinite);
 
   for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*%/gu)) {
     const value = Number(match[1]);
@@ -212,6 +311,13 @@ function validateNumbers(text, records, path, errors) {
       errors.push(`${path} contains unsupported average placement: ${match[0]}`);
     }
   }
+  for (const match of text.matchAll(/(?:提升|改善)(?:幅度)?\s*(?:为|是|[:：])?\s*(\d+(?:\.\d+)?)/gu)) {
+    const value = Number(match[1]);
+    if (!improvements.some((allowed) => Math.abs(Number(allowed.toFixed(4)) - value) <= 0.00005)) {
+      errors.push(`${path} contains unsupported trend improvement: ${match[0]}`);
+    }
+  }
+  validateGenericNumbers(text, records, evidence, path, errors);
 }
 
 function validateNames(text, names, knownCatalogNames, path, errors) {
@@ -286,7 +392,7 @@ function validateTextFacts(text, records, evidence, catalog, path, errors) {
   validateCoreClaim(text, records, evidence, path, errors);
   const names = allowedNames(evidence, records, catalog);
   validateNames(text, names, catalogNames(catalog), path, errors);
-  validateNumbers(text, records, path, errors);
+  validateNumbers(text, records, evidence, path, errors);
 }
 
 function readEntries(value, path, maxEntries, records, evidence, catalog, errors) {
@@ -318,9 +424,82 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
   }).filter(Boolean);
 }
 
+function pathFromError(message) {
+  const match = String(message).match(/^([A-Za-z][A-Za-z0-9_.\[\]-]*)\s/u);
+  return match?.[1] ?? "output";
+}
+
+function categoryForError(message) {
+  const value = String(message);
+  if (/unsupported (?:number|percentage|sample count|average placement|trend improvement)/u.test(value)) return "unsupported_number";
+  if (/entity absent|API name absent|quoted entity absent|unknown evidence/u.test(value)) return "unsupported_entity";
+  if (/omits displayed evidence/u.test(value)) return "missing_coverage";
+  if (/risk notice|freshness risk/u.test(value)) return "missing_risk_notice";
+  if (/absolute or causal|core-item claim|non-core item|cannot claim a winner|stable evidence cannot|must discuss/u.test(value)) return "analysis_boundary";
+  return "format_error";
+}
+
+function idsFromError(message) {
+  const values = String(message).match(/(?:build|item|item-signal|comparison|comp):\d+/gu) ?? [];
+  return [...new Set(values)];
+}
+
+function allowedNumbers(evidence) {
+  const values = new Set();
+  for (const record of evidenceRecords(evidence).values()) {
+    collectNumericValues(record, values);
+    if (record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))) {
+      textNumericValues(record?.text, values);
+    }
+    for (const value of Object.values(record?.stats ?? {})) {
+      if (Number.isFinite(Number(value))) values.add(Number(value));
+    }
+    for (const value of [record?.coverage, record?.appearanceRate, record?.trend?.placementImprovement, record?.trend?.emergenceScore]) {
+      if (Number.isFinite(Number(value))) values.add(Number(value));
+    }
+  }
+  return [...values].sort((left, right) => left - right);
+}
+
+export function classifyConclusionValidationErrors(errors, evidence, options = {}) {
+  return [...new Set((errors ?? []).map(String))].map((message) => {
+    const category = categoryForError(message);
+    const issue = {
+      category,
+      path: pathFromError(message),
+      message,
+      missingEvidenceIds: category === "missing_coverage" ? idsFromError(message) : [],
+      allowedValues: []
+    };
+    if (category === "unsupported_number") issue.allowedValues = allowedNumbers(evidence);
+    if (category === "unsupported_entity") {
+      issue.allowedValues = [...allowedNames(evidence, null, options.catalog)].sort().slice(0, 120);
+    }
+    return issue;
+  });
+}
+
+export function createConclusionValidationFeedback(validation, evidence, options = {}) {
+  const maxErrors = Math.max(1, Number(options.maxErrors ?? 8));
+  const issues = validation?.issues ?? classifyConclusionValidationErrors(validation?.errors ?? [], evidence, options);
+  return {
+    schemaVersion: CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION,
+    valid: false,
+    errors: issues.slice(0, maxErrors)
+  };
+}
+
 export function validateConclusionOutput(rawValue, evidence, options = {}) {
   const errors = [];
-  if (!isObject(rawValue)) return { valid: false, errors: ["conclusion output must be an object"], value: null };
+  if (!isObject(rawValue)) {
+    const objectErrors = ["conclusion output must be an object"];
+    return {
+      valid: false,
+      errors: objectErrors,
+      issues: classifyConclusionValidationErrors(objectErrors, evidence, options),
+      value: null
+    };
+  }
   unknownKeys(rawValue, ROOT_KEYS, "output", errors);
   if (rawValue.schemaVersion !== CONCLUSION_SCHEMA_VERSION) errors.push(`schemaVersion must be ${CONCLUSION_SCHEMA_VERSION}`);
   if (rawValue.status !== "ok" && rawValue.status !== "insufficient_evidence") {
@@ -372,6 +551,10 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   if (evidence?.generationRules?.mustAvoidWinnerClaim && WINNER_CLAIM.test(combined)) {
     errors.push("unresolved comparison cannot claim a winner");
   }
+  if (evidence?.generationRules?.mustUseStandardizedTrendImprovement) {
+    if (!/(?:提升|改善)/u.test(combined)) errors.push("comp-trend conclusion must discuss standardized placement improvement");
+    if (!/(?:登场|热度|使用基础|使用率)/u.test(combined)) errors.push("comp-trend conclusion must discuss pick-rate foundation");
+  }
 
   const value = {
     schemaVersion: CONCLUSION_SCHEMA_VERSION,
@@ -383,5 +566,10 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
     nextAction,
     riskNotice
   };
-  return { valid: errors.length === 0, errors, value: errors.length === 0 ? value : null };
+  return {
+    valid: errors.length === 0,
+    errors,
+    issues: classifyConclusionValidationErrors(errors, evidence, options),
+    value: errors.length === 0 ? value : null
+  };
 }

@@ -16,6 +16,7 @@ import {
   MetaTFTClient,
   SESSION_LAST_QUERY_KEY,
   SQLiteCacheStore,
+  SQLiteSemanticDocumentStore,
   applyEnabledEntityAliasesFromStore,
   buildEntityAliasOverrideDraft,
   buildItemCatalogAudit,
@@ -26,6 +27,9 @@ import {
   buildUnitCatalogFromExplorerRows,
   createCatalog,
   createConclusionProviderFromConfig,
+  createEmbeddingProviderFromConfig,
+  createIntentEnvelope,
+  createPersistentSemanticRetriever,
   createAssetResolver,
   createStructuredParserFromConfig,
   fetchOfficialTftEntityDetails,
@@ -39,7 +43,10 @@ import {
   parseQuery,
   recommendForInput,
   generateEvidenceBackedConclusion,
+  RetrievalPlanner,
   resolveConclusionProviderConfig,
+  resolveEmbeddingProviderConfig,
+  retrieveSemanticPlan,
   resolveStructuredParserConfig
 } from "../index.js";
 
@@ -49,8 +56,10 @@ export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
 export const DEFAULT_COMP_RANKINGS_TIMEOUT_MS = 8000;
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
+const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
 const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url));
 const ASSET_RESOLVER = createAssetResolver();
+const DETAIL_RETRIEVAL_PLANNER = new RetrievalPlanner();
 const CONTENT_TYPES = new Map([
   [".html", "text/html; charset=utf-8"],
   [".css", "text/css; charset=utf-8"],
@@ -238,6 +247,52 @@ function createSmallWindowConclusionGenerator(options = {}, env = process.env) {
   };
 }
 
+export function resolveSmallWindowSemanticConfig(options = {}, env = process.env) {
+  const config = resolveEmbeddingProviderConfig({
+    ...(options.embeddingConfig ?? {}),
+    mode: options.embeddingMode ?? options.embeddingConfig?.mode,
+    provider: options.embeddingProviderName ?? options.embeddingConfig?.provider,
+    endpoint: options.embeddingEndpoint ?? options.embeddingConfig?.endpoint,
+    model: options.embeddingModel ?? options.embeddingConfig?.model,
+    apiKey: options.embeddingApiKey ?? options.embeddingConfig?.apiKey,
+    dimensions: options.embeddingDimensions ?? options.embeddingConfig?.dimensions,
+    timeoutMs: options.embeddingTimeoutMs ?? options.embeddingConfig?.timeoutMs,
+    batchSize: options.embeddingBatchSize ?? options.embeddingConfig?.batchSize,
+    allowUnauthenticated: options.embeddingAllowUnauthenticated ?? options.embeddingConfig?.allowUnauthenticated
+  }, env);
+  return {
+    ...config,
+    indexPath: resolve(String(options.semanticIndexPath ?? env.TFT_AGENT_SEMANTIC_INDEX_PATH ?? DEFAULT_SEMANTIC_INDEX_PATH)),
+    locale: String(options.semanticLocale ?? env.TFT_AGENT_SEMANTIC_LOCALE ?? "zh-CN")
+  };
+}
+
+async function createSmallWindowSemanticRuntime(options = {}, env = process.env) {
+  if (options.semanticRetriever) {
+    return {
+      semanticRetriever: options.semanticRetriever,
+      semanticDocumentStore: options.semanticDocumentStore ?? null,
+      semanticConfig: { enabled: true, provider: "injected", model: options.embeddingModel ?? "injected-model" }
+    };
+  }
+  const config = resolveSmallWindowSemanticConfig(options, env);
+  if (!config.enabled) {
+    return { semanticRetriever: null, semanticDocumentStore: null, semanticConfig: config };
+  }
+  if (!config.configured && !options.embeddingProvider) {
+    throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
+  }
+  const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
+  const provider = options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
+    fetchImpl: options.embeddingFetch
+  });
+  return {
+    semanticRetriever: createPersistentSemanticRetriever({ store, provider }),
+    semanticDocumentStore: store,
+    semanticConfig: config
+  };
+}
+
 function summarizeCacheStore(options = {}, cacheStore) {
   if (options.cacheStoreInfo) {
     const type = String(options.cacheStoreInfo.type ?? "unknown");
@@ -295,6 +350,18 @@ function summarizeConclusionConfig(config = {}) {
   return summary;
 }
 
+function summarizeSemanticConfig(config = {}, store = null) {
+  return {
+    enabled: Boolean(config.enabled),
+    persistent: Boolean(store instanceof SQLiteSemanticDocumentStore),
+    provider: String(config.provider ?? "off"),
+    model: config.model ? String(config.model) : null,
+    indexConfigured: Boolean(config.indexPath),
+    endpointConfigured: Boolean(config.endpoint),
+    apiKeyConfigured: Boolean(config.apiKey)
+  };
+}
+
 export function getSmallWindowRuntimeStatus(runtime = {}) {
   const cacheStoreInfo = runtime.cacheStoreInfo ?? summarizeCacheStore({}, runtime.cacheStore);
   const cachePath = cacheStoreInfo.cachePath ?? cacheStoreInfo.path ?? null;
@@ -309,6 +376,7 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
     cache,
     structuredParser: summarizeStructuredParserConfig(runtime.structuredParserConfig ?? {}),
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
+    semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
     requests: {
       explorerTimeoutMs: runtime.requestTimeouts?.explorerTimeoutMs ?? null,
       catalogTimeoutMs: runtime.requestTimeouts?.catalogTimeoutMs ?? null,
@@ -358,6 +426,56 @@ function itemName(apiName, catalog) {
 function itemDetailsName(apiName, catalog) {
   const item = catalog.itemByApiName.get(apiName);
   return item?.preferredDisplayName ?? item?.zhName ?? item?.shortName ?? apiName;
+}
+
+function attachDetailRetrievalMetadata(payload, input, catalog) {
+  const intent = payload?.type;
+  const entityType = intent === "unit_details"
+    ? "unit"
+    : intent === "item_details"
+      ? "item"
+      : intent === "trait_details"
+        ? "trait"
+        : null;
+  if (!entityType) return payload;
+  const apiName = entityType === "unit"
+    ? payload?.unit?.apiName
+    : entityType === "item"
+      ? payload?.item?.apiName
+      : payload?.trait?.apiName;
+  if (!apiName) return payload;
+  const entityMatch = {
+    entityType,
+    apiName,
+    alias: payload?.[entityType]?.name ?? apiName,
+    matchType: "exact_catalog",
+    confidence: 1
+  };
+  const parsed = {
+    rawInput: String(input ?? ""),
+    intent,
+    confidence: 1,
+    parser: { entityMatches: [entityMatch] },
+    ...(entityType === "unit" ? { unit: apiName } : {}),
+    ...(entityType === "item" ? { ownedItems: [apiName] } : {}),
+    ...(entityType === "trait" ? { traitFilters: [apiName] } : {})
+  };
+  const query = {
+    intent,
+    warnings: [],
+    ...(entityType === "unit" ? { unit: apiName } : {}),
+    ...(entityType === "item" ? { lockedItems: [apiName] } : {}),
+    ...(entityType === "trait" ? { traitFilters: [apiName] } : {})
+  };
+  const intentEnvelope = createIntentEnvelope({
+    input,
+    parsed,
+    query,
+    validation: { valid: true, errors: [], warnings: [] },
+    catalog
+  });
+  const retrievalPlan = DETAIL_RETRIEVAL_PLANNER.plan(intentEnvelope);
+  return { ...payload, intentEnvelope, retrievalPlan };
 }
 
 function isItemDetailsQuestion(input) {
@@ -480,7 +598,7 @@ async function serializeItemDetailsQuery(input, catalog, runtime) {
 }
 
 function serializeCompRankingEntityClarification(parsed, catalog) {
-  if (parsed?.intent !== "comp_rankings" || !hasUnsupportedCompRankingEntities(parsed)) return null;
+  if (!["comp_rankings", "comp_trends"].includes(parsed?.intent) || !hasUnsupportedCompRankingEntities(parsed)) return null;
   if (parsed.parser?.genericEmblemRequested) {
     const question = "请指定要加入的具体纹章或羁绊，例如“观星者纹章”。";
     return {
@@ -488,7 +606,7 @@ function serializeCompRankingEntityClarification(parsed, catalog) {
       type: "clarification",
       text: question,
       answer: { summary: question },
-      query: { intent: "clarification", requestedIntent: "comp_rankings", warnings: [] },
+      query: { intent: "clarification", requestedIntent: parsed.intent, warnings: [] },
       clarification: {
         needsClarification: true,
         blocking: true,
@@ -514,7 +632,7 @@ function serializeCompRankingEntityClarification(parsed, catalog) {
     answer: { summary: question },
     query: {
       intent: "clarification",
-      requestedIntent: "comp_rankings",
+      requestedIntent: parsed.intent,
       unit: parsed.unit ?? null,
       ownedItems: parsed.ownedItems ?? [],
       excludedItems: parsed.excludedItems ?? [],
@@ -686,7 +804,7 @@ function sourcePayload(result, meta = {}) {
     provider: "MetaTFT",
     endpoint: result.type === "unit_item_comparison"
       ? result.source?.endpoint ?? "tft-explorer-api/unit_builds"
-      : result.plan?.path ?? (result.type === "comp_rankings"
+      : result.plan?.path ?? (["comp_rankings", "comp_trends"].includes(result.type)
         ? "/tft-explorer-api/exact_units_traits2"
         : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
     patch: result.query?.patch ?? null,
@@ -1000,17 +1118,17 @@ export async function resetSmallWindowPreferences(runtime, scope = null) {
 
 function serializeRecommendation(result, catalog, meta = {}) {
   const { itemDetails, ...publicMeta } = meta;
-  if (result.type === "comp_rankings") {
+  if (result.type === "comp_rankings" || result.type === "comp_trends") {
     return serializeCompRankings(result, publicMeta);
   }
   const query = result.query ?? {};
-  if (result.type === "unit_item_rankings") {
+  if (result.type === "unit_item_rankings" || result.type === "unit_emblem_rankings") {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
     const best = itemRankings[0] ?? null;
     return {
       ok: true,
-      type: "unit_item_rankings",
+      type: result.type,
       text: result.text,
       unit: query.unit ? {
         apiName: query.unit,
@@ -1314,7 +1432,7 @@ function serializeCompRankings(result, meta = {}) {
   }
   return {
     ok: true,
-    type: "comp_rankings",
+    type: result.type === "comp_trends" ? "comp_trends" : "comp_rankings",
     rankings,
     improving: (result.improving ?? []).map(serializeComp),
     references: (result.references ?? []).map(serializeComp),
@@ -1404,6 +1522,9 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParserConfig: options.structuredParserConfig ?? null,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
+    semanticRetriever: options.semanticRetriever ?? null,
+    semanticDocumentStore: options.semanticDocumentStore ?? null,
+    semanticConfig: options.semanticConfig ?? { enabled: false, provider: "off" },
     accessService: options.accessService ?? null,
     recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput
   };
@@ -1430,12 +1551,14 @@ export function createSmallWindowCacheStore(options = {}) {
 export async function createSmallWindowRuntimeAsync(options = {}, env = process.env) {
   const structuredParserRuntime = createSmallWindowStructuredParser(options, env);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
+  const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
   const runtimeOptions = {
     ...options,
     ...requestTimeouts,
     ...structuredParserRuntime,
-    ...conclusionRuntime
+    ...conclusionRuntime,
+    ...semanticRuntime
   };
 
   const finalizeRuntime = (runtime) => {
@@ -1845,11 +1968,17 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       aliasMemory,
       preferences
     };
-    return { statusCode: 200, payload: entityDetailsPayload };
+    return {
+      statusCode: 200,
+      payload: attachDetailRetrievalMetadata(entityDetailsPayload, input, catalog)
+    };
   }
   const itemDetailsPayload = await serializeItemDetailsQuery(input, catalog, runtime);
   if (itemDetailsPayload) {
-    return { statusCode: 200, payload: itemDetailsPayload };
+    return {
+      statusCode: 200,
+      payload: attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog)
+    };
   }
   const parsedForIntent = parseQuery(input, { catalog });
   const compEntityClarification = serializeCompRankingEntityClarification(parsedForIntent, catalog);
@@ -1882,6 +2011,8 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     bypassDefaultContextCache: Boolean(body.refresh),
     structuredParser: requestRuntime.structuredParser,
     useStructuredParser: structuredParserMode,
+    semanticRetriever: requestRuntime.semanticRetriever,
+    semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
     sessionKey
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
@@ -1897,12 +2028,17 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     }
   }
 
-  // Comp rankings are already an evidence-first dashboard. Keep this route
-  // deterministic and avoid spending an LLM request until its conclusion UX
-  // is explicitly re-enabled.
-  const generatedConclusion = result.type === "comp_rankings"
-    ? { status: "skipped", reason: "comp_rankings_disabled" }
-    : await generateEvidenceBackedConclusion({
+  let semanticEvidence = [];
+  if (requestRuntime.semanticRetriever && result.retrievalPlan?.semanticQueries?.length) {
+    try {
+      semanticEvidence = await retrieveSemanticPlan(result.retrievalPlan, requestRuntime.semanticRetriever, {
+        onFallback: requestRuntime.semanticConfig?.onFallback
+      });
+    } catch (error) {
+      result.query.warnings = [...new Set([...(result.query?.warnings ?? []), `语义索引检索失败：${error.message}`])];
+    }
+  }
+  const generatedConclusion = await generateEvidenceBackedConclusion({
       result,
       catalog,
       input,
@@ -1911,7 +2047,8 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       provider: requestRuntime.conclusionProvider,
       cacheStore: runtime.cacheStore,
       requestEnabled: preferences.conclusionMode !== "off",
-      bypassCache: Boolean(body.refresh)
+      bypassCache: Boolean(body.refresh),
+      semanticEvidence
     });
 
   const payload = serializeRecommendation(result, catalog, {
@@ -1926,6 +2063,8 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     ...(payload.answer ?? {}),
     generatedConclusion
   };
+  if (result.intentEnvelope) payload.intentEnvelope = result.intentEnvelope;
+  if (result.retrievalPlan) payload.retrievalPlan = result.retrievalPlan;
   Object.assign(payload, conversationMeta({ conversationId }));
   if (context.accessService && context.visitor) {
     payload.access = context.accessService.publicStatus(context.visitor);

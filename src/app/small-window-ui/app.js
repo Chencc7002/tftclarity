@@ -961,6 +961,13 @@ function generatedConclusionCard(data) {
   const content = conclusion.content;
   const reasons = (content.reasons ?? []).map((reason) => `<li>${escapeHtml(reason.text)}</li>`).join("");
   const alternatives = (content.alternatives ?? []).map((alternative) => `<li>${escapeHtml(alternative.text)}</li>`).join("");
+  const supportingEvidence = (conclusion.supportingEvidence ?? []).map((evidence) => `
+    <li>
+      <strong>${escapeHtml(evidence.type ?? "")}</strong>
+      <span>${escapeHtml(evidence.text ?? "")}</span>
+      <small>${escapeHtml([evidence.source, evidence.patch].filter(Boolean).join(" · "))}</small>
+    </li>
+  `).join("");
   const feedback = state.explanationFeedback;
   return `<section class="generated-conclusion" data-conclusion-status="generated">
     <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
@@ -968,6 +975,7 @@ function generatedConclusionCard(data) {
     <p>${escapeHtml(content.summary)}</p>
     ${reasons ? `<ul>${reasons}</ul>` : ""}
     ${alternatives ? `<details><summary>${t("alternatives")}</summary><ul>${alternatives}</ul></details>` : ""}
+    ${supportingEvidence ? `<details class="conclusion-supporting-evidence"><summary>${t("staticEvidence")}</summary><ul>${supportingEvidence}</ul></details>` : ""}
     ${content.nextAction ? `<div class="conclusion-action"><strong>${t("nextAction")}</strong><span>${escapeHtml(content.nextAction)}</span></div>` : ""}
     ${content.riskNotice ? `<div class="conclusion-risk">${escapeHtml(content.riskNotice)}</div>` : ""}
     <div class="conclusion-footer"><small>${escapeHtml(conclusion.model ?? "LLM")} · ${formatNumber(conclusion.latencyMs ?? 0)}ms</small><div class="result-feedback" data-explanation-feedback-group><button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button><button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button><span class="feedback-status">${feedback ? t("recorded") : ""}</span></div></div>
@@ -1129,8 +1137,8 @@ function renderCurrentResult(data) {
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
-  else if (data.type === CompRankingResult.type) renderCompRankings(data);
-  else if (data.type === ItemRankingResult.type) renderItemRankings(data);
+  else if (data.type === CompRankingResult.type || data.type === "comp_trends") renderCompRankings(data);
+  else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else renderRecommendationResult(data);
 }
 

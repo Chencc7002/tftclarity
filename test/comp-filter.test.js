@@ -371,6 +371,7 @@ test("build ranking, single-item, completion, and comparison work with applied a
   const cases = [
     ["霞什么三件装备最强？", "unit_build_rankings"],
     ["霞哪个单件装备表现最好？", "unit_item_rankings"],
+    ["霞的核心装备是什么？", "unit_item_rankings"],
     ["霞已经有羊刀，剩下两件怎么带？", "unit_build_completion"],
     ["霞的羊刀和无尽哪个更好？", "unit_item_comparison"]
   ];

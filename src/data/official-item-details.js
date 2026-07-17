@@ -68,6 +68,25 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
       sourceUrl
     });
   }
+  let payloadMetadata = typeof payload === "object" && payload ? payload : null;
+  if (!payloadMetadata && typeof payload === "string") {
+    try {
+      payloadMetadata = JSON.parse(payload.trim().replace(/^\uFEFF/u, ""));
+    } catch {
+      payloadMetadata = null;
+    }
+  }
+  Object.defineProperty(byApiName, "meta", {
+    value: Object.freeze({
+      version: payloadMetadata?.version ?? null,
+      season: payloadMetadata?.season ?? null,
+      updatedAt: payloadMetadata?.time ?? payloadMetadata?.updatedAt ?? null,
+      sourceUrl
+    }),
+    enumerable: false,
+    configurable: false,
+    writable: false
+  });
   return byApiName;
 }
 

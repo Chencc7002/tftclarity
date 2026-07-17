@@ -61,6 +61,76 @@ test("small-window HTTP serialization adds generatedConclusion without replacing
   assert.equal(payload.text, buildConclusionResult().text);
 });
 
+test("semantic evidence sent to the conclusion model is returned as expandable safe evidence", async () => {
+  let providerRequest;
+  const result = buildConclusionResult({
+    retrievalPlan: {
+      schemaVersion: "retrieval_plan.v1",
+      intent: "unit_build_completion",
+      structuredQueries: [],
+      semanticQueries: [{
+        id: "semantic:static",
+        query: "霞已有羊刀怎么补？",
+        types: ["item_description"],
+        patch: "current",
+        locale: "zh-CN",
+        topK: 2
+      }],
+      evidenceBudget: { maxItems: 40, maxCharacters: 16000 },
+      requiredEvidence: [],
+      promptKey: "unit-build-rankings",
+      needsClarification: false,
+      warnings: []
+    }
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    metaTFTClient: {},
+    compsClient: {},
+    fetchItems: false,
+    semanticRetriever: {
+      async search() {
+        return [{
+          id: "current:zh-CN:item_description:TFT_Item_GuinsoosRageblade",
+          documentType: "item_description",
+          score: 0.97,
+          apiName: "TFT_Item_GuinsoosRageblade",
+          patch: "current",
+          locale: "zh-CN",
+          source: "tencent_official_tft_catalog",
+          metadata: {
+            content: "羊刀每秒获得7%可叠加的攻击速度。",
+            canonicalName: "鬼索的狂暴之刃",
+            aliases: ["羊刀"]
+          }
+        }];
+      }
+    },
+    conclusionProvider: async (request) => {
+      providerRequest = request;
+      return providerOutput();
+    },
+    conclusionGeneratorConfig: {
+      enabled: true,
+      mode: "on",
+      provider: "injected",
+      model: "fixture-model"
+    },
+    recommendForInputImpl: async () => structuredClone(result)
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({
+    input: "霞已有羊刀怎么补？",
+    preferences: { conclusionMode: "on" }
+  }, runtime);
+  assert.equal(statusCode, 200);
+  assert.equal(providerRequest.evidence.semanticEvidence.length, 1);
+  assert.equal("score" in providerRequest.evidence.semanticEvidence[0], false);
+  assert.equal(payload.answer.generatedConclusion.supportingEvidence.length, 1);
+  assert.match(payload.answer.generatedConclusion.supportingEvidence[0].text, /7%/u);
+});
+
 test("small-window keeps HTTP 200 and template facts when the provider fails", async () => {
   const runtime = runtimeWith(async () => { throw new Error("offline"); });
   const original = buildConclusionResult();
@@ -71,7 +141,7 @@ test("small-window keeps HTTP 200 and template facts when the provider fails", a
   assert.equal(payload.cards[0].stats.games, original.rankedBuilds[0].stats.games);
 });
 
-test("comp ranking requests skip the LLM conclusion provider", async () => {
+test("comp ranking requests with no visible evidence safely skip the LLM conclusion provider", async () => {
   let providerCalls = 0;
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
@@ -97,10 +167,8 @@ test("comp ranking requests skip the LLM conclusion provider", async () => {
   const { statusCode, payload } = await handleRecommendRequest({ input: "当前版本阵容" }, runtime);
   assert.equal(statusCode, 200);
   assert.equal(providerCalls, 0);
-  assert.deepEqual(payload.answer.generatedConclusion, {
-    status: "skipped",
-    reason: "comp_rankings_disabled"
-  });
+  assert.equal(payload.answer.generatedConclusion.status, "skipped");
+  assert.equal(payload.answer.generatedConclusion.reason, "unsafe_state");
 });
 
 test("conclusion configuration and runtime status never expose endpoint or API key values", () => {

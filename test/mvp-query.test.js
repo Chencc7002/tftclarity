@@ -737,7 +737,7 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
       catalog,
       preferences: { minSamples: 100 }
     });
-    assert.equal(result.type, "unit_item_rankings", `${input}:${JSON.stringify({
+    assert.equal(result.type, category === "emblem" ? "unit_emblem_rankings" : "unit_item_rankings", `${input}:${JSON.stringify({
       clarification: result.clarification,
       unit: result.query.unit,
       ambiguities: result.parsed.parser.entityAmbiguities,

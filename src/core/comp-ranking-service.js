@@ -219,7 +219,7 @@ export function buildCompRankings(response = {}, options = {}) {
   }
 
   return {
-    type: "comp_rankings",
+    type: query.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
     rankings,
     improving,
     references,

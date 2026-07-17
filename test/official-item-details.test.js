@@ -41,6 +41,27 @@ test("official TFT equipment details preserve effects and resolve recipe compone
   assert.doesNotMatch(handOfJustice.effect, /<br>|<li>/);
 });
 
+test("official TFT equipment catalog retains safe version metadata for semantic provenance", () => {
+  const catalog = buildOfficialTftItemDetailsCatalog({
+    version: "16.14",
+    season: "TFT17",
+    time: "2026-07-15T00:00:00Z",
+    data: [{
+      equipId: "100",
+      englishName: "TFT_Item_Test",
+      name: "测试装备",
+      effect: "测试效果",
+      formula: ""
+    }]
+  });
+  assert.deepEqual(catalog.meta, {
+    version: "16.14",
+    season: "TFT17",
+    updatedAt: "2026-07-15T00:00:00Z",
+    sourceUrl: "https://game.gtimg.cn/images/lol/act/img/tft/js/equip.js"
+  });
+});
+
 test("current Hand of Justice uses 正义 as its display name while retaining 合剂 as a historical alias", () => {
   const item = buildItemCatalogFromItemsResponse({
     data: [{ items: "TFT_Item_UnstableConcoction", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }]

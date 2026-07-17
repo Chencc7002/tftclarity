@@ -42,8 +42,22 @@ import { buildCompRankingQuery, isCompRankingFollowUp } from "./comp-query.js";
 import { buildCompRankings } from "./comp-ranking-service.js";
 import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
+import { createIntentEnvelope } from "../retrieval/contracts.js";
+import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
+import { StructuredRetriever } from "../retrieval/structured-retriever.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
+const RETRIEVAL_PLANNER = new RetrievalPlanner();
+const SEMANTIC_INTENTS = new Set([
+  "unit_build_rankings",
+  "unit_build_completion",
+  "unit_best_3_items",
+  "unit_item_rankings",
+  "unit_item_comparison",
+  "unit_emblem_rankings",
+  "comp_rankings",
+  "comp_trends"
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -92,6 +106,46 @@ function unavailableItemDecision(query, catalog) {
 function responseTypeForQuery(query, clarification = null) {
   if (clarification?.needsClarification) return "clarification";
   return query?.intent ?? "unit_build_rankings";
+}
+
+function isCompIntent(intent) {
+  return intent === "comp_rankings" || intent === "comp_trends";
+}
+
+function createRetrievalAudit(result, input, catalog, planner = RETRIEVAL_PLANNER) {
+  const intentEnvelope = createIntentEnvelope({
+    input,
+    parsed: result?.parsed,
+    query: result?.query,
+    validation: result?.validation,
+    clarification: result?.clarification,
+    catalog
+  });
+  let retrievalPlan = null;
+  try {
+    retrievalPlan = planner.plan(intentEnvelope);
+  } catch (error) {
+    intentEnvelope.warnings = [...new Set([...intentEnvelope.warnings, `retrieval_plan_unavailable:${error.message}`])];
+  }
+  return { intentEnvelope, retrievalPlan };
+}
+
+function attachRetrievalAudit(result, input, catalog, audit = null) {
+  const value = audit ?? createRetrievalAudit(result, input, catalog);
+  result.intentEnvelope = value.intentEnvelope;
+  result.retrievalPlan = value.retrievalPlan;
+  return result;
+}
+
+function structuredQueryFor(plan, operation) {
+  return plan?.structuredQueries?.find((query) => query.operation === operation) ?? null;
+}
+
+async function executePlannedStructuredQuery(plan, operation, handler, context = {}) {
+  const query = structuredQueryFor(plan, operation);
+  if (!query) throw new Error(`RetrievalPlan does not allow structured operation: ${operation}`);
+  const retriever = new StructuredRetriever({ handlers: { [operation]: handler } });
+  return (await retriever.executeQuery(query, context)).value;
 }
 
 function itemLabel(apiName, catalog) {
@@ -167,11 +221,11 @@ function lastQueryFromSession(value) {
 
 function inheritCompRankingFromSession(parsed, sessionValue, options = {}) {
   const previousQuery = lastQueryFromSession(sessionValue);
-  if (previousQuery?.intent !== "comp_rankings" || !isCompRankingFollowUp(parsed, previousQuery)) {
+  if (!isCompIntent(previousQuery?.intent) || !isCompRankingFollowUp(parsed, previousQuery)) {
     return { parsed, inherited: false, inheritedKeys: [] };
   }
 
-  const next = { ...parsed, intent: "comp_rankings" };
+  const next = { ...parsed, intent: isCompIntent(parsed?.intent) ? parsed.intent : previousQuery.intent };
   const inheritedKeys = [];
   for (const key of ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit", "specialMode"]) {
     const current = next[key];
@@ -207,6 +261,147 @@ function structuredParserFor(options) {
   if (typeof parser.parse === "function") return parser.parse.bind(parser);
   if (typeof parser.parseQuery === "function") return parser.parseQuery.bind(parser);
   return null;
+}
+
+async function applySemanticIntentHint(input, parsed, options = {}) {
+  const parser = parsed?.parser ?? {};
+  const needsSemanticIntent = parser.intentExplicit !== true
+    || asArray(parser.unresolvedEntityHints).length > 0
+    || asArray(parser.entityAmbiguities).length > 0;
+  if (!options.semanticRetriever?.search || !needsSemanticIntent) return parsed;
+  try {
+    const hits = await options.semanticRetriever.search(input, {
+      documentTypes: ["intent_sample"],
+      patch: options.preferences?.patch ?? "current",
+      locale: options.semanticLocale ?? "zh-CN",
+      topK: 3,
+      minimumScore: Number(options.semanticIntentMinimumScore ?? 0.72)
+    });
+    const first = hits.find((hit) => SEMANTIC_INTENTS.has(hit.intent));
+    const second = hits.find((hit) => hit !== first && SEMANTIC_INTENTS.has(hit.intent));
+    const minimumScore = Number(options.semanticIntentMinimumScore ?? 0.72);
+    const minimumMargin = Number(options.semanticIntentMinimumMargin ?? 0.06);
+    const accepted = first
+      && first.score >= minimumScore
+      && (!second || first.intent === second.intent || first.score - second.score >= minimumMargin);
+    return {
+      ...parsed,
+      ...(accepted ? { intent: first.intent } : {}),
+      parser: {
+        ...(parsed.parser ?? {}),
+        semanticIntent: {
+          attempted: true,
+          accepted: Boolean(accepted),
+          intent: accepted ? first.intent : null,
+          evidenceId: accepted ? first.id : null,
+          score: first?.score ?? null,
+          candidates: hits.slice(0, 3).map((hit) => ({ id: hit.id, intent: hit.intent, score: hit.score }))
+        }
+      }
+    };
+  } catch (error) {
+    return {
+      ...parsed,
+      parser: {
+        ...(parsed.parser ?? {}),
+        semanticIntent: { attempted: true, accepted: false, error: error?.code ?? error?.name ?? "error" }
+      }
+    };
+  }
+}
+
+function semanticEntityCandidate(hit, catalog) {
+  const type = hit.documentType === "unit" || hit.documentType === "unit_description"
+    ? "unit"
+    : ["item", "item_description", "emblem_description"].includes(hit.documentType)
+      ? "item"
+      : ["trait", "trait_description"].includes(hit.documentType)
+        ? "trait"
+        : null;
+  if (!type || !hit.apiName) return null;
+  const record = type === "unit"
+    ? catalog.unitByApiName.get(hit.apiName)
+    : type === "item"
+      ? catalog.itemByApiName.get(hit.apiName)
+      : catalog.traitByFilterId.get(hit.apiName) ?? catalog.traitByApiName.get(hit.apiName);
+  if (!record || record.current === false) return null;
+  return {
+    id: hit.id,
+    entityType: type,
+    apiName: type === "trait" ? record.apiName : hit.apiName,
+    filterId: type === "trait" ? record.filterId : null,
+    label: hit.metadata?.canonicalName
+      ?? record.preferredDisplayName
+      ?? record.displayName
+      ?? record.shortName
+      ?? record.zhName
+      ?? hit.apiName,
+    matchedAlias: hit.metadata?.matchedAlias ?? null,
+    confidence: Number(hit.score),
+    source: "persistent_semantic_index",
+    evidenceId: hit.id
+  };
+}
+
+async function applySemanticEntityHints(input, parsed, options = {}, catalog) {
+  const parser = parsed?.parser ?? {};
+  const needsEntitySearch = !parsed.unit
+    || asArray(parser.unresolvedEntityHints).length > 0
+    || asArray(parser.entityAmbiguities).length > 0;
+  if (!options.semanticRetriever?.search || !needsEntitySearch) return parsed;
+  try {
+    const hits = await options.semanticRetriever.search(input, {
+      documentTypes: ["unit", "item", "trait", "unit_description", "item_description", "trait_description", "emblem_description"],
+      patch: options.preferences?.patch ?? "current",
+      locale: options.semanticLocale ?? "zh-CN",
+      topK: Number(options.semanticEntityLimit ?? 8),
+      minimumScore: Number(options.semanticEntityMinimumScore ?? 0.76)
+    });
+    const candidates = hits.map((hit) => semanticEntityCandidate(hit, catalog)).filter(Boolean);
+    const units = candidates.filter((candidate) => candidate.entityType === "unit");
+    const first = units[0];
+    const second = units[1];
+    const minimumScore = Number(options.semanticEntityMinimumScore ?? 0.76);
+    const minimumMargin = Number(options.semanticEntityMinimumMargin ?? 0.06);
+    const acceptedUnit = !parsed.unit
+      && first
+      && first.confidence >= minimumScore
+      && (!second || first.confidence - second.confidence >= minimumMargin)
+      ? first
+      : null;
+    return {
+      ...parsed,
+      ...(acceptedUnit ? { unit: acceptedUnit.apiName, unitAlias: acceptedUnit.label } : {}),
+      parser: {
+        ...parser,
+        entityMatches: acceptedUnit ? [
+          ...(parser.entityMatches ?? []),
+          {
+            entityType: "unit",
+            apiName: acceptedUnit.apiName,
+            alias: acceptedUnit.label,
+            matchType: "semantic_index",
+            confidence: acceptedUnit.confidence,
+            evidenceId: acceptedUnit.evidenceId
+          }
+        ] : parser.entityMatches ?? [],
+        semanticEntities: {
+          attempted: true,
+          acceptedUnit: acceptedUnit?.apiName ?? null,
+          evidenceId: acceptedUnit?.evidenceId ?? null,
+          candidates: candidates.slice(0, Number(options.semanticEntityLimit ?? 8))
+        }
+      }
+    };
+  } catch (error) {
+    return {
+      ...parsed,
+      parser: {
+        ...parser,
+        semanticEntities: { attempted: true, acceptedUnit: null, candidates: [], error: error?.code ?? error?.name ?? "error" }
+      }
+    };
+  }
 }
 
 async function callStructuredParser(input, parsed, options, catalog) {
@@ -289,8 +484,8 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     applied.push(key);
   };
 
-  if (structured.intent === "comp_rankings" && !parsed.unit) {
-    next.intent = "comp_rankings";
+  if (isCompIntent(structured.intent) && !parsed.unit) {
+    next.intent = structured.intent;
     applied.push("intent");
   }
 
@@ -425,10 +620,15 @@ async function parseQueryWithOptionalStructuredParser(input, options, catalog, p
 }
 
 function buildClarificationEntityCandidates(input, parsed, query, catalog, options = {}) {
-  if (options.useEntityCandidateRetriever === false) return [];
+  const semanticCandidates = (parsed.parser?.semanticEntities?.candidates ?? []).map((candidate) => ({
+    ...candidate,
+    inputFragment: input,
+    queryText: `${input} ${candidate.label}`.trim()
+  }));
+  if (options.useEntityCandidateRetriever === false) return semanticCandidates;
 
   const retriever = options.entityCandidateRetriever ?? retrieveEntityCandidates;
-  if (typeof retriever !== "function") return [];
+  if (typeof retriever !== "function") return semanticCandidates;
 
   const requests = [];
   if (!query.unit) {
@@ -453,6 +653,7 @@ function buildClarificationEntityCandidates(input, parsed, query, catalog, optio
       queryText: replaceInputFragment(input, inputFragment, candidate.label ?? candidate.matchedAlias)
     };
   }));
+  candidates.push(...semanticCandidates);
 
   const unique = new Map();
   for (const candidate of candidates) {
@@ -530,7 +731,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
     };
   }
 
-  if (!lastQuery?.unit || lastQuery.intent === "comp_rankings") {
+  if (!lastQuery?.unit || isCompIntent(lastQuery.intent)) {
     return {
       parsed,
       inherited: false,
@@ -765,7 +966,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
 }
 
 function canPreinheritUnitFollowUp(parsed) {
-  if (parsed?.unit || parsed?.intent === "comp_rankings") return false;
+  if (parsed?.unit || isCompIntent(parsed?.intent)) return false;
   if ((parsed?.parser?.entityAmbiguities ?? []).length > 0) return false;
   return (parsed?.ownedItems ?? []).length > 0
     || (parsed?.excludedItems ?? []).length > 0
@@ -876,9 +1077,26 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
 
   if (response === undefined && options.metaTFTClient) {
     try {
-      response = typeof options.metaTFTClient.getCompCandidates === "function"
-        ? await options.metaTFTClient.getCompCandidates(plan)
-        : await options.metaTFTClient.getExactUnitsTraits2(plan.params);
+      response = await executePlannedStructuredQuery(
+        options.retrievalPlan,
+        "unit_comp_candidates",
+        async (params) => {
+          const plannedQuery = {
+            ...query,
+            unit: params.unit,
+            days: params.days,
+            patch: params.patch,
+            queue: params.queue,
+            rankFilter: params.rank,
+            minSamples: params.minSamples
+          };
+          const explorerPlan = planMetaTFTCompCandidates(plannedQuery);
+          return typeof options.metaTFTClient.getCompCandidates === "function"
+            ? options.metaTFTClient.getCompCandidates(explorerPlan)
+            : options.metaTFTClient.getExactUnitsTraits2(explorerPlan.params);
+        },
+        { intent: query.intent }
+      );
       const stored = await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, {
         request: plan,
         response,
@@ -1013,7 +1231,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
   });
 
   if (!validation.valid || clarification.blocking) {
-    return {
+    return attachRetrievalAudit({
       type: responseTypeForQuery(validatedQuery, clarification),
       parsed,
       query: validatedQuery,
@@ -1028,12 +1246,12 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       text: clarification.needsClarification
         ? clarification.question
         : `无法查询：${validation.errors.join("；")}`
-    };
+    }, input, catalog);
   }
 
   const localDecision = unavailableItemDecision(validatedQuery, catalog);
   if (localDecision) {
-    return {
+    return attachRetrievalAudit({
       type: responseTypeForQuery(validatedQuery),
       parsed,
       query: validatedQuery,
@@ -1048,7 +1266,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       overlap: null,
       decision: localDecision,
       text: localDecision.text
-    };
+    }, input, catalog);
   }
 
   const rows = normalizeUnitBuildRows(responseOrRows);
@@ -1059,7 +1277,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
     maxOverlapRate: options.comparisonOptions?.maxOverlapRate,
     materialThresholds: options.comparisonOptions?.materialThresholds
   });
-  const itemRanking = validatedQuery.intent === "unit_item_rankings"
+  const itemRanking = ["unit_item_rankings", "unit_emblem_rankings"].includes(validatedQuery.intent)
     ? aggregateUnitItemRankings(filtered.builds, validatedQuery, { catalog })
     : null;
   const rankedBuilds = itemRanking
@@ -1075,7 +1293,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       comparison
     });
 
-  return {
+  return attachRetrievalAudit({
     type: responseTypeForQuery(validatedQuery),
     parsed,
     query: validatedQuery,
@@ -1105,7 +1323,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       cache: "provided"
     },
     text
-  };
+  }, input, catalog);
 }
 
 export async function recommendForInput(input, options = {}) {
@@ -1114,14 +1332,16 @@ export async function recommendForInput(input, options = {}) {
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options));
-  const deterministicParsed = parseQueryDeterministically(input, options, catalog);
+  let deterministicParsed = parseQueryDeterministically(input, options, catalog);
+  deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
+  deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
   const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
   const initialCompSessionMerge = inheritCompRankingFromSession(
     deterministicParsed,
     initialSessionEntry?.value,
     options
   );
-  const initialUnitSessionMerge = initialCompSessionMerge.parsed.intent !== "comp_rankings"
+  const initialUnitSessionMerge = !isCompIntent(initialCompSessionMerge.parsed.intent)
     && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
     ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
     : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
@@ -1143,7 +1363,7 @@ export async function recommendForInput(input, options = {}) {
     : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
   parsedInput = compSessionMerge.parsed;
 
-  if (parsedInput.intent === "comp_rankings") {
+  if (isCompIntent(parsedInput.intent)) {
     const query = buildCompRankingQuery(parsedInput, {
       preferences: options.preferences,
       // v3 accepts MetaTFT's reproducible page calculation and distinguishes it
@@ -1156,6 +1376,15 @@ export async function recommendForInput(input, options = {}) {
       ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit"]
         .map((key) => [key, compConstraintSource(parsedInput, options, key)])
     );
+    const retrievalAudit = createRetrievalAudit({
+      parsed: parsedInput,
+      query,
+      validation: { valid: true, errors: [], warnings: [] },
+      clarification: null
+    }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
+    if (!retrievalAudit.retrievalPlan || retrievalAudit.retrievalPlan.needsClarification) {
+      throw new Error("A valid RetrievalPlan is required before structured retrieval");
+    }
     const queryCacheKey = makeQueryCacheKey(query);
     let response = options.compResponse ?? options.response;
     let queryCache = { key: queryCacheKey, hit: false };
@@ -1175,43 +1404,58 @@ export async function recommendForInput(input, options = {}) {
     }
 
     if (response === undefined) {
-      const dataParams = { queue: query.queue };
-      const statsParams = {
-        queue: query.queue,
-        patch: query.patch,
-        days: query.days,
-        permit_filter_adjustment: "true"
-      };
-      if (query.queue === "1100" && query.rankFilter.length > 0) {
-        statsParams.rank = [...query.rankFilter].sort().join(",");
-      }
       try {
-        const client = options.compsClient;
-        if (typeof client?.getCompsData !== "function" || typeof client?.getCompsStats !== "function") {
-          throw new Error("comp rankings require a comps client with getCompsData() and getCompsStats()");
-        }
-        let compsData = await client.getCompsData(dataParams);
-        let dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
-        let compsStats = await client.getCompsStats({
-          ...statsParams,
-          ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
-        });
-        const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
-        if (dataClusterId !== undefined && statsClusterId !== undefined
-          && String(dataClusterId) !== String(statsClusterId)) {
-          compsData = await client.getCompsData(dataParams);
-          dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
-          compsStats = await client.getCompsStats({
-            ...statsParams,
-            ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
-          });
-        }
-        const finalStatsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
-        if (dataClusterId !== undefined && finalStatsClusterId !== undefined
-          && String(dataClusterId) !== String(finalStatsClusterId)) {
-          throw new Error(`MetaTFT comps cluster mismatch after retry: data=${dataClusterId}, stats=${finalStatsClusterId}`);
-        }
-        response = createCompsPageSnapshot(compsData, compsStats);
+        const operation = query.intent === "comp_trends" ? "comps_trends" : "comps_rankings";
+        const retrieved = await executePlannedStructuredQuery(
+          retrievalAudit.retrievalPlan,
+          operation,
+          async (params) => {
+            const dataParams = { queue: params.queue };
+            const statsParams = {
+              queue: params.queue,
+              patch: params.patch,
+              days: params.days,
+              permit_filter_adjustment: "true"
+            };
+            if (params.queue === "1100" && params.rank?.length > 0) {
+              statsParams.rank = [...params.rank].sort().join(",");
+            }
+            const client = options.compsClient;
+            if (typeof client?.getCompsData !== "function" || typeof client?.getCompsStats !== "function") {
+              throw new Error("comp rankings require a comps client with getCompsData() and getCompsStats()");
+            }
+            let compsData = await client.getCompsData(dataParams);
+            let dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+            let compsStats = await client.getCompsStats({
+              ...statsParams,
+              ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+            });
+            const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+            if (dataClusterId !== undefined && statsClusterId !== undefined
+              && String(dataClusterId) !== String(statsClusterId)) {
+              compsData = await client.getCompsData(dataParams);
+              dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+              compsStats = await client.getCompsStats({
+                ...statsParams,
+                ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+              });
+            }
+            const finalStatsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+            if (dataClusterId !== undefined && finalStatsClusterId !== undefined
+              && String(dataClusterId) !== String(finalStatsClusterId)) {
+              throw new Error(`MetaTFT comps cluster mismatch after retry: data=${dataClusterId}, stats=${finalStatsClusterId}`);
+            }
+            return {
+              response: createCompsPageSnapshot(compsData, compsStats),
+              dataParams,
+              statsParams,
+              dataClusterId
+            };
+          },
+          { intent: query.intent }
+        );
+        const { dataParams, statsParams, dataClusterId } = retrieved;
+        response = retrieved.response;
         try {
           response = await enrichCompResponseWithTrendHistory(response, {
             query,
@@ -1298,6 +1542,7 @@ export async function recommendForInput(input, options = {}) {
       }
     };
     decorated.text = "";
+    attachRetrievalAudit(decorated, input, catalog, retrievalAudit);
     return decorated;
   }
 
@@ -1363,6 +1608,7 @@ export async function recommendForInput(input, options = {}) {
       allowPendingComparison: pendingComparison
     });
     if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    attachRetrievalAudit(result, input, catalog);
     return result;
   }
 
@@ -1392,12 +1638,22 @@ export async function recommendForInput(input, options = {}) {
     };
     const sessionWrite = await writeLastQuerySession(result, options);
     if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    attachRetrievalAudit(result, input, catalog);
     return result;
   }
 
+  const preflightRetrievalAudit = createRetrievalAudit({
+    parsed,
+    query: preflightValidatedQuery,
+    validation: preflightValidation,
+    clarification: preflightClarification
+  }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
   const compResult = parsedUnavailableItems.length > 0 || hasUnresolvedEntityHints
     ? { value: null, cache: null, warnings: [] }
-    : await resolveCompConstraint(preflightValidatedQuery, parsed, options, catalog);
+    : await resolveCompConstraint(preflightValidatedQuery, parsed, {
+      ...options,
+      retrievalPlan: preflightRetrievalAudit.retrievalPlan
+    }, catalog);
   const query = buildQueryContext(parsed, {
     catalog,
     preferences: options.preferences,
@@ -1458,9 +1714,19 @@ export async function recommendForInput(input, options = {}) {
       allowPendingComparison: pendingComparison
     });
     if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    attachRetrievalAudit(result, input, catalog);
     return result;
   }
 
+  const finalRetrievalAudit = createRetrievalAudit({
+    parsed,
+    query: validatedQuery,
+    validation,
+    clarification
+  }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
+  if (!finalRetrievalAudit.retrievalPlan || finalRetrievalAudit.retrievalPlan.needsClarification) {
+    throw new Error("A valid RetrievalPlan is required before structured retrieval");
+  }
   const queryCacheKey = makeQueryCacheKey(validatedQuery);
   let queryCache = {
     key: queryCacheKey,
@@ -1484,7 +1750,33 @@ export async function recommendForInput(input, options = {}) {
 
   if (response === undefined) {
     try {
-      response = await options.metaTFTClient?.getUnitBuilds(plan);
+      response = await executePlannedStructuredQuery(
+        finalRetrievalAudit.retrievalPlan,
+        "unit_builds",
+        async (params) => {
+          const plannedQuery = {
+            ...validatedQuery,
+            unit: params.unit,
+            days: params.days,
+            patch: params.patch,
+            queue: params.queue,
+            rankFilter: params.rank,
+            starLevel: params.starLevel,
+            itemCount: params.itemCount,
+            traitFilters: params.traitFilters,
+            comp: params.comp,
+            itemPolicy: params.itemPolicy,
+            itemCategories: params.itemCategories,
+            lockedItems: params.lockedItems,
+            ownedItems: params.lockedItems,
+            excludedItems: params.excludedItems,
+            comparisonItems: params.comparisonItems,
+            minSamples: params.minSamples
+          };
+          return options.metaTFTClient?.getUnitBuilds(planMetaTFTUnitBuilds(plannedQuery));
+        },
+        { intent: validatedQuery.intent }
+      );
       if (response !== undefined) {
         const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
           request: plan,
@@ -1564,5 +1856,5 @@ export async function recommendForInput(input, options = {}) {
     result.cache.session.writtenAt = sessionWrite.updatedAt;
   }
 
-  return result;
+  return attachRetrievalAudit(result, input, catalog, finalRetrievalAudit);
 }

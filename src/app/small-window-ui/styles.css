@@ -383,6 +383,10 @@ body.resizing-columns { user-select: none; cursor: col-resize; }
 .generated-conclusion p, .generated-conclusion li, .conclusion-action { color: var(--ink); font-size: 12px; line-height: 1.65; }
 .generated-conclusion ul { min-width: 0; margin: 0; padding-left: 19px; }
 .generated-conclusion details summary { width: fit-content; color: var(--star-indigo); font-size: 11px; font-weight: 800; cursor: pointer; }
+.conclusion-supporting-evidence ul { margin-top: 7px; display: grid; gap: 6px; }
+.conclusion-supporting-evidence li { display: grid; gap: 2px; }
+.conclusion-supporting-evidence li span { overflow-wrap: anywhere; }
+.conclusion-supporting-evidence li small { color: var(--muted); overflow-wrap: anywhere; }
 .conclusion-action { min-width: 0; padding: 9px 10px; display: grid; gap: 3px; border-radius: 9px; background: #fff; }
 .conclusion-action span, .conclusion-risk, .conclusion-footer small { min-width: 0; overflow-wrap: anywhere; }
 .conclusion-risk { padding: 8px 9px; border-radius: 8px; color: #985b12; background: #fff4df; font-size: 11px; line-height: 1.55; }

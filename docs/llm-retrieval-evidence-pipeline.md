@@ -1,7 +1,7 @@
 # TFTAgent LLM 检索、证据与结论生成流程设计
 
 更新时间：2026-07-17
-状态：待开发
+状态：P0–P3 已实现（SQLite Embedding 索引、增量构建和运行时检索已接入；真实线上 Provider smoke 仍需部署凭据）
 适用范围：TFTAgent 后端查询、语义检索、证据组装、LLM 数据解读与前端降级展示
 
 ## 1. 文档目标
@@ -722,3 +722,60 @@ conclusion_fallback
 8. 任何 LLM、Embedding 或网络异常都不影响结构化查询和确定性模板答案。
 9. 用户能在前端区分原始统计、模型解读、风险提示和模板回退。
 10. 离线测试、真实 Provider smoke 和小窗口端到端验证均通过后才能灰度启用。
+
+## 13. 当前实现记录
+
+本轮实现基于 `codex/ui` 的 `c739d3a`，保持原有确定性查询、排序、HTTP 卡片和模板答案兼容。核心导出统一由 `src/index.js` 提供。
+
+### 13.1 契约与编排
+
+- `src/retrieval/contracts.js`：导出 `IntentEnvelope v1`、`RetrievalPlan v1`、`SemanticHit v1` 与 `EvidencePack v2` 构造和校验能力。
+- `src/retrieval/retrieval-planner.js`：按已校验意图生成白名单计划；低置信、实体冲突或需要澄清时不生成实时查询。
+- `src/retrieval/structured-retriever.js`：只允许注册的 MetaTFT 与官方目录操作，并剔除未注册参数、URL 和接口名。生产推荐路径会在网络调用前执行该闸门；棋子出装、阵容排行、阵容趋势和条件性 Comp 候选查询均由对应的白名单操作触发。
+- `src/retrieval/llm-pipeline.js`：提供端到端编排与阶段事件；语义检索失败不会阻塞结构化查询。
+
+统一 `IntentEnvelope` 与 `RetrievalPlan` 还会保留星级、装备件数、羁绊、锁定/排除/比较装备及已解析 Comp 条件。若计划来源或操作未注册，生产路径会在调用 MetaTFT 前拒绝执行；这不是结果生成后的旁路审计字段。
+
+### 13.2 语义检索
+
+- `src/retrieval/semantic-retriever.js`：提供 `SemanticRetriever`、持久化向量检索器、现有实体候选 TF-IDF 适配器，以及只在 Provider 故障时启用的 TF-IDF 降级包装器。
+- `src/llm/embedding-provider.js`：实现可注入 Provider 和真实 OpenAI-compatible `/embeddings` Provider，支持批处理、超时、维度校验和安全错误封装。
+- `src/retrieval/semantic-document-store.js`：实现 `SQLiteSemanticDocumentStore`，把文档、元数据和 Float32 BLOB 向量持久化到 SQLite；按类型、版本、语言和模型过滤，并拒绝 MetaTFT 每日实时统计进入静态索引。
+- `src/retrieval/semantic-corpus.js`：从当前实体目录、别名、静态说明和人工意图样例生成稳定、版本化的语义文档。
+- `src/retrieval/semantic-index-builder.js`：按 `contentHash` 和 Embedding 模型增量生成向量，保留未变化向量，清理当前版本已删除文档，并输出构建和健康审计报告。
+- `src/retrieval/hybrid-reranker.js`：执行 API ID、当前规范名、当前别名、关键词、向量相似度的优先级，并强制类型、版本和语言过滤；持久化检索器和统一检索计划执行路径都会实际经过该重排器，而不是只保留为独立工具。
+
+构建命令为 `npm run semantic:index`，审计命令为 `npm run semantic:audit`。未传 `--input` 时默认读取当前版本的完整小窗口目录缓存，并从腾讯官方当前 `chess.js`、`race.js`、`job.js` 与 `equip.js` 补入棋子技能、羁绊档位和装备效果；阵容快照会裁剪为仅含 cluster 身份、名称和别名的静态文档。官方说明目录缺失时默认中止完整构建，只有显式的降级参数才允许继续；种子目录也只能通过 `--allow-seed-catalog` 显式启用。索引构建默认要求真实 Embedding Provider 可用，不会静默生成无向量索引；`--no-embeddings` 只用于明确的文档维护和诊断。运行时配置 `TFT_AGENT_EMBEDDING_MODE=on` 后，小窗口会打开持久化 SQLite 索引，先执行向量检索，并在 Provider 请求失败时对同一持久化语料执行 TF-IDF 降级。Node 22.5 及以上使用内置 `node:sqlite`；Node 18–21 使用可选依赖 `better-sqlite3`。详细命令和当前构建规模见 `docs/semantic-index-build.md`。
+
+OpenAI-compatible 配置推荐优先使用 `https://api.inferera.com/v1`；若部署网络可以稳定访问默认域名，也可切换到 `https://aihubmix.com/v1`。`.env.example` 已同时列出 Embedding 模型、维度、批次、超时和 SQLite 索引路径，API Key 只由后端环境读取。
+
+### 13.3 证据、Prompt 与纠错
+
+- `src/retrieval/evidence-assembler.js`：把现有可见卡片升级为 Evidence Pack v2，结构化证据优先，语义说明只能使用剩余预算；关键可见证据缺失或超预算时安全跳过 LLM。
+- `src/llm/conclusion-prompt-registry.js`：服务端按已校验意图选择基础 Prompt 和单一专用 Prompt；资料类意图不注册 Prompt。
+- `src/core/conclusion-service.js`：默认“初次生成 + 最多两次语义纠错”，网络传输重试独立计数；连续相同错误可提前回退，只有通过校验的内容才写缓存。
+- `src/llm/conclusion-validator.js`：输出结构化 `conclusion_validation_feedback.v1`，覆盖格式、数字、实体、证据覆盖、风险和分析边界错误；除百分比、样本和平均名次专项校验外，还会拒绝无法回链到对应证据的其他数字。已引用的官方静态说明可以提供其自身数值，但未引用说明不能为结论补充数字。
+- 小窗口沿用已有“已使用模板回退”标记；生成失败不会替换确定性卡片和模板事实。任何实际发送给结论模型的语义静态说明都会随生成结论返回为“可展开的静态证据”，向量相似度分数不会进入 Evidence Pack 或用户结论。
+
+结论缓存键包含 Evidence Schema、基础 Prompt、当前意图 Prompt、Provider Prompt 配置和模型版本。修改某个意图 Prompt 时，不会使其他意图的结论缓存失效。
+
+### 13.4 已支持意图
+
+结论流程：`unit_build_rankings`、`unit_build_completion`、`unit_best_3_items`、`unit_item_rankings`、`unit_item_comparison`、`unit_emblem_rankings`、`comp_rankings`、`comp_trends`。
+
+结构化直出且不调用结论 Provider：`unit_details`、`item_details`、`trait_details`、`unit_item_availability`。资料类 HTTP 结果同样携带 `IntentEnvelope` 和无 Prompt 的白名单 `RetrievalPlan`，但不会构建结论 Evidence Pack。
+
+专项回归覆盖：转职同义问法、三张可见卡片边界、单装备全候选覆盖、低样本风险、排他比较未决、阵容趋势提升与登场基础、数字和实体证据回链、纠错成功、纠错上限回退、资料类直出，以及 Embedding/LLM 不可用降级。
+
+### 13.5 SQLite Embedding 索引运行方式
+
+生产构建需要配置 `TFT_AGENT_EMBEDDING_MODE=on`、OpenAI-compatible Endpoint、模型和 API Key，然后执行：
+
+```text
+npm run semantic:index -- --input ./semantic-catalog.json --patch current --locale zh-CN
+npm run semantic:audit
+```
+
+`semantic-catalog.json` 可以包含 `units`、`items`、`traits`、`comps`、`descriptions` 和 `documents`。未传 `--input` 时使用 `.cache/small-window-cache.json` 中的当前版本完整实体目录，在存在时读取 `.cache/comps-data-current-inspect.json` 的阵容身份，并从官方目录补齐静态说明；不会再静默回退到 39 条种子语料。当前完整文档索引为 644 条：62 个棋子身份与 62 条技能说明、162 个非纹章装备身份与 162 条效果说明、19 条纹章说明、42 个羁绊身份与 42 条羁绊说明、69 个阵容身份和 24 条意图样例。每次构建会比较 `contentHash` 与 `embeddingModel`，只请求新增、内容变化、缺失向量或模型变化的文档；同一 patch/locale 中不再存在的文档会从 SQLite 删除。
+
+索引使用 `semantic_documents` 表保存 `document_type`、`content`、`content_hash`、Float32 BLOB 向量、向量维度、`embedding_model`、`patch`、`locale`、`source`、元数据和更新时间。运行时只加载当前类型、版本、语言和模型的向量到检索候选集。高置信意图样例和当前版本实体命中会进入真实推荐编排；它们只能确定意图或实体，不参与实时指标、强度和排序计算。

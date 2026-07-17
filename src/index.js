@@ -190,7 +190,11 @@ export {
   serializeConclusionEvidence
 } from "./llm/conclusion-evidence.js";
 export {
+  CONCLUSION_ERROR_CATEGORIES,
   CONCLUSION_SCHEMA_VERSION,
+  CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION,
+  classifyConclusionValidationErrors,
+  createConclusionValidationFeedback,
   validateConclusionOutput
 } from "./llm/conclusion-validator.js";
 export {
@@ -202,17 +206,117 @@ export {
   resolveConclusionProviderConfig
 } from "./llm/conclusion-provider.js";
 export {
+  BASE_CONCLUSION_PROMPT_VERSION,
+  CONCLUSION_PROMPT_ROUTES,
+  CORRECTION_PROMPT_VERSION,
+  ConclusionPromptRegistry,
+  createConclusionPromptRegistry,
+  getConclusionPromptRoute
+} from "./llm/conclusion-prompt-registry.js";
+export {
+  DEFAULT_EMBEDDING_BATCH_SIZE,
+  DEFAULT_EMBEDDING_TIMEOUT_MS,
+  EmbeddingProvider,
+  EmbeddingProviderUnavailableError,
+  FunctionEmbeddingProvider,
+  OpenAICompatibleEmbeddingProvider,
+  createEmbeddingProvider,
+  createEmbeddingProviderFromConfig,
+  resolveEmbeddingProviderConfig
+} from "./llm/embedding-provider.js";
+export {
   clearEntityCandidateIndex,
   createEntityCandidateIndex,
   getOrCreateEntityCandidateIndex,
   retrieveEntityCandidates
 } from "./llm/entity-candidate-retriever.js";
 export {
+  EVIDENCE_PACK_SCHEMA_VERSION,
+  INTENT_ENVELOPE_SCHEMA_VERSION,
+  RETRIEVAL_PLAN_SCHEMA_VERSION,
+  SEMANTIC_HIT_SCHEMA_VERSION,
+  createEvidencePack,
+  createIntentEnvelope,
+  createRetrievalPlan,
+  createSemanticHit,
+  validateIntentEnvelope
+} from "./retrieval/contracts.js";
+export {
+  DEFAULT_EVIDENCE_BUDGET,
+  PROMPT_KEYS,
+  REQUIRED_EVIDENCE,
+  RetrievalPlanner,
+  createRetrievalPlanner,
+  planRetrieval
+} from "./retrieval/retrieval-planner.js";
+export {
+  DEFAULT_EVIDENCE_MAX_CHARACTERS,
+  DEFAULT_EVIDENCE_MAX_ITEMS,
+  EvidenceAssembler,
+  EvidenceAssemblyError,
+  assembleEvidencePack,
+  createEvidenceAssembler
+} from "./retrieval/evidence-assembler.js";
+export {
+  MemorySemanticDocumentStore,
+  SQLITE_SEMANTIC_INDEX_SCHEMA,
+  SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION,
+  SQLiteSemanticDocumentStore,
+  SemanticDocumentStore,
+  decodeSemanticEmbedding,
+  encodeSemanticEmbedding,
+  normalizeSemanticDocument,
+  semanticContentHash
+} from "./retrieval/semantic-document-store.js";
+export {
+  EmbeddingSemanticRetriever,
+  EntityCandidateSemanticRetriever,
+  FallbackSemanticRetriever,
+  HybridSemanticRetriever,
+  SemanticRetriever,
+  TfidfSemanticRetriever,
+  createEntityCandidateSemanticRetriever,
+  createFallbackSemanticRetriever,
+  createPersistentSemanticRetriever,
+  retrieveSemanticPlan,
+  createTfidfSemanticRetriever
+} from "./retrieval/semantic-retriever.js";
+export {
+  INTENT_SEMANTIC_SAMPLES,
+  buildSemanticCorpus
+} from "./retrieval/semantic-corpus.js";
+export {
+  attachOfficialSemanticDescriptions,
+  catalogFromRuntimeCacheSnapshot,
+  createStaticCompCatalog,
+  loadCompleteSemanticCatalog,
+  loadRuntimeCatalogSnapshot
+} from "./retrieval/semantic-catalog-loader.js";
+export {
+  auditSemanticIndex,
+  buildSemanticIndex
+} from "./retrieval/semantic-index-builder.js";
+export {
+  HYBRID_MATCH_PRIORITY,
+  HybridReranker,
+  rerankSemanticHits
+} from "./retrieval/hybrid-reranker.js";
+export {
+  STRUCTURED_OPERATION_REGISTRY,
+  StructuredRetrievalError,
+  StructuredRetriever,
+  createStructuredRetriever
+} from "./retrieval/structured-retriever.js";
+export { runLlmRetrievalPipeline } from "./retrieval/llm-pipeline.js";
+export {
   createRecommendationFromRows,
   recommendForInput,
   SESSION_LAST_QUERY_KEY
 } from "./core/recommendation-service.js";
 export {
+  DEFAULT_CONCLUSION_MAX_CORRECTIONS,
+  DEFAULT_CONCLUSION_MAX_TRANSPORT_RETRIES,
+  DEFAULT_CONCLUSION_MAX_VALIDATION_ERRORS,
   generateEvidenceBackedConclusion,
   makeConclusionCacheKey
 } from "./core/conclusion-service.js";

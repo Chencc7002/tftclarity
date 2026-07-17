@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { buildConclusionEvidence, createCatalog, validateConclusionOutput } from "../src/index.js";
+import { assembleEvidencePack, buildConclusionEvidence, createCatalog, validateConclusionOutput } from "../src/index.js";
 
 const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fixture.json", import.meta.url), "utf8"));
 const buildResult = (overrides = {}) => ({ ...structuredClone(resultFixture), ...overrides });
@@ -51,6 +51,41 @@ test("validateConclusionOutput accepts evidence-linked names and exact metrics",
   const result = validateConclusionOutput(validOutput(), evidence, { catalog });
   assert.equal(result.valid, true, result.errors.join("\n"));
   assert.equal(result.value.reasons[0].evidenceIds[0], "build:1");
+});
+
+test("validateConclusionOutput accepts linked visible semantic facts and rejects invented static numbers", () => {
+  const semanticEvidence = assembleEvidencePack({
+    result: buildResult(),
+    catalog,
+    input: "霞已有羊刀怎么补？",
+    semanticEvidence: [{
+      id: "item-description:rageblade",
+      documentType: "item_description",
+      text: "羊刀每秒获得7%可叠加的攻击速度。",
+      source: "official_catalog",
+      patch: "current",
+      visible: true,
+      metadata: {
+        apiName: "TFT_Item_GuinsoosRageblade",
+        canonicalName: "鬼索的狂暴之刃",
+        aliases: ["羊刀"]
+      }
+    }]
+  });
+  const linked = validOutput({
+    reasons: [{
+      evidenceIds: ["item-description:rageblade"],
+      text: "官方静态说明显示，羊刀每秒获得7%可叠加的攻击速度。"
+    }]
+  });
+  const valid = validateConclusionOutput(linked, semanticEvidence, { catalog });
+  assert.equal(valid.valid, true, valid.errors.join("\n"));
+
+  const invented = structuredClone(linked);
+  invented.reasons[0].text = "官方静态说明显示，羊刀每秒获得8%可叠加的攻击速度。";
+  const invalid = validateConclusionOutput(invented, semanticEvidence, { catalog });
+  assert.equal(invalid.valid, false);
+  assert.match(invalid.errors.join("\n"), /unsupported percentage/u);
 });
 
 test("validateConclusionOutput accepts only evidence-linked core-item claims", () => {
@@ -230,7 +265,8 @@ test("validateConclusionOutput rejects unknown evidence, fabricated metrics, ent
     validOutput({ reasons: [{ evidenceIds: ["build:99"], text: "样本1248场。" }] }),
     validOutput({ reasons: [{ evidenceIds: ["build:1"], text: "该组合前四率为99.9%。" }] }),
     validOutput({ headline: "改用“神秘刀”" }),
-    validOutput({ summary: "这套装备导致胜率提升。" })
+    validOutput({ summary: "这套装备导致胜率提升。" }),
+    validOutput({ summary: "当前证据支持综合强度分999。" })
   ];
   for (const value of cases) {
     const result = validateConclusionOutput(value, evidence, { catalog });

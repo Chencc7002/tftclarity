@@ -415,6 +415,9 @@ test("handleRecommendRequest returns official item encyclopedia details before r
   assert.equal(payload.item.officialName, "正义之手");
   assert.equal(payload.item.effect, "获得伤害增幅和全能吸血");
   assert.equal(payload.item.recipe[0].name, "女神之泪");
+  assert.equal(payload.intentEnvelope.intent, "item_details");
+  assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "item_details");
+  assert.equal(payload.retrievalPlan.promptKey, null);
 });
 
 test("handleRecommendRequest returns unit stats, ability, and three stable item recommendations", async () => {
@@ -476,6 +479,9 @@ test("handleRecommendRequest returns unit stats, ability, and three stable item 
   assert.equal(payload.recommendedItems.length, 3);
   assert.deepEqual(payload.recommendedItems.map((item) => item.name), ["装备甲", "装备乙", "装备丙"]);
   assert.match(payload.answer.methodology, /登场频率/);
+  assert.equal(payload.intentEnvelope.intent, "unit_details");
+  assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "unit_details");
+  assert.equal(payload.retrievalPlan.promptKey, null);
 });
 
 test("handleRecommendRequest returns official trait effects and tiers", async () => {
@@ -509,6 +515,9 @@ test("handleRecommendRequest returns official trait effects and tiers", async ()
   assert.equal(payload.type, "trait_details");
   assert.equal(payload.trait.name, "挑战者");
   assert.deepEqual(payload.trait.levels, [{ units: 2, effect: "15% 攻击速度" }]);
+  assert.equal(payload.intentEnvelope.intent, "trait_details");
+  assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "trait_details");
+  assert.equal(payload.retrievalPlan.promptKey, null);
 });
 
 test("official entity catalogs resolve encyclopedia aliases when the MetaTFT catalog is unavailable", async () => {
@@ -550,6 +559,11 @@ test("unknown item detail wording clarifies before recommendation logic", async 
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
     officialItemDetails: new Map(),
+    officialEntityDetails: {
+      units: new Map(),
+      traits: new Map(),
+      meta: {}
+    },
     recommendForInputImpl: () => {
       throw new Error("unknown item details must not enter recommendation logic");
     }
