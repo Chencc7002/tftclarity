@@ -47,6 +47,16 @@ import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
 const RETRIEVAL_PLANNER = new RetrievalPlanner();
+const SEMANTIC_INTENTS = new Set([
+  "unit_build_rankings",
+  "unit_build_completion",
+  "unit_best_3_items",
+  "unit_item_rankings",
+  "unit_item_comparison",
+  "unit_emblem_rankings",
+  "comp_rankings",
+  "comp_trends"
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -234,6 +244,147 @@ function structuredParserFor(options) {
   if (typeof parser.parse === "function") return parser.parse.bind(parser);
   if (typeof parser.parseQuery === "function") return parser.parseQuery.bind(parser);
   return null;
+}
+
+async function applySemanticIntentHint(input, parsed, options = {}) {
+  const parser = parsed?.parser ?? {};
+  const needsSemanticIntent = parser.intentExplicit !== true
+    || asArray(parser.unresolvedEntityHints).length > 0
+    || asArray(parser.entityAmbiguities).length > 0;
+  if (!options.semanticRetriever?.search || !needsSemanticIntent) return parsed;
+  try {
+    const hits = await options.semanticRetriever.search(input, {
+      documentTypes: ["intent_sample"],
+      patch: options.preferences?.patch ?? "current",
+      locale: options.semanticLocale ?? "zh-CN",
+      topK: 3,
+      minimumScore: Number(options.semanticIntentMinimumScore ?? 0.72)
+    });
+    const first = hits.find((hit) => SEMANTIC_INTENTS.has(hit.intent));
+    const second = hits.find((hit) => hit !== first && SEMANTIC_INTENTS.has(hit.intent));
+    const minimumScore = Number(options.semanticIntentMinimumScore ?? 0.72);
+    const minimumMargin = Number(options.semanticIntentMinimumMargin ?? 0.06);
+    const accepted = first
+      && first.score >= minimumScore
+      && (!second || first.intent === second.intent || first.score - second.score >= minimumMargin);
+    return {
+      ...parsed,
+      ...(accepted ? { intent: first.intent } : {}),
+      parser: {
+        ...(parsed.parser ?? {}),
+        semanticIntent: {
+          attempted: true,
+          accepted: Boolean(accepted),
+          intent: accepted ? first.intent : null,
+          evidenceId: accepted ? first.id : null,
+          score: first?.score ?? null,
+          candidates: hits.slice(0, 3).map((hit) => ({ id: hit.id, intent: hit.intent, score: hit.score }))
+        }
+      }
+    };
+  } catch (error) {
+    return {
+      ...parsed,
+      parser: {
+        ...(parsed.parser ?? {}),
+        semanticIntent: { attempted: true, accepted: false, error: error?.code ?? error?.name ?? "error" }
+      }
+    };
+  }
+}
+
+function semanticEntityCandidate(hit, catalog) {
+  const type = hit.documentType === "unit" || hit.documentType === "unit_description"
+    ? "unit"
+    : ["item", "item_description", "emblem_description"].includes(hit.documentType)
+      ? "item"
+      : ["trait", "trait_description"].includes(hit.documentType)
+        ? "trait"
+        : null;
+  if (!type || !hit.apiName) return null;
+  const record = type === "unit"
+    ? catalog.unitByApiName.get(hit.apiName)
+    : type === "item"
+      ? catalog.itemByApiName.get(hit.apiName)
+      : catalog.traitByFilterId.get(hit.apiName) ?? catalog.traitByApiName.get(hit.apiName);
+  if (!record || record.current === false) return null;
+  return {
+    id: hit.id,
+    entityType: type,
+    apiName: type === "trait" ? record.apiName : hit.apiName,
+    filterId: type === "trait" ? record.filterId : null,
+    label: hit.metadata?.canonicalName
+      ?? record.preferredDisplayName
+      ?? record.displayName
+      ?? record.shortName
+      ?? record.zhName
+      ?? hit.apiName,
+    matchedAlias: hit.metadata?.matchedAlias ?? null,
+    confidence: Number(hit.score),
+    source: "persistent_semantic_index",
+    evidenceId: hit.id
+  };
+}
+
+async function applySemanticEntityHints(input, parsed, options = {}, catalog) {
+  const parser = parsed?.parser ?? {};
+  const needsEntitySearch = !parsed.unit
+    || asArray(parser.unresolvedEntityHints).length > 0
+    || asArray(parser.entityAmbiguities).length > 0;
+  if (!options.semanticRetriever?.search || !needsEntitySearch) return parsed;
+  try {
+    const hits = await options.semanticRetriever.search(input, {
+      documentTypes: ["unit", "item", "trait", "unit_description", "item_description", "trait_description", "emblem_description"],
+      patch: options.preferences?.patch ?? "current",
+      locale: options.semanticLocale ?? "zh-CN",
+      topK: Number(options.semanticEntityLimit ?? 8),
+      minimumScore: Number(options.semanticEntityMinimumScore ?? 0.76)
+    });
+    const candidates = hits.map((hit) => semanticEntityCandidate(hit, catalog)).filter(Boolean);
+    const units = candidates.filter((candidate) => candidate.entityType === "unit");
+    const first = units[0];
+    const second = units[1];
+    const minimumScore = Number(options.semanticEntityMinimumScore ?? 0.76);
+    const minimumMargin = Number(options.semanticEntityMinimumMargin ?? 0.06);
+    const acceptedUnit = !parsed.unit
+      && first
+      && first.confidence >= minimumScore
+      && (!second || first.confidence - second.confidence >= minimumMargin)
+      ? first
+      : null;
+    return {
+      ...parsed,
+      ...(acceptedUnit ? { unit: acceptedUnit.apiName, unitAlias: acceptedUnit.label } : {}),
+      parser: {
+        ...parser,
+        entityMatches: acceptedUnit ? [
+          ...(parser.entityMatches ?? []),
+          {
+            entityType: "unit",
+            apiName: acceptedUnit.apiName,
+            alias: acceptedUnit.label,
+            matchType: "semantic_index",
+            confidence: acceptedUnit.confidence,
+            evidenceId: acceptedUnit.evidenceId
+          }
+        ] : parser.entityMatches ?? [],
+        semanticEntities: {
+          attempted: true,
+          acceptedUnit: acceptedUnit?.apiName ?? null,
+          evidenceId: acceptedUnit?.evidenceId ?? null,
+          candidates: candidates.slice(0, Number(options.semanticEntityLimit ?? 8))
+        }
+      }
+    };
+  } catch (error) {
+    return {
+      ...parsed,
+      parser: {
+        ...parser,
+        semanticEntities: { attempted: true, acceptedUnit: null, candidates: [], error: error?.code ?? error?.name ?? "error" }
+      }
+    };
+  }
 }
 
 async function callStructuredParser(input, parsed, options, catalog) {
@@ -452,10 +603,15 @@ async function parseQueryWithOptionalStructuredParser(input, options, catalog, p
 }
 
 function buildClarificationEntityCandidates(input, parsed, query, catalog, options = {}) {
-  if (options.useEntityCandidateRetriever === false) return [];
+  const semanticCandidates = (parsed.parser?.semanticEntities?.candidates ?? []).map((candidate) => ({
+    ...candidate,
+    inputFragment: input,
+    queryText: `${input} ${candidate.label}`.trim()
+  }));
+  if (options.useEntityCandidateRetriever === false) return semanticCandidates;
 
   const retriever = options.entityCandidateRetriever ?? retrieveEntityCandidates;
-  if (typeof retriever !== "function") return [];
+  if (typeof retriever !== "function") return semanticCandidates;
 
   const requests = [];
   if (!query.unit) {
@@ -480,6 +636,7 @@ function buildClarificationEntityCandidates(input, parsed, query, catalog, optio
       queryText: replaceInputFragment(input, inputFragment, candidate.label ?? candidate.matchedAlias)
     };
   }));
+  candidates.push(...semanticCandidates);
 
   const unique = new Map();
   for (const candidate of candidates) {
@@ -1141,7 +1298,9 @@ export async function recommendForInput(input, options = {}) {
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options));
-  const deterministicParsed = parseQueryDeterministically(input, options, catalog);
+  let deterministicParsed = parseQueryDeterministically(input, options, catalog);
+  deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
+  deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
   const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
   const initialCompSessionMerge = inheritCompRankingFromSession(
     deterministicParsed,

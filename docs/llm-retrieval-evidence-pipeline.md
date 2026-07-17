@@ -1,7 +1,7 @@
 # TFTAgent LLM 检索、证据与结论生成流程设计
 
 更新时间：2026-07-17
-状态：P0–P3 已实现（本地 TF-IDF 为默认语义降级；真实 Embedding 与线上数据 smoke 仍需部署配置）
+状态：P0–P3 已实现（SQLite Embedding 索引、增量构建和运行时检索已接入；真实线上 Provider smoke 仍需部署凭据）
 适用范围：TFTAgent 后端查询、语义检索、证据组装、LLM 数据解读与前端降级展示
 
 ## 1. 文档目标
@@ -736,12 +736,14 @@ conclusion_fallback
 
 ### 13.2 语义检索
 
-- `src/retrieval/semantic-retriever.js`：提供 `SemanticRetriever`、现有实体候选 TF-IDF 适配器、通用本地 TF-IDF、Embedding 检索器与自动降级包装器。
-- `src/llm/embedding-provider.js`：提供可注入的 `EmbeddingProvider` 抽象；Provider 不可用时由降级包装器转入 TF-IDF。
-- `src/retrieval/semantic-document-store.js`：提供带 `contentHash` 的增量内存文档存储，并拒绝 MetaTFT 每日实时统计进入静态语义索引。
+- `src/retrieval/semantic-retriever.js`：提供 `SemanticRetriever`、持久化向量检索器、现有实体候选 TF-IDF 适配器，以及只在 Provider 故障时启用的 TF-IDF 降级包装器。
+- `src/llm/embedding-provider.js`：实现可注入 Provider 和真实 OpenAI-compatible `/embeddings` Provider，支持批处理、超时、维度校验和安全错误封装。
+- `src/retrieval/semantic-document-store.js`：实现 `SQLiteSemanticDocumentStore`，把文档、元数据和 Float32 BLOB 向量持久化到 SQLite；按类型、版本、语言和模型过滤，并拒绝 MetaTFT 每日实时统计进入静态索引。
+- `src/retrieval/semantic-corpus.js`：从当前实体目录、别名、静态说明和人工意图样例生成稳定、版本化的语义文档。
+- `src/retrieval/semantic-index-builder.js`：按 `contentHash` 和 Embedding 模型增量生成向量，保留未变化向量，清理当前版本已删除文档，并输出构建和健康审计报告。
 - `src/retrieval/hybrid-reranker.js`：执行 API ID、当前规范名、当前别名、关键词、向量相似度的优先级，并强制类型、版本和语言过滤。
 
-当前没有把真实 Embedding 向量写入 SQLite，也没有引入必须独立部署的向量数据库。上线真实 Embedding 前，应按第 6 节表结构补充 SQLite 持久化、增量构建脚本和真实 Provider smoke；未配置时核心查询继续使用现有精确规则和 TF-IDF。
+构建命令为 `npm run semantic:index`，审计命令为 `npm run semantic:audit`。索引构建默认要求真实 Embedding Provider 可用，不会静默生成无向量索引；只有显式传入 `--allow-missing-embeddings` 才允许仅写入文档。运行时配置 `TFT_AGENT_EMBEDDING_MODE=on` 后，小窗口会打开持久化 SQLite 索引，先执行向量检索，并在 Provider 请求失败时对同一持久化语料执行 TF-IDF 降级。Node 22.5 及以上使用内置 `node:sqlite`；Node 18–21 使用可选依赖 `better-sqlite3`。
 
 ### 13.3 证据、Prompt 与纠错
 
@@ -760,3 +762,16 @@ conclusion_fallback
 结构化直出且不调用结论 Provider：`unit_details`、`item_details`、`trait_details`。
 
 专项回归覆盖：转职同义问法、三张可见卡片边界、单装备全候选覆盖、低样本风险、排他比较未决、阵容趋势提升与登场基础、数字和实体证据回链、纠错成功、纠错上限回退、资料类直出，以及 Embedding/LLM 不可用降级。
+
+### 13.5 SQLite Embedding 索引运行方式
+
+生产构建需要配置 `TFT_AGENT_EMBEDDING_MODE=on`、OpenAI-compatible Endpoint、模型和 API Key，然后执行：
+
+```text
+npm run semantic:index -- --input ./semantic-catalog.json --patch current --locale zh-CN
+npm run semantic:audit
+```
+
+`semantic-catalog.json` 可以包含 `units`、`items`、`traits`、`comps`、`descriptions` 和 `documents`。未传 `--input` 时使用仓库内置目录和人工意图样例。每次构建会比较 `contentHash` 与 `embeddingModel`，只请求新增、内容变化、缺失向量或模型变化的文档；同一 patch/locale 中不再存在的文档会从 SQLite 删除。
+
+索引使用 `semantic_documents` 表保存 `document_type`、`content`、`content_hash`、Float32 BLOB 向量、向量维度、`embedding_model`、`patch`、`locale`、`source`、元数据和更新时间。运行时只加载当前类型、版本、语言和模型的向量到检索候选集。高置信意图样例和当前版本实体命中会进入真实推荐编排；它们只能确定意图或实体，不参与实时指标、强度和排序计算。

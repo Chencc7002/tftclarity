@@ -214,10 +214,15 @@ export {
   getConclusionPromptRoute
 } from "./llm/conclusion-prompt-registry.js";
 export {
+  DEFAULT_EMBEDDING_BATCH_SIZE,
+  DEFAULT_EMBEDDING_TIMEOUT_MS,
   EmbeddingProvider,
   EmbeddingProviderUnavailableError,
   FunctionEmbeddingProvider,
-  createEmbeddingProvider
+  OpenAICompatibleEmbeddingProvider,
+  createEmbeddingProvider,
+  createEmbeddingProviderFromConfig,
+  resolveEmbeddingProviderConfig
 } from "./llm/embedding-provider.js";
 export {
   clearEntityCandidateIndex,
@@ -254,7 +259,12 @@ export {
 } from "./retrieval/evidence-assembler.js";
 export {
   MemorySemanticDocumentStore,
+  SQLITE_SEMANTIC_INDEX_SCHEMA,
+  SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION,
+  SQLiteSemanticDocumentStore,
   SemanticDocumentStore,
+  decodeSemanticEmbedding,
+  encodeSemanticEmbedding,
   normalizeSemanticDocument,
   semanticContentHash
 } from "./retrieval/semantic-document-store.js";
@@ -266,8 +276,18 @@ export {
   TfidfSemanticRetriever,
   createEntityCandidateSemanticRetriever,
   createFallbackSemanticRetriever,
+  createPersistentSemanticRetriever,
+  retrieveSemanticPlan,
   createTfidfSemanticRetriever
 } from "./retrieval/semantic-retriever.js";
+export {
+  INTENT_SEMANTIC_SAMPLES,
+  buildSemanticCorpus
+} from "./retrieval/semantic-corpus.js";
+export {
+  auditSemanticIndex,
+  buildSemanticIndex
+} from "./retrieval/semantic-index-builder.js";
 export {
   HYBRID_MATCH_PRIORITY,
   HybridReranker,

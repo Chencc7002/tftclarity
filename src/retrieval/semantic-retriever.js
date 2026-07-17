@@ -143,12 +143,27 @@ export class EmbeddingSemanticRetriever extends SemanticRetriever {
     super();
     this.provider = options.provider;
     this.store = options.store;
+    this.queryVectorCache = new Map();
+    this.maxCachedQueries = Math.max(1, Number(options.maxCachedQueries ?? 256));
   }
 
   async search(query, options = {}) {
     if (!this.provider?.isAvailable?.()) throw new EmbeddingProviderUnavailableError();
-    const [queryVector] = await this.provider.embed([String(query ?? "")], { purpose: "semantic_search" });
-    const documents = await this.store.list(options);
+    const queryText = String(query ?? "");
+    const cacheKey = `${this.provider.model ?? "unknown"}\u0000${queryText}`;
+    let queryVector = this.queryVectorCache.get(cacheKey);
+    if (!queryVector) {
+      [queryVector] = await this.provider.embed([queryText], { purpose: "semantic_search" });
+      this.queryVectorCache.set(cacheKey, queryVector);
+      if (this.queryVectorCache.size > this.maxCachedQueries) {
+        this.queryVectorCache.delete(this.queryVectorCache.keys().next().value);
+      }
+    }
+    const documents = await this.store.list({
+      ...options,
+      embeddingModel: options.embeddingModel ?? this.provider.model,
+      hasEmbedding: true
+    });
     return documents
       .filter((document) => filterDocument(document, options) && Array.isArray(document.embedding))
       .map((document) => hitFor(document, vectorCosine(queryVector, document.embedding), "embedding"))
@@ -159,10 +174,11 @@ export class EmbeddingSemanticRetriever extends SemanticRetriever {
 }
 
 export class FallbackSemanticRetriever extends SemanticRetriever {
-  constructor(primary, fallback) {
+  constructor(primary, fallback, options = {}) {
     super();
     this.primary = primary;
     this.fallback = fallback;
+    this.onFallback = options.onFallback ?? null;
   }
 
   async search(query, options = {}) {
@@ -170,7 +186,7 @@ export class FallbackSemanticRetriever extends SemanticRetriever {
       const hits = await this.primary?.search?.(query, options);
       if (array(hits).length) return hits;
     } catch (error) {
-      options.onFallback?.(error);
+      (options.onFallback ?? this.onFallback)?.(error);
     }
     const hits = await this.fallback.search(query, options);
     return hits.map((hit) => ({
@@ -190,4 +206,29 @@ export function createEntityCandidateSemanticRetriever(options = {}) {
 
 export function createFallbackSemanticRetriever(primary, fallback) {
   return new FallbackSemanticRetriever(primary, fallback);
+}
+
+export function createPersistentSemanticRetriever({ store, provider, onFallback = null } = {}) {
+  if (!store?.list) throw new TypeError("createPersistentSemanticRetriever requires a SemanticDocumentStore");
+  const fallback = new TfidfSemanticRetriever({ store });
+  if (!provider) return fallback;
+  const primary = new EmbeddingSemanticRetriever({ provider, store });
+  return new FallbackSemanticRetriever(primary, fallback, { onFallback });
+}
+
+export async function retrieveSemanticPlan(plan, retriever, options = {}) {
+  if (!retriever || !Array.isArray(plan?.semanticQueries)) return [];
+  const hits = [];
+  for (const query of plan.semanticQueries) {
+    const values = await retriever.search(query.query, {
+      documentTypes: query.types,
+      patch: query.patch,
+      locale: query.locale,
+      topK: query.topK,
+      minimumScore: options.minimumScore,
+      onFallback: options.onFallback
+    });
+    hits.push(...values);
+  }
+  return hits;
 }
