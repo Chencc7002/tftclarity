@@ -285,6 +285,12 @@ export {
   buildSemanticCorpus
 } from "./retrieval/semantic-corpus.js";
 export {
+  catalogFromRuntimeCacheSnapshot,
+  createStaticCompCatalog,
+  loadCompleteSemanticCatalog,
+  loadRuntimeCatalogSnapshot
+} from "./retrieval/semantic-catalog-loader.js";
+export {
   auditSemanticIndex,
   buildSemanticIndex
 } from "./retrieval/semantic-index-builder.js";

@@ -743,7 +743,7 @@ conclusion_fallback
 - `src/retrieval/semantic-index-builder.js`：按 `contentHash` 和 Embedding 模型增量生成向量，保留未变化向量，清理当前版本已删除文档，并输出构建和健康审计报告。
 - `src/retrieval/hybrid-reranker.js`：执行 API ID、当前规范名、当前别名、关键词、向量相似度的优先级，并强制类型、版本和语言过滤。
 
-构建命令为 `npm run semantic:index`，审计命令为 `npm run semantic:audit`。索引构建默认要求真实 Embedding Provider 可用，不会静默生成无向量索引；只有显式传入 `--allow-missing-embeddings` 才允许仅写入文档。运行时配置 `TFT_AGENT_EMBEDDING_MODE=on` 后，小窗口会打开持久化 SQLite 索引，先执行向量检索，并在 Provider 请求失败时对同一持久化语料执行 TF-IDF 降级。Node 22.5 及以上使用内置 `node:sqlite`；Node 18–21 使用可选依赖 `better-sqlite3`。
+构建命令为 `npm run semantic:index`，审计命令为 `npm run semantic:audit`。未传 `--input` 时默认读取当前版本的完整小窗口目录缓存，并把阵容快照裁剪为仅含 cluster 身份、名称和别名的静态文档；种子目录只能通过 `--allow-seed-catalog` 显式启用。索引构建默认要求真实 Embedding Provider 可用，不会静默生成无向量索引；`--no-embeddings` 只用于明确的本地文档维护和诊断。运行时配置 `TFT_AGENT_EMBEDDING_MODE=on` 后，小窗口会打开持久化 SQLite 索引，先执行向量检索，并在 Provider 请求失败时对同一持久化语料执行 TF-IDF 降级。Node 22.5 及以上使用内置 `node:sqlite`；Node 18–21 使用可选依赖 `better-sqlite3`。详细命令和当前构建规模见 `docs/semantic-index-build.md`。
 
 ### 13.3 证据、Prompt 与纠错
 
@@ -772,6 +772,6 @@ npm run semantic:index -- --input ./semantic-catalog.json --patch current --loca
 npm run semantic:audit
 ```
 
-`semantic-catalog.json` 可以包含 `units`、`items`、`traits`、`comps`、`descriptions` 和 `documents`。未传 `--input` 时使用仓库内置目录和人工意图样例。每次构建会比较 `contentHash` 与 `embeddingModel`，只请求新增、内容变化、缺失向量或模型变化的文档；同一 patch/locale 中不再存在的文档会从 SQLite 删除。
+`semantic-catalog.json` 可以包含 `units`、`items`、`traits`、`comps`、`descriptions` 和 `documents`。未传 `--input` 时使用 `.cache/small-window-cache.json` 中的当前版本完整实体目录，并在存在时读取 `.cache/comps-data-current-inspect.json` 的阵容身份；不会再静默回退到 39 条种子语料。每次构建会比较 `contentHash` 与 `embeddingModel`，只请求新增、内容变化、缺失向量或模型变化的文档；同一 patch/locale 中不再存在的文档会从 SQLite 删除。
 
 索引使用 `semantic_documents` 表保存 `document_type`、`content`、`content_hash`、Float32 BLOB 向量、向量维度、`embedding_model`、`patch`、`locale`、`source`、元数据和更新时间。运行时只加载当前类型、版本、语言和模型的向量到检索候选集。高置信意图样例和当前版本实体命中会进入真实推荐编排；它们只能确定意图或实体，不参与实时指标、强度和排序计算。

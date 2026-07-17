@@ -550,6 +550,11 @@ test("unknown item detail wording clarifies before recommendation logic", async 
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
     officialItemDetails: new Map(),
+    officialEntityDetails: {
+      units: new Map(),
+      traits: new Map(),
+      meta: {}
+    },
     recommendForInputImpl: () => {
       throw new Error("unknown item details must not enter recommendation logic");
     }
