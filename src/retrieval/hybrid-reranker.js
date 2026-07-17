@@ -25,9 +25,13 @@ function normalizedValues(hit) {
 function matchType(query, hit) {
   const normalizedQuery = normalizeAlias(query);
   const values = normalizedValues(hit);
-  if (values.apiName && normalizedQuery === values.apiName) return "api_exact";
-  if (values.canonicalName && normalizedQuery === values.canonicalName) return "canonical_exact";
-  if (values.aliases.includes(normalizedQuery) || normalizeAlias(hit.metadata?.matchedAlias) === normalizedQuery) return "alias_exact";
+  const matchedAlias = normalizeAlias(hit.metadata?.matchedAlias);
+  if (values.apiName && normalizedQuery.includes(values.apiName)) return "api_exact";
+  if (values.canonicalName && normalizedQuery.includes(values.canonicalName)) return "canonical_exact";
+  if (
+    values.aliases.some((alias) => normalizedQuery.includes(alias))
+    || (matchedAlias && normalizedQuery.includes(matchedAlias))
+  ) return "alias_exact";
   if (hit.metadata?.matchType && !["tfidf_vector", "embedding"].includes(hit.metadata.matchType)) return "keyword";
   if (values.content && (values.content.includes(normalizedQuery) || normalizedQuery.includes(values.content))) return "keyword";
   return "vector";
@@ -41,22 +45,39 @@ function allowed(hit, options) {
   return true;
 }
 
+function confidenceFor(type, score) {
+  const semanticScore = Math.max(0, Math.min(1, Number(score ?? 0)));
+  if (type === "api_exact") return 1;
+  if (type === "canonical_exact") return Math.max(0.99, semanticScore);
+  if (type === "alias_exact") return Math.max(0.97, semanticScore);
+  if (type === "keyword") return Math.max(0.8, semanticScore);
+  return semanticScore;
+}
+
 export class HybridReranker {
   rerank(query, hits, options = {}) {
     const byId = new Map();
     for (const hit of array(hits)) {
       if (!allowed(hit, options)) continue;
       const type = matchType(query, hit);
-      const rerankScore = HYBRID_MATCH_PRIORITY[type] + Math.max(0, Math.min(1, Number(hit.score ?? 0)));
+      const semanticScore = Math.max(0, Math.min(1, Number(hit.score ?? 0)));
+      const score = confidenceFor(type, semanticScore);
+      const rerankScore = HYBRID_MATCH_PRIORITY[type] + semanticScore;
       const value = {
         ...hit,
-        score: Number(hit.score ?? 0),
-        metadata: { ...hit.metadata, hybridMatchType: type, rerankScore }
+        score,
+        metadata: {
+          ...hit.metadata,
+          hybridMatchType: type,
+          semanticScore,
+          rerankScore
+        }
       };
       const existing = byId.get(value.id);
       if (!existing || existing.metadata.rerankScore < rerankScore) byId.set(value.id, value);
     }
     return [...byId.values()]
+      .filter((hit) => hit.score >= Number(options.minimumScore ?? 0))
       .sort((left, right) => right.metadata.rerankScore - left.metadata.rerankScore || left.id.localeCompare(right.id))
       .slice(0, Math.max(1, Number(options.topK ?? 8)));
   }

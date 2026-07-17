@@ -2,6 +2,7 @@ import { normalizeAlias } from "../core/normalizer.js";
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
 import { EmbeddingProviderUnavailableError } from "../llm/embedding-provider.js";
 import { createSemanticHit } from "./contracts.js";
+import { HybridReranker } from "./hybrid-reranker.js";
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -196,6 +197,42 @@ export class FallbackSemanticRetriever extends SemanticRetriever {
   }
 }
 
+export class HybridSemanticRetriever extends SemanticRetriever {
+  constructor(retriever, options = {}) {
+    super();
+    if (!retriever?.search) throw new TypeError("HybridSemanticRetriever requires a SemanticRetriever");
+    this.retriever = retriever;
+    this.lexicalRetriever = options.lexicalRetriever ?? null;
+    this.reranker = options.reranker ?? new HybridReranker();
+    this.candidateMultiplier = Math.max(1, Number(options.candidateMultiplier ?? 4));
+    this.maxCandidates = Math.max(8, Number(options.maxCandidates ?? 64));
+  }
+
+  async search(query, options = {}) {
+    const topK = Math.max(1, Number(options.topK ?? 8));
+    const candidateTopK = Math.min(
+      this.maxCandidates,
+      Math.max(topK, Math.ceil(topK * this.candidateMultiplier))
+    );
+    const candidateOptions = {
+      ...options,
+      topK: candidateTopK,
+      minimumScore: Number(options.candidateMinimumScore ?? -1)
+    };
+    const [primaryHits, lexicalHits] = await Promise.all([
+      this.retriever.search(query, candidateOptions),
+      this.lexicalRetriever && this.lexicalRetriever !== this.retriever
+        ? this.lexicalRetriever.search(query, { ...candidateOptions, minimumScore: 0 })
+        : []
+    ]);
+    return this.reranker.rerank(query, [...primaryHits, ...lexicalHits], {
+      ...options,
+      topK,
+      minimumScore: Number(options.minimumScore ?? 0)
+    });
+  }
+}
+
 export function createTfidfSemanticRetriever(options = {}) {
   return new TfidfSemanticRetriever(options);
 }
@@ -211,9 +248,16 @@ export function createFallbackSemanticRetriever(primary, fallback) {
 export function createPersistentSemanticRetriever({ store, provider, onFallback = null } = {}) {
   if (!store?.list) throw new TypeError("createPersistentSemanticRetriever requires a SemanticDocumentStore");
   const fallback = new TfidfSemanticRetriever({ store });
-  if (!provider) return fallback;
-  const primary = new EmbeddingSemanticRetriever({ provider, store });
-  return new FallbackSemanticRetriever(primary, fallback, { onFallback });
+  const retriever = provider
+    ? new FallbackSemanticRetriever(
+        new EmbeddingSemanticRetriever({ provider, store }),
+        fallback,
+        { onFallback }
+      )
+    : fallback;
+  return new HybridSemanticRetriever(retriever, {
+    lexicalRetriever: provider ? fallback : null
+  });
 }
 
 export async function retrieveSemanticPlan(plan, retriever, options = {}) {
@@ -228,7 +272,13 @@ export async function retrieveSemanticPlan(plan, retriever, options = {}) {
       minimumScore: options.minimumScore,
       onFallback: options.onFallback
     });
-    hits.push(...values);
+    hits.push(...new HybridReranker().rerank(query.query, values, {
+      documentTypes: query.types,
+      patch: query.patch,
+      locale: query.locale,
+      topK: query.topK,
+      minimumScore: options.minimumScore
+    }));
   }
   return hits;
 }

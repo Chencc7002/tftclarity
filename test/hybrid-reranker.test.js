@@ -25,7 +25,8 @@ test("hybrid reranking enforces API ID > canonical name > alias > keyword > vect
   const cases = [
     ["TFT17_MasterYi", "api"],
     ["易大师", "canonical"],
-    ["剑圣", "alias"]
+    ["剑圣", "alias"],
+    ["剑圣哪个转职好", "alias"]
   ];
   for (const [query, expected] of cases) {
     const hits = rerankSemanticHits(query, [
@@ -35,6 +36,8 @@ test("hybrid reranking enforces API ID > canonical name > alias > keyword > vect
       hit("api", { score: 0.1, apiName: "TFT17_MasterYi" })
     ]);
     assert.equal(hits[0].id, expected);
+    assert.ok(hits[0].score >= 0.97);
+    assert.equal(hits[0].metadata.semanticScore, 0.1);
   }
 });
 

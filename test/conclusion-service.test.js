@@ -5,7 +5,8 @@ import test from "node:test";
 import {
   MemoryCacheStore,
   createCatalog,
-  generateEvidenceBackedConclusion
+  generateEvidenceBackedConclusion,
+  makeConclusionCacheKey
 } from "../src/index.js";
 
 const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fixture.json", import.meta.url), "utf8"));
@@ -124,4 +125,35 @@ test("conclusion service reports disabled mode without calling a provider", asyn
   });
   assert.equal(conclusion.status, "disabled");
   assert.equal(called, false);
+});
+
+test("conclusion cache keys isolate evidence, model, base prompt and the selected intent prompt version", () => {
+  const evidence = {
+    schemaVersion: "llm_evidence_pack.v2",
+    request: { intent: "unit_item_rankings", requestedIntent: "unit_item_rankings" },
+    recommendations: []
+  };
+  const baseline = makeConclusionCacheKey(evidence, {
+    model: "model-a",
+    promptVersion: "provider.v1",
+    basePromptVersion: "base.v1",
+    intentPromptVersion: "unit-item.v1"
+  });
+  for (const config of [
+    { model: "model-b", promptVersion: "provider.v1", basePromptVersion: "base.v1", intentPromptVersion: "unit-item.v1" },
+    { model: "model-a", promptVersion: "provider.v2", basePromptVersion: "base.v1", intentPromptVersion: "unit-item.v1" },
+    { model: "model-a", promptVersion: "provider.v1", basePromptVersion: "base.v2", intentPromptVersion: "unit-item.v1" },
+    { model: "model-a", promptVersion: "provider.v1", basePromptVersion: "base.v1", intentPromptVersion: "unit-item.v2" }
+  ]) {
+    assert.notEqual(makeConclusionCacheKey(evidence, config), baseline);
+  }
+  assert.notEqual(
+    makeConclusionCacheKey({ ...evidence, schemaVersion: "llm_evidence_pack.v3" }, {
+      model: "model-a",
+      promptVersion: "provider.v1",
+      basePromptVersion: "base.v1",
+      intentPromptVersion: "unit-item.v1"
+    }),
+    baseline
+  );
 });

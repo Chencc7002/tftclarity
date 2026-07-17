@@ -56,7 +56,7 @@ function normalizeSemantic(record, index) {
   return {
     evidenceId,
     type: clipped(record?.documentType ?? record?.type ?? "static_description", 80),
-    text: clipped(record?.text ?? record?.content ?? "", 1400),
+    text: clipped(record?.text ?? record?.content ?? record?.metadata?.content ?? "", 1400),
     score: Number.isFinite(Number(record?.score)) ? Number(record.score) : null,
     authority: "official_static_catalog",
     source: clipped(record?.source ?? record?.metadata?.source ?? "semantic_index", 80),

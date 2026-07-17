@@ -195,7 +195,7 @@ function inferIntent(input, details = {}) {
   if ((details.itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized)) {
     return "unit_item_rankings";
   }
-  if (/(单件|单装备|哪个装备|哪件装备|优先做.{0,6}装备|装备表现最好|装备最厉害)/.test(normalized)) {
+  if (/(单件|单装备|核心装备|核心装|哪个装备|哪件装备|优先做.{0,6}装备|装备表现最好|装备最厉害)/.test(normalized)) {
     return "unit_item_rankings";
   }
   if ((details.ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized)) {

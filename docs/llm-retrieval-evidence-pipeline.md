@@ -741,9 +741,11 @@ conclusion_fallback
 - `src/retrieval/semantic-document-store.js`：实现 `SQLiteSemanticDocumentStore`，把文档、元数据和 Float32 BLOB 向量持久化到 SQLite；按类型、版本、语言和模型过滤，并拒绝 MetaTFT 每日实时统计进入静态索引。
 - `src/retrieval/semantic-corpus.js`：从当前实体目录、别名、静态说明和人工意图样例生成稳定、版本化的语义文档。
 - `src/retrieval/semantic-index-builder.js`：按 `contentHash` 和 Embedding 模型增量生成向量，保留未变化向量，清理当前版本已删除文档，并输出构建和健康审计报告。
-- `src/retrieval/hybrid-reranker.js`：执行 API ID、当前规范名、当前别名、关键词、向量相似度的优先级，并强制类型、版本和语言过滤。
+- `src/retrieval/hybrid-reranker.js`：执行 API ID、当前规范名、当前别名、关键词、向量相似度的优先级，并强制类型、版本和语言过滤；持久化检索器和统一检索计划执行路径都会实际经过该重排器，而不是只保留为独立工具。
 
 构建命令为 `npm run semantic:index`，审计命令为 `npm run semantic:audit`。未传 `--input` 时默认读取当前版本的完整小窗口目录缓存，并把阵容快照裁剪为仅含 cluster 身份、名称和别名的静态文档；种子目录只能通过 `--allow-seed-catalog` 显式启用。索引构建默认要求真实 Embedding Provider 可用，不会静默生成无向量索引；`--no-embeddings` 只用于明确的本地文档维护和诊断。运行时配置 `TFT_AGENT_EMBEDDING_MODE=on` 后，小窗口会打开持久化 SQLite 索引，先执行向量检索，并在 Provider 请求失败时对同一持久化语料执行 TF-IDF 降级。Node 22.5 及以上使用内置 `node:sqlite`；Node 18–21 使用可选依赖 `better-sqlite3`。详细命令和当前构建规模见 `docs/semantic-index-build.md`。
+
+OpenAI-compatible 配置推荐优先使用 `https://api.inferera.com/v1`；若部署网络可以稳定访问默认域名，也可切换到 `https://aihubmix.com/v1`。`.env.example` 已同时列出 Embedding 模型、维度、批次、超时和 SQLite 索引路径，API Key 只由后端环境读取。
 
 ### 13.3 证据、Prompt 与纠错
 

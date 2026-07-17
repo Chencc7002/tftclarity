@@ -1,5 +1,6 @@
 import { generateEvidenceBackedConclusion } from "../core/conclusion-service.js";
 import { createIntentEnvelope } from "./contracts.js";
+import { rerankSemanticHits } from "./hybrid-reranker.js";
 import { RetrievalPlanner } from "./retrieval-planner.js";
 
 function emit(onEvent, event) {
@@ -24,8 +25,14 @@ async function retrieveSemantics(plan, retriever, onEvent) {
         locale: query.locale,
         topK: query.topK
       });
-      hits.push(...values);
-      emit(onEvent, { type: "semantic_retrieval_completed", queryId: query.id, count: values.length });
+      const reranked = rerankSemanticHits(query.query, values, {
+        documentTypes: query.types,
+        patch: query.patch,
+        locale: query.locale,
+        topK: query.topK
+      });
+      hits.push(...reranked);
+      emit(onEvent, { type: "semantic_retrieval_completed", queryId: query.id, count: reranked.length });
     } catch (error) {
       emit(onEvent, { type: "semantic_retrieval_failed", queryId: query.id, error: error?.code ?? error?.name ?? "error" });
       if (query.required) throw error;

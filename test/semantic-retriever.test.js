@@ -6,8 +6,10 @@ import {
   EmbeddingSemanticRetriever,
   EntityCandidateSemanticRetriever,
   FallbackSemanticRetriever,
+  FunctionEmbeddingProvider,
   MemorySemanticDocumentStore,
   TfidfSemanticRetriever,
+  createPersistentSemanticRetriever,
   createCatalog
 } from "../src/index.js";
 
@@ -76,6 +78,50 @@ test("Embedding provider failure automatically falls back to local TF-IDF", asyn
   });
   assert.equal(hits[0].intent, "unit_emblem_rankings");
   assert.equal(hits[0].metadata.fallback, true);
+});
+
+test("persistent semantic retrieval applies hybrid exact-name priority after vector candidate retrieval", async () => {
+  const store = new MemorySemanticDocumentStore([
+    {
+      id: "unit:exact",
+      documentType: "unit",
+      content: "易大师 剑圣 Master Yi",
+      apiName: "TFT17_MasterYi",
+      embedding: [-1, 0],
+      embeddingModel: "fixture-v1",
+      patch: "17.7",
+      locale: "zh-CN",
+      source: "official_catalog",
+      metadata: { canonicalName: "易大师", aliases: ["剑圣"] }
+    },
+    ...Array.from({ length: 70 }, (_, index) => ({
+      id: `unit:vector-only:${index}`,
+      documentType: "unit",
+      content: `相似但不是目标实体 ${index}`,
+      apiName: `TFT17_Distractor${index}`,
+      embedding: [1, index / 1000],
+      embeddingModel: "fixture-v1",
+      patch: "17.7",
+      locale: "zh-CN",
+      source: "official_catalog",
+      metadata: { canonicalName: `干扰项${index}`, aliases: [] }
+    }))
+  ]);
+  const provider = new FunctionEmbeddingProvider(async () => [[1, 0]], { model: "fixture-v1" });
+  const retriever = createPersistentSemanticRetriever({ store, provider });
+  const hits = await retriever.search("剑圣", {
+    documentTypes: ["unit"],
+    patch: "17.7",
+    locale: "zh-CN",
+    topK: 2,
+    minimumScore: 0.76
+  });
+  assert.equal(hits[0].id, "unit:exact");
+  assert.equal(hits[0].score, 0.97);
+  assert.equal(hits[0].metadata.hybridMatchType, "alias_exact");
+  assert.equal(hits[1].metadata.hybridMatchType, "vector");
+  assert.equal(hits[0].metadata.retrievalMode, "tfidf");
+  assert.equal(hits[1].metadata.retrievalMode, "embedding");
 });
 
 test("semantic document store supports incremental upsert and rejects realtime statistics", async () => {

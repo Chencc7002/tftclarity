@@ -48,6 +48,30 @@ test("EvidenceAssembler never lets semantic evidence displace visible structured
   assert.equal(pack.structuredEvidence.length + pack.semanticEvidence.length, 10);
 });
 
+test("EvidenceAssembler retains SemanticHit content stored in metadata", () => {
+  const pack = assembleEvidencePack({
+    result: structuredClone(fixture),
+    catalog: createCatalog(),
+    semanticEvidence: [{
+      schemaVersion: "semantic_hit.v1",
+      id: "unit:TFT17_Xayah",
+      documentType: "unit",
+      score: 0.98,
+      apiName: "TFT17_Xayah",
+      patch: "17.7",
+      locale: "zh-CN",
+      source: "official_catalog",
+      metadata: {
+        content: "霞是当前版本目录中的规范棋子实体。",
+        canonicalName: "霞"
+      }
+    }]
+  });
+  assert.equal(pack.semanticEvidence.length, 1);
+  assert.equal(pack.semanticEvidence[0].text, "霞是当前版本目录中的规范棋子实体。");
+  assert.equal(pack.semanticEvidence[0].metadata.apiName, "TFT17_Xayah");
+});
+
 test("EvidenceAssembler rejects missing or over-budget critical evidence instead of generating a partial conclusion", () => {
   assert.throws(() => assembleEvidencePack({
     result: { ...structuredClone(fixture), rankedBuilds: [] },

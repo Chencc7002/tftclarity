@@ -272,6 +272,7 @@ export {
   EmbeddingSemanticRetriever,
   EntityCandidateSemanticRetriever,
   FallbackSemanticRetriever,
+  HybridSemanticRetriever,
   SemanticRetriever,
   TfidfSemanticRetriever,
   createEntityCandidateSemanticRetriever,
