@@ -619,10 +619,37 @@ test("current MetaTFT item observations win over an unobserved historical seed w
   const current = catalog.itemByApiName.get("TFT_Item_MadredsBloodrazor");
   const historicalSeed = catalog.itemByApiName.get("TFT_Item_GiantSlayer");
   const parsed = parseQuery("霞已经有巨人杀手，剩下两件怎么带？", { catalog });
+  const shorthand = parseQuery("霞已经有巨杀，剩下两件怎么带？", { catalog });
+  const pinyin = parseQuery("xia yijing you jusha", { catalog });
+  const comparison = parseQuery("霞，无尽和巨杀哪个更好？", { catalog });
 
   assert.equal(current.current, true);
+  assert.equal(current.aliases.includes("巨杀"), true);
+  assert.equal(current.aliases.includes("jusha"), true);
   assert.equal(historicalSeed.current, false);
+  assert.equal(historicalSeed.supersededBy, "TFT_Item_MadredsBloodrazor");
   assert.equal(historicalSeed.availabilitySource, "metatft_items_snapshot_absence");
   assert.deepEqual(parsed.ownedItems, ["TFT_Item_MadredsBloodrazor"]);
+  assert.deepEqual(shorthand.ownedItems, ["TFT_Item_MadredsBloodrazor"]);
+  assert.deepEqual(pinyin.ownedItems, ["TFT_Item_MadredsBloodrazor"]);
+  assert.deepEqual(comparison.comparisonItems, [
+    "TFT_Item_InfinityEdge",
+    "TFT_Item_MadredsBloodrazor"
+  ]);
+  assert.equal(parsed.parser.entityAmbiguities.length, 0);
+  assert.equal(shorthand.parser.entityAmbiguities.length, 0);
+  assert.equal(comparison.parser.entityAmbiguities.length, 0);
+});
+
+test("seed fallback catalog resolves giant slayer shorthand to the current API id", () => {
+  const catalog = createCatalog();
+  const parsed = parseQuery("霞，无尽和巨杀哪个更好？", { catalog });
+  const explicitLegacy = parseQuery("霞已经有 TFT_Item_GiantSlayer", { catalog });
+
+  assert.deepEqual(parsed.comparisonItems, [
+    "TFT_Item_InfinityEdge",
+    "TFT_Item_MadredsBloodrazor"
+  ]);
+  assert.deepEqual(explicitLegacy.ownedItems, ["TFT_Item_GiantSlayer"]);
   assert.equal(parsed.parser.entityAmbiguities.length, 0);
 });

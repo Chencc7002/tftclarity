@@ -194,9 +194,13 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
   if (structuredParser?.valid && structuredParser.needsClarification) {
     return buildClarification(
       "structured_parser_clarification",
-      structuredParser.clarificationQuestion,
+      "信息还不足以执行查询。请补充当前版本的英雄、装备或羁绊名称；装备比较可以提供两到五个候选。",
       {
-        suggestions: structuredParser.suggestions ?? []
+        suggestions: [
+          "查询一个英雄的装备",
+          "比较两到五件装备",
+          "查看当前版本阵容排行"
+        ]
       }
     );
   }

@@ -601,7 +601,7 @@ test("exclusions stay separate from comparison options and do not widen ordinary
 
   assert.deepEqual(compared.query.comparison.itemApiNames, [
     "TFT_Item_InfinityEdge",
-    "TFT_Item_GiantSlayer"
+    "TFT_Item_MadredsBloodrazor"
   ]);
   assert.deepEqual(compared.query.excludedItems, ["TFT_Item_GuinsoosRageblade"]);
   assert.deepEqual(compared.query.ownedItems, []);
@@ -1474,7 +1474,7 @@ test("comparison keeps explicit owned items separate from the alternatives", () 
       placement_count: [90, 80, 70, 60, 40, 30, 20, 10]
     },
     {
-      unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_GiantSlayer|TFT_Item_Deathblade",
+      unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_MadredsBloodrazor|TFT_Item_Deathblade",
       placement_count: [60, 55, 50, 45, 40, 30, 20, 10]
     }
   ];
@@ -1483,7 +1483,7 @@ test("comparison keeps explicit owned items separate from the alternatives", () 
   assert.deepEqual(result.query.ownedItems, ["TFT_Item_GuinsoosRageblade"]);
   assert.deepEqual(result.query.comparison.itemApiNames, [
     "TFT_Item_InfinityEdge",
-    "TFT_Item_GiantSlayer"
+    "TFT_Item_MadredsBloodrazor"
   ]);
   assert.equal(result.comparison.winner, "TFT_Item_InfinityEdge");
   assert.ok(result.filteredBuilds.every((build) => build.items.includes("TFT_Item_GuinsoosRageblade")));
@@ -1901,6 +1901,28 @@ test("structured parser can safely expand unresolved entity mentions before reco
   assert.deepEqual(result.query.ownedItems, ["TFT_Item_GuinsoosRageblade"]);
   assert.ok(result.rankedBuilds.length > 0);
   assert.ok(result.rankedBuilds.every((build) => build.items.includes("TFT_Item_GuinsoosRageblade")));
+});
+
+test("provider-authored clarification prose cannot surface stale catalog entities", async () => {
+  const result = await recommendForInput("哪个更好？", {
+    response: fixtureRows,
+    structuredParser: async () => ({
+      intent: "clarification",
+      entities: {
+        unit_mentions: [],
+        item_mentions: [],
+        trait_mentions: []
+      },
+      constraints: {},
+      needs_clarification: true,
+      clarification_question: "你想比较什么？例如“霞和婕拉哪个好”。"
+    })
+  });
+
+  assert.equal(result.clarification.reason, "structured_parser_clarification");
+  assert.match(result.text, /当前版本的英雄、装备或羁绊名称/u);
+  assert.doesNotMatch(result.text, /婕拉/u);
+  assert.equal(result.parsed.parser.structuredParser.clarificationQuestion, null);
 });
 
 test("structured parser can resolve an explicit low-confidence item after the unit is known", async () => {

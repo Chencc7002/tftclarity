@@ -63,6 +63,7 @@ export const ITEMS = [
     zhName: "巨人杀手",
     shortName: "巨杀",
     aliases: ["巨杀", "巨人杀手"],
+    supersededBy: "TFT_Item_MadredsBloodrazor",
     category: "ordinary_completed",
     current: true,
     obtainable: true
@@ -80,7 +81,7 @@ export const ITEMS = [
     apiName: "TFT_Item_MadredsBloodrazor",
     zhName: "巨人杀手",
     shortName: "巨人杀手",
-    aliases: ["巨人杀手", "麦瑞德", "裂血手套", "红叉", "madreds"],
+    aliases: ["巨杀", "巨人杀手", "麦瑞德", "裂血手套", "红叉", "madreds"],
     category: "ordinary_completed",
     current: true,
     obtainable: true

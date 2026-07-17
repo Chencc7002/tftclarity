@@ -34,7 +34,7 @@ const PINYIN_ALIASES = {
   item: new Map([
     ["TFT_Item_GuinsoosRageblade", ["yangdao", "guisuo"]],
     ["TFT_Item_InfinityEdge", ["wujin"]],
-    ["TFT_Item_GiantSlayer", ["jusha"]],
+    ["TFT_Item_MadredsBloodrazor", ["jusha"]],
     ["TFT_Item_RapidFireCannon", ["huopao"]],
     ["TFT_Item_LastWhisper", ["qingyu"]],
     ["TFT_Item_HextechGunblade", ["kejiqiang"]],

@@ -22,6 +22,17 @@ function compact(values) {
 
 export function decodeOfficialTftHtml(value) {
   return String(value ?? "")
+    // Static encyclopedia pages represent the default game state. Runtime-only
+    // ShowIf branches can contain unresolved TFTUnitProperty tokens, while the
+    // paired ShowIfNot branch contains the official default value.
+    .replace(
+      /<ShowIfNot(?:\.[^>]*)?>([\s\S]*?)<\/ShowIfNot(?:\.[^>]*)?>/gi,
+      "$1"
+    )
+    .replace(
+      /<ShowIf(?:\.[^>]*)?>[\s\S]*?<\/ShowIf(?:\.[^>]*)?>/gi,
+      ""
+    )
     .replace(/<br\s*\/?>(\r?\n)?/gi, "\n")
     .replace(/<li[^>]*>/gi, "\n• ")
     .replace(/<\/li>/gi, "")

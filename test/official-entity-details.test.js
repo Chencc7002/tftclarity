@@ -51,6 +51,18 @@ const job = {
   }]
 };
 
+const darkStarRace = {
+  version: "16.14",
+  data: [{
+    raceId: "10304",
+    name: "暗星",
+    characterid: "TFT17_DarkStar",
+    level: {
+      2: "<row>(2) 【暗星】创造【黑洞】，【黑洞】会吞噬最大生命值低于<ShowIf.TFT17_DarkStar_HasNeutronStar><TFTBonus>@TFTUnitProperty.trait:TFT17_Augment_DarkStar_NeutronStar_BonusExecutePercent*100@%</TFTBonus></ShowIf.TFT17_DarkStar_HasNeutronStar><ShowIfNot.TFT17_DarkStar_HasNeutronStar>8%</ShowIfNot.TFT17_DarkStar_HasNeutronStar>的敌人。</row>"
+    }
+  }]
+};
+
 test("official entity details decode unit stats, abilities, and trait tiers", () => {
   const details = buildOfficialTftEntityDetails({ chess, race: { data: [] }, job });
   const unit = details.units.get("TFT17_MasterYi");
@@ -68,6 +80,21 @@ test("official entity details decode unit stats, abilities, and trait tiers", ()
   ]);
   assert.equal(details.meta.version, "16.14");
   assert.equal(decodeOfficialTftHtml("<b>效果</b><br>&amp; 属性"), "效果\n& 属性");
+});
+
+test("official trait details select the static default branch instead of leaking runtime tokens", () => {
+  const details = buildOfficialTftEntityDetails({
+    chess: { data: [] },
+    race: darkStarRace,
+    job: { data: [] }
+  });
+  const darkStar = details.traits.get("TFT17_DarkStar");
+
+  assert.deepEqual(darkStar.levels, [{
+    units: 2,
+    effect: "(2) 【暗星】创造【黑洞】，【黑洞】会吞噬最大生命值低于8%的敌人。"
+  }]);
+  assert.doesNotMatch(darkStar.levels[0].effect, /TFTUnitProperty|ShowIf|@/u);
 });
 
 test("official entity details fetch all three official catalogs", async () => {

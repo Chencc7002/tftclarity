@@ -467,7 +467,9 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
         entityMentions: structured.entities,
         constraints: structured.constraints,
         needsClarification: structured.needsClarification,
-        clarificationQuestion: structured.clarificationQuestion,
+        // Provider-authored clarification prose is not catalog-validated and
+        // must never be surfaced to users as product guidance.
+        clarificationQuestion: null,
         applied
       }
     }
