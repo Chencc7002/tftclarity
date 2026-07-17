@@ -1,4 +1,5 @@
 import { readFile } from "node:fs/promises";
+import { createConclusionPromptRegistry } from "./conclusion-prompt-registry.js";
 
 const PROMPT_URL = new URL("./prompts/generate-conclusion.md", import.meta.url);
 export const DEFAULT_CONCLUSION_TIMEOUT_MS = 1800;
@@ -121,6 +122,15 @@ export function resolveConclusionProviderConfig(options = {}, env = process.env)
     useStructuredOutput: options.useStructuredOutput ?? usesReasoningCompletionTokens(model),
     includeResponseFormat: options.includeResponseFormat ?? true,
     promptVersion: String(options.promptVersion ?? "generate-conclusion.v8"),
+    maxCorrections: Math.max(0, Math.min(5, Math.floor(Number(
+      options.maxCorrections ?? env.TFT_AGENT_CONCLUSION_MAX_CORRECTIONS ?? 2
+    )))),
+    maxValidationErrors: Math.max(1, Math.min(50, Math.floor(Number(
+      options.maxValidationErrors ?? env.TFT_AGENT_CONCLUSION_MAX_VALIDATION_ERRORS ?? 8
+    )))),
+    maxTransportRetries: Math.max(0, Math.min(3, Math.floor(Number(
+      options.maxTransportRetries ?? env.TFT_AGENT_CONCLUSION_MAX_TRANSPORT_RETRIES ?? 1
+    )))),
     cacheTtlMs: positiveNumber(options.cacheTtlMs, 30 * 60 * 1000),
     onEvent: options.onEvent
   };
@@ -171,9 +181,21 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
   const fetchImpl = options.fetchImpl ?? globalThis.fetch;
   if (typeof fetchImpl !== "function") throw new Error("createOpenAICompatibleConclusionProvider requires fetch or fetchImpl");
   let promptPromise = null;
-  const getPrompt = () => {
-    promptPromise ??= promptText(options.promptText);
-    return promptPromise;
+  const registry = options.promptRegistry ?? createConclusionPromptRegistry();
+  const getPrompt = async (evidence, correction) => {
+    if (options.promptText !== undefined) {
+      promptPromise ??= promptText(options.promptText);
+      return promptPromise;
+    }
+    const intent = evidence?.request?.requestedIntent ?? evidence?.request?.intent;
+    const prompt = await registry.load(intent, { correction });
+    if (!prompt) {
+      throw new ConclusionProviderError(`No conclusion prompt is registered for intent: ${intent ?? "missing"}`, {
+        code: "unregistered_intent",
+        recoverable: false
+      });
+    }
+    return prompt.text;
   };
 
   const provider = async ({ evidence, validationFeedback = [] } = {}) => {
@@ -184,11 +206,11 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
     const body = {
       model: options.model,
       messages: [
-        { role: "system", content: await getPrompt() },
+        { role: "system", content: await getPrompt(evidence, Array.isArray(validationFeedback) ? validationFeedback.length > 0 : Boolean(validationFeedback)) },
         { role: "user", content: JSON.stringify(evidence) },
-        ...(validationFeedback.length > 0 ? [{
+        ...((Array.isArray(validationFeedback) ? validationFeedback.length > 0 : Boolean(validationFeedback)) ? [{
           role: "user",
-          content: `上一版结论未通过证据校验。请重新生成完整 JSON，并逐项修正以下问题：\n${validationFeedback.map((error) => `- ${error}`).join("\n")}`
+          content: `上一版结论未通过证据校验。请重新生成完整 JSON，并逐项修正 validationFeedback：\n${JSON.stringify(validationFeedback)}`
         }] : [])
       ],
       temperature: Number(options.temperature ?? 0)

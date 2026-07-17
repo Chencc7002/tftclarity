@@ -94,7 +94,7 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
   const metrics = unique((parsed.metrics ?? []).filter((metric) => METRIC_SET.has(metric)));
   const trendRequested = Boolean(parsed.trendRequested);
   return {
-    intent: "comp_rankings",
+    intent: parsed.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
     metrics: metrics.length > 0 ? metrics : ["top4_rate", "win_share"],
     limit: Math.min(10, Math.max(1, Number(parsed.limit ?? 5))),
     minSamples: Math.max(0, Number(parsed.minSamples ?? options.minSamples ?? preferences.minSamples ?? 500)),
@@ -125,7 +125,7 @@ export function parseCompRankingQuery(input, options = {}) {
 }
 
 export function isCompRankingFollowUp(parsed, previousQuery) {
-  if (previousQuery?.intent !== "comp_rankings") return false;
+  if (!["comp_rankings", "comp_trends"].includes(previousQuery?.intent)) return false;
   if (parsed?.unit
     || (parsed?.ownedItems ?? []).length > 0
     || (parsed?.excludedItems ?? []).length > 0
@@ -134,7 +134,7 @@ export function isCompRankingFollowUp(parsed, previousQuery) {
     || (parsed?.parser?.unresolvedEntityHints ?? []).length > 0
     || (parsed?.parser?.entityAmbiguities ?? []).length > 0) return false;
   if (/(?:装备|英雄|纹章|效果|合成|配方)/u.test(parsed?.rawInput ?? "")) return false;
-  if (parsed?.intent === "comp_rankings") return true;
+  if (["comp_rankings", "comp_trends"].includes(parsed?.intent)) return true;
   return ["rankFilter", "days", "patch", "minSamples", "sort"].some((key) => parsed?.[key] !== undefined)
     || /(?:呢|再看|换成|改成|如果|那)/u.test(parsed?.rawInput ?? "");
 }

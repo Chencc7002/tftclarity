@@ -67,13 +67,13 @@ function compareComps(sort, a, b) {
 
 function sourceOf(parsed, previousQuery, preferences, key) {
   if (parsed?.[key] !== undefined) return "current_input";
-  if (previousQuery?.intent === "comp_rankings" && previousQuery?.[key] !== undefined) return "conversation";
+  if (["comp_rankings", "comp_trends"].includes(previousQuery?.intent) && previousQuery?.[key] !== undefined) return "conversation";
   return Object.hasOwn(preferences ?? {}, key) ? "preference" : "system_default";
 }
 
 function inheritedValue(parsed, previousQuery, preferences, key, fallback) {
   if (parsed?.[key] !== undefined) return parsed[key];
-  if (previousQuery?.intent === "comp_rankings" && previousQuery?.[key] !== undefined) return previousQuery[key];
+  if (["comp_rankings", "comp_trends"].includes(previousQuery?.intent) && previousQuery?.[key] !== undefined) return previousQuery[key];
   if (Object.hasOwn(preferences ?? {}, key)) return preferences[key];
   return fallback;
 }
@@ -94,8 +94,8 @@ export function hasUnsupportedCompRankingEntities(parsed) {
 
 export function isCompRankingFollowUp(parsed, previousQuery) {
   if (hasUnsupportedCompRankingEntities(parsed)) return false;
-  if (parsed?.intent === "comp_rankings") return true;
-  if (previousQuery?.intent !== "comp_rankings") return false;
+  if (["comp_rankings", "comp_trends"].includes(parsed?.intent)) return true;
+  if (!["comp_rankings", "comp_trends"].includes(previousQuery?.intent)) return false;
   if (/(?:装备|英雄|纹章|效果|合成|配方)/u.test(parsed?.rawInput ?? "")) return false;
   return ["rankFilter", "days", "patch", "minSamples", "sort"].some((key) => parsed?.[key] !== undefined)
     || /(?:呢|再看|换成|改成|如果|那)/u.test(parsed?.rawInput ?? "");
@@ -104,9 +104,9 @@ export function isCompRankingFollowUp(parsed, previousQuery) {
 export function buildCompRankings(parsed, options = {}) {
   const catalog = options.catalog ?? createCatalog();
   const preferences = options.explicitPreferences ?? options.preferences ?? {};
-  const previousQuery = options.previousQuery?.intent === "comp_rankings" ? options.previousQuery : null;
+  const previousQuery = ["comp_rankings", "comp_trends"].includes(options.previousQuery?.intent) ? options.previousQuery : null;
   const query = {
-    intent: "comp_rankings",
+    intent: parsed?.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
     rankFilter: inheritedValue(parsed, previousQuery, preferences, "rankFilter", DEFAULT_QUERY_OPTIONS.rankFilter),
     days: inheritedValue(parsed, previousQuery, preferences, "days", DEFAULT_QUERY_OPTIONS.days),
     patch: inheritedValue(parsed, previousQuery, preferences, "patch", DEFAULT_QUERY_OPTIONS.patch),
@@ -146,7 +146,7 @@ export function buildCompRankings(parsed, options = {}) {
 
   return {
     ok: true,
-    type: "comp_rankings",
+    type: query.intent,
     text: `${summary}\n${warnings.join("\n")}`,
     answer: { summary, warnings },
     query: {

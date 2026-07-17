@@ -480,7 +480,7 @@ async function serializeItemDetailsQuery(input, catalog, runtime) {
 }
 
 function serializeCompRankingEntityClarification(parsed, catalog) {
-  if (parsed?.intent !== "comp_rankings" || !hasUnsupportedCompRankingEntities(parsed)) return null;
+  if (!["comp_rankings", "comp_trends"].includes(parsed?.intent) || !hasUnsupportedCompRankingEntities(parsed)) return null;
   if (parsed.parser?.genericEmblemRequested) {
     const question = "请指定要加入的具体纹章或羁绊，例如“观星者纹章”。";
     return {
@@ -488,7 +488,7 @@ function serializeCompRankingEntityClarification(parsed, catalog) {
       type: "clarification",
       text: question,
       answer: { summary: question },
-      query: { intent: "clarification", requestedIntent: "comp_rankings", warnings: [] },
+      query: { intent: "clarification", requestedIntent: parsed.intent, warnings: [] },
       clarification: {
         needsClarification: true,
         blocking: true,
@@ -514,7 +514,7 @@ function serializeCompRankingEntityClarification(parsed, catalog) {
     answer: { summary: question },
     query: {
       intent: "clarification",
-      requestedIntent: "comp_rankings",
+      requestedIntent: parsed.intent,
       unit: parsed.unit ?? null,
       ownedItems: parsed.ownedItems ?? [],
       excludedItems: parsed.excludedItems ?? [],
@@ -686,7 +686,7 @@ function sourcePayload(result, meta = {}) {
     provider: "MetaTFT",
     endpoint: result.type === "unit_item_comparison"
       ? result.source?.endpoint ?? "tft-explorer-api/unit_builds"
-      : result.plan?.path ?? (result.type === "comp_rankings"
+      : result.plan?.path ?? (["comp_rankings", "comp_trends"].includes(result.type)
         ? "/tft-explorer-api/exact_units_traits2"
         : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
     patch: result.query?.patch ?? null,
@@ -1000,17 +1000,17 @@ export async function resetSmallWindowPreferences(runtime, scope = null) {
 
 function serializeRecommendation(result, catalog, meta = {}) {
   const { itemDetails, ...publicMeta } = meta;
-  if (result.type === "comp_rankings") {
+  if (result.type === "comp_rankings" || result.type === "comp_trends") {
     return serializeCompRankings(result, publicMeta);
   }
   const query = result.query ?? {};
-  if (result.type === "unit_item_rankings") {
+  if (result.type === "unit_item_rankings" || result.type === "unit_emblem_rankings") {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
     const best = itemRankings[0] ?? null;
     return {
       ok: true,
-      type: "unit_item_rankings",
+      type: result.type,
       text: result.text,
       unit: query.unit ? {
         apiName: query.unit,
@@ -1314,7 +1314,7 @@ function serializeCompRankings(result, meta = {}) {
   }
   return {
     ok: true,
-    type: "comp_rankings",
+    type: result.type === "comp_trends" ? "comp_trends" : "comp_rankings",
     rankings,
     improving: (result.improving ?? []).map(serializeComp),
     references: (result.references ?? []).map(serializeComp),
@@ -1897,12 +1897,7 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     }
   }
 
-  // Comp rankings are already an evidence-first dashboard. Keep this route
-  // deterministic and avoid spending an LLM request until its conclusion UX
-  // is explicitly re-enabled.
-  const generatedConclusion = result.type === "comp_rankings"
-    ? { status: "skipped", reason: "comp_rankings_disabled" }
-    : await generateEvidenceBackedConclusion({
+  const generatedConclusion = await generateEvidenceBackedConclusion({
       result,
       catalog,
       input,
@@ -1926,6 +1921,8 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     ...(payload.answer ?? {}),
     generatedConclusion
   };
+  if (result.intentEnvelope) payload.intentEnvelope = result.intentEnvelope;
+  if (result.retrievalPlan) payload.retrievalPlan = result.retrievalPlan;
   Object.assign(payload, conversationMeta({ conversationId }));
   if (context.accessService && context.visitor) {
     payload.access = context.accessService.publicStatus(context.visitor);

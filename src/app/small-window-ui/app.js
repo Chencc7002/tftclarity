@@ -1129,8 +1129,8 @@ function renderCurrentResult(data) {
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
-  else if (data.type === CompRankingResult.type) renderCompRankings(data);
-  else if (data.type === ItemRankingResult.type) renderItemRankings(data);
+  else if (data.type === CompRankingResult.type || data.type === "comp_trends") renderCompRankings(data);
+  else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else renderRecommendationResult(data);
 }
 

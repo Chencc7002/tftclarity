@@ -1,7 +1,7 @@
 # TFTAgent LLM 检索、证据与结论生成流程设计
 
 更新时间：2026-07-17
-状态：待开发
+状态：P0–P3 已实现（本地 TF-IDF 为默认语义降级；真实 Embedding 与线上数据 smoke 仍需部署配置）
 适用范围：TFTAgent 后端查询、语义检索、证据组装、LLM 数据解读与前端降级展示
 
 ## 1. 文档目标
@@ -722,3 +722,41 @@ conclusion_fallback
 8. 任何 LLM、Embedding 或网络异常都不影响结构化查询和确定性模板答案。
 9. 用户能在前端区分原始统计、模型解读、风险提示和模板回退。
 10. 离线测试、真实 Provider smoke 和小窗口端到端验证均通过后才能灰度启用。
+
+## 13. 当前实现记录
+
+本轮实现基于 `codex/ui` 的 `c739d3a`，保持原有确定性查询、排序、HTTP 卡片和模板答案兼容。核心导出统一由 `src/index.js` 提供。
+
+### 13.1 契约与编排
+
+- `src/retrieval/contracts.js`：导出 `IntentEnvelope v1`、`RetrievalPlan v1`、`SemanticHit v1` 与 `EvidencePack v2` 构造和校验能力。
+- `src/retrieval/retrieval-planner.js`：按已校验意图生成白名单计划；低置信、实体冲突或需要澄清时不生成实时查询。
+- `src/retrieval/structured-retriever.js`：只允许注册的 MetaTFT 与官方目录操作，并剔除未注册参数、URL 和接口名。
+- `src/retrieval/llm-pipeline.js`：提供端到端编排与阶段事件；语义检索失败不会阻塞结构化查询。
+
+### 13.2 语义检索
+
+- `src/retrieval/semantic-retriever.js`：提供 `SemanticRetriever`、现有实体候选 TF-IDF 适配器、通用本地 TF-IDF、Embedding 检索器与自动降级包装器。
+- `src/llm/embedding-provider.js`：提供可注入的 `EmbeddingProvider` 抽象；Provider 不可用时由降级包装器转入 TF-IDF。
+- `src/retrieval/semantic-document-store.js`：提供带 `contentHash` 的增量内存文档存储，并拒绝 MetaTFT 每日实时统计进入静态语义索引。
+- `src/retrieval/hybrid-reranker.js`：执行 API ID、当前规范名、当前别名、关键词、向量相似度的优先级，并强制类型、版本和语言过滤。
+
+当前没有把真实 Embedding 向量写入 SQLite，也没有引入必须独立部署的向量数据库。上线真实 Embedding 前，应按第 6 节表结构补充 SQLite 持久化、增量构建脚本和真实 Provider smoke；未配置时核心查询继续使用现有精确规则和 TF-IDF。
+
+### 13.3 证据、Prompt 与纠错
+
+- `src/retrieval/evidence-assembler.js`：把现有可见卡片升级为 Evidence Pack v2，结构化证据优先，语义说明只能使用剩余预算；关键可见证据缺失或超预算时安全跳过 LLM。
+- `src/llm/conclusion-prompt-registry.js`：服务端按已校验意图选择基础 Prompt 和单一专用 Prompt；资料类意图不注册 Prompt。
+- `src/core/conclusion-service.js`：默认“初次生成 + 最多两次语义纠错”，网络传输重试独立计数；连续相同错误可提前回退，只有通过校验的内容才写缓存。
+- `src/llm/conclusion-validator.js`：输出结构化 `conclusion_validation_feedback.v1`，覆盖格式、数字、实体、证据覆盖、风险和分析边界错误。
+- 小窗口沿用已有“已使用模板回退”标记；生成失败不会替换确定性卡片和模板事实。
+
+结论缓存键包含 Evidence Schema、基础 Prompt、当前意图 Prompt、Provider Prompt 配置和模型版本。修改某个意图 Prompt 时，不会使其他意图的结论缓存失效。
+
+### 13.4 已支持意图
+
+结论流程：`unit_build_rankings`、`unit_build_completion`、`unit_best_3_items`、`unit_item_rankings`、`unit_item_comparison`、`unit_emblem_rankings`、`comp_rankings`、`comp_trends`。
+
+结构化直出且不调用结论 Provider：`unit_details`、`item_details`、`trait_details`。
+
+专项回归覆盖：转职同义问法、三张可见卡片边界、单装备全候选覆盖、低样本风险、排他比较未决、阵容趋势提升与登场基础、数字和实体证据回链、纠错成功、纠错上限回退、资料类直出，以及 Embedding/LLM 不可用降级。

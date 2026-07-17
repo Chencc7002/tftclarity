@@ -1,4 +1,17 @@
 export const CONCLUSION_SCHEMA_VERSION = "llm_conclusion.v1";
+export const CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION = "conclusion_validation_feedback.v1";
+
+export const CONCLUSION_ERROR_CATEGORIES = Object.freeze([
+  "format_error",
+  "unsupported_number",
+  "unsupported_entity",
+  "missing_coverage",
+  "missing_risk_notice",
+  "analysis_boundary",
+  "stale_or_missing_evidence",
+  "intent_or_entity_error",
+  "provider_unavailable"
+]);
 
 const ROOT_KEYS = new Set([
   "schemaVersion", "status", "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
@@ -190,6 +203,9 @@ function validateNumbers(text, records, path, errors) {
     ]))
     .filter(Number.isFinite);
   const placements = stats.map((entry) => Number(entry.avgPlacement)).filter(Number.isFinite);
+  const improvements = [...records]
+    .map((record) => Number(record?.trend?.placementImprovement))
+    .filter(Number.isFinite);
 
   for (const match of text.matchAll(/(\d+(?:\.\d+)?)\s*%/gu)) {
     const value = Number(match[1]);
@@ -210,6 +226,12 @@ function validateNumbers(text, records, path, errors) {
     const value = Number(match[1]);
     if (!placements.some((allowed) => Math.abs(Number(allowed.toFixed(2)) - value) <= 0.005)) {
       errors.push(`${path} contains unsupported average placement: ${match[0]}`);
+    }
+  }
+  for (const match of text.matchAll(/(?:提升|改善)(?:幅度)?\s*(?:为|是|[:：])?\s*(\d+(?:\.\d+)?)/gu)) {
+    const value = Number(match[1]);
+    if (!improvements.some((allowed) => Math.abs(Number(allowed.toFixed(4)) - value) <= 0.00005)) {
+      errors.push(`${path} contains unsupported trend improvement: ${match[0]}`);
     }
   }
 }
@@ -318,9 +340,78 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
   }).filter(Boolean);
 }
 
+function pathFromError(message) {
+  const match = String(message).match(/^([A-Za-z][A-Za-z0-9_.\[\]-]*)\s/u);
+  return match?.[1] ?? "output";
+}
+
+function categoryForError(message) {
+  const value = String(message);
+  if (/unsupported (?:percentage|sample count|average placement|trend improvement)/u.test(value)) return "unsupported_number";
+  if (/entity absent|API name absent|quoted entity absent|unknown evidence/u.test(value)) return "unsupported_entity";
+  if (/omits displayed evidence/u.test(value)) return "missing_coverage";
+  if (/risk notice|freshness risk/u.test(value)) return "missing_risk_notice";
+  if (/absolute or causal|core-item claim|non-core item|cannot claim a winner|stable evidence cannot|must discuss/u.test(value)) return "analysis_boundary";
+  return "format_error";
+}
+
+function idsFromError(message) {
+  const values = String(message).match(/(?:build|item|item-signal|comparison|comp):\d+/gu) ?? [];
+  return [...new Set(values)];
+}
+
+function allowedNumbers(evidence) {
+  const values = new Set();
+  for (const record of evidenceRecords(evidence).values()) {
+    for (const value of Object.values(record?.stats ?? {})) {
+      if (Number.isFinite(Number(value))) values.add(Number(value));
+    }
+    for (const value of [record?.coverage, record?.appearanceRate, record?.trend?.placementImprovement, record?.trend?.emergenceScore]) {
+      if (Number.isFinite(Number(value))) values.add(Number(value));
+    }
+  }
+  return [...values].sort((left, right) => left - right);
+}
+
+export function classifyConclusionValidationErrors(errors, evidence, options = {}) {
+  return [...new Set((errors ?? []).map(String))].map((message) => {
+    const category = categoryForError(message);
+    const issue = {
+      category,
+      path: pathFromError(message),
+      message,
+      missingEvidenceIds: category === "missing_coverage" ? idsFromError(message) : [],
+      allowedValues: []
+    };
+    if (category === "unsupported_number") issue.allowedValues = allowedNumbers(evidence);
+    if (category === "unsupported_entity") {
+      issue.allowedValues = [...allowedNames(evidence, null, options.catalog)].sort().slice(0, 120);
+    }
+    return issue;
+  });
+}
+
+export function createConclusionValidationFeedback(validation, evidence, options = {}) {
+  const maxErrors = Math.max(1, Number(options.maxErrors ?? 8));
+  const issues = validation?.issues ?? classifyConclusionValidationErrors(validation?.errors ?? [], evidence, options);
+  return {
+    schemaVersion: CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION,
+    valid: false,
+    errors: issues.slice(0, maxErrors)
+  };
+}
+
 export function validateConclusionOutput(rawValue, evidence, options = {}) {
   const errors = [];
-  if (!isObject(rawValue)) return { valid: false, errors: ["conclusion output must be an object"], value: null };
+  if (!isObject(rawValue)) {
+    const objectErrors = ["conclusion output must be an object"];
+    return {
+      valid: false,
+      errors: objectErrors,
+      issues: classifyConclusionValidationErrors(objectErrors, evidence, options),
+      value: null
+    };
+  }
   unknownKeys(rawValue, ROOT_KEYS, "output", errors);
   if (rawValue.schemaVersion !== CONCLUSION_SCHEMA_VERSION) errors.push(`schemaVersion must be ${CONCLUSION_SCHEMA_VERSION}`);
   if (rawValue.status !== "ok" && rawValue.status !== "insufficient_evidence") {
@@ -372,6 +463,10 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   if (evidence?.generationRules?.mustAvoidWinnerClaim && WINNER_CLAIM.test(combined)) {
     errors.push("unresolved comparison cannot claim a winner");
   }
+  if (evidence?.generationRules?.mustUseStandardizedTrendImprovement) {
+    if (!/(?:提升|改善)/u.test(combined)) errors.push("comp-trend conclusion must discuss standardized placement improvement");
+    if (!/(?:登场|热度|使用基础|使用率)/u.test(combined)) errors.push("comp-trend conclusion must discuss pick-rate foundation");
+  }
 
   const value = {
     schemaVersion: CONCLUSION_SCHEMA_VERSION,
@@ -383,5 +478,10 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
     nextAction,
     riskNotice
   };
-  return { valid: errors.length === 0, errors, value: errors.length === 0 ? value : null };
+  return {
+    valid: errors.length === 0,
+    errors,
+    issues: classifyConclusionValidationErrors(errors, evidence, options),
+    value: errors.length === 0 ? value : null
+  };
 }

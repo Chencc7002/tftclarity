@@ -83,7 +83,7 @@ test("conclusion service retries once with validator feedback and accepts the co
   });
   assert.equal(conclusion.status, "generated");
   assert.equal(calls.length, 2);
-  assert.match(calls[1].validationFeedback.join("\n"), /unsupported percentage/u);
+  assert.match(JSON.stringify(calls[1].validationFeedback), /unsupported percentage/u);
 });
 
 test("conclusion service classifies non-JSON provider output as invalid output", async () => {

@@ -7,7 +7,9 @@ const SUPPORTED_INTENTS = new Set([
   "unit_best_3_items",
   "unit_item_comparison",
   "unit_item_rankings",
-  "comp_rankings"
+  "unit_emblem_rankings",
+  "comp_rankings",
+  "comp_trends"
 ]);
 
 function asArray(value) {
@@ -270,7 +272,7 @@ function buildComparison(result, catalog) {
   };
 }
 
-function buildCompRankings(result) {
+function buildCompRankings(result, options = {}) {
   const records = [];
   const byCompId = new Map();
   const add = (comp, metric, rank, section = "ranking") => {
@@ -286,6 +288,8 @@ function buildCompRankings(result) {
         stats: statsRecord(comp?.stats),
         trend: Number.isFinite(comp?.trend?.avgPlacementChange) ? {
           avgPlacementChange: comp.trend.avgPlacementChange,
+          placementImprovement: Number((-comp.trend.avgPlacementChange).toFixed(4)),
+          emergenceScore: finite(comp.trend.emergenceScore),
           improving: Boolean(comp.trend.improving),
           source: comp.trend.source ?? null,
           comparedAt: comp.trend.comparedAt ?? null
@@ -312,6 +316,8 @@ function buildCompRankings(result) {
     if (Number.isFinite(comp?.trend?.avgPlacementChange)) {
       record.trend = {
         avgPlacementChange: comp.trend.avgPlacementChange,
+        placementImprovement: Number((-comp.trend.avgPlacementChange).toFixed(4)),
+        emergenceScore: finite(comp.trend.emergenceScore),
         improving: Boolean(comp.trend.improving),
         source: comp.trend.source ?? null,
         comparedAt: comp.trend.comparedAt ?? null
@@ -320,16 +326,18 @@ function buildCompRankings(result) {
     record.displayRanks.push({ metric, rank, section });
   };
 
-  for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
-    asArray(comps).forEach((comp, index) => add(comp, metric, index + 1));
+  if (!options.trendOnly) {
+    for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
+      asArray(comps).forEach((comp, index) => add(comp, metric, index + 1));
+    }
+    asArray(result?.references).forEach((comp, index) => add({ ...comp, lowSample: true }, "reference", index + 1, "reference"));
   }
-  asArray(result?.references).forEach((comp, index) => add({ ...comp, lowSample: true }, "reference", index + 1, "reference"));
   asArray(result?.improving).forEach((comp, index) => add(comp, "avgPlacementChange", index + 1, "improving"));
   return records;
 }
 
 function buildCompRankingContext(result, recommendations) {
-  if ((result?.type ?? result?.query?.intent) !== "comp_rankings") return null;
+  if (!["comp_rankings", "comp_trends"].includes(result?.type ?? result?.query?.intent)) return null;
   const metricLeaders = [];
   for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
     const first = asArray(comps)[0];
@@ -364,13 +372,13 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     : resultIntent;
 
   const comparison = intent === "unit_item_comparison" ? buildComparison(result, catalog) : null;
-  const recommendations = intent === "unit_item_rankings"
+  const recommendations = intent === "unit_item_rankings" || intent === "unit_emblem_rankings"
     ? buildItemRankings(result, catalog)
-    : intent === "comp_rankings"
-      ? buildCompRankings(result)
+    : intent === "comp_rankings" || intent === "comp_trends"
+      ? buildCompRankings(result, { trendOnly: intent === "comp_trends" })
       : comparison?.options ?? buildRecommendations(result, catalog);
   const itemSignals = intent === "unit_build_rankings" ? buildItemSignals(recommendations) : [];
-  const compRankingContext = intent === "comp_rankings" ? buildCompRankingContext(result, recommendations) : null;
+  const compRankingContext = intent === "comp_rankings" || intent === "comp_trends" ? buildCompRankingContext(result, recommendations) : null;
   const dataStatus = sourceState(result);
   const warnings = buildWarnings(result);
   const hasLowSample = recommendations.some((entry) => entry.lowSample);
@@ -390,7 +398,7 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     query: buildQuery(result, catalog),
     recommendations,
     itemSignals,
-    itemRankingContext: intent === "unit_item_rankings" ? {
+    itemRankingContext: intent === "unit_item_rankings" || intent === "unit_emblem_rankings" ? {
       displayedCount: recommendations.length,
       methodology: clipped(result?.itemRankingMethodology ?? "presence_once_per_complete_build", 160),
       stableEvidenceIds: recommendations.filter((entry) => entry.stable).map((entry) => entry.evidenceId),
@@ -411,10 +419,11 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
       forbidCausalClaims: true,
       coreClaimsRequireItemSignal: true,
       mustQualifyUnstableCore: itemSignals.some((entry) => entry.core && !entry.stable),
-      mustAnalyzeAllDisplayedItemRankings: intent === "unit_item_rankings",
-      mustDistinguishMetricRankFromReliability: intent === "unit_item_rankings",
-      mustAnalyzeDisplayedCompRankings: intent === "comp_rankings",
+      mustAnalyzeAllDisplayedItemRankings: intent === "unit_item_rankings" || intent === "unit_emblem_rankings",
+      mustDistinguishMetricRankFromReliability: intent === "unit_item_rankings" || intent === "unit_emblem_rankings",
+      mustAnalyzeDisplayedCompRankings: intent === "comp_rankings" || intent === "comp_trends",
       mustAlignCompRecommendationWithRequestedMetrics: intent === "comp_rankings",
+      mustUseStandardizedTrendImprovement: intent === "comp_trends",
       mustMentionLowSample: hasLowSample,
       mustMentionStaleData: dataStatus.cache === "stale",
       mustAvoidWinnerClaim: unresolvedComparison

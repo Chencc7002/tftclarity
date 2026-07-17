@@ -277,7 +277,7 @@ test("a cold-start comp trend query immediately exposes MetaTFT's official top t
     }
   });
 
-  assert.equal(result.type, "comp_rankings");
+  assert.equal(result.type, "comp_trends");
   assert.equal(result.cache.query.hit, false);
   assert.equal(result.trend.status, "upstream");
   assert.deepEqual(ids(result.improving), ["409002", "409003", "409019"]);

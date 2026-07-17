@@ -35,7 +35,9 @@ function mentionsArtifactCategory(input) {
 
 function mentionsEmblemCategory(input) {
   const normalized = normalizeText(input);
-  return normalized.includes("纹章") || normalized.includes("转职");
+  return normalized.includes("纹章")
+    || normalized.includes("转职")
+    || /(?:什么|哪个|哪些)转(?!换|成)/.test(normalized);
 }
 
 function parseItemCategories(input) {
@@ -51,8 +53,8 @@ function requestsCategoryRanking(input) {
   const normalized = normalizeText(input);
   return /(?:有?什么|哪些|哪个|哪件).{0,10}(?:好|强|强力|厉害|适合|推荐|优先|值得)/.test(normalized)
     || /(?:好|强|强力|厉害|适合|推荐|优先|值得).{0,10}(?:有?什么|哪些|哪个|哪件)/.test(normalized)
-    || /(?:应该|该|适合|推荐).{0,6}(?:带|携带|选择|拿|用)?(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
-    || /(?:带|携带|选择|拿|用).{0,4}(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:应该|该|适合|推荐).{0,6}(?:带|携带|选择|拿|用)?(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:带|携带|选择|拿|用).{0,4}(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
     || /(?:纹章|转职|神器|光明(?:装备)?).{0,4}(?:推荐|排行|排名)/.test(normalized);
 }
 
@@ -187,6 +189,9 @@ function inferIntent(input, details = {}) {
     return "unit_item_availability";
   }
   if (details.comparison?.requested) return "unit_item_comparison";
+  if (details.itemCategories?.includes("emblem") && requestsCategoryRanking(normalized)) {
+    return "unit_emblem_rankings";
+  }
   if ((details.itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized)) {
     return "unit_item_rankings";
   }
@@ -198,6 +203,9 @@ function inferIntent(input, details = {}) {
   }
   if (/(?:装备|出装|神装|怎么带|带什么|给什么|合成|配方)/.test(normalized)) {
     return "unit_build_rankings";
+  }
+  if (/(?:阵容|版本|当前).{0,8}(?:趋势|上升|提升)|(?:趋势|上升|提升).{0,8}阵容/u.test(normalized)) {
+    return "comp_trends";
   }
   if (
     /(?:阵容|阵容榜|上分阵容|热门体系)/.test(normalized)
@@ -441,8 +449,8 @@ export function parseQuery(input, options = {}) {
   const intent = comparison.requested
     ? "unit_item_comparison"
     : inferIntent(input, { comparison, ownedItems, itemCategories });
-  const compQuery = intent === "comp_rankings"
-    ? parseCompRankingQuery(input, options.compQuery)
+  const compQuery = intent === "comp_rankings" || intent === "comp_trends"
+    ? parseCompRankingQuery(input, { ...(options.compQuery ?? {}), intent })
     : null;
 
   return {

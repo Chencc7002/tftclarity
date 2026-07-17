@@ -71,7 +71,7 @@ test("small-window keeps HTTP 200 and template facts when the provider fails", a
   assert.equal(payload.cards[0].stats.games, original.rankedBuilds[0].stats.games);
 });
 
-test("comp ranking requests skip the LLM conclusion provider", async () => {
+test("comp ranking requests with no visible evidence safely skip the LLM conclusion provider", async () => {
   let providerCalls = 0;
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
@@ -97,10 +97,8 @@ test("comp ranking requests skip the LLM conclusion provider", async () => {
   const { statusCode, payload } = await handleRecommendRequest({ input: "当前版本阵容" }, runtime);
   assert.equal(statusCode, 200);
   assert.equal(providerCalls, 0);
-  assert.deepEqual(payload.answer.generatedConclusion, {
-    status: "skipped",
-    reason: "comp_rankings_disabled"
-  });
+  assert.equal(payload.answer.generatedConclusion.status, "skipped");
+  assert.equal(payload.answer.generatedConclusion.reason, "unsafe_state");
 });
 
 test("conclusion configuration and runtime status never expose endpoint or API key values", () => {

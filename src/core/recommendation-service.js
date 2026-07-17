@@ -42,8 +42,11 @@ import { buildCompRankingQuery, isCompRankingFollowUp } from "./comp-query.js";
 import { buildCompRankings } from "./comp-ranking-service.js";
 import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
+import { createIntentEnvelope } from "../retrieval/contracts.js";
+import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
+const RETRIEVAL_PLANNER = new RetrievalPlanner();
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -92,6 +95,30 @@ function unavailableItemDecision(query, catalog) {
 function responseTypeForQuery(query, clarification = null) {
   if (clarification?.needsClarification) return "clarification";
   return query?.intent ?? "unit_build_rankings";
+}
+
+function isCompIntent(intent) {
+  return intent === "comp_rankings" || intent === "comp_trends";
+}
+
+function attachRetrievalAudit(result, input, catalog) {
+  const intentEnvelope = createIntentEnvelope({
+    input,
+    parsed: result?.parsed,
+    query: result?.query,
+    validation: result?.validation,
+    clarification: result?.clarification,
+    catalog
+  });
+  let retrievalPlan = null;
+  try {
+    retrievalPlan = RETRIEVAL_PLANNER.plan(intentEnvelope);
+  } catch (error) {
+    intentEnvelope.warnings = [...new Set([...intentEnvelope.warnings, `retrieval_plan_unavailable:${error.message}`])];
+  }
+  result.intentEnvelope = intentEnvelope;
+  result.retrievalPlan = retrievalPlan;
+  return result;
 }
 
 function itemLabel(apiName, catalog) {
@@ -167,11 +194,11 @@ function lastQueryFromSession(value) {
 
 function inheritCompRankingFromSession(parsed, sessionValue, options = {}) {
   const previousQuery = lastQueryFromSession(sessionValue);
-  if (previousQuery?.intent !== "comp_rankings" || !isCompRankingFollowUp(parsed, previousQuery)) {
+  if (!isCompIntent(previousQuery?.intent) || !isCompRankingFollowUp(parsed, previousQuery)) {
     return { parsed, inherited: false, inheritedKeys: [] };
   }
 
-  const next = { ...parsed, intent: "comp_rankings" };
+  const next = { ...parsed, intent: isCompIntent(parsed?.intent) ? parsed.intent : previousQuery.intent };
   const inheritedKeys = [];
   for (const key of ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit", "specialMode"]) {
     const current = next[key];
@@ -289,8 +316,8 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     applied.push(key);
   };
 
-  if (structured.intent === "comp_rankings" && !parsed.unit) {
-    next.intent = "comp_rankings";
+  if (isCompIntent(structured.intent) && !parsed.unit) {
+    next.intent = structured.intent;
     applied.push("intent");
   }
 
@@ -530,7 +557,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
     };
   }
 
-  if (!lastQuery?.unit || lastQuery.intent === "comp_rankings") {
+  if (!lastQuery?.unit || isCompIntent(lastQuery.intent)) {
     return {
       parsed,
       inherited: false,
@@ -765,7 +792,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
 }
 
 function canPreinheritUnitFollowUp(parsed) {
-  if (parsed?.unit || parsed?.intent === "comp_rankings") return false;
+  if (parsed?.unit || isCompIntent(parsed?.intent)) return false;
   if ((parsed?.parser?.entityAmbiguities ?? []).length > 0) return false;
   return (parsed?.ownedItems ?? []).length > 0
     || (parsed?.excludedItems ?? []).length > 0
@@ -1013,7 +1040,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
   });
 
   if (!validation.valid || clarification.blocking) {
-    return {
+    return attachRetrievalAudit({
       type: responseTypeForQuery(validatedQuery, clarification),
       parsed,
       query: validatedQuery,
@@ -1028,12 +1055,12 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       text: clarification.needsClarification
         ? clarification.question
         : `无法查询：${validation.errors.join("；")}`
-    };
+    }, input, catalog);
   }
 
   const localDecision = unavailableItemDecision(validatedQuery, catalog);
   if (localDecision) {
-    return {
+    return attachRetrievalAudit({
       type: responseTypeForQuery(validatedQuery),
       parsed,
       query: validatedQuery,
@@ -1048,7 +1075,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       overlap: null,
       decision: localDecision,
       text: localDecision.text
-    };
+    }, input, catalog);
   }
 
   const rows = normalizeUnitBuildRows(responseOrRows);
@@ -1059,7 +1086,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
     maxOverlapRate: options.comparisonOptions?.maxOverlapRate,
     materialThresholds: options.comparisonOptions?.materialThresholds
   });
-  const itemRanking = validatedQuery.intent === "unit_item_rankings"
+  const itemRanking = ["unit_item_rankings", "unit_emblem_rankings"].includes(validatedQuery.intent)
     ? aggregateUnitItemRankings(filtered.builds, validatedQuery, { catalog })
     : null;
   const rankedBuilds = itemRanking
@@ -1075,7 +1102,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       comparison
     });
 
-  return {
+  return attachRetrievalAudit({
     type: responseTypeForQuery(validatedQuery),
     parsed,
     query: validatedQuery,
@@ -1105,7 +1132,7 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       cache: "provided"
     },
     text
-  };
+  }, input, catalog);
 }
 
 export async function recommendForInput(input, options = {}) {
@@ -1121,7 +1148,7 @@ export async function recommendForInput(input, options = {}) {
     initialSessionEntry?.value,
     options
   );
-  const initialUnitSessionMerge = initialCompSessionMerge.parsed.intent !== "comp_rankings"
+  const initialUnitSessionMerge = !isCompIntent(initialCompSessionMerge.parsed.intent)
     && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
     ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
     : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
@@ -1143,7 +1170,7 @@ export async function recommendForInput(input, options = {}) {
     : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
   parsedInput = compSessionMerge.parsed;
 
-  if (parsedInput.intent === "comp_rankings") {
+  if (isCompIntent(parsedInput.intent)) {
     const query = buildCompRankingQuery(parsedInput, {
       preferences: options.preferences,
       // v3 accepts MetaTFT's reproducible page calculation and distinguishes it
@@ -1298,6 +1325,7 @@ export async function recommendForInput(input, options = {}) {
       }
     };
     decorated.text = "";
+    attachRetrievalAudit(decorated, input, catalog);
     return decorated;
   }
 
@@ -1363,6 +1391,7 @@ export async function recommendForInput(input, options = {}) {
       allowPendingComparison: pendingComparison
     });
     if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    attachRetrievalAudit(result, input, catalog);
     return result;
   }
 
@@ -1392,6 +1421,7 @@ export async function recommendForInput(input, options = {}) {
     };
     const sessionWrite = await writeLastQuerySession(result, options);
     if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    attachRetrievalAudit(result, input, catalog);
     return result;
   }
 
@@ -1458,6 +1488,7 @@ export async function recommendForInput(input, options = {}) {
       allowPendingComparison: pendingComparison
     });
     if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+    attachRetrievalAudit(result, input, catalog);
     return result;
   }
 
