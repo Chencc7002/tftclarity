@@ -344,7 +344,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   });
   assert.deepEqual(payload.cards[0].items.map((item) => item.name), ["羊刀", "无尽", "巨杀"]);
   assert.equal(payload.query.unitName, "霞");
-  assert.match(payload.query.unitIconUrl, /^https:\/\/ddragon\.leagueoflegends\.com\/cdn\/16\.13\.1\//);
+  assert.match(payload.query.unitIconUrl, /^https:\/\/cdn\.metatft\.com\/file\/metatft\/champions\//);
   assert.ok(payload.cards[0].items.every((item) => item.iconUrl?.startsWith("https://ddragon.leagueoflegends.com/")));
   assert.equal(payload.query.minSamples, 100);
   assert.equal(payload.meta.rankedBuilds, 2);
@@ -415,6 +415,133 @@ test("handleRecommendRequest returns official item encyclopedia details before r
   assert.equal(payload.item.officialName, "正义之手");
   assert.equal(payload.item.effect, "获得伤害增幅和全能吸血");
   assert.equal(payload.item.recipe[0].name, "女神之泪");
+});
+
+test("handleRecommendRequest returns unit stats, ability, and three stable item recommendations", async () => {
+  const items = [
+    ["TFT_Item_A", "装备甲"],
+    ["TFT_Item_B", "装备乙"],
+    ["TFT_Item_C", "装备丙"],
+    ["TFT_Item_D", "装备丁"]
+  ].map(([apiName, zhName]) => ({ apiName, zhName, aliases: [zhName], category: "ordinary_completed", current: true, obtainable: true }));
+  const catalog = createCatalog({
+    units: [{ apiName: "TFT17_MasterYi", zhName: "剑圣", aliases: ["剑圣", "易"] }],
+    traits: [],
+    items
+  });
+  const officialEntityDetails = {
+    units: new Map([["TFT17_MasterYi", {
+      apiName: "TFT17_MasterYi",
+      name: "易",
+      cost: 4,
+      role: "物理战士",
+      traitNames: ["灵能特工", "狂战士"],
+      stats: { health: 1100, mana: 60, startingMana: 20, attackDamage: 60, armor: 65, magicResist: 65, attackSpeed: 0.85, attackRange: 1, critChance: 25 },
+      ability: { name: "灵能打击", type: "主动", description: "造成伤害。", iconUrl: null },
+      source: { version: "16.14", season: "2026.S17" }
+    }]]),
+    traits: new Map(),
+    meta: { version: "16.14", season: "2026.S17" }
+  };
+  const ranking = (apiName, games, top4Rate, avgPlacement) => ({
+    apiName,
+    stats: { games, top4Rate, winRate: 0.1, avgPlacement },
+    coverage: 0.2,
+    coverageDenominatorGames: 1000,
+    buildCount: 10,
+    commonPairings: [],
+    copyCounts: []
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails,
+    metaTFTClient: {},
+    compsClient: {},
+    recommendForInputImpl: async () => ({ itemRankings: [
+      ranking("TFT_Item_A", 800, 0.60, 3.8),
+      ranking("TFT_Item_B", 700, 0.58, 3.9),
+      ranking("TFT_Item_C", 500, 0.57, 4.0),
+      ranking("TFT_Item_D", 20, 0.75, 3.2)
+    ] })
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({ input: "剑圣的属性和技能是什么？" }, runtime);
+  assert.equal(statusCode, 200);
+  assert.equal(payload.type, "unit_details");
+  assert.equal(payload.unit.name, "剑圣");
+  assert.equal(payload.unit.stats.health, 1100);
+  assert.equal(payload.unit.ability.name, "灵能打击");
+  assert.equal(payload.recommendedItems.length, 3);
+  assert.deepEqual(payload.recommendedItems.map((item) => item.name), ["装备甲", "装备乙", "装备丙"]);
+  assert.match(payload.answer.methodology, /登场频率/);
+});
+
+test("handleRecommendRequest returns official trait effects and tiers", async () => {
+  const catalog = createCatalog({
+    units: [],
+    traits: [{ apiName: "TFT17_ASTrait", filterId: "TFT17_ASTrait_2", zhName: "挑战者", displayName: "挑战者", aliases: ["挑战者"] }],
+    items: []
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails: {
+      units: new Map(),
+      traits: new Map([["TFT17_ASTrait", {
+        apiName: "TFT17_ASTrait",
+        name: "挑战者",
+        type: "job",
+        description: "你的队伍获得攻击速度。",
+        levels: [{ units: 2, effect: "15% 攻击速度" }],
+        iconUrl: null,
+        source: { version: "16.14" }
+      }]]),
+      meta: { version: "16.14" }
+    },
+    recommendForInputImpl: () => { throw new Error("trait details must not call recommendation logic"); }
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({ input: "挑战者羁绊有什么效果？" }, runtime);
+  assert.equal(statusCode, 200);
+  assert.equal(payload.type, "trait_details");
+  assert.equal(payload.trait.name, "挑战者");
+  assert.deepEqual(payload.trait.levels, [{ units: 2, effect: "15% 攻击速度" }]);
+});
+
+test("official entity catalogs resolve encyclopedia aliases when the MetaTFT catalog is unavailable", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({ units: [], traits: [], items: [] }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails: {
+      units: new Map([["TFT17_MasterYi", {
+        apiName: "TFT17_MasterYi",
+        name: "易",
+        stats: { health: 1100 },
+        ability: { name: "灵能打击", description: "造成伤害。" },
+        traitNames: []
+      }]]),
+      traits: new Map([["TFT17_ASTrait", {
+        apiName: "TFT17_ASTrait",
+        name: "挑战者",
+        type: "job",
+        description: "获得攻击速度。",
+        levels: [{ units: 2, effect: "15% 攻击速度" }]
+      }]]),
+      meta: { version: "16.14" }
+    },
+    recommendForInputImpl: async () => ({ itemRankings: [] })
+  });
+
+  const unit = await handleRecommendRequest({ input: "剑圣的属性和技能是什么？" }, runtime);
+  const trait = await handleRecommendRequest({ input: "挑战者羁绊有什么效果？" }, runtime);
+  assert.equal(unit.payload.type, "unit_details");
+  assert.equal(unit.payload.unit.apiName, "TFT17_MasterYi");
+  assert.equal(trait.payload.type, "trait_details");
+  assert.equal(trait.payload.trait.apiName, "TFT17_ASTrait");
 });
 
 test("unknown item detail wording clarifies before recommendation logic", async () => {
@@ -517,6 +644,8 @@ test("handleRecommendRequest serializes comp rankings without leaking raw rows",
 
   assert.equal(statusCode, 200);
   assert.equal(payload.type, "comp_rankings");
+  assert.equal(payload.trend.officialGate.sourcePath, "results.data.comps");
+  assert.equal(Array.isArray(payload.trend.officialGate.leaders), true);
   assert.equal(payload.rankings.popularity.length, 4);
   assert.equal(payload.rankings.popularity[0].stats.games, 2000);
   assert.equal(typeof payload.rankings.popularity[0].stats.winShare, "number");

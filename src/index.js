@@ -106,11 +106,31 @@ export {
 } from "./data/item-localization.js";
 export { CURRENT_ITEM_LOCALIZATION_SOURCE } from "./data/item-localization-sources.js";
 export {
+  OFFICIAL_COMP_TREND_FIELD_PATH,
+  OFFICIAL_COMP_TREND_MINIMUM,
+  OFFICIAL_COMP_TREND_PAGE_PATH,
+  OFFICIAL_COMP_TREND_THRESHOLD,
+  inspectOfficialCompTrendGate
+} from "./core/official-comp-trend-gate.js";
+export {
+  calculateMetaTftPagePlacementChange,
+  normalizeMetaTftDailyTrends
+} from "./core/metatft-page-trend.js";
+export {
   OFFICIAL_TFT_EQUIPMENT_URL,
   buildOfficialTftItemDetailsCatalog,
   fetchOfficialTftItemDetails,
   parseOfficialTftEquipmentPayload
 } from "./data/official-item-details.js";
+export {
+  OFFICIAL_TFT_CHESS_URL,
+  OFFICIAL_TFT_RACE_URL,
+  OFFICIAL_TFT_JOB_URL,
+  buildOfficialTftEntityDetails,
+  decodeOfficialTftHtml,
+  fetchOfficialTftEntityDetails,
+  parseOfficialTftEntityPayload
+} from "./data/official-entity-details.js";
 export { auditItemPatchChanges } from "./data/item-patch-audit.js";
 export {
   buildItemCatalogAudit,

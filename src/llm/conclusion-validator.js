@@ -114,11 +114,37 @@ function recordNames(record) {
   return names.filter(Boolean);
 }
 
-function allowedNames(evidence, records = null) {
+function naturalEntityVariants(value) {
+  const name = String(value ?? "").trim();
+  if (!name) return [];
+  const values = new Set([name]);
+  const emblemBase = name.replace(/(?:纹章|徽章|转职|转)$/u, "").trim();
+  if (emblemBase && emblemBase !== name) {
+    values.add(emblemBase);
+    values.add(`${emblemBase}纹章`);
+    values.add(`${emblemBase}转`);
+    values.add(`${emblemBase}转职`);
+  }
+  return [...values];
+}
+
+function catalogEntityNames(entity) {
+  return [
+    entity?.apiName,
+    entity?.filterId,
+    entity?.preferredDisplayName,
+    entity?.zhName,
+    entity?.displayName,
+    entity?.shortName,
+    ...(entity?.aliases ?? [])
+  ].filter(Boolean).flatMap(naturalEntityVariants);
+}
+
+function allowedNames(evidence, records = null, catalog = null) {
   const values = new Set();
   const add = (value) => {
-    if (value?.apiName) values.add(String(value.apiName));
-    if (value?.name) values.add(String(value.name));
+    if (value?.apiName) naturalEntityVariants(value.apiName).forEach((name) => values.add(name));
+    if (value?.name) naturalEntityVariants(value.name).forEach((name) => values.add(name));
   };
   add(evidence?.query?.unit);
   for (const key of ["lockedItems", "excludedItems", "comparisonItems", "traits"]) {
@@ -127,6 +153,13 @@ function allowedNames(evidence, records = null) {
   for (const record of records ?? evidenceRecords(evidence).values()) {
     for (const name of recordNames(record)) values.add(name);
   }
+  for (const name of [...values]) naturalEntityVariants(name).forEach((variant) => values.add(variant));
+  for (const collection of [catalog?.items, catalog?.units, catalog?.traits]) {
+    for (const entity of collection ?? []) {
+      const names = catalogEntityNames(entity);
+      if (names.some((name) => values.has(name))) names.forEach((name) => values.add(name));
+    }
+  }
   return values;
 }
 
@@ -134,9 +167,7 @@ function catalogNames(catalog) {
   const names = new Set();
   for (const collection of [catalog?.items, catalog?.units, catalog?.traits]) {
     for (const entity of collection ?? []) {
-      for (const key of ["apiName", "filterId", "preferredDisplayName", "zhName", "shortName"]) {
-        if (entity?.[key]) names.add(String(entity[key]));
-      }
+      catalogEntityNames(entity).forEach((name) => names.add(name));
     }
   }
   return names;
@@ -236,8 +267,11 @@ function validateCoreClaim(text, records, evidence, path, errors) {
   const allSignals = evidence?.itemSignals ?? [];
   const scopedSignals = [...records].filter((record) => record?.kind === "item_core_signal");
   const entryScoped = /^(?:reasons|alternatives)\[/u.test(path);
-  const allowedSignals = entryScoped ? scopedSignals : allSignals;
-  if (!allowedSignals.some((signal) => signal.core === true)) {
+  const namedGlobalCoreSignal = allSignals.some((signal) => (
+    signal.core === true && describesItemAsCore(text, signal.item)
+  ));
+  const hasLinkedCoreSignal = scopedSignals.some((signal) => signal.core === true);
+  if (!(entryScoped ? hasLinkedCoreSignal || namedGlobalCoreSignal : allSignals.some((signal) => signal.core === true))) {
     errors.push(`${path} contains a core-item claim without a linked core signal`);
   }
   for (const signal of allSignals) {
@@ -250,7 +284,7 @@ function validateCoreClaim(text, records, evidence, path, errors) {
 function validateTextFacts(text, records, evidence, catalog, path, errors) {
   if (ABSOLUTE_OR_CAUSAL.test(text)) errors.push(`${path} contains an absolute or causal claim`);
   validateCoreClaim(text, records, evidence, path, errors);
-  const names = allowedNames(evidence, records);
+  const names = allowedNames(evidence, records, catalog);
   validateNames(text, names, catalogNames(catalog), path, errors);
   validateNumbers(text, records, path, errors);
 }

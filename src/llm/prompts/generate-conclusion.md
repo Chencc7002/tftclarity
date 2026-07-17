@@ -6,11 +6,12 @@
 2. 每一条 reasons/alternatives 都必须引用 1–3 个真实 evidenceId，且文字只描述这些 evidenceId 中的事实。
    文字中每提到一个候选名称，都必须在同一条的 `evidenceIds` 中包含该候选对应的 evidenceId；跨候选比较必须同时引用被比较的候选。若候选超过 3 个，应拆成多条，不得只引用其中一方。
    `evidenceIds` 字段已经承担引用作用，用户可见文字里严禁重复写 `build:1`、`item-signal:1`、API 名称、字段名或 `core=true/false`；出现这些技术标识会被视为不合格输出。
+   证据中若出现“挑战者纹章”一类完整名称，用户可见文字可以自然简称为“挑战者”“挑战者转”或“挑战者转职”；简称必须能唯一还原到当前证据中的实体，不能借此引入证据外的纹章或羁绊。
 3. 百分比统一保留一位小数，平均名次保留两位；样本数使用原始整数。
 4. 不使用“必定、保证、唯一最强”等绝对措辞，不把相关性写成因果关系。
    即使是否定句，也不要在用户可见文字中复述这些禁用词，直接写“仅代表当前样本趋势”。
 5. lowSample、stale 或未决胜负必须明确保留相应风险；winner 为 null 时不得声称任何候选胜出或更优。
-6. 对出装推荐，优先解读 `itemSignals`：只有 `kind=item_core_signal` 且 `core=true` 的装备才能称为“核心装备/核心趋势”，对应 reasons 必须引用该 `item-signal:*`。可用 `appearances/recommendationCount` 说明它在展示方案中的重复程度。
+6. 对出装推荐，优先解读 `itemSignals`：只有 `kind=item_core_signal` 且 `core=true` 的装备才能称为“核心装备/核心趋势”。优先在对应 reasons 中引用该 `item-signal:*`；若同一核心信号已存在于证据包，也可在引用相关出装方案时自然说明该装备是核心倾向。可用 `appearances/recommendationCount` 说明它在展示方案中的重复程度。
 7. `core=false` 的装备不得提升为核心；没有任何 `core=true` 时，应明确当前前列方案没有重复到足以识别核心装备，不得自行猜测。
 8. 若核心信号 `stable=false`，只能表述为“低样本下的核心趋势”或“当前样本中的核心倾向”，不得使用“必备、必出、必须出、唯一核心”。
 9. 仅对 `unit_build_rankings`，summary 先回答“核心装备是什么”，再解释第一套完整出装、可替代方案及数据风险；不要只是复述三件装备名称。

@@ -50,16 +50,40 @@ test("conclusion service validates, caches, and reuses generated content", async
 test("conclusion service falls back on invalid output without changing the recommendation", async () => {
   const result = buildResult();
   const before = structuredClone(result);
+  let calls = 0;
   const conclusion = await generateEvidenceBackedConclusion({
     result,
     catalog,
     input: "霞怎么出装？",
     config,
-    provider: async () => ({ ...output(), reasons: [{ evidenceIds: ["build:1"], text: "前四率99.9%。" }] })
+    provider: async () => {
+      calls += 1;
+      return { ...output(), reasons: [{ evidenceIds: ["build:1"], text: "前四率99.9%。" }] };
+    }
   });
   assert.equal(conclusion.status, "fallback");
   assert.equal(conclusion.reason, "invalid_output");
+  assert.equal(calls, 2);
   assert.deepEqual(result, before);
+});
+
+test("conclusion service retries once with validator feedback and accepts the correction", async () => {
+  const calls = [];
+  const conclusion = await generateEvidenceBackedConclusion({
+    result: buildResult(),
+    catalog,
+    input: "霞怎么出装？",
+    config,
+    provider: async (request) => {
+      calls.push(request);
+      return calls.length === 1
+        ? { ...output(), reasons: [{ evidenceIds: ["build:1"], text: "前四率99.9%。" }] }
+        : output();
+    }
+  });
+  assert.equal(conclusion.status, "generated");
+  assert.equal(calls.length, 2);
+  assert.match(calls[1].validationFeedback.join("\n"), /unsupported percentage/u);
 });
 
 test("conclusion service classifies non-JSON provider output as invalid output", async () => {

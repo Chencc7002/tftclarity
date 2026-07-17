@@ -47,6 +47,15 @@ function parseItemCategories(input) {
   return uniqueValues(categories);
 }
 
+function requestsCategoryRanking(input) {
+  const normalized = normalizeText(input);
+  return /(?:有?什么|哪些|哪个|哪件).{0,10}(?:好|强|强力|厉害|适合|推荐|优先|值得)/.test(normalized)
+    || /(?:好|强|强力|厉害|适合|推荐|优先|值得).{0,10}(?:有?什么|哪些|哪个|哪件)/.test(normalized)
+    || /(?:应该|该|适合|推荐).{0,6}(?:带|携带|选择|拿|用)?(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:带|携带|选择|拿|用).{0,4}(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:纹章|转职|神器|光明(?:装备)?).{0,4}(?:推荐|排行|排名)/.test(normalized);
+}
+
 const RANK_ORDER = Object.freeze([
   "CHALLENGER",
   "GRANDMASTER",
@@ -178,8 +187,7 @@ function inferIntent(input, details = {}) {
     return "unit_item_availability";
   }
   if (details.comparison?.requested) return "unit_item_comparison";
-  if ((details.itemCategories?.length ?? 0) > 0
-    && /(哪个|哪件|什么).{0,8}(好|最好|最强|更好|优先)|(?:好|最好|最强|更好|优先).{0,8}(哪个|哪件|什么)/.test(normalized)) {
+  if ((details.itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized)) {
     return "unit_item_rankings";
   }
   if (/(单件|单装备|哪个装备|哪件装备|优先做.{0,6}装备|装备表现最好|装备最厉害)/.test(normalized)) {
@@ -204,8 +212,7 @@ function inferIntent(input, details = {}) {
 function hasExplicitIntent(input, comparison, ownedItems, itemCategories = []) {
   const normalized = normalizeText(input);
   return comparison?.requested
-    || ((itemCategories?.length ?? 0) > 0
-      && /(哪个|哪件|什么).{0,8}(好|最好|最强|更好|优先)|(?:好|最好|最强|更好|优先).{0,8}(哪个|哪件|什么)/.test(normalized))
+    || ((itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized))
     || /(单件|单装备|哪个装备|哪件装备|三件套|出装|一套|换一套|阵容|能不能带|可不可以带)/.test(normalized)
     || ((ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized));
 }
@@ -415,8 +422,7 @@ export function parseQuery(input, options = {}) {
     ""
   );
   const emblemCategoryRankingRequested = itemCategories.includes("emblem")
-    && /(?:哪个|哪件|什么).{0,8}(?:好|最好|最强|更好|优先)|(?:好|最好|最强|更好|优先).{0,8}(?:哪个|哪件|什么)/
-      .test(normalizedInput);
+    && requestsCategoryRanking(normalizedInput);
   const genericEmblemActionRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}(?:纹章|转职)/
     .test(positiveEmblemScopeText);
   const genericEmblemRequested = (

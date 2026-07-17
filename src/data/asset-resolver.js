@@ -2,13 +2,19 @@ import { readFileSync } from "node:fs";
 
 const assetManifest = JSON.parse(readFileSync(new URL("./generated/asset-manifest.json", import.meta.url), "utf8"));
 
-const ALLOWED_HOSTS = new Set(["ddragon.leagueoflegends.com"]);
+const ALLOWED_HOSTS = new Set(["ddragon.leagueoflegends.com", "cdn.metatft.com"]);
 const ITEM_ASSET_ALIASES = new Map([
   ["TFT_Item_GiantSlayer", "TFT_Item_MadredsBloodrazor"]
 ]);
 
 function traitBase(value) {
   return String(value ?? "").replace(/_\d+$/, "");
+}
+
+function metaTFTUnitIconUrl(apiName) {
+  const slug = String(apiName ?? "").trim().toLowerCase();
+  if (!/^tft\d+_[a-z0-9_]+$/u.test(slug)) return null;
+  return `https://cdn.metatft.com/file/metatft/champions/${slug}.png`;
 }
 
 export function normalizeAssetUrl(value) {
@@ -35,14 +41,21 @@ export function createAssetResolver(options = {}) {
         ? ITEM_ASSET_ALIASES.get(requested) ?? requested
         : requested;
     const record = byKey.get(`${entityType}:${requested}`) ?? byKey.get(`${entityType}:${lookup}`);
-    const iconUrl = normalizeAssetUrl(record?.iconUrl);
+    const manifestIconUrl = normalizeAssetUrl(record?.iconUrl);
+    const metaTFTIconUrl = entityType === "unit"
+      ? normalizeAssetUrl(metaTFTUnitIconUrl(lookup))
+      : null;
+    const iconUrl = metaTFTIconUrl ?? manifestIconUrl;
     return {
       entityType,
       apiName: entityType === "item" ? requested : lookup,
       ...(entityType === "item" && lookup !== requested ? { assetApiName: lookup } : {}),
       ...(entityType === "trait" ? { filterId: requested } : {}),
       iconUrl,
-      source: record?.source ?? manifest?.source ?? null,
+      ...(entityType === "unit" && manifestIconUrl && manifestIconUrl !== iconUrl
+        ? { fallbackIconUrl: manifestIconUrl }
+        : {}),
+      source: metaTFTIconUrl ? "MetaTFT CDN" : record?.source ?? manifest?.source ?? null,
       sourcePatch: record?.sourcePatch ?? manifest?.sourcePatch ?? null,
       fallback: !iconUrl
     };
@@ -71,6 +84,7 @@ export function decorateCompAssets(result, options = {}) {
       return {
         ...unit,
         iconUrl: asset.iconUrl,
+        fallbackIconUrl: asset.fallbackIconUrl ?? null,
         assetFallback: asset.fallback,
         core: Boolean(build),
         items: (build?.items ?? unit.items ?? []).map((apiName) => ({
@@ -91,6 +105,7 @@ export function decorateCompAssets(result, options = {}) {
       key,
       (values ?? []).map(decorateComp)
     ])),
+    improving: (result.improving ?? []).map(decorateComp),
     references: (result.references ?? []).map(decorateComp)
   };
 }

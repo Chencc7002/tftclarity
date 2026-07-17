@@ -726,7 +726,10 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
     ["霞的光明装备哪个最好？", "radiant", "include_radiant"],
     ["霞的神器哪个好？", "artifact", "include_artifact"],
     ["霞的纹章哪个最好？", "emblem", "include_special"],
-    ["霞携带什么转职最强？", "emblem", "include_special"]
+    ["霞携带什么转职最强？", "emblem", "include_special"],
+    ["霞有什么强的转职？", "emblem", "include_special"],
+    ["霞应该携带什么转职？", "emblem", "include_special"],
+    ["霞哪个转职好？", "emblem", "include_special"]
   ];
 
   for (const [input, category, itemPolicy] of cases) {

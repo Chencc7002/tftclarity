@@ -346,11 +346,11 @@ function itemPill(item) {
   </span>`;
 }
 
-function assetThumb(iconUrl, label, className = "") {
+function assetThumb(iconUrl, label, className = "", fallbackIconUrl = null) {
   const text = String(label ?? "?").trim();
   const fallback = text.slice(0, 1) || "?";
   const image = iconUrl
-    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy" onerror="this.hidden=true">`
+    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"${fallbackIconUrl ? ` data-fallback-src="${escapeHtml(fallbackIconUrl)}"` : ""} onerror="if(this.dataset.fallbackSrc){this.src=this.dataset.fallbackSrc;this.dataset.fallbackSrc=''}else{this.hidden=true}">`
     : "";
   return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${escapeHtml(fallback)}</span>${image}</span>`;
 }
@@ -403,8 +403,16 @@ function compUpdatedLabel(value) {
 function renderCompTrendNotice(data, improving) {
   if (improving.length) return "";
   const status = data.trend?.status;
+  const gate = data.trend?.officialGate;
   let message = "";
-  if (status === "warming") {
+  if (gate && !gate.ready && status !== "local" && status !== "mixed") {
+    message = gate.status === "insufficient"
+      ? t("trendGateInsufficient", {
+        eligible: gate.eligibleCount ?? 0,
+        minimum: gate.minimum ?? 3
+      })
+      : t("trendGateFieldMissing");
+  } else if (status === "warming") {
     message = data.trend?.readyAt
       ? t("trendWarmingReady", { value: escapeHtml(formatDate(data.trend.readyAt)) })
       : t("trendWarming");
@@ -419,7 +427,9 @@ function renderCompTrendNotice(data, improving) {
 }
 
 function compTrendSourceLabel(comp) {
-  return comp.trend?.source === "local_72h" ? t("trendSourceLocal") : t("trendSourceOfficial");
+  if (comp.trend?.source === "local_72h") return t("trendSourceLocal");
+  if (comp.trend?.source === "metatft_page_calculated") return t("trendSourcePageCalculated");
+  return t("trendSourceOfficial");
 }
 
 function renderCompUnit(unit, expanded = false) {
@@ -429,8 +439,13 @@ function renderCompUnit(unit, expanded = false) {
   const averageStar = expanded && hasNumericValue(unit.avgStarLevel)
     ? `<small class="unit-star">${t("avgShort")} ${formatNumber(unit.avgStarLevel, { minimumFractionDigits: 1, maximumFractionDigits: 1 })}★</small>`
     : "";
-  return `<div class="comp-unit${unit.core ? " core" : ""}">
-    ${assetThumb(unit.iconUrl, localizedName(unit), "unit-icon")}
+  const targetStarLevel = Number(unit.targetStarLevel);
+  const targetStars = Number.isInteger(targetStarLevel) && targetStarLevel >= 3
+    ? `<span class="target-star-badge" title="${escapeHtml(t("targetStarLevel", { value: targetStarLevel }))}" aria-label="${escapeHtml(t("targetStarLevel", { value: targetStarLevel }))}">${"★".repeat(Math.min(4, targetStarLevel))}</span>`
+    : "";
+  return `<div class="comp-unit${unit.core ? " core" : ""}${targetStars ? " has-star-target" : ""}">
+    ${targetStars}
+    ${assetThumb(unit.iconUrl, localizedName(unit), "unit-icon", unit.fallbackIconUrl)}
     ${expanded ? `<span class="unit-name">${escapeHtml(localizedName(unit))}</span>${averageStar}${items}` : ""}
   </div>`;
 }
@@ -654,6 +669,84 @@ function renderItemDetails(data) {
       <div class="card-head"><div class="card-title">${escapeHtml(item.name ?? t("itemDetails"))}</div><div class="detail-category">${escapeHtml(item.category ?? "")}</div></div>
       <strong class="detail-label">${escapeHtml(t("recipeRoute"))}</strong>${recipeHtml}
       <strong class="detail-label">${escapeHtml(t("effectAndStats"))}</strong><div class="detail-effect">${effect}</div>
+    </article>
+  `);
+}
+
+function entitySourceLine(source) {
+  if (!source) return "";
+  const parts = [source.season, source.version, source.updatedAt].filter(Boolean);
+  return parts.length ? `<div class="entity-source">${escapeHtml(parts.join(" · "))}</div>` : "";
+}
+
+function entityStat(label, value, suffix = "") {
+  const present = value !== null && value !== undefined && value !== "";
+  const display = present ? `${value}${suffix}` : "-";
+  return `<div class="entity-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(display)}</strong></div>`;
+}
+
+function renderUnitDetails(data) {
+  const unit = data.unit ?? {};
+  const stats = unit.stats ?? {};
+  const ability = unit.ability ?? {};
+  const recommendations = data.recommendedItems ?? [];
+  const manaValue = hasNumericValue(stats.startingMana) && hasNumericValue(stats.mana)
+    ? `${stats.startingMana}/${stats.mana}`
+    : stats.mana;
+  const recommendationHtml = recommendations.length
+    ? `<div class="stable-item-grid">${recommendations.map((item, index) => `
+        <article class="stable-item-card">
+          <div class="stable-item-head"><b>#${index + 1}</b>${itemPill(item)}</div>
+          <div class="stable-item-stats">
+            <span>${escapeHtml(t("metricSamples"))} <b>${formatNumber(item.stats?.games ?? 0)}</b></span>
+            <span>${escapeHtml(t("metricTop4Rate"))} <b>${formatNumber(item.stats?.top4 ?? 0)}%</b></span>
+            <span>${escapeHtml(t("metricAvgPlacement"))} <b>${formatNumber(item.stats?.avg ?? 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
+            <span>${escapeHtml(t("recommendationScore"))} <b>${formatNumber(item.recommendationScore ?? 0, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</b></span>
+          </div>
+        </article>`).join("")}</div>`
+    : `<div class="detail-muted">${escapeHtml(t("noStableItems"))}</div>`;
+  const abilityDescription = escapeHtml(ability.description ?? "-").replace(/\n/g, "<br>");
+
+  setResponseHtml(`
+    <article class="result-card entity-detail-card">
+      <header class="entity-detail-head">
+        ${assetThumb(unit.iconUrl, unit.name, "entity-icon")}
+        <div><div class="card-title">${escapeHtml(unit.name ?? t("unitDetails"))}</div><small>${unit.cost ? escapeHtml(t("unitCost", { value: unit.cost })) : ""}${unit.role ? ` · ${escapeHtml(unit.role)}` : ""}</small></div>
+      </header>
+      ${(unit.traitNames ?? []).length ? `<div class="entity-chips">${unit.traitNames.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}</div>` : ""}
+      <strong class="detail-label">${escapeHtml(t("baseStats"))}</strong>
+      <div class="entity-stat-grid">
+        ${entityStat(t("health"), stats.health)}${entityStat(t("mana"), manaValue)}${entityStat(t("attackDamage"), stats.attackDamage)}${entityStat(t("armor"), stats.armor)}
+        ${entityStat(t("magicResist"), stats.magicResist)}${entityStat(t("attackSpeed"), stats.attackSpeed)}${entityStat(t("attackRange"), stats.attackRange)}${entityStat(t("critChance"), stats.critChance, "%")}
+      </div>
+      <strong class="detail-label">${escapeHtml(t("ability"))}</strong>
+      <section class="ability-card">
+        ${assetThumb(ability.iconUrl, ability.name ?? t("ability"), "ability-icon")}
+        <div><div><strong>${escapeHtml(ability.name ?? t("ability"))}</strong>${ability.type ? `<span>${escapeHtml(ability.type)}</span>` : ""}</div><p>${abilityDescription}</p></div>
+      </section>
+      <strong class="detail-label">${escapeHtml(t("stableItemRecommendations"))}</strong>
+      ${recommendationHtml}
+      <div class="recommendation-method">${escapeHtml(t("recommendationMethod"))}</div>
+      ${entitySourceLine(unit.source ?? data.source)}
+    </article>
+  `);
+}
+
+function renderTraitDetails(data) {
+  const trait = data.trait ?? {};
+  const levels = trait.levels ?? [];
+  setResponseHtml(`
+    <article class="result-card entity-detail-card">
+      <header class="entity-detail-head">
+        ${assetThumb(trait.iconUrl, trait.name, "entity-icon")}
+        <div><div class="card-title">${escapeHtml(trait.name ?? t("traitDetails"))}</div><small>${escapeHtml(trait.type === "race" ? t("traitRace") : trait.type === "job" ? t("traitJob") : "")}</small></div>
+      </header>
+      <div class="detail-effect">${escapeHtml(trait.description ?? "-").replace(/\n/g, "<br>")}</div>
+      <strong class="detail-label">${escapeHtml(t("traitTiers"))}</strong>
+      <div class="trait-level-list">
+        ${levels.map((level) => `<div class="trait-level"><strong>${escapeHtml(t("unitsRequired", { value: level.units }))}</strong><span>${escapeHtml(level.effect)}</span></div>`).join("") || `<div class="detail-muted">-</div>`}
+      </div>
+      ${entitySourceLine(trait.source ?? data.source)}
     </article>
   `);
 }
@@ -1032,7 +1125,9 @@ function renderRecommendationResult(data) {
 }
 
 function renderCurrentResult(data) {
-  if (data.type === "item_details") renderItemDetails(data);
+  if (data.type === "unit_details") renderUnitDetails(data);
+  else if (data.type === "trait_details") renderTraitDetails(data);
+  else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
   else if (data.type === CompRankingResult.type) renderCompRankings(data);
   else if (data.type === ItemRankingResult.type) renderItemRankings(data);

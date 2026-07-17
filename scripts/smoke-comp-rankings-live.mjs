@@ -2,6 +2,7 @@ import {
   CompsContextClient,
   buildCompRankings,
   createCatalog,
+  inspectOfficialCompTrendGate,
   normalizeCompsPageDataResponse,
   normalizeCompsStatsResponse
 } from "../src/index.js";
@@ -10,6 +11,10 @@ const rankFilter = ["CHALLENGER", "DIAMOND", "EMERALD", "GRANDMASTER", "MASTER",
 const client = new CompsContextClient({ timeoutMs: 15000, rankingsTimeoutMs: 15000 });
 const dataParams = { queue: "1100" };
 const compsData = await client.getCompsData(dataParams);
+const officialGate = inspectOfficialCompTrendGate(compsData);
+if (!officialGate.ready) {
+  throw new Error(`official trend gate is closed: status=${officialGate.status} eligible=${officialGate.eligibleCount}/${officialGate.minimum}`);
+}
 const clusterId = compsData?.results?.data?.cluster_id;
 const statsParams = {
   queue: "1100",
@@ -60,8 +65,24 @@ if (String(result.source.clusterId) !== String(clusterId)) {
 if (result.diagnostics.acceptedGroups !== visible.length) {
   throw new Error(`visible comp mismatch: page=${visible.length} result=${result.diagnostics.acceptedGroups}`);
 }
-if (!definitions.size || result.trend.status !== "upstream") {
-  throw new Error(`official comp trends were not derived on cold start: status=${result.trend.status}`);
+if (!definitions.size || result.trend.status !== "upstream" || !result.trend.officialGate?.ready) {
+  throw new Error(`official comp trends did not pass the raw cold-start gate: status=${result.trend.status}`);
+}
+if (result.improving.length !== 3) {
+  throw new Error(`live query did not return three visible improving comps: count=${result.improving.length}`);
+}
+const rawTrends = compsData.results.data.comps;
+for (const comp of result.improving) {
+  const rawChange = Number(rawTrends?.[comp.source.clusterId]?.["Average Placement Change"]);
+  const gateEntry = officialGate.sourceType === "raw_field"
+    ? { avgPlacementChange: rawChange }
+    : normalizeCompsPageDataResponse(compsData).definitions
+      .find((definition) => definition.clusterId === comp.source.clusterId);
+  if (!Number.isFinite(gateEntry?.avgPlacementChange)
+    || gateEntry.avgPlacementChange >= -0.1
+    || Math.abs(gateEntry.avgPlacementChange - comp.trend.avgPlacementChange) > 1e-9) {
+    throw new Error(`trend card is not backed by the selected official source: cluster=${comp.source.clusterId}`);
+  }
 }
 
 console.log(JSON.stringify({
@@ -72,6 +93,7 @@ console.log(JSON.stringify({
   statsParams,
   clusterId,
   updated: result.source.updatedAt,
+  officialGate,
   sampleSize: result.source.sampleSize,
   definitions: definitions.size,
   visibleRows: visible.length,

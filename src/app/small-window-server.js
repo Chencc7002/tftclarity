@@ -28,6 +28,7 @@ import {
   createConclusionProviderFromConfig,
   createAssetResolver,
   createStructuredParserFromConfig,
+  fetchOfficialTftEntityDetails,
   fetchOfficialTftItemDetails,
   filterItemCatalogAudit,
   hasUnsupportedCompRankingEntities,
@@ -787,6 +788,192 @@ function preferenceKey(scope) {
   return scope ? anonymousScopeKey(scope, SMALL_WINDOW_PREFERENCES_KEY) : SMALL_WINDOW_PREFERENCES_KEY;
 }
 
+async function loadOfficialEntityDetails(runtime) {
+  if (runtime.officialEntityDetails) return runtime.officialEntityDetails;
+  if (!runtime.officialEntityDetailsPromise) {
+    runtime.officialEntityDetailsPromise = runtime.fetchOfficialEntityDetails({
+      fetchImpl: runtime.officialEntityDetailsFetch,
+      chessUrl: runtime.officialChessUrl,
+      raceUrl: runtime.officialRaceUrl,
+      jobUrl: runtime.officialJobUrl,
+      timeoutMs: runtime.officialEntityDetailsTimeoutMs
+    }).then((details) => {
+      runtime.officialEntityDetails = details;
+      runtime.officialEntityDetailsLoadedAt = new Date().toISOString();
+      return details;
+    }).finally(() => {
+      runtime.officialEntityDetailsPromise = null;
+    });
+  }
+  return runtime.officialEntityDetailsPromise;
+}
+
+function baseTraitApiName(value) {
+  return String(value ?? "").replace(/_[0-9]+$/, "");
+}
+
+function explicitUnitDetailsQuestion(input) {
+  const text = String(input ?? "");
+  return /(?:属性|技能|详情|介绍|棋子信息|是什么棋子)/u.test(text)
+    && !/(装备|出装|转职|纹章|阵容|排行|排名|推荐)/u.test(text);
+}
+
+function explicitTraitDetailsQuestion(input) {
+  const text = String(input ?? "");
+  return /(?:羁绊|效果|属性|详情|介绍|档位|几人)/u.test(text)
+    && !/(装备|出装|转职|纹章|阵容|排行|排名|推荐)/u.test(text);
+}
+
+function normalizeRange(value, min, max, inverse = false) {
+  if (!Number.isFinite(value)) return 0;
+  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return 1;
+  const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
+  return inverse ? 1 - normalized : normalized;
+}
+
+function scoreStableItemRecommendations(entries, catalog) {
+  const candidates = (entries ?? []).filter((entry) => {
+    const item = catalog.itemByApiName.get(entry.apiName);
+    return item?.category === "ordinary_completed"
+      && item.current !== false
+      && item.obtainable !== false
+      && Number(entry.stats?.games) > 0
+      && Number.isFinite(Number(entry.stats?.avgPlacement));
+  });
+  if (!candidates.length) return [];
+  const observedMaxGames = Math.max(...candidates.map((entry) => Number(entry.stats.games)), 1);
+  const highFrequency = candidates.filter((entry) => Number(entry.stats.games) >= observedMaxGames * 0.10);
+  const stableCandidates = highFrequency.length >= 3 ? highFrequency : candidates;
+  const games = stableCandidates.map((entry) => Number(entry.stats.games));
+  const top4 = stableCandidates.map((entry) => Number(entry.stats.top4Rate)).filter(Number.isFinite);
+  const averages = stableCandidates.map((entry) => Number(entry.stats.avgPlacement)).filter(Number.isFinite);
+  const maxGames = Math.max(...games, 1);
+  const top4Min = Math.min(...top4);
+  const top4Max = Math.max(...top4);
+  const avgMin = Math.min(...averages);
+  const avgMax = Math.max(...averages);
+  const scored = stableCandidates.map((entry) => {
+    const frequencyScore = Math.log1p(Number(entry.stats.games)) / Math.log1p(maxGames);
+    const top4Score = normalizeRange(Number(entry.stats.top4Rate), top4Min, top4Max);
+    const placementScore = normalizeRange(Number(entry.stats.avgPlacement), avgMin, avgMax, true);
+    return {
+      entry,
+      score: 0.55 * frequencyScore + 0.30 * top4Score + 0.15 * placementScore,
+      acceptablePlacement: Number(entry.stats.avgPlacement) <= 4.5
+    };
+  });
+  const acceptable = scored.filter((entry) => entry.acceptablePlacement);
+  const pool = acceptable.length >= 3 ? acceptable : scored;
+  return pool.sort((a, b) => b.score - a.score || b.entry.stats.games - a.entry.stats.games).slice(0, 3);
+}
+
+async function stableUnitItems(apiName, catalog, runtime, context = {}) {
+  const name = unitName(apiName, catalog);
+  const result = await runtime.recommendForInputImpl(`${name}普通单件装备排行，样本>=0`, {
+    catalog,
+    metaTFTClient: runtime.metaTFTClient,
+    compsClient: runtime.compsClient,
+    compsData: context.compsData,
+    cacheStore: runtime.cacheStore,
+    preferences: { ...(context.preferences ?? {}), minSamples: 0, itemPolicy: "ordinary_only" },
+    explicitPreferences: { minSamples: 0, itemPolicy: "ordinary_only" },
+    bypassQueryCache: Boolean(context.refresh),
+    bypassDefaultContextCache: Boolean(context.refresh),
+    structuredParser: null,
+    useStructuredParser: "never",
+    useSession: false
+  });
+  return scoreStableItemRecommendations(result.itemRankings, catalog).map(({ entry, score }) => ({
+    ...serializeItemRanking(entry, catalog),
+    recommendationScore: Number(score.toFixed(3))
+  }));
+}
+
+async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}) {
+  const unitWording = explicitUnitDetailsQuestion(input);
+  const traitWording = explicitTraitDetailsQuestion(input);
+  if (!unitWording && !traitWording) return null;
+
+  let details = null;
+  let entityCatalog = catalog;
+  let parsed = parseQuery(input, { catalog: entityCatalog });
+  if (!parsed.unit && !(parsed.traitFilters ?? []).length) {
+    details = await loadOfficialEntityDetails(runtime);
+    const officialUnits = buildUnitCatalogFromCompsData({
+      compOptions: [{ units_list: [...details.units.keys()].join("&") }]
+    });
+    const officialTraitFilters = [...details.traits.values()].flatMap((trait) => {
+      const tiers = (trait.levels ?? []).map((level) => `${trait.apiName}_${level.units}`);
+      return tiers.length ? tiers : [`${trait.apiName}_1`];
+    });
+    const officialTraits = buildTraitCatalogFromCompsData({
+      compOptions: [{ traits_list: officialTraitFilters.join("&") }]
+    });
+    entityCatalog = createCatalog({
+      units: mergeCatalogUnits(catalog.units, officialUnits),
+      traits: mergeCatalogTraits(catalog.traits, officialTraits),
+      items: catalog.items
+    });
+    parsed = parseQuery(input, { catalog: entityCatalog });
+  }
+
+  const unitApiName = parsed.unit ?? null;
+  const traitApiNames = [...new Set((parsed.traitFilters ?? []).map(baseTraitApiName))];
+  const wantsUnit = Boolean(unitApiName && unitWording);
+  const wantsTrait = Boolean(!unitApiName && traitApiNames.length === 1 && traitWording);
+  if (!wantsUnit && !wantsTrait) return null;
+
+  details ??= await loadOfficialEntityDetails(runtime);
+  if (wantsUnit) {
+    const official = details.units.get(unitApiName);
+    const catalogUnit = entityCatalog.unitByApiName.get(unitApiName);
+    let recommendations = [];
+    let recommendationWarning = null;
+    try {
+      recommendations = await stableUnitItems(unitApiName, entityCatalog, runtime, context);
+    } catch (error) {
+      recommendationWarning = error?.message ?? String(error);
+    }
+    const name = catalogUnit?.zhName ?? official?.name ?? unitApiName;
+    return {
+      ok: true,
+      type: "unit_details",
+      text: official ? `${name}：${official.ability?.name ?? "技能信息"}` : `${name}暂无官方棋子详情。`,
+      answer: {
+        summary: `${name}的属性、技能与稳定装备推荐`,
+        methodology: "先排除样本不足最高频装备 10% 的极低频候选，再按 55% 对数登场频率 + 30% 前四率 + 15% 平均名次计算稳定分，并优先保留平均名次不高于 4.5 的装备。"
+      },
+      unit: {
+        ...(official ?? { stats: {}, ability: {}, traitNames: [] }),
+        apiName: unitApiName,
+        name,
+        iconUrl: ASSET_RESOLVER.resolveUnit(unitApiName).iconUrl
+      },
+      recommendedItems: recommendations,
+      recommendationWarning,
+      source: official?.source ?? details.meta ?? null
+    };
+  }
+
+  const traitApiName = traitApiNames[0];
+  const official = details.traits.get(traitApiName);
+  const catalogTrait = entityCatalog.traitByApiName.get(traitApiName)
+    ?? entityCatalog.traitByFilterId.get(parsed.traitFilters[0]);
+  const name = official?.name ?? catalogTrait?.displayName ?? catalogTrait?.zhName ?? traitApiName;
+  return {
+    ok: true,
+    type: "trait_details",
+    text: official ? `${name}：${official.description}` : `${name}暂无官方羁绊详情。`,
+    answer: { summary: `${name}的羁绊效果与档位属性` },
+    trait: {
+      ...(official ?? { description: null, levels: [], type: null, iconUrl: null }),
+      apiName: traitApiName,
+      name
+    },
+    source: official?.source ?? details.meta ?? null
+  };
+}
+
 export async function loadSmallWindowPreferences(runtime, scope = null) {
   return completeSmallWindowPreferences(await loadStoredSmallWindowPreferences(runtime, scope));
 }
@@ -1079,7 +1266,9 @@ function serializeCompRankings(result, meta = {}) {
         apiName: unit.apiName,
         name: unit.name,
         iconUrl: unit.iconUrl ?? null,
+        fallbackIconUrl: unit.fallbackIconUrl ?? null,
         assetFallback: Boolean(unit.assetFallback),
+        targetStarLevel: Number.isInteger(unit.targetStarLevel) ? unit.targetStarLevel : null,
         starLevel: Number.isFinite(unit.starLevel) ? unit.starLevel : null,
         avgStarLevel: Number.isFinite(unit.avgStarLevel) ? unit.avgStarLevel : null,
         core: Boolean(unit.core),
@@ -1198,6 +1387,15 @@ export function createSmallWindowRuntime(options = {}) {
     officialItemDetailsUrl: options.officialItemDetailsUrl,
     officialItemDetailsTimeoutMs: options.officialItemDetailsTimeoutMs ?? 10000,
     fetchOfficialItemDetails: options.fetchOfficialItemDetails ?? fetchOfficialTftItemDetails,
+    officialEntityDetails: options.officialEntityDetails ?? null,
+    officialEntityDetailsPromise: null,
+    officialEntityDetailsLoadedAt: options.officialEntityDetailsLoadedAt ?? null,
+    officialEntityDetailsFetch: options.officialEntityDetailsFetch ?? options.fetchImpl,
+    officialChessUrl: options.officialChessUrl,
+    officialRaceUrl: options.officialRaceUrl,
+    officialJobUrl: options.officialJobUrl,
+    officialEntityDetailsTimeoutMs: options.officialEntityDetailsTimeoutMs ?? 10000,
+    fetchOfficialEntityDetails: options.fetchOfficialEntityDetails ?? fetchOfficialTftEntityDetails,
     fetchItems: options.fetchItems ?? true,
     compsData: options.compsData ?? null,
     defaultContextOptions: options.defaultContextOptions ?? {},
@@ -1635,6 +1833,20 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
   const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const entityDetailsPayload = await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
+    preferences,
+    compsData,
+    refresh: Boolean(body.refresh)
+  });
+  if (entityDetailsPayload) {
+    entityDetailsPayload.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return { statusCode: 200, payload: entityDetailsPayload };
+  }
   const itemDetailsPayload = await serializeItemDetailsQuery(input, catalog, runtime);
   if (itemDetailsPayload) {
     return { statusCode: 200, payload: itemDetailsPayload };

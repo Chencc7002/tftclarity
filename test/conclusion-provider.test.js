@@ -87,3 +87,20 @@ test("OpenAI-compatible conclusion provider rejects Markdown-wrapped JSON", asyn
   });
   await assert.rejects(() => provider({ evidence: {} }), (error) => error.code === "invalid_json" && error.recoverable === false);
 });
+
+test("OpenAI-compatible conclusion provider sends validation feedback on a corrective attempt", async () => {
+  let body;
+  const provider = createOpenAICompatibleConclusionProvider({
+    endpoint: "https://provider.example/v1/chat/completions",
+    model: "safe-model",
+    promptText: "prompt",
+    fetchImpl: async (_url, init) => {
+      body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(output) } }] }) };
+    }
+  });
+  await provider({ evidence: {}, validationFeedback: ["headline contains an unsupported entity"] });
+  assert.equal(body.messages.length, 3);
+  assert.match(body.messages[2].content, /headline contains an unsupported entity/u);
+  assert.match(body.messages[2].content, /重新生成完整 JSON/u);
+});

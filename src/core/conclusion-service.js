@@ -74,14 +74,14 @@ async function cacheSet(cacheStore, key, value, ttlMs) {
   return cacheStore.setQuery(key, value, { ttlMs });
 }
 
-async function callProvider(provider, evidence) {
+async function callProvider(provider, evidence, options = {}) {
   const invoke = typeof provider === "function" ? provider : provider?.generate?.bind(provider);
   if (!invoke) throw new Error("conclusion provider is unavailable");
   try {
-    return await invoke({ evidence });
+    return await invoke({ evidence, ...options });
   } catch (error) {
     if (!error?.recoverable) throw error;
-    return invoke({ evidence });
+    return invoke({ evidence, ...options });
   }
 }
 
@@ -144,18 +144,46 @@ export async function generateEvidenceBackedConclusion({
   }
 
   let raw;
+  let correctiveAttemptUsed = false;
   try {
     raw = await callProvider(provider, evidence);
   } catch (error) {
-    const reason = ["invalid_json", "truncated_output"].includes(error?.code)
-      ? "invalid_output"
-      : "provider_unavailable";
-    const value = envelope("fallback", { reason, model, latencyMs: Date.now() - startedAt });
-    emit(config, { status: value.status, reason: value.reason, latencyMs: value.latencyMs, model });
-    return value;
+    if (["invalid_json", "truncated_output"].includes(error?.code)) {
+      correctiveAttemptUsed = true;
+      try {
+        raw = await callProvider(provider, evidence, {
+          validationFeedback: ["输出必须是完整、严格且不带 Markdown 围栏的 JSON 对象。"]
+        });
+      } catch {
+        const value = envelope("fallback", { reason: "invalid_output", model, latencyMs: Date.now() - startedAt });
+        emit(config, { status: value.status, reason: value.reason, latencyMs: value.latencyMs, model, attempts: 2 });
+        return value;
+      }
+    } else {
+      const value = envelope("fallback", { reason: "provider_unavailable", model, latencyMs: Date.now() - startedAt });
+      emit(config, { status: value.status, reason: value.reason, latencyMs: value.latencyMs, model });
+      return value;
+    }
   }
 
-  const validation = validateConclusionOutput(raw, evidence, { catalog });
+  let validation = validateConclusionOutput(raw, evidence, { catalog });
+  if ((!validation.valid || validation.value?.status !== "ok") && !correctiveAttemptUsed) {
+    correctiveAttemptUsed = true;
+    const validationFeedback = validation.valid
+      ? ["status 必须为 ok；已有证据足以生成有边界的结论。"]
+      : validation.errors.slice(0, 8);
+    try {
+      raw = await callProvider(provider, evidence, { validationFeedback });
+      validation = validateConclusionOutput(raw, evidence, { catalog });
+    } catch (error) {
+      const reason = ["invalid_json", "truncated_output"].includes(error?.code)
+        ? "invalid_output"
+        : "provider_unavailable";
+      const value = envelope("fallback", { reason, model, latencyMs: Date.now() - startedAt });
+      emit(config, { status: value.status, reason: value.reason, latencyMs: value.latencyMs, model, attempts: 2 });
+      return value;
+    }
+  }
   if (!validation.valid || validation.value?.status !== "ok") {
     const value = envelope("fallback", {
       reason: "invalid_output",
@@ -167,7 +195,8 @@ export async function generateEvidenceBackedConclusion({
       reason: value.reason,
       validationErrors: validation.errors.slice(0, 8),
       latencyMs: value.latencyMs,
-      model
+      model,
+      attempts: correctiveAttemptUsed ? 2 : 1
     });
     return value;
   }
@@ -187,6 +216,6 @@ export async function generateEvidenceBackedConclusion({
     promptVersion: config.promptVersion ?? "generate-conclusion.v1"
   }, config.cacheTtlMs);
   const value = envelope("generated", { content, model, latencyMs: Date.now() - startedAt });
-  emit(config, { status: value.status, latencyMs: value.latencyMs, model });
+  emit(config, { status: value.status, latencyMs: value.latencyMs, model, attempts: correctiveAttemptUsed ? 2 : 1 });
   return value;
 }

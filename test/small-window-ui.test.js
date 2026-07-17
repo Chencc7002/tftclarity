@@ -128,18 +128,36 @@ test("small-window renders dedicated responsive item comparison evidence", () =>
   assert.match(styles, /grid-template-columns: 1fr/);
 });
 
+test("small-window renders unit and trait encyclopedia result types", () => {
+  assert.match(appJs, /function renderUnitDetails/);
+  assert.match(appJs, /function renderTraitDetails/);
+  assert.match(appJs, /data\.type === "unit_details"/);
+  assert.match(appJs, /data\.type === "trait_details"/);
+  assert.match(appJs, /stableItemRecommendations/);
+  assert.match(styles, /\.entity-stat-grid/);
+  assert.match(styles, /\.ability-card/);
+  assert.match(styles, /\.stable-item-grid/);
+  assert.match(styles, /\.trait-level-list/);
+  assert.match(i18n, /recommendationMethod/);
+});
+
 test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware", () => {
   assert.match(indexHtml, /id="wallpaper-toggle"/);
   assert.match(indexHtml, /role="switch"/);
   assert.match(indexHtml, /id="wallpaper-select"/);
   assert.match(indexHtml, /id="particle-layer"/);
+  assert.match(indexHtml, /id="topbar-starfield"/);
   assert.match(appJs, /WallpaperController/);
   assert.match(wallpaperCatalog, /"set-17"/);
   assert.match(wallpaperCatalog, /cosmic-court\.jpg/);
-  assert.match(wallpaperCatalog, /stargazer-convergence\.jpg/);
+  assert.match(wallpaperCatalog, /stargazer-convergence\.png/);
+  assert.match(wallpaperCatalog, /yasuo\.png/);
+  assert.match(wallpaperCatalog, /soraka\.jpg/);
   assert.match(wallpaperCatalog, /focusSize: "cover"/);
   assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/cosmic-court.jpg", import.meta.url)).size > 100_000);
-  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/stargazer-convergence.jpg", import.meta.url)).size > 100_000);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/stargazer-convergence.png", import.meta.url)).size > 100_000);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/yasuo.png", import.meta.url)).size > 100_000);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/soraka.jpg", import.meta.url)).size > 100_000);
   assert.match(wallpaperController, /tftagent\.wallpaperEnabled/);
   assert.match(wallpaperController, /tftagent\.wallpaperId/);
   assert.match(wallpaperController, /WALLPAPER_IDLE_MS = 7000/);
@@ -151,6 +169,12 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.match(wallpaperController, /Math\.min\(130/);
   assert.match(wallpaperController, /globalCompositeOperation = "lighter"/);
   assert.match(styles, /\.shell\.wallpaper-enabled \.wallpaper-layer/);
+  assert.match(styles, /\.shell\.wallpaper-enabled \.topbar-starfield/);
+  assert.match(styles, /@keyframes topbar-stars-drift/);
+  assert.match(styles, /@keyframes topbar-stars-twinkle/);
+  assert.match(appJs, /target-star-badge/);
+  assert.match(appJs, /data-fallback-src/);
+  assert.match(styles, /\.target-star-badge/);
   assert.match(styles, /var\(--wallpaper-focus-size, cover\)/);
   assert.doesNotMatch(styles, /\.wallpaper-layer::after/);
   assert.doesNotMatch(wallpaperController, /wallpaper-focus-opacity/);
@@ -162,7 +186,6 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.match(styles, /\.shell\.wallpaper-enabled \.result-card/);
   assert.match(styles, /\.shell\.wallpaper-enabled \.result-empty strong/);
   assert.doesNotMatch(indexHtml, /class="window-controls"/);
-  assert.doesNotMatch(styles, /\.shell\.wallpaper-enabled \.topbar/);
 });
 
 test("all existing real interactions and endpoints remain wired", () => {

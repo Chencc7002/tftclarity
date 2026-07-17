@@ -176,7 +176,7 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
     return promptPromise;
   };
 
-  const provider = async ({ evidence } = {}) => {
+  const provider = async ({ evidence, validationFeedback = [] } = {}) => {
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeoutMs = positiveNumber(options.timeoutMs, DEFAULT_CONCLUSION_TIMEOUT_MS);
@@ -185,7 +185,11 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
       model: options.model,
       messages: [
         { role: "system", content: await getPrompt() },
-        { role: "user", content: JSON.stringify(evidence) }
+        { role: "user", content: JSON.stringify(evidence) },
+        ...(validationFeedback.length > 0 ? [{
+          role: "user",
+          content: `上一版结论未通过证据校验。请重新生成完整 JSON，并逐项修正以下问题：\n${validationFeedback.map((error) => `- ${error}`).join("\n")}`
+        }] : [])
       ],
       temperature: Number(options.temperature ?? 0)
     };

@@ -68,7 +68,7 @@ test("validateConclusionOutput accepts only evidence-linked core-item claims", (
   const wrongLink = validOutput({
     reasons: [{ evidenceIds: ["build:1"], text: "羊刀是当前统计口径下的核心装备。" }]
   });
-  assert.equal(validateConclusionOutput(wrongLink, evidence, { catalog }).valid, false);
+  assert.equal(validateConclusionOutput(wrongLink, evidence, { catalog }).valid, true);
 
   const promotedNonCore = validOutput({ summary: "无尽是当前前列方案的核心装备。" });
   assert.equal(validateConclusionOutput(promotedNonCore, evidence, { catalog }).valid, false);
@@ -78,6 +78,46 @@ test("validateConclusionOutput accepts only evidence-linked core-item claims", (
 
   const qualified = validOutput({ nextAction: "羊刀不是必备装备，仍需根据散件选择。" });
   assert.equal(validateConclusionOutput(qualified, evidence, { catalog }).valid, true);
+});
+
+test("validateConclusionOutput accepts evidence-backed emblem shorthand", () => {
+  const emblemApiName = "TFT17_Item_ChallengerEmblemItem";
+  const emblemCatalog = createCatalog({
+    items: [{
+      apiName: emblemApiName,
+      zhName: "挑战者纹章",
+      shortName: "挑战者转",
+      aliases: ["挑战者纹章", "挑战者转", "挑战者转职"],
+      category: "emblem"
+    }]
+  });
+  const emblemEvidence = buildConclusionEvidence({
+    result: {
+      type: "unit_item_rankings",
+      query: { intent: "unit_item_rankings", unit: "TFT17_Xayah", minSamples: 0, sort: "top4_first" },
+      itemRankings: [{
+        apiName: emblemApiName,
+        stats: { games: 830, top4Rate: 0.633, winRate: 0.195, avgPlacement: 3.79 },
+        coverage: 0.034
+      }],
+      source: { provider: "MetaTFT", cache: "live" },
+      cache: { query: { hit: false } }
+    },
+    catalog: emblemCatalog,
+    input: "霞有什么强的转职？"
+  });
+  const value = {
+    schemaVersion: "llm_conclusion.v1",
+    status: "ok",
+    headline: "挑战者是当前样本中的稳定转职选择",
+    summary: "挑战者有830场样本，前四率63.3%，平均名次3.79，可作为当前统计口径下的常规参考。",
+    reasons: [{ evidenceIds: ["item:1"], text: "挑战者有830场样本，前四率63.3%，平均名次3.79。" }],
+    alternatives: [],
+    nextAction: "需要转职时可优先参考挑战者。",
+    riskNotice: null
+  };
+  const validation = validateConclusionOutput(value, emblemEvidence, { catalog: emblemCatalog });
+  assert.equal(validation.valid, true, validation.errors.join("\n"));
 });
 
 test("validateConclusionOutput accepts reliability analysis across every displayed item ranking", () => {

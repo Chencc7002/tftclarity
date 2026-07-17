@@ -32,6 +32,8 @@
             "centroid": [2.2],
             "units_string": "TFT17_Illaoi, TFT17_Karma, TFT17_Nunu, TFT17_Bard, TFT17_Blitzcrank, TFT17_Sona, TFT17_Vex",
             "traits_string": "TFT17_DarkStar_1, TFT17_ManaTrait_1, TFT17_ShieldTank_2, TFT17_SpaceGroove_1",
+            "stars": ["TFT17_Nunu"],
+            "stars_4": [],
             "name": [
               { "name": "TFT17_ShieldTank", "type": "trait", "score": 1 },
               { "name": "TFT17_Nunu", "type": "unit", "score": 2 }

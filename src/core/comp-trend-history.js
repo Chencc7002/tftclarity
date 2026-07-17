@@ -2,6 +2,7 @@ import {
   normalizeCompsPageDataResponse,
   normalizeCompsStatsResponse
 } from "../data/comp-response-adapter.js";
+import { inspectOfficialCompTrendGate } from "./official-comp-trend-gate.js";
 
 export const COMP_TREND_WINDOW_MS = 72 * 60 * 60 * 1000;
 export const COMP_TREND_SNAPSHOT_INTERVAL_MS = 6 * 60 * 60 * 1000;
@@ -56,7 +57,8 @@ function currentSnapshot(response, capturedAt) {
   };
 }
 
-function officialTrendCount(response) {
+function officialTrendCount(response, gate) {
+  if (!gate?.ready) return 0;
   const definitions = normalizeCompsPageDataResponse(responseParts(response).data).definitions;
   return definitions.filter((definition) => Number.isFinite(definition.avgPlacementChange)
     && definition.trendSource !== "local_72h").length;
@@ -84,7 +86,10 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
   const key = makeCompTrendHistoryKey(options.query);
   const canPersist = typeof cacheStore?.getCompTrendHistory === "function"
     && typeof cacheStore?.setCompTrendHistory === "function";
-  const officialCount = officialTrendCount(cloned);
+  const officialGate = cloned.officialTrendGate
+    ?? inspectOfficialCompTrendGate(responseParts(cloned).data);
+  cloned.officialTrendGate = officialGate;
+  const officialCount = officialTrendCount(cloned, officialGate);
 
   if (!canPersist) {
     cloned.trend = {
@@ -93,7 +98,8 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
       windowHours: 72,
       threshold: 0.1,
       officialCount,
-      localCount: 0
+      localCount: 0,
+      officialGate
     };
     return cloned;
   }
@@ -116,10 +122,14 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
       const currentAvg = finite(currentRow?.avgPlacement);
       const previousAvg = finite(previousRow?.avgPlacement);
       const existing = trendRows[clusterId];
+      const existingIsLocal = existing?.["Trend Source"] === "local_72h"
+        || existing?.trend_source === "local_72h"
+        || existing?.trendSource === "local_72h";
       const existingChange = finite(existing?.["Average Placement Change"]
         ?? existing?.average_placement_change
         ?? existing?.placement_change);
-      if (existingChange !== null || currentAvg === null || previousAvg === null) continue;
+      if ((existingChange !== null && (officialGate.ready || existingIsLocal))
+        || currentAvg === null || previousAvg === null) continue;
       trendRows[clusterId] = {
         ...(existing && typeof existing === "object" ? existing : {}),
         "Average Placement Change": currentAvg - previousAvg,
@@ -158,7 +168,8 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
     localCount,
     comparedAt: baseline?.capturedAt ?? null,
     firstObservedAt: first?.capturedAt ?? null,
-    readyAt: first ? new Date(Date.parse(first.capturedAt) + COMP_TREND_WINDOW_MS).toISOString() : null
+    readyAt: first ? new Date(Date.parse(first.capturedAt) + COMP_TREND_WINDOW_MS).toISOString() : null,
+    officialGate
   };
   return cloned;
 }

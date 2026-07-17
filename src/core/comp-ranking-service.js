@@ -2,6 +2,7 @@ import {
   normalizeCompsPageDataResponse,
   normalizeCompsStatsResponse
 } from "../data/comp-response-adapter.js";
+import { inspectOfficialCompTrendGate } from "./official-comp-trend-gate.js";
 
 const SPECIAL_NAME_PATTERN = /(?:^|_)Augment_|UniqueCarry|HeroAugment/i;
 export const METATFT_DEFAULT_MIN_PLAYRATE = 0.01;
@@ -104,6 +105,9 @@ export function buildCompRankings(response = {}, options = {}) {
   const parts = responseParts(response, options);
   const pageData = normalizeCompsPageDataResponse(parts.compsData);
   const pageStats = normalizeCompsStatsResponse(parts.compsStats);
+  const officialGate = response?.officialTrendGate
+    ?? response?.trend?.officialGate
+    ?? inspectOfficialCompTrendGate(parts.compsData);
   const definitions = new Map(pageData.definitions.map((definition) => [definition.clusterId, definition]));
   const minPlayrate = Number.isFinite(Number(options.minPlayrate))
     ? Number(options.minPlayrate)
@@ -129,6 +133,12 @@ export function buildCompRankings(response = {}, options = {}) {
       continue;
     }
 
+    const localTrend = definition.trendSource === "local_72h";
+    const exactOfficialTrend = officialGate.ready
+      && definition.trendSource !== "local_72h";
+    const trendAllowed = localTrend || exactOfficialTrend;
+    const visiblePlacementChange = trendAllowed ? definition.avgPlacementChange : null;
+
     comps.push({
       compId: `cluster:${row.clusterId}`,
       name: compName(definition, catalog),
@@ -136,6 +146,11 @@ export function buildCompRankings(response = {}, options = {}) {
       units: definition.units.map((apiName) => ({
         apiName,
         name: readableToken(apiName, catalog, "unit"),
+        targetStarLevel: definition.fourStarUnits.includes(apiName)
+          ? 4
+          : definition.threeStarUnits.includes(apiName)
+            ? 3
+            : null,
         starLevel: null,
         avgStarLevel: null,
         core: false,
@@ -150,12 +165,12 @@ export function buildCompRankings(response = {}, options = {}) {
       coreBuilds: summarizeBuilds(definition),
       stats: row.stats,
       trend: {
-        avgPlacementChange: definition.avgPlacementChange,
-        emergenceScore: emergingStrength(row.stats, definition.avgPlacementChange),
-        source: definition.trendSource,
-        comparedAt: definition.trendComparedAt,
+        avgPlacementChange: visiblePlacementChange,
+        emergenceScore: emergingStrength(row.stats, visiblePlacementChange),
+        source: trendAllowed ? definition.trendSource : null,
+        comparedAt: trendAllowed ? definition.trendComparedAt : null,
         // MetaTFT shows the blue arrow only below -0.10 over the last 3 days.
-        improving: Number.isFinite(definition.avgPlacementChange) && definition.avgPlacementChange < -0.1
+        improving: Number.isFinite(visiblePlacementChange) && visiblePlacementChange < -0.1
       },
       pageOrder: row.sourceIndex,
       source: {
@@ -216,7 +231,8 @@ export function buildCompRankings(response = {}, options = {}) {
         ? "metatft"
         : null,
       windowHours: 72,
-      threshold: 0.1
+      threshold: 0.1,
+      officialGate
     },
     query,
     source: {

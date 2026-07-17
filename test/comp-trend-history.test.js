@@ -87,7 +87,7 @@ test("comp trends warm up on the first snapshot and compute same-scope 72-hour c
   assert.equal(rankings.improving[0].trend.source, "local_72h");
 });
 
-test("official MetaTFT placement changes take priority over local history", async () => {
+test("an insufficient raw official trend set does not block local 72-hour history", async () => {
   let now = Date.parse("2026-07-16T00:00:00.000Z");
   const cacheStore = new MemoryCacheStore({ now: () => now });
   await enrichCompResponseWithTrendHistory(
@@ -101,11 +101,14 @@ test("official MetaTFT placement changes take priority over local history", asyn
     { query, cacheStore }
   );
 
-  assert.equal(response.trend.status, "upstream");
-  assert.equal(response.trend.officialCount, 1);
-  assert.equal(response.trend.localCount, 0);
-  assert.equal(response.compsData.results.data.comps["101"]["Average Placement Change"], -0.22);
-  assert.equal(buildCompRankings(response, { query }).improving[0].trend.source, "metatft");
+  assert.equal(response.trend.status, "local");
+  assert.equal(response.trend.officialCount, 0);
+  assert.equal(response.trend.officialGate.status, "insufficient");
+  assert.equal(response.trend.officialGate.eligibleCount, 1);
+  assert.equal(response.trend.localCount, 1);
+  assert.equal(response.compsData.results.data.comps["101"]["Trend Source"], "local_72h");
+  assert.ok(response.compsData.results.data.comps["101"]["Average Placement Change"] < -1);
+  assert.equal(buildCompRankings(response, { query }).improving[0].trend.source, "local_72h");
 });
 
 test("trend baselines survive query-history clearing and are isolated by comp cluster", async () => {

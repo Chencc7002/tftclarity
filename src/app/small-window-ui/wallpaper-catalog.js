@@ -12,8 +12,22 @@ export const WALLPAPER_SEASONS = {
       {
         id: "set17-stargazer-convergence",
         labelKey: "wallpaperStargazerConvergence",
-        url: "/assets/wallpapers/set-17/stargazer-convergence.jpg",
+        url: "/assets/wallpapers/set-17/stargazer-convergence.png",
         position: "center center",
+        focusSize: "cover"
+      },
+      {
+        id: "set17-yasuo",
+        labelKey: "wallpaperYasuo",
+        url: "/assets/wallpapers/set-17/yasuo.png",
+        position: "62% center",
+        focusSize: "cover"
+      },
+      {
+        id: "set17-soraka",
+        labelKey: "wallpaperSoraka",
+        url: "/assets/wallpapers/set-17/soraka.jpg",
+        position: "38% center",
         focusSize: "cover"
       }
     ]

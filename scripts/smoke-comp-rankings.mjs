@@ -40,13 +40,14 @@ const options = {
     }
   }
 };
+const smokeInput = "当前版本前四率和登顶率最高的阵容有哪些？";
 
 function check(condition, message) {
   if (!condition) throw new Error(`Comp smoke failed: ${message}`);
 }
 
-const first = await recommendForInput("当前版本最强阵容有哪些？", options);
-const second = await recommendForInput("当前版本最强阵容有哪些？", options);
+const first = await recommendForInput(smokeInput, { ...options, sessionKey: "comp-smoke:first" });
+const second = await recommendForInput(smokeInput, { ...options, sessionKey: "comp-smoke:second" });
 check(first.type === "comp_rankings", "wrong response type");
 check(first.rankings.top4Rate.length > 0, "top4 ranking is empty");
 check(first.rankings.winRate.length > 0, "win ranking is empty");
@@ -57,7 +58,8 @@ check(first.rankings.winRate[0].units.every((unit) => unit.name && !unit.name.st
 check([first.rankings.top4Rate, first.rankings.winRate].flat()
   .some((comp) => comp.units.some((unit) => unit.items.length === 3)), "core item ownership is missing");
 check(first.diagnostics.rejected.some((entry) => entry.reason === "hidden_situational"), "page visibility filtering was not applied");
-check(second.cache.query.hit === true, "second query did not hit cache");
+check(second.cache.query.hit === true || (dataCalls === 1 && statsCalls === 1),
+  `second query did not reuse the paired response: data=${dataCalls} stats=${statsCalls} firstKey=${first.cache?.query?.key} secondKey=${second.cache?.query?.key}`);
 check(dataCalls === 1 && statsCalls === 1, `expected one paired page request, got data=${dataCalls}, stats=${statsCalls}`);
 check(unitBuildCalls === 0, `unexpected unit_builds calls: ${unitBuildCalls}`);
 
@@ -73,7 +75,7 @@ try {
   const response = await fetch(`${started.url}api/recommend`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ input: "当前版本最强阵容有哪些？", preferences: { minSamples: 1 } })
+    body: JSON.stringify({ input: smokeInput, preferences: { minSamples: 1 } })
   });
   const payload = await response.json();
   check(response.ok && payload.ok, "small-window comp request failed");

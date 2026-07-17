@@ -1146,7 +1146,9 @@ export async function recommendForInput(input, options = {}) {
   if (parsedInput.intent === "comp_rankings") {
     const query = buildCompRankingQuery(parsedInput, {
       preferences: options.preferences,
-      dataVersion: options.compDataVersion
+      // v3 accepts MetaTFT's reproducible page calculation and distinguishes it
+      // from both a raw legacy field and local 72-hour history.
+      dataVersion: options.compDataVersion ?? "comp-trend-gate-v3"
     });
     query.sort = parsedInput.sort;
     query.sessionContext = parsedInput.sessionContext ?? null;
@@ -1224,7 +1226,8 @@ export async function recommendForInput(input, options = {}) {
             windowHours: 72,
             threshold: 0.1,
             officialCount: 0,
-            localCount: 0
+            localCount: 0,
+            officialGate: response.officialTrendGate ?? null
           };
           warnings.push(`阵容趋势历史暂不可用：${trendError.message}`);
         }

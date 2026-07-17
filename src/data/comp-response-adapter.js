@@ -1,9 +1,18 @@
+import { inspectOfficialCompTrendGate } from "../core/official-comp-trend-gate.js";
+import { calculateMetaTftPagePlacementChange } from "../core/metatft-page-trend.js";
+
 function asArray(value) {
   return Array.isArray(value) ? value : [];
 }
 
 function splitTokens(value, pattern = /[&,]/) {
   return String(value ?? "").split(pattern).map((item) => item.trim()).filter(Boolean);
+}
+
+function normalizeStarUnits(value) {
+  return Array.isArray(value)
+    ? value.map(String).map((item) => item.trim()).filter(Boolean)
+    : splitTokens(value);
 }
 
 export function normalizeExactUnitsTraitsResponse(response) {
@@ -79,38 +88,6 @@ function finiteNumber(value, fallback = null) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function normalizeDailyTrends(value) {
-  return asArray(value).map((row) => ({
-    day: row?.day ?? row?.date ?? null,
-    avgPlacement: finiteNumber(row?.avg ?? row?.avg_placement ?? row?.avgPlacement),
-    games: finiteNumber(row?.count ?? row?.games, 0),
-    patch: row?.patch,
-    bPatchVersion: row?.b_patch_version ?? row?.bPatchVersion
-  })).filter((row) => Number.isFinite(Date.parse(row.day))
-    && Number.isFinite(row.avgPlacement));
-}
-
-function threeDayPlacementChange(value) {
-  const trends = normalizeDailyTrends(value)
-    .sort((left, right) => Date.parse(left.day) - Date.parse(right.day));
-  if (trends.length <= 2) return null;
-  const baseline = trends[trends.length - Math.min(trends.length, 4)];
-  const latest = trends.at(-1);
-  const previous = trends.at(-2);
-  // Match MetaTFT's page logic for an incomplete current day. When yesterday
-  // has more than four times today's samples within the same patch, the page
-  // treats yesterday as the latest complete point.
-  const endpoint = previous.games > latest.games * 4
-    && previous.patch === latest.patch
-    && previous.bPatchVersion === latest.bPatchVersion
-    ? previous
-    : latest;
-  return {
-    avgPlacementChange: endpoint.avgPlacement - baseline.avgPlacement,
-    comparedAt: baseline.day
-  };
-}
-
 function normalizePageBuilds(value) {
   return asArray(value).map((row) => ({
     clusterId: String(row.cluster ?? row.cluster_id ?? row.clusterId ?? ""),
@@ -126,8 +103,9 @@ function normalizePageBuilds(value) {
 export function normalizeCompsPageDataResponse(response = {}) {
   const root = response?.results?.data ?? response?.data?.results?.data ?? response?.data ?? response;
   const details = root?.cluster_details ?? root?.clusterDetails ?? response?.cluster_details ?? {};
-  // MetaTFT keeps the three-day placement delta beside the comp definitions,
-  // not in /comps_stats. It is optional, so never infer one from current stats.
+  // Only results.data.comps is authoritative for the official trend gate.
+  // Daily cluster trends remain available for diagnostics, but are explicitly
+  // labelled as derived and must never be presented as an official top three.
   const trendRows = root?.comps ?? root?.comp_data?.comps ?? response?.comps ?? {};
   const trendByCluster = new Map(Object.entries(trendRows ?? {}).map(([clusterId, row]) => [
     String(clusterId),
@@ -144,10 +122,9 @@ export function normalizeCompsPageDataResponse(response = {}) {
     const clusterId = String(row.Cluster ?? row.cluster ?? row.cluster_id ?? row.clusterId ?? key);
     const explicitTrend = trendByCluster.get(clusterId);
     const hasExplicitTrend = Number.isFinite(explicitTrend?.avgPlacementChange);
-    // The current MetaTFT /comps response may omit the legacy top-level
-    // `comps` delta map. The same official value is reproducible from each
-    // cluster's daily `trends` by mirroring the page's four-point calculation.
-    const dailyTrend = hasExplicitTrend ? null : threeDayPlacementChange(row.trends);
+    // Keep the page-compatible calculation for diagnostics and regression
+    // comparisons. The strict gate in the ranking service suppresses it.
+    const dailyTrend = hasExplicitTrend ? null : calculateMetaTftPagePlacementChange(row.trends);
     const nameEntries = asArray(row.name);
     const nameTokens = nameEntries.length > 0
       ? nameEntries.map((entry) => typeof entry === "string" ? entry : entry?.name).filter(Boolean)
@@ -157,6 +134,8 @@ export function normalizeCompsPageDataResponse(response = {}) {
       clusterId,
       units: splitTokens(row.units_string ?? row.units ?? row.units_list),
       traits: splitTokens(row.traits_string ?? row.traits ?? row.traits_list),
+      threeStarUnits: normalizeStarUnits(row.stars ?? row.three_star_units ?? row.threeStarUnits),
+      fourStarUnits: normalizeStarUnits(row.stars_4 ?? row.four_star_units ?? row.fourStarUnits),
       nameTokens,
       nameString: String(row.name_string ?? row.comp_name ?? ""),
       situational: String(row.name_string ?? row.comp_name ?? "").includes("Augment"),
@@ -164,7 +143,7 @@ export function normalizeCompsPageDataResponse(response = {}) {
       avgPlacementChange: hasExplicitTrend
         ? explicitTrend.avgPlacementChange
         : dailyTrend?.avgPlacementChange ?? null,
-      trendSource: hasExplicitTrend ? explicitTrend.source : dailyTrend ? "metatft" : null,
+      trendSource: hasExplicitTrend ? explicitTrend.source : dailyTrend ? "metatft_page_calculated" : null,
       trendComparedAt: hasExplicitTrend ? explicitTrend.comparedAt : dailyTrend?.comparedAt ?? null,
       builds: normalizePageBuilds(row.builds).map((build) => ({
         ...build,
@@ -244,6 +223,7 @@ export function normalizeCompsStatsResponse(response = {}) {
 export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsResponse = {}) {
   const data = normalizeCompsPageDataResponse(compsDataResponse);
   const stats = normalizeCompsStatsResponse(compsStatsResponse);
+  const officialTrendGate = inspectOfficialCompTrendGate(compsDataResponse);
   const clusterDetails = Object.fromEntries(data.definitions.map((definition) => [
     definition.clusterId,
     {
@@ -251,6 +231,8 @@ export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsRespon
       centroid: definition.centroidMax === null ? [] : [definition.centroidMax],
       units_string: definition.units.join(", "),
       traits_string: definition.traits.join(", "),
+      stars: [...definition.threeStarUnits],
+      stars_4: [...definition.fourStarUnits],
       name: definition.nameTokens,
       name_string: definition.nameString,
       builds: definition.builds.map((build) => ({
@@ -266,6 +248,7 @@ export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsRespon
   ]));
 
   return {
+    officialTrendGate,
     compsData: {
       updated: data.updatedAt,
       queue_id: data.queue || undefined,
@@ -275,7 +258,8 @@ export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsRespon
           tft_set: data.tftSet,
           cluster_details: clusterDetails,
           comps: Object.fromEntries(data.definitions
-            .filter((definition) => Number.isFinite(definition.avgPlacementChange))
+            .filter((definition) => officialTrendGate.ready
+              && Number.isFinite(definition.avgPlacementChange))
             .map((definition) => [definition.clusterId, {
               "Average Placement Change": definition.avgPlacementChange,
               "Trend Source": definition.trendSource ?? "metatft",
