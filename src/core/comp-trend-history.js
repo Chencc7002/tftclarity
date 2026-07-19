@@ -57,8 +57,7 @@ function currentSnapshot(response, capturedAt) {
   };
 }
 
-function officialTrendCount(response, gate) {
-  if (!gate?.ready) return 0;
+function officialTrendCount(response) {
   const definitions = normalizeCompsPageDataResponse(responseParts(response).data).definitions;
   return definitions.filter((definition) => Number.isFinite(definition.avgPlacementChange)
     && definition.trendSource !== "local_72h").length;
@@ -89,7 +88,7 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
   const officialGate = cloned.officialTrendGate
     ?? inspectOfficialCompTrendGate(responseParts(cloned).data);
   cloned.officialTrendGate = officialGate;
-  const officialCount = officialTrendCount(cloned, officialGate);
+  const officialCount = officialTrendCount(cloned);
 
   if (!canPersist) {
     cloned.trend = {
@@ -122,14 +121,10 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
       const currentAvg = finite(currentRow?.avgPlacement);
       const previousAvg = finite(previousRow?.avgPlacement);
       const existing = trendRows[clusterId];
-      const existingIsLocal = existing?.["Trend Source"] === "local_72h"
-        || existing?.trend_source === "local_72h"
-        || existing?.trendSource === "local_72h";
       const existingChange = finite(existing?.["Average Placement Change"]
         ?? existing?.average_placement_change
         ?? existing?.placement_change);
-      if ((existingChange !== null && (officialGate.ready || existingIsLocal))
-        || currentAvg === null || previousAvg === null) continue;
+      if (existingChange !== null || currentAvg === null || previousAvg === null) continue;
       trendRows[clusterId] = {
         ...(existing && typeof existing === "object" ? existing : {}),
         "Average Placement Change": currentAvg - previousAvg,

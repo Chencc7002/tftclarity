@@ -19,9 +19,21 @@ const compPageFixture = JSON.parse(readFileSync(
   new URL("../test/fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url),
   "utf8"
 ));
+compPageFixture.compsData.results.data.comps = {
+  "409002": { "Average Placement Change": -0.31 },
+  "409003": { "Average Placement Change": 0.25 },
+  "409019": { "Average Placement Change": -0.14 },
+  "409092": { "Average Placement Change": 0.09 }
+};
+// Keep one deliberately crowded comp in the visual fixture so the 60%
+// selection-rate badge remains covered by browser QA.
+compPageFixture.compsStats.results[0].places[0] = 20000;
+const visualUnitApiNames = [...new Set(Object.values(
+  compPageFixture.compsData.results.data.cluster_details
+).flatMap((comp) => String(comp.units_string ?? "").split(/,\s*/).filter(Boolean)))];
 const visualCatalog = createCatalog({
   units: buildUnitCatalogFromExplorerRows({
-    data: ["TFT17_Xayah", "TFT17_Kaisa", "TFT17_Aatrox"].map((apiName) => ({
+    data: [...visualUnitApiNames, "TFT17_Xayah", "TFT17_Kaisa"].map((apiName) => ({
       units_unique: `${apiName}-1`,
       placement_count: [20, 18, 16, 14, 12, 10, 8, 6]
     }))

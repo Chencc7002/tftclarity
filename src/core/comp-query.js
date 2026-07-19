@@ -39,12 +39,17 @@ export function parseCompMetrics(input) {
 
 function parseLimit(input) {
   const text = normalizeText(input);
-  const match = text.match(/([1-9]|10|一|二|三|四|五|六|七|八|九|十)套/)
-    ?? text.match(/([1-9]|10|一|二|三|四|五|六|七|八|九|十)个(?:阵容)?/)
-    ?? text.match(/前([1-9]|10|一|二|三|四|五|六|七|八|九|十)(?:个|名)/);
-  const chinese = { 一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
+  const token = "(?:2[01]|1\\d|[1-9]|二十一|二十|十一|十二|十三|十四|十五|十六|十七|十八|十九|一|二|三|四|五|六|七|八|九|十)";
+  const match = text.match(new RegExp(`(${token})套`))
+    ?? text.match(new RegExp(`(${token})个(?:阵容)?`))
+    ?? text.match(new RegExp(`前(${token})(?:个|名)`));
+  const chinese = {
+    一: 1, 二: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10,
+    十一: 11, 十二: 12, 十三: 13, 十四: 14, 十五: 15, 十六: 16, 十七: 17,
+    十八: 18, 十九: 19, 二十: 20, 二十一: 21
+  };
   const value = match ? Number(match[1]) || chinese[match[1]] : undefined;
-  return Number.isInteger(value) ? Math.min(10, Math.max(1, value)) : undefined;
+  return Number.isInteger(value) ? Math.min(21, Math.max(1, value)) : undefined;
 }
 
 function parseMinSamples(input) {
@@ -93,16 +98,20 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
   const preferences = { ...DEFAULT_QUERY_OPTIONS, ...(options.preferences ?? {}) };
   const metrics = unique((parsed.metrics ?? []).filter((metric) => METRIC_SET.has(metric)));
   const trendRequested = Boolean(parsed.trendRequested);
+  const intent = parsed.intent === "comp_trends" ? "comp_trends" : "comp_rankings";
+  const popularRequested = Boolean(parsed.popularRequested);
+  const defaultLimit = intent === "comp_rankings" && popularRequested ? 21 : 5;
   return {
-    intent: parsed.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
+    intent,
     metrics: metrics.length > 0 ? metrics : ["top4_rate", "win_share"],
-    limit: Math.min(10, Math.max(1, Number(parsed.limit ?? 5))),
+    limit: Math.min(21, Math.max(1, Number(parsed.limit ?? defaultLimit))),
     minSamples: Math.max(0, Number(parsed.minSamples ?? options.minSamples ?? preferences.minSamples ?? 500)),
     days: Number(parsed.days ?? (trendRequested ? 3 : preferences.days) ?? 3),
     patch: String(parsed.patch ?? preferences.patch ?? "current"),
     queue: String(parsed.queue ?? preferences.queue ?? "1100"),
     rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
     specialMode: Boolean(parsed.specialMode),
+    popularRequested,
     trendRequested,
     dataVersion: String(options.dataVersion ?? "metatft-comps-page-v1")
   };
@@ -118,6 +127,7 @@ export function parseCompRankingQuery(input, options = {}) {
     minSamples: parseMinSamples(text) ?? options.minSamples,
     days: parseDays(text) ?? options.days,
     rankFilter: parseRankFilter(text) ?? options.rankFilter,
+    popularRequested: /热门阵容|阵容热门|热门/.test(text),
     trendRequested,
     specialMode: /(专属强化|英雄强化|特殊玩法|赌狗|d牌|d卡|追三|reroll)/i.test(text)
       || Boolean(options.specialMode)

@@ -53,6 +53,25 @@ test("HTTP schema exposes an explicitly supplied Comp and never labels it automa
   assert.match(payload.answer.summary, /用户指定/);
 });
 
+test("a comp-card unit shortcut carries the exact Comp, target star, and high sample floor", async () => {
+  const { payload } = await handleRecommendRequest({
+    input: `Comp: ${compId} 3星 TFT17_Xayah, 三件普通装备, 样本>=500`,
+    conversationId: "http-comp-unit-shortcut",
+    preferences: { minSamples: 100 }
+  }, runtimeFor([220, 190, 160, 130, 80, 50, 30, 20]));
+
+  assert.deepEqual(payload.query.starLevel, [3]);
+  assert.equal(payload.query.unit, "TFT17_Xayah");
+  assert.equal(payload.query.minSamples, 500);
+  assert.equal(payload.query.constraintSources.star_level.source, "current_input");
+  assert.equal(payload.query.constraintSources.min_samples.source, "current_input");
+  assert.equal(payload.query.comp.status, "applied");
+  assert.equal(payload.query.comp.source, "current_input");
+  assert.equal(payload.query.comp.value.id, compId);
+  assert.equal(payload.query.comp.value.selection, "explicit");
+  assert.equal(payload.source.requestParams.unit_tier_numitems_unique, "TFT17_Xayah-1_3_3");
+});
+
 test("HTTP schema keeps an unspecified Comp absent and executes an unrestricted request", async () => {
   const { payload } = await handleRecommendRequest({
     input: "霞什么三件装备最强？",

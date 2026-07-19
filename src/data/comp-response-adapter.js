@@ -258,8 +258,7 @@ export function createCompsPageSnapshot(compsDataResponse = {}, compsStatsRespon
           tft_set: data.tftSet,
           cluster_details: clusterDetails,
           comps: Object.fromEntries(data.definitions
-            .filter((definition) => officialTrendGate.ready
-              && Number.isFinite(definition.avgPlacementChange))
+            .filter((definition) => Number.isFinite(definition.avgPlacementChange))
             .map((definition) => [definition.clusterId, {
               "Average Placement Change": definition.avgPlacementChange,
               "Trend Source": definition.trendSource ?? "metatft",

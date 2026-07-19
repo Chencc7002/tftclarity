@@ -23,6 +23,10 @@ const LOW_SAMPLE_CLAIM = /(?:低样本|样本(?:量)?不足|不能视为稳定�
 const CORE_CLAIM = /核心(?:装备|装|选择|趋势|倾向|单件)/u;
 const API_NAME = /\bTFT\w*_[A-Za-z0-9_]+\b/gu;
 const QUOTED_ENTITY = /[“"]([^”"\n]{1,24}(?:刀|弓|剑|甲|杖|冠|拳|刃|矛|锤|盾|盔|铠|爪|枪|炮|帽|纹章|徽章))[”"]/gu;
+const GENERIC_CATALOG_ALIASES = new Set([
+  "攻速", "攻击速度", "攻击力", "法强", "法术强度", "护甲", "魔抗", "魔法抗性",
+  "生命", "生命值", "法力", "法力值", "回血", "吸血", "暴击", "暴击率", "射程", "移速"
+]);
 
 function isObject(value) {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
@@ -190,7 +194,9 @@ function catalogNames(catalog) {
   const names = new Set();
   for (const collection of [catalog?.items, catalog?.units, catalog?.traits]) {
     for (const entity of collection ?? []) {
-      catalogEntityNames(entity).forEach((name) => names.add(name));
+      catalogEntityNames(entity)
+        .filter((name) => !GENERIC_CATALOG_ALIASES.has(name))
+        .forEach((name) => names.add(name));
     }
   }
   return names;
@@ -222,15 +228,42 @@ function textNumericValues(value, output = new Set()) {
   return output;
 }
 
+function collectEntityCopyCounts(record, output) {
+  const collections = [
+    record?.items,
+    record?.representativeItems,
+    ...(record?.units ?? []).map((unit) => unit?.items),
+    ...(record?.commonPairings ?? []).map((pairing) => pairing?.items)
+  ];
+  for (const collection of collections) {
+    if (!Array.isArray(collection)) continue;
+    const counts = new Map();
+    for (const entity of collection) {
+      const key = typeof entity === "string"
+        ? entity
+        : entity?.apiName ?? entity?.name ?? null;
+      if (!key) continue;
+      counts.set(key, (counts.get(key) ?? 0) + 1);
+    }
+    for (const count of counts.values()) {
+      if (count > 1) output.add(count);
+    }
+  }
+  return output;
+}
+
 function allowedNumericValues(records, evidence) {
   const values = new Set();
   for (const record of records) {
     collectNumericValues(record, values);
+    collectEntityCopyCounts(record, values);
     if (record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))) {
       textNumericValues(record?.text, values);
     }
   }
   collectNumericValues(evidence?.query, values);
+  const days = Number(evidence?.query?.days);
+  if (Number.isFinite(days) && days > 0) values.add(days * 24);
   return values;
 }
 
@@ -249,12 +282,59 @@ function matchesAllowedNumber(value, allowed) {
   return false;
 }
 
+function sampleCountMentions(text) {
+  const mentions = [];
+  let remaining = String(text ?? "");
+  remaining = remaining.replace(/(\d+)\s*(?:场|局)(?:样本)?/gu, (full, value) => {
+    mentions.push({ text: full, value: Number(value) });
+    return " ";
+  });
+  remaining = remaining.replace(/样本(?:数|量)?\s*(?:为|是|有|[:：=])?\s*(\d+)(?!\d)/gu, (full, value) => {
+    mentions.push({ text: full, value: Number(value) });
+    return " ";
+  });
+  return { mentions, remaining };
+}
+
+function stripSupportedDateLiterals(text, evidence) {
+  let output = String(text ?? "");
+  const updatedAt = String(evidence?.dataStatus?.updatedAt ?? "").trim();
+  const date = updatedAt.match(/^(\d{4})-(\d{2})-(\d{2})/u);
+  if (!date) return output;
+  const [, year, month, day] = date;
+  for (const value of [
+    `${year}-${month}-${day}`,
+    `${year}/${month}/${day}`,
+    `${year}年${Number(month)}月${Number(day)}日`,
+    `${year}年${month}月${day}日`
+  ]) {
+    output = output.replace(new RegExp(escapedPattern(value), "gu"), " ");
+  }
+  return output;
+}
+
+function stripStructuralNumbers(text) {
+  return String(text ?? "")
+    .replace(/(?:第|方案|选项|候选|备选|推荐|组合|套装)\s*\d+(?:\s*(?:个|项|套))?/gu, " ")
+    .replace(/\d+\s*(?:种|套|项)(?=$|[\s,，。；;、])/gu, " ");
+}
+
+function containsPositiveLowSampleClaim(text) {
+  const remaining = String(text ?? "")
+    .replace(/(?:并非|不是|不属于|不算|非|没有|无|未标记为)\s*(?:低样本|样本(?:量)?不足|不稳定推荐)/gu, " ")
+    .replace(/样本(?:量)?\s*(?:并不|不算|并非|不是)\s*不足/gu, " ")
+    .replace(/(?:低|小)样本(?:波动)?\s*(?:校正|修正|调整)/gu, " ")
+    .replace(/(?:校正|修正|调整|降低|避免)(?:了|过|后的)?\s*(?:低|小)样本(?:波动|影响|偏差)?/gu, " ");
+  return LOW_SAMPLE_CLAIM.test(remaining);
+}
+
 function validateGenericNumbers(text, records, evidence, path, errors) {
   let remaining = String(text ?? "")
     .replace(/\d+(?:\.\d+)?\s*%/gu, " ")
-    .replace(/\d+\s*(?:场|局|个?样本)/gu, " ")
     .replace(/(?:均名|平均名次)\s*(?:为|是|[:：])?\s*\d+(?:\.\d+)?/gu, " ")
     .replace(/(?:提升|改善)(?:幅度)?\s*(?:为|是|[:：])?\s*\d+(?:\.\d+)?/gu, " ");
+  remaining = sampleCountMentions(remaining).remaining;
+  remaining = stripStructuralNumbers(stripSupportedDateLiterals(remaining, evidence));
   for (const name of [...records].flatMap(recordNames).filter((name) => /\d/u.test(name))) {
     remaining = remaining.replace(new RegExp(escapedPattern(name), "gu"), " ");
   }
@@ -301,9 +381,8 @@ function validateNumbers(text, records, evidence, path, errors) {
       errors.push(`${path} contains unsupported percentage: ${match[0]}`);
     }
   }
-  for (const match of text.matchAll(/(\d+)\s*(?:场|局|个?样本)/gu)) {
-    const value = Number(match[1]);
-    if (!games.includes(value)) errors.push(`${path} contains unsupported sample count: ${match[0]}`);
+  for (const mention of sampleCountMentions(text).mentions) {
+    if (!games.includes(mention.value)) errors.push(`${path} contains unsupported sample count: ${mention.text}`);
   }
   for (const match of text.matchAll(/(?:均名|平均名次)\s*(?:为|是|[:：])?\s*(\d+(?:\.\d+)?)/gu)) {
     const value = Number(match[1]);
@@ -325,7 +404,11 @@ function validateNames(text, names, knownCatalogNames, path, errors) {
     if (!names.has(match[0])) errors.push(`${path} contains an API name absent from evidence: ${match[0]}`);
   }
   for (const name of knownCatalogNames) {
-    if (name.length >= 2 && text.includes(name) && !names.has(name)) {
+    const asciiName = /^[A-Za-z0-9_ .'-]+$/u.test(name);
+    const appears = asciiName
+      ? new RegExp(`(?<![A-Za-z0-9_])${escapedPattern(name)}(?![A-Za-z0-9_])`, "u").test(text)
+      : text.includes(name);
+    if (name.length >= 2 && appears && !names.has(name)) {
       errors.push(`${path} contains a catalog entity absent from evidence: ${name}`);
     }
   }
@@ -344,17 +427,22 @@ function primaryRecordNames(record) {
 }
 
 function inferEvidenceIds(entry, records) {
-  const ids = Array.isArray(entry?.evidenceIds)
+  const explicitIds = Array.isArray(entry?.evidenceIds)
     ? [...new Set(entry.evidenceIds.map(String))]
     : [];
+  if (explicitIds.length > 3) {
+    return { ids: explicitIds, inferred: false, explicitCount: explicitIds.length };
+  }
+  const ids = [...explicitIds];
   const text = String(entry?.text ?? "");
   for (const [id, record] of records) {
+    if (ids.length >= 3) break;
     const explicitlyReferenced = new RegExp(`(?<![A-Za-z0-9_-])${escapedPattern(id)}(?![A-Za-z0-9_-])`, "u").test(text);
     const candidateNamed = record?.kind !== "item_core_signal" && primaryRecordNames(record)
       .some((name) => name.length >= 2 && text.includes(name));
     if ((explicitlyReferenced || candidateNamed) && !ids.includes(id)) ids.push(id);
   }
-  return ids;
+  return { ids, inferred: explicitIds.length === 0, explicitCount: explicitIds.length };
 }
 
 function escapedPattern(value) {
@@ -408,11 +496,13 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
       return null;
     }
     unknownKeys(entry, ENTRY_KEYS, entryPath, errors);
-    const inferredIds = inferEvidenceIds(entry, records);
-    if (!Array.isArray(entry.evidenceIds) || inferredIds.length === 0 || inferredIds.length > 3) {
+    const resolvedIds = inferEvidenceIds(entry, records);
+    if (!Array.isArray(entry.evidenceIds)
+      || resolvedIds.ids.length === 0
+      || resolvedIds.explicitCount > 3) {
       errors.push(`${entryPath}.evidenceIds must contain 1 to 3 entries`);
     }
-    const ids = inferredIds.slice(0, 3);
+    const ids = resolvedIds.ids.slice(0, 3);
     const linkedRecords = [];
     for (const id of ids) {
       if (!records.has(id)) errors.push(`${entryPath}.evidenceIds contains unknown evidence: ${id}`);
@@ -461,19 +551,59 @@ function allowedNumbers(evidence) {
   return [...values].sort((left, right) => left - right);
 }
 
+function issueEvidenceScope(message, evidence, output) {
+  const records = evidenceRecords(evidence);
+  const match = String(message).match(/^(reasons|alternatives)\[(\d+)\]/u);
+  if (!match) {
+    return {
+      evidenceIds: [...records.keys()],
+      records: [...records.values()]
+    };
+  }
+  const entry = output?.[match[1]]?.[Number(match[2])];
+  if (!entry) return { evidenceIds: [], records: [] };
+  const resolved = inferEvidenceIds(entry, records);
+  const evidenceIds = resolved.ids.slice(0, 3).filter((id) => records.has(id));
+  return {
+    evidenceIds,
+    records: evidenceIds.map((id) => records.get(id))
+  };
+}
+
+function allowedFeedbackNumbers(records, evidence) {
+  const values = new Set(allowedNumericValues(records, evidence));
+  for (const value of [...values]) {
+    if (value >= 0 && value <= 1) {
+      values.add(Number((value * 100).toFixed(1)));
+      values.add(Number((value * 100).toFixed(2)));
+    }
+  }
+  return [...values].sort((left, right) => left - right);
+}
+
 export function classifyConclusionValidationErrors(errors, evidence, options = {}) {
   return [...new Set((errors ?? []).map(String))].map((message) => {
     const category = categoryForError(message);
+    const scope = issueEvidenceScope(message, evidence, options.output);
     const issue = {
       category,
       path: pathFromError(message),
       message,
       missingEvidenceIds: category === "missing_coverage" ? idsFromError(message) : [],
-      allowedValues: []
+      allowedValues: [],
+      linkedEvidenceIds: scope.evidenceIds
     };
-    if (category === "unsupported_number") issue.allowedValues = allowedNumbers(evidence);
+    if (category === "unsupported_number") {
+      issue.allowedValues = scope.records.length > 0
+        ? allowedFeedbackNumbers(scope.records, evidence)
+        : allowedNumbers(evidence);
+    }
     if (category === "unsupported_entity") {
-      issue.allowedValues = [...allowedNames(evidence, null, options.catalog)].sort().slice(0, 120);
+      issue.allowedValues = [...allowedNames(
+        evidence,
+        scope.records.length > 0 ? scope.records : null,
+        options.catalog
+      )].sort().slice(0, 120);
     }
     return issue;
   });
@@ -539,10 +669,12 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
       errors.push(`comp-ranking conclusion omits displayed evidence: ${missing.join(",")}`);
     }
   }
-  if (evidence?.generationRules?.mustMentionLowSample && !/(?:低样本|样本不足|仅供参考|不稳定)/u.test(combined)) {
+  if (evidence?.generationRules?.mustMentionLowSample
+    && !containsPositiveLowSampleClaim(combined)
+    && !/(?:仅供参考|不稳定)/u.test(combined)) {
     errors.push("low-sample evidence requires a risk notice");
   }
-  if (!evidence?.generationRules?.mustMentionLowSample && LOW_SAMPLE_CLAIM.test(combined)) {
+  if (!evidence?.generationRules?.mustMentionLowSample && containsPositiveLowSampleClaim(combined)) {
     errors.push("stable evidence cannot be described as low-sample");
   }
   if (evidence?.generationRules?.mustMentionStaleData && !/(?:过期|时效|非最新|旧缓存)/u.test(combined)) {
@@ -569,7 +701,7 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   return {
     valid: errors.length === 0,
     errors,
-    issues: classifyConclusionValidationErrors(errors, evidence, options),
+    issues: classifyConclusionValidationErrors(errors, evidence, { ...options, output: rawValue }),
     value: errors.length === 0 ? value : null
   };
 }

@@ -50,6 +50,8 @@ test("rule parser recognizes comp leaderboard questions without inventing a unit
   assert.deepEqual(parseQuery("登顶率最高的阵容").metrics, ["win_rate"]);
   assert.deepEqual(parseQuery("吃鸡份额最高的阵容").metrics, ["win_share"]);
   assert.deepEqual(parseQuery("最热门的阵容").metrics, ["popularity"]);
+  assert.equal(parseQuery("推荐当前版本热门阵容").limit, 21);
+  assert.equal(parseQuery("推荐当前版本热门阵容").popularRequested, true);
   assert.deepEqual(parseQuery("平均名次最好的阵容").metrics, ["avg_placement"]);
 });
 
@@ -85,7 +87,7 @@ test("page stats adapter accepts MetaTFT's current space-delimited placement pay
   assert.equal(row.stats.pickRate, 0.01);
 });
 
-test("comp rankings never expose a partial official top three", () => {
+test("comp trends expose all measured rise and fall values even when the legacy top-three gate is incomplete", () => {
   const response = structuredClone(fixture);
   for (const row of Object.values(response.compsData.results.data.cluster_details)) delete row.trends;
   response.compsData.results.data.comps = {
@@ -98,12 +100,13 @@ test("comp rankings never expose a partial official top three", () => {
   assert.equal(normalized.definitions.find((row) => row.clusterId === "409002").avgPlacementChange, -0.31);
 
   const result = buildCompRankings(response, { query: query({ minSamples: 1 }), catalog: createCatalog() });
-  assert.deepEqual(result.improving, []);
+  assert.deepEqual(ids(result.rising), ["409002", "409003", "409019"]);
+  assert.deepEqual(ids(result.falling), ["409092"]);
   assert.equal(result.trend.officialGate.status, "insufficient");
   assert.equal(result.trend.officialGate.eligibleCount, 2);
   assert.deepEqual(result.trend.officialGate.leaders, []);
-  assert.ok(Object.values(result.rankings).flat()
-    .every((comp) => comp.trend.avgPlacementChange === null && comp.trend.source === null));
+  assert.ok([...result.rising, ...result.falling]
+    .every((comp) => Number.isFinite(comp.trend.avgPlacementChange) && comp.trend.source === "metatft"));
 });
 
 test("daily comp trends reproduce MetaTFT page values when the legacy raw map is absent", () => {
@@ -254,7 +257,7 @@ test("comp recommendation caches one paired page response and never calls Explor
   assert.equal(explorerCalls, 0);
 });
 
-test("a cold-start comp trend query immediately exposes MetaTFT's official top three", async () => {
+test("a cold-start comp trend query returns up to five rising comps", async () => {
   const compsData = structuredClone(fixture.compsData);
   compsData.results.data.comps = {
     "409002": { "Average Placement Change": -0.31 },
@@ -280,12 +283,71 @@ test("a cold-start comp trend query immediately exposes MetaTFT's official top t
   assert.equal(result.type, "comp_trends");
   assert.equal(result.cache.query.hit, false);
   assert.equal(result.trend.status, "upstream");
-  assert.deepEqual(ids(result.improving), ["409002", "409003", "409019"]);
+  assert.deepEqual(ids(result.rising), ["409002", "409003", "409019", "409092"]);
+  assert.deepEqual(result.falling, []);
   assert.deepEqual(
-    Object.fromEntries(result.improving.map((comp) => [comp.source.clusterId, comp.trend.avgPlacementChange])),
-    { "409019": -0.14, "409003": -0.22, "409002": -0.31 }
+    Object.fromEntries(result.rising.map((comp) => [comp.source.clusterId, comp.trend.avgPlacementChange])),
+    { "409019": -0.14, "409003": -0.22, "409002": -0.31, "409092": -0.09 }
   );
-  assert.ok(result.improving.every((comp) => comp.trend.source === "metatft"));
+  assert.ok(result.rising.every((comp) => comp.trend.source === "metatft"));
+});
+
+test("trend view returns rising five, falling five, selection-rate top ten, and contested labels", () => {
+  const response = structuredClone(fixture);
+  response.compsData.results.data.comps = {
+    "409002": { "Average Placement Change": -0.31 },
+    "409003": { "Average Placement Change": 0.25 },
+    "409019": { "Average Placement Change": -0.14 },
+    "409092": { "Average Placement Change": 0.09 }
+  };
+  response.compsStats.results[0].places[0] = 20000;
+
+  const result = buildCompRankings(response, {
+    query: query({ intent: "comp_trends", metrics: ["popularity"], limit: 21 }),
+    catalog: createCatalog()
+  });
+
+  assert.deepEqual(ids(result.rising), ["409002", "409019"]);
+  assert.deepEqual(ids(result.falling), ["409003", "409092"]);
+  assert.deepEqual(ids(result.rankings.popularity), fixture.expected.popularity);
+  assert.equal(result.rankings.popularity[0].stats.selectionRate, 0.8);
+  assert.equal(result.rankings.popularity[0].contested, true);
+  assert.ok(result.rankings.popularity.slice(1).every((comp) => comp.contested === false));
+});
+
+test("popular comp view prepares 21 rows for each switchable ranking standard", () => {
+  const clusterDetails = {};
+  const statsRows = [{ cluster: "", places: [100000] }];
+  for (let index = 1; index <= 25; index += 1) {
+    const clusterId = String(500000 + index);
+    clusterDetails[clusterId] = {
+      Cluster: clusterId,
+      centroid: [1.5],
+      units_string: "TFT17_Aatrox",
+      traits_string: "TFT17_HPTank_1",
+      name: [{ name: "TFT17_Aatrox", type: "unit", score: 1 }],
+      name_string: `TFT17_Aatrox_${index}`,
+      builds: []
+    };
+    statsRows.push({
+      cluster: clusterId,
+      places: [100 + index, 120, 130, 140, 130, 120, 110, 100]
+    });
+  }
+  const response = {
+    compsData: {
+      results: { data: { cluster_id: 500, cluster_details: clusterDetails, comps: {} } }
+    },
+    compsStats: { cluster_id: 500, results: statsRows }
+  };
+  const result = buildCompRankings(response, {
+    query: query({ intent: "comp_rankings", popularRequested: true, limit: 21 }),
+    catalog: createCatalog()
+  });
+
+  assert.equal(result.rankings.avgPlacement.length, 21);
+  assert.equal(result.rankings.top4Rate.length, 21);
+  assert.equal(result.rankings.winRate.length, 21);
 });
 
 test("an explicit version-trend question uses MetaTFT's three-day page window", async () => {
@@ -463,6 +525,22 @@ test("core build decoration preserves hero ownership and localized item labels",
   assert.equal(nunu.items.length, 3);
   assert.ok(nunu.items.every((item) => item.name && item.iconUrl));
   assert.equal(nunu.items[0].apiName, "TFT_Item_WarmogsArmor");
+});
+
+test("comp cards deduplicate repeated unit and trait tokens before rendering", () => {
+  const response = structuredClone(fixture);
+  const definition = response.compsData.results.data.cluster_details["409002"];
+  definition.units_string += ", TFT17_Nunu, TFT17_Karma";
+  definition.traits_string += ", TFT17_ShieldTank_2";
+
+  const result = buildCompRankings(response, {
+    query: query({ metrics: ["popularity"] }),
+    catalog: createCatalog()
+  });
+  const comp = result.rankings.popularity.find((entry) => entry.source.clusterId === "409002");
+
+  assert.equal(comp.units.length, new Set(comp.units.map((unit) => unit.apiName)).size);
+  assert.equal(comp.traits.length, new Set(comp.traits.map((trait) => trait.filterId)).size);
 });
 
 test("asset resolver continues to reject non-allowlisted URLs", () => {

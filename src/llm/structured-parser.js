@@ -347,7 +347,7 @@ export function validateStructuredParserOutput(rawValue) {
         if (!valid) errors.push(`constraints.metrics contains unsupported metric: ${metric}`);
         return valid;
       }),
-      limit: readInteger(constraints.limit, "constraints.limit", errors, { min: 1, max: 10 })
+      limit: readInteger(constraints.limit, "constraints.limit", errors, { min: 1, max: 21 })
     },
     needsClarification,
     clarificationQuestion

@@ -373,9 +373,13 @@ function parseUnknownStargazerEffect(input, entities) {
 
 export function parseQuery(input, options = {}) {
   const catalog = options.catalog ?? createCatalog();
-  const exactEntities = resolveEntities(input, { catalog });
-  const initialUnresolvedEntityHints = inferUnresolvedEntityHints(input, exactEntities);
-  const highConfidenceEntityResolutions = resolveHighConfidenceEntityCandidates(input, {
+  const compMention = parseCompMention(input);
+  const entityInput = typeof compMention === "string" && compMention.includes("|")
+    ? String(input ?? "").replace(compMention, " ")
+    : input;
+  const exactEntities = resolveEntities(entityInput, { catalog });
+  const initialUnresolvedEntityHints = inferUnresolvedEntityHints(entityInput, exactEntities);
+  const highConfidenceEntityResolutions = resolveHighConfidenceEntityCandidates(entityInput, {
     catalog,
     entities: exactEntities,
     unresolvedEntityHints: initialUnresolvedEntityHints,
@@ -403,7 +407,6 @@ export function parseQuery(input, options = {}) {
     ambiguities: exactEntities.ambiguities
   };
   const unit = entities.units[0]?.target;
-  const compMention = parseCompMention(input);
   const traitFilters = compMention
     ? []
     : uniqueValues(entities.traits.map((trait) => trait.target));
@@ -423,7 +426,7 @@ export function parseQuery(input, options = {}) {
   const comparisonMetric = parseComparisonMetric(input, comparison.requested);
   const primaryMetric = comparisonMetric.value;
   const activeItemMatches = entities.items.filter((item) => !excludedItemSet.has(item.target));
-  const unresolvedEntityHints = inferUnresolvedEntityHints(input, entities);
+  const unresolvedEntityHints = inferUnresolvedEntityHints(entityInput, entities);
   const normalizedInput = normalizeText(input);
   const positiveEmblemScopeText = normalizedInput.replace(
     /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要).*?(?=但是|但|不过|然后|再|[,，。！？?；;]|$)/g,
@@ -478,6 +481,7 @@ export function parseQuery(input, options = {}) {
     queue: undefined,
     metrics: compQuery?.metrics,
     limit: compQuery?.limit,
+    popularRequested: compQuery?.popularRequested,
     specialMode: compQuery?.specialMode,
     trendRequested: compQuery?.trendRequested,
     parser: {

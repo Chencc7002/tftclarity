@@ -116,7 +116,7 @@ export const SMALL_WINDOW_PREFERENCES_KEY = "small_window";
 export const DEFAULT_SMALL_WINDOW_PREFERENCES = {
   minSamples: DEFAULT_QUERY_OPTIONS.minSamples,
   itemPolicy: DEFAULT_QUERY_OPTIONS.itemPolicy,
-  sort: DEFAULT_QUERY_OPTIONS.sort,
+  sort: "robust_first",
   days: DEFAULT_QUERY_OPTIONS.days,
   rankFilter: DEFAULT_QUERY_OPTIONS.rankFilter,
   structuredParserMode: "inherit",
@@ -1186,7 +1186,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
           ? (hasLockedItems ? "低样本补齐参考" : "低样本参考")
           : `低样本参考 ${index}`)
         : index === 0
-          ? (hasLockedItems ? "推荐补齐" : "推荐")
+          ? query.sort === "robust_first"
+            ? (hasLockedItems ? "普适补齐" : "普适推荐")
+            : (hasLockedItems ? "推荐补齐" : "推荐")
           : `备选 ${index}`;
     return {
       title,
@@ -1206,6 +1208,15 @@ function serializeRecommendation(result, catalog, meta = {}) {
         avg: Number(build.stats.avgPlacement.toFixed(2)),
         games: build.stats.games
       },
+      ranking: build.ranking?.method === "robust_applicability_v1"
+        ? {
+          method: build.ranking.method,
+          score: Number((build.ranking.score * 100).toFixed(1)),
+          performanceScore: Number((build.ranking.performanceScore * 100).toFixed(1)),
+          coverageScore: Number((build.ranking.coverageScore * 100).toFixed(1)),
+          priorSamples: build.ranking.priorSamples
+        }
+        : null,
       lowSample
     };
   });
@@ -1295,7 +1306,10 @@ function serializeRecommendation(result, catalog, meta = {}) {
         ? `${compAnswerPrefix(query.comp)}${cards[0].title}：${cards[0].items.map((item) => item.name).join(" + ")}。`
         : `${compAnswerPrefix(query.comp)}${result.clarification?.question ?? result.text}`,
       evidence: cards[0]?.stats ?? null,
-      warnings: query.warnings ?? []
+      warnings: query.warnings ?? [],
+      methodology: cards[0]?.ranking?.method === "robust_applicability_v1"
+        ? "稳健普适评分：对前四率、吃鸡率和平均名次做同查询样本的贝叶斯收缩校正，再加入 8% 的对数样本覆盖权重；表现接近时优先高覆盖方案，显著更强的方案仍可胜出。"
+        : null
     },
     unit: query.unit ? {
       apiName: query.unit,
@@ -1380,6 +1394,7 @@ function serializeCompRankings(result, meta = {}) {
       name: comp.name,
       patch: comp.patch,
       lowSample: Boolean(comp.lowSample),
+      contested: Boolean(comp.contested),
       units: (comp.units ?? []).map((unit) => ({
         apiName: unit.apiName,
         name: unit.name,
@@ -1411,7 +1426,8 @@ function serializeCompRankings(result, meta = {}) {
         winRate: Number.isFinite(comp.stats?.winRate) ? comp.stats.winRate : null,
         winShare: Number.isFinite(comp.stats?.winShare) ? comp.stats.winShare : null,
         avgPlacement: Number.isFinite(comp.stats?.avgPlacement) ? comp.stats.avgPlacement : null,
-        pickRate: Number.isFinite(comp.stats?.pickRate) ? comp.stats.pickRate : null
+        pickRate: Number.isFinite(comp.stats?.pickRate) ? comp.stats.pickRate : null,
+        selectionRate: Number.isFinite(comp.stats?.selectionRate) ? comp.stats.selectionRate : null
       },
       trend: {
         avgPlacementChange: Number.isFinite(comp.trend?.avgPlacementChange)
@@ -1421,6 +1437,7 @@ function serializeCompRankings(result, meta = {}) {
           ? comp.trend.emergenceScore
           : null,
         improving: Boolean(comp.trend?.improving),
+        direction: comp.trend?.direction ?? null,
         source: comp.trend?.source ?? null,
         comparedAt: comp.trend?.comparedAt ?? null
       },
@@ -1434,6 +1451,8 @@ function serializeCompRankings(result, meta = {}) {
     ok: true,
     type: result.type === "comp_trends" ? "comp_trends" : "comp_rankings",
     rankings,
+    rising: (result.rising ?? result.improving ?? []).map(serializeComp),
+    falling: (result.falling ?? []).map(serializeComp),
     improving: (result.improving ?? []).map(serializeComp),
     references: (result.references ?? []).map(serializeComp),
     trend: result.trend ?? null,

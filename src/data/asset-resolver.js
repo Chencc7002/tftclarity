@@ -105,6 +105,8 @@ export function decorateCompAssets(result, options = {}) {
       key,
       (values ?? []).map(decorateComp)
     ])),
+    rising: (result.rising ?? result.improving ?? []).map(decorateComp),
+    falling: (result.falling ?? []).map(decorateComp),
     improving: (result.improving ?? []).map(decorateComp),
     references: (result.references ?? []).map(decorateComp)
   };

@@ -53,6 +53,94 @@ test("validateConclusionOutput accepts evidence-linked names and exact metrics",
   assert.equal(result.value.reasons[0].evidenceIds[0], "build:1");
 });
 
+test("validateConclusionOutput distinguishes structural numbers from sample counts", () => {
+  const value = validOutput({
+    reasons: [{
+      evidenceIds: ["build:1"],
+      text: "第2套样本相对更少；当前组合实际有1248场，前四率61.2%。"
+    }]
+  });
+  const result = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+});
+
+test("validateConclusionOutput accepts evidence-backed dates and equivalent hour windows", () => {
+  const datedEvidence = structuredClone(evidence);
+  datedEvidence.dataStatus.updatedAt = "2026-07-16T08:00:00.000Z";
+  datedEvidence.query.days = 3;
+  const value = validOutput({
+    summary: "截至2026-07-16，近72小时的当前统计口径下，第一套完整出装可作为优先参考。"
+  });
+  const result = validateConclusionOutput(value, datedEvidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+});
+
+test("validateConclusionOutput does not treat generic stat aliases as unsupported entities", () => {
+  const aliasCatalog = {
+    ...catalog,
+    traits: [...catalog.traits, {
+      apiName: "TFT17_ASTrait",
+      filterId: "TFT17_ASTrait_2",
+      zhName: "挑战者",
+      displayName: "3挑战者",
+      aliases: ["挑战者", "攻速", "攻击速度"]
+    }]
+  };
+  const generic = validateConclusionOutput(validOutput({
+    nextAction: "如果需要补充攻速，可结合现有散件调整。"
+  }), evidence, { catalog: aliasCatalog });
+  assert.equal(generic.valid, true, generic.errors.join("\n"));
+
+  const inventedEntity = validateConclusionOutput(validOutput({
+    nextAction: "下一步直接选择挑战者羁绊。"
+  }), evidence, { catalog: aliasCatalog });
+  assert.equal(inventedEntity.valid, false);
+  assert.match(inventedEntity.errors.join("\n"), /catalog entity absent from evidence: 挑战者/u);
+});
+
+test("validateConclusionOutput caps evidence id expansion at three entries", () => {
+  const value = validOutput({
+    reasons: [{
+      evidenceIds: ["build:1", "build:2", "item-signal:1"],
+      text: "该组合前四率为61.2%，样本1248场，另见 build:2。"
+    }]
+  });
+  const result = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+  assert.deepEqual(result.value.reasons[0].evidenceIds, ["build:1", "build:2", "item-signal:1"]);
+});
+
+test("validateConclusionOutput reports allowed numbers from the linked evidence scope", () => {
+  const value = validOutput({
+    reasons: [{ evidenceIds: ["build:1"], text: "该组合前四率为99.9%。" }]
+  });
+  const result = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(result.valid, false);
+  const issue = result.issues.find((entry) => entry.path === "reasons[0].text");
+  assert.deepEqual(issue.linkedEvidenceIds, ["build:1"]);
+  assert.equal(issue.allowedValues.includes(1248), true);
+  assert.equal(issue.allowedValues.includes(846), false);
+});
+
+test("validateConclusionOutput accepts repeated-item counts derived from a linked build", () => {
+  const repeatedEvidence = structuredClone(evidence);
+  const build = repeatedEvidence.recommendations.find((entry) => entry.evidenceId === "build:1");
+  build.items = [
+    { apiName: "TFT_Item_GuinsoosRageblade", name: "羊刀" },
+    { apiName: "TFT_Item_GuinsoosRageblade", name: "羊刀" },
+    { apiName: "TFT_Item_GuinsoosRageblade", name: "羊刀" },
+    { apiName: "TFT_Item_GuinsoosRageblade", name: "羊刀" }
+  ];
+  const value = validOutput({
+    reasons: [{
+      evidenceIds: ["build:1"],
+      text: "该组合包含4件羊刀，前四率61.2%，样本1248场。"
+    }]
+  });
+  const result = validateConclusionOutput(value, repeatedEvidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+});
+
 test("validateConclusionOutput accepts linked visible semantic facts and rejects invented static numbers", () => {
   const semanticEvidence = assembleEvidencePack({
     result: buildResult(),
@@ -281,6 +369,8 @@ test("validateConclusionOutput enforces low-sample and unresolved-comparison ris
   assert.equal(validateConclusionOutput(validOutput(), lowEvidence, { catalog }).valid, false);
   assert.equal(validateConclusionOutput(validOutput({ riskNotice: "当前属于低样本结果，仅供参考。" }), lowEvidence, { catalog }).valid, true);
   assert.equal(validateConclusionOutput(validOutput({ riskNotice: "当前属于低样本结果。" }), evidence, { catalog }).valid, false);
+  assert.equal(validateConclusionOutput(validOutput({ riskNotice: "当前并非低样本结果。" }), evidence, { catalog }).valid, true);
+  assert.equal(validateConclusionOutput(validOutput({ summary: "当前结果已做低样本校正，可结合样本覆盖参考。" }), evidence, { catalog }).valid, true);
 
   const staleEvidence = structuredClone(evidence);
   staleEvidence.generationRules.mustMentionStaleData = true;

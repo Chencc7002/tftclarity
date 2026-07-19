@@ -5,10 +5,12 @@ import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocal
 import { getCurrentPatchNote } from "./patch-notes.js";
 import { WallpaperController } from "./wallpaper-controller.js";
 
+const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
+
 const state = {
   minSamples: 100,
   itemPolicy: "ordinary_only",
-  sort: "top4_first",
+  sort: "robust_first",
   days: 3,
   structuredParserMode: "inherit",
   conclusionMode: "inherit",
@@ -36,6 +38,8 @@ const state = {
   responsesById: new Map(),
   responseCounter: 0,
   currentResponseId: null,
+  compRankingMetric: null,
+  resultNavigation: [],
   feedbackByCard: {},
   explanationFeedback: null
 };
@@ -142,7 +146,83 @@ const appShell = new AppShell({
 void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, composer, wallpaperController];
 
 function setResponseHtml(html) {
-  resultPane.setHtml(html);
+  resultPane.setHtml(`${renderResultNavigation()}${html}`);
+}
+
+function isCompResult(data) {
+  return data?.type === CompRankingResult.type || data?.type === "comp_trends";
+}
+
+function compCardNavigationKey(card) {
+  return card?.dataset?.compSignature?.trim()
+    || card?.dataset?.compName?.trim()
+    || "";
+}
+
+function renderResultNavigation() {
+  const snapshot = state.resultNavigation.at(-1);
+  if (!snapshot) return "";
+  return `
+    <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
+      <button type="button" data-return-comp ${state.requestInFlight ? "disabled" : ""}>
+        <span aria-hidden="true">←</span>
+        <span>${escapeHtml(t("backToComp", { name: snapshot.compName }))}</span>
+      </button>
+      <small>${escapeHtml(t("compResultPreserved"))}</small>
+    </nav>`;
+}
+
+function captureCompNavigationSnapshot(compName) {
+  if (!isCompResult(state.lastResult)) return null;
+  const openCompKeys = [...resultContentEl.querySelectorAll(".comp-card[open]")]
+    .map(compCardNavigationKey)
+    .filter(Boolean);
+  return {
+    compName,
+    data: state.lastResult,
+    lastInput: state.lastInput,
+    lastDisplayInput: state.lastDisplayInput,
+    lastResultId: state.lastResultId,
+    lastSuggestions: state.lastSuggestions,
+    lastEntityCandidates: state.lastEntityCandidates,
+    currentResponseId: state.currentResponseId,
+    compRankingMetric: state.compRankingMetric,
+    feedbackByCard: { ...state.feedbackByCard },
+    explanationFeedback: state.explanationFeedback,
+    rawOutput: rawOutputEl.textContent,
+    openCompKeys,
+    scrollTop: resultContentEl.scrollTop
+  };
+}
+
+function restorePreviousCompResult() {
+  if (state.requestInFlight) return;
+  const snapshot = state.resultNavigation.pop();
+  if (!snapshot) return;
+
+  state.lastInput = snapshot.lastInput;
+  state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastResult = snapshot.data;
+  state.lastResultId = snapshot.lastResultId;
+  state.lastSuggestions = snapshot.lastSuggestions;
+  state.lastEntityCandidates = snapshot.lastEntityCandidates;
+  state.currentResponseId = snapshot.currentResponseId;
+  state.compRankingMetric = snapshot.compRankingMetric;
+  state.feedbackByCard = { ...snapshot.feedbackByCard };
+  state.explanationFeedback = snapshot.explanationFeedback;
+  state.resultView = { type: "result", data: snapshot.data };
+  rawOutputEl.textContent = snapshot.rawOutput;
+  resultTitleEl.textContent = t("resultTitle");
+  renderCurrentResult(snapshot.data);
+
+  const openCompKeys = new Set(snapshot.openCompKeys);
+  for (const card of resultContentEl.querySelectorAll(".comp-card")) {
+    card.open = openCompKeys.has(compCardNavigationKey(card));
+  }
+  resultContentEl.scrollTop = snapshot.scrollTop;
+  resultRefreshButton.disabled = !state.lastInput;
+  setStatusKey("statusReturnedToComp", "ready", { name: snapshot.compName });
+  resultPane.focus();
 }
 
 function scrollConversation() {
@@ -455,8 +535,9 @@ function compPrimaryMetric(key, comp) {
   if (key === "winRate") return `${t("winShort")} ${rate(comp.stats?.winRate)}`;
   if (key === "winShare") return `${t("winShareShort")} ${rate(comp.stats?.winShare)}`;
   if (key === "trend") return `↟ ${t("avgPlacementImproved", { value: Math.abs(comp.trend?.avgPlacementChange ?? 0).toFixed(2) })}`;
+  if (key === "trendDown") return `↡ ${t("avgPlacementDeclined", { value: Math.abs(comp.trend?.avgPlacementChange ?? 0).toFixed(2) })}`;
   if (key === "avgPlacement") return `${t("avgShort")} ${placement(comp.stats?.avgPlacement)}`;
-  if (key === "popularity") return `${t("samples")} ${formatNumber(comp.stats?.games ?? 0)}`;
+  if (key === "popularity") return `${t("selectionRate")} ${rate(comp.stats?.selectionRate)}`;
   return `${t("top4Short")} ${rate(comp.stats?.top4Rate)}`;
 }
 
@@ -506,7 +587,17 @@ function compTrendSourceLabel(comp) {
   return t("trendSourceOfficial");
 }
 
-function renderCompUnit(unit, expanded = false) {
+function compSignature(comp) {
+  const units = [...new Set((comp.units ?? [])
+    .map((unit) => String(unit.apiName ?? "").trim())
+    .filter((apiName) => /^TFT[\w-]+$/i.test(apiName)))];
+  const traits = [...new Set((comp.traits ?? [])
+    .map((trait) => String(trait.filterId ?? "").trim())
+    .filter((filterId) => /^TFT[\w-]+_\d+(?:plus|minus)?$/i.test(filterId)))];
+  return units.length && traits.length ? `${units.join("&")}|${traits.join("&")}` : "";
+}
+
+function renderCompUnit(unit, comp, expanded = false) {
   const items = expanded && unit.items?.length
     ? `<span class="unit-items">${unit.items.map((item) => assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")).join("")}</span>`
     : "";
@@ -517,10 +608,25 @@ function renderCompUnit(unit, expanded = false) {
   const targetStars = Number.isInteger(targetStarLevel) && targetStarLevel >= 3
     ? `<span class="target-star-badge" title="${escapeHtml(t("targetStarLevel", { value: targetStarLevel }))}" aria-label="${escapeHtml(t("targetStarLevel", { value: targetStarLevel }))}">${"★".repeat(Math.min(4, targetStarLevel))}</span>`
     : "";
-  return `<div class="comp-unit${unit.core ? " core" : ""}${targetStars ? " has-star-target" : ""}">
+  const queryStarLevel = targetStarLevel === 3 ? 3 : 2;
+  const unitName = localizedName(unit);
+  const queryLabel = t("queryCompUnit", {
+    star: queryStarLevel,
+    unit: unitName,
+    comp: localizedName(comp)
+  });
+  return `<div class="comp-unit comp-unit-query${unit.core ? " core" : ""}${targetStars ? " has-star-target" : ""}"
+    data-comp-unit-query
+    data-unit-api-name="${escapeHtml(unit.apiName)}"
+    data-unit-name="${escapeHtml(unitName)}"
+    data-unit-star-level="${queryStarLevel}"
+    role="button"
+    tabindex="0"
+    title="${escapeHtml(queryLabel)}"
+    aria-label="${escapeHtml(queryLabel)}">
     ${targetStars}
-    ${assetThumb(unit.iconUrl, localizedName(unit), "unit-icon", unit.fallbackIconUrl)}
-    ${expanded ? `<span class="unit-name">${escapeHtml(localizedName(unit))}</span>${averageStar}${items}` : ""}
+    ${assetThumb(unit.iconUrl, unitName, "unit-icon", unit.fallbackIconUrl)}
+    ${expanded ? `<span class="unit-name">${escapeHtml(unitName)}</span>${averageStar}${items}` : ""}
   </div>`;
 }
 
@@ -528,18 +634,28 @@ function renderCompCard(comp, metricKey, index) {
   const mainTraits = (comp.traits ?? []).filter((trait) => !/UniqueTrait|SummonTrait/.test(trait.filterId ?? trait.apiName)).slice(0, 3);
   const coreUnits = (comp.units ?? []).filter((unit) => unit.core).slice(0, 4);
   const foldedUnits = coreUnits.length ? coreUnits : (comp.units ?? []).slice(0, 5);
-  const appearanceRate = hasNumericValue(comp.stats?.pickRate) ? Number(comp.stats.pickRate) * 8 : null;
-  const metricSubline = metricKey === "trend"
-    ? `${t("appearanceShort")} ${rate(appearanceRate)} · ${formatNumber(comp.stats?.games ?? 0)} ${t("games")}`
+  const appearanceRate = hasNumericValue(comp.stats?.selectionRate)
+    ? Number(comp.stats.selectionRate)
+    : hasNumericValue(comp.stats?.pickRate)
+      ? Number(comp.stats.pickRate) * 8
+      : null;
+  const metricSubline = metricKey === "trend" || metricKey === "trendDown"
+    ? `${t("selectionRate")} ${rate(appearanceRate)} · ${formatNumber(comp.stats?.games ?? 0)} ${t("games")}`
     : `${formatNumber(comp.stats?.games ?? 0)} ${t("games")}`;
+  const trendVariant = metricKey === "trend" ? "trend" : metricKey === "trendDown" ? "trend-down" : "ranking";
+  const signature = compSignature(comp);
   return `
-    <details class="comp-card" data-variant="${metricKey === "trend" ? "trend" : "ranking"}" ${index === 0 ? "open" : ""}>
+    <details class="comp-card" data-variant="${trendVariant}"
+      data-comp-name="${escapeHtml(localizedName(comp))}"
+      data-comp-signature="${escapeHtml(signature)}"
+      ${index === 0 ? "open" : ""}>
       <summary>
         <div class="comp-summary-main">
           <strong>${escapeHtml(localizedName(comp))}</strong>
           ${comp.lowSample ? `<span class="low-sample-label">${t("lowSample")}</span>` : ""}
+          ${metricKey === "popularity" && comp.contested ? `<span class="contested-label">${t("contested")}</span>` : ""}
           <div class="trait-row">${mainTraits.map((trait) => assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")).join("")}</div>
-          <div class="unit-row">${foldedUnits.map((unit) => renderCompUnit(unit)).join("")}</div>
+          <div class="unit-row">${foldedUnits.map((unit) => renderCompUnit(unit, comp)).join("")}</div>
         </div>
         <div class="comp-summary-metric">
           <b>${escapeHtml(compPrimaryMetric(metricKey, comp))}</b>
@@ -554,20 +670,57 @@ function renderCompCard(comp, metricKey, index) {
           <span>${t("avgShort")} ${placement(comp.stats?.avgPlacement)}</span>
           <span>${t("appearanceShort")} ${rate(appearanceRate)}</span>
         </div>
-        ${metricKey === "trend" ? `<div class="trend-model-line"><span>${escapeHtml(compTrendSourceLabel(comp))}</span><span>${t("emergingScore")} ${formatNumber(comp.trend?.emergenceScore ?? 0, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</span><small>${t("emergingFormula")}</small></div>` : ""}
-        <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, true)).join("")}</div>
+        ${metricKey === "trend" || metricKey === "trendDown" ? `<div class="trend-model-line"><span>${escapeHtml(compTrendSourceLabel(comp))}</span><small>${t("trendWindow")}</small></div>` : ""}
+        <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, comp, true)).join("")}</div>
         <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
         <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
       </div>
     </details>`;
 }
 
+function defaultPopularCompMetric(data) {
+  if (data.query?.sort === "win_first") return "winRate";
+  if (data.query?.sort === "avg_first" || data.query?.sort === "robust_first") return "avgPlacement";
+  return "top4Rate";
+}
+
+function renderPopularMetricSwitch(activeMetric) {
+  const metrics = ["avgPlacement", "top4Rate", "winRate"];
+  return `<div class="comp-metric-switch" role="group" aria-label="${escapeHtml(t("rankingStandard"))}">
+    ${metrics.map((metric) => `<button type="button" data-comp-metric="${metric}" class="${metric === activeMetric ? "active" : ""}" aria-pressed="${metric === activeMetric}">${escapeHtml(compMetricLabel(metric))}</button>`).join("")}
+  </div>`;
+}
+
 function renderCompRankings(data) {
-  const sections = Object.entries(data.rankings ?? {}).filter(([, comps]) => comps?.length);
   const references = data.references ?? [];
-  const improving = data.improving ?? [];
+  const isTrendView = data.type === "comp_trends";
+  const rising = data.rising ?? data.improving ?? [];
+  const falling = data.falling ?? [];
+  const popularity = data.rankings?.popularity ?? [];
+  const isPopularView = !isTrendView && Boolean(data.query?.popularRequested);
+  let sections;
+  let metricSwitch = "";
+  if (isTrendView) {
+    sections = [];
+  } else if (isPopularView) {
+    const availableMetrics = ["avgPlacement", "top4Rate", "winRate"]
+      .filter((metric) => data.rankings?.[metric]?.length);
+    const defaultMetric = defaultPopularCompMetric(data);
+    if (!availableMetrics.includes(state.compRankingMetric)) {
+      state.compRankingMetric = availableMetrics.includes(defaultMetric)
+        ? defaultMetric
+        : availableMetrics[0] ?? null;
+    }
+    sections = state.compRankingMetric
+      ? [[state.compRankingMetric, data.rankings[state.compRankingMetric]]]
+      : [];
+    metricSwitch = renderPopularMetricSwitch(state.compRankingMetric);
+  } else {
+    sections = Object.entries(data.rankings ?? {}).filter(([, comps]) => comps?.length);
+  }
   const stale = data.cache?.query?.stale ? t("staleCache") : data.cache?.query?.hit ? t("localCache") : t("live");
-  if (!sections.length && !references.length) {
+  const hasTrendData = rising.length || falling.length || popularity.length;
+  if (!sections.length && !references.length && !hasTrendData) {
     setResponseHtml(`
       <div class="empty-state">
         <div>${t("noCompData")}</div>
@@ -575,19 +728,22 @@ function renderCompRankings(data) {
         <small>${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
       </div>
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
-      ${renderCompTrendNotice(data, improving)}
+      ${renderCompTrendNotice(data, [])}
       <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
     return;
   }
   setResponseHtml(`
     <div class="comp-overview">
-      <strong>${t("currentCompRanking")}</strong>
+      <strong>${t(isTrendView ? "currentCompTrends" : "currentCompRanking")}</strong>
       <span>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${escapeHtml(stale)}</span>
       <small title="${escapeHtml(compRankLabel(data.query?.rankFilter))}">${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))} · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
     </div>
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
-    ${renderCompTrendNotice(data, improving)}
-    ${improving.length ? `<section class="ranking-section improving-section"><h2>${t("improvingComps")}</h2><p class="trend-method">${t("emergingFormula")}</p>${improving.map((comp, index) => renderCompCard(comp, "trend", index)).join("")}</section>` : ""}
+    ${isTrendView ? renderCompTrendNotice(data, [...rising, ...falling]) : ""}
+    ${isPopularView ? `<div class="popular-ranking-toolbar"><span>${t("popularCompSample", { value: 21 })}</span>${metricSwitch}</div>` : ""}
+    ${isTrendView && rising.length ? `<section class="ranking-section improving-section"><h2>${t("risingComps")}</h2><p class="trend-method">${t("risingFormula")}</p>${rising.map((comp, index) => renderCompCard(comp, "trend", index)).join("")}</section>` : ""}
+    ${isTrendView && falling.length ? `<section class="ranking-section falling-section"><h2>${t("fallingComps")}</h2><p class="trend-method">${t("fallingFormula")}</p>${falling.map((comp, index) => renderCompCard(comp, "trendDown", index)).join("")}</section>` : ""}
+    ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${popularity.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
     ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
     ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
     <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
@@ -1159,7 +1315,13 @@ function assistantResponseHtml(data, responseId = "") {
   if (data?.clarification?.needsClarification) {
     return `<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
   }
-  const summary = data?.answer?.summary ?? data?.text ?? (data?.type === CompRankingResult.type ? t("currentCompRanking") : t("noResult"));
+  const summary = data?.answer?.summary
+    ?? data?.text
+    ?? (data?.type === "comp_trends"
+      ? t("currentCompTrends")
+      : data?.type === CompRankingResult.type
+        ? t("currentCompRanking")
+        : t("noResult"));
   return `<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result>${t("resultDetails")} →</button>`;
 }
 
@@ -1233,19 +1395,29 @@ function recommendationCard(data, card, index) {
   const cardTitle = data.comparison
     ? `${card.winner ? t("best") : card.lowSample ? t("lowSample") : t("alternatives")} · ${localizedName(comparedItem, card.title)}`
     : card.winner
-      ? t("bestRecommendation")
+      ? data.query?.sort === "robust_first"
+        ? t("applicabilityRecommendation")
+        : t("bestRecommendation")
       : card.lowSample
         ? t("lowSample")
         : `${t("alternatives")} ${index}`;
   const difference = card.difference
     ? `<div class="difference-note">${t("relativeRecommendation")}：${card.difference.removed?.length ? `${t("replace")} ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : t("sameItems")}；${t("top4Short")} ${card.difference.top4Delta >= 0 ? "+" : ""}${formatNumber(card.difference.top4Delta)}pp，${t("samples")} ${card.difference.gamesDelta >= 0 ? "+" : ""}${formatNumber(card.difference.gamesDelta)}</div>`
     : "";
+  const rankingRationale = card.ranking?.method === "robust_applicability_v1"
+    ? `<div class="ranking-rationale${card.winner ? " primary" : ""}">
+      <strong>${t(card.winner ? "applicabilityRecommendation" : "applicabilityScore")}</strong>
+      <span>${t("applicabilityScoreValue", { score: formatNumber(card.ranking.score, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}</span>
+      <span>${t("sampleCoverageValue", { value: formatNumber(card.ranking.coverageScore, { maximumFractionDigits: 0 }) })}</span>
+      ${card.winner ? `<small>${t("applicabilityMethodShort")}</small>` : ""}
+    </div>`
+    : "";
   return `<article class="result-card${card.winner ? " best" : ""}">
     ${card.winner ? `<span class="best-label">${t("best")}</span>` : ""}
     <div class="card-head"><div class="card-title-group">${assetThumb(data.unit?.iconUrl ?? data.query?.unitIconUrl, unitLabel, "equipment-unit-icon")}<div class="card-title">${escapeHtml(cardTitle)}</div></div>${card.lowSample ? `<div class="risk">${t("lowSample")}</div>` : ""}</div>
     <div class="items">${card.items.map(itemPill).join("")}</div>
     <div class="stats">${metric(t("top4"), `${formatNumber(card.stats.top4)}%`)}${metric(t("win"), `${formatNumber(card.stats.win)}%`)}${metric(t("avg"), formatNumber(card.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(card.stats.games))}</div>
-    ${difference}${feedbackActions(index)}
+    ${rankingRationale}${difference}${feedbackActions(index)}
   </article>`;
 }
 
@@ -1281,7 +1453,11 @@ function renderCurrentResult(data) {
 }
 
 function renderResult(data) {
+  if (isCompResult(data) && state.resultNavigation.length) {
+    state.resultNavigation = [];
+  }
   state.lastResult = data;
+  state.compRankingMetric = null;
   state.lastResultId = data.queryId ?? null;
   state.feedbackByCard = {};
   state.explanationFeedback = null;
@@ -1667,6 +1843,7 @@ function setRequestRunning(running) {
   resultRefreshButton.disabled = running || !state.lastInput;
   form.querySelector("button[type=submit]").disabled = running;
   for (const button of resultEl.querySelectorAll("[data-quick-task]")) button.disabled = running;
+  for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
 }
 
 async function requestRecommendation(refresh = false, displayInput = null) {
@@ -1699,10 +1876,10 @@ async function requestRecommendation(refresh = false, displayInput = null) {
   if (!refresh) composer.clear();
   scrollConversation();
   setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
-  renderLoadingResult();
   const controller = new AbortController();
   state.currentController = controller;
   setRequestRunning(true);
+  renderLoadingResult();
   const progressTimers = [
     setTimeout(() => updateProgress(assistantTarget, 1), 280),
     setTimeout(() => updateProgress(assistantTarget, 2), 720)
@@ -1755,6 +1932,30 @@ async function requestRecommendation(refresh = false, displayInput = null) {
       scrollConversation();
     }
   }
+}
+
+async function requestCompUnitRecommendation(target) {
+  if (state.requestInFlight) return;
+  const compCard = target.closest(".comp-card");
+  const signature = compCard?.dataset.compSignature?.trim();
+  const unitApiName = target.dataset.unitApiName?.trim();
+  if (!signature || !unitApiName) return;
+
+  const requestedStarLevel = Number(target.dataset.unitStarLevel) === 3 ? 3 : 2;
+  const unitName = target.dataset.unitName?.trim() || unitApiName;
+  const compName = compCard.dataset.compName?.trim() || t("compRanking");
+  const navigationSnapshot = captureCompNavigationSnapshot(compName);
+  if (!navigationSnapshot) return;
+  const input = `Comp: ${signature} ${requestedStarLevel}\u661f ${unitApiName}, \u4e09\u4ef6\u666e\u901a\u88c5\u5907, \u6837\u672c>=${COMP_UNIT_QUERY_MIN_SAMPLES}`;
+  const displayInput = t("compUnitQueryDisplay", {
+    star: requestedStarLevel,
+    unit: unitName,
+    comp: compName,
+    samples: COMP_UNIT_QUERY_MIN_SAMPLES
+  });
+  state.resultNavigation.push(navigationSnapshot);
+  queryInput.value = input;
+  await requestRecommendation(false, displayInput);
 }
 
 bindSegmented("#sample-control", "minSamples", Number);
@@ -1821,6 +2022,24 @@ retryButton.addEventListener("click", () => {
 });
 
 async function handleResultClick(event) {
+  const returnCompButton = event.target.closest("[data-return-comp]");
+  if (returnCompButton) {
+    restorePreviousCompResult();
+    return;
+  }
+  const compUnitTarget = event.target.closest("[data-comp-unit-query]");
+  if (compUnitTarget) {
+    event.preventDefault();
+    event.stopPropagation();
+    await requestCompUnitRecommendation(compUnitTarget);
+    return;
+  }
+  const compMetricButton = event.target.closest("button[data-comp-metric]");
+  if (compMetricButton && state.lastResult?.type === "comp_rankings") {
+    state.compRankingMetric = compMetricButton.dataset.compMetric;
+    renderCompRankings(state.lastResult);
+    return;
+  }
   const quickTaskButton = event.target.closest("button[data-quick-task]");
   if (quickTaskButton) {
     if (state.requestInFlight) return;
@@ -1993,6 +2212,16 @@ async function handleResultClick(event) {
 
 resultEl.addEventListener("click", handleResultClick);
 resultContentEl.addEventListener("click", handleResultClick);
+for (const container of [resultEl, resultContentEl]) {
+  container.addEventListener("keydown", (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const compUnitTarget = event.target.closest("[data-comp-unit-query]");
+    if (!compUnitTarget) return;
+    event.preventDefault();
+    event.stopPropagation();
+    requestCompUnitRecommendation(compUnitTarget);
+  });
+}
 
 refreshButton.addEventListener("click", () => {
   requestRecommendation(true);
@@ -2018,6 +2247,7 @@ clearButton.addEventListener("click", async () => {
   state.responseRecords = [];
   state.responsesById.clear();
   state.currentResponseId = null;
+  state.resultNavigation = [];
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   rawOutputEl.textContent = "";

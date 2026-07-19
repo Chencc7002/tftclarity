@@ -6,6 +6,7 @@ import { inspectOfficialCompTrendGate } from "./official-comp-trend-gate.js";
 
 const SPECIAL_NAME_PATTERN = /(?:^|_)Augment_|UniqueCarry|HeroAugment/i;
 export const METATFT_DEFAULT_MIN_PLAYRATE = 0.01;
+export const CONTESTED_COMP_SELECTION_RATE = 0.60;
 
 function baseTrait(filterId) {
   return String(filterId).replace(/_\d+$/, "");
@@ -85,6 +86,12 @@ function emergingStrength(stats, avgPlacementChange) {
   return Math.abs(avgPlacementChange) * Math.sqrt(appearanceRate);
 }
 
+function selectionRate(stats) {
+  return Number.isFinite(stats?.pickRate)
+    ? Math.max(0, stats.pickRate * 8)
+    : null;
+}
+
 function responseParts(response, options) {
   return {
     compsData: response?.compsData ?? response?.data ?? options.compsDataResponse,
@@ -133,17 +140,18 @@ export function buildCompRankings(response = {}, options = {}) {
       continue;
     }
 
-    const localTrend = definition.trendSource === "local_72h";
-    const exactOfficialTrend = officialGate.ready
-      && definition.trendSource !== "local_72h";
-    const trendAllowed = localTrend || exactOfficialTrend;
+    const trendAllowed = Number.isFinite(definition.avgPlacementChange)
+      && Boolean(definition.trendSource);
     const visiblePlacementChange = trendAllowed ? definition.avgPlacementChange : null;
+    const compSelectionRate = selectionRate(row.stats);
+    const unitApiNames = [...new Set(definition.units)];
+    const traitFilterIds = [...new Set(definition.traits)];
 
     comps.push({
       compId: `cluster:${row.clusterId}`,
       name: compName(definition, catalog),
       patch: query.patch ?? "current",
-      units: definition.units.map((apiName) => ({
+      units: unitApiNames.map((apiName) => ({
         apiName,
         name: readableToken(apiName, catalog, "unit"),
         targetStarLevel: definition.fourStarUnits.includes(apiName)
@@ -156,21 +164,32 @@ export function buildCompRankings(response = {}, options = {}) {
         core: false,
         items: []
       })),
-      traits: definition.traits.map((filterId) => ({
+      traits: traitFilterIds.map((filterId) => ({
         apiName: baseTrait(filterId),
         filterId,
         name: readableToken(filterId, catalog, "trait"),
         tier: traitTier(filterId)
       })),
       coreBuilds: summarizeBuilds(definition),
-      stats: row.stats,
+      stats: {
+        ...row.stats,
+        selectionRate: compSelectionRate
+      },
+      contested: Number.isFinite(compSelectionRate)
+        && compSelectionRate >= CONTESTED_COMP_SELECTION_RATE,
       trend: {
         avgPlacementChange: visiblePlacementChange,
         emergenceScore: emergingStrength(row.stats, visiblePlacementChange),
         source: trendAllowed ? definition.trendSource : null,
         comparedAt: trendAllowed ? definition.trendComparedAt : null,
-        // MetaTFT shows the blue arrow only below -0.10 over the last 3 days.
-        improving: Number.isFinite(visiblePlacementChange) && visiblePlacementChange < -0.1
+        direction: Number.isFinite(visiblePlacementChange)
+          ? visiblePlacementChange < 0
+            ? "rising"
+            : visiblePlacementChange > 0
+              ? "falling"
+              : "flat"
+          : null,
+        improving: Number.isFinite(visiblePlacementChange) && visiblePlacementChange < 0
       },
       pageOrder: row.sourceIndex,
       source: {
@@ -186,17 +205,18 @@ export function buildCompRankings(response = {}, options = {}) {
 
   const minSamples = Math.max(0, Number(query.minSamples ?? 0));
   const eligible = comps.filter((comp) => comp.stats.games >= minSamples);
-  const improving = comps
-    .filter((comp) => comp.trend.improving)
-    // Emerging strength rewards both a meaningful placement improvement and
-    // enough play rate to make that change credible. The square root keeps
-    // popularity from overwhelming the actual improvement signal.
-    .sort((left, right) => right.trend.emergenceScore - left.trend.emergenceScore
-      || left.trend.avgPlacementChange - right.trend.avgPlacementChange
+  const rising = eligible
+    .filter((comp) => comp.trend.direction === "rising")
+    .sort((left, right) => left.trend.avgPlacementChange - right.trend.avgPlacementChange
       || right.stats.games - left.stats.games
       || left.pageOrder - right.pageOrder)
-    .slice(0, 3)
-    .map((comp) => ({ ...comp, lowSample: comp.stats.games < minSamples }));
+    .slice(0, 5);
+  const falling = eligible
+    .filter((comp) => comp.trend.direction === "falling")
+    .sort((left, right) => right.trend.avgPlacementChange - left.trend.avgPlacementChange
+      || right.stats.games - left.stats.games
+      || left.pageOrder - right.pageOrder)
+    .slice(0, 5);
   const references = comps
     .filter((comp) => comp.stats.games < minSamples)
     .sort((a, b) => b.stats.games - a.stats.games || a.pageOrder - b.pageOrder)
@@ -210,18 +230,31 @@ export function buildCompRankings(response = {}, options = {}) {
     popularity: "popularity"
   };
   const rankings = { top4Rate: [], winRate: [], winShare: [], avgPlacement: [], popularity: [] };
-  for (const metric of query.metrics ?? ["top4_rate", "win_share"]) {
+  const rankingMetrics = query.intent === "comp_trends"
+    ? ["popularity"]
+    : query.popularRequested
+      ? ["avg_placement", "top4_rate", "win_rate", "popularity"]
+      : query.metrics ?? ["top4_rate", "win_share"];
+  for (const metric of rankingMetrics) {
     const key = metricMap[metric];
     if (!key) continue;
+    const limit = query.intent === "comp_trends"
+      ? 10
+      : query.popularRequested
+        ? 21
+        : query.limit ?? 5;
     rankings[key] = [...eligible]
       .sort(metricComparator(metric))
-      .slice(0, query.limit ?? 5);
+      .slice(0, limit);
   }
 
   return {
     type: query.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
     rankings,
-    improving,
+    rising,
+    falling,
+    // Keep the old key for downstream evidence and cached-result compatibility.
+    improving: rising,
     references,
     trend: response?.trend ?? {
       status: pageData.definitions.some((definition) => Number.isFinite(definition.avgPlacementChange))

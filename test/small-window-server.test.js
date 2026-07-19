@@ -336,7 +336,10 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
 
   assert.equal(statusCode, 200);
   assert.equal(payload.ok, true);
-  assert.equal(payload.cards[0].title, "推荐");
+  assert.equal(payload.cards[0].title, "普适推荐");
+  assert.equal(payload.cards[0].ranking.method, "robust_applicability_v1");
+  assert.equal(payload.cards[0].ranking.coverageScore <= 100, true);
+  assert.match(payload.answer.methodology, /贝叶斯收缩校正/);
   assert.deepEqual(payload.unit, {
     apiName: "TFT17_Xayah",
     name: "霞",
@@ -360,7 +363,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   }, runtime);
 
   assert.equal(owned.statusCode, 200);
-  assert.equal(owned.payload.cards[0].title, "推荐补齐");
+  assert.equal(owned.payload.cards[0].title, "普适补齐");
   assert.equal(owned.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
 
   const localized = await handleRecommendRequest({
@@ -372,7 +375,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
 
   assert.equal(localized.statusCode, 200);
   assert.equal(localized.payload.query.unitName, "霞");
-  assert.equal(localized.payload.cards[0].title, "推荐补齐");
+  assert.equal(localized.payload.cards[0].title, "普适补齐");
   assert.equal(localized.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
 });
 

@@ -155,6 +155,15 @@ test("small-window cards render the sample-risk marker", () => {
   assert.match(styles, /\.risk/);
 });
 
+test("small-window defaults to an explained robust applicability recommendation", () => {
+  assert.match(indexHtml, /value="robust_first"[^>]*selected/);
+  assert.match(appJs, /sort: "robust_first"/);
+  assert.match(appJs, /card\.ranking\?\.method === "robust_applicability_v1"/);
+  assert.match(appJs, /applicabilityRecommendation/);
+  assert.match(i18n, /普适推荐/);
+  assert.match(styles, /\.ranking-rationale/);
+});
+
 test("small-window comparison cards distinguish winners and compared items", () => {
   assert.match(appJs, /card\.winner/);
   assert.match(appJs, /item\.compared/);
@@ -239,6 +248,9 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.match(styles, /\.shell\.wallpaper-enabled \.assistant-message \.message-body/);
   assert.match(styles, /\.shell\.wallpaper-enabled \.result-card/);
   assert.match(styles, /\.shell\.wallpaper-enabled \.result-empty strong/);
+  assert.match(styles, /\.shell\.wallpaper-enabled \.message-meta time/);
+  assert.match(styles, /font-variant-numeric: tabular-nums/);
+  assert.match(styles, /text-shadow: 0 1px 2px rgba\(255,255,255,1\), 0 0 4px rgba\(255,255,255,\.96\)/);
   assert.doesNotMatch(indexHtml, /class="window-controls"/);
 });
 
@@ -285,6 +297,9 @@ test("result templates cover recommendations, item rankings, comps, risks, and e
   assert.match(appJs, /function renderItemRankings/);
   assert.match(appJs, /function renderCompRankings/);
   assert.match(appJs, /renderCompCard\(comp, "trend", index\)/);
+  assert.match(appJs, /data-comp-metric=/);
+  assert.match(appJs, /renderCompCard\(comp, "trendDown", index\)/);
+  assert.match(appJs, /class="contested-label"/);
   assert.match(appJs, /winShareHighest/);
   assert.match(appJs, /class="best-label"/);
   assert.match(appJs, /class="alternatives"/);
@@ -301,6 +316,42 @@ test("result templates cover recommendations, item rankings, comps, risks, and e
   assert.match(appJs, /<details class="comp-card"/);
   assert.match(styles, /\.result-card\.best/);
   assert.match(styles, /\.low-sample-section/);
+  assert.match(styles, /\.comp-metric-switch/);
+  assert.match(styles, /\.falling-section/);
+  assert.match(styles, /\.unit-row \{ padding-top: 7px; align-items: flex-start; \}/);
+  assert.match(styles, /\.full-unit-grid \.comp-unit\.has-star-target \{ margin-top: 7px; \}/);
+});
+
+test("comp units are keyboard-accessible shortcuts for explicit high-sample build queries", () => {
+  assert.match(appJs, /const COMP_UNIT_QUERY_MIN_SAMPLES = 500/);
+  assert.match(appJs, /function compSignature\(comp\)/);
+  assert.match(appJs, /data-comp-signature=/);
+  assert.match(appJs, /data-comp-unit-query/);
+  assert.match(appJs, /role="button"/);
+  assert.match(appJs, /targetStarLevel === 3 \? 3 : 2/);
+  assert.match(appJs, /Comp: \$\{signature\}/);
+  assert.match(appJs, /\\u4e09\\u4ef6\\u666e\\u901a\\u88c5\\u5907, \\u6837\\u672c>=\$\{COMP_UNIT_QUERY_MIN_SAMPLES\}/);
+  assert.match(appJs, /requestCompUnitRecommendation/);
+  assert.match(appJs, /\["Enter", " "\]/);
+  assert.match(styles, /\.comp-unit-query:hover/);
+  assert.match(styles, /\.comp-unit-query:focus-visible/);
+  assert.match(i18n, /compUnitQueryDisplay/);
+});
+
+test("comp unit drill-down preserves and restores the previous comp result", () => {
+  assert.match(appJs, /resultNavigation: \[\]/);
+  assert.match(appJs, /function captureCompNavigationSnapshot\(compName\)/);
+  assert.match(appJs, /openCompKeys/);
+  assert.match(appJs, /scrollTop: resultContentEl\.scrollTop/);
+  assert.match(appJs, /state\.resultNavigation\.push\(navigationSnapshot\)/);
+  assert.match(appJs, /function restorePreviousCompResult\(\)/);
+  assert.match(appJs, /data-return-comp/);
+  assert.match(appJs, /state\.compRankingMetric = snapshot\.compRankingMetric/);
+  assert.match(appJs, /resultContentEl\.scrollTop = snapshot\.scrollTop/);
+  assert.match(styles, /\.result-navigation/);
+  assert.match(i18n, /backToComp:/);
+  assert.match(i18n, /compResultPreserved:/);
+  assert.match(i18n, /statusReturnedToComp:/);
 });
 
 test("settings retain preferences, runtime details, alias review, export, clear, and reset controls", () => {
