@@ -127,8 +127,6 @@ const titleBar = new TitleBar({
 });
 const appShell = new AppShell({
   shell: document.querySelector("#app-shell"),
-  workspace: document.querySelector("#workspace"),
-  resizer: document.querySelector("#column-resizer"),
   panel: settingsPanel,
   backdrop: document.querySelector("#settings-backdrop"),
   settingsButton,

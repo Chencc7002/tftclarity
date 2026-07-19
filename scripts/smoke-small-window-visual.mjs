@@ -159,7 +159,7 @@ async function inspectResponsiveMode(page, label, expected) {
       result: rect(".result-pane"),
       settings: rect(".settings-panel"),
       settingsDisplay: getComputedStyle(document.querySelector(".settings-panel")).display,
-      resizerDisplay: getComputedStyle(document.querySelector(".column-resizer")).display
+      hasResizer: Boolean(document.querySelector(".column-resizer"))
     };
   });
   if (expected === "three") {
@@ -167,10 +167,10 @@ async function inspectResponsiveMode(page, label, expected) {
     assertSmoke(layout.settingsDisplay !== "none" && layout.result.right <= layout.settings.left + 2, `${label} settings is not the third column`);
   } else if (expected === "two") {
     assertSmoke(layout.conversation.right <= layout.result.left + 2, `${label} is not two-column`);
-    assertSmoke(layout.settingsDisplay === "none" && layout.resizerDisplay !== "none", `${label} did not hide settings or show the resizer`);
+    assertSmoke(layout.settingsDisplay === "none" && !layout.hasResizer, `${label} did not hide settings or remove the resizer`);
   } else {
     assertSmoke(layout.result.top >= layout.conversation.bottom - 2, `${label} result does not follow conversation vertically`);
-    assertSmoke(layout.resizerDisplay === "none", `${label} resizer remains visible in single-column mode`);
+    assertSmoke(!layout.hasResizer, `${label} resizer remains in single-column mode`);
   }
   return layout;
 }

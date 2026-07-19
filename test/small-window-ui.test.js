@@ -25,7 +25,7 @@ test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /class="conversation" id="result"/);
   assert.match(indexHtml, /id="result-pane"/);
   assert.match(indexHtml, /id="result-content"/);
-  assert.match(indexHtml, /id="column-resizer"/);
+  assert.doesNotMatch(indexHtml, /id="column-resizer"/);
   assert.match(indexHtml, /id="settings-panel"/);
   assert.match(indexHtml, /class="resize-grip"/);
   assert.match(appJs, /AppShell/);
@@ -66,6 +66,12 @@ test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(styles, /\.quick-task-grid/);
   assert.match(styles, /\.quick-task-card/);
   assert.match(styles, /min-height: 54px/);
+  assert.match(styles, /var\(--wallpaper-accent\)/);
+  assert.match(styles, /\.composer-actions \.send-button[\s\S]*var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
+  assert.match(styles, /\.conversation-pane[\s\S]*border-right: 1px solid color-mix\(in srgb, var\(--wallpaper-accent\) 18%, transparent\)/);
+  assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
+  assert.match(wallpaperCatalog, /accentSecondary/);
+  assert.match(wallpaperController, /--wallpaper-accent-secondary/);
 });
 
 test("public UI exposes a visible, localized Riot fan-project notice", () => {
@@ -121,17 +127,15 @@ test("small-window clarification renders actionable entity candidates", () => {
 
 test("responsive layout supports three, two, single, and compact modes without a 460px cap", () => {
   assert.doesNotMatch(styles, /width:\s*min\(100%,\s*460px\)/);
-  assert.match(styles, /grid-template-columns:\s*clamp\(320px, var\(--conversation-width\), 520px\) 9px minmax\(360px, 1fr\)/);
+  assert.match(styles, /grid-template-columns:\s*clamp\(320px, var\(--conversation-width\), 520px\) minmax\(360px, 1fr\)/);
   assert.match(styles, /@media \(max-width: 1099px\)/);
   assert.match(styles, /@media \(max-width: 759px\)/);
   assert.match(styles, /@media \(max-width: 519px\)/);
   assert.match(styles, /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/);
   assert.match(styles, /overflow-x:\s*hidden/);
-  assert.match(appShell, /tftagent\.conversationRatio/);
-  assert.match(appShell, /localStorage\.setItem\(COLUMN_STORAGE_KEY/);
-  assert.match(appShell, /ResizeObserver/);
-  assert.match(appShell, /pointerdown/);
-  assert.match(appShell, /ArrowLeft/);
+  assert.doesNotMatch(appShell, /ColumnResizer/);
+  assert.doesNotMatch(styles, /\.column-resizer/);
+  assert.match(styles, /\.result-empty \.state-orbit \{[^}]*background: transparent/);
 });
 
 test("language switching uses independent dictionaries and does not issue API requests", () => {

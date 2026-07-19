@@ -167,6 +167,8 @@ export class WallpaperController {
     this.shell.style.setProperty("--wallpaper-image", `url("${wallpaper.url}")`);
     this.shell.style.setProperty("--wallpaper-position", wallpaper.position);
     this.shell.style.setProperty("--wallpaper-focus-size", wallpaper.focusSize ?? "cover");
+    this.shell.style.setProperty("--wallpaper-accent", wallpaper.accent ?? "#3eaeeb");
+    this.shell.style.setProperty("--wallpaper-accent-secondary", wallpaper.accentSecondary ?? "#5678e8");
   }
 
   setEnabled(enabled, { persist = true } = {}) {
