@@ -1,0 +1,71 @@
+<view class="safe-page chat-page">
+  <view class="app-navigation" style="padding-top: {{statusBarHeight}}px; height: {{navigationBarHeight}}px;">
+    <view class="nav-content">
+      <view class="brand-star">✦</view>
+      <text class="nav-title">tftclarity</text>
+      <text class="nav-subtitle">Set 17 · 星神</text>
+      <button class="clear-chat" bindtap="clearConversation" aria-label="清空会话">＋</button>
+    </view>
+  </view>
+
+  <scroll-view class="chat-scroll" scroll-y enhanced show-scrollbar="{{false}}" scroll-into-view="{{scrollTarget}}">
+    <view class="chat-inner">
+      <view class="message assistant welcome">
+        <view class="message-meta"><view class="avatar">✦</view><text>tftclarity</text></view>
+        <view class="bubble">
+          <text class="welcome-title">今天想查什么？</text>
+          <text>可以查询当前版本阵容、趋势、英雄出装和更新公告。查询数据会先返回，AI 解读随后补充。</text>
+        </view>
+      </view>
+
+      <view class="quick-grid">
+        <button class="quick-card" data-task="comps" bindtap="onQuickTask">
+          <view class="quick-icon">▦</view><view><text class="quick-title">热门阵容</text><text class="quick-copy">当前版本上分阵容</text></view>
+        </button>
+        <button class="quick-card" data-task="trends" bindtap="onQuickTask">
+          <view class="quick-icon">↗</view><view><text class="quick-title">阵容趋势</text><text class="quick-copy">近期上升与下降</text></view>
+        </button>
+        <button class="quick-card" data-task="build" bindtap="onQuickTask">
+          <view class="quick-icon">◇</view><view><text class="quick-title">英雄出装</text><text class="quick-copy">指定英雄查三件套</text></view>
+        </button>
+        <button class="quick-card" data-task="patch" bindtap="onQuickTask">
+          <view class="quick-icon">▤</view><view><text class="quick-title">更新公告</text><text class="quick-copy">17.7 版本改动</text></view>
+        </button>
+      </view>
+
+      <block wx:for="{{messages}}" wx:key="id">
+        <view class="message {{item.role}} {{item.failed ? 'failed' : ''}}">
+          <view class="message-meta" wx:if="{{item.role === 'assistant'}}"><view class="avatar">✦</view><text>tftclarity</text></view>
+          <view class="bubble">
+            <view class="typing" wx:if="{{item.pending}}"><view class="typing-dot"></view><view class="typing-dot"></view><view class="typing-dot"></view></view>
+            <text wx:else>{{item.text}}</text>
+            <button wx:if="{{item.resultId}}" class="result-link" data-result-id="{{item.resultId}}" bindtap="openResult">
+              <text>{{item.actionLabel || '查看结果'}}</text><text>→</text>
+            </button>
+          </view>
+        </view>
+      </block>
+      <view id="chat-bottom" class="chat-bottom"></view>
+    </view>
+  </scroll-view>
+
+  <view class="composer-wrap">
+    <view class="composer">
+      <textarea
+        class="composer-input"
+        value="{{input}}"
+        focus="{{inputFocus}}"
+        auto-height
+        maxlength="240"
+        cursor-spacing="18"
+        confirm-type="send"
+        hold-keyboard
+        placeholder="输入英雄、装备或阵容问题…"
+        bindinput="onInput"
+        bindconfirm="onConfirm"
+      />
+      <button class="send-button {{loading || !input ? 'disabled' : ''}}" disabled="{{loading || !input}}" bindtap="sendCurrent">↑</button>
+    </view>
+    <text class="fan-note">独立非商业粉丝项目 · 数据仅供参考</text>
+  </view>
+</view>

@@ -1,0 +1,14 @@
+{
+  "pages": [
+    "pages/chat/chat",
+    "pages/result/result"
+  ],
+  "window": {
+    "navigationStyle": "custom",
+    "backgroundColor": "#f4f8fc",
+    "backgroundTextStyle": "dark"
+  },
+  "style": "v2",
+  "lazyCodeLoading": "requiredComponents",
+  "sitemapLocation": "sitemap.json"
+}

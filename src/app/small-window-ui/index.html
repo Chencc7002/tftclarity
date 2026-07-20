@@ -122,8 +122,13 @@
         <section class="result-pane" id="result-pane" aria-labelledby="result-title">
           <div class="pane-heading result-heading">
             <div>
-              <span class="eyebrow" data-i18n="resultEyebrow">数据结果</span>
-              <h1 id="result-title" data-i18n="resultTitle">当前推荐</h1>
+              <button type="button" id="mobile-result-back" class="mobile-result-back" data-i18n-title="backToChat" data-i18n-aria="backToChat" title="返回对话" aria-label="返回对话">
+                <span aria-hidden="true">←</span>
+              </button>
+              <span class="result-heading-copy">
+                <span class="eyebrow" data-i18n="resultEyebrow">数据结果</span>
+                <h1 id="result-title" data-i18n="resultTitle">当前推荐</h1>
+              </span>
             </div>
             <button type="button" id="result-refresh-button" class="subtle-button" data-i18n-title="refreshTitle" title="刷新数据" disabled><span aria-hidden="true">⟳</span><span data-i18n="refresh">刷新</span></button>
           </div>

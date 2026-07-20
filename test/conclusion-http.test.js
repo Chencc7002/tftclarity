@@ -6,9 +6,11 @@ import { MemoryCacheStore, createCatalog } from "../src/index.js";
 import {
   createSmallWindowRuntime,
   getSmallWindowRuntimeStatus,
+  handleConclusionStatusRequest,
   handleFeedbackRequest,
   handleRecommendRequest,
-  resolveSmallWindowConclusionConfig
+  resolveSmallWindowConclusionConfig,
+  streamConclusionResponse
 } from "../src/app/small-window-server.js";
 
 const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fixture.json", import.meta.url), "utf8"));
@@ -59,6 +61,95 @@ test("small-window HTTP serialization adds generatedConclusion without replacing
   assert.equal(payload.answer.generatedConclusion.content.headline, providerOutput().headline);
   assert.equal(payload.cards[0].items.length, 3);
   assert.equal(payload.text, buildConclusionResult().text);
+});
+
+test("deferred conclusions return deterministic cards before starting the provider", async () => {
+  let releaseProvider;
+  let providerCalls = 0;
+  const providerGate = new Promise((resolve) => {
+    releaseProvider = resolve;
+  });
+  const runtime = runtimeWith(async () => {
+    providerCalls += 1;
+    await providerGate;
+    return providerOutput();
+  });
+
+  const { statusCode, payload } = await handleRecommendRequest({
+    input: "霞已有羊刀怎么补？",
+    deferConclusion: true,
+    preferences: { conclusionMode: "on" }
+  }, runtime, { visitor: { scope: "mini-user-a" } });
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.cards[0].items.length, 3);
+  assert.equal(payload.answer.generatedConclusion.status, "pending");
+  assert.equal(providerCalls, 0);
+
+  const denied = handleConclusionStatusRequest(runtime, payload.answer.generatedConclusion.jobId, "mini-user-b");
+  assert.equal(denied.statusCode, 404);
+
+  const statusUrl = new URL(payload.answer.generatedConclusion.statusUrl, "https://tftclarity.cn");
+  const started = handleConclusionStatusRequest(
+    runtime,
+    statusUrl.searchParams.get("jobId"),
+    "mini-user-b",
+    statusUrl.searchParams.get("token")
+  );
+  assert.equal(started.payload.status, "pending");
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.equal(providerCalls, 1);
+
+  releaseProvider();
+  await runtime.conclusionJobs.get(payload.answer.generatedConclusion.jobId).promise;
+  const complete = handleConclusionStatusRequest(runtime, payload.answer.generatedConclusion.jobId, "mini-user-a");
+  assert.equal(complete.payload.status, "complete");
+  assert.equal(complete.payload.conclusion.content.headline, providerOutput().headline);
+});
+
+test("conclusion stream emits validated text one Unicode character at a time", async () => {
+  const runtime = runtimeWith(async () => providerOutput(), {
+    cacheTtlMs: 0
+  });
+  runtime.conclusionStreamIntervalMs = 0;
+  const { payload } = await handleRecommendRequest({
+    input: "霞已有羊刀怎么补？",
+    deferConclusion: true,
+    preferences: { conclusionMode: "on" }
+  }, runtime);
+  const chunks = [];
+  const response = {
+    destroyed: false,
+    writableEnded: false,
+    writeHead(statusCode, headers) {
+      this.statusCode = statusCode;
+      this.headers = headers;
+    },
+    write(value) {
+      chunks.push(value);
+      return true;
+    },
+    end() {
+      this.writableEnded = true;
+    }
+  };
+
+  await streamConclusionResponse(
+    {},
+    response,
+    runtime,
+    payload.answer.generatedConclusion.jobId
+  );
+
+  const events = chunks.join("").trim().split("\n").map((line) => JSON.parse(line));
+  const deltas = events.filter((event) => event.type === "delta");
+  assert.equal(response.statusCode, 200);
+  assert.match(response.headers["content-type"], /application\/x-ndjson/u);
+  assert.ok(deltas.length > 10);
+  assert.ok(deltas.every((event) => Array.from(event.text).length === 1));
+  assert.match(deltas.map((event) => event.text).join(""), /围绕羊刀补齐无尽与巨杀/u);
+  assert.equal(events.at(-1).type, "complete");
+  assert.equal(events.at(-1).conclusion.status, "generated");
 });
 
 test("semantic evidence sent to the conclusion model is returned as expandable safe evidence", async () => {

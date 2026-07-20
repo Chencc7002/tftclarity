@@ -1,0 +1,108 @@
+<view class="safe-page result-page">
+  <view class="app-navigation" style="padding-top: {{statusBarHeight}}px; height: {{navigationBarHeight}}px;">
+    <view class="nav-content">
+      <button class="back-button" bindtap="goBack" aria-label="返回对话">←</button>
+      <view class="nav-copy">
+        <text class="nav-title">{{view ? view.title : '查询结果'}}</text>
+        <text class="nav-kicker">结构化数据先返回 · AI 解读随后补充</text>
+      </view>
+    </view>
+  </view>
+
+  <view wx:if="{{missing}}" class="missing-state">
+    <view class="missing-star">✦</view>
+    <text class="missing-title">结果已过期</text>
+    <text class="missing-copy">返回对话后可以重新发起查询。</text>
+    <button class="primary-action" bindtap="goBack">返回对话</button>
+  </view>
+
+  <scroll-view wx:else class="result-scroll" scroll-y enhanced show-scrollbar="{{false}}">
+    <view class="result-inner">
+      <view class="summary-card">
+        <text class="summary-kicker">当前查询</text>
+        <text class="summary-title">{{view.title}}</text>
+        <text class="summary-copy">{{view.summary}}</text>
+      </view>
+
+      <view wx:if="{{view.clarification}}" class="clarification-card">
+        <text class="card-label">需要补充条件</text>
+        <text>{{view.clarification}}</text>
+      </view>
+
+      <view class="data-section" wx:if="{{view.cards.length}}">
+        <view class="section-heading">
+          <text>数据结果</text>
+          <text>{{view.cards.length}} 项</text>
+        </view>
+        <block wx:for="{{view.cards}}" wx:key="id" wx:for-item="card">
+          <view class="data-card">
+            <view class="card-head">
+              <view class="card-copy">
+                <text class="card-title">{{card.title}}</text>
+                <text wx:if="{{card.subtitle}}" class="card-subtitle">{{card.subtitle}}</text>
+              </view>
+              <text class="card-badge">{{card.badge}}</text>
+            </view>
+
+            <text wx:if="{{card.description}}" class="card-description">{{card.description}}</text>
+
+            <scroll-view wx:if="{{card.units.length}}" class="asset-row" scroll-x enhanced show-scrollbar="{{false}}">
+              <view class="asset-list">
+                <view class="asset-entry unit-entry" wx:for="{{card.units}}" wx:key="name" wx:for-item="unit">
+                  <image wx:if="{{unit.iconUrl}}" class="asset-image" src="{{unit.iconUrl}}" mode="aspectFill" />
+                  <view wx:else class="asset-fallback">✦</view>
+                  <text>{{unit.name}}</text>
+                  <text wx:if="{{unit.starLevel}}" class="star-level">{{unit.starLevel}}★</text>
+                </view>
+              </view>
+            </scroll-view>
+
+            <scroll-view wx:if="{{card.items.length}}" class="asset-row" scroll-x enhanced show-scrollbar="{{false}}">
+              <view class="asset-list">
+                <view class="asset-entry" wx:for="{{card.items}}" wx:key="id" wx:for-item="equipment">
+                  <image wx:if="{{equipment.iconUrl}}" class="asset-image" src="{{equipment.iconUrl}}" mode="aspectFill" />
+                  <view wx:else class="asset-fallback">◇</view>
+                  <text>{{equipment.name}}</text>
+                </view>
+              </view>
+            </scroll-view>
+
+            <view wx:if="{{card.stats.length}}" class="stats-grid">
+              <view class="stat" wx:for="{{card.stats}}" wx:key="label" wx:for-item="metric">
+                <text>{{metric.label}}</text>
+                <text class="stat-value">{{metric.value}}</text>
+              </view>
+            </view>
+          </view>
+        </block>
+      </view>
+
+      <view wx:if="{{conclusionPending || view.conclusion}}" class="ai-card {{conclusionPending ? 'streaming' : ''}}">
+        <view class="ai-head">
+          <view><text class="ai-star">✦</text><text>AI 数据解读</text></view>
+          <text>{{conclusionPending ? '生成中' : view.conclusion.model}}</text>
+        </view>
+        <text wx:if="{{conclusionPending}}" class="stream-text">{{streamText}}</text>
+        <block wx:else>
+          <text class="ai-title">{{view.conclusion.headline}}</text>
+          <text class="ai-summary">{{view.conclusion.summary}}</text>
+          <view wx:if="{{view.conclusion.reasons.length}}" class="reason-list">
+            <text wx:for="{{view.conclusion.reasons}}" wx:key="*this">• {{item}}</text>
+          </view>
+          <view wx:if="{{view.conclusion.nextAction}}" class="next-action">
+            <text>下一步</text><text>{{view.conclusion.nextAction}}</text>
+          </view>
+          <text wx:if="{{view.conclusion.riskNotice}}" class="risk-notice">{{view.conclusion.riskNotice}}</text>
+        </block>
+      </view>
+
+      <view wx:if="{{view.source}}" class="source-card" bindtap="copySource">
+        <text>数据来源</text>
+        <text>{{view.source}}</text>
+        <text wx:if="{{view.sourceUrl}}">点击复制官方链接</text>
+      </view>
+
+      <text class="legal-note">数据仅供阵容决策参考。tftclarity 是独立非商业粉丝项目，与 Riot Games 无关联。</text>
+    </view>
+  </scroll-view>
+</view>

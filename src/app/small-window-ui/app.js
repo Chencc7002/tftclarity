@@ -30,6 +30,7 @@ const state = {
   itemAuditLoaded: false,
   conversationId: globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`,
   currentController: null,
+  currentConclusionController: null,
   requestInFlight: false,
   requestSerial: 0,
   progressIndex: 0,
@@ -41,9 +42,12 @@ const state = {
   compRankingMetric: null,
   resultNavigation: [],
   feedbackByCard: {},
-  explanationFeedback: null
+  explanationFeedback: null,
+  mobileView: "chat",
+  conclusionStreamText: ""
 };
 
+const shellEl = document.querySelector("#app-shell");
 const form = document.querySelector("#query-form");
 const queryInput = document.querySelector("#query-input");
 const refreshButton = document.querySelector("#refresh-button");
@@ -74,6 +78,7 @@ const resultEl = document.querySelector("#result");
 const resultContentEl = document.querySelector("#result-content");
 const resultTitleEl = document.querySelector("#result-title");
 const resultRefreshButton = document.querySelector("#result-refresh-button");
+const mobileResultBackButton = document.querySelector("#mobile-result-back");
 const statusEl = document.querySelector("#status");
 const aiQuotaEl = document.querySelector("#ai-quota");
 const rawOutputEl = document.querySelector("#raw-output");
@@ -110,7 +115,7 @@ const conversationPane = new ConversationPane(resultEl);
 const composer = new Composer({ form, input: queryInput });
 const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
 const wallpaperController = new WallpaperController({
-  shell: document.querySelector("#app-shell"),
+  shell: shellEl,
   canvas: document.querySelector("#particle-layer"),
   control: document.querySelector("#wallpaper-control"),
   toggle: document.querySelector("#wallpaper-toggle"),
@@ -145,6 +150,41 @@ void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, comp
 
 function setResponseHtml(html) {
   resultPane.setHtml(`${renderResultNavigation()}${html}`);
+}
+
+const mobileLayoutQuery = window.matchMedia("(max-width: 759px)");
+
+function setMobileView(view, { pushHistory = false, replaceHistory = false } = {}) {
+  const nextView = view === "result" ? "result" : "chat";
+  state.mobileView = nextView;
+  shellEl.dataset.mobileView = nextView;
+  if (!mobileLayoutQuery.matches) return;
+  const historyState = { ...(history.state ?? {}), tftclarityMobileView: nextView };
+  if (pushHistory && history.state?.tftclarityMobileView !== nextView) {
+    history.pushState(historyState, "");
+  } else if (replaceHistory) {
+    history.replaceState(historyState, "");
+  }
+  if (nextView === "result") resultContentEl.scrollTop = 0;
+  else scrollConversation();
+}
+
+function openMobileResult() {
+  setMobileView("result", { pushHistory: true });
+  resultPane.focus();
+  if (state.resultView.type === "result"
+    && state.resultView.data === state.lastResult
+    && state.lastResult?.answer?.generatedConclusion?.status === "pending") {
+    void streamGeneratedConclusion(state.lastResult, state.requestSerial);
+  }
+}
+
+function returnToMobileChat() {
+  if (mobileLayoutQuery.matches && history.state?.tftclarityMobileView === "result") {
+    history.back();
+    return;
+  }
+  setMobileView("chat", { replaceHistory: true });
 }
 
 function isCompResult(data) {
@@ -1209,6 +1249,12 @@ function sourceAndRisk(data) {
 function generatedConclusionCard(data) {
   const conclusion = data?.answer?.generatedConclusion;
   if (!conclusion || conclusion.status === "disabled" || conclusion.status === "skipped") return "";
+  if (conclusion.status === "pending") {
+    return `<section class="generated-conclusion pending" data-conclusion-status="pending" data-conclusion-job="${escapeHtml(conclusion.jobId ?? "")}">
+      <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span class="streaming-badge">${t("generatedFromEvidence")}</span></div>
+      <p class="conclusion-stream-text" data-conclusion-stream>${escapeHtml(state.conclusionStreamText || t("conclusionStreaming"))}</p>
+    </section>`;
+  }
   if (conclusion.status !== "generated" || !conclusion.content) {
     return `<section class="generated-conclusion fallback" data-conclusion-status="${escapeHtml(conclusion.status)}">
       <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${t("templateFallback")}</span></div>
@@ -1459,6 +1505,7 @@ function renderResult(data) {
   state.lastResultId = data.queryId ?? null;
   state.feedbackByCard = {};
   state.explanationFeedback = null;
+  state.conclusionStreamText = "";
   rawOutputEl.textContent = data.text ?? JSON.stringify(data, null, 2);
   state.lastSuggestions = data.clarification?.suggestions ?? [];
   state.lastEntityCandidates = data.clarification?.entityCandidates ?? [];
@@ -1467,6 +1514,101 @@ function renderResult(data) {
   resultTitleEl.textContent = t("resultTitle");
   renderCurrentResult(data);
   resultRefreshButton.disabled = false;
+}
+
+function applyConclusionEvent(data, event) {
+  const pending = data?.answer?.generatedConclusion;
+  if (!pending || pending.jobId !== state.lastResult?.answer?.generatedConclusion?.jobId) return false;
+  if (event.type === "delta") {
+    state.conclusionStreamText += String(event.text ?? "");
+    const target = resultContentEl.querySelector("[data-conclusion-stream]");
+    if (target) target.textContent = state.conclusionStreamText;
+    return true;
+  }
+  if (event.type === "complete" && event.conclusion) {
+    data.answer.generatedConclusion = event.conclusion;
+    state.lastResult = data;
+    state.resultView = { type: "result", data };
+    const scrollTop = resultContentEl.scrollTop;
+    renderCurrentResult(data);
+    resultContentEl.scrollTop = scrollTop;
+    rawOutputEl.textContent = JSON.stringify(data, null, 2);
+    return true;
+  }
+  return event.type === "start";
+}
+
+async function pollConclusionStatus(data, pending, signal) {
+  while (!signal.aborted) {
+    const response = await fetch(pending.statusUrl, {
+      signal,
+      headers: { accept: "application/json" }
+    });
+    const event = await response.json();
+    if (!response.ok || !event.ok) throw new Error(event.error ?? t("queryFailed"));
+    if (event.status === "complete") {
+      applyConclusionEvent(data, { type: "complete", conclusion: event.conclusion });
+      return;
+    }
+    await new Promise((resolveDelay) => setTimeout(resolveDelay, 650));
+  }
+}
+
+async function streamGeneratedConclusion(data, requestId) {
+  const pending = data?.answer?.generatedConclusion;
+  if (pending?.status !== "pending" || !pending.streamUrl) return;
+  state.currentConclusionController?.abort();
+  const controller = new AbortController();
+  state.currentConclusionController = controller;
+  state.conclusionStreamText = "";
+
+  try {
+    const response = await fetch(pending.streamUrl, {
+      signal: controller.signal,
+      headers: { accept: "application/x-ndjson" }
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    if (!response.body?.getReader) {
+      await pollConclusionStatus(data, pending, controller.signal);
+      return;
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    while (!controller.signal.aborted) {
+      const { done, value } = await reader.read();
+      buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() ?? "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        applyConclusionEvent(data, JSON.parse(line));
+      }
+      if (done) {
+        if (buffer.trim()) applyConclusionEvent(data, JSON.parse(buffer));
+        break;
+      }
+    }
+  } catch (error) {
+    if (error.name === "AbortError" || requestId !== state.requestSerial) return;
+    if (data?.answer?.generatedConclusion !== pending) return;
+    try {
+      await pollConclusionStatus(data, pending, controller.signal);
+    } catch (pollError) {
+      if (pollError.name === "AbortError") return;
+      if (data?.answer?.generatedConclusion !== pending) return;
+      data.answer.generatedConclusion = {
+        status: "fallback",
+        reason: "provider_unavailable",
+        content: null,
+        model: pending.model ?? null
+      };
+      if (state.lastResult === data) renderCurrentResult(data);
+    }
+  } finally {
+    if (state.currentConclusionController === controller) state.currentConclusionController = null;
+  }
 }
 
 function renderError(message, messageKey = null) {
@@ -1864,6 +2006,8 @@ async function requestRecommendation(refresh = false, displayInput = null) {
   }
 
   state.currentController?.abort();
+  state.currentConclusionController?.abort();
+  state.currentConclusionController = null;
   const requestId = ++state.requestSerial;
   state.progressIndex = 0;
   state.lastInput = input;
@@ -1894,6 +2038,7 @@ async function requestRecommendation(refresh = false, displayInput = null) {
         input,
         conversationId: state.conversationId,
         refresh,
+        deferConclusion: true,
         preferences: {
           minSamples: state.minSamples,
           itemPolicy: state.itemPolicy,
@@ -1910,6 +2055,9 @@ async function requestRecommendation(refresh = false, displayInput = null) {
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     if (data.access) renderAccessStatus(data.access);
     renderResult(data);
+    if (!mobileLayoutQuery.matches || state.mobileView === "result") {
+      void streamGeneratedConclusion(data, requestId);
+    }
     setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
   } catch (error) {
     if (requestId !== state.requestSerial) return;
@@ -2043,8 +2191,10 @@ async function handleResultClick(event) {
     if (state.requestInFlight) return;
     const quickTask = QUICK_TASKS.find((task) => task.id === quickTaskButton.dataset.quickTask);
     if (quickTask?.view === "patch-note") {
+      state.currentConclusionController?.abort();
+      state.currentConclusionController = null;
       renderPatchNote();
-      resultPane.focus();
+      openMobileResult();
       return;
     }
     if (quickTask?.inputTemplateKey) {
@@ -2065,7 +2215,7 @@ async function handleResultClick(event) {
     return;
   }
   if (event.target.closest("[data-view-result]")) {
-    resultPane.focus();
+    openMobileResult();
     return;
   }
   if (event.target.closest("[data-retry-result]")) {
@@ -2210,6 +2360,13 @@ async function handleResultClick(event) {
 
 resultEl.addEventListener("click", handleResultClick);
 resultContentEl.addEventListener("click", handleResultClick);
+mobileResultBackButton.addEventListener("click", returnToMobileChat);
+window.addEventListener("popstate", (event) => {
+  setMobileView(event.state?.tftclarityMobileView === "result" ? "result" : "chat");
+});
+mobileLayoutQuery.addEventListener?.("change", () => {
+  setMobileView(state.mobileView, { replaceHistory: mobileLayoutQuery.matches });
+});
 for (const container of [resultEl, resultContentEl]) {
   container.addEventListener("keydown", (event) => {
     if (!["Enter", " "].includes(event.key)) return;
@@ -2233,7 +2390,9 @@ clearButton.addEventListener("click", async () => {
   const previousConversationId = state.conversationId;
   state.requestSerial += 1;
   state.currentController?.abort();
+  state.currentConclusionController?.abort();
   state.currentController = null;
+  state.currentConclusionController = null;
   activeResponseEl = null;
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   state.lastInput = "";
@@ -2251,6 +2410,7 @@ clearButton.addEventListener("click", async () => {
   rawOutputEl.textContent = "";
   resultEl.innerHTML = welcomeConversationHtml();
   renderEmptyResult();
+  setMobileView("chat", { replaceHistory: true });
   setRequestRunning(false);
   setStatusKey("statusCleared");
   try {
@@ -2447,6 +2607,7 @@ resetPreferencesButton.addEventListener("click", async () => {
   }
 });
 
+setMobileView("chat", { replaceHistory: true });
 setLocale(getLocale());
 wallpaperController.refreshLocale();
 setRequestRunning(false);

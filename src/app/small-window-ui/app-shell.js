@@ -38,8 +38,9 @@ export class AppShell {
     backdrop.addEventListener("click", () => this.settings.setOpen(false));
     document.addEventListener("keydown", (event) => { if (event.key === "Escape" && this.settings.open) this.settings.setOpen(false); });
     const preferred = localStorage.getItem(SETTINGS_STORAGE_KEY);
-    this.settings.setOpen(preferred === null ? window.innerWidth >= 1100 : preferred === "true", { persist: false });
-    this.wasWide = window.innerWidth >= 1100;
+    const initiallyWide = window.innerWidth >= 1100;
+    this.settings.setOpen(initiallyWide && (preferred === null || preferred === "true"), { persist: false });
+    this.wasWide = initiallyWide;
     window.addEventListener("resize", () => {
       const wide = window.innerWidth >= 1100;
       if (this.wasWide && !wide && this.settings.open) this.settings.setOpen(false, { persist: false });
