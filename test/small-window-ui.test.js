@@ -212,6 +212,9 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.match(indexHtml, /id="wallpaper-toggle"/);
   assert.match(indexHtml, /role="switch"/);
   assert.match(indexHtml, /id="wallpaper-select"/);
+  assert.match(indexHtml, /id="wallpaper-mobile-button"/);
+  assert.match(indexHtml, /id="wallpaper-mobile-menu"/);
+  assert.match(indexHtml, /id="wallpaper-mobile-options"/);
   assert.match(indexHtml, /id="particle-layer"/);
   assert.match(indexHtml, /id="topbar-starfield"/);
   assert.match(appJs, /WallpaperController/);
@@ -227,6 +230,10 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/soraka.jpg", import.meta.url)).size > 100_000);
   assert.match(wallpaperController, /tftagent\.wallpaperEnabled/);
   assert.match(wallpaperController, /tftagent\.wallpaperId/);
+  assert.match(wallpaperController, /populateMobileOptions/);
+  assert.match(wallpaperController, /setMobileMenuOpen/);
+  assert.match(wallpaperController, /data-wallpaper-id/);
+  assert.match(wallpaperController, /mobileToggle\.setAttribute\("aria-checked"/);
   assert.match(wallpaperController, /WALLPAPER_IDLE_MS = 7000/);
   assert.match(wallpaperController, /document\.addEventListener\("keydown"/);
   assert.match(wallpaperController, /document\.addEventListener\("mousemove"/);
@@ -253,6 +260,10 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.match(styles, /\.shell\.wallpaper-enabled \.result-card/);
   assert.match(styles, /\.shell\.wallpaper-enabled \.result-empty strong/);
   assert.match(styles, /\.shell\.wallpaper-enabled \.message-meta time/);
+  assert.match(styles, /\.wallpaper-mobile-menu/);
+  assert.match(styles, /\.wallpaper-mobile-options/);
+  assert.match(styles, /\.wallpaper-mobile-option\.active/);
+  assert.match(styles, /@media \(max-width: 1099px\) \{[\s\S]*\.wallpaper-toggle, \.wallpaper-select \{ display: none; \}/);
   assert.match(styles, /font-variant-numeric: tabular-nums/);
   assert.match(styles, /text-shadow: 0 1px 2px rgba\(255,255,255,1\), 0 0 4px rgba\(255,255,255,\.96\)/);
   assert.doesNotMatch(indexHtml, /class="window-controls"/);

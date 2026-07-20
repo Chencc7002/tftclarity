@@ -121,6 +121,11 @@ export class WallpaperController {
     this.control = control;
     this.toggle = toggle;
     this.select = select;
+    this.mobileButton = control.querySelector("#wallpaper-mobile-button");
+    this.mobileMenu = control.querySelector("#wallpaper-mobile-menu");
+    this.mobileClose = control.querySelector("#wallpaper-mobile-close");
+    this.mobileToggle = control.querySelector("#wallpaper-mobile-toggle");
+    this.mobileOptions = control.querySelector("#wallpaper-mobile-options");
     this.idleMs = idleMs;
     this.idleTimer = null;
     this.particles = new ParticleField(canvas);
@@ -128,11 +133,28 @@ export class WallpaperController {
     this.wallpaperId = wallpaperById(localStorage.getItem(WALLPAPER_ID_STORAGE_KEY) || DEFAULT_WALLPAPER_ID).id;
 
     this.populateSelect();
+    this.populateMobileOptions();
     this.select.value = this.wallpaperId;
     this.toggle.addEventListener("click", () => this.setEnabled(!this.enabled));
     this.select.addEventListener("change", () => this.setWallpaper(this.select.value));
+    this.mobileButton.addEventListener("click", () => this.setMobileMenuOpen(this.mobileMenu.hidden));
+    this.mobileClose.addEventListener("click", () => this.setMobileMenuOpen(false));
+    this.mobileToggle.addEventListener("click", () => this.setEnabled(!this.enabled));
+    this.mobileOptions.addEventListener("click", (event) => {
+      const option = event.target.closest("[data-wallpaper-id]");
+      if (!option) return;
+      this.setWallpaper(option.dataset.wallpaperId);
+      if (!this.enabled) this.setEnabled(true);
+      this.setMobileMenuOpen(false);
+    });
+    document.addEventListener("click", (event) => {
+      if (!this.mobileMenu.hidden && !this.control.contains(event.target)) this.setMobileMenuOpen(false);
+    });
     this.handleActivity = () => this.registerActivity();
-    document.addEventListener("keydown", this.handleActivity, { capture: true });
+    document.addEventListener("keydown", (event) => {
+      this.handleActivity();
+      if (event.key === "Escape") this.setMobileMenuOpen(false);
+    }, { capture: true });
     document.addEventListener("mousemove", this.handleActivity, { capture: true, passive: true });
     document.addEventListener("click", this.handleActivity, { capture: true });
     document.addEventListener("visibilitychange", () => {
@@ -154,11 +176,52 @@ export class WallpaperController {
     }));
   }
 
+  populateMobileOptions() {
+    this.mobileOptions.replaceChildren(...WALLPAPERS.map((wallpaper) => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.className = "wallpaper-mobile-option";
+      button.dataset.wallpaperId = wallpaper.id;
+      button.style.setProperty("--wallpaper-thumb", `url("${wallpaper.url}")`);
+      button.setAttribute("aria-pressed", "false");
+
+      const preview = document.createElement("span");
+      preview.className = "wallpaper-mobile-preview";
+      preview.setAttribute("aria-hidden", "true");
+
+      const label = document.createElement("span");
+      label.className = "wallpaper-mobile-label";
+      label.dataset.labelKey = wallpaper.labelKey;
+      label.textContent = t(wallpaper.labelKey);
+
+      button.append(preview, label);
+      return button;
+    }));
+    this.refreshMobileOptions();
+  }
+
+  setMobileMenuOpen(open) {
+    const next = Boolean(open);
+    this.mobileMenu.hidden = !next;
+    this.mobileButton.setAttribute("aria-expanded", String(next));
+    this.control.classList.toggle("mobile-menu-open", next);
+    if (next) this.mobileClose.focus({ preventScroll: true });
+  }
+
+  refreshMobileOptions() {
+    for (const option of this.mobileOptions.querySelectorAll("[data-wallpaper-id]")) {
+      const active = option.dataset.wallpaperId === this.wallpaperId;
+      option.classList.toggle("active", active);
+      option.setAttribute("aria-pressed", String(active));
+    }
+  }
+
   setWallpaper(id) {
     this.wallpaperId = wallpaperById(id).id;
     this.select.value = this.wallpaperId;
     localStorage.setItem(WALLPAPER_ID_STORAGE_KEY, this.wallpaperId);
     this.applyWallpaper();
+    this.refreshMobileOptions();
     if (this.enabled) this.enterIdleMode();
   }
 
@@ -176,6 +239,8 @@ export class WallpaperController {
     this.shell.classList.toggle("wallpaper-enabled", this.enabled);
     this.control.classList.toggle("active", this.enabled);
     this.toggle.setAttribute("aria-checked", String(this.enabled));
+    this.mobileToggle.setAttribute("aria-checked", String(this.enabled));
+    this.mobileButton.classList.toggle("wallpaper-off", !this.enabled);
     this.select.disabled = !this.enabled;
     if (persist) localStorage.setItem(WALLPAPER_ENABLED_STORAGE_KEY, String(this.enabled));
     this.refreshLocale();
@@ -206,5 +271,13 @@ export class WallpaperController {
     this.toggle.setAttribute("aria-label", this.toggle.title);
     this.select.setAttribute("aria-label", t("wallpaperChoice"));
     for (const option of this.select.options) option.textContent = t(option.dataset.labelKey);
+    this.mobileButton.title = t("wallpaperChoice");
+    this.mobileButton.setAttribute("aria-label", t("wallpaperChoice"));
+    this.mobileMenu.setAttribute("aria-label", t("wallpaperChoice"));
+    this.mobileClose.title = t("closeWallpaperMenu");
+    this.mobileClose.setAttribute("aria-label", t("closeWallpaperMenu"));
+    for (const option of this.mobileOptions.querySelectorAll("[data-label-key]")) {
+      option.textContent = t(option.dataset.labelKey);
+    }
   }
 }

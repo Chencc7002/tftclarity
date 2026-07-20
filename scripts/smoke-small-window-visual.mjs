@@ -420,6 +420,60 @@ if (playwright) {
     await page.setViewportSize({ width: 520, height: 700 });
     const singleColumn = await inspectLayout(page, "520x700 single-column result");
     const singleColumnMode = await inspectResponsiveMode(page, "520x700", "single");
+    const mobileWallpaperControls = await page.evaluate(() => ({
+      mobileButtonVisible: getComputedStyle(document.querySelector("#wallpaper-mobile-button")).display !== "none",
+      desktopToggleHidden: getComputedStyle(document.querySelector("#wallpaper-toggle")).display === "none",
+      desktopSelectHidden: getComputedStyle(document.querySelector("#wallpaper-select")).display === "none",
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth
+    }));
+    assertSmoke(mobileWallpaperControls.mobileButtonVisible, "mobile wallpaper picker entry is hidden");
+    assertSmoke(mobileWallpaperControls.desktopToggleHidden && mobileWallpaperControls.desktopSelectHidden, "desktop wallpaper controls crowd the mobile top bar");
+    assertSmoke(mobileWallpaperControls.overflow === 0, "mobile wallpaper entry causes horizontal overflow");
+    await page.click("#wallpaper-mobile-button");
+    await page.waitForSelector("#wallpaper-mobile-menu:not([hidden])");
+    const mobileWallpaperMenu = await page.evaluate(() => {
+      const menu = document.querySelector("#wallpaper-mobile-menu");
+      const rect = menu.getBoundingClientRect();
+      const options = [...menu.querySelectorAll("[data-wallpaper-id]")].map((option) => {
+        const optionRect = option.getBoundingClientRect();
+        return {
+          id: option.dataset.wallpaperId,
+          width: optionRect.width,
+          height: optionRect.height,
+          pressed: option.getAttribute("aria-pressed")
+        };
+      });
+      return {
+        rect: { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left },
+        options,
+        expanded: document.querySelector("#wallpaper-mobile-button").getAttribute("aria-expanded")
+      };
+    });
+    assertSmoke(mobileWallpaperMenu.expanded === "true", "mobile wallpaper picker does not expose its open state");
+    assertSmoke(mobileWallpaperMenu.rect.left >= 0 && mobileWallpaperMenu.rect.right <= 520, "mobile wallpaper menu escapes the viewport");
+    assertSmoke(mobileWallpaperMenu.rect.top >= 0 && mobileWallpaperMenu.rect.bottom <= 700, "mobile wallpaper menu is vertically clipped");
+    assertSmoke(mobileWallpaperMenu.options.length === 4, "mobile wallpaper menu does not expose all season wallpapers");
+    assertSmoke(mobileWallpaperMenu.options.every((option) => option.height >= 44), "mobile wallpaper options are too small for touch");
+    await page.click('[data-wallpaper-id="set17-soraka"]');
+    const mobileWallpaperSelection = await page.evaluate(() => {
+      const shell = document.querySelector("#app-shell");
+      return {
+        enabled: shell.classList.contains("wallpaper-enabled"),
+        image: shell.style.getPropertyValue("--wallpaper-image"),
+        accent: shell.style.getPropertyValue("--wallpaper-accent"),
+        menuHidden: document.querySelector("#wallpaper-mobile-menu").hidden,
+        expanded: document.querySelector("#wallpaper-mobile-button").getAttribute("aria-expanded")
+      };
+    });
+    assertSmoke(mobileWallpaperSelection.enabled, "choosing a mobile wallpaper did not enable wallpaper mode");
+    assertSmoke(mobileWallpaperSelection.image.includes("soraka.jpg"), "mobile wallpaper selection did not apply the chosen image");
+    assertSmoke(mobileWallpaperSelection.accent === "#35a875", "mobile wallpaper selection did not apply the matching accent");
+    assertSmoke(mobileWallpaperSelection.menuHidden && mobileWallpaperSelection.expanded === "false", "mobile wallpaper menu did not close after selection");
+    await page.click("#wallpaper-mobile-button");
+    await page.click("#wallpaper-mobile-toggle");
+    assertSmoke(!(await page.locator("#app-shell").evaluate((element) => element.classList.contains("wallpaper-enabled"))), "mobile wallpaper switch did not disable wallpaper mode");
+    await page.click('[data-wallpaper-id="set17-yasuo"]');
+    assertSmoke(await page.locator("#app-shell").evaluate((element) => element.classList.contains("wallpaper-enabled")), "choosing a wallpaper while disabled did not restore wallpaper mode");
     await page.screenshot({ path: resolve(outputDir, "result-520x700.png"), fullPage: true });
 
     const assistantCountBeforeFollowup = await page.locator(".assistant-message").count();
@@ -641,6 +695,9 @@ if (playwright) {
         twoColumnMode,
         singleColumn,
         singleColumnMode,
+        mobileWallpaperControls,
+        mobileWallpaperMenu,
+        mobileWallpaperSelection,
         longConversation,
         explicitComp,
         unrestrictedResult,
