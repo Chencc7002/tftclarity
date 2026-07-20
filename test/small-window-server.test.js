@@ -227,6 +227,23 @@ test("resolves bounded small-window request timeouts from options and environmen
   });
 });
 
+test("query snapshots default to 30 days and honor an explicit override", async () => {
+  const baseOptions = {
+    cacheStore: new MemoryCacheStore(),
+    catalog: createCatalog(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {}
+  };
+
+  assert.equal(createSmallWindowRuntime(baseOptions).queryEventRetentionDays, 30);
+
+  const overridden = await createSmallWindowRuntimeAsync(baseOptions, {
+    TFT_AGENT_QUERY_EVENT_RETENTION_DAYS: "14"
+  });
+  assert.equal(overridden.queryEventRetentionDays, 14);
+});
+
 test("small-window runtime can use an injected SQLite cache store", async () => {
   const database = new FakeSQLiteDatabase();
   const runtime = await createSmallWindowRuntimeAsync({

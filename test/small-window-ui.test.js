@@ -96,13 +96,13 @@ test("public legal pages and persistent Riot notice are visible and linked", () 
   assert.match(indexHtml, /tftclarity isn't endorsed by Riot Games/);
   assert.match(privacyHtml, /<h1>Privacy Policy<\/h1>/);
   assert.match(privacyHtml, /tft_visitor/);
-  assert.match(privacyHtml, /up to 90 days/);
-  assert.match(privacyHtml, /mailto:longyuyanchen@gmail\.com/);
+  assert.match(privacyHtml, /up to 30 days/);
+  assert.match(privacyHtml, /mailto:tftclarity@outlook\.com/);
   assert.match(termsHtml, /<h1>Terms of Service<\/h1>/);
   assert.match(termsHtml, /Game-integrity boundaries/);
   assert.match(termsHtml, /does not use Riot Sign On/);
-  assert.match(termsHtml, /mailto:longyuyanchen@gmail\.com/);
-  assert.doesNotMatch(`${privacyHtml}\n${termsHtml}`, /longyuyanchen@qq\.com/);
+  assert.match(termsHtml, /mailto:tftclarity@outlook\.com/);
+  assert.doesNotMatch(`${privacyHtml}\n${termsHtml}`, /longyuyanchen@(qq|gmail)\.com/);
   assert.match(legalCss, /@media \(max-width: 620px\)/);
 });
 

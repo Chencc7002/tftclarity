@@ -95,7 +95,7 @@ GET https://tftclarity.cn/privacy → 200 text/html; charset=utf-8
 GET https://tftclarity.cn/terms   → 200 text/html; charset=utf-8
 ```
 
-首页固定页脚和设置面板均包含 Riot 独立项目声明以及 Privacy Policy、Terms of Service 入口。生产 HTML 已核对页面标题、关键政策内容和 `longyuyanchen@gmail.com` 联系地址，旧 QQ 地址不存在。
+首页固定页脚和设置面板均包含 Riot 独立项目声明以及 Privacy Policy、Terms of Service 入口。生产 HTML 已核对页面标题、关键政策内容和 `tftclarity@outlook.com` 联系地址。
 
 首页响应已经包含 CSP、HSTS、`X-Content-Type-Options` 等安全响应头，并设置了 `HttpOnly`、`Secure`、`SameSite=Lax` 的匿名访客 Cookie。`HEAD` 请求当前返回 405，但普通 `GET` 可以正常访问，这不影响网站作为公开产品使用。
 

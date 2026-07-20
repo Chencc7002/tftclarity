@@ -10,7 +10,7 @@
 - [x] `https://tftclarity.cn/terms` 返回 200，并显示 Terms of Service。
 - [x] 首页底部始终能看到独立项目声明以及 Privacy、Terms 链接。
 - [x] 设置面板中能看到完整 Riot 英文声明。
-- [ ] `longyuyanchen@gmail.com` 已配置并实际完成一次收信测试。
+- [ ] `tftclarity@outlook.com` 已配置并实际完成一次收信测试。
 - [ ] 使用无痕窗口重新检查所有页面，避免截图中出现管理入口、调试数据或旧缓存。
 - [ ] 关闭浏览器收藏栏、下载栏、开发者工具和无关标签页。
 - [ ] 不展示 API Key、Cookie 值、IP、后台日志、个人账号、邮箱或其他敏感信息。

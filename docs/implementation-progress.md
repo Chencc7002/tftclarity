@@ -187,7 +187,7 @@
   - `POST /api/recommend` 会生成服务端 `queryId` 并将脱敏后的查询、结果卡、缓存与 LLM 元数据写入 `query_events`；公开反馈必须属于当前匿名访客，不能跨访客引用查询。
   - 提供 `POST /api/feedback`，浏览器只提交 `queryId + target + cardIndex + rating + 可选原因`。服务端从查询快照重建反馈，忽略客户端伪造的推荐指标；差评原因使用固定枚举。
   - 每张小窗结果卡新增上/下反馈图标和可选差评原因；`feedback_id` 由服务端确定，SQLite 唯一约束保证同一目标只保留首次反馈。反馈只写 `feedback_events`，不会静默修改偏好、catalog 或排序。
-  - 新增独立访客/IP 反馈限流、90 天查询快照保留期、受 Bearer token 保护的 `GET /api/admin/feedback/stats` 聚合统计，以及可执行一致性检查的 `npm run backup:sqlite` 备份命令。
+  - 新增独立访客/IP 反馈限流、30 天查询快照保留期、受 Bearer token 保护的 `GET /api/admin/feedback/stats` 聚合统计，以及可执行一致性检查的 `npm run backup:sqlite` 备份命令。
   - 提供 `POST /api/entity-memory/clear`，删除未启用候选别名与反馈事件，保留已启用别名和长期偏好，满足反馈记忆可清空要求。
   - 提供 `GET /api/entity-aliases`、`POST /api/entity-aliases/review` 与 `POST /api/entity-aliases/review-batch`，用于查看候选别名并人工单条或批量启用/停用；启用后会清理运行时 catalog cache，下一次查询即可走规则解析命中。
   - `GET /api/entity-aliases` 支持 `enabled`、`entityType`、`apiName`、`query`、`limit`、`offset` 参数，并返回 `pagination`，用于小窗候选审核的筛选和分页。

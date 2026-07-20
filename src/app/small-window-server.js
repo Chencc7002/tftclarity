@@ -1555,7 +1555,7 @@ export function createSmallWindowRuntime(options = {}) {
     adminToken: String(options.adminToken ?? "").trim() || null,
     queryEventRetentionDays: Number.isInteger(Number(options.queryEventRetentionDays))
       ? Math.max(0, Number(options.queryEventRetentionDays))
-      : 90,
+      : 30,
     recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput
   };
 }
@@ -1980,7 +1980,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
     durationMs: Date.now() - details.startedAt
   });
 
-  const retentionDays = Number(runtime.queryEventRetentionDays ?? 90);
+  const retentionDays = Number(runtime.queryEventRetentionDays ?? 30);
   const now = Date.now();
   if (retentionDays > 0 && now - Number(runtime.queryEventsPrunedAt ?? 0) >= 24 * 60 * 60 * 1000) {
     runtime.queryEventsPrunedAt = now;

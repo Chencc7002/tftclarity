@@ -1,6 +1,6 @@
 # Riot 法律页面生产部署与验收
 
-> 当前状态：代码与材料已完成，生产站首页已有 Riot 独立项目声明；`/privacy` 与 `/terms` 尚待合入最新主线并发布。  
+> 当前状态：Privacy Policy、Terms of Service 与首页法律入口均已上线；本手册用于后续法律文案或生产配置更新。
 > 公网域名：<https://tftclarity.cn/>  
 > 更新日期：2026-07-20
 
@@ -8,8 +8,9 @@
 
 - [ ] 当前工作分支已与最新 `origin/main` 对齐。
 - [ ] 本次法律页面改动已应用到最新主线版本，而不是直接从落后版本覆盖生产站。
-- [ ] `longyuyanchen@gmail.com` 已配置并完成实际收信测试。
+- [ ] `tftclarity@outlook.com` 已配置并完成实际收信测试。
 - [ ] Privacy Policy 中的运营地区、数据保留期、Cookie 和第三方 LLM 描述与生产配置一致。
+- [ ] `.env.production` 中 `TFT_AGENT_QUERY_EVENT_RETENTION_DAYS=30`。
 - [ ] Terms of Service 中的非商业定位、适用法律和联系方式已由运营者最终确认。
 - [ ] `.env.production`、API Key、Cookie Secret 和 Admin Token 未进入提交或截图。
 
@@ -56,7 +57,10 @@ docker compose exec app ls -lh /app/.cache/backups
 git status --short
 git pull --ff-only origin main
 git rev-parse HEAD
+grep '^TFT_AGENT_QUERY_EVENT_RETENTION_DAYS=' .env.production
 ```
+
+`grep` 应输出 `TFT_AGENT_QUERY_EVENT_RETENTION_DAYS=30`。如果仍为旧值，应先备份 `.env.production` 并改为 `30`，再重建容器。
 
 重建应用容器：
 
@@ -64,7 +68,10 @@ git rev-parse HEAD
 docker compose up -d --build app
 docker compose ps
 docker compose logs --tail=100 app
+docker compose exec -T app printenv TFT_AGENT_QUERY_EVENT_RETENTION_DAYS
 ```
+
+最后一条命令应输出 `30`。
 
 Caddy 已将全部请求反向代理到 `app:17317`，不需要为 `/privacy` 或 `/terms` 增加单独规则。
 
@@ -108,7 +115,7 @@ curl -fsS -o /dev/null -w "%{http_code} %{content_type}\n" https://tftclarity.cn
 - [ ] 桌面宽度和手机宽度均无横向滚动。
 - [ ] 无痕窗口中同样可访问。
 - [ ] 页面没有管理入口、API Key、内部错误或调试数据。
-- [ ] `longyuyanchen@gmail.com` 的 `mailto:` 链接正确。
+- [ ] `tftclarity@outlook.com` 的 `mailto:` 链接正确。
 
 ## 6. 失败回滚
 

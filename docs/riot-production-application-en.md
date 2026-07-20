@@ -171,11 +171,11 @@ The ranking, filtering, metrics, and eligibility rules are deterministic. AI out
 - No product account is required.
 - No Riot account identifier, PUUID, or specific-player match history is currently requested.
 - A signed anonymous `tft_visitor` cookie separates visitor scope and enforces public quotas.
-- Query snapshots are retained for up to 90 days for feedback integrity, quality investigation, and security.
+- Query snapshots are retained for up to 30 days for feedback integrity, quality investigation, and security.
 - Short-lived conversation context expires after approximately 30 minutes.
 - Optional feedback stores only the relevant query and normalized result context.
 - HTTPS, HTTP-only cookies, scoped identifiers, rate limits, server-side secrets, and access controls protect the service.
-- Privacy requests are handled at `longyuyanchen@gmail.com`.
+- Privacy requests are handled at `tftclarity@outlook.com`.
 
 See the public [Privacy Policy](https://tftclarity.cn/privacy) and [Terms of Service](https://tftclarity.cn/terms).
 

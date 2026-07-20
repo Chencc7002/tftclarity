@@ -106,7 +106,7 @@ docker compose up -d app
 docker compose ps
 ```
 
-恢复完成后检查 `/api/health` 和应用日志。V1 的查询快照默认保留 90 天，反馈长期保留；可通过 `TFT_AGENT_QUERY_EVENT_RETENTION_DAYS` 调整快照保留期。
+恢复完成后检查 `/api/health` 和应用日志。V1 的查询快照默认保留 30 天，反馈长期保留；可通过 `TFT_AGENT_QUERY_EVENT_RETENTION_DAYS` 调整快照保留期。
 
 ## 8. 日常检查
 
