@@ -58,6 +58,12 @@ const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-c
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
 const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url));
+const STATIC_PAGE_ROUTES = new Map([
+  ["/privacy", "privacy.html"],
+  ["/privacy/", "privacy.html"],
+  ["/terms", "terms.html"],
+  ["/terms/", "terms.html"]
+]);
 const ASSET_RESOLVER = createAssetResolver();
 const DETAIL_RETRIEVAL_PLANNER = new RetrievalPlanner();
 const CONTENT_TYPES = new Map([
@@ -410,8 +416,9 @@ async function readJsonRequest(req, maxBytes = 32 * 1024) {
   return JSON.parse(raw);
 }
 
-function safeStaticPath(pathname) {
-  const name = pathname === "/" ? "index.html" : pathname.replace(/^\/+/, "");
+export function safeStaticPath(pathname) {
+  const name = STATIC_PAGE_ROUTES.get(pathname)
+    ?? (pathname === "/" ? "index.html" : pathname.replace(/^\/+/, ""));
   if (name.includes("..") || name.includes("\\") || name.startsWith("/")) return null;
   const root = resolve(PUBLIC_DIR);
   const target = resolve(root, name);

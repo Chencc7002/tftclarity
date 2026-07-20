@@ -13,6 +13,9 @@ const resultPane = ui("result-pane.js");
 const patchNotes = ui("patch-notes.js");
 const wallpaperController = ui("wallpaper-controller.js");
 const wallpaperCatalog = ui("wallpaper-catalog.js");
+const privacyHtml = ui("privacy.html");
+const termsHtml = ui("terms.html");
+const legalCss = ui("legal.css");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /<title>tftclarity · Set 17<\/title>/);
@@ -84,6 +87,23 @@ test("public UI exposes a visible, localized Riot fan-project notice", () => {
   assert.match(i18n, /legalFooterSummary/);
   assert.match(styles, /\.site-legal-footer/);
   assert.match(styles, /\.legal-notice/);
+});
+
+test("public legal pages and persistent Riot notice are visible and linked", () => {
+  assert.match(indexHtml, /class="site-legal-footer"/);
+  assert.match(indexHtml, /href="\/privacy"/);
+  assert.match(indexHtml, /href="\/terms"/);
+  assert.match(indexHtml, /tftclarity isn't endorsed by Riot Games/);
+  assert.match(privacyHtml, /<h1>Privacy Policy<\/h1>/);
+  assert.match(privacyHtml, /tft_visitor/);
+  assert.match(privacyHtml, /up to 90 days/);
+  assert.match(privacyHtml, /mailto:longyuyanchen@gmail\.com/);
+  assert.match(termsHtml, /<h1>Terms of Service<\/h1>/);
+  assert.match(termsHtml, /Game-integrity boundaries/);
+  assert.match(termsHtml, /does not use Riot Sign On/);
+  assert.match(termsHtml, /mailto:longyuyanchen@gmail\.com/);
+  assert.doesNotMatch(`${privacyHtml}\n${termsHtml}`, /longyuyanchen@qq\.com/);
+  assert.match(legalCss, /@media \(max-width: 620px\)/);
 });
 
 test("small-window maintenance exposes a separate filterable item catalog audit", () => {
