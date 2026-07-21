@@ -174,7 +174,8 @@ function openMobileResult() {
   resultPane.focus();
   if (state.resultView.type === "result"
     && state.resultView.data === state.lastResult
-    && state.lastResult?.answer?.generatedConclusion?.status === "pending") {
+    && state.lastResult?.answer?.generatedConclusion?.status === "pending"
+    && !state.currentConclusionController) {
     void streamGeneratedConclusion(state.lastResult, state.requestSerial);
   }
 }
@@ -1355,7 +1356,57 @@ function resultKind(data) {
   return t("recommendation");
 }
 
-function assistantResponseHtml(data, responseId = "") {
+const EQUIPMENT_CORE_RESULT_TYPES = new Set([
+  "unit_build_rankings",
+  "unit_build_completion",
+  "unit_best_3_items"
+]);
+
+function equipmentCoreConclusionText(data) {
+  const summary = data?.coreItemSummary ?? data?.answer?.coreConclusion;
+  if (!EQUIPMENT_CORE_RESULT_TYPES.has(data?.type) || Number(summary?.recommendationCount) < 2) return null;
+  const unit = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? t("hero"));
+  const items = (summary.items ?? []).map((item) => localizedName(item)).filter(Boolean);
+  const params = {
+    count: Number(summary.recommendationCount),
+    required: Number(summary.requiredAppearances),
+    items: items.join(" + "),
+    unit
+  };
+  return items.length ? t("chatCoreWithItems", params) : t("chatCoreWithoutItems", params);
+}
+
+function generatedConclusionText(conclusion) {
+  const content = conclusion?.content;
+  if (!content) return "";
+  return [
+    content.headline,
+    content.summary,
+    ...(content.reasons ?? []).map((reason) => reason?.text),
+    ...(content.alternatives ?? []).map((alternative) => alternative?.text),
+    content.nextAction,
+    content.riskNotice
+  ].filter(Boolean).join("\n\n");
+}
+
+function chatCoreConclusionHtml(data, responseId, options = {}) {
+  const fullFixedText = equipmentCoreConclusionText(data);
+  if (!fullFixedText) return "";
+  const fixedText = Object.prototype.hasOwnProperty.call(options, "fixedCoreText") ? options.fixedCoreText : fullFixedText;
+  const conclusion = data?.answer?.generatedConclusion;
+  const interpretation = conclusion?.status === "pending"
+    ? state.conclusionStreamText || t("conclusionStreaming")
+    : conclusion?.status === "generated"
+      ? generatedConclusionText(conclusion)
+      : "";
+  return `<section class="chat-core-conclusion" data-chat-core-conclusion="${escapeHtml(responseId)}">
+    <header><strong>${t("chatCoreTitle")}</strong><small>${t("chatCoreScope")}</small></header>
+    <p class="chat-core-fixed${options.streamingFixed ? " is-streaming" : ""}" data-chat-core-fixed>${escapeHtml(fixedText)}</p>
+    ${interpretation ? `<div class="chat-core-interpretation${conclusion?.status === "pending" ? " pending" : ""}"><span>${t("chatFurtherInterpretation")}</span><p data-chat-conclusion-stream>${escapeHtml(interpretation)}</p></div>` : ""}
+  </section>`;
+}
+
+function assistantResponseHtml(data, responseId = "", options = {}) {
   if (data?.clarification?.needsClarification) {
     return `<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
   }
@@ -1366,23 +1417,59 @@ function assistantResponseHtml(data, responseId = "") {
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
-  return `<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result>${t("resultDetails")} →</button>`;
+  return `${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result>${t("resultDetails")} →</button>`;
+}
+
+function stopAssistantCoreStream(record) {
+  if (!record?.coreConclusionTimer) return;
+  clearInterval(record.coreConclusionTimer);
+  record.coreConclusionTimer = null;
+}
+
+function streamAssistantCoreConclusion(record) {
+  const fullText = equipmentCoreConclusionText(record?.data);
+  const target = record?.target?.querySelector("[data-chat-core-fixed]");
+  if (!fullText || !target) return;
+  stopAssistantCoreStream(record);
+  const characters = Array.from(fullText);
+  let index = 0;
+  record.coreConclusionTimer = setInterval(() => {
+    if (!target.isConnected) {
+      stopAssistantCoreStream(record);
+      return;
+    }
+    index += 1;
+    target.textContent = characters.slice(0, index).join("");
+    if (index % 10 === 0) scrollConversation();
+    if (index >= characters.length) {
+      target.classList.remove("is-streaming");
+      stopAssistantCoreStream(record);
+    }
+  }, 16);
+}
+
+function rerenderAssistantRecord(record) {
+  if (!record?.target?.isConnected) return;
+  stopAssistantCoreStream(record);
+  record.target.innerHTML = assistantResponseHtml(record.data, record.id);
 }
 
 function recordAssistantResponse(data) {
   if (!activeResponseEl) return null;
   const id = `response-${++state.responseCounter}`;
   const record = { id, target: activeResponseEl, data };
-  activeResponseEl.innerHTML = assistantResponseHtml(data, id);
+  const fixedCoreText = equipmentCoreConclusionText(data);
+  activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
   state.responseRecords.push(record);
   state.responsesById.set(id, record);
+  if (fixedCoreText) streamAssistantCoreConclusion(record);
   return id;
 }
 
 function rerenderLocalizedState() {
   applyI18n();
   for (const record of state.responseRecords) {
-    if (record.target?.isConnected) record.target.innerHTML = assistantResponseHtml(record.data, record.id);
+    rerenderAssistantRecord(record);
   }
   if (state.requestInFlight && activeResponseEl?.isConnected) activeResponseEl.innerHTML = progressStepsHtml(state.progressIndex);
   if (state.resultView.type === "result" && state.resultView.data) renderCurrentResult(state.resultView.data);
@@ -1475,11 +1562,12 @@ function renderRecommendationResult(data) {
     return;
   }
   const locked = data.lockedItems?.length ? data.lockedItems.map((item) => localizedName(item)).join(" + ") : t("none");
-  const commonCore = data.commonCore?.length ? data.commonCore.map((item) => localizedName(item)).join(" + ") : null;
+  const coreSummary = data.coreItemSummary ?? data.answer?.coreConclusion;
+  const commonCore = coreSummary?.items?.length ? coreSummary.items.map((item) => localizedName(item)).join(" + ") : null;
   const [best, ...alternatives] = data.cards;
   setResponseHtml(`${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
     <div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>
-    ${commonCore ? `<div class="core-line">${t("frequentCore")}：${escapeHtml(commonCore)}（${t("strictTopThree")}）</div>` : ""}
+    ${commonCore ? `<div class="core-line">${t("frequentCore")}：${escapeHtml(commonCore)}（${t("coreFrequencyRule", { count: coreSummary.recommendationCount, required: coreSummary.requiredAppearances })}）</div>` : ""}
     ${recommendationCard(data, best, 0)}
     ${alternatives.length ? `<details class="alternatives" ${window.innerWidth >= 520 ? "open" : ""}><summary>${t("alternatives")} · ${alternatives.length}</summary><div class="alternatives-grid">${alternatives.slice(0, 2).map((card, index) => recommendationCard(data, card, index + 1)).join("")}</div></details>` : ""}
     ${generatedConclusionCard(data)}
@@ -1523,6 +1611,10 @@ function applyConclusionEvent(data, event) {
     state.conclusionStreamText += String(event.text ?? "");
     const target = resultContentEl.querySelector("[data-conclusion-stream]");
     if (target) target.textContent = state.conclusionStreamText;
+    const record = state.responsesById.get(state.currentResponseId);
+    const chatTarget = record?.data === data ? record.target?.querySelector("[data-chat-conclusion-stream]") : null;
+    if (chatTarget) chatTarget.textContent = state.conclusionStreamText;
+    if (state.conclusionStreamText.length % 12 === 0) scrollConversation();
     return true;
   }
   if (event.type === "complete" && event.conclusion) {
@@ -1532,6 +1624,8 @@ function applyConclusionEvent(data, event) {
     const scrollTop = resultContentEl.scrollTop;
     renderCurrentResult(data);
     resultContentEl.scrollTop = scrollTop;
+    const record = state.responsesById.get(state.currentResponseId);
+    if (record?.data === data) rerenderAssistantRecord(record);
     rawOutputEl.textContent = JSON.stringify(data, null, 2);
     return true;
   }
@@ -1604,7 +1698,11 @@ async function streamGeneratedConclusion(data, requestId) {
         content: null,
         model: pending.model ?? null
       };
-      if (state.lastResult === data) renderCurrentResult(data);
+      if (state.lastResult === data) {
+        renderCurrentResult(data);
+        const record = state.responsesById.get(state.currentResponseId);
+        if (record?.data === data) rerenderAssistantRecord(record);
+      }
     }
   } finally {
     if (state.currentConclusionController === controller) state.currentConclusionController = null;
@@ -2055,7 +2153,7 @@ async function requestRecommendation(refresh = false, displayInput = null) {
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     if (data.access) renderAccessStatus(data.access);
     renderResult(data);
-    if (!mobileLayoutQuery.matches || state.mobileView === "result") {
+    if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);
     }
     setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
@@ -2401,6 +2499,7 @@ clearButton.addEventListener("click", async () => {
   state.lastResultId = null;
   state.lastSuggestions = [];
   state.lastEntityCandidates = [];
+  state.responseRecords.forEach(stopAssistantCoreStream);
   state.responseRecords = [];
   state.responsesById.clear();
   state.currentResponseId = null;

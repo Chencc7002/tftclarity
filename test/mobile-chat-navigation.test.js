@@ -33,9 +33,15 @@ test("mobile web respects narrow viewports and display safe areas", () => {
 
 test("mobile web requests fast results and consumes independent conclusion stream", () => {
   const app = readUi("app.js");
+  const css = readUi("styles.css");
   assert.match(app, /deferConclusion:\s*true/u);
   assert.match(app, /application\/x-ndjson/u);
   assert.match(app, /response\.body\.getReader/u);
   assert.match(app, /pollConclusionStatus/u);
   assert.match(app, /event\.type === "delta"/u);
+  assert.match(app, /data-chat-core-conclusion/u);
+  assert.match(app, /data-chat-conclusion-stream/u);
+  assert.match(app, /EQUIPMENT_CORE_RESULT_TYPES\.has\(data\.type\)[\s\S]*streamGeneratedConclusion/u);
+  assert.match(app, /streamAssistantCoreConclusion/u);
+  assert.match(css, /@media \(max-width: 759px\)[\s\S]*\.chat-core-conclusion \{/u);
 });

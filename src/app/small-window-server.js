@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import {
   anonymousScopeKey,
   createAnonymousAccessService
@@ -1279,11 +1280,23 @@ function serializeRecommendation(result, catalog, meta = {}) {
       stats: build.stats
     }))
   });
-  const commonItemApiNames = cards.length > 1
-    ? [...new Set(cards[0].items.map((item) => item.apiName))].filter((apiName) => (
-      cards.every((card) => card.items.some((item) => item.apiName === apiName))
-    ))
-    : [];
+  const coreFrequency = summarizeCoreItemFrequency(cards);
+  const coreItems = coreFrequency.coreItems.map((entry) => ({
+    apiName: entry.apiName,
+    name: itemName(entry.apiName, catalog),
+    iconUrl: ASSET_RESOLVER.resolveItem(entry.apiName).iconUrl,
+    appearances: entry.appearances,
+    recommendationCount: entry.recommendationCount,
+    appearanceRate: Number(entry.appearanceRate.toFixed(3))
+  }));
+  const coreItemSummary = {
+    rule: "visible_build_frequency_2_of_3",
+    numerator: coreFrequency.numerator,
+    denominator: coreFrequency.denominator,
+    recommendationCount: coreFrequency.recommendationCount,
+    requiredAppearances: coreFrequency.requiredAppearances,
+    items: coreItems
+  };
   const referenceCard = cards[0] ?? null;
   cards.forEach((card, index) => {
     card.difference = index === 0 ? null : itemDifferences(referenceCard, card, catalog);
@@ -1333,7 +1346,8 @@ function serializeRecommendation(result, catalog, meta = {}) {
       warnings: query.warnings ?? [],
       methodology: cards[0]?.ranking?.method === "robust_applicability_v1"
         ? "稳健普适评分：对前四率、吃鸡率和平均名次做同查询样本的贝叶斯收缩校正，再加入 8% 的对数样本覆盖权重；表现接近时优先高覆盖方案，显著更强的方案仍可胜出。"
-        : null
+        : null,
+      coreConclusion: coreItemSummary
     },
     unit: query.unit ? {
       apiName: query.unit,
@@ -1341,11 +1355,8 @@ function serializeRecommendation(result, catalog, meta = {}) {
       iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
     } : null,
     cards,
-    commonCore: commonItemApiNames.map((apiName) => ({
-      apiName,
-      name: itemName(apiName, catalog),
-      iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
-    })),
+    coreItemSummary,
+    commonCore: coreItems,
     comparison: serializedComparison,
     results: serializedComparison?.entries ?? [],
     overlap: serializedComparison?.overlap ?? null,

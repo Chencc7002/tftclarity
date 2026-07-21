@@ -1,3 +1,5 @@
+import { requiredCoreItemAppearances } from "../core/core-item-frequency.js";
+
 export const CONCLUSION_EVIDENCE_SCHEMA_VERSION = "llm_conclusion_evidence.v1";
 export const MAX_CONCLUSION_EVIDENCE_BYTES = 32 * 1024;
 
@@ -175,6 +177,7 @@ function buildRecommendations(result, catalog) {
 function buildItemSignals(recommendations) {
   const builds = asArray(recommendations).filter((entry) => String(entry?.evidenceId ?? "").startsWith("build:"));
   if (builds.length < 2) return [];
+  const requiredAppearances = requiredCoreItemAppearances(builds.length);
   const signals = new Map();
   for (const build of builds) {
     const seenInBuild = new Set();
@@ -199,8 +202,9 @@ function buildItemSignals(recommendations) {
     .map((signal) => ({
       ...signal,
       recommendationCount: builds.length,
+      requiredAppearances,
       appearanceRate: Number((signal.appearances / builds.length).toFixed(3)),
-      core: signal.appearances >= 2,
+      core: signal.appearances >= requiredAppearances,
       lowSample: !signal.stable
     }))
     .sort((left, right) => Number(right.core) - Number(left.core)
@@ -377,7 +381,9 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     : intent === "comp_rankings" || intent === "comp_trends"
       ? buildCompRankings(result, { trendOnly: intent === "comp_trends" })
       : comparison?.options ?? buildRecommendations(result, catalog);
-  const itemSignals = intent === "unit_build_rankings" ? buildItemSignals(recommendations) : [];
+  const itemSignals = ["unit_build_rankings", "unit_build_completion", "unit_best_3_items"].includes(intent)
+    ? buildItemSignals(recommendations)
+    : [];
   const compRankingContext = intent === "comp_rankings" || intent === "comp_trends" ? buildCompRankingContext(result, recommendations) : null;
   const dataStatus = sourceState(result);
   const warnings = buildWarnings(result);

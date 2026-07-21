@@ -369,6 +369,17 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(payload.query.minSamples, 100);
   assert.equal(payload.meta.rankedBuilds, 2);
   assert.deepEqual(payload.commonCore.map((item) => item.name), ["羊刀"]);
+  assert.deepEqual(payload.coreItemSummary, {
+    rule: "visible_build_frequency_2_of_3",
+    numerator: 2,
+    denominator: 3,
+    recommendationCount: 2,
+    requiredAppearances: 2,
+    items: payload.commonCore
+  });
+  assert.deepEqual(payload.answer.coreConclusion, payload.coreItemSummary);
+  assert.equal(payload.coreItemSummary.items[0].appearances, 2);
+  assert.equal(payload.coreItemSummary.items[0].appearanceRate, 1);
   assert.equal(payload.cards[1].difference.removed.length > 0, true);
   assert.deepEqual(payload.lockedItems, []);
 

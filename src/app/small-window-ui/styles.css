@@ -311,6 +311,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .user-message .message-body { padding: 10px 12px; border: 1px solid #c8e6f5; border-radius: 14px 5px 14px 14px; color: #23485f; background: #eef8fd; box-shadow: 0 5px 15px rgba(48,120,164,.07); }
 .answer-summary { color: var(--ink); font-weight: 700; }
 .answer-explanation { margin-top: 5px; color: var(--muted); }
+.chat-core-conclusion { display: none; }
 .view-result { margin-top: 9px; min-height: 30px; padding: 0 9px; border: 1px solid #cdeaf8; border-radius: 8px; color: var(--star-cyan-dark); background: var(--star-cyan-soft); font-size: 11px; }
 
 .query-panel { border-top: 1px solid var(--line); background: rgba(255,255,255,.95); }
@@ -892,6 +893,16 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .pane-heading h1 { font-size: 14px; }.eyebrow { font-size: 8px; }.pane-hint { display: none; }
   .conversation { padding: 11px 12px 14px; gap: 12px; }
   .message-body { font-size: 12px; }.assistant-message .message-body { padding: 9px 10px; }
+  .chat-core-conclusion { margin-bottom: 10px; padding: 10px; display: grid; gap: 7px; border: 1px solid color-mix(in srgb, var(--wallpaper-accent) 30%, var(--line)); border-radius: 10px; background: color-mix(in srgb, var(--wallpaper-accent) 7%, rgba(255,255,255,.92)); }
+  .chat-core-conclusion header { min-width: 0; display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .chat-core-conclusion header strong { color: var(--ink); font-size: 11px; }
+  .chat-core-conclusion header small { overflow: hidden; color: var(--muted); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+  .chat-core-conclusion p { min-width: 0; margin: 0; white-space: pre-wrap; }
+  .chat-core-fixed { color: var(--ink); font-weight: 650; line-height: 1.65; }
+  .chat-core-fixed.is-streaming::after, .chat-core-interpretation.pending p:not(:empty)::after { content: ""; width: 2px; height: 1em; margin-left: 3px; display: inline-block; vertical-align: -.12em; background: var(--wallpaper-accent); animation: conclusion-cursor .72s steps(1, end) infinite; }
+  .chat-core-interpretation { padding-top: 7px; display: grid; gap: 4px; border-top: 1px solid color-mix(in srgb, var(--wallpaper-accent) 18%, var(--line)); }
+  .chat-core-interpretation > span { color: var(--star-indigo); font-size: 9px; font-weight: 800; }
+  .chat-core-interpretation p { color: var(--muted); font-size: 10px; line-height: 1.6; }
   .quick-task-card { min-height: 60px; padding-block: 7px; }
   .composer { padding: 8px 10px calc(8px + env(safe-area-inset-bottom)); gap: 5px; }.composer textarea { min-height: 40px; max-height: 68px; padding: 7px 9px; font-size: 12px; }
   .composer-actions button { min-height: 28px; padding: 0 6px; }.composer-actions .send-button { min-width: 62px; }

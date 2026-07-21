@@ -7,9 +7,9 @@ const BASE_PROMPT_URL = new URL("./prompts/base-conclusion.md", import.meta.url)
 const CORRECTION_PROMPT_URL = new URL("./prompts/conclusion-correction.md", import.meta.url);
 
 const ROUTES = Object.freeze({
-  unit_build_rankings: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v1", file: "unit-build-rankings.md" }),
-  unit_build_completion: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v1", file: "unit-build-rankings.md" }),
-  unit_best_3_items: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v1", file: "unit-build-rankings.md" }),
+  unit_build_rankings: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v2", file: "unit-build-rankings.md" }),
+  unit_build_completion: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v2", file: "unit-build-rankings.md" }),
+  unit_best_3_items: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v2", file: "unit-build-rankings.md" }),
   unit_item_rankings: Object.freeze({ key: "unit-item-rankings", version: "unit-item-rankings.v1", file: "unit-item-rankings.md" }),
   unit_item_comparison: Object.freeze({ key: "unit-item-comparison", version: "unit-item-comparison.v1", file: "unit-item-comparison.md" }),
   unit_emblem_rankings: Object.freeze({ key: "unit-emblem-rankings", version: "unit-emblem-rankings.v1", file: "unit-emblem-rankings.md" }),

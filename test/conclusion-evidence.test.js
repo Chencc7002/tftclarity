@@ -65,6 +65,7 @@ test("buildConclusionEvidence creates a bounded whitelist pack with raw metrics"
   assert.equal(evidence.itemSignals[0].item.apiName, "TFT_Item_GuinsoosRageblade");
   assert.equal(evidence.itemSignals[0].appearances, 2);
   assert.equal(evidence.itemSignals[0].recommendationCount, 2);
+  assert.equal(evidence.itemSignals[0].requiredAppearances, 2);
   assert.equal(evidence.itemSignals[0].core, true);
   assert.equal(evidence.itemSignals[0].stable, true);
   assert.deepEqual(evidence.itemSignals[0].buildEvidenceIds, ["build:1", "build:2"]);
