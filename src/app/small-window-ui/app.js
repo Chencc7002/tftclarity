@@ -52,7 +52,6 @@ const form = document.querySelector("#query-form");
 const queryInput = document.querySelector("#query-input");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
-const retryButton = document.querySelector("#retry-button");
 const stopButton = document.querySelector("#stop-button");
 const settingsButton = document.querySelector("#settings-button");
 const settingsPanel = document.querySelector("#settings-panel");
@@ -2138,7 +2137,6 @@ function updateProgress(target, index) {
 function setRequestRunning(running) {
   state.requestInFlight = running;
   stopButton.classList.toggle("hidden", !running);
-  retryButton.disabled = running || !state.lastInput;
   refreshButton.disabled = running || !state.lastInput;
   resultRefreshButton.disabled = running || !state.lastInput;
   form.querySelector("button[type=submit]").disabled = running;
@@ -2319,12 +2317,6 @@ queryInput.addEventListener("input", () => {
 
 stopButton.addEventListener("click", () => {
   state.currentController?.abort();
-});
-
-retryButton.addEventListener("click", () => {
-  if (!state.lastInput || state.requestInFlight) return;
-  queryInput.value = state.lastInput;
-  requestRecommendation(false);
 });
 
 async function handleResultClick(event) {

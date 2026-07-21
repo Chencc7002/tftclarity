@@ -857,6 +857,18 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
   assert.match(noRadiantSamples.text, /没有光明装备的单件携带样本/);
 });
 
+test("which-special-item wording keeps complete three-item aggregation", () => {
+  for (const input of [
+    "霞哪一件光明装备最好？",
+    "霞应该带哪一件神器？"
+  ]) {
+    const result = planQuery(input);
+    assert.equal(result.query.intent, "unit_item_rankings", input);
+    assert.equal(result.query.itemCount, 3, input);
+    assert.match(result.plan.params.unit_tier_numitems_unique, /_3$/u, input);
+  }
+});
+
 test("radiant and artifact rankings use average placement only and do not let sample count change the order", () => {
   const apiNames = [
     "TFT_Item_GuinsoosRageblade",

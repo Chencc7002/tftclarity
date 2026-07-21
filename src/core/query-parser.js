@@ -13,6 +13,9 @@ function parseItemCount(input) {
   const normalized = normalizeText(input);
   if (/(剩下|另外|再补|补).{0,4}([12一二两])件/.test(normalized)) return undefined;
   if (/三件套/.test(normalized)) return 3;
+  // “哪一件光明装备最好”中的“一件”表示从排行里选一个，不是要求
+  // MetaTFT 只返回携带一件装备的样本。特殊装备排行仍需基于完整三件套聚合。
+  if (requestsCategoryRanking(normalized)) return undefined;
   const match = normalized.match(/([123一二三两])件(普通)?(装备|装)?/);
   const count = match ? digitValue(match[1]) : null;
   if (count == null) return undefined;
@@ -51,14 +54,14 @@ function parseItemCategories(input) {
 
 function requestsCategoryRanking(input) {
   const normalized = normalizeText(input);
-  return /(?:有|能用|能带|可以用|可以带)?(?:哪些|什么|哪几件).{0,4}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
+  return /(?:有|能用|能带|可以用|可以带)?(?:哪些|什么|哪(?:一|几)?件).{0,4}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
     || /(?:纹章|转职|神器|光明(?:装备)?).{0,4}(?:有哪些|有些什么|有哪几件)/.test(normalized)
     || /(?:有?什么|哪些|哪个|哪件).{0,10}(?:好|强|强力|厉害|适合|推荐|优先|值得)/.test(normalized)
     || /(?:好|强|强力|厉害|适合|推荐|优先|值得).{0,10}(?:有?什么|哪些|哪个|哪件)/.test(normalized)
     || /(?:最好|最强|最适合|最优|表现最好).{0,6}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
     || /(?:纹章|转职|神器|光明(?:装备)?).{0,6}(?:最好|最强|最适合|最优|表现最好)/.test(normalized)
-    || /(?:应该|该|适合|推荐).{0,6}(?:带|携带|选择|拿|用)?(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
-    || /(?:带|携带|选择|拿|用).{0,4}(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:应该|该|适合|推荐).{0,6}(?:带|携带|选择|拿|用)?(?:什么|哪个|哪些|哪(?:一|几)?件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:带|携带|选择|拿|用).{0,4}(?:什么|哪个|哪些|哪(?:一|几)?件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
     || /(?:纹章|转职|神器|光明(?:装备)?).{0,4}(?:推荐|排行|排名)/.test(normalized);
 }
 

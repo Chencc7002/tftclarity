@@ -77,9 +77,11 @@ test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
 });
 
-test("composer refresh and clear actions use distinct accessible SVG icons", () => {
+test("composer keeps one refresh action and a distinct accessible clear action", () => {
+  assert.doesNotMatch(indexHtml, /id="retry-button"/u);
   assert.match(indexHtml, /id="refresh-button"[^>]*data-i18n-aria="refreshTitle"[\s\S]*?<svg class="compact-action-icon"/u);
   assert.match(indexHtml, /id="clear-button"[^>]*data-i18n-aria="clearTitle"[\s\S]*?<svg class="compact-action-icon"/u);
+  assert.doesNotMatch(appJs, /querySelector\("#retry-button"\)/u);
   assert.doesNotMatch(indexHtml, /id="clear-button"[^>]*>[\s\S]*?⌫/u);
   assert.match(styles, /\.compact-action-icon \{[^}]*stroke-width: 2/u);
   assert.match(styles, /#refresh-button:not\(:disabled\)/u);
