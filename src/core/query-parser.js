@@ -51,8 +51,12 @@ function parseItemCategories(input) {
 
 function requestsCategoryRanking(input) {
   const normalized = normalizeText(input);
-  return /(?:有?什么|哪些|哪个|哪件).{0,10}(?:好|强|强力|厉害|适合|推荐|优先|值得)/.test(normalized)
+  return /(?:有|能用|能带|可以用|可以带)?(?:哪些|什么|哪几件).{0,4}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:纹章|转职|神器|光明(?:装备)?).{0,4}(?:有哪些|有些什么|有哪几件)/.test(normalized)
+    || /(?:有?什么|哪些|哪个|哪件).{0,10}(?:好|强|强力|厉害|适合|推荐|优先|值得)/.test(normalized)
     || /(?:好|强|强力|厉害|适合|推荐|优先|值得).{0,10}(?:有?什么|哪些|哪个|哪件)/.test(normalized)
+    || /(?:最好|最强|最适合|最优|表现最好).{0,6}(?:纹章|转职|神器|光明(?:装备)?)/.test(normalized)
+    || /(?:纹章|转职|神器|光明(?:装备)?).{0,6}(?:最好|最强|最适合|最优|表现最好)/.test(normalized)
     || /(?:应该|该|适合|推荐).{0,6}(?:带|携带|选择|拿|用)?(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
     || /(?:带|携带|选择|拿|用).{0,4}(?:什么|哪个|哪些|哪件).{0,5}(?:纹章|转职|转(?!换|成)|神器|光明(?:装备)?)/.test(normalized)
     || /(?:纹章|转职|神器|光明(?:装备)?).{0,4}(?:推荐|排行|排名)/.test(normalized);
@@ -315,7 +319,7 @@ function cleanUnresolvedFragment(value, entities) {
     const alias = normalizeAlias(match.alias);
     if (alias) fragment = fragment.replaceAll(alias, "");
   }
-  return fragment.replace(/(?:一个|一件|两件|三件|那个|普通|光明|神器|特殊|装备|羁绊|已经|当前|版本|什么|怎么|如何|可以|能不能|可不可以|不要|别带|别用|不用|排除|剔除|去掉|换掉|换成|替换成|改成|把|避开|规避|不考虑|不想要|不需要|前四|吃鸡|稳健|高样本|样本|优先|吗|呢|呀|啊|的)/g, "");
+  return fragment.replace(/(?:一个|一件|两件|三件|那个|普通|光明|神器|特殊|装备|羁绊|已经|当前|版本|什么|怎么|如何|可以|能不能|可不可以|包含|允许|含|不要|别带|别用|不用|排除|剔除|去掉|换掉|换成|替换成|改成|把|避开|规避|不考虑|不想要|不需要|前四|吃鸡|稳健|高样本|样本|优先|吗|呢|呀|啊|的)/g, "");
 }
 
 function inferUnresolvedEntityHints(input, entities) {

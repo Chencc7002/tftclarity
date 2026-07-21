@@ -801,6 +801,7 @@ function serializeItemRanking(entry, catalog) {
     coverage: Number.isFinite(entry.coverage) ? percent(entry.coverage) : null,
     coverageDenominatorGames: entry.coverageDenominatorGames,
     buildCount: entry.buildCount,
+    excludedReason: entry.excludedReason ?? null,
     commonPairings: (entry.commonPairings ?? []).map((pairing) => ({
       games: pairing.games,
       items: pairing.items.map((apiName) => ({
@@ -1151,6 +1152,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
     const best = itemRankings[0] ?? null;
+    const specialAveragePlacementOnly = result.itemRankingMethodology?.methodology === "special_item_outlier_cleaned_avg_placement_only";
     return {
       ok: true,
       type: result.type,
@@ -1166,7 +1168,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
           : `${compAnswerPrefix(query.comp)}${result.text}`,
         evidence: best?.stats ?? null,
         warnings: query.warnings ?? [],
-        methodology: "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本"
+        methodology: specialAveragePlacementOnly
+          ? `先剔除样本低于同类最高样本 2%（本次为 ${result.itemRankingMethodology?.sampleFloor?.outlierFloor ?? 0}）的极低样本离群项；其余神器与光明装备仅按平均名次升序排列，样本数只作可信度参考，不参与排序`
+          : "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本"
       },
       itemRankings,
       itemRankingReferences: references,

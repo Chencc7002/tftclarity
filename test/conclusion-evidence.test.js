@@ -111,6 +111,21 @@ test("item-ranking evidence mirrors every candidate and detail displayed by the 
   assert.equal(evidence.generationRules.mustDistinguishMetricRankFromReliability, true);
 });
 
+test("item-ranking evidence exposes the special-item average-placement-only method", () => {
+  const result = itemRankingResult();
+  result.itemRankingMethodology = {
+    methodology: "special_item_outlier_cleaned_avg_placement_only",
+    sampleFloor: { outlierFloor: 20, relativeRatio: 0.02 }
+  };
+  result.query.itemCategories = ["artifact"];
+  const evidence = buildConclusionEvidence({ result, catalog, input: "霞的神器排行" });
+
+  assert.equal(evidence.itemRankingContext.methodology, "special_item_outlier_cleaned_avg_placement_only");
+  assert.equal(evidence.itemRankingContext.specialAveragePlacementOnly, true);
+  assert.equal(evidence.itemRankingContext.outlierSampleFloor, 20);
+  assert.equal(evidence.itemRankingContext.outlierSampleRatio, 0.02);
+});
+
 test("buildConclusionEvidence only includes requested comparison options and preserves no-winner state", () => {
   const result = buildResult({
     type: "unit_item_comparison",

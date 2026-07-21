@@ -406,7 +406,16 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     itemSignals,
     itemRankingContext: intent === "unit_item_rankings" || intent === "unit_emblem_rankings" ? {
       displayedCount: recommendations.length,
-      methodology: clipped(result?.itemRankingMethodology ?? "presence_once_per_complete_build", 160),
+      methodology: clipped(
+        result?.itemRankingMethodology?.methodology
+          ?? result?.itemRankingMethodology
+          ?? "presence_once_per_complete_build",
+        160
+      ),
+      specialAveragePlacementOnly: result?.itemRankingMethodology?.methodology === "special_item_outlier_cleaned_avg_placement_only"
+        || result?.itemRankingMethodology === "special_item_outlier_cleaned_avg_placement_only",
+      outlierSampleFloor: Number(result?.itemRankingMethodology?.sampleFloor?.outlierFloor ?? 0),
+      outlierSampleRatio: Number(result?.itemRankingMethodology?.sampleFloor?.relativeRatio ?? 0),
       stableEvidenceIds: recommendations.filter((entry) => entry.stable).map((entry) => entry.evidenceId),
       lowSampleEvidenceIds: recommendations.filter((entry) => entry.lowSample).map((entry) => entry.evidenceId),
       stableTopHalfEvidenceIds: recommendations

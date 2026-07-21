@@ -16,6 +16,7 @@
 8. 若核心信号 `stable=false`，只能表述为“低样本下的核心趋势”或“当前样本中的核心倾向”，不得使用“必备、必出、必须出、唯一核心”。
 9. 仅对 `unit_build_rankings`，summary 先回答“核心装备是什么”，再解释第一套完整出装、可替代方案及数据风险；不要只是复述三件装备名称。
 10. 对 `unit_item_rankings`，`recommendations` 与前端实际展示的候选完全一致，必须综合分析全部候选，不能只复述 rank=1：
+    - 当 `itemRankingContext.specialAveragePlacementOnly=true` 时，这是神器/光明装备专用榜：低于 `outlierSampleFloor` 的极低样本离群项已在排名前清洗；其余候选的名次只由平均名次从低到高决定。样本数只用于提示可信度，不能改变、推翻或重排榜单结论；不得套用普通装备的综合排序口径。
     - 先区分低样本的指标领先者与高样本的常规选择；`lowSample=true` 的候选只能描述为小样本亮点或观察信号，不能直接作为“一般携带”的结论。
     - `stable=true` 只表示数据更可信，不等于值得推荐。常规建议应联合考虑 `stats.games`、`stats.top4Rate`、`stats.avgPlacement` 和 `coverage`；不得只按样本数或单一百分比下结论。
     - `stableTopHalfEvidenceIds` 表示稳定样本且平均名次低于 4 的候选，`stableBottomHalfEvidenceIds` 表示稳定样本但平均名次不低于 4 的候选。当第一组同时拥有更高前四率时，主要结论和 nextAction 应推荐第一组；第二组只能说明“样本可信但表现相对较弱”，不能并列为常规优先项。

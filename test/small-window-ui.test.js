@@ -77,6 +77,23 @@ test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
 });
 
+test("composer refresh and clear actions use distinct accessible SVG icons", () => {
+  assert.match(indexHtml, /id="refresh-button"[^>]*data-i18n-aria="refreshTitle"[\s\S]*?<svg class="compact-action-icon"/u);
+  assert.match(indexHtml, /id="clear-button"[^>]*data-i18n-aria="clearTitle"[\s\S]*?<svg class="compact-action-icon"/u);
+  assert.doesNotMatch(indexHtml, /id="clear-button"[^>]*>[\s\S]*?⌫/u);
+  assert.match(styles, /\.compact-action-icon \{[^}]*stroke-width: 2/u);
+  assert.match(styles, /#refresh-button:not\(:disabled\)/u);
+  assert.match(styles, /#clear-button \{/u);
+});
+
+test("mobile special-item questions receive a query-specific chat conclusion", () => {
+  assert.match(appJs, /function isSpecialItemRanking\(data\)/u);
+  assert.match(appJs, /function specialItemRankingConclusionText\(data\)/u);
+  assert.match(appJs, /chatCoreConclusionText\(data\)/u);
+  assert.match(i18n, /chatSpecialRankingWithItems/u);
+  assert.match(i18n, /低于同类最高样本 2%/u);
+});
+
 test("public UI exposes a visible, localized Riot fan-project notice", () => {
   assert.match(indexHtml, /class="site-legal-footer"/);
   assert.match(indexHtml, /class="settings-section legal-notice"/);

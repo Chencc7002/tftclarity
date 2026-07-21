@@ -174,10 +174,13 @@ function formatItemRankingText(aggregation, query, catalog) {
     return `没有单件装备达到样本阈值 ${query.minSamples}。`;
   }
   const stats = best.stats;
+  const rankingMethod = aggregation.methodology === "special_item_outlier_cleaned_avg_placement_only"
+    ? `排序：先剔除样本低于同类最高样本 2%（本次为 ${aggregation.sampleFloor.outlierFloor}）的极低样本离群项，再仅按平均名次从低到高排列；样本数只作参考，不参与剩余候选的名次计算。`
+    : "口径：按合法完整三件套是否包含该装备聚合；同一组合中的重复装备只计一次组合样本。";
   return [
     `结论：${itemLabel(best.apiName, catalog)}在当前口径的单装备聚合中排名第一。`,
     `证据：前四率 ${(stats.top4Rate * 100).toFixed(1)}% / 登顶率 ${(stats.winRate * 100).toFixed(1)}% / 均名 ${stats.avgPlacement.toFixed(2)} / 样本 ${stats.games}。`,
-    "口径：按合法完整三件套是否包含该装备聚合；同一组合中的重复装备只计一次组合样本。"
+    rankingMethod
   ].join("\n");
 }
 
@@ -1311,7 +1314,8 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       methodology: itemRanking.methodology,
       totalGames: itemRanking.totalGames,
       completeBuildCount: itemRanking.completeBuildCount,
-      coverageReliable: itemRanking.coverageReliable
+      coverageReliable: itemRanking.coverageReliable,
+      sampleFloor: itemRanking.sampleFloor
     } : null,
     comparison,
     results: comparison?.entries ?? [],

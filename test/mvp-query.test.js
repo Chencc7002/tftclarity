@@ -709,6 +709,59 @@ test("user-specified radiant, artifact, and emblem items widen the local item po
   assert.match(mixedSpecial.text, /含特殊装备/);
 });
 
+test("generic radiant and artifact build scopes require every returned trio to contain the requested special category", () => {
+  const apiNames = [
+    "TFT_Item_GuinsoosRageblade",
+    "TFT_Item_InfinityEdge",
+    "TFT_Item_GiantSlayer",
+    "TFT5_Item_GuinsoosRagebladeRadiant",
+    "TFT4_Item_OrnnDeathsDefiance"
+  ];
+  const catalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({
+      data: apiNames.map((items) => ({ items }))
+    })
+  });
+  const rows = [
+    {
+      unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+      placement_count: [200, 180, 160, 140, 120, 100, 80, 60]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT5_Item_GuinsoosRagebladeRadiant|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+      placement_count: [20, 18, 16, 14, 12, 10, 8, 6]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT4_Item_OrnnDeathsDefiance|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+      placement_count: [18, 16, 14, 12, 10, 8, 6, 4]
+    }
+  ];
+
+  const radiant = recommendFromRows("霞三件套要包含光明装备", rows, {
+    catalog,
+    preferences: { minSamples: 0 }
+  });
+  const artifact = recommendFromRows("霞三件套要包含神器", rows, {
+    catalog,
+    preferences: { minSamples: 0 }
+  });
+  const eitherSpecial = recommendFromRows("霞三件套要包含光明装备或神器", rows, {
+    catalog,
+    preferences: { minSamples: 0 }
+  });
+
+  assert.equal(radiant.type, "unit_build_rankings");
+  assert.ok(radiant.rankedBuilds.length > 0);
+  assert.ok(radiant.rankedBuilds.every((build) => build.items.includes("TFT5_Item_GuinsoosRagebladeRadiant")));
+  assert.equal(artifact.type, "unit_build_rankings");
+  assert.ok(artifact.rankedBuilds.length > 0);
+  assert.ok(artifact.rankedBuilds.every((build) => build.items.includes("TFT4_Item_OrnnDeathsDefiance")));
+  assert.equal(eitherSpecial.type, "unit_build_rankings");
+  assert.ok(eitherSpecial.rankedBuilds.every((build) => build.items.some((apiName) => (
+    ["TFT5_Item_GuinsoosRagebladeRadiant", "TFT4_Item_OrnnDeathsDefiance"].includes(apiName)
+  ))));
+});
+
 test("radiant, artifact, and emblem questions rank only the requested item category with zero default threshold", () => {
   const apiNames = [
     "TFT_Item_GuinsoosRageblade",
@@ -753,7 +806,10 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
   ];
   const cases = [
     ["霞的光明装备哪个最好？", "radiant", "include_radiant"],
+    ["霞最好的光明装备", "radiant", "include_radiant"],
     ["霞的神器哪个好？", "artifact", "include_artifact"],
+    ["霞有哪些神器？", "artifact", "include_artifact"],
+    ["霞有哪些光明装备？", "radiant", "include_radiant"],
     ["霞的纹章哪个最好？", "emblem", "include_special"],
     ["霞携带什么转职最强？", "emblem", "include_special"],
     ["霞有什么强的转职？", "emblem", "include_special"],
@@ -799,6 +855,79 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
   assert.equal(noRadiantSamples.itemRankings.length, 0);
   assert.equal(noRadiantSamples.itemRankingReferences.length, 0);
   assert.match(noRadiantSamples.text, /没有光明装备的单件携带样本/);
+});
+
+test("radiant and artifact rankings use average placement only and do not let sample count change the order", () => {
+  const apiNames = [
+    "TFT_Item_GuinsoosRageblade",
+    "TFT_Item_InfinityEdge",
+    "TFT5_Item_GuinsoosRagebladeRadiant",
+    "TFT5_Item_InfinityEdgeRadiant",
+    "TFT5_Item_GiantSlayerRadiant",
+    "TFT4_Item_OrnnDeathsDefiance",
+    "TFT4_Item_OrnnInfinityForce",
+    "TFT_Item_Artifact_Fishbones"
+  ];
+  const catalog = createCatalog({
+    items: buildItemCatalogFromItemsResponse({
+      data: apiNames.map((items) => ({ items }))
+    })
+  });
+  const rows = [
+    {
+      unit_builds: "TFT17_Xayah&TFT5_Item_GuinsoosRagebladeRadiant|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [5, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT5_Item_InfinityEdgeRadiant|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [0, 30, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT5_Item_GiantSlayerRadiant|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [0, 0, 0, 1000, 0, 0, 0, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT4_Item_OrnnDeathsDefiance|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [10, 0, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT4_Item_OrnnInfinityForce|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [0, 25, 0, 0, 0, 0, 0, 0]
+    },
+    {
+      unit_builds: "TFT17_Xayah&TFT_Item_Artifact_Fishbones|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge",
+      placement_count: [0, 0, 1000, 0, 0, 0, 0, 0]
+    }
+  ];
+
+  const radiant = recommendFromRows("霞的光明装备排行", rows, { catalog });
+  const artifact = recommendFromRows("霞的神器排行", rows, { catalog });
+
+  assert.equal(radiant.itemRankingMethodology.methodology, "special_item_outlier_cleaned_avg_placement_only");
+  assert.equal(radiant.itemRankingMethodology.sampleFloor.outlierFloor, 20);
+  assert.equal(radiant.itemRankings[0].apiName, "TFT5_Item_InfinityEdgeRadiant");
+  assert.ok(radiant.itemRankings[0].stats.games < radiant.itemRankings[1].stats.games);
+  assert.ok(radiant.itemRankings[0].stats.avgPlacement < radiant.itemRankings[1].stats.avgPlacement);
+  assert.equal(radiant.itemRankingReferences[0].apiName, "TFT5_Item_GuinsoosRagebladeRadiant");
+  assert.equal(radiant.itemRankingReferences[0].excludedReason, "special_item_outlier_sample");
+  assert.match(radiant.text, /仅按平均名次从低到高排列/);
+
+  assert.equal(artifact.itemRankingMethodology.methodology, "special_item_outlier_cleaned_avg_placement_only");
+  assert.equal(artifact.itemRankingMethodology.sampleFloor.outlierFloor, 20);
+  assert.equal(artifact.itemRankings[0].apiName, "TFT4_Item_OrnnInfinityForce");
+  assert.ok(artifact.itemRankings[0].stats.games < artifact.itemRankings[1].stats.games);
+  assert.ok(artifact.itemRankings[0].stats.avgPlacement < artifact.itemRankings[1].stats.avgPlacement);
+  assert.equal(artifact.itemRankingReferences[0].apiName, "TFT4_Item_OrnnDeathsDefiance");
+  assert.equal(artifact.itemRankingReferences[0].excludedReason, "special_item_outlier_sample");
+
+  const narrowArtifact = recommendFromRows("霞的神器排行", [
+    { ...rows[3], placement_count: [1, 0, 0, 0, 0, 0, 0, 0] },
+    { ...rows[4], placement_count: [0, 2, 0, 0, 0, 0, 0, 0] },
+    { ...rows[5], placement_count: [0, 0, 3, 0, 0, 0, 0, 0] }
+  ], { catalog });
+  assert.equal(narrowArtifact.itemRankingMethodology.sampleFloor.outlierFloor, 1);
+  assert.equal(narrowArtifact.itemRankings.length, 3);
+  assert.equal(narrowArtifact.itemRankingReferences.length, 0);
 });
 
 test("Brawler emblem shorthand locks the emblem and keeps Master Yi across follow-ups", async () => {

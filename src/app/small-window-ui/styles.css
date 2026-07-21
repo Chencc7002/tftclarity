@@ -321,6 +321,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 5px; }
 .composer-actions button { min-height: 31px; padding: 0 8px; display: inline-flex; align-items: center; justify-content: center; gap: 4px; border: 1px solid transparent; border-radius: 8px; color: var(--muted); background: transparent; font-size: 11px; }
 .composer-actions button:hover:not(:disabled) { color: var(--star-cyan-dark); background: var(--star-cyan-soft); }
+.compact-action-icon { width: 16px; height: 16px; flex: 0 0 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+#refresh-button:not(:disabled) { border-color: color-mix(in srgb, var(--wallpaper-accent) 24%, transparent); color: color-mix(in srgb, var(--wallpaper-accent) 72%, #17445f); background: color-mix(in srgb, var(--wallpaper-accent) 8%, rgba(255,255,255,.72)); }
+#clear-button { border-color: rgba(181,83,100,.2); color: #9f4357; background: rgba(255,245,247,.68); }
+#clear-button:hover:not(:disabled) { border-color: rgba(181,83,100,.38); color: #842f44; background: rgba(255,235,240,.82); }
 .composer-actions .send-button {
   margin-left: auto;
   min-width: 74px;

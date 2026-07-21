@@ -1,6 +1,45 @@
 import { calculatePlacementStats } from "./stats-calculator.js";
 import { compareRankedBuilds } from "./ranker.js";
 
+const AVG_PLACEMENT_ONLY_CATEGORIES = new Set(["radiant", "artifact"]);
+export const SPECIAL_ITEM_RELATIVE_SAMPLE_RATIO = 0.02;
+
+function usesSpecialAveragePlacementRanking(requestedCategories) {
+  return requestedCategories.size > 0
+    && [...requestedCategories].every((category) => AVG_PLACEMENT_ONLY_CATEGORIES.has(category));
+}
+
+function compareAveragePlacementOnly(left, right) {
+  const leftPlacement = Number.isFinite(Number(left?.stats?.avgPlacement))
+    ? Number(left.stats.avgPlacement)
+    : Number.POSITIVE_INFINITY;
+  const rightPlacement = Number.isFinite(Number(right?.stats?.avgPlacement))
+    ? Number(right.stats.avgPlacement)
+    : Number.POSITIVE_INFINITY;
+  if (leftPlacement !== rightPlacement) return leftPlacement - rightPlacement;
+  return String(left.apiName).localeCompare(String(right.apiName));
+}
+
+function specialItemSampleFloor(rankings, configuredMinSamples) {
+  const observedGames = rankings
+    .map((entry) => Number(entry?.stats?.games ?? 0))
+    .filter((games) => Number.isFinite(games) && games > 0);
+  const referenceGames = Math.max(0, ...observedGames);
+  const outlierFloor = referenceGames > 0
+    ? Math.ceil(referenceGames * SPECIAL_ITEM_RELATIVE_SAMPLE_RATIO)
+    : 0;
+  const effectiveFloor = Math.max(configuredMinSamples, outlierFloor);
+  const hasCleanCandidate = rankings.some((entry) => Number(entry?.stats?.games ?? 0) >= effectiveFloor);
+  const hasRelativeOutlier = rankings.some((entry) => Number(entry?.stats?.games ?? 0) < outlierFloor);
+  return {
+    referenceGames,
+    relativeRatio: SPECIAL_ITEM_RELATIVE_SAMPLE_RATIO,
+    outlierFloor: hasCleanCandidate ? outlierFloor : 0,
+    effectiveFloor: hasCleanCandidate ? effectiveFloor : configuredMinSamples,
+    applied: hasCleanCandidate && hasRelativeOutlier
+  };
+}
+
 function placementCountForBuild(build) {
   const values = build.raw?.placement_count ?? build.raw?.placementCount ?? [];
   return Array.from({ length: 8 }, (_, index) => Number(values[index]) || 0);
@@ -95,6 +134,7 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
 
   const minSamples = Number(query.minSamples ?? 100);
   const requestedCategories = new Set(query.itemCategories ?? []);
+  const averagePlacementOnly = usesSpecialAveragePlacementRanking(requestedCategories);
   const rankings = [...buckets.values()]
     .filter((bucket) => requestedCategories.size === 0
       || requestedCategories.has(options.catalog?.itemByApiName?.get(bucket.apiName)?.category))
@@ -118,12 +158,27 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
             placementCount: entry.placementCount
           }))
           .sort((a, b) => a.copyCount - b.copyCount),
-        qualified: stats.games >= minSamples
+        qualified: false,
+        excludedReason: null
       };
     });
 
+  const sampleFloor = averagePlacementOnly
+    ? specialItemSampleFloor(rankings, minSamples)
+    : { referenceGames: null, relativeRatio: null, outlierFloor: 0, effectiveFloor: minSamples, applied: false };
+  for (const entry of rankings) {
+    entry.qualified = entry.stats.games >= sampleFloor.effectiveFloor;
+    if (!entry.qualified) {
+      entry.excludedReason = averagePlacementOnly
+        && entry.stats.games < sampleFloor.outlierFloor
+        ? "special_item_outlier_sample"
+        : "below_min_samples";
+    }
+  }
+
   rankings.sort((left, right) => {
     if (left.qualified !== right.qualified) return left.qualified ? -1 : 1;
+    if (averagePlacementOnly) return compareAveragePlacementOnly(left, right);
     return compareRankedBuilds({ stats: left.stats }, { stats: right.stats }, query);
   });
 
@@ -133,6 +188,9 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
     totalGames,
     completeBuildCount: completeBuilds.length,
     coverageReliable: totalGames > 0,
-    methodology: "presence_once_per_complete_build"
+    sampleFloor,
+    methodology: averagePlacementOnly
+      ? "special_item_outlier_cleaned_avg_placement_only"
+      : "presence_once_per_complete_build"
   };
 }

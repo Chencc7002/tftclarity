@@ -15,7 +15,9 @@ test("mobile web uses mutually exclusive chat and result views", () => {
   assert.match(css, /\.shell\[data-mobile-view="result"\] \.conversation-pane \{ display: none; \}/u);
   assert.match(app, /history\.pushState/u);
   assert.match(app, /window\.addEventListener\("popstate"/u);
-  assert.match(app, /data-view-result[\s\S]*openMobileResult/u);
+  assert.match(app, /data-view-result data-response-id=/u);
+  assert.match(app, /function activateResponseResult\(record\)/u);
+  assert.match(app, /responsesById\.get\(viewResultButton\.dataset\.responseId\)[\s\S]*activateResponseResult\(responseRecord\)[\s\S]*openMobileResult/u);
 });
 
 test("mobile web respects narrow viewports and display safe areas", () => {
@@ -42,6 +44,9 @@ test("mobile web requests fast results and consumes independent conclusion strea
   assert.match(app, /data-chat-core-conclusion/u);
   assert.match(app, /data-chat-conclusion-stream/u);
   assert.match(app, /EQUIPMENT_CORE_RESULT_TYPES\.has\(data\.type\)[\s\S]*streamGeneratedConclusion/u);
+  assert.match(app, /function specialItemRankingConclusionText\(data\)/u);
+  assert.match(app, /isSpecialItemRanking\(data\)[\s\S]*streamGeneratedConclusion/u);
+  assert.match(app, /chatSpecialRankingWithItems/u);
   assert.match(app, /streamAssistantCoreConclusion/u);
   assert.match(css, /@media \(max-width: 759px\)[\s\S]*\.chat-core-conclusion \{/u);
 });

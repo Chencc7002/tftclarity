@@ -1376,6 +1376,38 @@ function equipmentCoreConclusionText(data) {
   return items.length ? t("chatCoreWithItems", params) : t("chatCoreWithoutItems", params);
 }
 
+function isSpecialItemRanking(data) {
+  return data?.type === ItemRankingResult.type
+    && (data?.query?.itemCategories ?? []).some((category) => ["radiant", "artifact"].includes(category));
+}
+
+function specialItemRankingConclusionText(data) {
+  if (!isSpecialItemRanking(data)) return null;
+  const categories = (data.query.itemCategories ?? [])
+    .filter((category) => ["radiant", "artifact"].includes(category))
+    .map((category) => t(category === "radiant" ? "radiantCategoryName" : "artifactCategoryName"));
+  const rankings = data.itemRankings ?? [];
+  if (!rankings.length) return t("chatSpecialRankingEmpty", { category: categories.join(" / ") });
+  const displayedRankings = rankings.slice(0, 5);
+  const itemNames = displayedRankings.map((item) => localizedName(item)).filter(Boolean);
+  const best = displayedRankings[0];
+  return t("chatSpecialRankingWithItems", {
+    category: categories.join(" / "),
+    count: displayedRankings.length,
+    items: itemNames.join("、"),
+    best: localizedName(best),
+    avg: formatNumber(best.stats?.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  });
+}
+
+function chatCoreConclusionText(data) {
+  return equipmentCoreConclusionText(data) ?? specialItemRankingConclusionText(data);
+}
+
+function chatCoreScopeText(data) {
+  return isSpecialItemRanking(data) ? t("chatSpecialRankingScope") : t("chatCoreScope");
+}
+
 function generatedConclusionText(conclusion) {
   const content = conclusion?.content;
   if (!content) return "";
@@ -1390,7 +1422,7 @@ function generatedConclusionText(conclusion) {
 }
 
 function chatCoreConclusionHtml(data, responseId, options = {}) {
-  const fullFixedText = equipmentCoreConclusionText(data);
+  const fullFixedText = chatCoreConclusionText(data);
   if (!fullFixedText) return "";
   const fixedText = Object.prototype.hasOwnProperty.call(options, "fixedCoreText") ? options.fixedCoreText : fullFixedText;
   const conclusion = data?.answer?.generatedConclusion;
@@ -1400,7 +1432,7 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
       ? generatedConclusionText(conclusion)
       : "";
   return `<section class="chat-core-conclusion" data-chat-core-conclusion="${escapeHtml(responseId)}">
-    <header><strong>${t("chatCoreTitle")}</strong><small>${t("chatCoreScope")}</small></header>
+    <header><strong>${t("chatCoreTitle")}</strong><small>${chatCoreScopeText(data)}</small></header>
     <p class="chat-core-fixed${options.streamingFixed ? " is-streaming" : ""}" data-chat-core-fixed>${escapeHtml(fixedText)}</p>
     ${interpretation ? `<div class="chat-core-interpretation${conclusion?.status === "pending" ? " pending" : ""}"><span>${t("chatFurtherInterpretation")}</span><p data-chat-conclusion-stream>${escapeHtml(interpretation)}</p></div>` : ""}
   </section>`;
@@ -1417,7 +1449,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
-  return `${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result>${t("resultDetails")} →</button>`;
+  return `${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -1427,7 +1459,7 @@ function stopAssistantCoreStream(record) {
 }
 
 function streamAssistantCoreConclusion(record) {
-  const fullText = equipmentCoreConclusionText(record?.data);
+  const fullText = chatCoreConclusionText(record?.data);
   const target = record?.target?.querySelector("[data-chat-core-fixed]");
   if (!fullText || !target) return;
   stopAssistantCoreStream(record);
@@ -1457,13 +1489,43 @@ function rerenderAssistantRecord(record) {
 function recordAssistantResponse(data) {
   if (!activeResponseEl) return null;
   const id = `response-${++state.responseCounter}`;
-  const record = { id, target: activeResponseEl, data };
-  const fixedCoreText = equipmentCoreConclusionText(data);
+  const record = {
+    id,
+    target: activeResponseEl,
+    data,
+    input: state.lastInput,
+    displayInput: state.lastDisplayInput
+  };
+  const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
   state.responseRecords.push(record);
   state.responsesById.set(id, record);
   if (fixedCoreText) streamAssistantCoreConclusion(record);
   return id;
+}
+
+function activateResponseResult(record) {
+  if (!record?.data) return false;
+  state.currentConclusionController?.abort();
+  state.currentConclusionController = null;
+  state.lastInput = record.input ?? state.lastInput;
+  state.lastDisplayInput = record.displayInput ?? record.input ?? state.lastDisplayInput;
+  state.lastResult = record.data;
+  state.lastResultId = record.data.queryId ?? null;
+  state.lastSuggestions = record.data.clarification?.suggestions ?? [];
+  state.lastEntityCandidates = record.data.clarification?.entityCandidates ?? [];
+  state.currentResponseId = record.id;
+  state.compRankingMetric = null;
+  state.feedbackByCard = {};
+  state.explanationFeedback = null;
+  state.conclusionStreamText = "";
+  state.resultView = { type: "result", data: record.data };
+  rawOutputEl.textContent = record.data.text ?? JSON.stringify(record.data, null, 2);
+  resultTitleEl.textContent = t("resultTitle");
+  renderCurrentResult(record.data);
+  refreshButton.disabled = state.requestInFlight || !state.lastInput;
+  resultRefreshButton.disabled = state.requestInFlight || !state.lastInput;
+  return true;
 }
 
 function rerenderLocalizedState() {
@@ -2153,7 +2215,7 @@ async function requestRecommendation(refresh = false, displayInput = null) {
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     if (data.access) renderAccessStatus(data.access);
     renderResult(data);
-    if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || !mobileLayoutQuery.matches || state.mobileView === "result") {
+    if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);
     }
     setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
@@ -2312,7 +2374,10 @@ async function handleResultClick(event) {
     await requestRecommendation(false, t(quickTask.promptKey));
     return;
   }
-  if (event.target.closest("[data-view-result]")) {
+  const viewResultButton = event.target.closest("[data-view-result]");
+  if (viewResultButton) {
+    const responseRecord = state.responsesById.get(viewResultButton.dataset.responseId);
+    if (responseRecord) activateResponseResult(responseRecord);
     openMobileResult();
     return;
   }
