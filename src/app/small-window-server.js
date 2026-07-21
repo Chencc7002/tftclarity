@@ -54,6 +54,9 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17317;
 export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
 export const DEFAULT_COMP_RANKINGS_TIMEOUT_MS = 8000;
+export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
+export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
+export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
@@ -399,6 +402,20 @@ function sendJson(res, statusCode, payload) {
     "content-length": Buffer.byteLength(body)
   });
   res.end(body);
+}
+
+function beginNdjson(res, statusCode = 200) {
+  res.writeHead(statusCode, {
+    "content-type": "application/x-ndjson; charset=utf-8",
+    "cache-control": "no-store, no-transform",
+    "x-accel-buffering": "no",
+    "x-content-type-options": "nosniff"
+  });
+}
+
+function writeNdjson(res, payload) {
+  if (res.destroyed || res.writableEnded) return false;
+  return res.write(`${JSON.stringify(payload)}\n`);
 }
 
 async function readJsonRequest(req, maxBytes = 32 * 1024) {
@@ -1548,6 +1565,10 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParserConfig: options.structuredParserConfig ?? null,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
+    conclusionJobs: new Map(),
+    conclusionJobTtlMs: Math.max(1000, Number(options.conclusionJobTtlMs ?? DEFAULT_CONCLUSION_JOB_TTL_MS)),
+    conclusionJobLimit: Math.max(8, Number(options.conclusionJobLimit ?? DEFAULT_CONCLUSION_JOB_LIMIT)),
+    conclusionStreamIntervalMs: Math.max(0, Number(options.conclusionStreamIntervalMs ?? DEFAULT_CONCLUSION_STREAM_INTERVAL_MS)),
     semanticRetriever: options.semanticRetriever ?? null,
     semanticDocumentStore: options.semanticDocumentStore ?? null,
     semanticConfig: options.semanticConfig ?? { enabled: false, provider: "off" },
@@ -1957,12 +1978,164 @@ function quotaWrappedCallable(callable, accessService, visitor) {
   return wrapped;
 }
 
+function conclusionJobScope(scope) {
+  return String(scope ?? "local");
+}
+
+function pruneConclusionJobs(runtime, now = Date.now(), reserveSlot = false) {
+  const jobs = runtime.conclusionJobs ?? (runtime.conclusionJobs = new Map());
+  const ttlMs = Math.max(1000, Number(runtime.conclusionJobTtlMs ?? DEFAULT_CONCLUSION_JOB_TTL_MS));
+  for (const [id, job] of jobs) {
+    if (now - Number(job.updatedAt ?? job.createdAt ?? now) > ttlMs) jobs.delete(id);
+  }
+  const limit = Math.max(8, Number(runtime.conclusionJobLimit ?? DEFAULT_CONCLUSION_JOB_LIMIT));
+  while (reserveSlot ? jobs.size >= limit : jobs.size > limit) {
+    const oldest = jobs.keys().next().value;
+    if (!oldest) break;
+    jobs.delete(oldest);
+  }
+  return jobs;
+}
+
+function conclusionFallback(error, model = null) {
+  return {
+    status: "fallback",
+    content: null,
+    reason: "provider_unavailable",
+    model,
+    latencyMs: 0,
+    attempts: 0,
+    corrections: 0,
+    transportRetries: 0,
+    error: error?.code ?? "conclusion_job_failed"
+  };
+}
+
+function createConclusionJob(runtime, options, scope = null) {
+  const jobs = pruneConclusionJobs(runtime, Date.now(), true);
+  const id = randomUUID();
+  const job = {
+    id,
+    token: randomUUID(),
+    scope: conclusionJobScope(scope),
+    status: "pending",
+    createdAt: Date.now(),
+    updatedAt: Date.now(),
+    conclusion: null,
+    promise: null,
+    start() {
+      if (this.promise) return this.promise;
+      this.startedAt = Date.now();
+      this.promise = Promise.resolve()
+        .then(() => generateEvidenceBackedConclusion(options))
+        .catch((error) => conclusionFallback(error, options.config?.model ?? options.provider?.model ?? null))
+        .then((conclusion) => {
+          this.conclusion = conclusion;
+          this.status = "complete";
+          this.updatedAt = Date.now();
+          return conclusion;
+        });
+      return this.promise;
+    }
+  };
+  jobs.set(id, job);
+  return job;
+}
+
+function conclusionJobTokenMatches(job, token) {
+  const expected = Buffer.from(String(job?.token ?? ""));
+  const received = Buffer.from(String(token ?? ""));
+  return expected.length > 0
+    && expected.length === received.length
+    && timingSafeEqual(expected, received);
+}
+
+function getOwnedConclusionJob(runtime, jobId, scope = null, token = null) {
+  const jobs = pruneConclusionJobs(runtime);
+  const job = jobs.get(String(jobId ?? ""));
+  if (!job || (job.scope !== conclusionJobScope(scope) && !conclusionJobTokenMatches(job, token))) return null;
+  return job;
+}
+
+function pendingConclusion(job, model = null) {
+  const encodedId = encodeURIComponent(job.id);
+  const encodedToken = encodeURIComponent(job.token);
+  return {
+    status: "pending",
+    content: null,
+    model,
+    jobId: job.id,
+    streamUrl: `/api/conclusion/stream?jobId=${encodedId}&token=${encodedToken}`,
+    statusUrl: `/api/conclusion/status?jobId=${encodedId}&token=${encodedToken}`
+  };
+}
+
+function conclusionStreamText(conclusion) {
+  const content = conclusion?.content;
+  if (!content) return "";
+  return [
+    content.headline,
+    content.summary,
+    ...(content.reasons ?? []).map((reason) => reason?.text),
+    ...(content.alternatives ?? []).map((alternative) => alternative?.text),
+    content.nextAction,
+    content.riskNotice
+  ].filter(Boolean).join("\n\n");
+}
+
+export function handleConclusionStatusRequest(runtime, jobId, scope = null, token = null) {
+  const job = getOwnedConclusionJob(runtime, jobId, scope, token);
+  if (!job) return { statusCode: 404, payload: { ok: false, error: "结论任务不存在或已过期" } };
+  job.start();
+  return {
+    statusCode: 200,
+    payload: {
+      ok: true,
+      jobId: job.id,
+      status: job.status,
+      ...(job.status === "complete" ? { conclusion: job.conclusion } : {})
+    }
+  };
+}
+
+export async function streamConclusionResponse(req, res, runtime, jobId, scope = null, token = null) {
+  const job = getOwnedConclusionJob(runtime, jobId, scope, token);
+  if (!job) {
+    beginNdjson(res, 404);
+    writeNdjson(res, { type: "error", error: "结论任务不存在或已过期" });
+    res.end();
+    return;
+  }
+
+  beginNdjson(res);
+  writeNdjson(res, { type: "start", jobId: job.id, status: job.status });
+  const conclusion = await job.start();
+  if (res.destroyed || res.writableEnded) return;
+
+  const text = conclusion?.status === "generated" ? conclusionStreamText(conclusion) : "";
+  const intervalMs = Math.max(0, Number(runtime.conclusionStreamIntervalMs ?? DEFAULT_CONCLUSION_STREAM_INTERVAL_MS));
+  for (const character of text) {
+    if (res.destroyed || res.writableEnded) return;
+    writeNdjson(res, { type: "delta", text: character });
+    if (intervalMs > 0) await new Promise((resolveDelay) => setTimeout(resolveDelay, intervalMs));
+  }
+  writeNdjson(res, { type: "complete", conclusion });
+  res.end();
+}
+
 async function persistQueryResponse(payload, runtime, details = {}) {
   const queryId = randomUUID();
   const visitorScope = String(details.scope ?? "local");
   const conclusion = payload.answer?.generatedConclusion ?? null;
   const responseSnapshot = structuredClone(payload);
   delete responseSnapshot.access;
+  if (responseSnapshot.answer?.generatedConclusion?.status === "pending") {
+    responseSnapshot.answer.generatedConclusion = {
+      status: "pending",
+      content: null,
+      model: responseSnapshot.answer.generatedConclusion.model ?? null
+    };
+  }
   payload.queryId = queryId;
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,
@@ -2111,18 +2284,28 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       result.query.warnings = [...new Set([...(result.query?.warnings ?? []), `语义索引检索失败：${error.message}`])];
     }
   }
-  const generatedConclusion = await generateEvidenceBackedConclusion({
-      result,
-      catalog,
-      input,
-      previousQuery: previousSessionEntry?.value?.query ?? previousSessionEntry?.value ?? null,
-      config: requestRuntime.conclusionGeneratorConfig,
-      provider: requestRuntime.conclusionProvider,
-      cacheStore: runtime.cacheStore,
-      requestEnabled: preferences.conclusionMode !== "off",
-      bypassCache: Boolean(body.refresh),
-      semanticEvidence
-    });
+  const conclusionOptions = {
+    result,
+    catalog,
+    input,
+    previousQuery: previousSessionEntry?.value?.query ?? previousSessionEntry?.value ?? null,
+    config: requestRuntime.conclusionGeneratorConfig,
+    provider: requestRuntime.conclusionProvider,
+    cacheStore: runtime.cacheStore,
+    requestEnabled: preferences.conclusionMode !== "off",
+    bypassCache: Boolean(body.refresh),
+    semanticEvidence
+  };
+  const canDeferConclusion = body?.deferConclusion === true
+    && conclusionOptions.requestEnabled
+    && requestRuntime.conclusionGeneratorConfig?.enabled
+    && requestRuntime.conclusionProvider;
+  const generatedConclusion = canDeferConclusion
+    ? pendingConclusion(
+      createConclusionJob(runtime, conclusionOptions, scope),
+      requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
+    )
+    : await generateEvidenceBackedConclusion(conclusionOptions);
 
   const payload = serializeRecommendation(result, catalog, {
     durationMs: Date.now() - startedAt,
@@ -2835,6 +3018,27 @@ export function createSmallWindowHandler(options = {}) {
           accessService
         });
         return sendJson(res, statusCode, payload);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/conclusion/status") {
+        const { statusCode, payload } = handleConclusionStatusRequest(
+          runtime,
+          url.searchParams.get("jobId"),
+          visitor.scope,
+          url.searchParams.get("token")
+        );
+        return sendJson(res, statusCode, payload);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/conclusion/stream") {
+        return streamConclusionResponse(
+          req,
+          res,
+          runtime,
+          url.searchParams.get("jobId"),
+          visitor.scope,
+          url.searchParams.get("token")
+        );
       }
 
       if (req.method === "GET" && url.pathname === "/api/preferences") {

@@ -1,0 +1,15 @@
+{
+  "appid": "touristappid",
+  "projectname": "tftclarity-mini-program",
+  "miniprogramRoot": "miniprogram/",
+  "compileType": "miniprogram",
+  "setting": {
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "urlCheck": true
+  },
+  "simulatorType": "wechat",
+  "condition": {}
+}
