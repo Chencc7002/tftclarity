@@ -9,12 +9,26 @@ test("mobile web uses mutually exclusive chat and result views", () => {
   const css = readUi("styles.css");
   const app = readUi("app.js");
 
-  assert.match(html, /id="mobile-result-back"/u);
+  assert.match(html, /id="mobile-result-back"[^>]*data-common-result-navigation/u);
+  assert.match(html, /id="result-pane"[\s\S]*id="mobile-result-back"[\s\S]*id="result-content"/u);
   assert.match(css, /\.shell\[data-mobile-view="chat"\] \.result-pane \{ display: none; \}/u);
   assert.match(css, /\.shell\[data-mobile-view="result"\] \.conversation-pane \{ display: none; \}/u);
   assert.match(app, /history\.pushState/u);
   assert.match(app, /window\.addEventListener\("popstate"/u);
   assert.match(app, /data-view-result[\s\S]*openMobileResult/u);
+});
+
+test("mobile web respects narrow viewports and display safe areas", () => {
+  const html = readUi("index.html");
+  const css = readUi("styles.css");
+
+  assert.match(html, /viewport-fit=cover/u);
+  assert.match(css, /body \{[^}]*min-width: 0/u);
+  assert.match(css, /height: 100dvh/u);
+  assert.match(css, /--title-height: calc\(var\(--title-content-height\) \+ env\(safe-area-inset-top, 0px\)\)/u);
+  assert.match(css, /min-height: var\(--title-height\)/u);
+  assert.match(css, /max\(10px, env\(safe-area-inset-right, 0px\)\)/u);
+  assert.match(css, /max\(10px, env\(safe-area-inset-left, 0px\)\)/u);
 });
 
 test("mobile web requests fast results and consumes independent conclusion stream", () => {
