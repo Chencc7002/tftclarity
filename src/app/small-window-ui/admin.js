@@ -274,7 +274,7 @@ function renderCurrentComps() {
     const strategyName = document.createElement("strong");
     strategyName.textContent = comp.strategyDerivation?.strategy ?? comp.strategy ?? "-";
     const reason = document.createElement("small");
-    reason.textContent = `${(comp.strategyDerivation?.reason ?? []).join("；")} · ${comp.strategyDerivation?.algorithmVersion ?? "-"} · 置信度 ${comp.strategyDerivation?.confidence ?? "-"}`;
+    reason.textContent = `${(comp.strategyDerivation?.reason ?? []).join("；")} · ${comp.strategyDerivation?.overrideVersion ?? comp.strategyDerivation?.algorithmVersion ?? "-"} · 置信度 ${comp.strategyDerivation?.confidence ?? "-"}`;
     strategy.append(strategyName, reason);
     const signature = document.createElement("td");
     const signatureCode = document.createElement("code");
@@ -283,7 +283,7 @@ function renderCurrentComps() {
     signatureCode.textContent = `${comp.lineupSignature?.version ?? "-"} · ${comp.lineupSignature?.value ?? "-"}`;
     signature.append(signatureCode);
     const binding = document.createElement("td");
-    binding.textContent = `${comp.profileBinding?.status ?? "unmatched"}${comp.profileBinding?.profileKey ? ` · ${comp.profileBinding.profileKey}` : ""}${comp.profileBinding?.confidence !== null && comp.profileBinding?.confidence !== undefined ? ` · ${comp.profileBinding.confidence}` : ""}`;
+    binding.textContent = `${comp.profileBinding?.status ?? "unmatched"}${comp.profileBinding?.profileKey ? ` · ${comp.profileBinding.profileKey}` : ""}${comp.profileBinding?.strategyOverride ? ` · 策略 ${comp.profileBinding.strategyOverride}` : ""}${comp.profileBinding?.confidence !== null && comp.profileBinding?.confidence !== undefined ? ` · ${comp.profileBinding.confidence}` : ""}`;
     const actions = document.createElement("td");
     const bind = document.createElement("button");
     bind.type = "button";
@@ -328,7 +328,12 @@ $("#current-comp-rows").addEventListener("click", async (event) => {
   if (!profileKey) return notify("请先选择一个已启用 Profile");
   const payload = await request("/api/admin/comp-profiles/bind", {
     method: "POST",
-    body: JSON.stringify({ seasonContextId: state.seasonContextId, profileKey, clusterId: button.dataset.bindCluster })
+    body: JSON.stringify({
+      seasonContextId: state.seasonContextId,
+      profileKey,
+      clusterId: button.dataset.bindCluster,
+      strategyOverride: $("#binding-strategy").value
+    })
   });
   $("#profile-preview").textContent = JSON.stringify(payload.preview, null, 2);
   await Promise.all([loadProfiles(), loadCurrentComps(), loadAudit()]);

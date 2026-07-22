@@ -306,8 +306,10 @@ function buildCompRankings(result, options = {}) {
             value: comp.strategyDerivation.strategy,
             reason: asArray(comp.strategyDerivation.reason).map((reason) => clipped(reason, 120)),
             algorithmVersion: comp.strategyDerivation.algorithmVersion,
+            overrideVersion: comp.strategyDerivation.overrideVersion,
+            automaticStrategy: comp.strategyDerivation.automaticStrategy,
             confidence: finite(comp.strategyDerivation.confidence),
-            source: "tftclarity_automatic_derivation"
+            source: comp.strategyDerivation.source ?? comp?.enrichmentSources?.strategy ?? "tftclarity_automatic_derivation"
           } : null,
           profile: comp?.profile ? {
             ...comp.profile,
@@ -317,7 +319,7 @@ function buildCompRankings(result, options = {}) {
           binding: comp?.profileBinding ?? null,
           sources: {
             facts: "metatft",
-            strategy: "tftclarity_automatic_derivation",
+            strategy: comp?.enrichmentSources?.strategy ?? "tftclarity_automatic_derivation",
             profile: comp?.profile ? "tftclarity_profile" : null
           }
         },

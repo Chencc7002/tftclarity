@@ -301,7 +301,15 @@ export function analyzeCompRankingResult(result, request = {}) {
     }));
   }
   if (comp.strategyDerivation) {
-    evidencePack.push(evidenceRecord("automatic_derivation", "TFTClarity CompEnrichment", query, facts.sourceUpdatedAt, comp.strategyDerivation.confidence ?? 0.5, comp.strategyDerivation));
+    const strategyOverridden = comp.strategyDerivation.source === "tftclarity_verified_binding_override";
+    evidencePack.push(evidenceRecord(
+      strategyOverridden ? "manual_comp_profile" : "automatic_derivation",
+      strategyOverridden ? "TFTClarity verified strategy binding" : "TFTClarity CompEnrichment",
+      query,
+      strategyOverridden ? comp.profileBinding?.lastVerifiedAt : facts.sourceUpdatedAt,
+      comp.strategyDerivation.confidence ?? 0.5,
+      comp.strategyDerivation
+    ));
   }
   if (comp.profile) {
     evidencePack.push(evidenceRecord("manual_comp_profile", "TFTClarity manual Comp Profile", query, comp.profileBinding?.lastVerifiedAt, 1, {

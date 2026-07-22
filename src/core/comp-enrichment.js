@@ -20,11 +20,13 @@ export const COMP_PROFILE_DEFAULTS = Object.freeze({
   notes: []
 });
 export const COMP_STRATEGY_ALGORITHM_VERSION = "comp-strategy-v1";
+export const COMP_STRATEGY_OVERRIDE_VERSION = "comp-strategy-binding-override-v1";
 export const LINEUP_SIGNATURE_VERSION = "lineup-signature-v1";
 export const MIN_PROFILE_MATCH_CONFIDENCE = 0.8;
 
 const SEED_DATA = JSON.parse(readFileSync(new URL("../data/comp-profiles.json", import.meta.url), "utf8"));
 const VERIFIED_BINDING_STATUSES = new Set(["verified", "matched"]);
+const COMP_STRATEGIES = new Set(["reroll", "fast8", "fast9", "automatic"]);
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -53,6 +55,15 @@ function rating(value, field) {
     throw profileValidationError(`${field} 必须是 1 到 5 的整数或 null`, field);
   }
   return number;
+}
+
+function strategyOverride(value, field = "strategyOverride") {
+  if (value === undefined || value === null || value === "") return null;
+  const normalized = String(value).trim().toLowerCase();
+  if (!COMP_STRATEGIES.has(normalized)) {
+    throw profileValidationError(`${field} 必须是 automatic、reroll、fast8、fast9 或 null`, field);
+  }
+  return normalized;
 }
 
 export function validateCompProfile(value = {}) {
@@ -220,7 +231,14 @@ export class CompEnrichmentService {
       .filter((record) => !provider || record.provider === provider)
       .map((record) => [`${record.profileKey}\u0000${record.provider}`, { ...record }]));
     const overrides = await this.cacheStore?.listCompProfileBindings?.({ seasonContextId, provider }) ?? [];
-    for (const record of overrides) bindings.set(`${record.profileKey}\u0000${record.provider}`, record);
+    for (const record of overrides) {
+      const key = `${record.profileKey}\u0000${record.provider}`;
+      const seeded = bindings.get(key);
+      bindings.set(key, {
+        ...record,
+        strategyOverride: record.strategyOverride ?? seeded?.strategyOverride ?? null
+      });
+    }
     return [...bindings.values()];
   }
 
@@ -243,10 +261,14 @@ export class CompEnrichmentService {
     if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       throw profileValidationError("matchConfidence 必须在 0 到 1 之间", "matchConfidence");
     }
+    const normalizedStrategyOverride = strategyOverride(
+      value.strategyOverride ?? value.strategy_override
+    );
     return this.cacheStore.upsertCompProfileBinding({
       ...value,
       lineupSignature: signature,
       signatureVersion,
+      strategyOverride: normalizedStrategyOverride,
       matchConfidence: confidence,
       matchStatus: value.matchStatus ?? (confidence >= MIN_PROFILE_MATCH_CONFIDENCE ? "verified" : "low_confidence")
     });
@@ -280,13 +302,28 @@ export class CompEnrichmentService {
     } else if (signatureBindings.length > 1) matchStatus = "multiple_candidates";
 
     const canApply = matchStatus === "matched" && binding && profiles.has(binding.profileKey);
-    const strategy = deriveCompStrategy(comp);
+    const automaticStrategy = deriveCompStrategy(comp);
+    const configuredStrategyOverride = canApply ? strategyOverride(binding.strategyOverride) : null;
+    const appliedStrategyOverride = configuredStrategyOverride === "automatic" ? null : configuredStrategyOverride;
+    const strategy = appliedStrategyOverride ?? automaticStrategy.strategy;
+    const strategySource = appliedStrategyOverride
+      ? "tftclarity_verified_binding_override"
+      : "tftclarity_automatic_derivation";
     return {
       ...comp,
-      strategy: strategy.strategy,
+      strategy,
       strategyDerivation: {
-        ...strategy,
-        source: "tftclarity_automatic_derivation"
+        ...automaticStrategy,
+        strategy,
+        automaticStrategy: automaticStrategy.strategy,
+        ...(appliedStrategyOverride ? {
+          reason: [`已验证绑定将自动推导 ${automaticStrategy.strategy} 覆盖为 ${appliedStrategyOverride}`],
+          automaticReason: automaticStrategy.reason,
+          automaticConfidence: automaticStrategy.confidence,
+          confidence: Number(binding.matchConfidence ?? 1),
+          overrideVersion: COMP_STRATEGY_OVERRIDE_VERSION
+        } : {}),
+        source: strategySource
       },
       lineupSignature: signature,
       profileKey: canApply ? binding.profileKey : null,
@@ -296,12 +333,15 @@ export class CompEnrichmentService {
         status: matchStatus,
         confidence: binding?.matchConfidence ?? null,
         profileKey: binding?.profileKey ?? null,
+        strategyOverride: appliedStrategyOverride,
+        strategyOverrideConfigured: canApply ? configuredStrategyOverride : null,
+        lastVerifiedAt: binding?.lastVerifiedAt ?? null,
         clusterId,
         reviewRequired: matchStatus !== "matched"
       },
       enrichmentSources: {
         facts: "metatft",
-        strategy: "tftclarity_automatic_derivation",
+        strategy: strategySource,
         profile: canApply ? "tftclarity_profile" : null
       }
     };
@@ -351,6 +391,21 @@ export class CompEnrichmentService {
           : null;
       if (!conflictStatus) continue;
       for (const comp of comps) {
+        if (comp.enrichmentSources.strategy === "tftclarity_verified_binding_override") {
+          const automaticStrategy = {
+            strategy: comp.strategyDerivation.automaticStrategy,
+            reason: comp.strategyDerivation.automaticReason,
+            algorithmVersion: comp.strategyDerivation.algorithmVersion,
+            confidence: comp.strategyDerivation.automaticConfidence
+          };
+          comp.strategy = automaticStrategy.strategy;
+          comp.strategyDerivation = {
+            ...automaticStrategy,
+            automaticStrategy: automaticStrategy.strategy,
+            source: "tftclarity_automatic_derivation"
+          };
+          comp.enrichmentSources.strategy = "tftclarity_automatic_derivation";
+        }
         comp.profileKey = null;
         comp.profile = null;
         comp.profileSource = null;
@@ -359,6 +414,8 @@ export class CompEnrichmentService {
           ...comp.profileBinding,
           status: conflictStatus,
           profileKey: profileKeys.size === 1 ? [...profileKeys][0] : null,
+          strategyOverride: null,
+          strategyOverrideConfigured: null,
           reviewRequired: true
         };
       }
@@ -373,6 +430,7 @@ export class CompEnrichmentService {
     const rankings = Object.fromEntries(Object.entries(result?.rankings ?? {}).map(([key, records]) => [key, replace(records)]));
     const enriched = [...enrichedById.values()];
     const matched = enriched.filter((comp) => comp.profileBinding.status === "matched").length;
+    const strategySources = uniqueSorted(enriched.map((comp) => comp.enrichmentSources?.strategy));
     const currentClusterIds = new Set(enriched.map((comp) => comp.profileBinding.clusterId));
     const reviewQueue = enriched
       .filter((comp) => comp.profileBinding.reviewRequired)
@@ -408,6 +466,7 @@ export class CompEnrichmentService {
       enrichment: {
         sourceFacts: "metatft",
         automaticSource: "tftclarity_automatic_derivation",
+        strategySources,
         profileSource: "tftclarity_profile",
         profiles: profiles.size,
         currentComps: enriched.length,

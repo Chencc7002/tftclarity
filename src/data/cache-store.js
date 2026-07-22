@@ -674,6 +674,7 @@ export class MemoryCacheStore {
       clusterId,
       lineupSignature,
       signatureVersion: String(record.signatureVersion ?? record.signature_version ?? "lineup-signature-v1"),
+      strategyOverride: record.strategyOverride ?? record.strategy_override ?? null,
       matchConfidence: Number(record.matchConfidence ?? record.match_confidence ?? 1),
       matchStatus: String(record.matchStatus ?? record.match_status ?? "verified"),
       lastVerifiedAt: record.lastVerifiedAt ?? record.last_verified_at ?? now,

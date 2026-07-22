@@ -3354,6 +3354,7 @@ export async function handleAdminCompProfileBind(body, runtime) {
     provider: seasonContext.source.provider,
     clusterId,
     lineupSignature: signature,
+    strategyOverride: body?.strategyOverride,
     matchConfidence: 1,
     matchStatus: "verified"
   });

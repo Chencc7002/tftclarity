@@ -232,7 +232,11 @@ export class EvidenceAssembler {
         filters: metadata.filters,
         enrichmentSources: result?.enrichment ? {
           facts: "metatft",
-          strategy: "tftclarity_automatic_derivation",
+          strategy: result.enrichment.strategySources?.length === 1
+            ? result.enrichment.strategySources[0]
+            : result.enrichment.strategySources?.length > 1
+              ? "mixed"
+              : "tftclarity_automatic_derivation",
           profile: "tftclarity_profile"
         } : null
       },

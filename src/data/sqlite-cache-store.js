@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS comp_profile_bindings (
   cluster_id TEXT NOT NULL,
   lineup_signature TEXT NOT NULL,
   signature_version TEXT NOT NULL,
+  strategy_override TEXT,
   match_confidence REAL NOT NULL,
   match_status TEXT NOT NULL,
   last_verified_at TEXT,
@@ -477,6 +478,11 @@ function ensureEntityAliasAuditSchema(database) {
 function ensureCompProfileSchema(database) {
   try {
     database.exec("ALTER TABLE comp_profile_bindings ADD COLUMN signature_version TEXT");
+  } catch (error) {
+    if (!/duplicate column|already exists/iu.test(String(error?.message ?? error))) throw error;
+  }
+  try {
+    database.exec("ALTER TABLE comp_profile_bindings ADD COLUMN strategy_override TEXT");
   } catch (error) {
     if (!/duplicate column|already exists/iu.test(String(error?.message ?? error))) throw error;
   }
@@ -1670,12 +1676,13 @@ export class SQLiteCacheStore {
     bindRun(this.database.prepare(`
       INSERT INTO comp_profile_bindings (
         season_context_id, profile_key, provider, cluster_id, lineup_signature, signature_version,
-        match_confidence, match_status, last_verified_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        strategy_override, match_confidence, match_status, last_verified_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(season_context_id, profile_key, provider) DO UPDATE SET
         cluster_id = excluded.cluster_id,
         lineup_signature = excluded.lineup_signature,
         signature_version = excluded.signature_version,
+        strategy_override = excluded.strategy_override,
         match_confidence = excluded.match_confidence,
         match_status = excluded.match_status,
         last_verified_at = excluded.last_verified_at,
@@ -1687,6 +1694,7 @@ export class SQLiteCacheStore {
       clusterId,
       lineupSignature,
       signatureVersion,
+      record.strategyOverride ?? record.strategy_override ?? null,
       Number(record.matchConfidence ?? record.match_confidence ?? 1),
       String(record.matchStatus ?? record.match_status ?? "verified"),
       record.lastVerifiedAt ?? record.last_verified_at ?? now,
@@ -1706,7 +1714,7 @@ export class SQLiteCacheStore {
     }
     return bindAll(this.database.prepare(`
       SELECT season_context_id, profile_key, provider, cluster_id, lineup_signature, signature_version,
-             match_confidence, match_status, last_verified_at, created_at, updated_at
+             strategy_override, match_confidence, match_status, last_verified_at, created_at, updated_at
       FROM comp_profile_bindings
       WHERE ${clauses.join(" AND ")}
       ORDER BY profile_key ASC
@@ -1717,6 +1725,7 @@ export class SQLiteCacheStore {
       clusterId: row.cluster_id,
       lineupSignature: row.lineup_signature,
       signatureVersion: row.signature_version,
+      strategyOverride: row.strategy_override ?? null,
       matchConfidence: row.match_confidence,
       matchStatus: row.match_status,
       lastVerifiedAt: row.last_verified_at ?? null,

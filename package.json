@@ -32,6 +32,7 @@
     "audit:aliases": "node scripts/audit-alias-coverage.mjs",
     "audit:items": "node scripts/audit-item-availability.mjs",
     "audit:item-patch": "node scripts/audit-item-patch.mjs",
+    "maintain:comp-profiles": "node scripts/apply-comp-profile-maintenance.mjs --write",
     "refresh:assets": "node scripts/refresh-asset-manifest.mjs",
     "audit:assets": "node scripts/refresh-asset-manifest.mjs --check"
   },

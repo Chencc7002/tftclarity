@@ -11,12 +11,19 @@
 
 - `/api/admin/seasons`：只读查看注册表中的赛季空间。
 - `/api/admin/aliases*`：按 `seasonContextId` 创建、修改、启停、删除、匹配测试、批量审核、导入、导出与备份别名。
-- `/api/admin/comp-profiles*`：按赛季维护七字段 Profile、查看当前阵容、绑定/重绑、导入、导出与备份。
+- `/api/admin/comp-profiles*`：按赛季维护七字段 Profile、查看当前阵容、绑定/重绑、设置绑定级策略覆盖、导入、导出与备份。
 - `/api/admin/item-catalog-audit`：按赛季审查装备目录。
 - `/api/admin/cache/clear`：只清理指定赛季的查询历史与运行时目录缓存。
 - `/api/admin/audit`：查看管理员写操作审计记录。
 
 别名或 Profile 写入成功后会立即进入对应 SeasonContext 的有效覆盖层，不需要修改基础 JSON/YAML 或重启服务；其他赛季不会受到影响。
+
+### 阵容策略覆盖
+
+- `difficulty` 等七个 Profile 字段仍只描述难度画像；`strategyOverride` 单独保存在已验证绑定上，不属于 Profile。
+- 只有 `clusterId` 与 `lineupSignature` 同时匹配且绑定状态有效时，`fast8`、`fast9` 或 `reroll` 覆盖才会生效。
+- 签名漂移、低置信、多个候选或多个 Profile 冲突时，服务端撤销覆盖并回到自动推导。
+- 管理端选择“使用自动推导”会保存显式 `automatic`，可覆盖种子中的人工策略默认值。
 
 ## 存储与迁移
 

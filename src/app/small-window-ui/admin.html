@@ -95,7 +95,7 @@
       <div class="panel-heading">
         <div>
           <h2>阵容画像</h2>
-          <p>MetaTFT 提供阵容事实；策略由系统只读推导；人工 Profile 只维护七个受校验字段。</p>
+          <p>MetaTFT 提供阵容事实；人工 Profile 只维护七个受校验字段；必要时可在已验证绑定上覆盖策略。</p>
         </div>
         <div class="actions">
           <button id="load-current-comps" type="button">读取当前 MetaTFT 阵容</button>
@@ -131,12 +131,13 @@
         <div><h3>当前阵容与匹配状态</h3><p id="profile-coverage">尚未读取当前阵容。</p></div>
         <div class="actions">
           <label>绑定到 Profile<select id="binding-profile"></select></label>
+          <label>策略覆盖<select id="binding-strategy"><option value="automatic">使用自动推导</option><option value="fast8">fast8</option><option value="fast9">fast9</option><option value="reroll">reroll</option></select></label>
           <label>匹配状态<select id="profile-match-filter"><option value="">全部</option><option value="matched">已匹配</option><option value="low_confidence">低置信</option><option value="unmatched">未匹配</option><option value="cluster_changed">cluster 变化</option><option value="signature_drift">签名漂移</option><option value="source_missing">来源消失</option><option value="multiple_candidates">多个候选</option><option value="multiple_profiles">多个 Profile</option></select></label>
         </div>
       </div>
       <div class="table-wrap">
         <table>
-          <thead><tr><th>MetaTFT 阵容</th><th>只读策略推导</th><th>lineupSignature</th><th>匹配</th><th>操作</th></tr></thead>
+          <thead><tr><th>MetaTFT 阵容</th><th>有效策略</th><th>lineupSignature</th><th>匹配</th><th>操作</th></tr></thead>
           <tbody id="current-comp-rows"><tr><td colspan="5">点击“读取当前 MetaTFT 阵容”后显示。</td></tr></tbody>
         </table>
       </div>

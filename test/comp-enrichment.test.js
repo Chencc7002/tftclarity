@@ -206,6 +206,62 @@ test("only a verified exact binding applies a Profile; drift and low confidence 
   assert.equal(low.profile, null);
 });
 
+test("a strategy override only applies through a verified exact binding", async () => {
+  const store = new MemoryCacheStore();
+  const service = new CompEnrichmentService({ cacheStore: store, seedData: { profiles: [], bindings: [] } });
+  const current = comp("strategy-override");
+  await service.saveProfile({
+    seasonContextId: "set17-live",
+    profileKey: "strategy-profile",
+    profile: validProfile()
+  });
+  await service.bindProfile({
+    seasonContextId: "set17-live",
+    profileKey: "strategy-profile",
+    provider: "metatft-live",
+    clusterId: "strategy-override",
+    lineupSignature: createLineupSignature(current),
+    strategyOverride: "fast9"
+  });
+
+  const matched = await service.enrichComp(current, { seasonContextId: "set17-live", provider: "metatft-live" });
+  assert.equal(matched.strategy, "fast9");
+  assert.equal(matched.strategyDerivation.automaticStrategy, "fast8");
+  assert.equal(matched.strategyDerivation.source, "tftclarity_verified_binding_override");
+  assert.equal(matched.profileBinding.strategyOverride, "fast9");
+  assert.equal(matched.enrichmentSources.strategy, "tftclarity_verified_binding_override");
+
+  const drifted = await service.enrichComp(comp("strategy-override", {
+    units: [{ apiName: "TFT17_CHANGED", core: true }]
+  }), { seasonContextId: "set17-live", provider: "metatft-live" });
+  assert.equal(drifted.profileBinding.status, "signature_drift");
+  assert.equal(drifted.profileBinding.strategyOverride, null);
+  assert.equal(drifted.strategy, "fast8");
+  assert.equal(drifted.enrichmentSources.strategy, "tftclarity_automatic_derivation");
+
+  await service.bindProfile({
+    seasonContextId: "set17-live",
+    profileKey: "strategy-profile",
+    provider: "metatft-live",
+    clusterId: "strategy-override",
+    lineupSignature: createLineupSignature(current),
+    strategyOverride: "automatic"
+  });
+  const automatic = await service.enrichComp(current, { seasonContextId: "set17-live", provider: "metatft-live" });
+  assert.equal(automatic.strategy, "fast8");
+  assert.equal(automatic.profileBinding.strategyOverride, null);
+  assert.equal(automatic.profileBinding.strategyOverrideConfigured, "automatic");
+
+  await assert.rejects(() => service.bindProfile({
+    seasonContextId: "set17-live",
+    profileKey: "strategy-profile",
+    provider: "metatft-live",
+    clusterId: "strategy-override",
+    lineupSignature: createLineupSignature(current),
+    strategyOverride: "fast10"
+  }), (error) => error.code === "invalid_comp_profile" && error.field === "strategyOverride");
+});
+
 test("ambiguous candidates and multiple Profiles never silently apply an old Profile", async () => {
   const store = new MemoryCacheStore();
   const service = new CompEnrichmentService({ cacheStore: store, seedData: { profiles: [], bindings: [] } });
@@ -214,13 +270,22 @@ test("ambiguous candidates and multiple Profiles never silently apply an old Pro
   }
   const current = comp("cluster-a");
   const signature = createLineupSignature(current);
-  await service.bindProfile({ seasonContextId: "set17-live", profileKey: "profile-one", provider: "metatft-live", clusterId: "cluster-a", lineupSignature: signature });
+  await service.bindProfile({
+    seasonContextId: "set17-live",
+    profileKey: "profile-one",
+    provider: "metatft-live",
+    clusterId: "cluster-a",
+    lineupSignature: signature,
+    strategyOverride: "fast9"
+  });
   const duplicated = await service.enrichRankingResult(rankingResult([
     current,
     { ...current, compId: "cluster:cluster-b", source: { clusterId: "cluster-b" }, name: "重复候选" }
   ]), { seasonContextId: "set17-live", provider: "metatft-live" });
   assert.ok(duplicated.rankings.top4Rate.every((entry) => entry.profileBinding.status === "multiple_candidates"));
   assert.ok(duplicated.rankings.top4Rate.every((entry) => entry.profile === null));
+  assert.ok(duplicated.rankings.top4Rate.every((entry) => entry.strategy === "fast8"));
+  assert.ok(duplicated.rankings.top4Rate.every((entry) => entry.enrichmentSources.strategy === "tftclarity_automatic_derivation"));
 
   await service.bindProfile({ seasonContextId: "set17-live", profileKey: "profile-two", provider: "metatft-live", clusterId: "cluster-a", lineupSignature: signature });
   const conflict = await service.enrichRankingResult(rankingResult([current]), { seasonContextId: "set17-live", provider: "metatft-live" });
@@ -305,12 +370,14 @@ test("SQLite Comp Profiles persist and allow the same profileKey in separate sea
     clusterId: "cluster-a",
     lineupSignature: "sha256:test",
     signatureVersion: LINEUP_SIGNATURE_VERSION,
+    strategyOverride: "fast8",
     matchConfidence: 1,
     matchStatus: "verified"
   });
   assert.equal(store.getCompProfile("same-profile", { seasonContextId: "set17-live" }).difficulty, 2);
   assert.equal(store.getCompProfile("same-profile", { seasonContextId: "set18-live" }).difficulty, 5);
   assert.equal(store.listCompProfileBindings({ seasonContextId: "set17-live" })[0].signatureVersion, LINEUP_SIGNATURE_VERSION);
+  assert.equal(store.listCompProfileBindings({ seasonContextId: "set17-live" })[0].strategyOverride, "fast8");
   assert.equal(store.listCompProfileBindings({ seasonContextId: "set18-live" }).length, 0);
   database.close();
 });
