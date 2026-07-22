@@ -47,20 +47,11 @@ import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 import { StructuredRetriever } from "../retrieval/structured-retriever.js";
+import { SUPPORTED_CONCLUSION_INTENTS } from "../llm/conclusion-spec-registry.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
 const RETRIEVAL_PLANNER = new RetrievalPlanner();
-const SEMANTIC_INTENTS = new Set([
-  "unit_build_rankings",
-  "unit_build_completion",
-  "unit_best_3_items",
-  "unit_item_rankings",
-  "unit_item_comparison",
-  "unit_emblem_rankings",
-  "comp_rankings",
-  "comp_trends",
-  "comp_analysis"
-]);
+const SEMANTIC_INTENTS = new Set(SUPPORTED_CONCLUSION_INTENTS);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];

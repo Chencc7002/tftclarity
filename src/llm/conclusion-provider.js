@@ -9,11 +9,25 @@ const CONCLUSION_RESPONSE_SCHEMA = {
   type: "object",
   additionalProperties: false,
   required: [
-    "schemaVersion", "status", "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
+    "schemaVersion", "contractId", "status", "addressedDimensions", "missingDimensions", "missingEvidence",
+    "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
   ],
   properties: {
-    schemaVersion: { type: "string", enum: ["llm_conclusion.v1"] },
+    schemaVersion: { type: "string", enum: ["llm_conclusion.v2"] },
+    contractId: { type: "string" },
     status: { type: "string", enum: ["ok", "insufficient_evidence"] },
+    addressedDimensions: { type: "array", uniqueItems: true, items: { type: "string" } },
+    missingDimensions: { type: "array", uniqueItems: true, items: { type: "string" } },
+    missingEvidence: {
+      type: "array",
+      items: {
+        type: "object", additionalProperties: false, required: ["dimension", "requiredEvidence"],
+        properties: {
+          dimension: { type: "string" },
+          requiredEvidence: { type: "array", items: { type: "string" } }
+        }
+      }
+    },
     headline: { type: "string" },
     summary: { type: "string" },
     reasons: {
@@ -22,8 +36,9 @@ const CONCLUSION_RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["evidenceIds", "text"],
+        required: ["dimension", "evidenceIds", "text"],
         properties: {
+          dimension: { type: "string" },
           evidenceIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
           text: { type: "string" }
         }
@@ -35,8 +50,9 @@ const CONCLUSION_RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["evidenceIds", "text"],
+        required: ["dimension", "evidenceIds", "text"],
         properties: {
+          dimension: { type: "string" },
           evidenceIds: { type: "array", minItems: 1, maxItems: 3, items: { type: "string" } },
           text: { type: "string" }
         }
@@ -59,10 +75,18 @@ function usesReasoningCompletionTokens(model) {
 function reasoningEffort(value, model) {
   const effort = String(value ?? (usesReasoningCompletionTokens(model) ? "minimal" : "")).trim().toLowerCase();
   if (!effort) return null;
-  if (!["none", "minimal", "low", "medium", "high", "xhigh"].includes(effort)) {
+  if (!["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(effort)) {
     throw new Error(`Unsupported conclusion reasoning effort: ${value}`);
   }
   return effort;
+}
+
+function thinkingMode(value) {
+  const mode = String(value ?? "").trim().toLowerCase();
+  if (!mode) return null;
+  if (["on", "enabled", "true"].includes(mode)) return "enabled";
+  if (["off", "disabled", "false"].includes(mode)) return "disabled";
+  throw new Error(`Unsupported conclusion thinking mode: ${value}`);
 }
 
 function normalizeMode(value = "off") {
@@ -118,12 +142,13 @@ export function resolveConclusionProviderConfig(options = {}, env = process.env)
       options.reasoningEffort ?? env.TFT_AGENT_CONCLUSION_REASONING_EFFORT,
       model
     ),
+    thinkingMode: thinkingMode(options.thinkingMode ?? env.TFT_AGENT_CONCLUSION_THINKING),
     useMaxCompletionTokens: options.useMaxCompletionTokens ?? usesReasoningCompletionTokens(model),
     useStructuredOutput: options.useStructuredOutput ?? usesReasoningCompletionTokens(model),
     includeResponseFormat: options.includeResponseFormat ?? true,
-    promptVersion: String(options.promptVersion ?? "generate-conclusion.v8"),
+    promptVersion: String(options.promptVersion ?? "generate-conclusion.v9"),
     maxCorrections: Math.max(0, Math.min(5, Math.floor(Number(
-      options.maxCorrections ?? env.TFT_AGENT_CONCLUSION_MAX_CORRECTIONS ?? 2
+      options.maxCorrections ?? env.TFT_AGENT_CONCLUSION_MAX_CORRECTIONS ?? 3
     )))),
     maxValidationErrors: Math.max(1, Math.min(50, Math.floor(Number(
       options.maxValidationErrors ?? env.TFT_AGENT_CONCLUSION_MAX_VALIDATION_ERRORS ?? 8
@@ -188,7 +213,12 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
       return promptPromise;
     }
     const intent = evidence?.request?.requestedIntent ?? evidence?.request?.intent;
-    const prompt = await registry.load(intent, { correction });
+    const prompt = await registry.load({
+      intent,
+      questionType: evidence?.questionContract?.questionType ?? "default",
+      resultType: evidence?.questionContract?.resultType ?? intent,
+      specId: evidence?.conclusionSpec?.id ?? null
+    }, { correction });
     if (!prompt) {
       throw new ConclusionProviderError(`No conclusion prompt is registered for intent: ${intent ?? "missing"}`, {
         code: "unregistered_intent",
@@ -210,7 +240,7 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
         { role: "user", content: JSON.stringify(evidence) },
         ...((Array.isArray(validationFeedback) ? validationFeedback.length > 0 : Boolean(validationFeedback)) ? [{
           role: "user",
-          content: `上一版结论未通过证据校验。请重新生成完整 JSON，并逐项修正 validationFeedback：\n${JSON.stringify(validationFeedback)}`
+          content: `上一版结论未通过证据校验。请重新生成完整 JSON，并逐项修正 validationFeedback。若某项给出 missingEvidenceIds，请在产生该数字或比较的同一条 reason/alternative 中补充实际使用的对应 Evidence ID（每条最多 3 个），或删除不受当前引用支持的内容：\n${JSON.stringify(validationFeedback)}`
         }] : [])
       ],
       temperature: Number(options.temperature ?? 0)
@@ -221,7 +251,10 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
     } else {
       body.max_tokens = maxOutputTokens;
     }
-    if (options.reasoningEffort) body.reasoning_effort = options.reasoningEffort;
+    if (options.thinkingMode) body.thinking = { type: options.thinkingMode };
+    if (options.reasoningEffort && options.thinkingMode !== "disabled") {
+      body.reasoning_effort = options.reasoningEffort;
+    }
     if (options.includeResponseFormat !== false) {
       body.response_format = (options.useStructuredOutput ?? usesReasoningCompletionTokens(options.model))
         ? {

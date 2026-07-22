@@ -235,6 +235,7 @@ export function resolveSmallWindowConclusionConfig(options = {}, env = process.e
     apiKey: options.conclusionApiKey ?? options.conclusionGeneratorConfig?.apiKey,
     timeoutMs: options.conclusionTimeoutMs ?? options.conclusionGeneratorConfig?.timeoutMs,
     maxOutputTokens: options.conclusionMaxOutputTokens ?? options.conclusionGeneratorConfig?.maxOutputTokens,
+    thinkingMode: options.conclusionThinkingMode ?? options.conclusionGeneratorConfig?.thinkingMode,
     mode: options.conclusionMode ?? options.conclusionGeneratorConfig?.mode,
     allowUnauthenticated: options.conclusionAllowUnauthenticated ?? options.conclusionGeneratorConfig?.allowUnauthenticated,
     onEvent: options.conclusionEvent ?? options.conclusionGeneratorConfig?.onEvent
@@ -367,6 +368,7 @@ function summarizeConclusionConfig(config = {}) {
   };
   if (config.model) summary.model = String(config.model);
   if (Number.isFinite(Number(config.timeoutMs))) summary.timeoutMs = Number(config.timeoutMs);
+  if (config.thinkingMode) summary.thinkingMode = String(config.thinkingMode);
   return summary;
 }
 
@@ -2402,6 +2404,8 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     requestEnabled: preferences.conclusionMode !== "off",
     bypassCache: Boolean(body.refresh),
     seasonContextId: seasonContext.id,
+    principalId: scope ?? "anonymous",
+    conversationId,
     semanticEvidence
   };
   const canDeferConclusion = body?.deferConclusion === true

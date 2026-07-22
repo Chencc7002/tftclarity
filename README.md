@@ -163,6 +163,7 @@ Copy-Item .env.example .env
 
 - [LLM 检索与证据流水线](docs/llm-retrieval-evidence-pipeline.md)
 - [LLM 与会话记忆架构](docs/memory-llm-architecture.md)
+- [Question Contract 与 ConclusionSpec Registry](docs/question-contract-conclusion-spec.md)
 - [阵容排行数据来源](docs/comp-ranking-data-source.md)
 - [语义索引构建](docs/semantic-index-build.md)
 

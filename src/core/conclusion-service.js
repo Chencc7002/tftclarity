@@ -5,24 +5,19 @@ import {
   getConclusionPromptRoute
 } from "../llm/conclusion-prompt-registry.js";
 import {
+  CONCLUSION_SPEC_REGISTRY,
+  CONCLUSION_VALIDATOR_VERSION,
+  deriveConclusionQuestionType
+} from "../llm/conclusion-spec-registry.js";
+import { createQuestionContract } from "../llm/question-contract.js";
+import { createIntentEnvelope } from "../retrieval/contracts.js";
+import {
   CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION,
   createConclusionValidationFeedback,
   validateConclusionOutput
 } from "../llm/conclusion-validator.js";
 
-const SUPPORTED_TYPES = new Set([
-  "unit_build_rankings",
-  "unit_build_completion",
-  "unit_best_3_items",
-  "unit_item_comparison",
-  "unit_item_rankings",
-  "unit_emblem_rankings",
-  "comp_rankings",
-  "comp_trends",
-  "comp_analysis"
-]);
-
-export const DEFAULT_CONCLUSION_MAX_CORRECTIONS = 2;
+export const DEFAULT_CONCLUSION_MAX_CORRECTIONS = 3;
 export const DEFAULT_CONCLUSION_MAX_VALIDATION_ERRORS = 8;
 export const DEFAULT_CONCLUSION_MAX_TRANSPORT_RETRIES = 1;
 
@@ -38,13 +33,19 @@ function evidenceIntent(evidence) {
 
 export function makeConclusionCacheKey(evidence, config = {}) {
   const intent = evidenceIntent(evidence);
-  const route = getConclusionPromptRoute(intent);
+  const spec = evidence?.conclusionSpec;
+  const route = spec ? CONCLUSION_SPEC_REGISTRY.get(spec.id)?.prompt : getConclusionPromptRoute(intent);
   const digest = createHash("sha256").update(JSON.stringify(stableValue({
     evidence,
     evidenceVersion: evidence?.schemaVersion ?? null,
+    questionContractVersion: evidence?.questionContract?.schemaVersion ?? null,
+    contractId: evidence?.questionContract?.contractId ?? null,
+    specId: spec?.id ?? null,
+    specVersion: spec?.version ?? null,
     basePromptVersion: config.basePromptVersion ?? BASE_CONCLUSION_PROMPT_VERSION,
     intentPromptVersion: config.intentPromptVersion ?? route?.version ?? null,
     providerPromptVersion: config.promptVersion ?? null,
+    validatorVersion: config.validatorVersion ?? CONCLUSION_VALIDATOR_VERSION,
     model: config.model ?? null
   }))).digest("hex");
   return `llm_conclusion:${digest}`;
@@ -62,7 +63,19 @@ function envelope(status, options = {}) {
     transportRetries: Math.max(0, Number(options.transportRetries ?? 0)),
     ...(options.cached ? { cached: true } : {}),
     ...(options.supportingEvidence?.length ? { supportingEvidence: options.supportingEvidence } : {}),
-    ...(options.validationFeedback ? { validationFeedback: options.validationFeedback } : {})
+    ...(options.validationFeedback ? { validationFeedback: options.validationFeedback } : {}),
+    ...(options.diagnostics ? { diagnostics: options.diagnostics } : {})
+  };
+}
+
+function contractDiagnostics(questionContract, spec) {
+  return {
+    questionContractVersion: questionContract.schemaVersion,
+    contractId: questionContract.contractId,
+    specId: spec.id,
+    specVersion: spec.version,
+    promptVersion: spec.prompt.version,
+    validatorVersion: CONCLUSION_VALIDATOR_VERSION
   };
 }
 
@@ -94,7 +107,7 @@ function hasEvidence(result, type) {
 
 function unsafeReason(result) {
   const type = result?.type ?? result?.query?.intent;
-  if (!SUPPORTED_TYPES.has(type)) return "intent_or_entity_error";
+  if (!CONCLUSION_SPEC_REGISTRY.supportsIntent(type)) return "intent_or_entity_error";
   if (result?.clarification?.needsClarification) return "intent_or_entity_error";
   if (isStale(result)) return "stale_or_missing_evidence";
   if (!hasEvidence(result, type)) return "stale_or_missing_evidence";
@@ -186,7 +199,9 @@ export async function generateEvidenceBackedConclusion({
   requestEnabled = true,
   bypassCache = false,
   retrievalPlan = null,
-  semanticEvidence = []
+  semanticEvidence = [],
+  principalId = "anonymous",
+  conversationId = "default"
 } = {}) {
   const startedAt = Date.now();
   const model = config.model ?? provider?.model ?? null;
@@ -204,8 +219,43 @@ export async function generateEvidenceBackedConclusion({
     return value;
   }
 
+  const resultType = result?.type ?? result?.query?.intent;
+  const intentEnvelope = result?.intentEnvelope ?? createIntentEnvelope({
+    input,
+    parsed: result?.parsed,
+    query: result?.query,
+    validation: result?.validation ?? { valid: true },
+    clarification: result?.clarification,
+    catalog
+  });
+  const questionType = deriveConclusionQuestionType(result, intentEnvelope);
+  let spec;
+  try {
+    spec = CONCLUSION_SPEC_REGISTRY.resolve({ intent: intentEnvelope.intent, questionType, resultType });
+  } catch (error) {
+    const value = envelope("skipped", { reason: error?.code ?? "unregistered_intent", model, latencyMs: Date.now() - startedAt });
+    emit(config, { type: "conclusion_fallback", status: value.status, reason: value.reason, intent: intentEnvelope.intent, questionType, model });
+    return value;
+  }
+
+  let questionContract;
   let evidence;
   try {
+    questionContract = createQuestionContract({
+      originalQuestion: input,
+      intentEnvelope,
+      query: result?.query,
+      result,
+      spec,
+      seasonContextId,
+      principalId,
+      conversationId
+    });
+    if (questionContract.needsClarification) {
+      const value = envelope("skipped", { reason: "intent_or_entity_error", model, latencyMs: Date.now() - startedAt });
+      emit(config, { type: "contract_rejected", status: value.status, reason: value.reason, contractId: questionContract.contractId, model });
+      return value;
+    }
     evidence = assembleEvidencePack({
       result,
       catalog,
@@ -213,7 +263,9 @@ export async function generateEvidenceBackedConclusion({
       locale,
       previousQuery,
       semanticEvidence: semanticEvidence.length ? semanticEvidence : result?.semanticEvidence ?? [],
-      plan: retrievalPlan ?? result?.retrievalPlan ?? null
+      plan: retrievalPlan ?? result?.retrievalPlan ?? null,
+      questionContract,
+      spec
     });
   } catch (error) {
     const value = envelope("skipped", { reason: "unsafe_state", model, latencyMs: Date.now() - startedAt });
@@ -222,7 +274,7 @@ export async function generateEvidenceBackedConclusion({
   }
 
   const intent = evidenceIntent(evidence);
-  const promptRoute = getConclusionPromptRoute(intent);
+  const promptRoute = getConclusionPromptRoute(intent, questionType, resultType);
   if (!promptRoute) {
     const value = envelope("skipped", { reason: "unregistered_intent", model, latencyMs: Date.now() - startedAt });
     emit(config, { type: "conclusion_fallback", status: value.status, reason: value.reason, intent, model });
@@ -230,6 +282,7 @@ export async function generateEvidenceBackedConclusion({
   }
 
   const cacheKey = makeConclusionCacheKey(evidence, config);
+  const diagnostics = contractDiagnostics(questionContract, spec);
   const supportingEvidence = visibleSupportingEvidence(evidence);
   if (!bypassCache) {
     const cached = await cacheGet(cacheStore, cacheKey, seasonContextId);
@@ -239,7 +292,8 @@ export async function generateEvidenceBackedConclusion({
         model: cached.value.model ?? model,
         latencyMs: Date.now() - startedAt,
         cached: true,
-        supportingEvidence
+        supportingEvidence,
+        diagnostics
       });
       emit(config, { type: "conclusion_generated", status: value.status, cached: true, latencyMs: value.latencyMs, model: value.model });
       return value;
@@ -280,7 +334,8 @@ export async function generateEvidenceBackedConclusion({
           attempts,
           corrections,
           transportRetries,
-          validationFeedback
+          validationFeedback,
+          diagnostics
         });
         emit(config, { type: "conclusion_fallback", status: value.status, reason, attempts, corrections, transportRetries, model });
         return value;
@@ -288,9 +343,15 @@ export async function generateEvidenceBackedConclusion({
     }
 
     if (raw !== undefined) {
-      lastValidation = validateConclusionOutput(raw, evidence, { catalog });
-      if (lastValidation.valid && lastValidation.value?.status === "ok") {
+      lastValidation = validateConclusionOutput(raw, evidence, { catalog, spec, questionContract });
+      if (lastValidation.valid) {
         const content = {
+          schemaVersion: lastValidation.value.schemaVersion,
+          status: lastValidation.value.status,
+          contractId: lastValidation.value.contractId,
+          addressedDimensions: lastValidation.value.addressedDimensions,
+          missingDimensions: lastValidation.value.missingDimensions,
+          missingEvidence: lastValidation.value.missingEvidence,
           headline: lastValidation.value.headline,
           summary: lastValidation.value.summary,
           reasons: lastValidation.value.reasons,
@@ -303,9 +364,14 @@ export async function generateEvidenceBackedConclusion({
           content,
           model,
           evidenceVersion: evidence.schemaVersion,
+          questionContractVersion: questionContract.schemaVersion,
+          contractId: questionContract.contractId,
+          specId: spec.id,
+          specVersion: spec.version,
           basePromptVersion: config.basePromptVersion ?? BASE_CONCLUSION_PROMPT_VERSION,
           intentPromptVersion: promptRoute.version,
-          providerPromptVersion: config.promptVersion ?? null
+          providerPromptVersion: config.promptVersion ?? null,
+          validatorVersion: CONCLUSION_VALIDATOR_VERSION
         }, config.cacheTtlMs, seasonContextId);
         const value = envelope("generated", {
           content,
@@ -314,14 +380,13 @@ export async function generateEvidenceBackedConclusion({
           attempts,
           corrections,
           transportRetries,
-          supportingEvidence
+          supportingEvidence,
+          diagnostics
         });
         emit(config, { type: corrections ? "conclusion_corrected" : "conclusion_generated", status: value.status, attempts, corrections, transportRetries, model });
         return value;
       }
-      validationFeedback = lastValidation.valid
-        ? formatFeedback("status 必须为 ok；已有证据足以生成有边界的结论。", "format_error")
-        : createConclusionValidationFeedback(lastValidation, evidence, { catalog, maxErrors: maxValidationErrors });
+      validationFeedback = createConclusionValidationFeedback(lastValidation, evidence, { catalog, maxErrors: maxValidationErrors });
     }
 
     emit(config, {
@@ -343,7 +408,8 @@ export async function generateEvidenceBackedConclusion({
     attempts,
     corrections,
     transportRetries,
-    validationFeedback
+    validationFeedback,
+    diagnostics
   });
   emit(config, {
     type: "conclusion_fallback",

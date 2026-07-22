@@ -53,6 +53,8 @@ export async function runLlmRetrievalPipeline({
   cacheStore = null,
   requestEnabled = true,
   locale = "zh-CN",
+  principalId = "anonymous",
+  conversationId = "default",
   onEvent = null
 } = {}) {
   if (typeof resolveRequest !== "function") throw new TypeError("runLlmRetrievalPipeline requires resolveRequest");
@@ -99,6 +101,7 @@ export async function runLlmRetrievalPipeline({
     throw error;
   });
   const [semanticHits, structuredResult] = await Promise.all([semanticPromise, structuredPromise]);
+  if (structuredResult && !structuredResult.intentEnvelope) structuredResult.intentEnvelope = intentEnvelope;
 
   if (!retrievalPlan.promptKey) {
     return {
@@ -120,6 +123,8 @@ export async function runLlmRetrievalPipeline({
     provider: conclusionProvider,
     cacheStore,
     requestEnabled,
+    principalId,
+    conversationId,
     retrievalPlan,
     semanticEvidence: semanticHits
   });

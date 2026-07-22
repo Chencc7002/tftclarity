@@ -1,19 +1,8 @@
 import { requiredCoreItemAppearances } from "../core/core-item-frequency.js";
+import { CONCLUSION_SPEC_REGISTRY, deriveConclusionQuestionType } from "./conclusion-spec-registry.js";
 
 export const CONCLUSION_EVIDENCE_SCHEMA_VERSION = "llm_conclusion_evidence.v1";
 export const MAX_CONCLUSION_EVIDENCE_BYTES = 32 * 1024;
-
-const SUPPORTED_INTENTS = new Set([
-  "unit_build_rankings",
-  "unit_build_completion",
-  "unit_best_3_items",
-  "unit_item_comparison",
-  "unit_item_rankings",
-  "unit_emblem_rankings",
-  "comp_rankings",
-  "comp_trends",
-  "comp_analysis"
-]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -391,11 +380,16 @@ function buildCompRankingContext(result, recommendations) {
   };
 }
 
-export function buildConclusionEvidence({ result, catalog, input = "", locale = "zh-CN", previousQuery = null } = {}) {
+export function buildConclusionEvidence({ result, catalog, input = "", locale = "zh-CN", previousQuery = null, spec = null } = {}) {
   const resultIntent = result?.type ?? result?.query?.intent;
-  if (!SUPPORTED_INTENTS.has(resultIntent)) {
+  if (!CONCLUSION_SPEC_REGISTRY.supportsIntent(resultIntent)) {
     throw new Error(`Unsupported conclusion evidence intent: ${resultIntent ?? "(missing)"}`);
   }
+  const resolvedSpec = spec ?? CONCLUSION_SPEC_REGISTRY.resolve({
+    intent: resultIntent,
+    questionType: deriveConclusionQuestionType(result, result?.intentEnvelope),
+    resultType: resultIntent
+  });
   const intent = resultIntent === "unit_build_completion" || resultIntent === "unit_best_3_items"
     ? "unit_build_rankings"
     : resultIntent;
@@ -457,8 +451,7 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     warnings,
     dataStatus,
     generationRules: {
-      factsMustComeFromEvidence: true,
-      forbidCausalClaims: true,
+      ...resolvedSpec.generationRules,
       coreClaimsRequireItemSignal: true,
       mustQualifyUnstableCore: itemSignals.some((entry) => entry.core && !entry.stable),
       mustAnalyzeAllDisplayedItemRankings: intent === "unit_item_rankings" || intent === "unit_emblem_rankings",

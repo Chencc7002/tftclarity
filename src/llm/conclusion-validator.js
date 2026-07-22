@@ -1,4 +1,5 @@
-export const CONCLUSION_SCHEMA_VERSION = "llm_conclusion.v1";
+export const CONCLUSION_SCHEMA_VERSION = "llm_conclusion.v2";
+export const LEGACY_CONCLUSION_SCHEMA_VERSION = "llm_conclusion.v1";
 export const CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION = "conclusion_validation_feedback.v1";
 
 export const CONCLUSION_ERROR_CATEGORIES = Object.freeze([
@@ -10,13 +11,22 @@ export const CONCLUSION_ERROR_CATEGORIES = Object.freeze([
   "analysis_boundary",
   "stale_or_missing_evidence",
   "intent_or_entity_error",
-  "provider_unavailable"
+  "provider_unavailable",
+  "contract_id_mismatch",
+  "missing_answer_dimension",
+  "unsupported_answer_dimension",
+  "dimension_without_evidence",
+  "wrong_target",
+  "current_fact_used_as_history",
+  "unsupported_causal_claim",
+  "question_focus_mismatch"
 ]);
 
 const ROOT_KEYS = new Set([
-  "schemaVersion", "status", "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
+  "schemaVersion", "contractId", "status", "addressedDimensions", "missingDimensions", "missingEvidence",
+  "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
 ]);
-const ENTRY_KEYS = new Set(["evidenceIds", "text"]);
+const ENTRY_KEYS = new Set(["dimension", "evidenceIds", "text"]);
 const ABSOLUTE_OR_CAUSAL = /(?:(?<!不)(?<!未)必定|(?<!不)(?<!未)必然|(?<!不)(?<!不能)(?<!无法)(?<!难以)(?<!不可)保证|(?<!非)(?<!不是)(?<!并非)(?<!不能视为)必备|(?<!非)(?<!不是)(?<!并非)必出|必须出|稳操胜券|唯一(?:最强|核心)|绝对最强|百分之百|100%胜率|导致(?:胜率|前四率|登顶率).{0,8}(?:提高|提升|增加)|使(?:胜率|前四率|登顶率).{0,8}(?:提高|提升|增加))/u;
 const WINNER_CLAIM = /(?:更优|胜出|优于|领先|最佳|首选|更好|最强)/u;
 const LOW_SAMPLE_CLAIM = /(?:低样本|样本(?:量)?不足|不能视为稳定推荐|不稳定推荐)/u;
@@ -285,15 +295,23 @@ function matchesAllowedNumber(value, allowed) {
 function sampleCountMentions(text) {
   const mentions = [];
   let remaining = String(text ?? "");
-  remaining = remaining.replace(/(\d+)\s*(?:场|局)(?:样本)?/gu, (full, value) => {
-    mentions.push({ text: full, value: Number(value) });
+  remaining = remaining.replace(/(\d+)\s*(?:场|局)(?:样本)?/gu, (full, value, offset) => {
+    mentions.push({ text: full, value: Number(value), index: offset });
     return " ";
   });
-  remaining = remaining.replace(/样本(?:数|量)?\s*(?:为|是|有|[:：=])?\s*(\d+)(?!\d)/gu, (full, value) => {
-    mentions.push({ text: full, value: Number(value) });
+  remaining = remaining.replace(/样本(?:数|量)?\s*(?:为|是|有|[:：=])?\s*(\d+)(?!\d)/gu, (full, value, offset) => {
+    mentions.push({ text: full, value: Number(value), index: offset });
     return " ";
   });
   return { mentions, remaining };
+}
+
+function isQuerySampleThresholdMention(text, mention, evidence) {
+  const threshold = Number(evidence?.query?.minSamples);
+  if (!Number.isFinite(threshold) || mention.value !== threshold) return false;
+  const start = Math.max(0, Number(mention.index ?? 0) - 12);
+  const end = Math.min(String(text ?? "").length, Number(mention.index ?? 0) + mention.text.length + 12);
+  return /(?:至少|最低|不少于|筛选|过滤|门槛|阈值|下限)/u.test(String(text ?? "").slice(start, end));
 }
 
 function stripSupportedDateLiterals(text, evidence) {
@@ -382,7 +400,9 @@ function validateNumbers(text, records, evidence, path, errors) {
     }
   }
   for (const mention of sampleCountMentions(text).mentions) {
-    if (!games.includes(mention.value)) errors.push(`${path} contains unsupported sample count: ${mention.text}`);
+    if (!games.includes(mention.value) && !isQuerySampleThresholdMention(text, mention, evidence)) {
+      errors.push(`${path} contains unsupported sample count: ${mention.text}`);
+    }
   }
   for (const match of text.matchAll(/(?:均名|平均名次)\s*(?:为|是|[:：])?\s*(\d+(?:\.\d+)?)/gu)) {
     const value = Number(match[1]);
@@ -413,7 +433,12 @@ function validateNames(text, names, knownCatalogNames, path, errors) {
     }
   }
   for (const match of text.matchAll(QUOTED_ENTITY)) {
-    if (!names.has(match[1])) errors.push(`${path} contains a quoted entity absent from evidence: ${match[1]}`);
+    const quoted = match[1];
+    const parts = quoted.split(/\s*(?:\+|＋|、|\/|和|与)\s*/u).filter(Boolean);
+    const supportedCompound = parts.length > 1 && parts.every((part) => names.has(part));
+    if (!names.has(quoted) && !supportedCompound) {
+      errors.push(`${path} contains a quoted entity absent from evidence: ${quoted}`);
+    }
   }
 }
 
@@ -483,7 +508,7 @@ function validateTextFacts(text, records, evidence, catalog, path, errors) {
   validateNumbers(text, records, evidence, path, errors);
 }
 
-function readEntries(value, path, maxEntries, records, evidence, catalog, errors) {
+function readEntries(value, path, maxEntries, records, evidence, catalog, errors, contract = null) {
   if (!Array.isArray(value)) {
     errors.push(`${path} must be an array`);
     return [];
@@ -496,6 +521,8 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
       return null;
     }
     unknownKeys(entry, ENTRY_KEYS, entryPath, errors);
+    const dimension = entry.dimension === undefined && !contract ? null : String(entry.dimension ?? "").trim();
+    if (contract && !dimension) errors.push(`${entryPath}.dimension is required`);
     const resolvedIds = inferEvidenceIds(entry, records);
     if (!Array.isArray(entry.evidenceIds)
       || resolvedIds.ids.length === 0
@@ -510,8 +537,139 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
     }
     const text = readText(entry.text, `${entryPath}.text`, 220, errors, { records });
     validateTextFacts(text, linkedRecords, evidence, catalog, `${entryPath}.text`, errors);
-    return { evidenceIds: ids, text };
+    return { ...(dimension ? { dimension } : {}), evidenceIds: ids, text };
   }).filter(Boolean);
+}
+
+function readStringArray(value, path, errors) {
+  if (!Array.isArray(value)) {
+    errors.push(`${path} must be an array`);
+    return [];
+  }
+  const output = [];
+  for (const entry of value) {
+    if (typeof entry !== "string" || !entry.trim()) errors.push(`${path} must contain non-empty strings`);
+    else if (!output.includes(entry.trim())) output.push(entry.trim());
+  }
+  return output;
+}
+
+function recordMetric(record, key) {
+  return record?.stats?.[key]
+    ?? record?.details?.metrics?.[key]
+    ?? record?.details?.[key]
+    ?? null;
+}
+
+function recordMatchesRequirement(record, requirement, evidence) {
+  const id = String(record?.evidenceId ?? "");
+  if (requirement === "visible_builds") {
+    if (id.startsWith("build:")) return true;
+    if (record?.kind !== "item_core_signal") return false;
+    const buildIds = Array.isArray(record.buildEvidenceIds) ? record.buildEvidenceIds.map(String) : [];
+    const records = evidenceRecords(evidence);
+    return buildIds.length > 0 && buildIds.every((buildId) => buildId.startsWith("build:") && records.has(buildId));
+  }
+  if (requirement === "visible_items" || requirement === "visible_emblems") return id.startsWith("item:");
+  if (requirement === "visible_comps" || requirement === "visible_trends") return id.startsWith("comp:");
+  if (requirement === "comparison_options" || requirement === "exclusive_samples" || requirement === "winner") return id.startsWith("comparison:");
+  if (requirement === "target_item") {
+    const target = evidence?.questionContract?.targets?.items?.[0] ?? evidence?.query?.performanceItem?.apiName;
+    return Boolean(target && (record?.item?.apiName === target || record?.apiName === target));
+  }
+  if (requirement === "target_comp") {
+    const targets = new Set(evidence?.questionContract?.targets?.comps ?? []);
+    return targets.has(record?.compId) || targets.has(record?.name) || record?.type === "metatft_fact";
+  }
+  if (requirement === "metatft_fact") return record?.type === "metatft_fact" || record?.authority === "primary_statistics";
+  if (requirement === "historical_fact" || requirement === "historicalComparison") return record?.type === "historical_fact";
+  if (requirement === "official_patch" || requirement === "officialPatch") return record?.type === "official_patch" || record?.authority === "official_patch";
+  if (requirement === "sample_status") return record?.lowSample !== undefined || Number.isFinite(Number(recordMetric(record, "games")));
+  if (requirement === "lockedItems") return (evidence?.query?.lockedItems ?? []).length > 0 && id.startsWith("build:");
+  if (requirement === "coverage") return Number.isFinite(Number(record?.coverage));
+  if (requirement === "placementImprovement") return Number.isFinite(Number(record?.trend?.placementImprovement));
+  if (requirement === "trendScore") return Number.isFinite(Number(record?.trend?.emergenceScore));
+  return Number.isFinite(Number(recordMetric(record, requirement)));
+}
+
+function validateQuestionContractBinding(rawValue, entries, evidence, errors) {
+  const contract = evidence?.questionContract;
+  if (!contract) return { addressedDimensions: [], missingDimensions: [], missingEvidence: [] };
+  if (rawValue.contractId !== contract.contractId) errors.push("contract_id_mismatch: output.contractId does not match Question Contract");
+  const allowed = new Set(contract.requiredAnswerDimensions ?? []);
+  const addressedDimensions = readStringArray(rawValue.addressedDimensions, "addressedDimensions", errors);
+  const missingDimensions = readStringArray(rawValue.missingDimensions, "missingDimensions", errors);
+  const missingEvidence = Array.isArray(rawValue.missingEvidence) ? rawValue.missingEvidence.map((entry, index) => {
+    if (!isObject(entry)) {
+      errors.push(`missingEvidence[${index}] must be an object`);
+      return null;
+    }
+    unknownKeys(entry, new Set(["dimension", "requiredEvidence"]), `missingEvidence[${index}]`, errors);
+    const dimension = String(entry.dimension ?? "").trim();
+    if (!dimension) errors.push(`missingEvidence[${index}].dimension is required`);
+    const requiredEvidence = readStringArray(entry.requiredEvidence, `missingEvidence[${index}].requiredEvidence`, errors);
+    return { dimension, requiredEvidence };
+  }).filter(Boolean) : (errors.push("missingEvidence must be an array"), []);
+
+  for (const dimension of [...addressedDimensions, ...missingDimensions, ...entries.map((entry) => entry.dimension).filter(Boolean)]) {
+    if (!allowed.has(dimension)) errors.push(`unsupported_answer_dimension: ${dimension}`);
+  }
+  const entryDimensions = new Set(entries.map((entry) => entry.dimension).filter(Boolean));
+  for (const dimension of addressedDimensions) {
+    if (!entryDimensions.has(dimension)) errors.push(`missing_answer_dimension: ${dimension} has no structured content`);
+  }
+  for (const entry of entries) {
+    if (!entry.dimension || !allowed.has(entry.dimension)) continue;
+    const requirements = contract.requiredEvidence?.[entry.dimension] ?? [];
+    const linked = entry.evidenceIds.map((id) => evidenceRecords(evidence).get(id)).filter(Boolean);
+    const missing = requirements.filter((requirement) => !linked.some((record) => recordMatchesRequirement(record, requirement, evidence)));
+    if (missing.length) errors.push(`dimension_without_evidence: ${entry.dimension} missing ${missing.join(",")}`);
+    if (/historical|history/u.test(entry.dimension) && !linked.some((record) => recordMatchesRequirement(record, "historical_fact", evidence))) {
+      errors.push(`current_fact_used_as_history: ${entry.dimension}`);
+    }
+  }
+  const allRequired = [...allowed];
+  if (rawValue.status === "ok") {
+    for (const dimension of allRequired) {
+      if (!addressedDimensions.includes(dimension)) errors.push(`missing_answer_dimension: ${dimension}`);
+    }
+    if (missingDimensions.length || missingEvidence.length) errors.push("status ok cannot declare missing dimensions or evidence");
+  } else if (rawValue.status === "insufficient_evidence") {
+    for (const dimension of allRequired) {
+      if (!addressedDimensions.includes(dimension) && !missingDimensions.includes(dimension)) {
+        errors.push(`missing_answer_dimension: ${dimension} must be addressed or declared missing`);
+      }
+    }
+    for (const dimension of missingDimensions) {
+      const declaration = missingEvidence.find((entry) => entry.dimension === dimension);
+      if (!declaration) errors.push(`dimension_without_evidence: missingEvidence declaration required for ${dimension}`);
+      const expected = contract.requiredEvidence?.[dimension] ?? [];
+      if (declaration && expected.some((requirement) => !declaration.requiredEvidence.includes(requirement))) {
+        errors.push(`dimension_without_evidence: incomplete missingEvidence declaration for ${dimension}`);
+      }
+      const availableRecords = [...evidenceRecords(evidence).values()];
+      if (expected.length > 0 && expected.every((requirement) => availableRecords.some((record) => recordMatchesRequirement(record, requirement, evidence)))) {
+        errors.push(`dimension_without_evidence: ${dimension} declared missing despite available evidence`);
+      }
+    }
+    if (missingDimensions.length === 0) errors.push("insufficient_evidence requires missingDimensions");
+  }
+  return { addressedDimensions, missingDimensions, missingEvidence };
+}
+
+function validateQuestionFocus(entries, combined, evidence, errors) {
+  const questionType = evidence?.questionContract?.questionType;
+  const specId = evidence?.conclusionSpec?.id;
+  if (["popularity_drop", "contested"].includes(questionType)) {
+    const focusText = entries.filter((entry) => entry.dimension === "current_popularity" || entry.dimension === "contest_level")
+      .map((entry) => entry.text).join(" ");
+    if (focusText && !/(?:热度|登场|选择率|使用率|玩|同行|竞争)/u.test(focusText)) {
+      errors.push("question_focus_mismatch: popularity question was answered as strength");
+    }
+  }
+  if (specId === "unit_item_rankings.item_performance" && /(?:完整|整套|三件套).{0,8}(?:出装|装备|推荐)|(?:出装|三件套).{0,8}(?:完整|整套|推荐)/u.test(combined)) {
+    errors.push("question_focus_mismatch: item performance was answered as a full build recommendation");
+  }
 }
 
 function pathFromError(message) {
@@ -521,11 +679,20 @@ function pathFromError(message) {
 
 function categoryForError(message) {
   const value = String(message);
+  for (const category of [
+    "contract_id_mismatch", "missing_answer_dimension", "unsupported_answer_dimension",
+    "dimension_without_evidence", "wrong_target", "current_fact_used_as_history",
+    "unsupported_causal_claim", "question_focus_mismatch"
+  ]) {
+    if (value.startsWith(`${category}:`)) return category;
+  }
   if (/unsupported (?:number|percentage|sample count|average placement|trend improvement)/u.test(value)) return "unsupported_number";
-  if (/entity absent|API name absent|quoted entity absent|unknown evidence/u.test(value)) return "unsupported_entity";
+  if (/catalog entity absent|quoted entity absent/u.test(value)) return "wrong_target";
+  if (/entity absent|API name absent|unknown evidence/u.test(value)) return "unsupported_entity";
   if (/omits displayed evidence/u.test(value)) return "missing_coverage";
   if (/risk notice|freshness risk/u.test(value)) return "missing_risk_notice";
-  if (/absolute or causal|core-item claim|non-core item|cannot claim a winner|stable evidence cannot|must discuss/u.test(value)) return "analysis_boundary";
+  if (/absolute or causal/u.test(value)) return "unsupported_causal_claim";
+  if (/core-item claim|non-core item|cannot claim a winner|stable evidence cannot|must discuss/u.test(value)) return "analysis_boundary";
   return "format_error";
 }
 
@@ -581,6 +748,70 @@ function allowedFeedbackNumbers(records, evidence) {
   return [...values].sort((left, right) => left - right);
 }
 
+function allowedSampleCounts(records) {
+  return [...new Set([...records].flatMap((record) => [
+    Number(record?.stats?.games),
+    ...(record?.commonPairings ?? []).map((pairing) => Number(pairing?.games)),
+    ...(record?.copyCounts ?? []).map((copy) => Number(copy?.games))
+  ]).filter(Number.isFinite))].sort((left, right) => left - right);
+}
+
+function validationErrorNumber(message) {
+  const detail = String(message).split(":").slice(1).join(":");
+  const match = detail.match(/-?\d+(?:\.\d+)?/u);
+  return match ? Number(match[0]) : null;
+}
+
+function recordPercentageValues(record) {
+  const stats = record?.stats ?? {};
+  const values = [stats.top4Rate, stats.winRate, stats.pickRate, record?.appearanceRate, record?.coverage]
+    .filter(Number.isFinite)
+    .map((value) => Number((value * 100).toFixed(1)));
+  if (record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))) {
+    for (const match of String(record?.text ?? "").matchAll(/(\d+(?:\.\d+)?)\s*%/gu)) {
+      values.push(Number(match[1]));
+    }
+  }
+  return values;
+}
+
+function recordSupportsValidationNumber(record, message, value) {
+  if (!Number.isFinite(value)) return false;
+  if (/unsupported percentage/u.test(message)) {
+    return recordPercentageValues(record).some((candidate) => Math.abs(candidate - value) <= 0.051);
+  }
+  if (/unsupported sample count/u.test(message)) {
+    return allowedSampleCounts([record]).includes(value);
+  }
+  if (/unsupported average placement/u.test(message)) {
+    const placement = Number(record?.stats?.avgPlacement);
+    return Number.isFinite(placement) && Math.abs(Number(placement.toFixed(2)) - value) <= 0.005;
+  }
+  if (/unsupported trend improvement/u.test(message)) {
+    const improvement = Number(record?.trend?.placementImprovement);
+    return Number.isFinite(improvement) && Math.abs(Number(improvement.toFixed(4)) - value) <= 0.00005;
+  }
+  const allowed = new Set();
+  collectNumericValues(record, allowed);
+  collectEntityCopyCounts(record, allowed);
+  if (record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))) {
+    textNumericValues(record?.text, allowed);
+  }
+  return matchesAllowedNumber(value, allowed);
+}
+
+function missingEvidenceForUnsupportedNumber(message, evidence, linkedEvidenceIds) {
+  const value = validationErrorNumber(message);
+  if (!Number.isFinite(value)) return [];
+  const linked = new Set(linkedEvidenceIds);
+  const remainingSlots = Math.max(0, 3 - linked.size);
+  if (remainingSlots === 0) return [];
+  return [...evidenceRecords(evidence)]
+    .filter(([evidenceId, record]) => !linked.has(evidenceId) && recordSupportsValidationNumber(record, message, value))
+    .map(([evidenceId]) => evidenceId)
+    .slice(0, remainingSlots);
+}
+
 export function classifyConclusionValidationErrors(errors, evidence, options = {}) {
   return [...new Set((errors ?? []).map(String))].map((message) => {
     const category = categoryForError(message);
@@ -594,9 +825,15 @@ export function classifyConclusionValidationErrors(errors, evidence, options = {
       linkedEvidenceIds: scope.evidenceIds
     };
     if (category === "unsupported_number") {
-      issue.allowedValues = scope.records.length > 0
-        ? allowedFeedbackNumbers(scope.records, evidence)
-        : allowedNumbers(evidence);
+      issue.missingEvidenceIds = missingEvidenceForUnsupportedNumber(message, evidence, scope.evidenceIds);
+      issue.allowedValues = /unsupported sample count/u.test(message)
+        ? allowedSampleCounts(scope.records.length > 0 ? scope.records : evidenceRecords(evidence).values())
+        : scope.records.length > 0
+          ? allowedFeedbackNumbers(scope.records, evidence)
+          : allowedNumbers(evidence);
+      if (issue.missingEvidenceIds.length > 0) {
+        issue.message = `${message}；该数值可由 ${issue.missingEvidenceIds.join(", ")} 支持。请在本条 evidenceIds 中补充实际使用的对应证据，或删除该数值及相关比较。`;
+      }
     }
     if (category === "unsupported_entity") {
       issue.allowedValues = [...allowedNames(
@@ -630,8 +867,10 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
       value: null
     };
   }
+  const contract = evidence?.questionContract ?? options.questionContract ?? null;
   unknownKeys(rawValue, ROOT_KEYS, "output", errors);
-  if (rawValue.schemaVersion !== CONCLUSION_SCHEMA_VERSION) errors.push(`schemaVersion must be ${CONCLUSION_SCHEMA_VERSION}`);
+  const expectedSchemaVersion = contract ? CONCLUSION_SCHEMA_VERSION : LEGACY_CONCLUSION_SCHEMA_VERSION;
+  if (rawValue.schemaVersion !== expectedSchemaVersion) errors.push(`schemaVersion must be ${expectedSchemaVersion}`);
   if (rawValue.status !== "ok" && rawValue.status !== "insufficient_evidence") {
     errors.push("status must be ok or insufficient_evidence");
   }
@@ -639,8 +878,8 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   const records = evidenceRecords(evidence);
   const headline = readText(rawValue.headline, "headline", 80, errors, { records });
   const summary = readText(rawValue.summary, "summary", 300, errors, { records });
-  const reasons = readEntries(rawValue.reasons, "reasons", 4, records, evidence, options.catalog, errors);
-  const alternatives = readEntries(rawValue.alternatives, "alternatives", 3, records, evidence, options.catalog, errors);
+  const reasons = readEntries(rawValue.reasons, "reasons", 8, records, evidence, options.catalog, errors, contract);
+  const alternatives = readEntries(rawValue.alternatives, "alternatives", 6, records, evidence, options.catalog, errors, contract);
   const nextAction = readText(rawValue.nextAction, "nextAction", 200, errors, { records });
   const riskNotice = readText(rawValue.riskNotice, "riskNotice", 180, errors, { nullable: true, records });
 
@@ -649,7 +888,9 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
     validateTextFacts(text, globalRecords, evidence, options.catalog, path, errors);
   }
   const combined = [headline, summary, nextAction, riskNotice, ...reasons.map((entry) => entry.text), ...alternatives.map((entry) => entry.text)].filter(Boolean).join("\n");
-  if (evidence?.generationRules?.mustAnalyzeAllDisplayedItemRankings) {
+  const contractFields = validateQuestionContractBinding(rawValue, [...reasons, ...alternatives], evidence, errors);
+  validateQuestionFocus([...reasons, ...alternatives], combined, evidence, errors);
+  if (rawValue.status === "ok" && evidence?.generationRules?.mustAnalyzeAllDisplayedItemRankings) {
     const referencedIds = new Set([...reasons, ...alternatives].flatMap((entry) => entry.evidenceIds));
     const missing = (evidence?.recommendations ?? []).filter((record) => {
       if (referencedIds.has(record.evidenceId)) return false;
@@ -661,7 +902,7 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
       errors.push(`item-ranking conclusion omits displayed evidence: ${missing.map((record) => record.evidenceId).join(", ")}`);
     }
   }
-  if (evidence?.generationRules?.mustAnalyzeDisplayedCompRankings) {
+  if (rawValue.status === "ok" && evidence?.generationRules?.mustAnalyzeDisplayedCompRankings) {
     const referencedIds = new Set([...reasons, ...alternatives].flatMap((entry) => entry.evidenceIds));
     const requiredIds = evidence?.compRankingContext?.directAnalysisEvidenceIds ?? [];
     const missing = requiredIds.filter((evidenceId) => !referencedIds.has(evidenceId));
@@ -689,7 +930,13 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   }
 
   const value = {
-    schemaVersion: CONCLUSION_SCHEMA_VERSION,
+    schemaVersion: expectedSchemaVersion,
+    ...(contract ? {
+      contractId: rawValue.contractId,
+      addressedDimensions: contractFields.addressedDimensions,
+      missingDimensions: contractFields.missingDimensions,
+      missingEvidence: contractFields.missingEvidence
+    } : {}),
     status: rawValue.status,
     headline,
     summary,

@@ -53,7 +53,7 @@ test("all unified retrieval contracts expose stable schema versions and required
   });
   assert.equal(pack.schemaVersion, EVIDENCE_PACK_SCHEMA_VERSION);
   assert.deepEqual(Object.keys(pack), [
-    "schemaVersion", "request", "query", "structuredEvidence", "semanticEvidence",
+    "schemaVersion", "questionContract", "conclusionSpec", "request", "query", "structuredEvidence", "semanticEvidence",
     "derivedSignals", "warnings", "dataStatus", "generationRules"
   ]);
 

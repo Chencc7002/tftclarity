@@ -13,7 +13,7 @@
 
 ## 证据引用
 
-1. 每条 `reasons` 和 `alternatives` 必须引用 1–3 个真实 `evidenceId`。
+1. 每条 `reasons` 和 `alternatives` 必须绑定一个 Question Contract 允许的 `dimension`，并引用 1–3 个满足该维度证据要求的真实 `evidenceId`。
 2. 文字中提到的每个候选都必须在同一条的 `evidenceIds` 中有对应证据；跨候选比较必须同时引用被比较的候选。
 3. 候选超过三个时拆成多条，不得只引用比较的一方。
 4. 用户可见文字不得出现 `build:1`、`item:1`、API 名称、内部字段名、布尔标记等技术标识。
@@ -29,21 +29,27 @@
 
 ## 输出契约
 
-只返回严格 JSON，不要 Markdown、代码围栏、注释或 JSON 前后的解释。不得增加字段。
+只返回严格 JSON，不要 Markdown、代码围栏、注释或 JSON 前后的解释。不得增加字段。必须逐字复制 Evidence Pack 中 `questionContract.contractId`，不得自行生成或修改。
 
 {
-  "schemaVersion": "llm_conclusion.v1",
+  "schemaVersion": "llm_conclusion.v2",
+  "contractId": "逐字复制 questionContract.contractId",
   "status": "ok",
+  "addressedDimensions": ["已回答的维度"],
+  "missingDimensions": [],
+  "missingEvidence": [],
   "headline": "不超过 80 字",
   "summary": "不超过 300 字",
   "reasons": [
     {
+      "dimension": "Question Contract 允许的维度",
       "evidenceIds": ["真实 evidenceId"],
       "text": "不超过 220 字"
     }
   ],
   "alternatives": [
     {
+      "dimension": "Question Contract 允许的维度",
       "evidenceIds": ["真实 evidenceId"],
       "text": "不超过 220 字"
     }
@@ -52,4 +58,6 @@
   "riskNotice": null
 }
 
-`status` 只能是 `ok` 或 `insufficient_evidence`。`riskNotice` 没有风险时为 `null`，有风险时为简短字符串。
+`status` 只能是 `ok` 或 `insufficient_evidence`。`status=ok` 时必须覆盖全部 `requiredAnswerDimensions`，且 `missingDimensions`/`missingEvidence` 为空。证据不足时必须返回 `insufficient_evidence`，列明已经回答和缺失的维度，并在 `missingEvidence` 中给出每个缺失维度需要的证据类型；不得用其他维度替代。`riskNotice` 没有风险时为 `null`，有风险时为简短字符串。
+
+`addressedDimensions` 必须与 `reasons` 和 `alternatives` 中实际出现的不同 `dimension` 完全一致。每个已回答维度至少要有一条带对应 Evidence ID 的 `reasons` 或 `alternatives`；不得只在 `summary`、`nextAction` 或 `riskNotice` 中提到该维度。特别是 `sample_risk` 即使已经写入 `riskNotice`，仍必须保留一条 `dimension="sample_risk"` 的结构化条目并绑定样本证据。

@@ -93,6 +93,12 @@ function metricsFor(intent, query) {
   return [];
 }
 
+function questionTypeFor(intent, query) {
+  if (intent === "comp_analysis") return query?.analysis?.questionType ?? "meta_fit";
+  if (intent === "unit_item_rankings" && query?.performanceItem) return "item_performance";
+  return "default";
+}
+
 function compConstraint(query, parsed) {
   const comp = query?.comp;
   const value = comp?.value;
@@ -141,6 +147,7 @@ export function createIntentEnvelope({ input = "", parsed = {}, query = {}, vali
     schemaVersion: INTENT_ENVELOPE_SCHEMA_VERSION,
     input: String(input ?? parsed?.rawInput ?? "").slice(0, 500),
     intent,
+    questionType: questionTypeFor(intent, query),
     confidence,
     entities,
     constraints: {
@@ -184,6 +191,7 @@ export function validateIntentEnvelope(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) errors.push("IntentEnvelope must be an object");
   if (value?.schemaVersion !== INTENT_ENVELOPE_SCHEMA_VERSION) errors.push(`schemaVersion must be ${INTENT_ENVELOPE_SCHEMA_VERSION}`);
   if (typeof value?.intent !== "string" || !value.intent) errors.push("intent is required");
+  if (typeof value?.questionType !== "string" || !value.questionType) errors.push("questionType is required");
   if (!Number.isFinite(value?.confidence) || value.confidence < 0 || value.confidence > 1) errors.push("confidence must be between 0 and 1");
   for (const key of ["entities", "requestedMetrics", "warnings"]) {
     if (!Array.isArray(value?.[key])) errors.push(`${key} must be an array`);
@@ -229,6 +237,8 @@ export function createSemanticHit(value = {}) {
 export function createEvidencePack(value = {}) {
   return {
     schemaVersion: EVIDENCE_PACK_SCHEMA_VERSION,
+    questionContract: value.questionContract ?? null,
+    conclusionSpec: value.conclusionSpec ?? null,
     request: value.request ?? {},
     query: value.query ?? {},
     structuredEvidence: array(value.structuredEvidence),

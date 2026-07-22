@@ -1,26 +1,24 @@
 import { readFile } from "node:fs/promises";
+import { CONCLUSION_SPEC_REGISTRY } from "./conclusion-spec-registry.js";
 
-export const BASE_CONCLUSION_PROMPT_VERSION = "base-conclusion.v1";
-export const CORRECTION_PROMPT_VERSION = "conclusion-correction.v1";
+export const BASE_CONCLUSION_PROMPT_VERSION = "base-conclusion.v2";
+export const CORRECTION_PROMPT_VERSION = "conclusion-correction.v2";
 
 const BASE_PROMPT_URL = new URL("./prompts/base-conclusion.md", import.meta.url);
 const CORRECTION_PROMPT_URL = new URL("./prompts/conclusion-correction.md", import.meta.url);
 
-const ROUTES = Object.freeze({
-  unit_build_rankings: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v2", file: "unit-build-rankings.md" }),
-  unit_build_completion: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v2", file: "unit-build-rankings.md" }),
-  unit_best_3_items: Object.freeze({ key: "unit-build-rankings", version: "unit-build-rankings.v2", file: "unit-build-rankings.md" }),
-  unit_item_rankings: Object.freeze({ key: "unit-item-rankings", version: "unit-item-rankings.v2", file: "unit-item-rankings.md" }),
-  unit_item_comparison: Object.freeze({ key: "unit-item-comparison", version: "unit-item-comparison.v1", file: "unit-item-comparison.md" }),
-  unit_emblem_rankings: Object.freeze({ key: "unit-emblem-rankings", version: "unit-emblem-rankings.v1", file: "unit-emblem-rankings.md" }),
-  comp_rankings: Object.freeze({ key: "comp-rankings", version: "comp-rankings.v1", file: "comp-rankings.md" }),
-  comp_trends: Object.freeze({ key: "comp-trends", version: "comp-trends.v1", file: "comp-trends.md" }),
-  comp_analysis: Object.freeze({ key: "comp-analysis", version: "comp-analysis.v1", file: "comp-analysis.md" })
-});
+const ROUTES = Object.freeze(Object.fromEntries(CONCLUSION_SPEC_REGISTRY.list({ enabled: true })
+  .filter((entry) => entry.match.questionType === "default" || entry.match.intent === "comp_analysis" && entry.match.questionType === "meta_fit")
+  .map((entry) => [entry.match.intent, Object.freeze({ ...entry.prompt })])));
 
-export function getConclusionPromptRoute(intent) {
-  const route = ROUTES[intent];
-  return route ? { intent, ...route } : null;
+export function getConclusionPromptRoute(intent, questionType = "default", resultType = intent) {
+  try {
+    const normalizedQuestionType = intent === "comp_analysis" && questionType === "default" ? "meta_fit" : questionType;
+    const spec = CONCLUSION_SPEC_REGISTRY.resolve({ intent, questionType: normalizedQuestionType, resultType });
+    return { intent, questionType, specId: spec.id, specVersion: spec.version, ...spec.prompt };
+  } catch {
+    return null;
+  }
 }
 
 export class ConclusionPromptRegistry {
@@ -31,12 +29,19 @@ export class ConclusionPromptRegistry {
     this.cache = new Map();
   }
 
-  has(intent) {
-    return Boolean(ROUTES[intent]);
+  has(intent, questionType = "default", resultType = intent) {
+    return Boolean(getConclusionPromptRoute(intent, questionType, resultType));
   }
 
-  route(intent) {
-    return getConclusionPromptRoute(intent);
+  route(intentOrContext, questionType = "default", resultType = intentOrContext) {
+    if (intentOrContext && typeof intentOrContext === "object") {
+      const spec = intentOrContext.specId ? CONCLUSION_SPEC_REGISTRY.get(intentOrContext.specId) : null;
+      return spec ? {
+        intent: spec.match.intent, questionType: spec.match.questionType,
+        specId: spec.id, specVersion: spec.version, ...spec.prompt
+      } : getConclusionPromptRoute(intentOrContext.intent, intentOrContext.questionType, intentOrContext.resultType);
+    }
+    return getConclusionPromptRoute(intentOrContext, questionType, resultType);
   }
 
   async readCached(key, url) {
@@ -44,8 +49,8 @@ export class ConclusionPromptRegistry {
     return this.cache.get(key);
   }
 
-  async load(intent, options = {}) {
-    const route = this.route(intent);
+  async load(intentOrContext, options = {}) {
+    const route = this.route(intentOrContext);
     if (!route) return null;
     const base = await this.readCached("base", this.basePromptUrl);
     const intentUrl = new URL(`./prompts/conclusion-intents/${route.file}`, import.meta.url);
@@ -54,7 +59,9 @@ export class ConclusionPromptRegistry {
       ? await this.readCached("correction", this.correctionPromptUrl)
       : null;
     return {
-      intent,
+      intent: route.intent,
+      questionType: route.questionType,
+      specId: route.specId,
       key: route.key,
       baseVersion: BASE_CONCLUSION_PROMPT_VERSION,
       intentVersion: route.version,
@@ -63,8 +70,8 @@ export class ConclusionPromptRegistry {
     };
   }
 
-  versions(intent, model = null) {
-    const route = this.route(intent);
+  versions(intentOrContext, model = null) {
+    const route = this.route(intentOrContext);
     if (!route) return null;
     return {
       basePromptVersion: BASE_CONCLUSION_PROMPT_VERSION,
