@@ -6,6 +6,7 @@ node_modules/
 !.env.example
 !.env.production.example
 deepseekAPIKey.txt
+tftclarityKey.txt
 *.log
 *.sqlite
 *.sqlite-*

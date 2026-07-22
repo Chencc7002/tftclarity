@@ -96,7 +96,7 @@ Contract 只能从通过结构验证的 IntentEnvelope 和未失败的 Query/val
 
 `ok` 必须覆盖全部必答维度且不得声明缺失。`insufficient_evidence` 必须把每个维度划分为已回答或缺失，并完整列出缺失证据；已有充分证据时不能虚假声明缺失。
 
-## Validator v2
+## Validator v3
 
 新增结构化错误类别：
 
@@ -111,6 +111,14 @@ Contract 只能从通过结构验证的 IntentEnvelope 和未失败的 Query/val
 
 现有数字、实体、Evidence ID、低样本、stale、未决胜负、核心装备信号和全候选覆盖校验继续生效。特别规则会拒绝用当前事实冒充历史、把相关性写成确定因果、把热度题答成强度题，以及把单件装备表现答成完整出装推荐。
 
+Validator v3 在严格事实边界前增加确定性 Citation Enricher/Repair：
+
+- `item-signal:*` 的 `buildEvidenceIds` 只在内部展开为验证作用域，不修改用户可见引用。
+- 数字必须同时匹配指标语义、数值、当前 Evidence 家族和查询范围；不能用同值的其他指标冒充。
+- 实体或数值只有唯一合法来源时才自动补充 Evidence ID，随后重新执行完整 Validator。
+- 多个合法来源属于歧义，只允许一次带最佳候选和明确反馈的 LLM 纠错。
+- Evidence Pack 中不存在的事实、关键维度遗漏、范围冲突和因果越界直接拒绝并使用确定性降级结果。
+
 纠错请求只发送有限的类别、输出字段路径、缺失 Evidence ID 和允许值，不发送密钥、内部 URL、本地路径或完整隐藏证据。达到修正上限或反馈重复后，UI 继续显示原确定性结果，不显示未通过校验的 LLM 文本。
 
 ## 缓存与迁移
@@ -119,8 +127,8 @@ Contract 只能从通过结构验证的 IntentEnvelope 和未失败的 Query/val
 
 - `specId`、`specVersion`
 - Question Contract schema 和 `contractId`
-- base/spec/provider Prompt 版本（当前基础 Prompt 为 `base-conclusion.v2`）
-- `conclusion-validator.v2`
+- base/spec/provider Prompt 版本（当前基础 Prompt 为 `base-conclusion.v3`）
+- `conclusion-validator.v3`
 - 完整 Evidence fingerprint
 - model
 

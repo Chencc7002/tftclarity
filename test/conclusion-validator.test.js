@@ -2,7 +2,13 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { assembleEvidencePack, buildConclusionEvidence, createCatalog, validateConclusionOutput } from "../src/index.js";
+import {
+  assembleEvidencePack,
+  buildConclusionEvidence,
+  createCatalog,
+  repairConclusionCitations,
+  validateConclusionOutput
+} from "../src/index.js";
 
 const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fixture.json", import.meta.url), "utf8"));
 const buildResult = (overrides = {}) => ({ ...structuredClone(resultFixture), ...overrides });
@@ -51,6 +57,85 @@ test("validateConclusionOutput accepts evidence-linked names and exact metrics",
   const result = validateConclusionOutput(validOutput(), evidence, { catalog });
   assert.equal(result.valid, true, result.errors.join("\n"));
   assert.equal(result.value.reasons[0].evidenceIds[0], "build:1");
+});
+
+test("validateConclusionOutput follows item-signal build lineage without expanding public citations", () => {
+  const value = validOutput({
+    reasons: [{
+      evidenceIds: ["item-signal:1"],
+      text: "羊刀、无尽、巨杀、轻语和杀人剑都来自当前展示的两套方案。"
+    }]
+  });
+  const result = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+  assert.deepEqual(result.value.reasons[0].evidenceIds, ["item-signal:1"]);
+});
+
+test("repairConclusionCitations adds a unique metric citation and reruns full validation", () => {
+  const value = validOutput({
+    alternatives: [{
+      evidenceIds: ["build:2"],
+      text: "方案二登顶率20.5%，高于方案一的18.3%。"
+    }]
+  });
+  const initial = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(initial.valid, false);
+  const repaired = repairConclusionCitations(value, evidence, { catalog, validation: initial });
+  assert.equal(repaired.changed, true);
+  assert.equal(repaired.validation.valid, true, repaired.validation.errors.join("\n"));
+  assert.deepEqual(repaired.value.alternatives[0].evidenceIds, ["build:1", "build:2"]);
+  assert.deepEqual(value.alternatives[0].evidenceIds, ["build:2"]);
+});
+
+test("repairConclusionCitations matches percentage meaning instead of only matching the number", () => {
+  const metricEvidence = structuredClone(evidence);
+  metricEvidence.recommendations[1].stats.winRate = 0.612;
+  const value = validOutput({
+    alternatives: [{ evidenceIds: ["build:1"], text: "方案二登顶率为61.2%。" }]
+  });
+  const initial = validateConclusionOutput(value, metricEvidence, { catalog });
+  assert.equal(initial.valid, false);
+  assert.match(initial.errors.join("\n"), /unsupported percentage: 61\.2%/u);
+  const repaired = repairConclusionCitations(value, metricEvidence, { catalog, validation: initial });
+  assert.equal(repaired.validation.valid, true, repaired.validation.errors.join("\n"));
+  assert.deepEqual(repaired.value.alternatives[0].evidenceIds, ["build:1", "build:2"]);
+});
+
+test("validateConclusionOutput maps paired percentage labels to their corresponding values", () => {
+  const value = validOutput({
+    reasons: [{ evidenceIds: ["build:1"], text: "该方案前四率和登顶率分别为61.2%和18.3%。" }]
+  });
+  const result = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+});
+
+test("repairConclusionCitations collapses entity support through item-signal lineage", () => {
+  const value = validOutput({
+    reasons: [{ evidenceIds: ["build:2"], text: "方案一还包含无尽和巨杀。" }]
+  });
+  const initial = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(initial.valid, false);
+  const repaired = repairConclusionCitations(value, evidence, { catalog, validation: initial });
+  assert.equal(repaired.validation.valid, true, repaired.validation.errors.join("\n"));
+  assert.deepEqual(repaired.value.reasons[0].evidenceIds, ["build:1", "build:2"]);
+});
+
+test("repairConclusionCitations leaves ambiguous metric citations unresolved", () => {
+  const ambiguousEvidence = structuredClone(evidence);
+  ambiguousEvidence.recommendations[1].stats.winRate = 0.183;
+  ambiguousEvidence.structuredEvidence = [...(ambiguousEvidence.structuredEvidence ?? []), {
+    evidenceId: "note:1",
+    type: "static_description",
+    text: "仅用于提供当前查询上下文。"
+  }];
+  const value = validOutput({
+    reasons: [{ evidenceIds: ["note:1"], text: "当前方案登顶率为18.3%。" }]
+  });
+  const initial = validateConclusionOutput(value, ambiguousEvidence, { catalog });
+  assert.equal(initial.valid, false);
+  const repaired = repairConclusionCitations(value, ambiguousEvidence, { catalog, validation: initial });
+  assert.equal(repaired.changed, false);
+  assert.equal(repaired.validation.valid, false);
 });
 
 test("validateConclusionOutput accepts quoted item combinations when every component is linked", () => {

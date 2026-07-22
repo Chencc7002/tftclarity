@@ -228,7 +228,7 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
     return prompt.text;
   };
 
-  const provider = async ({ evidence, validationFeedback = [] } = {}) => {
+  const provider = async ({ evidence, validationFeedback = [], previousOutput = null } = {}) => {
     const startedAt = Date.now();
     const controller = new AbortController();
     const timeoutMs = positiveNumber(options.timeoutMs, DEFAULT_CONCLUSION_TIMEOUT_MS);
@@ -240,7 +240,7 @@ export function createOpenAICompatibleConclusionProvider(options = {}) {
         { role: "user", content: JSON.stringify(evidence) },
         ...((Array.isArray(validationFeedback) ? validationFeedback.length > 0 : Boolean(validationFeedback)) ? [{
           role: "user",
-          content: `上一版结论未通过证据校验。请重新生成完整 JSON，并逐项修正 validationFeedback。若某项给出 missingEvidenceIds，请在产生该数字或比较的同一条 reason/alternative 中补充实际使用的对应 Evidence ID（每条最多 3 个），或删除不受当前引用支持的内容：\n${JSON.stringify(validationFeedback)}`
+          content: `上一版结论未通过证据校验。请以上一版 JSON 为基础，只修正 validationFeedback 指出的错误；未列为错误的字段保持不变。若某项给出 missingEvidenceIds，请在产生该实体、数字或比较的同一条 reason/alternative 中补充实际使用的对应 Evidence ID（每条最多 3 个），或删除不受当前引用支持的内容。请返回完整 JSON。\n上一版 JSON：\n${JSON.stringify(previousOutput)}\nvalidationFeedback：\n${JSON.stringify(validationFeedback)}`
         }] : [])
       ],
       temperature: Number(options.temperature ?? 0)
