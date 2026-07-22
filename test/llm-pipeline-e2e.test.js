@@ -58,15 +58,20 @@ function emblemResult(input) {
   };
 }
 
-function emblemOutput() {
+function emblemOutput(evidence = {}) {
   return {
-    schemaVersion: "llm_conclusion.v1",
+    schemaVersion: "llm_conclusion.v2",
+    contractId: evidence.questionContract?.contractId ?? "test-contract",
     status: "ok",
+    addressedDimensions: ["emblem_performance_ranking", "metric_reliability", "sample_risk"],
+    missingDimensions: [],
+    missingEvidence: [],
     headline: "高样本候选更适合作为常规选择",
     summary: "低样本榜首只是纸面亮点，另外两个高样本候选更适合稳定参考。",
     reasons: [
-      { evidenceIds: ["item:1", "item:2"], text: "第一项样本不足，第二项样本更充足，稳定性更容易复核。" },
-      { evidenceIds: ["item:3"], text: "第三项可作为另一种高样本常规选择。" }
+      { dimension: "emblem_performance_ranking", evidenceIds: ["item:1", "item:2", "item:3"], text: "第一项样本不足，另外两项样本更充足，稳定性更容易复核。" },
+      { dimension: "metric_reliability", evidenceIds: ["item:2"], text: "第二项的样本更充足。" },
+      { dimension: "sample_risk", evidenceIds: ["item:1"], text: "第一项属于低样本，仅供观察。" }
     ],
     alternatives: [],
     nextAction: "根据当前可获得的纹章，在高样本候选中选择。",
@@ -99,8 +104,11 @@ test("pipeline returns a corrected conclusion after the first generated version 
     conclusionProvider: async (request) => {
       calls.push(request);
       return calls.length === 1
-        ? { ...emblemOutput(), reasons: [{ evidenceIds: ["item:1"], text: "前四率99.9%。" }] }
-        : emblemOutput();
+        ? { ...emblemOutput(request.evidence), reasons: [
+            { ...emblemOutput(request.evidence).reasons[0], text: "前四率99.9%。" },
+            ...emblemOutput(request.evidence).reasons.slice(1)
+          ] }
+        : emblemOutput(request.evidence);
     }
   });
   assert.equal(result.status, "generated");
@@ -118,9 +126,10 @@ test("pipeline stops repeated semantic validation errors and exposes template fa
     resolveRequest: resolveUnitRequest,
     retrieveStructured: ({ input }) => emblemResult(input),
     conclusionConfig: { enabled: true, model: "fixture-model", maxCorrections: 2 },
-    conclusionProvider: async () => {
+    conclusionProvider: async ({ evidence }) => {
       calls += 1;
-      return { ...emblemOutput(), reasons: [{ evidenceIds: ["item:1"], text: "前四率99.9%。" }] };
+      const value = emblemOutput(evidence);
+      return { ...value, reasons: [{ ...value.reasons[0], text: "前四率99.9%。" }, ...value.reasons.slice(1)] };
     }
   });
   assert.equal(result.status, "deterministic_fallback");
@@ -149,11 +158,19 @@ test("three-item evidence contains only the three visible cards even if the stru
         .filter((entry) => entry.evidenceId.startsWith("build:"))
         .map((entry) => entry.evidenceId);
       return {
-        schemaVersion: "llm_conclusion.v1",
+        schemaVersion: "llm_conclusion.v2",
+        contractId: evidence.questionContract.contractId,
         status: "ok",
+        addressedDimensions: ["build_performance", "core_item_tendency", "sample_risk"],
+        missingDimensions: [],
+        missingEvidence: [],
         headline: "只比较当前展示的三套方案",
         summary: "当前展示方案各有取舍。",
-        reasons: [{ evidenceIds: ["build:1", "build:2", "build:3"], text: "三套可见方案都纳入比较。" }],
+        reasons: [
+          { dimension: "build_performance", evidenceIds: ["build:1", "build:2", "build:3"], text: "三套可见方案都纳入比较。" },
+          { dimension: "core_item_tendency", evidenceIds: ["build:1"], text: "当前组合用于观察装备倾向。" },
+          { dimension: "sample_risk", evidenceIds: ["build:1"], text: "当前样本可用于复核。" }
+        ],
         alternatives: [],
         nextAction: "从当前三套中选择。",
         riskNotice: null
@@ -189,12 +206,20 @@ test("comp trend generation uses standardized improvement and pick-rate foundati
     resolveRequest: async () => ({ parsed, query, validation: structured.validation, clarification: structured.clarification }),
     retrieveStructured: async () => structured,
     conclusionConfig: { enabled: true, model: "fixture-model" },
-    conclusionProvider: async () => ({
-      schemaVersion: "llm_conclusion.v1",
+    conclusionProvider: async ({ evidence }) => ({
+      schemaVersion: "llm_conclusion.v2",
+      contractId: evidence.questionContract.contractId,
       status: "ok",
+      addressedDimensions: ["current_popularity", "placement_trend", "sample_risk"],
+      missingDimensions: [],
+      missingEvidence: [],
       headline: "阵容甲更值得关注",
       summary: "阵容甲兼有名次改善和更高的登场基础；阵容乙提升更大但使用基础较低。",
-      reasons: [{ evidenceIds: ["comp:1", "comp:2"], text: "阵容甲提升0.24且登场率5.1%，阵容乙提升0.31但登场率1.8%。" }],
+      reasons: [
+        { dimension: "current_popularity", evidenceIds: ["comp:1", "comp:2"], text: "阵容甲登场率5.1%，阵容乙登场率1.8%。" },
+        { dimension: "placement_trend", evidenceIds: ["comp:1", "comp:2"], text: "阵容甲提升0.24，阵容乙提升0.31。" },
+        { dimension: "sample_risk", evidenceIds: ["comp:1"], text: "当前样本可用于趋势观察。" }
+      ],
       alternatives: [],
       nextAction: "优先观察提升与登场基础同时较强的阵容。",
       riskNotice: null

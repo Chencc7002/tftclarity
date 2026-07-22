@@ -16,14 +16,22 @@ import {
 const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fixture.json", import.meta.url), "utf8"));
 const buildConclusionResult = (overrides = {}) => ({ ...structuredClone(resultFixture), ...overrides });
 
-function providerOutput() {
+function providerOutput(evidence = {}) {
   return {
-    schemaVersion: "llm_conclusion.v1",
+    schemaVersion: "llm_conclusion.v2",
+    contractId: evidence.questionContract?.contractId ?? "test-contract",
     status: "ok",
+    addressedDimensions: ["build_performance", "core_item_tendency", "sample_risk"],
+    missingDimensions: [],
+    missingEvidence: [],
     headline: "围绕羊刀补齐无尽与巨杀",
     summary: "第一套完整出装可作为当前统计口径下的优先参考。",
-    reasons: [{ evidenceIds: ["build:1"], text: "该组合前四率为61.2%，样本1248场。" }],
-    alternatives: [{ evidenceIds: ["build:2"], text: "若更看重登顶率，可参考第二套组合。" }],
+    reasons: [
+      { dimension: "build_performance", evidenceIds: ["build:1"], text: "该组合前四率为61.2%，样本1248场。" },
+      { dimension: "core_item_tendency", evidenceIds: ["build:1"], text: "当前可见组合体现装备倾向。" },
+      { dimension: "sample_risk", evidenceIds: ["build:1"], text: "当前样本可用于复核。" }
+    ],
+    alternatives: [{ dimension: "build_performance", evidenceIds: ["build:2"], text: "若更看重登顶率，可参考第二套组合。" }],
     nextAction: "保留羊刀，再按散件补齐另外两件。",
     riskNotice: null
   };
@@ -51,7 +59,7 @@ function runtimeWith(provider, config = {}) {
 }
 
 test("small-window HTTP serialization adds generatedConclusion without replacing deterministic cards", async () => {
-  const runtime = runtimeWith(async () => providerOutput());
+  const runtime = runtimeWith(async ({ evidence }) => providerOutput(evidence));
   const { statusCode, payload } = await handleRecommendRequest({
     input: "霞已有羊刀怎么补？",
     preferences: { conclusionMode: "on" }
@@ -69,10 +77,10 @@ test("deferred conclusions return deterministic cards before starting the provid
   const providerGate = new Promise((resolve) => {
     releaseProvider = resolve;
   });
-  const runtime = runtimeWith(async () => {
+  const runtime = runtimeWith(async ({ evidence }) => {
     providerCalls += 1;
     await providerGate;
-    return providerOutput();
+    return providerOutput(evidence);
   });
 
   const { statusCode, payload } = await handleRecommendRequest({
@@ -108,7 +116,7 @@ test("deferred conclusions return deterministic cards before starting the provid
 });
 
 test("conclusion stream emits validated text one Unicode character at a time", async () => {
-  const runtime = runtimeWith(async () => providerOutput(), {
+  const runtime = runtimeWith(async ({ evidence }) => providerOutput(evidence), {
     cacheTtlMs: 0
   });
   runtime.conclusionStreamIntervalMs = 0;
@@ -200,7 +208,7 @@ test("semantic evidence sent to the conclusion model is returned as expandable s
     },
     conclusionProvider: async (request) => {
       providerRequest = request;
-      return providerOutput();
+      return providerOutput(request.evidence);
     },
     conclusionGeneratorConfig: {
       enabled: true,
@@ -268,13 +276,15 @@ test("conclusion configuration and runtime status never expose endpoint or API k
     TFT_AGENT_CONCLUSION_PROVIDER: "openai_compatible",
     TFT_AGENT_CONCLUSION_MODEL: "fixture-model",
     TFT_AGENT_CONCLUSION_ENDPOINT: "https://secret.example/v1",
-    TFT_AGENT_CONCLUSION_API_KEY: "secret-value"
+    TFT_AGENT_CONCLUSION_API_KEY: "secret-value",
+    TFT_AGENT_CONCLUSION_THINKING: "disabled"
   });
   const runtime = createSmallWindowRuntime({ conclusionGeneratorConfig: config, metaTFTClient: {}, compsClient: {} });
   const serialized = JSON.stringify(getSmallWindowRuntimeStatus(runtime));
   assert.doesNotMatch(serialized, /secret\.example|secret-value/u);
   assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.endpointConfigured, true);
   assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.apiKeyConfigured, true);
+  assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.thinkingMode, "disabled");
 });
 
 test("explanation feedback uses an independent feedback type", async () => {

@@ -1,4 +1,5 @@
 import { buildConclusionEvidence } from "../llm/conclusion-evidence.js";
+import { CONCLUSION_VALIDATOR_VERSION } from "../llm/conclusion-spec-registry.js";
 import { EVIDENCE_PACK_SCHEMA_VERSION, createEvidencePack } from "./contracts.js";
 
 export const DEFAULT_EVIDENCE_MAX_ITEMS = 40;
@@ -93,6 +94,10 @@ function dedupeSemantic(records) {
   return output;
 }
 
+function budgetSize(pack) {
+  return JSON.stringify({ ...pack, questionContract: null, conclusionSpec: null }).length;
+}
+
 function criticalErrors(legacy) {
   const errors = [];
   const intent = legacy?.request?.intent;
@@ -149,8 +154,8 @@ export class EvidenceAssembler {
     this.options = options;
   }
 
-  assemble({ result, catalog, input = "", locale = "zh-CN", previousQuery = null, semanticEvidence = [], plan = null } = {}) {
-    const legacy = buildConclusionEvidence({ result, catalog, input, locale, previousQuery });
+  assemble({ result, catalog, input = "", locale = "zh-CN", previousQuery = null, semanticEvidence = [], plan = null, questionContract = null, spec = null } = {}) {
+    const legacy = buildConclusionEvidence({ result, catalog, input, locale, previousQuery, spec });
     const requestIntent = result?.type ?? result?.query?.intent;
     if (requestIntent === "unit_emblem_rankings") {
       legacy.request.intent = "unit_emblem_rankings";
@@ -194,6 +199,14 @@ export class EvidenceAssembler {
 
     const semantic = dedupeSemantic(array(semanticEvidence).map(normalizeSemantic));
     const pack = createEvidencePack({
+      questionContract,
+      conclusionSpec: spec ? {
+        schemaVersion: spec.schemaVersion,
+        id: spec.id,
+        version: spec.version,
+        promptVersion: spec.prompt.version,
+        validatorVersion: CONCLUSION_VALIDATOR_VERSION
+      } : null,
       request: {
         ...legacy.request,
         seasonContextId: metadata.seasonContextId,
@@ -234,13 +247,13 @@ export class EvidenceAssembler {
     for (const record of semantic) {
       if (pack.structuredEvidence.length + pack.semanticEvidence.length >= maxItems) break;
       pack.semanticEvidence.push(record);
-      if (JSON.stringify(pack).length > maxCharacters) {
+      if (budgetSize(pack) > maxCharacters) {
         pack.semanticEvidence.pop();
         pack.warnings.push("semantic_evidence_trimmed_to_budget");
         break;
       }
     }
-    if (JSON.stringify({ ...pack, semanticEvidence: [] }).length > maxCharacters) {
+    if (budgetSize({ ...pack, semanticEvidence: [] }) > maxCharacters) {
       throw new EvidenceAssemblyError("Critical visible evidence exceeds the character budget", {
         details: [`max=${maxCharacters}`]
       });

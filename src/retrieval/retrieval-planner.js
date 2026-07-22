@@ -3,32 +3,29 @@ import {
   createRetrievalPlan,
   validateIntentEnvelope
 } from "./contracts.js";
+import { CONCLUSION_SPEC_REGISTRY } from "../llm/conclusion-spec-registry.js";
 
 const DEFAULT_EVIDENCE_BUDGET = Object.freeze({ maxItems: 40, maxCharacters: 16000 });
-const PROMPT_KEYS = Object.freeze({
-  unit_build_rankings: "unit-build-rankings",
-  unit_build_completion: "unit-build-rankings",
-  unit_best_3_items: "unit-build-rankings",
-  unit_item_rankings: "unit-item-rankings",
-  unit_item_comparison: "unit-item-comparison",
-  unit_emblem_rankings: "unit-emblem-rankings",
-  comp_rankings: "comp-rankings",
-  comp_trends: "comp-trends",
-  comp_analysis: "comp-analysis"
-});
+function specForEnvelope(envelope) {
+  if (!CONCLUSION_SPEC_REGISTRY.supportsIntent(envelope.intent)) return null;
+  return CONCLUSION_SPEC_REGISTRY.resolve({
+    intent: envelope.intent,
+    questionType: envelope.questionType,
+    resultType: envelope.intent
+  });
+}
 
-const REQUIRED_EVIDENCE = Object.freeze({
-  unit_build_rankings: ["visible_builds", "games", "avgPlacement", "top4Rate", "winRate"],
-  unit_build_completion: ["visible_builds", "lockedItems", "games", "avgPlacement", "top4Rate", "winRate"],
-  unit_best_3_items: ["visible_builds", "games", "avgPlacement", "top4Rate", "winRate"],
-  unit_item_rankings: ["visible_items", "coverage", "games", "avgPlacement", "top4Rate", "winRate"],
-  unit_item_comparison: ["comparison_options", "exclusive_samples", "winner", "games", "avgPlacement", "top4Rate", "winRate"],
-  unit_item_availability: ["visible_builds"],
-  unit_emblem_rankings: ["visible_emblems", "games", "avgPlacement", "top4Rate", "winRate"],
-  comp_rankings: ["visible_comps", "games", "avgPlacement", "top4Rate", "winRate", "pickRate"],
-  comp_trends: ["visible_trends", "placementImprovement", "pickRate", "games", "trendScore"],
-  comp_analysis: ["target_comp", "games", "avgPlacement", "top4Rate", "winRate", "pickRate", "historicalComparison", "officialPatch"]
-});
+function flattenedEvidence(spec) {
+  return [...new Set(Object.values(spec?.requiredEvidence ?? {}).flat())];
+}
+
+// Compatibility exports are projections of the registry, never independent configuration.
+const PROMPT_KEYS = Object.freeze(Object.fromEntries(CONCLUSION_SPEC_REGISTRY.list({ enabled: true })
+  .filter((entry) => entry.match.questionType === "default")
+  .map((entry) => [entry.match.intent, entry.prompt.key])));
+const REQUIRED_EVIDENCE = Object.freeze(Object.fromEntries(CONCLUSION_SPEC_REGISTRY.list({ enabled: true })
+  .filter((entry) => entry.match.questionType === "default")
+  .map((entry) => [entry.match.intent, flattenedEvidence(entry)])));
 
 const DETAIL_OPERATIONS = Object.freeze({
   unit_details: "unit_details",
@@ -161,6 +158,7 @@ export class RetrievalPlanner {
       });
     }
 
+    const conclusionSpec = specForEnvelope(envelope);
     const structuredQueries = [];
     if ([
       "unit_build_rankings", "unit_build_completion", "unit_best_3_items", "unit_item_rankings",
@@ -193,8 +191,8 @@ export class RetrievalPlanner {
       structuredQueries,
       semanticQueries,
       evidenceBudget: options.evidenceBudget ?? DEFAULT_EVIDENCE_BUDGET,
-      requiredEvidence: REQUIRED_EVIDENCE[envelope.intent] ?? [],
-      promptKey: PROMPT_KEYS[envelope.intent] ?? null,
+      requiredEvidence: flattenedEvidence(conclusionSpec),
+      promptKey: conclusionSpec?.prompt?.key ?? null,
       warnings: envelope.warnings
     });
   }

@@ -269,6 +269,24 @@ export {
   getConclusionPromptRoute
 } from "./llm/conclusion-prompt-registry.js";
 export {
+  CONCLUSION_SPEC_REGISTRY,
+  CONCLUSION_SPEC_REGISTRY_VERSION,
+  CONCLUSION_SPEC_SCHEMA_VERSION,
+  CONCLUSION_SPECS,
+  CONCLUSION_VALIDATOR_VERSION,
+  ConclusionSpecRegistry,
+  ConclusionSpecRegistryError,
+  createConclusionSpecRegistry,
+  deriveConclusionQuestionType
+} from "./llm/conclusion-spec-registry.js";
+export {
+  QUESTION_CONTRACT_FINGERPRINT_VERSION,
+  QUESTION_CONTRACT_SCHEMA_VERSION,
+  createQuestionContract,
+  questionContractFingerprint,
+  validateQuestionContract
+} from "./llm/question-contract.js";
+export {
   DEFAULT_EMBEDDING_BATCH_SIZE,
   DEFAULT_EMBEDDING_TIMEOUT_MS,
   EmbeddingProvider,

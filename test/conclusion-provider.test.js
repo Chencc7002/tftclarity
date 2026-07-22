@@ -22,6 +22,7 @@ test("conclusion provider config is off by default and missing configuration sta
   const missing = resolveConclusionProviderConfig({ mode: "on", provider: "openai_compatible" }, {});
   assert.equal(missing.enabled, false);
   assert.ok(missing.missing.includes("TFT_AGENT_CONCLUSION_MODEL"));
+  assert.equal(missing.maxCorrections, 3);
 });
 
 test("OpenAI-compatible conclusion provider sends only the evidence request and parses strict JSON", async () => {
@@ -73,9 +74,39 @@ test("GPT-5 conclusion config uses a minimal reasoning budget and completion-tok
   assert.equal(body.response_format.type, "json_schema");
   assert.equal(body.response_format.json_schema.strict, true);
   assert.deepEqual(body.response_format.json_schema.schema.required, [
-    "schemaVersion", "status", "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
+    "schemaVersion", "contractId", "status", "addressedDimensions", "missingDimensions", "missingEvidence",
+    "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
   ]);
   assert.equal(body.response_format.json_schema.schema.additionalProperties, false);
+});
+
+test("DeepSeek conclusion config can disable thinking without sending reasoning effort", async () => {
+  const config = resolveConclusionProviderConfig({
+    mode: "on",
+    model: "deepseek-v4-flash",
+    endpoint: "https://api.deepseek.com",
+    apiKey: "secret-key"
+  }, {
+    TFT_AGENT_CONCLUSION_THINKING: "disabled",
+    TFT_AGENT_CONCLUSION_REASONING_EFFORT: "high"
+  });
+  assert.equal(config.thinkingMode, "disabled");
+  assert.equal(config.reasoningEffort, "high");
+
+  let body;
+  const provider = createOpenAICompatibleConclusionProvider({
+    ...config,
+    promptText: "prompt",
+    fetchImpl: async (_url, init) => {
+      body = JSON.parse(init.body);
+      return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(output) } }] }) };
+    }
+  });
+  await provider({ evidence: {} });
+  assert.deepEqual(body.thinking, { type: "disabled" });
+  assert.equal(body.reasoning_effort, undefined);
+  assert.equal(body.max_tokens, 350);
+  assert.equal(body.response_format.type, "json_object");
 });
 
 test("OpenAI-compatible conclusion provider rejects Markdown-wrapped JSON", async () => {

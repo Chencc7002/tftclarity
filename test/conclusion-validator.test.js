@@ -53,6 +53,17 @@ test("validateConclusionOutput accepts evidence-linked names and exact metrics",
   assert.equal(result.value.reasons[0].evidenceIds[0], "build:1");
 });
 
+test("validateConclusionOutput accepts quoted item combinations when every component is linked", () => {
+  const value = validOutput({
+    alternatives: [{
+      evidenceIds: ["build:2"],
+      text: "可选“羊刀+轻语+杀人剑”这套可见组合。"
+    }]
+  });
+  const result = validateConclusionOutput(value, evidence, { catalog });
+  assert.equal(result.valid, true, result.errors.join("\n"));
+});
+
 test("validateConclusionOutput distinguishes structural numbers from sample counts", () => {
   const value = validOutput({
     reasons: [{

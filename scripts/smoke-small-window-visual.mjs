@@ -282,12 +282,21 @@ if (playwright) {
       const primary = evidence.recommendations?.[0];
       const games = primary?.stats?.games ?? 0;
       const lowSample = evidence.recommendations?.some((entry) => entry.lowSample);
+      const dimensions = evidence.questionContract.requiredAnswerDimensions;
       return {
-        schemaVersion: "llm_conclusion.v1",
+        schemaVersion: "llm_conclusion.v2",
+        contractId: evidence.questionContract.contractId,
         status: "ok",
+        addressedDimensions: dimensions,
+        missingDimensions: [],
+        missingEvidence: [],
         headline: "当前统计证据的行动参考",
         summary: "以下解读只组织已展示的统计事实，不改变本地排序与比较结果。",
-        reasons: [{ evidenceIds: [primary.evidenceId], text: `当前首条证据包含${games}场样本。` }],
+        reasons: dimensions.map((dimension, index) => ({
+          dimension,
+          evidenceIds: [evidence.recommendations?.[Math.min(index, evidence.recommendations.length - 1)]?.evidenceId ?? primary.evidenceId],
+          text: index === 0 ? `当前首条证据包含${games}场样本。` : "当前可见证据用于回答这一维度。"
+        })),
         alternatives: [],
         nextAction: "先按结构化结果行动，再结合现有散件选择补齐顺序。",
         riskNotice: lowSample ? "其中包含低样本结果，仅供参考。" : null
