@@ -22,6 +22,9 @@ function sourceMetadata(result, evidence) {
   const source = result?.source ?? {};
   const query = result?.query ?? {};
   return {
+    seasonContextId: query.seasonContextId ?? evidence?.dataStatus?.seasonContextId ?? "set17-live",
+    providerVersion: query.providerVersion ?? evidence?.dataStatus?.providerVersion ?? null,
+    effectivePatch: query.effectivePatch ?? source.patch ?? query.patch ?? evidence?.dataStatus?.patch ?? null,
     provider: clipped(source.provider ?? evidence?.dataStatus?.provider ?? "MetaTFT", 60),
     patch: source.patch ?? query.patch ?? evidence?.dataStatus?.patch ?? null,
     cluster: source.cluster ?? source.clusterId ?? result?.clusterId ?? null,
@@ -62,6 +65,7 @@ function normalizeSemantic(record, index) {
     source,
     patch: record?.patch ?? record?.metadata?.patch ?? null,
     locale: record?.locale ?? record?.metadata?.locale ?? null,
+    seasonContextId: record?.seasonContextId ?? record?.season_context_id ?? record?.metadata?.seasonContextId ?? "set17-live",
     visible: Boolean(record?.visible ?? record?.metadata?.visible ?? true),
     metadata: {
       ...(record?.apiName ? { apiName: clipped(record.apiName, 160) } : {}),
@@ -97,7 +101,7 @@ function criticalErrors(legacy) {
   for (const record of recommendations) {
     if (!record?.evidenceId) errors.push("missing_evidence_id");
     const stats = record?.stats;
-    if (["unit_build_rankings", "unit_item_rankings", "unit_emblem_rankings", "unit_item_comparison", "comp_rankings", "comp_trends"].includes(intent)) {
+    if (["unit_build_rankings", "unit_item_rankings", "unit_emblem_rankings", "unit_item_comparison", "comp_rankings", "comp_trends", "comp_analysis"].includes(intent)) {
       if (!stats || !Number.isFinite(Number(stats.games))) errors.push(`missing_games:${record?.evidenceId ?? "unknown"}`);
     }
   }
@@ -119,6 +123,7 @@ function derivedSignals(legacy) {
     itemSignals: array(legacy?.itemSignals),
     itemRankingContext: legacy?.itemRankingContext ?? null,
     compRankingContext: legacy?.compRankingContext ?? null,
+    compAnalysis: legacy?.compRankingContext?.analysis ?? null,
     comparison: legacy?.comparison ? {
       winner: legacy.comparison.winner ?? null,
       winnerEvidenceId: legacy.comparison.winnerEvidenceId ?? null,
@@ -160,10 +165,24 @@ export class EvidenceAssembler {
     }
 
     const metadata = sourceMetadata(result, legacy);
+    const analysisEvidence = array(result?.analysis?.evidencePack).map((record, index) => ({
+      ...record,
+      evidenceId: `analysis-source:${index + 1}`,
+      visible: true,
+      authority: record.sourceType === "official_patch"
+        ? "official_patch"
+        : record.sourceType === "metatft_fact" || record.sourceType === "historical_fact"
+          ? "primary_statistics"
+          : record.sourceType,
+      source: record.sourceName,
+      patch: record.effectivePatch,
+      updatedAt: record.sourceUpdatedAt,
+      cacheStatus: metadata.cache
+    }));
     const structuredEvidence = [
       ...array(legacy.recommendations),
       ...array(legacy.itemSignals)
-    ].map((record) => decorateStructured(record, metadata));
+    ].map((record) => decorateStructured(record, metadata)).concat(analysisEvidence);
     const configuredBudget = plan?.evidenceBudget ?? this.options.evidenceBudget ?? {};
     const maxItems = Math.max(1, Number(configuredBudget.maxItems ?? DEFAULT_EVIDENCE_MAX_ITEMS));
     const maxCharacters = Math.max(256, Number(configuredBudget.maxCharacters ?? DEFAULT_EVIDENCE_MAX_CHARACTERS));
@@ -177,18 +196,32 @@ export class EvidenceAssembler {
     const pack = createEvidencePack({
       request: {
         ...legacy.request,
+        seasonContextId: metadata.seasonContextId,
         entities: legacy.query?.unit?.apiName ? [legacy.query.unit.apiName] : []
       },
-      query: legacy.query,
+      query: {
+        ...legacy.query,
+        seasonContextId: metadata.seasonContextId,
+        providerVersion: metadata.providerVersion,
+        effectivePatch: metadata.effectivePatch
+      },
       structuredEvidence,
       semanticEvidence: [],
       derivedSignals: derivedSignals(legacy),
       warnings: legacy.warnings,
       dataStatus: {
         ...legacy.dataStatus,
+        seasonContextId: metadata.seasonContextId,
+        providerVersion: metadata.providerVersion,
+        effectivePatch: metadata.effectivePatch,
         patch: metadata.patch,
         cluster: metadata.cluster,
-        filters: metadata.filters
+        filters: metadata.filters,
+        enrichmentSources: result?.enrichment ? {
+          facts: "metatft",
+          strategy: "tftclarity_automatic_derivation",
+          profile: "tftclarity_profile"
+        } : null
       },
       generationRules: {
         ...legacy.generationRules,

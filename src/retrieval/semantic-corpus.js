@@ -13,7 +13,8 @@ export const INTENT_SEMANTIC_SAMPLES = Object.freeze({
     "易大师适合什么纹章"
   ],
   comp_rankings: ["当前阵容排行", "哪些阵容上分稳定", "阵容前四率和登顶率排名"],
-  comp_trends: ["最近哪些阵容在上升", "阵容趋势变化", "值得关注的新兴阵容"]
+  comp_trends: ["最近哪些阵容在上升", "阵容趋势变化", "值得关注的新兴阵容"],
+  comp_analysis: ["这个阵容还能玩吗", "为什么突然变强或变弱", "当前卷不卷", "适合上分还是吃鸡"]
 });
 
 function compact(values) {
@@ -39,6 +40,7 @@ function entityDocument(entity, type, options) {
   const category = String(entity.category ?? "");
   const documentType = type === "item" && category === "emblem" ? "emblem_description" : type;
   return normalizeSemanticDocument({
+    seasonContextId: options.seasonContextId,
     id: `${options.patch}:${options.locale}:${documentType}:${apiName}`,
     documentType,
     apiName: entity.apiName ?? entity.filterId,
@@ -67,6 +69,7 @@ function descriptionDocument(value, index, options) {
   const type = String(value.documentType ?? value.type ?? "static_description");
   return normalizeSemanticDocument({
     ...value,
+    seasonContextId: value.seasonContextId ?? value.season_context_id ?? options.seasonContextId,
     id: value.id ?? `${options.patch}:${options.locale}:${type}:${index}`,
     documentType: type,
     content,
@@ -78,6 +81,7 @@ function descriptionDocument(value, index, options) {
 
 export function buildSemanticCorpus(catalog = {}, options = {}) {
   const settings = {
+    seasonContextId: String(options.seasonContextId ?? catalog.seasonContextId ?? "set17-live"),
     patch: String(options.patch ?? catalog.patch ?? "current"),
     locale: String(options.locale ?? catalog.locale ?? "zh-CN"),
     source: String(options.source ?? "tft_static_catalog")
@@ -99,6 +103,7 @@ export function buildSemanticCorpus(catalog = {}, options = {}) {
   if (options.includeIntentSamples !== false) {
     for (const [intent, samples] of Object.entries(options.intentSamples ?? INTENT_SEMANTIC_SAMPLES)) {
       samples.forEach((sample, index) => documents.push(normalizeSemanticDocument({
+        seasonContextId: settings.seasonContextId,
         id: `${settings.patch}:${settings.locale}:intent_sample:${intent}:${index + 1}`,
         documentType: "intent_sample",
         intent,

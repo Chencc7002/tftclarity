@@ -43,6 +43,27 @@ test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(conversation, /class Composer/);
 });
 
+test("season switching is server-validated, conversation-isolated, and theme-driven", () => {
+  assert.match(indexHtml, /id="season-context-select"/);
+  assert.match(indexHtml, /id="season-context-summary"/);
+  assert.match(styles, /\.season-context-control/);
+  assert.match(appJs, /fetch\("\/api\/season-contexts"\)/);
+  assert.match(appJs, /fetch\("\/api\/season-contexts\/select"/);
+  assert.match(appJs, /seasonContextId: state\.seasonContextId/);
+  assert.match(appJs, /resetConversation\(\{ previousSeasonContextId/);
+  assert.match(appJs, /seasonContextId: previousSeasonContextId/);
+  assert.match(appJs, /document\.title = theme\.documentTitle/);
+  assert.match(appJs, /wallpaperController\.setSeason/);
+  assert.match(appJs, /option\.disabled = !context\.selectable/);
+  assert.match(appJs, /theme\?\.patchNoteVersion/);
+  assert.match(wallpaperController, /setSeason\(seasonId, defaultWallpaperId/);
+  assert.match(wallpaperController, /localStorage\.setItem\(`\$\{WALLPAPER_ID_STORAGE_KEY\}\.\$\{this\.seasonId\}`/);
+  assert.match(wallpaperCatalog, /"set-18-pbe"/);
+  assert.match(i18n, /seasonComingSoonStatus/);
+  assert.match(i18n, /seasonArchivedStatus/);
+  assert.match(i18n, /seasonRevivalStatus/);
+});
+
 test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(indexHtml, /class="quick-tasks"/);
   assert.equal((indexHtml.match(/class="quick-task-card/g) ?? []).length, 4);
@@ -77,9 +98,11 @@ test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
 });
 
-test("composer refresh and clear actions use distinct accessible SVG icons", () => {
+test("composer keeps one refresh action and a distinct accessible clear action", () => {
+  assert.doesNotMatch(indexHtml, /id="retry-button"/u);
   assert.match(indexHtml, /id="refresh-button"[^>]*data-i18n-aria="refreshTitle"[\s\S]*?<svg class="compact-action-icon"/u);
   assert.match(indexHtml, /id="clear-button"[^>]*data-i18n-aria="clearTitle"[\s\S]*?<svg class="compact-action-icon"/u);
+  assert.doesNotMatch(appJs, /querySelector\("#retry-button"\)/u);
   assert.doesNotMatch(indexHtml, /id="clear-button"[^>]*>[\s\S]*?⌫/u);
   assert.match(styles, /\.compact-action-icon \{[^}]*stroke-width: 2/u);
   assert.match(styles, /#refresh-button:not\(:disabled\)/u);

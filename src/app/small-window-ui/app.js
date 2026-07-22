@@ -2,10 +2,11 @@ import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
-import { getCurrentPatchNote } from "./patch-notes.js";
+import { getPatchNote } from "./patch-notes.js";
 import { WallpaperController } from "./wallpaper-controller.js";
 
 const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
+const SEASON_CONTEXT_STORAGE_KEY = "tftagent.seasonContextId";
 
 const state = {
   minSamples: 100,
@@ -44,7 +45,10 @@ const state = {
   feedbackByCard: {},
   explanationFeedback: null,
   mobileView: "chat",
-  conclusionStreamText: ""
+  conclusionStreamText: "",
+  seasonContextId: "set17-live",
+  seasonContexts: [],
+  seasonContext: null
 };
 
 const shellEl = document.querySelector("#app-shell");
@@ -52,7 +56,6 @@ const form = document.querySelector("#query-form");
 const queryInput = document.querySelector("#query-input");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
-const retryButton = document.querySelector("#retry-button");
 const stopButton = document.querySelector("#stop-button");
 const settingsButton = document.querySelector("#settings-button");
 const settingsPanel = document.querySelector("#settings-panel");
@@ -80,6 +83,9 @@ const resultTitleEl = document.querySelector("#result-title");
 const resultRefreshButton = document.querySelector("#result-refresh-button");
 const mobileResultBackButton = document.querySelector("#mobile-result-back");
 const statusEl = document.querySelector("#status");
+const seasonContextSelect = document.querySelector("#season-context-select");
+const seasonContextSummary = document.querySelector("#season-context-summary");
+const seasonContextNotice = document.querySelector("#season-context-notice");
 const aiQuotaEl = document.querySelector("#ai-quota");
 const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
@@ -126,6 +132,7 @@ const titleBar = new TitleBar({
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
+    applySeasonTheme(state.seasonContext, { refreshWallpaper: false });
     wallpaperController.refreshLocale();
     rerenderLocalizedState();
   }
@@ -189,7 +196,7 @@ function returnToMobileChat() {
 }
 
 function isCompResult(data) {
-  return data?.type === CompRankingResult.type || data?.type === "comp_trends";
+  return data?.type === CompRankingResult.type || data?.type === "comp_trends" || data?.type === "comp_analysis";
 }
 
 function compCardNavigationKey(card) {
@@ -293,6 +300,126 @@ function escapeHtml(value) {
     .replace(/'/g, "&#39;");
 }
 
+function localizedThemeValue(value, fallback = "") {
+  if (value && typeof value === "object" && !Array.isArray(value)) {
+    return value[getLocale()] ?? value["zh-CN"] ?? value["en-US"] ?? fallback;
+  }
+  return value ?? fallback;
+}
+
+function seasonStatusLabel(context) {
+  if (context?.status === "archived") return t("seasonArchivedStatus");
+  if (context?.status === "revival" || context?.mode === "revival") return t("seasonRevivalStatus");
+  if (context?.environment === "pbe" && context?.status !== "coming_soon") return t("seasonPbeStatus");
+  if (context?.status === "live") return t("seasonLiveStatus");
+  if (context?.status === "coming_soon") return t("seasonComingSoonStatus");
+  return t("seasonUnavailableStatus");
+}
+
+function seasonOptionLabel(context) {
+  const base = getLocale() === "en-US"
+    ? `Set ${context.season} · ${context.environment === "pbe" ? "PBE" : seasonStatusLabel(context)}`
+    : context.label;
+  return context.status === "coming_soon" ? `${base} — ${seasonStatusLabel(context)}` : base;
+}
+
+function renderSeasonContextOptions() {
+  if (!seasonContextSelect || !state.seasonContexts.length) return;
+  seasonContextSelect.replaceChildren(...state.seasonContexts.map((context) => {
+    const option = document.createElement("option");
+    option.value = context.id;
+    option.textContent = seasonOptionLabel(context);
+    option.disabled = !context.selectable;
+    if (context.notices?.length) option.title = context.notices.join(" ");
+    return option;
+  }));
+  seasonContextSelect.value = state.seasonContextId ?? "";
+  seasonContextSelect.disabled = state.seasonContexts.length === 0;
+}
+
+function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
+  if (!context) return;
+  const theme = context.theme ?? {};
+  const colors = theme.colors ?? {};
+  const wallpaper = theme.wallpaper ?? {};
+  document.title = theme.documentTitle || `tftclarity · Set ${context.season}`;
+  shellEl.dataset.seasonContextId = context.id;
+  shellEl.dataset.seasonEnvironment = context.environment;
+  shellEl.style.setProperty("--season-primary", colors.primary ?? "#6b63df");
+  shellEl.style.setProperty("--season-secondary", colors.secondary ?? "#34b9d6");
+  if (refreshWallpaper) {
+    wallpaperController.setSeason(wallpaper.seasonId, wallpaper.defaultId, {
+      primary: colors.primary,
+      secondary: colors.secondary,
+      particles: theme.particles
+    });
+  }
+  const label = seasonContextSummary?.querySelector("[data-season-label]");
+  const subtitle = seasonContextSummary?.querySelector("[data-season-subtitle]");
+  if (label) label.textContent = seasonOptionLabel(context).replace(/\s+—\s+.*/, "");
+  if (subtitle) subtitle.textContent = localizedThemeValue(theme.subtitle, context.themeId ?? "");
+  const notice = localizedThemeValue(theme.riskNotice, context.notices?.[0] ?? "");
+  if (seasonContextNotice) {
+    seasonContextNotice.textContent = notice;
+    seasonContextNotice.hidden = !notice;
+  }
+  renderSeasonContextOptions();
+}
+
+async function selectSeasonContext(seasonContextId, { reset = true, announce = true } = {}) {
+  const previousSeasonContextId = state.seasonContextId;
+  let didReset = false;
+  seasonContextSelect.disabled = true;
+  try {
+    const response = await fetch("/api/season-contexts/select", {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ seasonContextId })
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("seasonSwitchFailed"));
+    if (reset && previousSeasonContextId && previousSeasonContextId !== data.seasonContext.id) {
+      await resetConversation({ previousSeasonContextId, announce: false });
+      didReset = true;
+    }
+    state.seasonContextId = data.seasonContext.id;
+    state.seasonContext = data.seasonContext;
+    localStorage.setItem(SEASON_CONTEXT_STORAGE_KEY, state.seasonContextId);
+    applySeasonTheme(data.seasonContext);
+    if (didReset) {
+      resultEl.innerHTML = welcomeConversationHtml();
+      renderEmptyResult();
+    }
+    if (announce) setStatusKey("seasonSwitched", "ready", { season: seasonOptionLabel(data.seasonContext) });
+    return data.seasonContext;
+  } catch (error) {
+    seasonContextSelect.value = previousSeasonContextId ?? "";
+    if (announce) setStatus(error.message || t("seasonSwitchFailed"), "error");
+    return null;
+  } finally {
+    seasonContextSelect.disabled = state.seasonContexts.length === 0;
+  }
+}
+
+async function loadSeasonContexts() {
+  try {
+    const response = await fetch("/api/season-contexts");
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("seasonLoadFailed"));
+    state.seasonContexts = data.seasonContexts ?? [];
+    const storedId = localStorage.getItem(SEASON_CONTEXT_STORAGE_KEY);
+    const preferred = state.seasonContexts.find((context) => context.id === storedId && context.selectable)
+      ?? state.seasonContexts.find((context) => context.id === data.defaultSeasonContextId && context.selectable)
+      ?? state.seasonContexts.find((context) => context.selectable);
+    renderSeasonContextOptions();
+    if (!preferred) throw new Error(t("seasonLoadFailed"));
+    await selectSeasonContext(preferred.id, { reset: false, announce: false });
+  } catch (error) {
+    state.seasonContextId = "set17-live";
+    setStatus(error.message || t("seasonLoadFailed"), "error");
+  }
+}
+
 const QUICK_TASKS = [
   {
     id: "comp-rankings",
@@ -327,8 +454,15 @@ const QUICK_TASKS = [
   }
 ];
 
+function quickTasksForSeason() {
+  const configured = localizedThemeValue(state.seasonContext?.theme?.quickQuestions, []);
+  return QUICK_TASKS.map((task, index) => (
+    index < 2 && configured[index] ? { ...task, query: configured[index] } : task
+  ));
+}
+
 function quickTasksHtml() {
-  const cards = QUICK_TASKS.map((task) => {
+  const cards = quickTasksForSeason().map((task) => {
     const isInteractive = task.query || task.view || task.inputTemplateKey;
     const action = isInteractive
       ? ` data-quick-task="${escapeHtml(task.id)}"`
@@ -730,7 +864,49 @@ function renderPopularMetricSwitch(activeMetric) {
   </div>`;
 }
 
+function compPreferenceValueLabel(field, value) {
+  const labels = {
+    strategy: { reroll: "preferenceReroll", fast8: "preferenceFast8", fast9: "preferenceFast9" },
+    goal: { top4: "preferenceTop4", top1: "preferenceTop1", balanced: "preferenceBalanced" },
+    contested: { low: "preferenceLow", medium: "preferenceMedium", high: "preferenceHigh" },
+    difficulty: { low: "preferenceLow", medium: "preferenceMedium", high: "preferenceHigh" }
+  };
+  return labels[field]?.[value] ? t(labels[field][value]) : String(value);
+}
+
+function renderCompPreferenceSummary(data) {
+  const search = data.preferenceSearch;
+  if (!search) return "";
+  const conditions = search.conditions ?? {};
+  const chips = [];
+  if (conditions.strategy) chips.push(t("preferenceStrategy", { value: compPreferenceValueLabel("strategy", conditions.strategy) }));
+  if (conditions.reroll === false) chips.push(t("preferenceNoReroll"));
+  if (conditions.goal) chips.push(t("preferenceGoal", { value: compPreferenceValueLabel("goal", conditions.goal) }));
+  if (conditions.contested) chips.push(t("preferenceContested", { value: compPreferenceValueLabel("contested", conditions.contested) }));
+  if (conditions.difficulty) chips.push(t("preferenceDifficulty", { value: compPreferenceValueLabel("difficulty", conditions.difficulty) }));
+  if (conditions.beginnerFriendly !== null && conditions.beginnerFriendly !== undefined) {
+    chips.push(t(conditions.beginnerFriendly ? "preferenceBeginner" : "preferenceExperienced"));
+  }
+  chips.push(t("preferenceCount", { value: conditions.count ?? search.requestedCount ?? 3 }));
+  const statusKey = {
+    ok: "preferenceStatusOk",
+    low_sample_only: "preferenceStatusLowSample",
+    insufficient_profile: "preferenceStatusProfile",
+    insufficient_evidence: "preferenceStatusEvidence",
+    zero_results: "preferenceStatusZero"
+  }[search.status] ?? "preferenceStatusEvidence";
+  return `<section class="comp-preference-summary" data-status="${escapeHtml(search.status ?? "unknown")}">
+    <div><strong>${t("preferenceSearchTitle")}</strong><span>${escapeHtml(t(statusKey))}</span></div>
+    <div class="comp-preference-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>
+    <small>${t("preferenceReturned", { returned: search.returnedCount ?? 0, requested: search.requestedCount ?? conditions.count ?? 3 })} · ${t("deterministicRanking")}</small>
+  </section>`;
+}
+
 function renderCompRankings(data) {
+  if (data.type === "comp_analysis") {
+    renderCompAnalysis(data);
+    return;
+  }
   const references = data.references ?? [];
   const isTrendView = data.type === "comp_trends";
   const rising = data.rising ?? data.improving ?? [];
@@ -766,6 +942,7 @@ function renderCompRankings(data) {
         <small>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))}</small>
         <small>${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
       </div>
+      ${renderCompPreferenceSummary(data)}
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
       ${renderCompTrendNotice(data, [])}
       <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
@@ -777,6 +954,7 @@ function renderCompRankings(data) {
       <span>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${escapeHtml(stale)}</span>
       <small title="${escapeHtml(compRankLabel(data.query?.rankFilter))}">${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))} · ${escapeHtml(compUpdatedLabel(data.source?.updatedAt))}</small>
     </div>
+    ${renderCompPreferenceSummary(data)}
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${isTrendView ? renderCompTrendNotice(data, [...rising, ...falling]) : ""}
     ${isPopularView ? `<div class="popular-ranking-toolbar"><span>${t("popularCompSample", { value: 21 })}</span>${metricSwitch}</div>` : ""}
@@ -1311,8 +1489,20 @@ function renderEmptyResult(track = true) {
 }
 
 function renderPatchNote(track = true) {
-  const patch = getCurrentPatchNote(getLocale());
+  const version = state.seasonContext?.theme?.patchNoteVersion;
+  const patch = getPatchNote(version, getLocale());
   if (track) state.resultView = { type: "patch-note" };
+  if (!patch) {
+    resultTitleEl.textContent = t("patchNotesUnavailable");
+    resultRefreshButton.disabled = true;
+    rawOutputEl.textContent = JSON.stringify({
+      seasonContextId: state.seasonContextId,
+      patchNoteVersion: version ?? null,
+      status: "unavailable"
+    }, null, 2);
+    setResponseHtml(`<section class="result-state result-empty" data-state="empty"><div class="state-orbit" aria-hidden="true">!</div><strong>${escapeHtml(t("patchNotesUnavailable"))}</strong></section>`);
+    return;
+  }
   resultTitleEl.textContent = t("patchNotesTitle", { version: patch.version });
   resultRefreshButton.disabled = true;
   rawOutputEl.textContent = JSON.stringify(patch, null, 2);
@@ -1356,6 +1546,32 @@ function resultKind(data) {
   return t("recommendation");
 }
 
+function renderCompAnalysis(data) {
+  const analysis = data.analysis ?? {};
+  const answer = analysis.answer ?? {};
+  const target = data.rankings?.analysis?.[0] ?? null;
+  const evidenceStatus = analysis.evidenceStatus ?? analysis.status ?? "unavailable";
+  const sourceTypes = [...new Set((analysis.evidencePack ?? []).map((record) => record.sourceType).filter(Boolean))];
+  setResponseHtml(`
+    <div class="comp-overview comp-analysis-overview">
+      <strong>${escapeHtml(t("compAnalysisTitle"))}</strong>
+      <span>${escapeHtml(analysis.target?.name ?? t("compAnalysisUnknownTarget"))}</span>
+      <small>${escapeHtml(t("compAnalysisEvidenceStatus", { value: evidenceStatus }))}</small>
+    </div>
+    <section class="comp-analysis-answer" data-status="${escapeHtml(evidenceStatus)}">
+      <h2>${escapeHtml(t("compAnalysisConclusion"))}</h2>
+      <p>${escapeHtml(answer.conclusion ?? data.text ?? "")}</p>
+      ${(answer.reasons ?? []).length ? `<h3>${escapeHtml(t("compAnalysisReasons"))}</h3><ul>${answer.reasons.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
+      ${(answer.evidence ?? []).length ? `<h3>${escapeHtml(t("compAnalysisData"))}</h3><ul>${answer.evidence.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
+      ${(answer.risks ?? []).length ? `<h3>${escapeHtml(t("compAnalysisRisks"))}</h3><ul>${answer.risks.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
+    </section>
+    ${target ? `<section class="ranking-section"><h2>${escapeHtml(t("compAnalysisTargetData"))}</h2>${renderCompCard(target, "avgPlacement", 0)}</section>` : ""}
+    <div class="comp-footnote">${escapeHtml(t("compAnalysisSources", { value: sourceTypes.join(" / ") || "unavailable" }))}</div>
+    ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
+    ${sourceAndRisk(data)}
+  `);
+}
+
 const EQUIPMENT_CORE_RESULT_TYPES = new Set([
   "unit_build_rankings",
   "unit_build_completion",
@@ -1381,6 +1597,14 @@ function isSpecialItemRanking(data) {
     && (data?.query?.itemCategories ?? []).some((category) => ["radiant", "artifact"].includes(category));
 }
 
+function isItemPerformance(data) {
+  return data?.type === ItemRankingResult.type && Boolean(data?.itemPerformance);
+}
+
+function itemPerformanceConclusionText(data) {
+  return isItemPerformance(data) ? data.itemPerformance.conclusion ?? data.answer?.summary ?? null : null;
+}
+
 function specialItemRankingConclusionText(data) {
   if (!isSpecialItemRanking(data)) return null;
   const categories = (data.query.itemCategories ?? [])
@@ -1401,11 +1625,11 @@ function specialItemRankingConclusionText(data) {
 }
 
 function chatCoreConclusionText(data) {
-  return equipmentCoreConclusionText(data) ?? specialItemRankingConclusionText(data);
+  return itemPerformanceConclusionText(data) ?? equipmentCoreConclusionText(data) ?? specialItemRankingConclusionText(data);
 }
 
 function chatCoreScopeText(data) {
-  return isSpecialItemRanking(data) ? t("chatSpecialRankingScope") : t("chatCoreScope");
+  return isItemPerformance(data) ? "\u6307\u5b9a\u88c5\u5907\u4e0e\u540c\u6761\u4ef6 Top 3 \u5bf9\u6bd4" : isSpecialItemRanking(data) ? t("chatSpecialRankingScope") : t("chatCoreScope");
 }
 
 function generatedConclusionText(conclusion) {
@@ -1549,6 +1773,18 @@ function rerenderLocalizedState() {
 }
 
 function renderItemRankings(data) {
+  if (data.itemPerformance) {
+    const performance = data.itemPerformance;
+    const target = performance.item;
+    const rankingCards = performance.topRankings ?? [];
+    setResponseHtml(`
+      ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", performance.conclusion ?? data.answer?.summary ?? data.text, "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
+      ${target ? `<section class="item-ranking-list"><h2>\u6307\u5b9a\u88c5\u5907</h2><article class="item-ranking-card best"><div class="item-ranking-head">${assetThumb(target.iconUrl, localizedName(target), "tiny-item-icon")}<strong>${escapeHtml(localizedName(target))}</strong><span>${performance.rank ? `#${performance.rank}` : t("lowSample")}</span></div><div class="stats">${metric(t("top4"), `${formatNumber(target.stats.top4)}%`)}${metric(t("win"), `${formatNumber(target.stats.win)}%`)}${metric(t("avg"), formatNumber(target.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(target.stats.games))}</div></article></section>` : ""}
+      <section class="item-ranking-list"><h2>\u540c\u6761\u4ef6\u88c5\u5907 Top 3</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
+      <div class="item-ranking-meta">${t("methodology")}：${escapeHtml(data.answer?.methodology ?? "")}</div>${conditionPanel(data)}${sourceAndRisk(data)}
+    `);
+    return;
+  }
   const rankings = data.itemRankings ?? [];
   if (!rankings.length) {
     setResponseHtml(`${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text ?? t("noResult"), t("noResult"))}${conditionPanel(data)}${sourceAndRisk(data)}`);
@@ -1641,7 +1877,7 @@ function renderCurrentResult(data) {
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
-  else if (data.type === CompRankingResult.type || data.type === "comp_trends") renderCompRankings(data);
+  else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else renderRecommendationResult(data);
 }
@@ -2138,7 +2374,6 @@ function updateProgress(target, index) {
 function setRequestRunning(running) {
   state.requestInFlight = running;
   stopButton.classList.toggle("hidden", !running);
-  retryButton.disabled = running || !state.lastInput;
   refreshButton.disabled = running || !state.lastInput;
   resultRefreshButton.disabled = running || !state.lastInput;
   form.querySelector("button[type=submit]").disabled = running;
@@ -2197,6 +2432,7 @@ async function requestRecommendation(refresh = false, displayInput = null) {
       body: JSON.stringify({
         input,
         conversationId: state.conversationId,
+        seasonContextId: state.seasonContextId,
         refresh,
         deferConclusion: true,
         preferences: {
@@ -2215,7 +2451,7 @@ async function requestRecommendation(refresh = false, displayInput = null) {
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     if (data.access) renderAccessStatus(data.access);
     renderResult(data);
-    if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
+    if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);
     }
     setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
@@ -2321,12 +2557,6 @@ stopButton.addEventListener("click", () => {
   state.currentController?.abort();
 });
 
-retryButton.addEventListener("click", () => {
-  if (!state.lastInput || state.requestInFlight) return;
-  queryInput.value = state.lastInput;
-  requestRecommendation(false);
-});
-
 async function handleResultClick(event) {
   const returnCompButton = event.target.closest("[data-return-comp]");
   if (returnCompButton) {
@@ -2349,7 +2579,8 @@ async function handleResultClick(event) {
   const quickTaskButton = event.target.closest("button[data-quick-task]");
   if (quickTaskButton) {
     if (state.requestInFlight) return;
-    const quickTask = QUICK_TASKS.find((task) => task.id === quickTaskButton.dataset.quickTask);
+    const baseQuickTask = QUICK_TASKS.find((task) => task.id === quickTaskButton.dataset.quickTask);
+    const quickTask = quickTasksForSeason().find((task) => task.id === quickTaskButton.dataset.quickTask) ?? baseQuickTask;
     if (quickTask?.view === "patch-note") {
       state.currentConclusionController?.abort();
       state.currentConclusionController = null;
@@ -2549,7 +2780,7 @@ resultRefreshButton.addEventListener("click", () => {
   requestRecommendation(true);
 });
 
-clearButton.addEventListener("click", async () => {
+async function resetConversation({ previousSeasonContextId = state.seasonContextId, announce = true } = {}) {
   const previousConversationId = state.conversationId;
   state.requestSerial += 1;
   state.currentController?.abort();
@@ -2576,17 +2807,35 @@ clearButton.addEventListener("click", async () => {
   renderEmptyResult();
   setMobileView("chat", { replaceHistory: true });
   setRequestRunning(false);
-  setStatusKey("statusCleared");
+  if (announce) setStatusKey("statusCleared");
   try {
     const response = await fetch("/api/session/clear", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ conversationId: previousConversationId })
+      body: JSON.stringify({
+        conversationId: previousConversationId,
+        seasonContextId: previousSeasonContextId
+      })
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
+    return true;
   } catch {
-    setStatusKey("sessionClearFailed", "error");
+    if (announce) setStatusKey("sessionClearFailed", "error");
+    return false;
   }
+}
+
+clearButton.addEventListener("click", () => {
+  void resetConversation();
+});
+
+seasonContextSelect.addEventListener("change", () => {
+  const requested = state.seasonContexts.find((context) => context.id === seasonContextSelect.value);
+  if (!requested?.selectable || requested.id === state.seasonContextId) {
+    seasonContextSelect.value = state.seasonContextId ?? "";
+    return;
+  }
+  void selectSeasonContext(requested.id);
 });
 
 openItemAuditButton.addEventListener("click", async () => {
@@ -2775,5 +3024,6 @@ setMobileView("chat", { replaceHistory: true });
 setLocale(getLocale());
 wallpaperController.refreshLocale();
 setRequestRunning(false);
+void loadSeasonContexts();
 loadPreferences();
 loadAccessStatus();

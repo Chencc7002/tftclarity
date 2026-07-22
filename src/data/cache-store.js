@@ -1,5 +1,9 @@
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
+import {
+  DEFAULT_SEASON_CONTEXT_ID,
+  normalizeSeasonContextId
+} from "../season/season-context.js";
 
 export const DEFAULT_CACHE_TTL_MS = {
   query: 5 * 60 * 1000,
@@ -62,6 +66,23 @@ function hydrateMap(value) {
   return new Map(Object.entries(value ?? {}));
 }
 
+const SEASON_KEY_PREFIX = "season:";
+
+function seasonStorageKey(key, seasonContextId = DEFAULT_SEASON_CONTEXT_ID) {
+  return `${SEASON_KEY_PREFIX}${normalizeSeasonContextId(seasonContextId)}|${String(key)}`;
+}
+
+function seasonFromOptions(options = {}) {
+  return normalizeSeasonContextId(options.seasonContextId ?? options.season_context_id);
+}
+
+function hydrateSeasonMap(value) {
+  return new Map(Object.entries(value ?? {}).map(([key, entry]) => [
+    key.startsWith(SEASON_KEY_PREFIX) ? key : seasonStorageKey(key),
+    entry
+  ]));
+}
+
 function normalizeAliasValue(value) {
   return String(value ?? "")
     .trim()
@@ -93,6 +114,9 @@ function aliasMatchesQuery(entry, query) {
 
 export function makeQueryCacheKey(query) {
   const payload = {
+    season_context_id: normalizeSeasonContextId(query.seasonContextId ?? query.season_context_id),
+    provider_version: query.providerVersion ?? query.provider_version ?? "metatft-live.v1",
+    effective_patch: query.effectivePatch ?? query.effective_patch ?? query.patch ?? "current",
     intent: query.intent ?? null,
     unit: query.unit ?? null,
     star_level: sortNumbers(query.starLevel ?? query.star_level),
@@ -101,6 +125,7 @@ export function makeQueryCacheKey(query) {
     locked_items: sortStrings(query.lockedItems ?? query.ownedItems ?? query.locked_items ?? query.owned_items),
     comparison_items: sortStrings(query.comparisonItems ?? query.comparison_items ?? query.comparison?.itemApiNames),
     comparison_mode: query.comparisonMode ?? query.comparison_mode ?? null,
+    performance_item: query.performanceItem ?? query.performance_item ?? null,
     primary_metric: query.primaryMetric ?? query.primary_metric ?? null,
     comp: query.comp?.status === "applied" ? query.comp.value?.id ?? "invalid" : "none",
     comp_semantics: query.comp?.semanticsVersion ?? query.comp?.value?.semanticsVersion ?? "none",
@@ -126,6 +151,9 @@ export function makeQueryCacheKey(query) {
 
 export function makeCompCandidateCacheKey(input) {
   const payload = {
+    season_context_id: normalizeSeasonContextId(input.seasonContextId ?? input.season_context_id),
+    provider_version: input.providerVersion ?? input.provider_version ?? "metatft-live.v1",
+    effective_patch: input.effectivePatch ?? input.effective_patch ?? input.patch ?? "current",
     unit: input.unit ?? null,
     rank: sortStrings(input.rankFilter ?? input.rank),
     days: input.days ?? null,
@@ -139,6 +167,9 @@ export function makeCompCandidateCacheKey(input) {
 
 export function makeDefaultContextCacheKey(input) {
   const payload = {
+    season_context_id: normalizeSeasonContextId(input.seasonContextId ?? input.season_context_id),
+    provider_version: input.providerVersion ?? input.provider_version ?? "metatft-live.v1",
+    effective_patch: input.effectivePatch ?? input.effective_patch ?? input.patch ?? "current",
     unit: input.unit ?? null,
     rank: sortStrings(input.rankFilter ?? input.rank),
     days: input.days ?? null,
@@ -170,6 +201,9 @@ export class MemoryCacheStore {
     this.entityAliases = [];
     this.queryEvents = new Map();
     this.feedbackEvents = [];
+    this.adminAuditEvents = [];
+    this.compProfiles = new Map();
+    this.compProfileBindings = new Map();
     this.nextEntityAliasId = 1;
     this.nextFeedbackEventId = 1;
   }
@@ -195,31 +229,31 @@ export class MemoryCacheStore {
   }
 
   getQuery(key, options = {}) {
-    return this._get(this.queryCache, key, options);
+    return this._get(this.queryCache, seasonStorageKey(key, seasonFromOptions(options)), options);
   }
 
   setQuery(key, value, options = {}) {
-    return this._set(this.queryCache, key, value, options.ttlMs ?? this.ttlMs.query);
+    return this._set(this.queryCache, seasonStorageKey(key, seasonFromOptions(options)), value, options.ttlMs ?? this.ttlMs.query);
   }
 
   getDefaultContext(key, options = {}) {
-    return this._get(this.defaultContextCache, key, options);
+    return this._get(this.defaultContextCache, seasonStorageKey(key, seasonFromOptions(options)), options);
   }
 
   setDefaultContext(key, value, options = {}) {
-    return this._set(this.defaultContextCache, key, value, options.ttlMs ?? this.ttlMs.defaultContext);
+    return this._set(this.defaultContextCache, seasonStorageKey(key, seasonFromOptions(options)), value, options.ttlMs ?? this.ttlMs.defaultContext);
   }
 
   getSessionState(key, options = {}) {
-    return this._get(this.sessionState, key, options);
+    return this._get(this.sessionState, seasonStorageKey(key, seasonFromOptions(options)), options);
   }
 
   setSessionState(key, value, options = {}) {
-    return this._set(this.sessionState, key, value, options.ttlMs ?? this.ttlMs.session);
+    return this._set(this.sessionState, seasonStorageKey(key, seasonFromOptions(options)), value, options.ttlMs ?? this.ttlMs.session);
   }
 
-  deleteSessionState(key) {
-    return this.sessionState.delete(key);
+  deleteSessionState(key, options = {}) {
+    return this.sessionState.delete(seasonStorageKey(key, seasonFromOptions(options)));
   }
 
   getUserPreference(key, options = {}) {
@@ -231,11 +265,11 @@ export class MemoryCacheStore {
   }
 
   getCompTrendHistory(key, options = {}) {
-    return this._get(this.compTrendHistories, String(key), options);
+    return this._get(this.compTrendHistories, seasonStorageKey(key, seasonFromOptions(options)), options);
   }
 
-  setCompTrendHistory(key, value) {
-    return this._set(this.compTrendHistories, String(key), value, null);
+  setCompTrendHistory(key, value, options = {}) {
+    return this._set(this.compTrendHistories, seasonStorageKey(key, seasonFromOptions(options)), value, null);
   }
 
   deleteUserPreference(key) {
@@ -243,40 +277,46 @@ export class MemoryCacheStore {
   }
 
   getItemCatalog(patch = "current", options = {}) {
-    return this._get(this.itemCatalogs, String(patch), options);
+    return this._get(this.itemCatalogs, seasonStorageKey(String(patch), seasonFromOptions(options)), options);
   }
 
-  setItemCatalog(patch = "current", items = []) {
+  setItemCatalog(patch = "current", items = [], options = {}) {
     const normalizedPatch = String(patch || "current");
-    return this._set(this.itemCatalogs, normalizedPatch, {
+    const seasonContextId = seasonFromOptions(options);
+    return this._set(this.itemCatalogs, seasonStorageKey(normalizedPatch, seasonContextId), {
+      seasonContextId,
       patch: normalizedPatch,
       items: cloneValue(Array.isArray(items) ? items : [])
     }, null);
   }
 
-  clearItemCatalog(patch) {
+  clearItemCatalog(patch, options = {}) {
+    const seasonContextId = seasonFromOptions(options);
     if (patch !== undefined && patch !== null) {
-      return this.itemCatalogs.delete(String(patch)) ? 1 : 0;
+      return this.itemCatalogs.delete(seasonStorageKey(String(patch), seasonContextId)) ? 1 : 0;
     }
-    return this._clearMap(this.itemCatalogs);
+    return this._clearMapForSeason(this.itemCatalogs, { seasonContextId });
   }
 
   getDomainCatalog(patch = "current", options = {}) {
-    return this._get(this.domainCatalogs, String(patch), options);
+    return this._get(this.domainCatalogs, seasonStorageKey(String(patch), seasonFromOptions(options)), options);
   }
 
-  setDomainCatalog(patch = "current", value = {}) {
+  setDomainCatalog(patch = "current", value = {}, options = {}) {
     const normalizedPatch = String(patch || "current");
-    return this._set(this.domainCatalogs, normalizedPatch, {
+    const seasonContextId = seasonFromOptions(options);
+    return this._set(this.domainCatalogs, seasonStorageKey(normalizedPatch, seasonContextId), {
+      seasonContextId,
       patch: normalizedPatch,
       units: cloneValue(Array.isArray(value.units) ? value.units : []),
       traits: cloneValue(Array.isArray(value.traits) ? value.traits : [])
     }, null);
   }
 
-  clearDomainCatalog(patch) {
+  clearDomainCatalog(patch, options = {}) {
+    const seasonContextId = seasonFromOptions(options);
     if (patch !== undefined && patch !== null) {
-      const key = String(patch);
+      const key = seasonStorageKey(String(patch), seasonContextId);
       const entry = this.domainCatalogs.get(key);
       if (!entry) return { units: 0, traits: 0 };
       this.domainCatalogs.delete(key);
@@ -287,11 +327,13 @@ export class MemoryCacheStore {
     }
 
     const counts = { units: 0, traits: 0 };
-    for (const entry of this.domainCatalogs.values()) {
+    const prefix = seasonStorageKey("", seasonContextId);
+    for (const [key, entry] of this.domainCatalogs.entries()) {
+      if (!key.startsWith(prefix)) continue;
       counts.units += Array.isArray(entry.value?.units) ? entry.value.units.length : 0;
       counts.traits += Array.isArray(entry.value?.traits) ? entry.value.traits.length : 0;
+      this.domainCatalogs.delete(key);
     }
-    this.domainCatalogs.clear();
     return counts;
   }
 
@@ -310,30 +352,65 @@ export class MemoryCacheStore {
       normalizedAlias: record.normalizedAlias ?? record.normalized_alias ?? normalizeAliasValue(alias),
       entityType,
       apiName,
+      seasonContextId: normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id),
       confidence: Number.isFinite(Number(record.confidence)) ? Number(record.confidence) : 0.5,
       source: String(record.source ?? "candidate"),
       patch: record.patch ?? null,
       enabled: record.enabled ?? true,
-      updatedAt: record.updatedAt ?? record.updated_at ?? new Date(nowMs).toISOString()
+      createdAt: record.createdAt ?? record.created_at ?? new Date(nowMs).toISOString(),
+      updatedAt: record.updatedAt ?? record.updated_at ?? new Date(nowMs).toISOString(),
+      updatedBy: String(record.updatedBy ?? record.updated_by ?? "system")
     };
     this.nextEntityAliasId = Math.max(this.nextEntityAliasId, Number(entry.id) + 1);
     this.entityAliases.push(entry);
     return cloneValue(entry);
   }
 
-  getEntityAlias(id) {
+  getEntityAlias(id, options = {}) {
     const aliasId = Number(id);
     const entry = this.entityAliases.find((item) => Number(item.id) === aliasId);
-    return entry ? cloneValue(entry) : null;
+    return entry && entry.seasonContextId === seasonFromOptions(options) ? cloneValue(entry) : null;
   }
 
-  setEntityAliasEnabled(id, enabled) {
+  setEntityAliasEnabled(id, enabled, options = {}) {
     const aliasId = Number(id);
     const entry = this.entityAliases.find((item) => Number(item.id) === aliasId);
-    if (!entry) return null;
+    if (!entry || entry.seasonContextId !== seasonFromOptions(options)) return null;
     entry.enabled = Boolean(enabled);
     entry.updatedAt = new Date(this.now()).toISOString();
+    entry.updatedBy = String(options.updatedBy ?? options.updated_by ?? "admin");
     return cloneValue(entry);
+  }
+
+  updateEntityAlias(id, changes = {}, options = {}) {
+    const aliasId = Number(id);
+    const entry = this.entityAliases.find((item) => Number(item.id) === aliasId);
+    if (!entry || entry.seasonContextId !== seasonFromOptions(options)) return null;
+    const alias = changes.alias === undefined ? entry.alias : String(changes.alias).trim();
+    const entityType = changes.entityType === undefined ? entry.entityType : String(changes.entityType).trim();
+    const apiName = changes.apiName === undefined ? entry.apiName : String(changes.apiName).trim();
+    if (!alias || !entityType || !apiName) throw new Error("Entity alias requires alias, entityType, and apiName");
+    Object.assign(entry, {
+      alias,
+      normalizedAlias: normalizeAliasValue(alias),
+      entityType,
+      apiName,
+      confidence: changes.confidence === undefined ? entry.confidence : Number(changes.confidence),
+      source: changes.source === undefined ? entry.source : String(changes.source),
+      patch: changes.patch === undefined ? entry.patch : changes.patch,
+      enabled: changes.enabled === undefined ? entry.enabled : Boolean(changes.enabled),
+      updatedAt: new Date(this.now()).toISOString(),
+      updatedBy: String(changes.updatedBy ?? changes.updated_by ?? options.updatedBy ?? "admin")
+    });
+    return cloneValue(entry);
+  }
+
+  deleteEntityAlias(id, options = {}) {
+    const aliasId = Number(id);
+    const index = this.entityAliases.findIndex((item) => Number(item.id) === aliasId
+      && item.seasonContextId === seasonFromOptions(options));
+    if (index < 0) return null;
+    return cloneValue(this.entityAliases.splice(index, 1)[0]);
   }
 
   listEntityAliases(options = {}) {
@@ -341,8 +418,10 @@ export class MemoryCacheStore {
     const offset = nonNegativeInteger(options.offset, 0);
     return this.entityAliases
       .filter((entry) => {
+        if (entry.seasonContextId !== seasonFromOptions(options)) return false;
         if (options.entityType && entry.entityType !== options.entityType) return false;
         if (options.apiName && entry.apiName !== options.apiName) return false;
+        if (options.source && entry.source !== options.source) return false;
         if (options.patch && entry.patch !== options.patch) return false;
         if (options.enabled !== undefined && Boolean(entry.enabled) !== Boolean(options.enabled)) return false;
         if (options.minConfidence !== undefined && entry.confidence < Number(options.minConfidence)) return false;
@@ -369,6 +448,7 @@ export class MemoryCacheStore {
   clearEntityAliases(options = {}) {
     const before = this.entityAliases.length;
     this.entityAliases = this.entityAliases.filter((entry) => {
+      if (entry.seasonContextId !== seasonFromOptions(options)) return true;
       if (options.enabled === undefined) return false;
       return Boolean(entry.enabled) !== Boolean(options.enabled);
     });
@@ -384,6 +464,7 @@ export class MemoryCacheStore {
     }
     const entry = {
       queryId,
+      seasonContextId: normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id),
       visitorScope,
       conversationId: record.conversationId ?? record.conversation_id ?? null,
       input,
@@ -434,6 +515,7 @@ export class MemoryCacheStore {
     const createdAt = options.createdAt ?? new Date(nowMs).toISOString();
     const entry = {
       id: options.id ?? this.nextFeedbackEventId++,
+      seasonContextId: normalizeSeasonContextId(options.seasonContextId ?? options.season_context_id ?? payload.seasonContextId),
       feedbackId,
       queryId: options.queryId ?? null,
       visitorScope: options.visitorScope ?? null,
@@ -456,6 +538,7 @@ export class MemoryCacheStore {
     const limit = positiveInteger(options.limit, this.feedbackEvents.length || 100);
     return this.feedbackEvents
       .filter((entry) => {
+        if (options.seasonContextId && entry.seasonContextId !== seasonFromOptions(options)) return false;
         if (options.feedbackType && entry.feedbackType !== options.feedbackType) return false;
         if (options.status && entry.status !== options.status) return false;
         return true;
@@ -478,6 +561,7 @@ export class MemoryCacheStore {
   clearFeedbackEvents(options = {}) {
     const before = this.feedbackEvents.length;
     this.feedbackEvents = this.feedbackEvents.filter((entry) => {
+      if (options.seasonContextId && entry.seasonContextId !== seasonFromOptions(options)) return true;
       if (options.feedbackType && entry.feedbackType !== options.feedbackType) return true;
       if (options.status && entry.status !== options.status) return true;
       return false;
@@ -491,32 +575,173 @@ export class MemoryCacheStore {
     return count;
   }
 
-  _clearTransientState() {
+  addAdminAudit(record = {}) {
+    const entry = {
+      id: record.id ?? this.adminAuditEvents.length + 1,
+      seasonContextId: normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id),
+      action: String(record.action ?? "").trim(),
+      entityType: String(record.entityType ?? record.entity_type ?? "").trim(),
+      entityId: record.entityId ?? record.entity_id ?? null,
+      before: cloneValue(record.before ?? null),
+      after: cloneValue(record.after ?? null),
+      actor: String(record.actor ?? "admin"),
+      createdAt: record.createdAt ?? record.created_at ?? new Date(this.now()).toISOString()
+    };
+    if (!entry.action || !entry.entityType) throw new Error("Admin audit requires action and entityType");
+    this.adminAuditEvents.push(entry);
+    return cloneValue(entry);
+  }
+
+  listAdminAudits(options = {}) {
+    const limit = positiveInteger(options.limit, 100);
+    return this.adminAuditEvents
+      .filter((entry) => entry.seasonContextId === seasonFromOptions(options))
+      .sort((left, right) => Number(right.id) - Number(left.id))
+      .slice(0, limit)
+      .map(cloneValue);
+  }
+
+  upsertCompProfile(record = {}) {
+    const seasonContextId = normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id);
+    const profileKey = String(record.profileKey ?? record.profile_key ?? "").trim();
+    if (!profileKey) throw new Error("Comp profile requires profileKey");
+    const key = seasonStorageKey(profileKey, seasonContextId);
+    const existing = this.compProfiles.get(key);
+    const now = new Date(this.now()).toISOString();
+    const entry = {
+      seasonContextId,
+      profileKey,
+      difficulty: record.difficulty ?? null,
+      beginnerFriendly: record.beginnerFriendly ?? record.beginner_friendly ?? null,
+      pivotDifficulty: record.pivotDifficulty ?? record.pivot_difficulty ?? null,
+      positionDifficulty: record.positionDifficulty ?? record.position_difficulty ?? null,
+      contestTolerance: record.contestTolerance ?? record.contest_tolerance ?? null,
+      econDifficulty: record.econDifficulty ?? record.econ_difficulty ?? null,
+      notes: asArray(record.notes).map(String),
+      enabled: record.enabled ?? true,
+      source: String(record.source ?? "admin"),
+      createdAt: existing?.createdAt ?? record.createdAt ?? record.created_at ?? now,
+      updatedAt: record.updatedAt ?? record.updated_at ?? now
+    };
+    this.compProfiles.set(key, entry);
+    return cloneValue(entry);
+  }
+
+  getCompProfile(profileKey, options = {}) {
+    const entry = this.compProfiles.get(seasonStorageKey(profileKey, seasonFromOptions(options)));
+    return entry ? cloneValue(entry) : null;
+  }
+
+  listCompProfiles(options = {}) {
+    const seasonContextId = seasonFromOptions(options);
+    return [...this.compProfiles.values()]
+      .filter((entry) => entry.seasonContextId === seasonContextId
+        && (options.enabled === undefined || Boolean(entry.enabled) === Boolean(options.enabled)))
+      .sort((left, right) => left.profileKey.localeCompare(right.profileKey))
+      .map(cloneValue);
+  }
+
+  deleteCompProfile(profileKey, options = {}) {
+    const seasonContextId = seasonFromOptions(options);
+    const key = seasonStorageKey(profileKey, seasonContextId);
+    const entry = this.compProfiles.get(key);
+    if (!entry) return null;
+    this.compProfiles.delete(key);
+    for (const [bindingKey, binding] of this.compProfileBindings.entries()) {
+      if (binding.seasonContextId === seasonContextId && binding.profileKey === String(profileKey)) {
+        this.compProfileBindings.delete(bindingKey);
+      }
+    }
+    return cloneValue(entry);
+  }
+
+  upsertCompProfileBinding(record = {}) {
+    const seasonContextId = normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id);
+    const profileKey = String(record.profileKey ?? record.profile_key ?? "").trim();
+    const provider = String(record.provider ?? "").trim();
+    const clusterId = String(record.clusterId ?? record.cluster_id ?? "").trim();
+    const lineupSignature = String(record.lineupSignature ?? record.lineup_signature ?? "").trim();
+    if (!profileKey || !provider || !clusterId || !lineupSignature) {
+      throw new Error("Comp profile binding requires profileKey, provider, clusterId, and lineupSignature");
+    }
+    const key = seasonStorageKey(`${profileKey}\u0000${provider}`, seasonContextId);
+    const existing = this.compProfileBindings.get(key);
+    const now = new Date(this.now()).toISOString();
+    const entry = {
+      seasonContextId,
+      profileKey,
+      provider,
+      clusterId,
+      lineupSignature,
+      signatureVersion: String(record.signatureVersion ?? record.signature_version ?? "lineup-signature-v1"),
+      matchConfidence: Number(record.matchConfidence ?? record.match_confidence ?? 1),
+      matchStatus: String(record.matchStatus ?? record.match_status ?? "verified"),
+      lastVerifiedAt: record.lastVerifiedAt ?? record.last_verified_at ?? now,
+      createdAt: existing?.createdAt ?? record.createdAt ?? record.created_at ?? now,
+      updatedAt: record.updatedAt ?? record.updated_at ?? now
+    };
+    this.compProfileBindings.set(key, entry);
+    return cloneValue(entry);
+  }
+
+  listCompProfileBindings(options = {}) {
+    const seasonContextId = seasonFromOptions(options);
+    return [...this.compProfileBindings.values()]
+      .filter((entry) => entry.seasonContextId === seasonContextId
+        && (!options.profileKey || entry.profileKey === options.profileKey)
+        && (!options.provider || entry.provider === options.provider)
+        && (!options.clusterId || entry.clusterId === options.clusterId)
+        && (!options.matchStatus || entry.matchStatus === options.matchStatus))
+      .sort((left, right) => left.profileKey.localeCompare(right.profileKey))
+      .map(cloneValue);
+  }
+
+  deleteCompProfileBinding(profileKey, provider, options = {}) {
+    const key = seasonStorageKey(`${String(profileKey)}\u0000${String(provider)}`, seasonFromOptions(options));
+    const entry = this.compProfileBindings.get(key);
+    if (!entry) return null;
+    this.compProfileBindings.delete(key);
+    return cloneValue(entry);
+  }
+
+  _clearMapForSeason(map, options = {}) {
+    if (options.all === true) return this._clearMap(map);
+    const prefix = seasonStorageKey("", seasonFromOptions(options));
+    let count = 0;
+    for (const key of map.keys()) {
+      if (!key.startsWith(prefix)) continue;
+      map.delete(key);
+      count += 1;
+    }
+    return count;
+  }
+
+  _clearTransientState(options = {}) {
     return {
-      queryCache: this._clearMap(this.queryCache),
-      defaultContextCache: this._clearMap(this.defaultContextCache),
-      sessionState: this._clearMap(this.sessionState)
+      queryCache: this._clearMapForSeason(this.queryCache, options),
+      defaultContextCache: this._clearMapForSeason(this.defaultContextCache, options),
+      sessionState: this._clearMapForSeason(this.sessionState, options)
     };
   }
 
-  clearQueryCache() {
-    return this._clearMap(this.queryCache);
+  clearQueryCache(options = {}) {
+    return this._clearMapForSeason(this.queryCache, options);
   }
 
-  clearDefaultContextCache() {
-    return this._clearMap(this.defaultContextCache);
+  clearDefaultContextCache(options = {}) {
+    return this._clearMapForSeason(this.defaultContextCache, options);
   }
 
-  clearSessionState() {
-    return this._clearMap(this.sessionState);
+  clearSessionState(options = {}) {
+    return this._clearMapForSeason(this.sessionState, options);
   }
 
-  clearQueryHistory() {
-    return this._clearTransientState();
+  clearQueryHistory(options = {}) {
+    return this._clearTransientState(options);
   }
 
-  clearTransient() {
-    return this._clearTransientState();
+  clearTransient(options = {}) {
+    return this._clearTransientState(options);
   }
 
   clearExpired() {
@@ -539,6 +764,9 @@ export class MemoryCacheStore {
     this.entityAliases = [];
     this.queryEvents.clear();
     this.feedbackEvents = [];
+    this.adminAuditEvents = [];
+    this.compProfiles.clear();
+    this.compProfileBindings.clear();
     this.nextEntityAliasId = 1;
     this.nextFeedbackEventId = 1;
   }
@@ -560,16 +788,31 @@ export class JsonFileCacheStore extends MemoryCacheStore {
 
     try {
       const data = JSON.parse(await readFile(this.filePath, "utf8"));
-      this.queryCache = hydrateMap(data.queryCache);
-      this.defaultContextCache = hydrateMap(data.defaultContextCache);
-      this.sessionState = hydrateMap(data.sessionState);
+      this.queryCache = hydrateSeasonMap(data.queryCache);
+      this.defaultContextCache = hydrateSeasonMap(data.defaultContextCache);
+      this.sessionState = hydrateSeasonMap(data.sessionState);
       this.userPreferences = hydrateMap(data.userPreferences);
-      this.itemCatalogs = hydrateMap(data.itemCatalogs);
-      this.domainCatalogs = hydrateMap(data.domainCatalogs);
-      this.compTrendHistories = hydrateMap(data.compTrendHistories);
-      this.entityAliases = Array.isArray(data.entityAliases) ? data.entityAliases : [];
-      this.queryEvents = hydrateMap(data.queryEvents);
-      this.feedbackEvents = Array.isArray(data.feedbackEvents) ? data.feedbackEvents : [];
+      this.itemCatalogs = hydrateSeasonMap(data.itemCatalogs);
+      this.domainCatalogs = hydrateSeasonMap(data.domainCatalogs);
+      this.compTrendHistories = hydrateSeasonMap(data.compTrendHistories);
+      this.compProfiles = hydrateSeasonMap(data.compProfiles);
+      this.compProfileBindings = hydrateSeasonMap(data.compProfileBindings);
+      this.entityAliases = (Array.isArray(data.entityAliases) ? data.entityAliases : []).map((entry) => ({
+        ...entry,
+        seasonContextId: normalizeSeasonContextId(entry.seasonContextId ?? entry.season_context_id)
+      }));
+      this.queryEvents = new Map([...hydrateMap(data.queryEvents)].map(([key, entry]) => [key, {
+        ...entry,
+        seasonContextId: normalizeSeasonContextId(entry?.seasonContextId ?? entry?.season_context_id)
+      }]));
+      this.feedbackEvents = (Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []).map((entry) => ({
+        ...entry,
+        seasonContextId: normalizeSeasonContextId(entry?.seasonContextId ?? entry?.season_context_id ?? entry?.payload?.seasonContextId)
+      }));
+      this.adminAuditEvents = (Array.isArray(data.adminAuditEvents) ? data.adminAuditEvents : []).map((entry) => ({
+        ...entry,
+        seasonContextId: normalizeSeasonContextId(entry?.seasonContextId ?? entry?.season_context_id)
+      }));
       this.nextEntityAliasId = positiveInteger(data.nextEntityAliasId, this.entityAliases.length + 1);
       this.nextFeedbackEventId = positiveInteger(data.nextFeedbackEventId, this.feedbackEvents.length + 1);
     } catch (error) {
@@ -581,7 +824,7 @@ export class JsonFileCacheStore extends MemoryCacheStore {
 
   async _persist() {
     const payload = {
-      version: 4,
+      version: 7,
       queryCache: serializeMap(this.queryCache),
       defaultContextCache: serializeMap(this.defaultContextCache),
       sessionState: serializeMap(this.sessionState),
@@ -589,9 +832,12 @@ export class JsonFileCacheStore extends MemoryCacheStore {
       itemCatalogs: serializeMap(this.itemCatalogs),
       domainCatalogs: serializeMap(this.domainCatalogs),
       compTrendHistories: serializeMap(this.compTrendHistories),
+      compProfiles: serializeMap(this.compProfiles),
+      compProfileBindings: serializeMap(this.compProfileBindings),
       entityAliases: this.entityAliases,
       queryEvents: serializeMap(this.queryEvents),
       feedbackEvents: this.feedbackEvents,
+      adminAuditEvents: this.adminAuditEvents,
       nextEntityAliasId: this.nextEntityAliasId,
       nextFeedbackEventId: this.nextFeedbackEventId
     };
@@ -641,9 +887,9 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     return entry;
   }
 
-  async deleteSessionState(key) {
+  async deleteSessionState(key, options = {}) {
     await this._ensureLoaded();
-    const deleted = super.deleteSessionState(key);
+    const deleted = super.deleteSessionState(key, options);
     await this._persistQueued();
     return deleted;
   }
@@ -672,9 +918,9 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     return super.getCompTrendHistory(key, options);
   }
 
-  async setCompTrendHistory(key, value) {
+  async setCompTrendHistory(key, value, options = {}) {
     await this._ensureLoaded();
-    const entry = super.setCompTrendHistory(key, value);
+    const entry = super.setCompTrendHistory(key, value, options);
     await this._persistQueued();
     return entry;
   }
@@ -684,16 +930,16 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     return super.getItemCatalog(patch, options);
   }
 
-  async setItemCatalog(patch = "current", items = []) {
+  async setItemCatalog(patch = "current", items = [], options = {}) {
     await this._ensureLoaded();
-    const entry = super.setItemCatalog(patch, items);
+    const entry = super.setItemCatalog(patch, items, options);
     await this._persistQueued();
     return entry;
   }
 
-  async clearItemCatalog(patch) {
+  async clearItemCatalog(patch, options = {}) {
     await this._ensureLoaded();
-    const count = super.clearItemCatalog(patch);
+    const count = super.clearItemCatalog(patch, options);
     await this._persistQueued();
     return count;
   }
@@ -703,16 +949,16 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     return super.getDomainCatalog(patch, options);
   }
 
-  async setDomainCatalog(patch = "current", value = {}) {
+  async setDomainCatalog(patch = "current", value = {}, options = {}) {
     await this._ensureLoaded();
-    const entry = super.setDomainCatalog(patch, value);
+    const entry = super.setDomainCatalog(patch, value, options);
     await this._persistQueued();
     return entry;
   }
 
-  async clearDomainCatalog(patch) {
+  async clearDomainCatalog(patch, options = {}) {
     await this._ensureLoaded();
-    const count = super.clearDomainCatalog(patch);
+    const count = super.clearDomainCatalog(patch, options);
     await this._persistQueued();
     return count;
   }
@@ -724,15 +970,29 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     return entry;
   }
 
-  async getEntityAlias(id) {
+  async getEntityAlias(id, options = {}) {
     await this._ensureLoaded();
-    return super.getEntityAlias(id);
+    return super.getEntityAlias(id, options);
   }
 
-  async setEntityAliasEnabled(id, enabled) {
+  async setEntityAliasEnabled(id, enabled, options = {}) {
     await this._ensureLoaded();
-    const entry = super.setEntityAliasEnabled(id, enabled);
+    const entry = super.setEntityAliasEnabled(id, enabled, options);
     await this._persistQueued();
+    return entry;
+  }
+
+  async updateEntityAlias(id, changes = {}, options = {}) {
+    await this._ensureLoaded();
+    const entry = super.updateEntityAlias(id, changes, options);
+    if (entry) await this._persistQueued();
+    return entry;
+  }
+
+  async deleteEntityAlias(id, options = {}) {
+    await this._ensureLoaded();
+    const entry = super.deleteEntityAlias(id, options);
+    if (entry) await this._persistQueued();
     return entry;
   }
 
@@ -796,37 +1056,92 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     return count;
   }
 
-  async clearQueryCache() {
+  async addAdminAudit(record = {}) {
     await this._ensureLoaded();
-    const count = super.clearQueryCache();
+    const entry = super.addAdminAudit(record);
+    await this._persistQueued();
+    return entry;
+  }
+
+  async listAdminAudits(options = {}) {
+    await this._ensureLoaded();
+    return super.listAdminAudits(options);
+  }
+
+  async upsertCompProfile(record = {}) {
+    await this._ensureLoaded();
+    const entry = super.upsertCompProfile(record);
+    await this._persistQueued();
+    return entry;
+  }
+
+  async getCompProfile(profileKey, options = {}) {
+    await this._ensureLoaded();
+    return super.getCompProfile(profileKey, options);
+  }
+
+  async listCompProfiles(options = {}) {
+    await this._ensureLoaded();
+    return super.listCompProfiles(options);
+  }
+
+  async deleteCompProfile(profileKey, options = {}) {
+    await this._ensureLoaded();
+    const entry = super.deleteCompProfile(profileKey, options);
+    if (entry) await this._persistQueued();
+    return entry;
+  }
+
+  async upsertCompProfileBinding(record = {}) {
+    await this._ensureLoaded();
+    const entry = super.upsertCompProfileBinding(record);
+    await this._persistQueued();
+    return entry;
+  }
+
+  async listCompProfileBindings(options = {}) {
+    await this._ensureLoaded();
+    return super.listCompProfileBindings(options);
+  }
+
+  async deleteCompProfileBinding(profileKey, provider, options = {}) {
+    await this._ensureLoaded();
+    const entry = super.deleteCompProfileBinding(profileKey, provider, options);
+    if (entry) await this._persistQueued();
+    return entry;
+  }
+
+  async clearQueryCache(options = {}) {
+    await this._ensureLoaded();
+    const count = super.clearQueryCache(options);
     await this._persistQueued();
     return count;
   }
 
-  async clearDefaultContextCache() {
+  async clearDefaultContextCache(options = {}) {
     await this._ensureLoaded();
-    const count = super.clearDefaultContextCache();
+    const count = super.clearDefaultContextCache(options);
     await this._persistQueued();
     return count;
   }
 
-  async clearSessionState() {
+  async clearSessionState(options = {}) {
     await this._ensureLoaded();
-    const count = super.clearSessionState();
+    const count = super.clearSessionState(options);
     await this._persistQueued();
     return count;
   }
 
-  async clearQueryHistory() {
+  async clearQueryHistory(options = {}) {
     await this._ensureLoaded();
-    const result = super.clearQueryHistory();
+    const result = super.clearQueryHistory(options);
     await this._persistQueued();
     return result;
   }
 
-  async clearTransient() {
+  async clearTransient(options = {}) {
     await this._ensureLoaded();
-    const result = super.clearTransient();
+    const result = super.clearTransient(options);
     await this._persistQueued();
     return result;
   }

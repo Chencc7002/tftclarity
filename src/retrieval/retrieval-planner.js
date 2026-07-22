@@ -13,7 +13,8 @@ const PROMPT_KEYS = Object.freeze({
   unit_item_comparison: "unit-item-comparison",
   unit_emblem_rankings: "unit-emblem-rankings",
   comp_rankings: "comp-rankings",
-  comp_trends: "comp-trends"
+  comp_trends: "comp-trends",
+  comp_analysis: "comp-analysis"
 });
 
 const REQUIRED_EVIDENCE = Object.freeze({
@@ -25,7 +26,8 @@ const REQUIRED_EVIDENCE = Object.freeze({
   unit_item_availability: ["visible_builds"],
   unit_emblem_rankings: ["visible_emblems", "games", "avgPlacement", "top4Rate", "winRate"],
   comp_rankings: ["visible_comps", "games", "avgPlacement", "top4Rate", "winRate", "pickRate"],
-  comp_trends: ["visible_trends", "placementImprovement", "pickRate", "games", "trendScore"]
+  comp_trends: ["visible_trends", "placementImprovement", "pickRate", "games", "trendScore"],
+  comp_analysis: ["target_comp", "games", "avgPlacement", "top4Rate", "winRate", "pickRate", "historicalComparison", "officialPatch"]
 });
 
 const DETAIL_OPERATIONS = Object.freeze({
@@ -92,9 +94,17 @@ function unitCompCandidatesQuery(envelope) {
 function compQuery(envelope) {
   const constraints = envelope.constraints;
   return {
-    id: envelope.intent === "comp_trends" ? "structured:comp_trends" : "structured:comp_rankings",
+    id: envelope.intent === "comp_trends"
+      ? "structured:comp_trends"
+      : envelope.intent === "comp_analysis"
+        ? "structured:comp_analysis"
+        : "structured:comp_rankings",
     source: "metatft",
-    operation: envelope.intent === "comp_trends" ? "comps_trends" : "comps_rankings",
+    operation: envelope.intent === "comp_trends"
+      ? "comps_trends"
+      : envelope.intent === "comp_analysis"
+        ? "comps_analysis"
+        : "comps_rankings",
     params: compactParams({
       days: constraints.days,
       patch: constraints.patch,
@@ -116,7 +126,7 @@ function shouldRetrieveSemantics(envelope, options) {
 }
 
 function semanticQuery(envelope, options) {
-  const documentTypes = envelope.intent === "comp_trends" || envelope.intent === "comp_rankings"
+  const documentTypes = ["comp_trends", "comp_rankings", "comp_analysis"].includes(envelope.intent)
     ? ["comp", "comp_description"]
     : envelope.intent === "unit_emblem_rankings"
       ? ["unit", "trait", "emblem_description"]
@@ -160,7 +170,7 @@ export class RetrievalPlanner {
         structuredQueries.push(unitCompCandidatesQuery(envelope));
       }
       structuredQueries.push(unitBuildQuery(envelope));
-    } else if (["comp_rankings", "comp_trends"].includes(envelope.intent)) {
+    } else if (["comp_rankings", "comp_trends", "comp_analysis"].includes(envelope.intent)) {
       structuredQueries.push(compQuery(envelope));
     } else if (DETAIL_OPERATIONS[envelope.intent]) {
       const type = envelope.intent.replace("_details", "");

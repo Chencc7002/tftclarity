@@ -14,6 +14,7 @@ import {
 
 const HOT_CACHE_MAX_MS = Number(process.env.SMOKE_HOT_CACHE_MAX_MS ?? 100);
 const LOCAL_CACHE_MAX_MS = Number(process.env.SMOKE_LOCAL_CACHE_MAX_MS ?? 300);
+const SMOKE_ADMIN_TOKEN = "small-window-smoke-admin";
 
 const fixtureRows = [
   {
@@ -172,6 +173,7 @@ let compCandidateCalls = 0;
 const runtime = createSmallWindowRuntime({
   catalog: smokeCatalog,
   cacheStore,
+  adminToken: SMOKE_ADMIN_TOKEN,
   fetchItems: false,
   officialItemDetails: new Map(),
   metaTFTClient: {
@@ -329,6 +331,7 @@ try {
 
   const reviewed = await jsonRequest(`${baseUrl}/api/entity-aliases/review`, {
     method: "POST",
+    headers: { authorization: `Bearer ${SMOKE_ADMIN_TOKEN}` },
     body: JSON.stringify({
       id: feedback.aliasCandidate.id,
       enabled: true
@@ -555,7 +558,8 @@ try {
   const localCacheDurationMs = await verifyPersistentLocalCacheTarget();
 
   const entityMemoryCleared = await jsonRequest(`${baseUrl}/api/entity-memory/clear`, {
-    method: "POST"
+    method: "POST",
+    headers: { authorization: `Bearer ${SMOKE_ADMIN_TOKEN}` }
   });
   assertSmoke(entityMemoryCleared.cleared.feedbackEvents === 2, "entity memory clear did not remove feedback");
   assertSmoke(entityMemoryCleared.cleared.candidateAliases === 0, "entity memory clear should preserve reviewed aliases");

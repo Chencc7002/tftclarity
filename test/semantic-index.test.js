@@ -13,6 +13,7 @@ import {
   FunctionEmbeddingProvider,
   MemoryCacheStore,
   OpenAICompatibleEmbeddingProvider,
+  SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION,
   SQLiteSemanticDocumentStore,
   auditSemanticIndex,
   buildSemanticCorpus,
@@ -92,7 +93,7 @@ sqliteTest("SQLite semantic index persists metadata and Float32 vectors across p
   assert.equal(rows[0].embeddingModel, "fixture-embedding-v1");
   assert.deepEqual(rows[0].embedding, [1, 0, 0]);
   assert.deepEqual(rows[0].metadata.aliases, ["剑圣"]);
-  assert.equal(reopened.getMeta("schemaVersion").value, "semantic_index.v1");
+  assert.equal(reopened.getMeta("schemaVersion").value, SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION);
 });
 
 sqliteTest("persistent vector retriever embeds the query and searches vectors loaded from SQLite", async (t) => {

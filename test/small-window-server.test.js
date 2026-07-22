@@ -1256,7 +1256,7 @@ test("concurrent cold catalog loads share one request batch", async () => {
   const [firstEntry, secondEntry] = await Promise.all([first, second]);
 
   assert.equal(firstEntry, secondEntry);
-  assert.equal(runtime.catalogCache.get("current:1100"), firstEntry);
+  assert.equal(runtime.catalogCache.get("set17-live:metatft-live.v1:current:1100"), firstEntry);
   assert.equal(runtime.catalogLoadPromises.size, 0);
 });
 
@@ -1284,7 +1284,7 @@ test("invalidated slow catalog loads cannot overwrite a newer generation", async
 
   const staleLoad = loadRuntimeCatalog(runtime, {});
   await Promise.resolve();
-  invalidateRuntimeCatalog(runtime, "current:1100");
+  invalidateRuntimeCatalog(runtime, "set17-live:metatft-live.v1:current:1100");
   const freshEntry = await loadRuntimeCatalog(runtime, {});
   firstItemsGate.resolve();
   const staleEntry = await staleLoad;
@@ -1298,7 +1298,7 @@ test("invalidated slow catalog loads cannot overwrite a newer generation", async
     staleEntry.catalog.itemByApiName.get("TFT_Item_GuinsoosRageblade").raw.marker,
     1
   );
-  assert.equal(runtime.catalogCache.get("current:1100"), freshEntry);
+  assert.equal(runtime.catalogCache.get("set17-live:metatft-live.v1:current:1100"), freshEntry);
 });
 
 test("catalog load failures clear in-flight state and allow retry", async () => {
@@ -1318,12 +1318,12 @@ test("catalog load failures clear in-flight state and allow retry", async () => 
 
   await assert.rejects(loadRuntimeCatalog(runtime, {}), /alias store unavailable/);
   assert.equal(runtime.catalogLoadPromises.size, 0);
-  assert.equal(runtime.catalogCache.has("current:1100"), false);
+  assert.equal(runtime.catalogCache.has("set17-live:metatft-live.v1:current:1100"), false);
 
   const recovered = await loadRuntimeCatalog(runtime, {});
   assert.ok(recovered.catalog);
   assert.equal(aliasReads, 2);
-  assert.equal(runtime.catalogCache.get("current:1100"), recovered);
+  assert.equal(runtime.catalogCache.get("set17-live:metatft-live.v1:current:1100"), recovered);
 });
 
 test("small-window startup prewarms the dynamic catalog without delaying listen", async () => {
@@ -1345,10 +1345,10 @@ test("small-window startup prewarms the dynamic catalog without delaying listen"
     assert.deepEqual(prewarm, {
       ok: true,
       skipped: false,
-      key: "current:1100",
+      key: "set17-live:metatft-live.v1:current:1100",
       warning: null
     });
-    assert.equal(runtime.catalogCache.has("current:1100"), true);
+    assert.equal(runtime.catalogCache.has("set17-live:metatft-live.v1:current:1100"), true);
     await loadRuntimeCatalog(runtime, {});
     assert.deepEqual(calls, {
       items: 1,
@@ -1764,7 +1764,7 @@ test("small-window cache clear removes query history without resetting preferenc
       unit: "TFT17_Xayah"
     }
   });
-  runtime.catalogCache.set("current:1100", {
+  runtime.catalogCache.set("set17-live:metatft-live.v1:current:1100", {
     catalog: createCatalog()
   });
   await handlePreferencesRequest({
@@ -2078,7 +2078,7 @@ test("small-window can batch review selected entity aliases", async () => {
       confidence: 0.8
     }
   }, runtime);
-  runtime.catalogCache.set("current:1100", {
+  runtime.catalogCache.set("set17-live:metatft-live.v1:current:1100", {
     catalog: createCatalog()
   });
 
@@ -2375,7 +2375,7 @@ test("refresh requests invalidate only the active runtime catalog entry", async 
     builds: 2
   });
   assert.equal(runtime.catalogCache.has("other:999"), true);
-  assert.equal(runtime.catalogCache.has("current:1100"), true);
+  assert.equal(runtime.catalogCache.has("set17-live:metatft-live.v1:current:1100"), true);
 });
 
 test("handleRecommendRequest rejects empty input", async () => {

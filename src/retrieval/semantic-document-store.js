@@ -2,11 +2,12 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
-export const SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION = "semantic_index.v1";
+export const SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION = "semantic_index.v2";
 
 export const SQLITE_SEMANTIC_INDEX_SCHEMA = `
 CREATE TABLE IF NOT EXISTS semantic_documents (
-  id TEXT PRIMARY KEY,
+  season_context_id TEXT NOT NULL DEFAULT 'set17-live',
+  id TEXT NOT NULL,
   document_type TEXT NOT NULL,
   api_name TEXT,
   intent TEXT,
@@ -19,14 +20,15 @@ CREATE TABLE IF NOT EXISTS semantic_documents (
   locale TEXT,
   source TEXT NOT NULL,
   metadata_json TEXT NOT NULL DEFAULT '{}',
-  updated_at TEXT NOT NULL
+  updated_at TEXT NOT NULL,
+  PRIMARY KEY (season_context_id, id)
 );
 
 CREATE INDEX IF NOT EXISTS idx_semantic_documents_scope
-ON semantic_documents(document_type, patch, locale);
+ON semantic_documents(season_context_id, document_type, patch, locale);
 
 CREATE INDEX IF NOT EXISTS idx_semantic_documents_entity
-ON semantic_documents(api_name, patch, locale);
+ON semantic_documents(season_context_id, api_name, patch, locale);
 
 CREATE INDEX IF NOT EXISTS idx_semantic_documents_hash
 ON semantic_documents(content_hash, embedding_model);
@@ -49,6 +51,7 @@ function normalizeDocument(value = {}) {
     throw new RangeError("Realtime MetaTFT statistics cannot be stored in the static semantic index");
   }
   return {
+    seasonContextId: String(value.seasonContextId ?? value.season_context_id ?? "set17-live"),
     id: String(value.id),
     documentType: String(value.documentType),
     content,
@@ -75,6 +78,66 @@ function bindGet(statement, params = []) {
 
 function bindAll(statement, params = []) {
   return statement.all(...params);
+}
+
+function semanticTableColumns(database, table) {
+  try {
+    return bindAll(database.prepare(`PRAGMA table_info(${table})`)).map((row) => String(row.name));
+  } catch {
+    return [];
+  }
+}
+
+export function migrateSQLiteSemanticSeasonContext(database) {
+  const columns = semanticTableColumns(database, "semantic_documents");
+  if (!columns.length || columns.includes("season_context_id")) return false;
+  database.exec("PRAGMA foreign_keys = OFF");
+  database.exec("BEGIN IMMEDIATE");
+  try {
+    database.exec(`
+      CREATE TABLE semantic_documents_season_migration (
+        season_context_id TEXT NOT NULL DEFAULT 'set17-live',
+        id TEXT NOT NULL,
+        document_type TEXT NOT NULL,
+        api_name TEXT,
+        intent TEXT,
+        content TEXT NOT NULL,
+        content_hash TEXT NOT NULL,
+        embedding BLOB,
+        embedding_dimensions INTEGER,
+        embedding_model TEXT,
+        patch TEXT,
+        locale TEXT,
+        source TEXT NOT NULL,
+        metadata_json TEXT NOT NULL DEFAULT '{}',
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (season_context_id, id)
+      );
+      INSERT INTO semantic_documents_season_migration (
+        season_context_id, id, document_type, api_name, intent, content, content_hash,
+        embedding, embedding_dimensions, embedding_model, patch, locale, source, metadata_json, updated_at
+      )
+      SELECT 'set17-live', id, document_type, api_name, intent, content, content_hash,
+        embedding, embedding_dimensions, embedding_model, patch, locale, source, metadata_json, updated_at
+      FROM semantic_documents;
+      DROP TABLE semantic_documents;
+      ALTER TABLE semantic_documents_season_migration RENAME TO semantic_documents;
+      DROP INDEX IF EXISTS idx_semantic_documents_scope;
+      DROP INDEX IF EXISTS idx_semantic_documents_entity;
+      DROP INDEX IF EXISTS idx_semantic_documents_hash;
+      COMMIT;
+    `);
+  } catch (error) {
+    try {
+      database.exec("ROLLBACK");
+    } catch {
+      // Preserve the original migration error.
+    }
+    throw error;
+  } finally {
+    database.exec("PRAGMA foreign_keys = ON");
+  }
+  return true;
 }
 
 function encodeEmbedding(vector) {
@@ -110,6 +173,7 @@ function parseMetadata(value) {
 
 function rowToDocument(row) {
   return {
+    seasonContextId: row.season_context_id ?? "set17-live",
     id: row.id,
     documentType: row.document_type,
     apiName: row.api_name ?? null,
@@ -149,6 +213,10 @@ async function openSQLiteDatabase(filePath) {
 function filterSql(filters = {}) {
   const clauses = [];
   const params = [];
+  if (filters.allSeasons !== true) {
+    clauses.push("season_context_id = ?");
+    params.push(String(filters.seasonContextId ?? filters.season_context_id ?? "set17-live"));
+  }
   const types = Array.isArray(filters.documentTypes)
     ? filters.documentTypes.filter(Boolean).map(String)
     : filters.documentType
@@ -195,7 +263,7 @@ export class MemorySemanticDocumentStore extends SemanticDocumentStore {
     this.documents = new Map();
     for (const document of documents) {
       const normalized = normalizeDocument(document);
-      this.documents.set(normalized.id, normalized);
+      this.documents.set(`${normalized.seasonContextId}\u0000${normalized.id}`, normalized);
     }
   }
 
@@ -203,13 +271,14 @@ export class MemorySemanticDocumentStore extends SemanticDocumentStore {
     const result = { inserted: 0, updated: 0, unchanged: 0 };
     for (const value of Array.isArray(documents) ? documents : [documents]) {
       const document = normalizeDocument(value);
-      const existing = this.documents.get(document.id);
+      const key = `${document.seasonContextId}\u0000${document.id}`;
+      const existing = this.documents.get(key);
       if (existing?.contentHash === document.contentHash && existing?.embeddingModel === document.embeddingModel) {
         result.unchanged += 1;
         continue;
       }
       result[existing ? "updated" : "inserted"] += 1;
-      this.documents.set(document.id, document);
+      this.documents.set(key, document);
     }
     return result;
   }
@@ -217,6 +286,8 @@ export class MemorySemanticDocumentStore extends SemanticDocumentStore {
   async list(filters = {}) {
     const types = new Set(Array.isArray(filters.documentTypes) ? filters.documentTypes : filters.documentType ? [filters.documentType] : []);
     return [...this.documents.values()].filter((document) => {
+      if (filters.allSeasons !== true
+        && document.seasonContextId !== String(filters.seasonContextId ?? filters.season_context_id ?? "set17-live")) return false;
       if (types.size && !types.has(document.documentType)) return false;
       if (filters.patch && document.patch && document.patch !== filters.patch) return false;
       if (filters.locale && document.locale && document.locale !== filters.locale) return false;
@@ -224,9 +295,12 @@ export class MemorySemanticDocumentStore extends SemanticDocumentStore {
     }).map((document) => ({ ...document, metadata: { ...document.metadata } }));
   }
 
-  async remove(ids) {
+  async remove(ids, options = {}) {
     let removed = 0;
-    for (const id of Array.isArray(ids) ? ids : [ids]) removed += Number(this.documents.delete(String(id)));
+    const seasonContextId = String(options.seasonContextId ?? options.season_context_id ?? "set17-live");
+    for (const id of Array.isArray(ids) ? ids : [ids]) {
+      removed += Number(this.documents.delete(`${seasonContextId}\u0000${String(id)}`));
+    }
     return removed;
   }
 }
@@ -247,6 +321,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
     }
     this.database = options.database;
     this.ownsDatabase = Boolean(options.ownsDatabase);
+    migrateSQLiteSemanticSeasonContext(this.database);
     this.database.exec(SQLITE_SEMANTIC_INDEX_SCHEMA);
     this.setMeta("schemaVersion", SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION);
   }
@@ -269,14 +344,14 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
     const result = { inserted: 0, updated: 0, unchanged: 0 };
     const select = this.database.prepare(`
       SELECT content_hash, embedding_model, embedding IS NOT NULL AS has_embedding
-      FROM semantic_documents WHERE id = ?
+      FROM semantic_documents WHERE season_context_id = ? AND id = ?
     `);
     const upsert = this.database.prepare(`
       INSERT INTO semantic_documents (
-        id, document_type, api_name, intent, content, content_hash, embedding,
+        season_context_id, id, document_type, api_name, intent, content, content_hash, embedding,
         embedding_dimensions, embedding_model, patch, locale, source, metadata_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-      ON CONFLICT(id) DO UPDATE SET
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(season_context_id, id) DO UPDATE SET
         document_type = excluded.document_type,
         api_name = excluded.api_name,
         intent = excluded.intent,
@@ -294,7 +369,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
 
     for (const value of Array.isArray(documents) ? documents : [documents]) {
       const document = normalizeDocument(value);
-      const existing = bindGet(select, [document.id]);
+      const existing = bindGet(select, [document.seasonContextId, document.id]);
       const sameContent = existing?.content_hash === document.contentHash;
       const preservesExistingEmbedding = sameContent && !document.embedding && Boolean(existing?.has_embedding);
       const sameVectorState = existing?.embedding_model === document.embeddingModel
@@ -304,6 +379,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
         continue;
       }
       bindRun(upsert, [
+        document.seasonContextId,
         document.id,
         document.documentType,
         document.apiName,
@@ -330,7 +406,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
       ? Math.min(Number(filters.limit), 100000)
       : null;
     const rows = bindAll(this.database.prepare(`
-      SELECT id, document_type, api_name, intent, content, content_hash, embedding,
+      SELECT season_context_id, id, document_type, api_name, intent, content, content_hash, embedding,
              embedding_dimensions, embedding_model, patch, locale, source, metadata_json, updated_at
       FROM semantic_documents
       ${where}
@@ -340,12 +416,13 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
     return rows.map(rowToDocument);
   }
 
-  async remove(ids) {
+  async remove(ids, options = {}) {
     const values = [...new Set((Array.isArray(ids) ? ids : [ids]).filter(Boolean).map(String))];
     if (!values.length) return 0;
-    const statement = this.database.prepare("DELETE FROM semantic_documents WHERE id = ?");
+    const seasonContextId = String(options.seasonContextId ?? options.season_context_id ?? "set17-live");
+    const statement = this.database.prepare("DELETE FROM semantic_documents WHERE season_context_id = ? AND id = ?");
     let removed = 0;
-    for (const id of values) removed += Number(bindRun(statement, [id])?.changes ?? 0);
+    for (const id of values) removed += Number(bindRun(statement, [seasonContextId, id])?.changes ?? 0);
     return removed;
   }
 

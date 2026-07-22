@@ -65,6 +65,19 @@ const fixtureRows = [
   }
 ];
 
+test("specified item performance keeps the target separate from the Top 3 benchmark", () => {
+  const result = recommendFromRows("霞的羊刀表现怎么样？", fixtureRows, {
+    preferences: { minSamples: 1 }
+  });
+
+  assert.equal(result.type, "unit_item_rankings");
+  assert.equal(result.query.performanceItem, "TFT_Item_GuinsoosRageblade");
+  assert.deepEqual(result.query.lockedItems, []);
+  assert.equal(result.itemPerformance.target.apiName, "TFT_Item_GuinsoosRageblade");
+  assert.ok(result.itemPerformance.topRankings.length > 0);
+  assert.match(result.text, /鬼索的狂暴之刃/u);
+});
+
 function readProbeJson(name) {
   return JSON.parse(readFileSync(new URL(`../.probe/${name}`, import.meta.url), "utf8"));
 }
@@ -141,6 +154,7 @@ class FakeSQLiteDatabase {
   run(sql, params) {
     if (/INSERT INTO query_cache/i.test(sql)) {
       const [
+        season_context_id,
         cache_key,
         value_json,
         request_json,
@@ -152,6 +166,7 @@ class FakeSQLiteDatabase {
         updated_at
       ] = params;
       this.tables.query_cache.set(cache_key, {
+        season_context_id,
         cache_key,
         value_json,
         request_json,
@@ -167,6 +182,7 @@ class FakeSQLiteDatabase {
 
     if (/INSERT INTO default_context_cache/i.test(sql)) {
       const [
+        season_context_id,
         cache_key,
         unit,
         cluster_id,
@@ -186,6 +202,7 @@ class FakeSQLiteDatabase {
         updated_at
       ] = params;
       this.tables.default_context_cache.set(cache_key, {
+        season_context_id,
         cache_key,
         unit,
         cluster_id,
@@ -218,8 +235,9 @@ class FakeSQLiteDatabase {
     }
 
     if (/INSERT INTO session_state/i.test(sql)) {
-      const [key, value_json, expires_at, updated_at] = params;
+      const [season_context_id, key, value_json, expires_at, updated_at] = params;
       this.tables.session_state.set(key, {
+        season_context_id,
         key,
         value_json,
         expires_at,
@@ -230,6 +248,7 @@ class FakeSQLiteDatabase {
 
     if (/INSERT INTO entity_aliases/i.test(sql)) {
       const [
+        season_context_id,
         alias,
         normalized_alias,
         entity_type,
@@ -238,11 +257,14 @@ class FakeSQLiteDatabase {
         source,
         patch,
         enabled,
-        updated_at
+        created_at,
+        updated_at,
+        updated_by
       ] = params;
       const id = this.nextEntityAliasId++;
       this.tables.entity_aliases.set(id, {
         id,
+        season_context_id,
         alias,
         normalized_alias,
         entity_type,
@@ -251,7 +273,9 @@ class FakeSQLiteDatabase {
         source,
         patch,
         enabled,
-        updated_at
+        created_at,
+        updated_at,
+        updated_by
       });
       return {
         changes: 1,
@@ -261,6 +285,7 @@ class FakeSQLiteDatabase {
 
     if (/INSERT INTO feedback_events/i.test(sql)) {
       const [
+        season_context_id,
         feedback_id,
         query_id,
         visitor_scope,
@@ -280,6 +305,7 @@ class FakeSQLiteDatabase {
       const id = this.nextFeedbackEventId++;
       this.tables.feedback_events.set(id, {
         id,
+        season_context_id,
         feedback_id,
         query_id,
         visitor_scope,
@@ -299,21 +325,45 @@ class FakeSQLiteDatabase {
       };
     }
 
-    if (/UPDATE entity_aliases\s+SET enabled = \?, updated_at = \?\s+WHERE id = \?/i.test(sql)) {
-      const [enabled, updated_at, id] = params;
+    if (/UPDATE entity_aliases\s+SET enabled = \?, updated_at = \?, updated_by = \?\s+WHERE season_context_id = \? AND id = \?/i.test(sql)) {
+      const [enabled, updated_at, updated_by, seasonContextId, id] = params;
       const row = this.tables.entity_aliases.get(id);
-      if (!row) return { changes: 0 };
+      if (!row || row.season_context_id !== seasonContextId) return { changes: 0 };
       row.enabled = enabled;
       row.updated_at = updated_at;
+      row.updated_by = updated_by;
       return { changes: 1 };
     }
 
-    if (/DELETE FROM entity_aliases WHERE enabled = \?/i.test(sql)) {
-      const enabled = Number(params[0]);
+    if (/DELETE FROM entity_aliases WHERE season_context_id = \? AND enabled = \?/i.test(sql)) {
+      const [seasonContextId, enabledValue] = params;
+      const enabled = Number(enabledValue);
       let changes = 0;
       for (const [id, row] of this.tables.entity_aliases.entries()) {
-        if (Number(row.enabled) !== enabled) continue;
+        if (row.season_context_id !== seasonContextId || Number(row.enabled) !== enabled) continue;
         this.tables.entity_aliases.delete(id);
+        changes += 1;
+      }
+      return { changes };
+    }
+
+    if (/DELETE FROM entity_aliases WHERE season_context_id = \?/i.test(sql)) {
+      const seasonContextId = params[0];
+      let changes = 0;
+      for (const [id, row] of this.tables.entity_aliases.entries()) {
+        if (row.season_context_id !== seasonContextId) continue;
+        this.tables.entity_aliases.delete(id);
+        changes += 1;
+      }
+      return { changes };
+    }
+
+    const clearBySeason = sql.match(/DELETE FROM (query_cache|default_context_cache|session_state) WHERE season_context_id = \?/i);
+    if (clearBySeason) {
+      let changes = 0;
+      for (const [key, row] of this.tables[clearBySeason[1]].entries()) {
+        if (row.season_context_id !== params[0]) continue;
+        this.tables[clearBySeason[1]].delete(key);
         changes += 1;
       }
       return { changes };
@@ -350,12 +400,18 @@ class FakeSQLiteDatabase {
   }
 
   get(sql, params) {
-    if (/FROM entity_aliases\s+WHERE id = \?/i.test(sql)) {
-      return this.tables.entity_aliases.get(params[0]) ?? null;
+    if (/FROM entity_aliases\s+WHERE season_context_id = \? AND id = \?/i.test(sql)) {
+      const row = this.tables.entity_aliases.get(params[1]);
+      return row?.season_context_id === params[0] ? row : null;
     }
     if (/FROM feedback_events\s+WHERE feedback_id = \?/i.test(sql)) {
       return [...this.tables.feedback_events.values()]
         .find((row) => row.feedback_id === params[0]) ?? null;
+    }
+    const seasonMatch = sql.match(/FROM (\w+) WHERE season_context_id = \? AND (\w+) = \?/i);
+    if (seasonMatch) {
+      const row = this.tables[seasonMatch[1]].get(params[1]);
+      return row?.season_context_id === params[0] ? row : null;
     }
     const match = sql.match(/FROM (\w+) WHERE (\w+) = \?/i);
     if (!match) throw new Error(`FakeSQLiteDatabase does not support SQL: ${sql}`);
@@ -365,11 +421,13 @@ class FakeSQLiteDatabase {
   all(sql, params) {
     if (/FROM entity_aliases/i.test(sql)) {
       let rows = [...this.tables.entity_aliases.values()];
-      if (/WHERE normalized_alias = \? AND enabled = \?/i.test(sql)) {
-        const [normalizedAlias, enabled] = params;
-        rows = rows.filter((row) => row.normalized_alias === normalizedAlias && row.enabled === enabled);
+      if (/WHERE season_context_id = \? AND normalized_alias = \? AND enabled = \?/i.test(sql)) {
+        const [seasonContextId, normalizedAlias, enabled] = params;
+        rows = rows.filter((row) => row.season_context_id === seasonContextId
+          && row.normalized_alias === normalizedAlias
+          && row.enabled === enabled);
         if (/AND entity_type = \?/i.test(sql)) {
-          rows = rows.filter((row) => row.entity_type === params[2]);
+          rows = rows.filter((row) => row.entity_type === params[3]);
         }
         rows.sort((a, b) => {
           if (b.confidence !== a.confidence) return b.confidence - a.confidence;
@@ -377,6 +435,10 @@ class FakeSQLiteDatabase {
         });
       } else {
         let cursor = 0;
+        if (/season_context_id = \?/i.test(sql)) {
+          rows = rows.filter((row) => row.season_context_id === params[cursor]);
+          cursor += 1;
+        }
         if (/entity_type = \?/i.test(sql)) {
           rows = rows.filter((row) => row.entity_type === params[cursor]);
           cursor += 1;
@@ -855,6 +917,18 @@ test("radiant, artifact, and emblem questions rank only the requested item categ
   assert.equal(noRadiantSamples.itemRankings.length, 0);
   assert.equal(noRadiantSamples.itemRankingReferences.length, 0);
   assert.match(noRadiantSamples.text, /没有光明装备的单件携带样本/);
+});
+
+test("which-special-item wording keeps complete three-item aggregation", () => {
+  for (const input of [
+    "霞哪一件光明装备最好？",
+    "霞应该带哪一件神器？"
+  ]) {
+    const result = planQuery(input);
+    assert.equal(result.query.intent, "unit_item_rankings", input);
+    assert.equal(result.query.itemCount, 3, input);
+    assert.match(result.plan.params.unit_tier_numitems_unique, /_3$/u, input);
+  }
 });
 
 test("radiant and artifact rankings use average placement only and do not let sample count change the order", () => {

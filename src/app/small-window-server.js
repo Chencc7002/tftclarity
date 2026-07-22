@@ -5,6 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
+import { normalizeAlias } from "../core/normalizer.js";
 import {
   anonymousScopeKey,
   createAnonymousAccessService
@@ -12,6 +13,7 @@ import {
 import {
   CompsContextClient,
   CURRENT_ITEM_LOCALIZATION,
+  DEFAULT_SEASON_CONTEXT_ID,
   DEFAULT_QUERY_OPTIONS,
   JsonFileCacheStore,
   MetaTFTClient,
@@ -20,6 +22,7 @@ import {
   SQLiteSemanticDocumentStore,
   applyEnabledEntityAliasesFromStore,
   buildEntityAliasOverrideDraft,
+  buildCompRankings,
   buildItemCatalogAudit,
   buildItemCatalogFromItemsResponse,
   buildTraitCatalogFromCompsData,
@@ -27,8 +30,12 @@ import {
   buildUnitCatalogFromCompsData,
   buildUnitCatalogFromExplorerRows,
   createCatalog,
+  createCompsPageSnapshot,
   createConclusionProviderFromConfig,
+  createCompEnrichmentService,
   createEmbeddingProviderFromConfig,
+  createSeasonContextService,
+  createLineupSignature,
   createIntentEnvelope,
   createPersistentSemanticRetriever,
   createAssetResolver,
@@ -39,6 +46,7 @@ import {
   hasUnsupportedCompRankingEntities,
   mergeCatalogTraits,
   mergeCatalogUnits,
+  normalizeCompProfileRecord,
   isLowSampleBuild,
   itemCatalogAuditToCsv,
   parseQuery,
@@ -63,6 +71,8 @@ const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
 const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url));
 const STATIC_PAGE_ROUTES = new Map([
+  ["/admin", "admin.html"],
+  ["/admin/", "admin.html"],
   ["/privacy", "privacy.html"],
   ["/privacy/", "privacy.html"],
   ["/terms", "terms.html"],
@@ -1144,13 +1154,21 @@ export async function resetSmallWindowPreferences(runtime, scope = null) {
 
 function serializeRecommendation(result, catalog, meta = {}) {
   const { itemDetails, ...publicMeta } = meta;
-  if (result.type === "comp_rankings" || result.type === "comp_trends") {
+  if (["comp_rankings", "comp_trends", "comp_analysis"].includes(result.type)) {
     return serializeCompRankings(result, publicMeta);
   }
   const query = result.query ?? {};
   if (result.type === "unit_item_rankings" || result.type === "unit_emblem_rankings") {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
+    const itemPerformance = result.itemPerformance
+      ? {
+        item: result.itemPerformance.target ? serializeItemRanking(result.itemPerformance.target, catalog) : null,
+        rank: result.itemPerformance.targetRank,
+        topRankings: (result.itemPerformance.topRankings ?? []).map((entry) => serializeItemRanking(entry, catalog)),
+        conclusion: result.itemPerformance.conclusion
+      }
+      : null;
     const best = itemRankings[0] ?? null;
     const specialAveragePlacementOnly = result.itemRankingMethodology?.methodology === "special_item_outlier_cleaned_avg_placement_only";
     return {
@@ -1163,16 +1181,17 @@ function serializeRecommendation(result, catalog, meta = {}) {
         iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
       } : null,
       answer: {
-        summary: best
+        summary: itemPerformance?.conclusion ?? (best
           ? `${compAnswerPrefix(query.comp)}${best.name}在当前条件的单装备聚合中排名第一。`
-          : `${compAnswerPrefix(query.comp)}${result.text}`,
-        evidence: best?.stats ?? null,
+          : `${compAnswerPrefix(query.comp)}${result.text}`),
+        evidence: itemPerformance?.item?.stats ?? best?.stats ?? null,
         warnings: query.warnings ?? [],
         methodology: specialAveragePlacementOnly
           ? `先剔除样本低于同类最高样本 2%（本次为 ${result.itemRankingMethodology?.sampleFloor?.outlierFloor ?? 0}）的极低样本离群项；其余神器与光明装备仅按平均名次升序排列，样本数只作可信度参考，不参与排序`
           : "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本"
       },
       itemRankings,
+      itemPerformance,
       itemRankingReferences: references,
       methodology: result.itemRankingMethodology,
       cards: [],
@@ -1183,6 +1202,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
         unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
         traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
         ownedItemNames: (query.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
+        performanceItemName: query.performanceItem ? itemName(query.performanceItem, catalog) : null,
         excludedItemNames: (query.excludedItems ?? []).map((apiName) => itemName(apiName, catalog)),
         comp: serializeCompConstraint(query.comp, catalog),
         defaultContextSummary: serializeDefaultContext(query.defaultContext, catalog)
@@ -1480,6 +1500,15 @@ function serializeCompRankings(result, meta = {}) {
         source: comp.trend?.source ?? null,
         comparedAt: comp.trend?.comparedAt ?? null
       },
+      strategy: comp.strategy ?? null,
+      strategyDerivation: comp.strategyDerivation ?? null,
+      lineupSignature: comp.lineupSignature ?? null,
+      profileKey: comp.profileKey ?? null,
+      profile: comp.profile ?? null,
+      profileSource: comp.profileSource ?? null,
+      profileBinding: comp.profileBinding ?? null,
+      enrichmentSources: comp.enrichmentSources ?? null,
+      preferenceMatch: comp.preferenceMatch ?? null,
       source: comp.source
     });
   const rankings = {};
@@ -1488,7 +1517,11 @@ function serializeCompRankings(result, meta = {}) {
   }
   return {
     ok: true,
-    type: result.type === "comp_trends" ? "comp_trends" : "comp_rankings",
+    type: result.type === "comp_trends"
+      ? "comp_trends"
+      : result.type === "comp_analysis"
+        ? "comp_analysis"
+        : "comp_rankings",
     rankings,
     rising: (result.rising ?? result.improving ?? []).map(serializeComp),
     falling: (result.falling ?? []).map(serializeComp),
@@ -1496,9 +1529,25 @@ function serializeCompRankings(result, meta = {}) {
     references: (result.references ?? []).map(serializeComp),
     trend: result.trend ?? null,
     query: result.query,
+    text: result.text ?? "",
+    answer: result.analysis ? {
+      summary: result.analysis.answer?.conclusion ?? result.text ?? "",
+      reasons: result.analysis.answer?.reasons ?? [],
+      evidence: result.analysis.answer?.evidence ?? [],
+      risks: result.analysis.answer?.risks ?? [],
+      evidenceStatus: result.analysis.evidenceStatus ?? result.analysis.status
+    } : result.preferenceSearch ? {
+      summary: result.text ?? "",
+      warnings: result.warnings ?? [],
+      methodology: result.preferenceSearch.methodology,
+      evidenceStatus: result.preferenceSearch.status
+    } : null,
+    analysis: result.analysis ?? null,
+    preferenceSearch: result.preferenceSearch ?? null,
     source: result.source,
     warnings: result.warnings ?? [],
     cache: result.cache ?? null,
+    enrichment: result.enrichment ?? null,
     meta: {
       inputRows: result.diagnostics?.inputRows ?? 0,
       acceptedGroups: result.diagnostics?.acceptedGroups ?? 0,
@@ -1540,6 +1589,8 @@ export function createSmallWindowRuntime(options = {}) {
     : { enabled: false, mode: "off", provider: "off" });
 
   return {
+    seasonContextService: options.seasonContextService ?? createSeasonContextService(),
+    compEnrichmentService: options.compEnrichmentService ?? createCompEnrichmentService({ cacheStore }),
     metaTFTClient,
     catalogMetaTFTClient,
     compsClient,
@@ -1673,7 +1724,12 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
 }
 
 function runtimeCatalogKey(preferences = {}) {
-  return `${preferences.patch ?? "current"}:${preferences.queue ?? "1100"}`;
+  return [
+    preferences.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+    preferences.providerVersion ?? "metatft-live.v1",
+    preferences.effectivePatch ?? preferences.patch ?? "current",
+    preferences.queue ?? "1100"
+  ].join(":");
 }
 
 function hasDynamicCatalogRecords(records = []) {
@@ -1717,8 +1773,10 @@ export function invalidateRuntimeCatalog(runtime, key = null) {
 }
 
 export async function loadRuntimeCatalog(runtime, preferences = {}) {
+  const seasonContextId = preferences.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID;
+  const storeOptions = { seasonContextId };
   const applyAliasMemory = async (catalog, entry = {}) => {
-    const aliasMemory = await applyEnabledEntityAliasesFromStore(catalog, runtime.cacheStore);
+    const aliasMemory = await applyEnabledEntityAliasesFromStore(catalog, runtime.cacheStore, storeOptions);
     return {
       ...entry,
       catalog: aliasMemory.catalog,
@@ -1756,8 +1814,8 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       let persistedItemCatalog = null;
       let persistedDomainCatalog = null;
       const [persistedItemsResult, persistedDomainResult] = await Promise.allSettled([
-        runtime.cacheStore?.getItemCatalog?.(patch) ?? null,
-        runtime.cacheStore?.getDomainCatalog?.(patch) ?? null
+        runtime.cacheStore?.getItemCatalog?.(patch, storeOptions) ?? null,
+        runtime.cacheStore?.getDomainCatalog?.(patch, storeOptions) ?? null
       ]);
       if (persistedItemsResult.status === "fulfilled") {
         persistedItemCatalog = persistedItemsResult.value;
@@ -1803,7 +1861,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
             updatedAt: new Date().toISOString()
           };
           try {
-            const saved = await runtime.cacheStore?.setItemCatalog?.(patch, generatedItems);
+            const saved = await runtime.cacheStore?.setItemCatalog?.(patch, generatedItems, storeOptions);
             if (saved?.updatedAt) entry.itemCatalogMemory.updatedAt = saved.updatedAt;
           } catch (error) {
             warnings.push(`装备目录已刷新，但持久化失败：${error.message}`);
@@ -1937,7 +1995,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           const saved = await runtime.cacheStore?.setDomainCatalog?.(patch, {
             units: remoteUnitsAvailable || persistedUnitsAvailable ? finalUnits : [],
             traits: remoteTraitsAvailable || persistedTraitsAvailable ? finalTraits : []
-          });
+          }, storeOptions);
           if (saved?.updatedAt) entry.domainCatalogMemory.updatedAt = saved.updatedAt;
         } catch (error) {
           warnings.push(`英雄/羁绊目录已刷新，但持久化失败：${error.message}`);
@@ -2154,6 +2212,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   payload.queryId = queryId;
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,
+    seasonContextId: payload.seasonContext?.id ?? payload.query?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
     visitorScope,
     conversationId: details.conversationId,
     input: details.input,
@@ -2200,7 +2259,25 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     };
   }
 
+  let seasonContext;
+  try {
+    seasonContext = runtime.seasonContextService.resolveForQuery(body?.seasonContextId);
+  } catch (error) {
+    return {
+      statusCode: error.statusCode ?? 400,
+      payload: {
+        ok: false,
+        error: error.message,
+        code: error.code ?? "invalid_season_context",
+        seasonContextId: error.seasonContextId ?? (String(body?.seasonContextId ?? "") || null),
+        status: error.contextStatus ?? "unavailable"
+      }
+    };
+  }
+  const publicSeasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+
   const completeResponse = async (payload) => {
+    payload.seasonContext = publicSeasonContext;
     await persistQueryResponse(payload, runtime, {
       scope,
       conversationId,
@@ -2218,7 +2295,16 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     ...storedPreferences,
     ...normalizeSmallWindowPreferences(body.preferences)
   });
-  const preferences = completeSmallWindowPreferences(explicitPreferences);
+  const preferences = {
+    ...completeSmallWindowPreferences(explicitPreferences),
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
+    currentPatch: seasonContext.currentPatch,
+    previousPatch: seasonContext.previousPatch,
+    patch: seasonContext.providerPatch ?? "current",
+    queue: seasonContext.source.queue
+  };
   if (body.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
@@ -2258,12 +2344,13 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
   const localSessionKey = conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`;
   const sessionKey = scope ? anonymousScopeKey(scope, localSessionKey) : localSessionKey;
   const previousSessionEntry = requestRuntime.conclusionGeneratorConfig?.enabled && preferences.conclusionMode !== "off"
-    ? await runtime.cacheStore?.getSessionState?.(sessionKey)
+    ? await runtime.cacheStore?.getSessionState?.(sessionKey, { seasonContextId: seasonContext.id })
     : null;
   const result = await requestRuntime.recommendForInputImpl(input, {
     catalog,
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
+    compEnrichmentService: runtime.compEnrichmentService,
     compsData,
     cacheStore: runtime.cacheStore,
     preferences,
@@ -2274,6 +2361,9 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     useStructuredParser: structuredParserMode,
     semanticRetriever: requestRuntime.semanticRetriever,
     semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
     sessionKey
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
@@ -2293,6 +2383,7 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
   if (requestRuntime.semanticRetriever && result.retrievalPlan?.semanticQueries?.length) {
     try {
       semanticEvidence = await retrieveSemanticPlan(result.retrievalPlan, requestRuntime.semanticRetriever, {
+        seasonContextId: seasonContext.id,
         onFallback: requestRuntime.semanticConfig?.onFallback
       });
     } catch (error) {
@@ -2307,8 +2398,10 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     config: requestRuntime.conclusionGeneratorConfig,
     provider: requestRuntime.conclusionProvider,
     cacheStore: runtime.cacheStore,
+    compEnrichmentService: runtime.compEnrichmentService,
     requestEnabled: preferences.conclusionMode !== "off",
     bypassCache: Boolean(body.refresh),
+    seasonContextId: seasonContext.id,
     semanticEvidence
   };
   const canDeferConclusion = body?.deferConclusion === true
@@ -2730,11 +2823,19 @@ export async function handleFeedbackStatsRequest(runtime, options = {}) {
   };
 }
 
-export async function handleEntityMemoryClearRequest(runtime) {
+export async function handleEntityMemoryClearRequest(runtime, options = {}) {
+  const seasonContext = resolveAdminSeasonContext(runtime, options.seasonContextId);
   const candidateAliases = await runtime.cacheStore?.clearEntityAliases?.({
+    seasonContextId: seasonContext.id,
     enabled: false
   }) ?? 0;
-  const feedbackEvents = await runtime.cacheStore?.clearFeedbackEvents?.() ?? 0;
+  const feedbackEvents = await runtime.cacheStore?.clearFeedbackEvents?.({
+    seasonContextId: seasonContext.id
+  }) ?? 0;
+  await recordAdminAudit(runtime, seasonContext.id, "clear", "entity_memory", null, null, {
+    candidateAliases,
+    feedbackEvents
+  });
   return {
     ok: true,
     cleared: {
@@ -2756,6 +2857,8 @@ export async function handleEntityAliasesRequest(runtime, options = {}) {
     entityType: options.entityType,
     apiName: options.apiName,
     query: options.query,
+    source: options.source,
+    seasonContextId: options.seasonContextId,
     offset,
     limit: limit + 1
   }) ?? [];
@@ -2779,6 +2882,7 @@ export async function handleEntityAliasExportRequest(runtime, options = {}) {
     enabled: options.enabled,
     entityType: options.entityType,
     apiName: options.apiName,
+    seasonContextId: options.seasonContextId,
     limit: options.limit ?? 1000
   }) ?? [];
   return {
@@ -2795,7 +2899,9 @@ export async function handleEntityAliasReviewRequest(body, runtime) {
     throw new Error("Entity alias review requires a positive id");
   }
   const enabled = Boolean(body?.enabled);
-  const alias = await runtime.cacheStore?.setEntityAliasEnabled?.(id, enabled);
+  const alias = await runtime.cacheStore?.setEntityAliasEnabled?.(id, enabled, {
+    seasonContextId: body?.seasonContextId
+  });
   if (!alias) throw new Error(`Entity alias not found: ${id}`);
   invalidateRuntimeCatalog(runtime);
   return {
@@ -2816,7 +2922,9 @@ export async function handleEntityAliasBatchReviewRequest(body, runtime) {
   const aliases = [];
   const missingIds = [];
   for (const id of ids) {
-    const alias = await runtime.cacheStore?.setEntityAliasEnabled?.(id, enabled);
+    const alias = await runtime.cacheStore?.setEntityAliasEnabled?.(id, enabled, {
+      seasonContextId: body?.seasonContextId
+    });
     if (alias) aliases.push(alias);
     else missingIds.push(id);
   }
@@ -2830,10 +2938,473 @@ export async function handleEntityAliasBatchReviewRequest(body, runtime) {
   };
 }
 
+function resolveAdminSeasonContext(runtime, seasonContextId) {
+  return runtime.seasonContextService.resolve(seasonContextId, {
+    requireVisible: false,
+    requireSelectable: false,
+    requireAvailable: false
+  });
+}
+
+function normalizedAdminAliasInput(value = {}, fallback = {}) {
+  const alias = String(value.alias ?? fallback.alias ?? "").trim();
+  const entityType = String(value.entityType ?? value.entity_type ?? fallback.entityType ?? "").trim().toLowerCase();
+  const apiName = String(value.apiName ?? value.api_name ?? fallback.apiName ?? "").trim();
+  if (!alias || !["unit", "item", "trait"].includes(entityType) || !apiName) {
+    throw Object.assign(new Error("别名必须包含 alias、有效 entityType 和 apiName"), { statusCode: 400 });
+  }
+  const confidence = Number(value.confidence ?? fallback.confidence ?? 1);
+  if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
+    throw Object.assign(new Error("confidence 必须在 0 到 1 之间"), { statusCode: 400 });
+  }
+  return {
+    alias,
+    entityType,
+    apiName,
+    confidence,
+    source: String(value.source ?? fallback.source ?? "admin").trim() || "admin",
+    patch: value.patch === undefined ? (fallback.patch ?? null) : value.patch,
+    enabled: value.enabled === undefined ? (fallback.enabled ?? true) : Boolean(value.enabled)
+  };
+}
+
+async function adminCatalogFor(runtime, seasonContext, refresh = false) {
+  if (!seasonContext.availability?.available) {
+    throw Object.assign(new Error("该赛季目录尚不可用，不能校验别名目标"), {
+      statusCode: 409,
+      code: "season_catalog_unavailable"
+    });
+  }
+  const preferences = {
+    ...completeSmallWindowPreferences(),
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
+    patch: seasonContext.effectivePatch,
+    queue: seasonContext.source.queue
+  };
+  if (refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  return (await loadRuntimeCatalog(runtime, preferences)).catalog;
+}
+
+function assertAliasTargetExists(catalog, alias) {
+  const exists = alias.entityType === "unit"
+    ? catalog.unitByApiName.has(alias.apiName)
+    : alias.entityType === "item"
+      ? catalog.itemByApiName.has(alias.apiName)
+      : catalog.traitByFilterId.has(alias.apiName) || catalog.traitByApiName.has(alias.apiName);
+  if (!exists) {
+    throw Object.assign(new Error(`当前赛季目录中不存在目标实体：${alias.apiName}`), {
+      statusCode: 400,
+      code: "alias_target_not_found"
+    });
+  }
+}
+
+async function recordAdminAudit(runtime, seasonContextId, action, entityType, entityId, before, after) {
+  return runtime.cacheStore?.addAdminAudit?.({
+    seasonContextId,
+    action,
+    entityType,
+    entityId,
+    before,
+    after,
+    actor: "admin"
+  });
+}
+
+export async function handleAdminAliasCreate(body, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const aliasInput = normalizedAdminAliasInput(body);
+  assertAliasTargetExists(await adminCatalogFor(runtime, seasonContext), aliasInput);
+  const alias = await runtime.cacheStore.addEntityAlias({
+    ...aliasInput,
+    seasonContextId: seasonContext.id,
+    updatedBy: "admin"
+  });
+  await recordAdminAudit(runtime, seasonContext.id, "create", "entity_alias", alias.id, null, alias);
+  invalidateRuntimeCatalog(runtime);
+  return { ok: true, alias };
+}
+
+export async function handleAdminAliasUpdate(id, body, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const before = await runtime.cacheStore?.getEntityAlias?.(id, { seasonContextId: seasonContext.id });
+  if (!before) throw Object.assign(new Error(`Entity alias not found: ${id}`), { statusCode: 404 });
+  const aliasInput = normalizedAdminAliasInput(body, before);
+  assertAliasTargetExists(await adminCatalogFor(runtime, seasonContext), aliasInput);
+  const alias = await runtime.cacheStore.updateEntityAlias(id, { ...aliasInput, updatedBy: "admin" }, {
+    seasonContextId: seasonContext.id,
+    updatedBy: "admin"
+  });
+  await recordAdminAudit(runtime, seasonContext.id, "update", "entity_alias", id, before, alias);
+  invalidateRuntimeCatalog(runtime);
+  return { ok: true, alias };
+}
+
+export async function handleAdminAliasDelete(id, seasonContextId, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, seasonContextId);
+  const alias = await runtime.cacheStore?.deleteEntityAlias?.(id, { seasonContextId: seasonContext.id });
+  if (!alias) throw Object.assign(new Error(`Entity alias not found: ${id}`), { statusCode: 404 });
+  await recordAdminAudit(runtime, seasonContext.id, "delete", "entity_alias", id, alias, null);
+  invalidateRuntimeCatalog(runtime);
+  return { ok: true, alias };
+}
+
+export async function handleAdminAliasMatch(body, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const input = String(body?.input ?? body?.alias ?? "").trim();
+  if (!input) throw Object.assign(new Error("请输入要测试的俗称"), { statusCode: 400 });
+  const aliases = await runtime.cacheStore?.findEntityAliases?.(input, {
+    seasonContextId: seasonContext.id,
+    enabled: true,
+    limit: 20
+  }) ?? [];
+  return {
+    ok: true,
+    seasonContext: runtime.seasonContextService.publicRecord(seasonContext),
+    input,
+    matched: aliases.length > 0,
+    matches: aliases
+  };
+}
+
+export async function handleAdminAliasImport(body, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const records = Array.isArray(body?.aliases) ? body.aliases : [];
+  if (!records.length || records.length > 2000) {
+    throw Object.assign(new Error("aliases 必须是 1 到 2000 条记录的数组"), { statusCode: 400 });
+  }
+  const catalog = await adminCatalogFor(runtime, seasonContext);
+  const normalized = records.map((record) => normalizedAdminAliasInput(record));
+  normalized.forEach((record) => assertAliasTargetExists(catalog, record));
+  const aliases = [];
+  for (const record of normalized) {
+    aliases.push(await runtime.cacheStore.addEntityAlias({
+      ...record,
+      seasonContextId: seasonContext.id,
+      source: record.source || "admin_import",
+      updatedBy: "admin"
+    }));
+  }
+  await recordAdminAudit(runtime, seasonContext.id, "import", "entity_alias", null, null, {
+    count: aliases.length,
+    ids: aliases.map((alias) => alias.id)
+  });
+  invalidateRuntimeCatalog(runtime);
+  return { ok: true, imported: aliases.length, aliases };
+}
+
+export async function handleAdminAliasBatchReview(body, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const ids = [...new Set((Array.isArray(body?.ids) ? body.ids : [])
+    .map(Number)
+    .filter((id) => Number.isInteger(id) && id > 0))];
+  if (!ids.length) throw Object.assign(new Error("请选择至少一条候选别名"), { statusCode: 400 });
+  const enabled = Boolean(body?.enabled);
+  const aliases = [];
+  const missingIds = [];
+  for (const id of ids) {
+    const before = await runtime.cacheStore?.getEntityAlias?.(id, { seasonContextId: seasonContext.id });
+    const alias = await runtime.cacheStore?.setEntityAliasEnabled?.(id, enabled, {
+      seasonContextId: seasonContext.id,
+      updatedBy: "admin"
+    });
+    if (!alias) {
+      missingIds.push(id);
+      continue;
+    }
+    aliases.push(alias);
+    await recordAdminAudit(runtime, seasonContext.id, enabled ? "approve" : "disable", "entity_alias", id, before, alias);
+  }
+  if (aliases.length) invalidateRuntimeCatalog(runtime);
+  return { ok: true, updated: aliases.length, aliases, missingIds };
+}
+
+export async function handleAdminAliasBackup(runtime, options = {}) {
+  const seasonContext = resolveAdminSeasonContext(runtime, options.seasonContextId);
+  const aliases = await runtime.cacheStore?.listEntityAliases?.({
+    seasonContextId: seasonContext.id,
+    limit: 100000
+  }) ?? [];
+  return {
+    ok: true,
+    schemaVersion: "entity_alias_backup.v1",
+    seasonContext: runtime.seasonContextService.publicRecord(seasonContext),
+    exportedAt: new Date().toISOString(),
+    aliases
+  };
+}
+
+export async function handleAdminAliasExport(runtime, options = {}) {
+  const seasonContext = resolveAdminSeasonContext(runtime, options.seasonContextId);
+  const catalog = await adminCatalogFor(runtime, seasonContext);
+  const aliases = [];
+  const append = (entityType, records, identity) => {
+    for (const record of records ?? []) {
+      const apiName = identity(record);
+      const seen = new Set();
+      for (const alias of record.aliases ?? []) {
+        const normalizedAlias = normalizeAlias(alias);
+        if (!apiName || !normalizedAlias || seen.has(normalizedAlias)) continue;
+        seen.add(normalizedAlias);
+        aliases.push({
+          seasonContextId: seasonContext.id,
+          entityType,
+          apiName,
+          alias: String(alias),
+          normalizedAlias,
+          enabled: true,
+          source: "effective"
+        });
+      }
+    }
+  };
+  append("unit", catalog.units, (record) => record.apiName);
+  append("item", catalog.items, (record) => record.apiName);
+  append("trait", catalog.traits, (record) => record.filterId ?? record.apiName);
+  aliases.sort((left, right) => left.entityType.localeCompare(right.entityType)
+    || left.apiName.localeCompare(right.apiName)
+    || left.normalizedAlias.localeCompare(right.normalizedAlias));
+  return {
+    ok: true,
+    schemaVersion: "entity_alias_effective_export.v1",
+    seasonContext: runtime.seasonContextService.publicRecord(seasonContext),
+    exportedAt: new Date().toISOString(),
+    aliases
+  };
+}
+
+export async function handleAdminAuditRequest(runtime, options = {}) {
+  const seasonContext = resolveAdminSeasonContext(runtime, options.seasonContextId);
+  return {
+    ok: true,
+    audits: await runtime.cacheStore?.listAdminAudits?.({
+      seasonContextId: seasonContext.id,
+      limit: options.limit ?? 100
+    }) ?? []
+  };
+}
+
+export function handleAdminSeasonContexts(runtime) {
+  const seasonContexts = [...runtime.seasonContextService.contexts.values()].map((context) => {
+    const resolved = runtime.seasonContextService.resolve(context.id, {
+      requireVisible: false,
+      requireSelectable: false,
+      requireAvailable: false
+    });
+    return {
+      ...runtime.seasonContextService.publicRecord(resolved),
+      catalogNamespace: resolved.catalogNamespace,
+      source: {
+        provider: resolved.source.provider,
+        providerVersion: resolved.source.providerVersion,
+        queue: resolved.source.queue,
+        patchPolicy: resolved.source.patchPolicy,
+        effectivePatch: resolved.effectivePatch
+      }
+    };
+  });
+  return {
+    ok: true,
+    defaultSeasonContextId: runtime.seasonContextService.defaultContextId,
+    seasonContexts
+  };
+}
+
+export async function handleAdminCompProfiles(runtime, options = {}) {
+  const seasonContext = resolveAdminSeasonContext(runtime, options.seasonContextId);
+  const [effectiveProfiles, overrides, bindings] = await Promise.all([
+    runtime.compEnrichmentService.effectiveProfiles(seasonContext.id),
+    runtime.cacheStore?.listCompProfiles?.({ seasonContextId: seasonContext.id }) ?? [],
+    runtime.compEnrichmentService.effectiveBindings(seasonContext.id, seasonContext.source.provider)
+  ]);
+  return {
+    ok: true,
+    seasonContext: runtime.seasonContextService.publicRecord(seasonContext),
+    profiles: [...effectiveProfiles.values()],
+    overrides,
+    bindings
+  };
+}
+
+export async function handleAdminCompProfileSave(body, runtime, options = {}) {
+  const allowedFields = new Set(["seasonContextId", "profileKey", "profile", "enabled"]);
+  const unknownFields = Object.keys(body ?? {}).filter((field) => !allowedFields.has(field));
+  if (unknownFields.length) {
+    throw Object.assign(new TypeError(`Comp Profile 写请求包含未定义字段：${unknownFields.join(", ")}`), {
+      code: "invalid_comp_profile",
+      statusCode: 400,
+      field: unknownFields[0]
+    });
+  }
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const profileKey = String(options.profileKey ?? body?.profileKey ?? "").trim();
+  const before = await runtime.cacheStore?.getCompProfile?.(profileKey, { seasonContextId: seasonContext.id }) ?? null;
+  const profile = await runtime.compEnrichmentService.saveProfile({
+    seasonContextId: seasonContext.id,
+    profileKey,
+    profile: body?.profile ?? {},
+    enabled: body?.enabled,
+    source: "admin"
+  });
+  await recordAdminAudit(runtime, seasonContext.id, before ? "update" : "create", "comp_profile", profileKey, before, profile);
+  return { ok: true, profile };
+}
+
+export async function handleAdminCompProfileDelete(profileKey, seasonContextId, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, seasonContextId);
+  const deleted = await runtime.compEnrichmentService.deleteProfile(profileKey, {
+    seasonContextId: seasonContext.id
+  });
+  if (!deleted) throw Object.assign(new Error(`Comp profile not found: ${profileKey}`), { statusCode: 404 });
+  await recordAdminAudit(runtime, seasonContext.id, "delete", "comp_profile", profileKey, deleted, null);
+  return { ok: true, profile: deleted };
+}
+
+async function loadAdminCurrentComps(runtime, seasonContext, options = {}) {
+  if (!seasonContext.availability?.available) {
+    throw Object.assign(new Error("该赛季阵容数据当前不可用"), { statusCode: 409, code: "season_provider_unavailable" });
+  }
+  const queue = seasonContext.source.queue;
+  const patch = seasonContext.effectivePatch;
+  const catalog = await adminCatalogFor(runtime, seasonContext, Boolean(options.refresh));
+  let compsData = await runtime.compsClient.getCompsData({ queue });
+  const dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+  const compsStats = await runtime.compsClient.getCompsStats({
+    queue,
+    patch,
+    days: 3,
+    permit_filter_adjustment: "true",
+    ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+  });
+  const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+  if (dataClusterId !== undefined && statsClusterId !== undefined && String(dataClusterId) !== String(statsClusterId)) {
+    compsData = await runtime.compsClient.getCompsData({ queue });
+    throw Object.assign(new Error("MetaTFT 阵容定义和统计 cluster 不一致，请稍后重试"), {
+      statusCode: 503,
+      code: "comp_cluster_mismatch"
+    });
+  }
+  const query = {
+    intent: "comp_rankings",
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: patch,
+    patch,
+    queue,
+    days: 3,
+    minSamples: 0,
+    metrics: ["top4_rate"],
+    limit: 200
+  };
+  const facts = buildCompRankings(createCompsPageSnapshot(compsData, compsStats), { query, catalog });
+  const enriched = await runtime.compEnrichmentService.enrichRankingResult(facts, {
+    seasonContextId: seasonContext.id,
+    provider: seasonContext.source.provider
+  });
+  return {
+    result: enriched,
+    comps: enriched.rankings.top4Rate ?? []
+  };
+}
+
+export async function handleAdminCurrentComps(runtime, options = {}) {
+  const seasonContext = runtime.seasonContextService.resolve(options.seasonContextId, {
+    requireVisible: false,
+    requireSelectable: false,
+    requireAvailable: true
+  });
+  const current = await loadAdminCurrentComps(runtime, seasonContext, options);
+  const status = String(options.matchStatus ?? "");
+  return {
+    ok: true,
+    seasonContext: runtime.seasonContextService.publicRecord(seasonContext),
+    enrichment: current.result.enrichment,
+    comps: status ? current.comps.filter((comp) => comp.profileBinding?.status === status) : current.comps
+  };
+}
+
+export async function handleAdminCompProfileBind(body, runtime) {
+  const seasonContext = runtime.seasonContextService.resolve(body?.seasonContextId, {
+    requireVisible: false,
+    requireSelectable: false,
+    requireAvailable: true
+  });
+  const profileKey = String(body?.profileKey ?? "").trim();
+  const profile = (await runtime.compEnrichmentService.effectiveProfiles(seasonContext.id)).get(profileKey);
+  if (!profile) throw Object.assign(new Error(`Comp profile not found: ${profileKey}`), { statusCode: 404 });
+  const current = await loadAdminCurrentComps(runtime, seasonContext);
+  const clusterId = String(body?.clusterId ?? "").trim();
+  const comp = current.comps.find((record) => String(record.source?.clusterId) === clusterId);
+  if (!comp) throw Object.assign(new Error(`当前 MetaTFT 阵容中不存在 cluster：${clusterId}`), { statusCode: 400 });
+  const signature = createLineupSignature(comp);
+  const before = (await runtime.cacheStore?.listCompProfileBindings?.({
+    seasonContextId: seasonContext.id,
+    profileKey,
+    provider: seasonContext.source.provider
+  }) ?? [])[0] ?? null;
+  const binding = await runtime.compEnrichmentService.bindProfile({
+    seasonContextId: seasonContext.id,
+    profileKey,
+    provider: seasonContext.source.provider,
+    clusterId,
+    lineupSignature: signature,
+    matchConfidence: 1,
+    matchStatus: "verified"
+  });
+  await recordAdminAudit(runtime, seasonContext.id, before ? "rebind" : "bind", "comp_profile_binding", profileKey, before, binding);
+  return {
+    ok: true,
+    binding,
+    preview: await runtime.compEnrichmentService.enrichComp(comp, {
+      seasonContextId: seasonContext.id,
+      provider: seasonContext.source.provider
+    })
+  };
+}
+
+export async function handleAdminCompProfileImport(body, runtime) {
+  const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+  const values = Array.isArray(body?.profiles) ? body.profiles : [];
+  if (!values.length || values.length > 500) {
+    throw Object.assign(new Error("profiles 必须是 1 到 500 条记录的数组"), { statusCode: 400 });
+  }
+  const normalized = values.map((value) => normalizeCompProfileRecord({
+    ...value,
+    seasonContextId: seasonContext.id,
+    source: "admin_import"
+  }));
+  const profiles = [];
+  for (const profile of normalized) profiles.push(await runtime.compEnrichmentService.saveProfile(profile));
+  await recordAdminAudit(runtime, seasonContext.id, "import", "comp_profile", null, null, {
+    count: profiles.length,
+    profileKeys: profiles.map((profile) => profile.profileKey)
+  });
+  return { ok: true, imported: profiles.length, profiles };
+}
+
+export async function handleAdminCompProfileExport(runtime, options = {}) {
+  const seasonContext = resolveAdminSeasonContext(runtime, options.seasonContextId);
+  const effective = await runtime.compEnrichmentService.effectiveProfiles(seasonContext.id);
+  const overrides = await runtime.cacheStore?.listCompProfiles?.({ seasonContextId: seasonContext.id }) ?? [];
+  const bindings = await runtime.cacheStore?.listCompProfileBindings?.({ seasonContextId: seasonContext.id }) ?? [];
+  return {
+    ok: true,
+    schemaVersion: options.backup ? "comp-profile-backup.v1" : "comp-profile-export.v1",
+    seasonContextId: seasonContext.id,
+    exportedAt: new Date().toISOString(),
+    profiles: options.backup ? overrides : [...effective.values()],
+    ...(options.backup ? { bindings } : {})
+  };
+}
+
 async function handleSessionClear(runtime, body = {}, scope = null) {
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim();
   const key = conversationId ? `last_query:${conversationId}` : SESSION_LAST_QUERY_KEY;
-  await runtime.cacheStore?.deleteSessionState?.(scope ? anonymousScopeKey(scope, key) : key);
+  await runtime.cacheStore?.deleteSessionState?.(scope ? anonymousScopeKey(scope, key) : key, {
+    seasonContextId: body?.seasonContextId
+  });
   return {
     ok: true
   };
@@ -2847,7 +3418,19 @@ export async function handleRuntimeStatusRequest(runtime) {
 }
 
 export async function handleItemCatalogAuditRequest(runtime, options = {}) {
-  const preferences = completeSmallWindowPreferences(await loadSmallWindowPreferences(runtime));
+  const seasonContext = runtime.seasonContextService.resolve(options.seasonContextId, {
+    requireVisible: false,
+    requireSelectable: false,
+    requireAvailable: true
+  });
+  const preferences = {
+    ...completeSmallWindowPreferences(await loadSmallWindowPreferences(runtime)),
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
+    patch: seasonContext.effectivePatch,
+    queue: seasonContext.source.queue
+  };
   if (options.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
     if (runtime.officialItemDetailsPromise) {
@@ -2900,6 +3483,7 @@ export async function handleItemCatalogAuditRequest(runtime, options = {}) {
   const records = filterItemCatalogAudit(report.records, options);
   const payload = {
     ok: true,
+    seasonContext: runtime.seasonContextService.publicRecord(seasonContext),
     report: {
       ...report,
       records
@@ -2954,10 +3538,27 @@ function isPublicMaintenanceRoute(pathname) {
     || pathname === "/api/item-catalog-audit";
 }
 
+function isLegacyAdminWriteRoute(method, pathname) {
+  return ["POST", "PUT", "PATCH", "DELETE"].includes(method)
+    && new Set([
+      "/api/entity-memory/clear",
+      "/api/entity-aliases/review",
+      "/api/entity-aliases/review-batch"
+    ]).has(pathname);
+}
+
 function hasValidAdminToken(req, runtime) {
   const configured = String(runtime.adminToken ?? "");
   const authorization = String(req.headers.authorization ?? "");
-  const provided = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  let provided = authorization.startsWith("Bearer ") ? authorization.slice(7).trim() : "";
+  if (!provided && authorization.startsWith("Basic ")) {
+    try {
+      const credentials = Buffer.from(authorization.slice(6).trim(), "base64").toString("utf8");
+      provided = credentials.slice(credentials.indexOf(":") + 1);
+    } catch {
+      provided = "";
+    }
+  }
   const configuredBuffer = Buffer.from(configured);
   const providedBuffer = Buffer.from(provided);
   return configuredBuffer.length > 0
@@ -2995,14 +3596,24 @@ export function createSmallWindowHandler(options = {}) {
         });
       }
 
-      if (accessService.config.enabled
-        && url.pathname.startsWith("/api/admin/")
-        && !hasValidAdminToken(req, runtime)) {
+      if (url.pathname.startsWith("/api/admin/") && !hasValidAdminToken(req, runtime)) {
+        if (["POST", "PUT", "PATCH", "DELETE"].includes(req.method)) {
+          return sendJson(res, 403, { ok: false, error: "Administrator authorization required" });
+        }
         return sendJson(res, 404, { ok: false, error: "Not found" });
+      }
+
+      if ((url.pathname === "/admin" || url.pathname === "/admin/") && !hasValidAdminToken(req, runtime)) {
+        res.setHeader("www-authenticate", 'Basic realm="TFTClarity Admin", charset="UTF-8"');
+        return sendJson(res, 401, { ok: false, error: "Administrator authentication required" });
       }
 
       if (accessService.config.enabled && isPublicMaintenanceRoute(url.pathname)) {
         return sendJson(res, 404, { ok: false, error: "Not found" });
+      }
+
+      if (isLegacyAdminWriteRoute(req.method, url.pathname) && !hasValidAdminToken(req, runtime)) {
+        return sendJson(res, 403, { ok: false, error: "Administrator authorization required" });
       }
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {
@@ -3033,6 +3644,23 @@ export function createSmallWindowHandler(options = {}) {
           accessService
         });
         return sendJson(res, statusCode, payload);
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/season-contexts") {
+        return sendJson(res, 200, {
+          ok: true,
+          defaultSeasonContextId: runtime.seasonContextService.defaultContextId,
+          seasonContexts: runtime.seasonContextService.listPublic()
+        });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/season-contexts/select") {
+        const body = await readJsonRequest(req);
+        const selected = runtime.seasonContextService.resolveForQuery(body?.seasonContextId);
+        return sendJson(res, 200, {
+          ok: true,
+          seasonContext: runtime.seasonContextService.publicRecord(selected)
+        });
       }
 
       if (req.method === "GET" && url.pathname === "/api/conclusion/status") {
@@ -3097,8 +3725,148 @@ export function createSmallWindowHandler(options = {}) {
         }));
       }
 
+      if (req.method === "GET" && url.pathname === "/api/admin/seasons") {
+        return sendJson(res, 200, handleAdminSeasonContexts(runtime));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/comp-profiles") {
+        return sendJson(res, 200, await handleAdminCompProfiles(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId")
+        }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/comp-profiles") {
+        return sendJson(res, 200, await handleAdminCompProfileSave(await readJsonRequest(req), runtime));
+      }
+
+      const adminProfileMatch = url.pathname.match(/^\/api\/admin\/comp-profiles\/([a-z0-9][a-z0-9_-]{1,79})$/u);
+      if (adminProfileMatch && req.method === "PATCH") {
+        return sendJson(res, 200, await handleAdminCompProfileSave(await readJsonRequest(req), runtime, {
+          profileKey: adminProfileMatch[1]
+        }));
+      }
+      if (adminProfileMatch && req.method === "DELETE") {
+        return sendJson(res, 200, await handleAdminCompProfileDelete(
+          adminProfileMatch[1],
+          url.searchParams.get("seasonContextId"),
+          runtime
+        ));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/comp-profiles/current-comps") {
+        return sendJson(res, 200, await handleAdminCurrentComps(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId"),
+          matchStatus: url.searchParams.get("matchStatus") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/comp-profiles/bind") {
+        return sendJson(res, 200, await handleAdminCompProfileBind(await readJsonRequest(req), runtime));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/comp-profiles/import") {
+        return sendJson(res, 200, await handleAdminCompProfileImport(await readJsonRequest(req), runtime));
+      }
+
+      if (req.method === "GET" && ["/api/admin/comp-profiles/export", "/api/admin/comp-profiles/backup"].includes(url.pathname)) {
+        return sendJson(res, 200, await handleAdminCompProfileExport(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId"),
+          backup: url.pathname.endsWith("/backup")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/aliases") {
+        resolveAdminSeasonContext(runtime, url.searchParams.get("seasonContextId"));
+        return sendJson(res, 200, await handleEntityAliasesRequest(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId"),
+          entityType: url.searchParams.get("entityType") ?? undefined,
+          source: url.searchParams.get("source") ?? undefined,
+          enabled: url.searchParams.has("enabled") ? url.searchParams.get("enabled") === "true" : undefined,
+          query: url.searchParams.get("query") ?? undefined,
+          offset: url.searchParams.get("offset"),
+          limit: url.searchParams.get("limit")
+        }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/aliases") {
+        return sendJson(res, 200, await handleAdminAliasCreate(await readJsonRequest(req), runtime));
+      }
+
+      const adminAliasMatch = url.pathname.match(/^\/api\/admin\/aliases\/(\d+)$/u);
+      if (adminAliasMatch && req.method === "PATCH") {
+        return sendJson(res, 200, await handleAdminAliasUpdate(
+          Number(adminAliasMatch[1]),
+          await readJsonRequest(req),
+          runtime
+        ));
+      }
+      if (adminAliasMatch && req.method === "DELETE") {
+        return sendJson(res, 200, await handleAdminAliasDelete(
+          Number(adminAliasMatch[1]),
+          url.searchParams.get("seasonContextId"),
+          runtime
+        ));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/aliases/match") {
+        return sendJson(res, 200, await handleAdminAliasMatch(await readJsonRequest(req), runtime));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/aliases/import") {
+        return sendJson(res, 200, await handleAdminAliasImport(await readJsonRequest(req), runtime));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/aliases/review-batch") {
+        return sendJson(res, 200, await handleAdminAliasBatchReview(await readJsonRequest(req), runtime));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/aliases/export") {
+        return sendJson(res, 200, await handleAdminAliasExport(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/aliases/backup") {
+        return sendJson(res, 200, await handleAdminAliasBackup(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId")
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/audit") {
+        return sendJson(res, 200, await handleAdminAuditRequest(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId"),
+          limit: Number(url.searchParams.get("limit") ?? 100)
+        }));
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/admin/cache/clear") {
+        const body = await readJsonRequest(req);
+        const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
+        const cleared = await runtime.cacheStore?.clearQueryHistory?.({ seasonContextId: seasonContext.id }) ?? {};
+        const catalogCache = invalidateRuntimeCatalog(runtime);
+        await recordAdminAudit(runtime, seasonContext.id, "clear", "cache", null, null, {
+          ...cleared,
+          catalogCache
+        });
+        return sendJson(res, 200, { ok: true, cleared: { ...cleared, catalogCache } });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/item-catalog-audit") {
+        return sendJson(res, 200, await handleItemCatalogAuditRequest(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId"),
+          query: url.searchParams.get("query") ?? undefined,
+          category: url.searchParams.get("category") ?? undefined,
+          status: url.searchParams.get("status") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
       if (req.method === "POST" && url.pathname === "/api/entity-memory/clear") {
-        return sendJson(res, 200, await handleEntityMemoryClearRequest(runtime));
+        const body = await readJsonRequest(req);
+        return sendJson(res, 200, await handleEntityMemoryClearRequest(runtime, {
+          seasonContextId: body?.seasonContextId
+        }));
       }
 
       if (req.method === "GET" && url.pathname === "/api/entity-aliases") {
@@ -3130,12 +3898,17 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/entity-aliases/review") {
         const body = await readJsonRequest(req);
-        return sendJson(res, 200, await handleEntityAliasReviewRequest(body, runtime));
+        const reviewed = await handleAdminAliasBatchReview({
+          seasonContextId: body?.seasonContextId,
+          ids: [body?.id],
+          enabled: body?.enabled
+        }, runtime);
+        return sendJson(res, 200, { ...reviewed, alias: reviewed.aliases[0] ?? null });
       }
 
       if (req.method === "POST" && url.pathname === "/api/entity-aliases/review-batch") {
         const body = await readJsonRequest(req);
-        return sendJson(res, 200, await handleEntityAliasBatchReviewRequest(body, runtime));
+        return sendJson(res, 200, await handleAdminAliasBatchReview(body, runtime));
       }
 
       if (req.method === "POST" && url.pathname === "/api/session/clear") {
@@ -3175,7 +3948,10 @@ export function createSmallWindowHandler(options = {}) {
 
       return sendJson(res, error.statusCode ?? 500, {
         ok: false,
-        error: error.message
+        error: error.message,
+        ...(error.code ? { code: error.code } : {}),
+        ...(error.seasonContextId ? { seasonContextId: error.seasonContextId } : {}),
+        ...(error.contextStatus ? { status: error.contextStatus } : {})
       });
     }
   };

@@ -58,12 +58,14 @@ function filterDocument(document, options) {
   if (types.size && !types.has(document.documentType)) return false;
   if (options.patch && document.patch && document.patch !== options.patch) return false;
   if (options.locale && document.locale && document.locale !== options.locale) return false;
+  if (String(document.seasonContextId ?? "set17-live") !== String(options.seasonContextId ?? "set17-live")) return false;
   return true;
 }
 
 function hitFor(document, score, source) {
   return createSemanticHit({
     id: document.id,
+    seasonContextId: document.seasonContextId,
     documentType: document.documentType,
     score,
     apiName: document.apiName,
@@ -121,6 +123,7 @@ export class EntityCandidateSemanticRetriever extends SemanticRetriever {
     });
     return candidates.map((candidate) => createSemanticHit({
       id: `${candidate.entityType}:${candidate.apiName}`,
+      seasonContextId: options.seasonContextId ?? "set17-live",
       documentType: candidate.entityType,
       score: candidate.confidence,
       apiName: candidate.apiName,
@@ -266,6 +269,7 @@ export async function retrieveSemanticPlan(plan, retriever, options = {}) {
   for (const query of plan.semanticQueries) {
     const values = await retriever.search(query.query, {
       documentTypes: query.types,
+      seasonContextId: options.seasonContextId ?? "set17-live",
       patch: query.patch,
       locale: query.locale,
       topK: query.topK,
@@ -274,6 +278,7 @@ export async function retrieveSemanticPlan(plan, retriever, options = {}) {
     });
     hits.push(...new HybridReranker().rerank(query.query, values, {
       documentTypes: query.types,
+      seasonContextId: options.seasonContextId ?? "set17-live",
       patch: query.patch,
       locale: query.locale,
       topK: query.topK,

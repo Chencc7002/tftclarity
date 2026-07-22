@@ -28,6 +28,7 @@ function hasSpecialItemScope(parsedQuery, catalog) {
   if ((parsedQuery.itemCategories ?? []).some((category) => category !== "ordinary_completed")) return true;
   const itemApiNames = [
     ...(parsedQuery.ownedItems ?? []),
+    ...(parsedQuery.performanceItem ? [parsedQuery.performanceItem] : []),
     ...(parsedQuery.parser?.comparison?.itemApiNames ?? [])
   ];
   return itemApiNames.some((apiName) => {
@@ -63,7 +64,12 @@ export function buildQueryContext(parsedQuery, options = {}) {
   const starLevel = parsedQuery.starLevel?.length ? parsedQuery.starLevel : [2];
   const itemCount = parsedQuery.itemCount ?? 3;
   const itemPolicy = parsedQuery.itemPolicy ?? preferences.itemPolicy;
-  const itemCategories = parsedQuery.itemCategories ?? [];
+  const performanceCategory = parsedQuery.performanceItem
+    ? catalog.itemByApiName.get(parsedQuery.performanceItem)?.category
+    : null;
+  const itemCategories = parsedQuery.itemCategories?.length
+    ? parsedQuery.itemCategories
+    : performanceCategory ? [performanceCategory] : [];
   const rankFilter = parsedQuery.rankFilter ?? preferences.rankFilter;
   const days = parsedQuery.days ?? preferences.days;
   const patch = parsedQuery.patch ?? preferences.patch;
@@ -91,6 +97,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     sourcedConstraint("owned_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
     sourcedConstraint("locked_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
     sourcedConstraint("comparison_items", parsedQuery.comparisonItems ?? [], fieldSource(parsedQuery, "comparisonItems", Boolean(parsedQuery.comparisonItems?.length))),
+    sourcedConstraint("performance_item", parsedQuery.performanceItem ?? null, fieldSource(parsedQuery, "performanceItem", Boolean(parsedQuery.performanceItem))),
     sourcedConstraint("excluded_items", parsedQuery.excludedItems ?? [], fieldSource(parsedQuery, "excludedItems", Boolean(parsedQuery.excludedItems?.length))),
     sourcedConstraint("primary_metric", parsedQuery.primaryMetric, fieldSource(parsedQuery, "primaryMetric", Boolean(parsedQuery.primaryMetric))),
     sourcedConstraint("patch", patch, fieldSource(parsedQuery, "patch", Boolean(parsedQuery.patch))),
@@ -135,6 +142,9 @@ export function buildQueryContext(parsedQuery, options = {}) {
   if (comp) constraints.comp = { ...comp };
 
   return {
+    seasonContextId: preferences.seasonContextId ?? "set17-live",
+    providerVersion: preferences.providerVersion ?? null,
+    effectivePatch: preferences.effectivePatch ?? patch,
     rawInput: parsedQuery.rawInput,
     intent: parsedQuery.intent,
     unit: parsedQuery.unit,
@@ -147,6 +157,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     itemCategories,
     lockedItems,
     comparisonItems,
+    performanceItem: parsedQuery.performanceItem ?? null,
     comparisonMode,
     primaryMetric: parsedQuery.primaryMetric,
     pendingComparison: Boolean(parsedQuery.pendingComparison),

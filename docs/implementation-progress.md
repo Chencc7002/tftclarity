@@ -327,6 +327,19 @@ availabilityPolicy=item-availability-overrides-only
 - 最新离线结果：`npm test` 194/194，`smoke:small-window` 通过（热缓存 2ms、本地重开 4ms），`smoke:comps`、`audit:items`、`audit:item-patch`、`audit:aliases` 通过。
 - 实际视觉检查：460px/360px 均无横向溢出；完整三件套、单装备榜、澄清、低样本、错误、stale、长会话截图保存在 `.cache/visual-smoke/`。裸 `smoke:visual` 因 Playwright 未安装而跳过。
 
+## 2026-07-22 阶段 4：自然语言阵容条件检索
+
+- 开发前后均完成真实 LLM 硬门槛验证。当前使用 `gemini-3.6-flash`；阶段 4 复验输入为“推荐3套不卷、适合新手的95阵容”，模型实际返回 `intent=comp_rankings`、`strategy=fast9`、`contested=low`、`beginnerFriendly=true`、`count=3`。验证失败时直接失败，不使用规则解析或其他模型绕过。
+- 新增严格版本化条件协议 `comp-preference-conditions-v1`：`strategy`、`reroll`、`goal`、`contested`、`difficulty`、`beginnerFriendly`、`count`。未知字段、非法枚举、非法数量及 `strategy=reroll` 与 `reroll=false` 的矛盾组合会被拒绝。
+- 规则解析与受控 LLM 都只能补充条件。LLM 输出不能携带阵容 ID、排名、分数或决策；本次输入中的确定性条件优先，LLM 不得覆盖显式数量或放宽条件。
+- 新增 `comp-preference-search-v1` 确定性执行器：从完整 MetaTFT 页面候选池过滤，应用 strategy/reroll、人工 Profile、同行证据和样本门槛，并按 top4/top1/balanced 目标进行可靠性收缩排序，最后严格按 `count` 截断。
+- `top4` 以收缩后的前四率为主，`top1` 以收缩后的吃鸡率为主，`balanced` 综合前四率、吃鸡率、平均名次和样本可靠性；低同行结合 MetaTFT 选择率与 Profile `contestTolerance`。难度和新手条件只读取已验证 Profile，缺失时不推测。
+- 结果明确区分 `ok`、`low_sample_only`、`insufficient_profile`、`insufficient_evidence`、`zero_results`。低样本只进入参考区，不进入正式推荐；缺 Profile、缺指标和零结果均返回可见 warning。显式 `null` 的 Profile/统计字段保持为缺失证据，不会被数值转换为 0；低样本且缺目标指标的记录也不会伪装成低样本证据。
+- 小窗 HTTP 响应暴露条件协议、执行状态、真实返回数量和 `performedBy=deterministic_code`，但不泄漏内部完整候选池或 MetaTFT 原始行。UI 新增自然语言条件摘要和证据状态。
+- `scripts/smoke-llm.mjs` 支持 `SMOKE_LLM_EXPECT_PREFERENCES`，会对真实模型响应逐字段断言，不能只凭接口 200 或 intent 正确判定通过。
+- 阶段 4 定向测试覆盖基础映射、组合条件、协议拒绝、确定性过滤/排序/数量、缺 Profile、显式空值、低样本、真零结果、LLM 越权拒绝、服务端端到端与 HTTP 序列化。发布前 review 还补齐了：管理写接口服务端鉴权、别名真正覆盖基础词典、有效词典与覆盖层备份分离、完整候选池 Enrichment、旧会话条件清理、旧 SQLite 会话/默认阵容/趋势/别名迁移，以及语义索引 schema 版本断言。
+- 最终验收：系统 Node 18 全量 `495` 项为 `475 passed / 0 failed / 20 skipped`；bundled Node 24（含真实 SQLite 与持久化语义索引）全量为 `487 passed / 0 failed / 8 skipped`。`smoke:comps`、`smoke:small-window` 和 bundled Node 24 的 SQLite 文件库 smoke 均通过；最近一次小窗 smoke 热缓存 2ms、本地 JSON 重开 18ms。阶段实现时的最终真实 LLM 复验逐字段通过 `gemini-3.6-flash`。
+
 ## 当前限制
 
 - 装备 catalog 已能从 MetaTFT items 抓包生成，并已接入同 patch 的腾讯官网简中目录、Riot Data Dragon 英文回退、人工俗称覆盖、派生别名和覆盖审计。2026-07-11 实时动态装备为 179/179 官方简中，人工入口为 169/169；`TFT_Item_Artifact_CappaJuice` 已由腾讯官网 `version=16.13 / season=2026.S17` 确认为“帽子饮品”，同时保留 `Cappa Juice`。后续 patch 仍需重新刷新并审计，不能把本次满覆盖永久外推。
@@ -349,3 +362,38 @@ availabilityPolicy=item-availability-overrides-only
 4. 在按 catalog 复用的内存 BM25 + 稀疏 TF-IDF 索引基础上，评估后续是否接入跨进程持久化索引文件或稠密语义 embedding；候选仍必须走人工确认后才能进入主字典。
 5. 在 Windows 启动器基础上继续封装桌面体验：贴边吸附、托盘、透明/点击穿透，可评估 Electron、Tauri 或 WebView2。
 6. 将 `npm run smoke:small-window` 纳入默认发布前检查；`npm run smoke:metatft` 作为需要网络和非官方 API 稳定性的手动发布前检查，而不是默认 CI。
+
+## 2026-07-22 阶段 5-8：游戏分析、赛季切换、PBE 占位与交付
+
+### 阶段 5：游戏数据智能分析
+
+- 新增 `comp_analysis` 意图、目标阵容解析、当前五项指标事实、版本化趋势快照、官方 17.7 公告关联、确定性分析答案和专用小窗视图。
+- Evidence Pack 明确区分 MetaTFT 实时事实、历史快照、官方公告、自动推导和人工 Profile；缺失值不补造，公告关联只表达“可能相关”。
+- 实测 MetaTFT 历史 patch 请求不能可靠证明返回值对应所请求版本，因此历史能力采用 `snapshot_required`。没有可验证基线时明确安全降级，不让 LLM 猜测变化。
+
+### 阶段 6：普通用户赛季切换与主题
+
+- `GET /api/season-contexts` 返回服务端白名单中的可见空间，`POST /api/season-contexts/select` 再次校验可选择性和 provider 可用性；浏览器只保存 `seasonContextId`。
+- 每次 `/api/recommend` 都携带已验证赛季 ID。跨赛季切换先清理旧赛季会话并生成新 `conversationId`，不继承旧条件或结果。
+- 标题、赛季副标题、主色、壁纸目录/默认壁纸、粒子参数、公告版本、快捷问题和风险提示均来自受信注册表主题配置。壁纸选择按赛季分别持久化。
+- 顶部选择器支持 live、PBE、返场、coming soon 和 archived 的展示；当前 `set18-pbe` 可见但禁用。桌面、双栏和移动端单页切换均已进入视觉 smoke。
+
+### 阶段 7：PBE 安全占位
+
+- `set18-pbe` 保持 `coming_soon`、`selectable=false`，并带预览主题、不可查询提示和 `not_verified/not_synced` 健康状态。
+- 新增统一 Season Provider 接口与 `UnavailableSeasonProvider`。PBE 的 catalog、阵容、装备和英雄请求全部直接抛出 `season_provider_unavailable`，绝不回退正式服。
+- 新增 PBE→Live 内容提升计划契约：仅允许同 Set 的显式 PBE→Live、默认 dry-run、要求审核、不覆盖目标、不复制事实或查询缓存；执行保持关闭，等待受保护管理流程。
+
+### 阶段 8：验证结果
+
+- `npm test`：系统 Node 18.20.8 共 510 项，490 passed、0 failed、20 skipped；bundled Node 24.14.0 共 510 项，502 passed、0 failed、8 skipped。Node 24 已覆盖真实 SQLite 迁移、持久化别名/Profile 和语义索引；剩余 8 项为明确标记的 obsolete 用例，跳过项未计为通过。
+- `npm run smoke:small-window`：通过；热缓存 3ms、本地缓存 9ms。
+- `npm run smoke:comps`：通过；离线 MetaTFT 页面口径一致性检查通过。
+- `npm run smoke:metatft`：通过；实时 items 183 行、unit_builds 600 行，目标请求 485ms，低样本降级和默认阵容上下文均符合预期。
+- `npm run audit:aliases`：通过；英雄 62/62、羁绊 104/104、装备 169/169。
+- `npm run audit:items`：通过；当前显式可用性覆盖项为 0，无冲突。
+- `npm run audit:item-patch`：通过；178→180，新增 2、移除 0、缺少本地化 0、名称变化 0。
+- `npm run smoke:visual -- --playwright-module <bundled-playwright>`：通过；1200/760/520/460/360px 无横向溢出或紧凑文字裁切。真实执行 Set 17→Set 18 浏览器切换，确认标题、主题、摘要、空结果态、会话 ID、旧会话清理和后续请求的 `seasonContextId` 全部同步；验证中同时修复了 360px 设置抽屉被法律声明遮挡的问题，并将旧的纵向双面板断言更新为当前移动端聊天/结果单页切换路径。
+- `npm run smoke:sqlite`：系统 Node 18 因无 `node:sqlite` 且未安装可选 `better-sqlite3` 而明确跳过；随后使用 bundled Node 24.14.0 复验通过，生成 229,376 字节文件库并验证重开缓存命中、目录/会话/查询清理和零意外远程请求。
+
+管理员入口、鉴权、持久化选择、迁移边界和常用操作见 `docs/admin-season-operations.md`。

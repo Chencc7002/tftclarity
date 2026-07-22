@@ -59,6 +59,7 @@ export function validateQueryContext(query, options = {}) {
   const referencedItems = [...new Set([
     ...lockedItems,
     ...comparisonItems,
+    ...(query.performanceItem ? [query.performanceItem] : []),
     ...(query.excludedItems ?? [])
   ])];
   for (const itemApiName of referencedItems) {

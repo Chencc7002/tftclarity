@@ -20,11 +20,18 @@
           </span>
           <span class="brand-copy">
             <strong>tftclarity</strong>
-            <small>Set 17 · <span data-i18n="seasonName">星神</span></small>
+            <small id="season-context-summary"><span data-season-label>Set 17 · 正式服</span> · <span data-season-subtitle>星神</span></small>
           </span>
         </div>
 
         <div class="top-actions">
+          <div class="season-context-control">
+            <label for="season-context-select" data-i18n="seasonSwitch">赛季</label>
+            <select id="season-context-select" data-i18n-aria="seasonSwitchLabel" aria-label="选择赛季" disabled>
+              <option value="set17-live">Set 17 · 正式服</option>
+            </select>
+            <span id="season-context-notice" class="season-context-notice" role="status" hidden></span>
+          </div>
           <div class="wallpaper-control" id="wallpaper-control">
             <button type="button" id="wallpaper-toggle" class="wallpaper-toggle" role="switch" aria-checked="true" title="关闭赛季壁纸" aria-label="关闭赛季壁纸">
               <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 5.5h16v13H4z"/><path d="m6.5 16 3.8-4 2.7 2.7 2.2-2.2 2.3 3.5"/><circle cx="16.5" cy="9" r="1.4"/></svg>
@@ -110,7 +117,6 @@
           <form class="query-panel composer" id="query-form">
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>
             <div class="action-row composer-actions">
-              <button type="button" id="retry-button" class="compact-action" data-i18n-title="retryTitle" title="重试上一条" disabled><span aria-hidden="true">↻</span><span data-i18n="retry">重试</span></button>
               <button type="button" id="stop-button" class="compact-action hidden" data-i18n-title="stopTitle" title="停止查询"><span aria-hidden="true">■</span><span data-i18n="stop">停止</span></button>
               <button type="button" id="refresh-button" class="compact-action" data-i18n-title="refreshTitle" data-i18n-aria="refreshTitle" title="刷新数据" aria-label="刷新数据" disabled><svg class="compact-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg><span data-i18n="refresh">刷新</span></button>
               <button type="button" id="clear-button" class="compact-action" data-i18n-title="clearTitle" data-i18n-aria="clearTitle" title="清空会话" aria-label="清空会话"><svg class="compact-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg><span data-i18n="clear">清空</span></button>

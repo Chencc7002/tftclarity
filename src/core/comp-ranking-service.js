@@ -250,6 +250,10 @@ export function buildCompRankings(response = {}, options = {}) {
 
   return {
     type: query.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
+    // Keep the complete page-visible pool for deterministic natural-language
+    // preference filtering after strategy/Profile enrichment. Public serializers
+    // expose only the filtered rankings and references.
+    candidates: comps,
     rankings,
     rising,
     falling,

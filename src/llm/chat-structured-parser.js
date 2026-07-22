@@ -50,6 +50,8 @@ function compactParsed(parsed = {}) {
     excludedItems: parsed.excludedItems,
     minSamples: parsed.minSamples,
     sort: parsed.sort,
+    preferenceRequested: parsed.preferenceRequested,
+    preferenceConditions: parsed.preferenceConditions,
     entityMatches: parsed.parser?.entityMatches ?? []
   };
 }

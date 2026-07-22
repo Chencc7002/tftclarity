@@ -39,6 +39,11 @@ export const WALLPAPER_SEASONS = {
         accentSecondary: "#d5a548"
       }
     ]
+  },
+  "set-18-pbe": {
+    season: 18,
+    labelKey: "seasonPbePreview",
+    wallpapers: []
   }
 };
 
@@ -51,8 +56,20 @@ export const WALLPAPERS = Object.values(WALLPAPER_SEASONS)
     seasonLabelKey: season.labelKey
   })));
 
-export function wallpaperById(id) {
-  return WALLPAPERS.find((wallpaper) => wallpaper.id === id)
-    ?? WALLPAPERS.find((wallpaper) => wallpaper.id === DEFAULT_WALLPAPER_ID)
-    ?? WALLPAPERS[0];
+export function wallpapersForSeason(seasonId) {
+  const season = WALLPAPER_SEASONS[seasonId];
+  if (!season) return [];
+  return season.wallpapers.map((wallpaper) => ({
+    ...wallpaper,
+    season: season.season,
+    seasonLabelKey: season.labelKey
+  }));
+}
+
+export function wallpaperById(id, seasonId = null, defaultId = DEFAULT_WALLPAPER_ID) {
+  const wallpapers = seasonId ? wallpapersForSeason(seasonId) : WALLPAPERS;
+  return wallpapers.find((wallpaper) => wallpaper.id === id)
+    ?? wallpapers.find((wallpaper) => wallpaper.id === defaultId)
+    ?? wallpapers[0]
+    ?? null;
 }

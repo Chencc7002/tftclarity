@@ -21,6 +21,10 @@ const OPERATION_REGISTRY = Object.freeze({
     source: "metatft",
     params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
   }),
+  comps_analysis: Object.freeze({
+    source: "metatft",
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+  }),
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   trait_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) })

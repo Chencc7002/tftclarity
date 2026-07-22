@@ -65,12 +65,17 @@ const PATCH_NOTES = {
   }
 };
 
-export function getCurrentPatchNote(locale = "zh-CN") {
-  const patch = PATCH_NOTES[CURRENT_PATCH_VERSION];
+export function getPatchNote(version, locale = "zh-CN") {
+  const patch = PATCH_NOTES[String(version ?? "")];
+  if (!patch) return null;
   const localized = patch.locales[locale] ?? patch.locales["zh-CN"];
   return {
     version: patch.version,
     publishedAt: patch.publishedAt,
     ...localized
   };
+}
+
+export function getCurrentPatchNote(locale = "zh-CN") {
+  return getPatchNote(CURRENT_PATCH_VERSION, locale);
 }

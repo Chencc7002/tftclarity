@@ -81,6 +81,7 @@ function metricsFor(intent, query) {
   const explicit = unique(query?.requestedMetrics ?? query?.metrics);
   if (explicit.length) return explicit;
   if (intent === "comp_trends") return ["placementImprovement", "pickRate", "games", "trendScore"];
+  if (intent === "comp_analysis") return ["avgPlacement", "top4Rate", "winRate", "pickRate", "games", "historicalComparison", "officialPatch"];
   if (intent === "comp_rankings") return ["top4Rate", "winRate", "avgPlacement", "pickRate", "games"];
   if (["unit_build_rankings", "unit_build_completion", "unit_best_3_items"].includes(intent)) {
     return ["games", "avgPlacement", "top4Rate", "winRate"];
@@ -160,7 +161,11 @@ export function createIntentEnvelope({ input = "", parsed = {}, query = {}, vali
       comp: comp.resolved,
       metrics: unique(query?.metrics).map(String),
       limit: finite(query?.limit),
-      trendRequested: Boolean(query?.trendRequested)
+      preferenceRequested: Boolean(query?.preferenceRequested),
+      preferenceConditions: query?.preferenceConditions ?? null,
+      trendRequested: Boolean(query?.trendRequested),
+      analysisRequested: Boolean(query?.analysisRequested),
+      analysis: query?.analysis ?? null
     },
     requestedMetrics: metricsFor(intent, query),
     needsClarification,
@@ -208,6 +213,7 @@ export function createRetrievalPlan(value = {}) {
 export function createSemanticHit(value = {}) {
   return {
     schemaVersion: SEMANTIC_HIT_SCHEMA_VERSION,
+    seasonContextId: String(value.seasonContextId ?? value.season_context_id ?? "set17-live"),
     id: String(value.id ?? ""),
     documentType: String(value.documentType ?? ""),
     score: finite(value.score, 0),

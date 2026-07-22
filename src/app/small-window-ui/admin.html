@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>TFTClarity 管理端</title>
+  <link rel="stylesheet" href="/admin.css">
+</head>
+<body>
+  <header class="topbar">
+    <div>
+      <p class="eyebrow">TFTClarity</p>
+      <h1>赛季内容管理</h1>
+    </div>
+    <label>赛季空间
+      <select id="season-context"></select>
+    </label>
+  </header>
+
+  <main>
+    <nav class="tabs" aria-label="管理模块">
+      <a href="#season-admin">赛季管理</a>
+      <button class="active" type="button">实体别名</button>
+      <a href="#catalog-audit">装备目录审查</a>
+      <a href="#profile-admin">阵容画像</a>
+      <a href="#audit-log">操作审计</a>
+    </nav>
+
+    <section id="season-admin" class="panel">
+      <div class="panel-heading"><div><h2>赛季管理</h2><p>查看可见性、可选择状态、数据源健康和当前生效 patch。数据源地址不能由浏览器修改。</p></div></div>
+      <div id="season-admin-cards" class="season-cards"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>正式别名覆盖层</h2>
+          <p>修改会即时写入当前赛季数据库，不更改部署目录中的种子 JSON。</p>
+        </div>
+        <div class="actions">
+          <button id="export-aliases" type="button">导出有效词典</button>
+          <button id="backup-aliases" type="button">备份覆盖层</button>
+          <label class="file-button">导入 JSON<input id="import-aliases" type="file" accept="application/json"></label>
+        </div>
+      </div>
+
+      <form id="alias-form" class="alias-form">
+        <input id="alias-id" type="hidden">
+        <label>俗称<input id="alias-value" required maxlength="120" placeholder="例如：霞"></label>
+        <label>实体类型
+          <select id="entity-type"><option value="unit">英雄</option><option value="item">装备</option><option value="trait">羁绊</option></select>
+        </label>
+        <label>API 名称<input id="api-name" required maxlength="180" placeholder="TFT17_Xayah"></label>
+        <label>来源<input id="alias-source" value="admin" maxlength="80"></label>
+        <label class="checkbox"><input id="alias-enabled" type="checkbox" checked> 启用</label>
+        <div class="actions"><button class="primary" type="submit">保存别名</button><button id="cancel-edit" type="button">取消编辑</button></div>
+      </form>
+
+      <form id="match-form" class="match-form">
+        <label>匹配测试<input id="match-input" required placeholder="输入俗称，预览当前赛季命中结果"></label>
+        <button type="submit">测试</button>
+        <output id="match-result"></output>
+      </form>
+
+      <div class="filters">
+        <input id="alias-query" placeholder="搜索俗称、API 名称或来源">
+        <select id="filter-type"><option value="">全部类型</option><option value="unit">英雄</option><option value="item">装备</option><option value="trait">羁绊</option></select>
+        <select id="filter-source"><option value="">全部来源</option><option value="seed">seed</option><option value="admin">admin</option><option value="user-candidate">user-candidate</option><option value="feedback_candidate">feedback_candidate</option></select>
+        <select id="filter-status"><option value="">全部状态</option><option value="true">已启用</option><option value="false">已停用</option></select>
+        <button id="reload-aliases" type="button">刷新</button>
+      </div>
+
+      <div class="actions batch-actions"><button id="approve-selected" type="button">批量启用所选</button><button id="disable-selected" type="button">批量停用所选</button></div>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>选择</th><th>俗称</th><th>类型</th><th>目标实体</th><th>来源</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="alias-rows"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="catalog-audit" class="panel compact-panel">
+      <div><h2>目录与缓存</h2><p>所有检查与刷新只作用于当前赛季空间。</p></div>
+      <div class="actions"><button id="catalog-audit-button" type="button">检查装备目录</button><button id="clear-cache" type="button">刷新赛季缓存</button></div>
+      <pre id="catalog-result"></pre>
+    </section>
+
+    <section id="audit-log" class="panel">
+      <div class="panel-heading"><div><h2>操作审计</h2><p>记录别名导入、增删改和缓存刷新。</p></div><button id="reload-audit" type="button">刷新审计</button></div>
+      <ol id="audit-rows" class="audit-list"></ol>
+    </section>
+
+    <section id="profile-admin" class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>阵容画像</h2>
+          <p>MetaTFT 提供阵容事实；策略由系统只读推导；人工 Profile 只维护七个受校验字段。</p>
+        </div>
+        <div class="actions">
+          <button id="load-current-comps" type="button">读取当前 MetaTFT 阵容</button>
+          <button id="export-profiles" type="button">导出有效 Profile</button>
+          <button id="backup-profiles" type="button">备份覆盖层</button>
+          <label class="file-button">导入 Profile<input id="import-profiles" type="file" accept="application/json"></label>
+        </div>
+      </div>
+
+      <form id="profile-form" class="profile-form">
+        <label>稳定 Profile Key<input id="profile-key" required pattern="[a-z0-9][a-z0-9_-]{1,79}" placeholder="例如 xayah-fast9"></label>
+        <label>总体难度（1–5）<input id="profile-difficulty" type="number" min="1" max="5"></label>
+        <label>转型难度（1–5）<input id="profile-pivot" type="number" min="1" max="5"></label>
+        <label>站位难度（1–5）<input id="profile-position" type="number" min="1" max="5"></label>
+        <label>同行容忍（1–5）<input id="profile-contest" type="number" min="1" max="5"></label>
+        <label>经济难度（1–5）<input id="profile-econ" type="number" min="1" max="5"></label>
+        <label>新手友好
+          <select id="profile-beginner"><option value="">未设置</option><option value="true">是</option><option value="false">否</option></select>
+        </label>
+        <label class="profile-notes">说明（每行一条，最多 20 条）<textarea id="profile-notes" rows="3" maxlength="4000"></textarea></label>
+        <label class="checkbox"><input id="profile-enabled" type="checkbox" checked> 启用</label>
+        <div class="actions"><button class="primary" type="submit">保存 Profile</button><button id="cancel-profile-edit" type="button">取消编辑</button></div>
+      </form>
+
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>Profile Key</th><th>难度画像</th><th>说明</th><th>状态</th><th>操作</th></tr></thead>
+          <tbody id="profile-rows"></tbody>
+        </table>
+      </div>
+
+      <div class="profile-current-heading">
+        <div><h3>当前阵容与匹配状态</h3><p id="profile-coverage">尚未读取当前阵容。</p></div>
+        <div class="actions">
+          <label>绑定到 Profile<select id="binding-profile"></select></label>
+          <label>匹配状态<select id="profile-match-filter"><option value="">全部</option><option value="matched">已匹配</option><option value="low_confidence">低置信</option><option value="unmatched">未匹配</option><option value="cluster_changed">cluster 变化</option><option value="signature_drift">签名漂移</option><option value="source_missing">来源消失</option><option value="multiple_candidates">多个候选</option><option value="multiple_profiles">多个 Profile</option></select></label>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>MetaTFT 阵容</th><th>只读策略推导</th><th>lineupSignature</th><th>匹配</th><th>操作</th></tr></thead>
+          <tbody id="current-comp-rows"><tr><td colspan="5">点击“读取当前 MetaTFT 阵容”后显示。</td></tr></tbody>
+        </table>
+      </div>
+      <h3>待审核队列</h3>
+      <ul id="profile-review-queue" class="review-list"><li>尚未读取当前阵容。</li></ul>
+      <h3>最终 Enrichment 预览</h3>
+      <pre id="profile-preview">选择阵容并绑定后显示。</pre>
+    </section>
+  </main>
+
+  <div id="notice" role="status" aria-live="polite"></div>
+  <script type="module" src="/admin.js"></script>
+</body>
+</html>

@@ -14,7 +14,8 @@ const ROUTES = Object.freeze({
   unit_item_comparison: Object.freeze({ key: "unit-item-comparison", version: "unit-item-comparison.v1", file: "unit-item-comparison.md" }),
   unit_emblem_rankings: Object.freeze({ key: "unit-emblem-rankings", version: "unit-emblem-rankings.v1", file: "unit-emblem-rankings.md" }),
   comp_rankings: Object.freeze({ key: "comp-rankings", version: "comp-rankings.v1", file: "comp-rankings.md" }),
-  comp_trends: Object.freeze({ key: "comp-trends", version: "comp-trends.v1", file: "comp-trends.md" })
+  comp_trends: Object.freeze({ key: "comp-trends", version: "comp-trends.v1", file: "comp-trends.md" }),
+  comp_analysis: Object.freeze({ key: "comp-analysis", version: "comp-analysis.v1", file: "comp-analysis.md" })
 });
 
 export function getConclusionPromptRoute(intent) {

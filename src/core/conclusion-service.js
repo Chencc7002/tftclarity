@@ -18,7 +18,8 @@ const SUPPORTED_TYPES = new Set([
   "unit_item_rankings",
   "unit_emblem_rankings",
   "comp_rankings",
-  "comp_trends"
+  "comp_trends",
+  "comp_analysis"
 ]);
 
 export const DEFAULT_CONCLUSION_MAX_CORRECTIONS = 2;
@@ -85,6 +86,7 @@ function isStale(result) {
 function hasEvidence(result, type) {
   if (type === "comp_rankings") return Object.values(result?.rankings ?? {}).some((records) => records?.length);
   if (type === "comp_trends") return Boolean(result?.improving?.length);
+  if (type === "comp_analysis") return Boolean(result?.analysis?.target && result?.analysis?.evidencePack?.length);
   if (type === "unit_item_rankings" || type === "unit_emblem_rankings") return Boolean(result?.itemRankings?.length);
   if (type === "unit_item_comparison") return Boolean(result?.comparison?.entries?.length);
   return Boolean(result?.rankedBuilds?.length);
@@ -100,14 +102,14 @@ function unsafeReason(result) {
   return null;
 }
 
-async function cacheGet(cacheStore, key) {
+async function cacheGet(cacheStore, key, seasonContextId = "set17-live") {
   if (!cacheStore?.getQuery) return null;
-  return cacheStore.getQuery(key);
+  return cacheStore.getQuery(key, { seasonContextId });
 }
 
-async function cacheSet(cacheStore, key, value, ttlMs) {
+async function cacheSet(cacheStore, key, value, ttlMs, seasonContextId = "set17-live") {
   if (!cacheStore?.setQuery) return null;
-  return cacheStore.setQuery(key, value, { ttlMs });
+  return cacheStore.setQuery(key, value, { ttlMs, seasonContextId });
 }
 
 function providerInvoke(provider) {
@@ -180,6 +182,7 @@ export async function generateEvidenceBackedConclusion({
   config = {},
   provider = null,
   cacheStore = null,
+  seasonContextId = result?.query?.seasonContextId ?? "set17-live",
   requestEnabled = true,
   bypassCache = false,
   retrievalPlan = null,
@@ -229,7 +232,7 @@ export async function generateEvidenceBackedConclusion({
   const cacheKey = makeConclusionCacheKey(evidence, config);
   const supportingEvidence = visibleSupportingEvidence(evidence);
   if (!bypassCache) {
-    const cached = await cacheGet(cacheStore, cacheKey);
+    const cached = await cacheGet(cacheStore, cacheKey, seasonContextId);
     if (cached?.value?.kind === "llm_conclusion" && cached.value.content) {
       const value = envelope("generated", {
         content: cached.value.content,
@@ -303,7 +306,7 @@ export async function generateEvidenceBackedConclusion({
           basePromptVersion: config.basePromptVersion ?? BASE_CONCLUSION_PROMPT_VERSION,
           intentPromptVersion: promptRoute.version,
           providerPromptVersion: config.promptVersion ?? null
-        }, config.cacheTtlMs);
+        }, config.cacheTtlMs, seasonContextId);
         const value = envelope("generated", {
           content,
           model,

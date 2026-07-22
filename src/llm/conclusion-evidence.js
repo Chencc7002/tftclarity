@@ -11,7 +11,8 @@ const SUPPORTED_INTENTS = new Set([
   "unit_item_rankings",
   "unit_emblem_rankings",
   "comp_rankings",
-  "comp_trends"
+  "comp_trends",
+  "comp_analysis"
 ]);
 
 function asArray(value) {
@@ -310,7 +311,28 @@ function buildCompRankings(result, options = {}) {
         traits: asArray(comp?.traits).slice(0, 8).map((trait) => ({
           name: clipped(trait?.name ?? trait?.apiName ?? trait?.filterId, 80),
           tier: finite(trait?.tier)
-        }))
+        })),
+        enrichment: {
+          strategy: comp?.strategyDerivation ? {
+            value: comp.strategyDerivation.strategy,
+            reason: asArray(comp.strategyDerivation.reason).map((reason) => clipped(reason, 120)),
+            algorithmVersion: comp.strategyDerivation.algorithmVersion,
+            confidence: finite(comp.strategyDerivation.confidence),
+            source: "tftclarity_automatic_derivation"
+          } : null,
+          profile: comp?.profile ? {
+            ...comp.profile,
+            profileKey: comp.profileKey,
+            source: "tftclarity_profile"
+          } : null,
+          binding: comp?.profileBinding ?? null,
+          sources: {
+            facts: "metatft",
+            strategy: "tftclarity_automatic_derivation",
+            profile: comp?.profile ? "tftclarity_profile" : null
+          }
+        },
+        preferenceMatch: comp?.preferenceMatch ?? null
       };
       byCompId.set(key, record);
       records.push(record);
@@ -341,7 +363,7 @@ function buildCompRankings(result, options = {}) {
 }
 
 function buildCompRankingContext(result, recommendations) {
-  if (!["comp_rankings", "comp_trends"].includes(result?.type ?? result?.query?.intent)) return null;
+  if (!["comp_rankings", "comp_trends", "comp_analysis"].includes(result?.type ?? result?.query?.intent)) return null;
   const metricLeaders = [];
   for (const [metric, comps] of Object.entries(result?.rankings ?? {})) {
     const first = asArray(comps)[0];
@@ -362,7 +384,10 @@ function buildCompRankingContext(result, recommendations) {
     lowSampleEvidenceIds: recommendations.filter((entry) => entry.lowSample).map((entry) => entry.evidenceId),
     directAnalysisEvidenceIds: recommendations.length <= 12
       ? recommendations.map((entry) => entry.evidenceId)
-      : [...new Set(metricLeaders.map((entry) => entry.evidenceId))]
+      : [...new Set(metricLeaders.map((entry) => entry.evidenceId))],
+    enrichment: result?.enrichment ?? null,
+    preferenceSearch: result?.preferenceSearch ?? null,
+    analysis: result?.analysis ?? null
   };
 }
 
@@ -378,13 +403,15 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
   const comparison = intent === "unit_item_comparison" ? buildComparison(result, catalog) : null;
   const recommendations = intent === "unit_item_rankings" || intent === "unit_emblem_rankings"
     ? buildItemRankings(result, catalog)
-    : intent === "comp_rankings" || intent === "comp_trends"
+    : intent === "comp_rankings" || intent === "comp_trends" || intent === "comp_analysis"
       ? buildCompRankings(result, { trendOnly: intent === "comp_trends" })
       : comparison?.options ?? buildRecommendations(result, catalog);
   const itemSignals = ["unit_build_rankings", "unit_build_completion", "unit_best_3_items"].includes(intent)
     ? buildItemSignals(recommendations)
     : [];
-  const compRankingContext = intent === "comp_rankings" || intent === "comp_trends" ? buildCompRankingContext(result, recommendations) : null;
+  const compRankingContext = ["comp_rankings", "comp_trends", "comp_analysis"].includes(intent)
+    ? buildCompRankingContext(result, recommendations)
+    : null;
   const dataStatus = sourceState(result);
   const warnings = buildWarnings(result);
   const hasLowSample = recommendations.some((entry) => entry.lowSample);
@@ -436,9 +463,11 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
       mustQualifyUnstableCore: itemSignals.some((entry) => entry.core && !entry.stable),
       mustAnalyzeAllDisplayedItemRankings: intent === "unit_item_rankings" || intent === "unit_emblem_rankings",
       mustDistinguishMetricRankFromReliability: intent === "unit_item_rankings" || intent === "unit_emblem_rankings",
-      mustAnalyzeDisplayedCompRankings: intent === "comp_rankings" || intent === "comp_trends",
+      mustAnalyzeDisplayedCompRankings: intent === "comp_rankings" || intent === "comp_trends" || intent === "comp_analysis",
       mustAlignCompRecommendationWithRequestedMetrics: intent === "comp_rankings",
       mustUseStandardizedTrendImprovement: intent === "comp_trends",
+      mustPreserveCompAnalysisEvidenceStatus: intent === "comp_analysis",
+      causalClaimsMustUseOfficialOrHistoricalEvidence: intent === "comp_analysis",
       mustMentionLowSample: hasLowSample,
       mustMentionStaleData: dataStatus.cache === "stale",
       mustAvoidWinnerClaim: unresolvedComparison

@@ -27,6 +27,21 @@ function nowMs(options, cacheStore) {
 
 export function makeCompTrendHistoryKey(query = {}) {
   const scope = {
+    seasonContextId: String(query.seasonContextId ?? "set17-live"),
+    providerVersion: query.providerVersion ?? null,
+    queue: String(query.queue ?? "1100"),
+    days: Number(query.days ?? 3),
+    rank: [...(query.rankFilter ?? query.rank ?? [])].map(String).sort(),
+    dataVersion: query.dataVersion ?? null
+  };
+  return `comp_trend:${JSON.stringify(scope)}`;
+}
+
+function makeLegacyCompTrendHistoryKey(query = {}) {
+  const scope = {
+    seasonContextId: String(query.seasonContextId ?? "set17-live"),
+    providerVersion: query.providerVersion ?? null,
+    effectivePatch: String(query.effectivePatch ?? query.patch ?? "current"),
     queue: String(query.queue ?? "1100"),
     patch: String(query.patch ?? "current"),
     days: Number(query.days ?? 3),
@@ -43,15 +58,19 @@ function responseParts(response) {
   };
 }
 
-function currentSnapshot(response, capturedAt) {
+function currentSnapshot(response, capturedAt, query = {}) {
   const parts = responseParts(response);
   const data = normalizeCompsPageDataResponse(parts.data);
   const stats = normalizeCompsStatsResponse(parts.stats);
   return {
     capturedAt,
+    effectivePatch: query.effectivePatch ?? query.patch ?? null,
     clusterId: stats.clusterId || data.clusterId || null,
     rows: Object.fromEntries(stats.rows.map((row) => [row.clusterId, {
       avgPlacement: row.stats.avgPlacement,
+      top4Rate: row.stats.top4Rate,
+      winRate: row.stats.winRate,
+      pickRate: row.stats.pickRate,
       games: row.stats.games
     }]))
   };
@@ -71,10 +90,48 @@ function ensureTrendRows(response) {
 }
 
 function selectBaseline(snapshots, current, cutoffMs) {
-  return snapshots
-    .filter((snapshot) => snapshot.clusterId === current.clusterId
-      && Date.parse(snapshot.capturedAt) <= cutoffMs)
+  const sameCluster = snapshots.filter((snapshot) => snapshot.clusterId === current.clusterId);
+  const previousPatch = current.effectivePatch
+    ? sameCluster.filter((snapshot) => snapshot.effectivePatch
+      && snapshot.effectivePatch !== current.effectivePatch)
+    : [];
+  const eligible = previousPatch.length
+    ? previousPatch
+    : sameCluster.filter((snapshot) => Date.parse(snapshot.capturedAt) <= cutoffMs);
+  return eligible
     .sort((left, right) => Date.parse(right.capturedAt) - Date.parse(left.capturedAt))[0] ?? null;
+}
+
+function delta(current, baseline) {
+  const left = finite(current);
+  const right = finite(baseline);
+  return left === null || right === null ? null : left - right;
+}
+
+function buildComparisons(current, baseline) {
+  if (!baseline) return {};
+  const comparisons = {};
+  for (const [clusterId, currentRow] of Object.entries(current.rows ?? {})) {
+    const baselineRow = baseline.rows?.[clusterId];
+    if (!baselineRow) continue;
+    const metrics = {
+      avgPlaceDelta: delta(currentRow.avgPlacement, baselineRow.avgPlacement),
+      top4RateDelta: delta(currentRow.top4Rate, baselineRow.top4Rate),
+      winRateDelta: delta(currentRow.winRate, baselineRow.winRate),
+      pickRateDelta: delta(currentRow.pickRate, baselineRow.pickRate),
+      sampleSizeDelta: delta(currentRow.games, baselineRow.games)
+    };
+    const available = Object.values(metrics).filter((value) => value !== null).length;
+    comparisons[clusterId] = {
+      currentPatch: current.effectivePatch ?? null,
+      baselinePatch: baseline.effectivePatch ?? null,
+      baselineCapturedAt: baseline.capturedAt,
+      metrics,
+      patchChanges: [],
+      evidenceStatus: available === 5 ? "complete" : available > 0 ? "partial" : "unavailable"
+    };
+  }
+  return comparisons;
 }
 
 export async function enrichCompResponseWithTrendHistory(response, options = {}) {
@@ -83,6 +140,9 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
   const currentTime = nowMs(options, cacheStore);
   const capturedAt = new Date(currentTime).toISOString();
   const key = makeCompTrendHistoryKey(options.query);
+  const storeOptions = {
+    seasonContextId: options.query?.seasonContextId ?? options.seasonContextId ?? "set17-live"
+  };
   const canPersist = typeof cacheStore?.getCompTrendHistory === "function"
     && typeof cacheStore?.setCompTrendHistory === "function";
   const officialGate = cloned.officialTrendGate
@@ -103,15 +163,20 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
     return cloned;
   }
 
-  const stored = await cacheStore.getCompTrendHistory(key);
+  let stored = await cacheStore.getCompTrendHistory(key, storeOptions);
+  if (!stored?.value) {
+    const legacyKey = makeLegacyCompTrendHistoryKey(options.query);
+    if (legacyKey !== key) stored = await cacheStore.getCompTrendHistory(legacyKey, storeOptions);
+  }
   const history = stored?.value && typeof stored.value === "object"
     ? stored.value
     : { version: 1, snapshots: [] };
-  const current = currentSnapshot(cloned, capturedAt);
+  const current = currentSnapshot(cloned, capturedAt, options.query);
   const retained = (Array.isArray(history.snapshots) ? history.snapshots : [])
     .filter((snapshot) => Number.isFinite(Date.parse(snapshot.capturedAt))
       && Date.parse(snapshot.capturedAt) >= currentTime - COMP_TREND_RETENTION_MS);
   const baseline = selectBaseline(retained, current, currentTime - COMP_TREND_WINDOW_MS);
+  const comparisons = buildComparisons(current, baseline);
   const trendRows = ensureTrendRows(cloned);
   let localCount = 0;
 
@@ -143,10 +208,10 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
       || currentTime - Date.parse(last.capturedAt) >= COMP_TREND_SNAPSHOT_INTERVAL_MS);
   const snapshots = shouldRecord ? [...retained, current] : retained;
   await cacheStore.setCompTrendHistory(key, {
-    version: 1,
+    version: 2,
     scopeKey: key,
     snapshots
-  });
+  }, storeOptions);
 
   const first = snapshots
     .filter((snapshot) => snapshot.clusterId === current.clusterId)
@@ -164,6 +229,7 @@ export async function enrichCompResponseWithTrendHistory(response, options = {})
     comparedAt: baseline?.capturedAt ?? null,
     firstObservedAt: first?.capturedAt ?? null,
     readyAt: first ? new Date(Date.parse(first.capturedAt) + COMP_TREND_WINDOW_MS).toISOString() : null,
+    comparisons,
     officialGate
   };
   return cloned;

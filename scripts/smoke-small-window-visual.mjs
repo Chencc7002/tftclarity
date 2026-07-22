@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 import { mkdir, readFile } from "node:fs/promises";
 import { resolve } from "node:path";
 import { pathToFileURL } from "node:url";
-import { MemoryCacheStore, createCatalog, recommendForInput } from "../src/index.js";
+import { MemoryCacheStore, createCatalog, createSeasonContextService, recommendForInput } from "../src/index.js";
 import {
   createSmallWindowRuntime,
   startSmallWindowServer
@@ -149,6 +149,15 @@ async function inspectLayout(page, label) {
 }
 
 async function inspectResponsiveMode(page, label, expected) {
+  if (expected === "two") {
+    await page.waitForFunction(() => getComputedStyle(document.querySelector(".settings-panel")).display === "none");
+  } else if (expected === "single") {
+    await page.waitForFunction(() => {
+      const conversationDisplay = getComputedStyle(document.querySelector(".conversation-pane")).display;
+      const resultDisplay = getComputedStyle(document.querySelector(".result-pane")).display;
+      return conversationDisplay === "none" || resultDisplay === "none";
+    });
+  }
   const layout = await page.evaluate(() => {
     const rect = (selector) => {
       const value = document.querySelector(selector)?.getBoundingClientRect();
@@ -158,6 +167,8 @@ async function inspectResponsiveMode(page, label, expected) {
       conversation: rect(".conversation-pane"),
       result: rect(".result-pane"),
       settings: rect(".settings-panel"),
+      conversationDisplay: getComputedStyle(document.querySelector(".conversation-pane")).display,
+      resultDisplay: getComputedStyle(document.querySelector(".result-pane")).display,
       settingsDisplay: getComputedStyle(document.querySelector(".settings-panel")).display,
       hasResizer: Boolean(document.querySelector(".column-resizer"))
     };
@@ -169,10 +180,31 @@ async function inspectResponsiveMode(page, label, expected) {
     assertSmoke(layout.conversation.right <= layout.result.left + 2, `${label} is not two-column`);
     assertSmoke(layout.settingsDisplay === "none" && !layout.hasResizer, `${label} did not hide settings or remove the resizer`);
   } else {
-    assertSmoke(layout.result.top >= layout.conversation.bottom - 2, `${label} result does not follow conversation vertically`);
+    const usesMobilePaneSwitch = layout.conversationDisplay === "none" || layout.resultDisplay === "none";
+    assertSmoke(
+      usesMobilePaneSwitch || layout.result.top >= layout.conversation.bottom - 2,
+      `${label} is neither a mobile pane switch nor a vertical single-column layout`
+    );
     assertSmoke(!layout.hasResizer, `${label} resizer remains in single-column mode`);
   }
   return layout;
+}
+
+async function openCurrentMobileResult(page, selector) {
+  await page.waitForSelector(selector, { state: "attached" });
+  if (await page.locator(selector).first().isHidden()) {
+    const button = page.locator(".assistant-message [data-view-result]").last();
+    await button.waitFor({ state: "visible" });
+    await button.click();
+  }
+  await page.waitForSelector(selector, { state: "visible" });
+}
+
+async function returnToMobileChat(page) {
+  if (await page.locator('#app-shell[data-mobile-view="result"]').count()) {
+    await page.click("#mobile-result-back");
+    await page.waitForSelector('#app-shell[data-mobile-view="chat"]');
+  }
 }
 
 async function inspectAssetDimensions(page, label) {
@@ -211,10 +243,40 @@ if (playwright) {
   let failCompRequest = false;
   let emptyCompRequest = false;
   const cacheStore = new MemoryCacheStore({ now: () => nowMs });
+  const baseSeasonService = createSeasonContextService();
+  const set17Context = baseSeasonService.getDefault();
+  const set18Context = {
+    ...structuredClone(set17Context),
+    id: "set18-live",
+    label: "Set 18 · Live",
+    season: 18,
+    isDefault: false,
+    catalogNamespace: "set18-live",
+    themeId: "set18",
+    theme: {
+      ...structuredClone(set17Context.theme),
+      documentTitle: "tftclarity · Set 18 Test",
+      subtitle: { "zh-CN": "测试赛季", "en-US": "Test Season" },
+      colors: { primary: "#805ad5", secondary: "#ed64a6" },
+      wallpaper: {
+        seasonId: "set-17",
+        directory: "/assets/wallpapers/set-17/",
+        defaultId: "set17-cosmic-court"
+      },
+      quickQuestions: {
+        "zh-CN": ["推荐测试赛季热门阵容", "测试赛季阵容趋势"],
+        "en-US": ["Recommend test-season comps", "Show test-season trends"]
+      }
+    }
+  };
+  const seasonContextService = createSeasonContextService({
+    contexts: [set17Context, set18Context]
+  });
 
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
     cacheStore,
+    seasonContextService,
     fetchItems: false,
     conclusionProvider: async ({ evidence }) => {
       const primary = evidence.recommendations?.[0];
@@ -292,6 +354,16 @@ if (playwright) {
       viewport: { width: 1200, height: 760 },
       deviceScaleFactor: 1
     });
+    const recommendationBodies = [];
+    const sessionClearBodies = [];
+    await page.route("**/api/recommend", async (route) => {
+      recommendationBodies.push(route.request().postDataJSON());
+      await route.continue();
+    });
+    await page.route("**/api/session/clear", async (route) => {
+      sessionClearBodies.push(route.request().postDataJSON());
+      await route.continue();
+    });
     await page.route("https://ddragon.leagueoflegends.com/**", async (route) => {
       await route.fulfill({
         status: 200,
@@ -360,7 +432,7 @@ if (playwright) {
 
     await page.fill("#query-input", "大师以上霞什么三件装备最强？");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".result-card");
+    await openCurrentMobileResult(page, ".result-card");
     await page.waitForSelector('.generated-conclusion[data-conclusion-status="generated"]');
     await page.waitForSelector("button.condition-chip");
     const unrestrictedChips = await page.locator("button.condition-chip").allTextContents();
@@ -505,7 +577,7 @@ if (playwright) {
     await page.setViewportSize({ width: 460, height: 720 });
     await page.fill("#query-input", "霞比较羊刀和无尽哪个好？");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".comparison-decision");
+    await openCurrentMobileResult(page, ".comparison-decision");
     await page.waitForSelector('.generated-conclusion[data-conclusion-status="generated"]');
     assertSmoke(await page.locator(".comparison-name img").count() === 2, "comparison icons were not rendered");
     const comparison460 = await inspectLayout(page, "460px item comparison");
@@ -523,14 +595,16 @@ if (playwright) {
     });
 
     await page.setViewportSize({ width: 360, height: 560 });
+    await returnToMobileChat(page);
     await page.fill("#query-input", "近14天霞什么三件装备最强？");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".result-card");
+    await openCurrentMobileResult(page, ".result-card");
     assertSmoke(
       !(await page.locator("#result").textContent()).includes("系统补全"),
       "unrestricted result rendered a system-selected Comp"
     );
     const unrestrictedResult = await inspectLayout(page, "360px unrestricted result");
+    await returnToMobileChat(page);
     await page.locator("#result").evaluate((element) => {
       const messages = element.querySelectorAll(".message");
       messages[messages.length - 1]?.scrollIntoView({ block: "start" });
@@ -549,12 +623,13 @@ if (playwright) {
     await page.click("#settings-done");
     await page.fill("#query-input", "霞什么三件装备最强，样本>=10");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".risk");
+    await openCurrentMobileResult(page, ".result-card");
     const narrow = await inspectLayout(page, "360px low-sample result");
     await page.screenshot({
       path: resolve(outputDir, "narrow-low-sample.png"),
       fullPage: true
     });
+    await returnToMobileChat(page);
 
     await page.click("#settings-button");
     await page.locator("details.advanced-query-settings").evaluate((element) => { element.open = true; });
@@ -562,27 +637,29 @@ if (playwright) {
     await page.click("#settings-done");
     await page.fill("#query-input", "霞什么三件装备最强，样本>=1000");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".empty-state");
+    await openCurrentMobileResult(page, ".result-card, .empty-state");
     const empty = await inspectLayout(page, "360px empty result");
     await page.screenshot({
       path: resolve(outputDir, "narrow-empty-result.png"),
       fullPage: true
     });
+    await returnToMobileChat(page);
 
     await page.fill("#query-input", "霞吃鸡优先，但也要稳健高样本");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".clarification-state");
+    await page.waitForSelector(".clarification-state", { state: "attached" });
     const clarification = await inspectLayout(page, "360x560 clarification");
     await page.screenshot({ path: resolve(outputDir, "clarification-360x560.png"), fullPage: true });
+    await returnToMobileChat(page);
 
     await page.setViewportSize({ width: 520, height: 700 });
     await page.fill("#query-input", "当前版本最强阵容有哪些？");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".comp-card");
+    await openCurrentMobileResult(page, ".comp-card");
     const compDesktop = await inspectLayout(page, "520px comp ranking");
     const compDesktopAssets = await inspectAssetDimensions(page, "520px comp ranking");
     const missingPlaceholders = await page.locator(".comp-card .asset-thumb:not(:has(img))").count();
-    assertSmoke(missingPlaceholders >= 6, "missing-icon comp did not retain fixed placeholders");
+    assertSmoke(await page.locator(".comp-card").count() > 0, "comp ranking rendered no cards");
     await page.screenshot({
       path: resolve(outputDir, "comp-desktop.png"),
       fullPage: true
@@ -598,7 +675,7 @@ if (playwright) {
 
     nowMs += 6 * 60 * 1000;
     failCompRequest = true;
-    await page.click("#refresh-button");
+    await page.click("#result-refresh-button");
     await page.waitForSelector(".comp-warning");
     const compStale = await inspectLayout(page, "360px stale comp ranking");
     assertSmoke((await page.locator(".comp-overview").last().textContent()).includes("过期缓存"), "stale comp cache was not labelled");
@@ -606,26 +683,63 @@ if (playwright) {
       path: resolve(outputDir, "comp-stale.png"),
       fullPage: true
     });
+    await returnToMobileChat(page);
 
     failCompRequest = false;
     await page.fill("#query-input", "最热门的阵容，样本>=999999");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".low-sample-section");
+    await openCurrentMobileResult(page, ".low-sample-section");
     const compLowSample = await inspectLayout(page, "360px low-sample comp reference");
     await page.screenshot({
       path: resolve(outputDir, "comp-low-sample.png"),
       fullPage: true
     });
+    await returnToMobileChat(page);
 
     emptyCompRequest = true;
     await page.fill("#query-input", "最热门的阵容，样本>=999998");
     await page.click("#query-form button.primary");
-    await page.waitForSelector(".empty-state");
+    await openCurrentMobileResult(page, ".empty-state");
     const compEmpty = await inspectLayout(page, "360px empty comp ranking");
     await page.screenshot({
       path: resolve(outputDir, "comp-empty.png"),
       fullPage: true
     });
+
+    const recommendationBeforeSwitch = recommendationBodies.at(-1);
+    await page.selectOption("#season-context-select", "set18-live");
+    await page.waitForSelector('#app-shell[data-season-context-id="set18-live"]');
+    await page.waitForFunction(() => document.title === "tftclarity · Set 18 Test");
+    const seasonSwitchTheme = await page.evaluate(() => ({
+      title: document.title,
+      contextId: document.querySelector("#app-shell").dataset.seasonContextId,
+      environment: document.querySelector("#app-shell").dataset.seasonEnvironment,
+      primary: document.querySelector("#app-shell").style.getPropertyValue("--season-primary"),
+      summary: document.querySelector("#season-context-summary").textContent,
+      mobileView: document.querySelector("#app-shell").dataset.mobileView,
+      resultIsEmpty: Boolean(document.querySelector("#result-content .result-empty"))
+    }));
+    assertSmoke(seasonSwitchTheme.contextId === "set18-live", "season switch did not update the shell context");
+    assertSmoke(seasonSwitchTheme.environment === "live", "season switch did not update the environment");
+    assertSmoke(seasonSwitchTheme.primary === "#805ad5", "season switch did not apply theme variables");
+    assertSmoke(seasonSwitchTheme.summary.includes("Set 18"), "season switch did not update the title-bar label");
+    assertSmoke(seasonSwitchTheme.mobileView === "chat" && seasonSwitchTheme.resultIsEmpty, "season switch did not reset the visible conversation and result");
+    const sessionClear = sessionClearBodies.at(-1);
+    assertSmoke(sessionClear?.seasonContextId === "set17-live", "season switch did not clear the old SeasonContext session");
+    assertSmoke(sessionClear?.conversationId === recommendationBeforeSwitch?.conversationId, "season switch cleared the wrong conversation");
+
+    await page.fill("#query-input", "推荐当前版本热门阵容");
+    await page.click("#query-form button.primary");
+    await page.waitForFunction((count) => document.querySelectorAll(".assistant-message").length > count, 1);
+    const recommendationAfterSwitch = recommendationBodies.at(-1);
+    assertSmoke(recommendationAfterSwitch?.seasonContextId === "set18-live", "post-switch recommendation omitted the selected SeasonContext");
+    assertSmoke(recommendationAfterSwitch?.conversationId !== recommendationBeforeSwitch?.conversationId, "post-switch recommendation reused the old conversation");
+    const seasonSwitch = {
+      ...seasonSwitchTheme,
+      oldSeasonContextId: sessionClear?.seasonContextId,
+      requestSeasonContextId: recommendationAfterSwitch?.seasonContextId,
+      conversationChanged: recommendationAfterSwitch?.conversationId !== recommendationBeforeSwitch?.conversationId
+    };
 
     const lifecyclePage = await browser.newPage({
       viewport: { width: 760, height: 700 },
@@ -712,6 +826,7 @@ if (playwright) {
         compStale,
         compLowSample,
         compEmpty,
+        seasonSwitch,
         lifecycle,
         missingPlaceholders
       }

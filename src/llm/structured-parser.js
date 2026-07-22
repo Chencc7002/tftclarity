@@ -6,8 +6,14 @@ const VALID_INTENTS = new Set([
   "unit_build_completion",
   "unit_item_comparison",
   "clarification",
-  "comp_rankings"
+  "comp_rankings",
+  "comp_trends",
+  "comp_analysis"
 ]);
+
+const VALID_COMP_STRATEGIES = new Set(["reroll", "fast8", "fast9"]);
+const VALID_COMP_GOALS = new Set(["top4", "top1", "balanced"]);
+const VALID_COMP_LEVELS = new Set(["low", "medium", "high"]);
 
 const VALID_COMP_METRICS = new Set([
   "top4_rate",
@@ -95,7 +101,15 @@ const ALLOWED_CONSTRAINT_KEYS = new Set([
   "patch",
   "queue",
   "metrics",
-  "limit"
+  "limit",
+  "strategy",
+  "reroll",
+  "goal",
+  "contested",
+  "difficulty",
+  "beginner_friendly",
+  "beginnerFriendly",
+  "count"
 ]);
 
 const ROOT_ALIAS_PAIRS = [
@@ -120,7 +134,8 @@ const CONSTRAINT_ALIAS_PAIRS = [
   ["primary_metric", "primaryMetric"],
   ["excluded_items", "excludedItems"],
   ["min_samples", "minSamples"],
-  ["rank_filter", "rankFilter"]
+  ["rank_filter", "rankFilter"],
+  ["beginner_friendly", "beginnerFriendly"]
 ];
 
 function isPlainObject(value) {
@@ -210,6 +225,15 @@ function readBoolean(value, path, errors) {
   if (typeof value !== "boolean") {
     errors.push(`${path} must be a boolean`);
     return false;
+  }
+  return value;
+}
+
+function readNullableBoolean(value, path, errors) {
+  if (value === undefined || value === null || value === "") return undefined;
+  if (typeof value !== "boolean") {
+    errors.push(`${path} must be a boolean or null`);
+    return undefined;
   }
   return value;
 }
@@ -347,13 +371,32 @@ export function validateStructuredParserOutput(rawValue) {
         if (!valid) errors.push(`constraints.metrics contains unsupported metric: ${metric}`);
         return valid;
       }),
-      limit: readInteger(constraints.limit, "constraints.limit", errors, { min: 1, max: 21 })
+      limit: readInteger(constraints.limit, "constraints.limit", errors, { min: 1, max: 21 }),
+      strategy: readString(constraints.strategy, "constraints.strategy", errors, VALID_COMP_STRATEGIES),
+      reroll: readNullableBoolean(constraints.reroll, "constraints.reroll", errors),
+      goal: readString(constraints.goal, "constraints.goal", errors, VALID_COMP_GOALS),
+      contested: readString(constraints.contested, "constraints.contested", errors, VALID_COMP_LEVELS),
+      difficulty: readString(constraints.difficulty, "constraints.difficulty", errors, VALID_COMP_LEVELS),
+      beginnerFriendly: readNullableBoolean(
+        constraints.beginner_friendly ?? constraints.beginnerFriendly,
+        "constraints.beginner_friendly",
+        errors
+      ),
+      count: readInteger(constraints.count, "constraints.count", errors, { min: 1, max: 10 })
     },
     needsClarification,
     clarificationQuestion
   };
 
-  if (intent === "comp_rankings") {
+  const preferenceMode = value.constraints.strategy !== undefined
+    || value.constraints.reroll !== undefined
+    || value.constraints.goal !== undefined
+    || value.constraints.contested !== undefined
+    || value.constraints.difficulty !== undefined
+    || value.constraints.beginnerFriendly !== undefined
+    || value.constraints.count !== undefined;
+
+  if (intent === "comp_rankings" || intent === "comp_trends") {
     const entityMentions = [
       ...value.entities.unitMentions,
       ...value.entities.itemMentions,
@@ -363,22 +406,45 @@ export function validateStructuredParserOutput(rawValue) {
       ...value.constraints.excludedItemMentions
     ];
     if (entityMentions.length > 0) {
-      errors.push("comp_rankings cannot include unit, item, or trait mentions");
+      errors.push(`${intent} cannot include unit, item, or trait mentions`);
     }
     if (value.constraints.starLevel.length > 0
       || value.constraints.itemCount !== undefined
       || value.constraints.itemPolicy !== undefined
       || value.constraints.sort !== undefined) {
-      errors.push("comp_rankings cannot include single-unit item constraints");
+      errors.push(`${intent} cannot include single-unit item constraints`);
     }
-    if (value.constraints.metrics.length === 0) {
+    if (intent === "comp_trends" && preferenceMode) {
+      errors.push("comp preference conditions are not valid for comp_trends");
+    } else if (preferenceMode) {
+      if (value.constraints.count === undefined) errors.push("comp preference conditions require count");
+      if (value.constraints.limit !== undefined) errors.push("comp preference conditions must use count instead of limit");
+    } else if (value.constraints.metrics.length === 0) {
       errors.push("comp_rankings requires at least one metric");
-    }
-    if (value.constraints.limit === undefined) {
+    } else if (value.constraints.limit === undefined) {
       errors.push("comp_rankings requires limit");
     }
-  } else if (value.constraints.metrics.length > 0 || value.constraints.limit !== undefined) {
-    errors.push("metrics and limit are only valid for comp_rankings");
+    if (value.constraints.strategy === "reroll" && value.constraints.reroll === false) {
+      errors.push("constraints.strategy=reroll conflicts with constraints.reroll=false");
+    }
+  } else if (intent === "comp_analysis") {
+    if (value.entities.itemMentions.length > 0
+      || value.constraints.lockedItemMentions.length > 0
+      || value.constraints.comparisonItemMentions.length > 0
+      || value.constraints.excludedItemMentions.length > 0) {
+      errors.push("comp_analysis cannot include item constraints");
+    }
+    if (value.constraints.starLevel.length > 0
+      || value.constraints.itemCount !== undefined
+      || value.constraints.itemPolicy !== undefined
+      || value.constraints.sort !== undefined
+      || preferenceMode) {
+      errors.push("comp_analysis cannot include single-unit item or preference constraints");
+    }
+  } else if (value.constraints.metrics.length > 0
+    || value.constraints.limit !== undefined
+    || preferenceMode) {
+    errors.push("comp metrics, limit, and preference conditions are only valid for comp intents");
   }
 
   if (needsClarification && !clarificationQuestion) {
@@ -423,7 +489,7 @@ export function shouldUseStructuredParser(parsed, options = {}) {
   const mode = options.useStructuredParser ?? "auto";
   if (mode === false || mode === "never") return false;
   if (mode === true || mode === "always" || options.forceStructuredParser) return true;
-  if (parsed.intent === "comp_rankings") return false;
+  if (parsed.intent === "comp_rankings") return Boolean(parsed.preferenceRequested);
   if ((parsed.parser?.entityAmbiguities ?? []).length > 0) return false;
   if ((parsed.parser?.unresolvedEntityHints ?? []).length > 0) return true;
   if (parsed.parser?.exclusion?.requested && (parsed.excludedItems ?? []).length === 0) return true;

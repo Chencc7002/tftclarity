@@ -1,4 +1,5 @@
 import { createCatalog } from "./static-data.js";
+import { normalizeAlias } from "../core/normalizer.js";
 
 function compact(values) {
   return [...new Set(values.filter(Boolean).map(String))];
@@ -18,9 +19,17 @@ function normalizeEntityType(value) {
 }
 
 export function applyEntityAliasesToCatalog(catalog = createCatalog(), aliases = []) {
-  const units = new Map((catalog.units ?? []).map((unit) => [unit.apiName, unit]));
-  const items = new Map((catalog.items ?? []).map((item) => [item.apiName, item]));
-  const traitsByFilterId = new Map((catalog.traits ?? []).map((trait) => [trait.filterId, trait]));
+  const overrideAliases = new Set((aliases ?? [])
+    .filter((alias) => alias?.enabled && alias?.alias)
+    .map((alias) => normalizeAlias(alias.alias))
+    .filter(Boolean));
+  const withoutOverriddenAliases = (record) => ({
+    ...record,
+    aliases: (record.aliases ?? []).filter((alias) => !overrideAliases.has(normalizeAlias(alias)))
+  });
+  const units = new Map((catalog.units ?? []).map((unit) => [unit.apiName, withoutOverriddenAliases(unit)]));
+  const items = new Map((catalog.items ?? []).map((item) => [item.apiName, withoutOverriddenAliases(item)]));
+  const traitsByFilterId = new Map((catalog.traits ?? []).map((trait) => [trait.filterId, withoutOverriddenAliases(trait)]));
   const traitFilterByApiName = new Map((catalog.traits ?? []).map((trait) => [trait.apiName, trait.filterId]));
   const applied = [];
   const ignored = [];
@@ -90,6 +99,7 @@ export function applyEntityAliasesToCatalog(catalog = createCatalog(), aliases =
 export async function applyEnabledEntityAliasesFromStore(catalog, cacheStore, options = {}) {
   const aliases = await cacheStore?.listEntityAliases?.({
     enabled: true,
+    seasonContextId: options.seasonContextId,
     limit: options.limit ?? 500
   }) ?? [];
   return applyEntityAliasesToCatalog(catalog, aliases);

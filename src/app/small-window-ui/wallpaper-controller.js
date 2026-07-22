@@ -1,5 +1,5 @@
 import { t } from "./i18n.js";
-import { DEFAULT_WALLPAPER_ID, WALLPAPERS, wallpaperById } from "./wallpaper-catalog.js";
+import { DEFAULT_WALLPAPER_ID, wallpaperById, wallpapersForSeason } from "./wallpaper-catalog.js";
 
 export const WALLPAPER_ENABLED_STORAGE_KEY = "tftagent.wallpaperEnabled";
 export const WALLPAPER_ID_STORAGE_KEY = "tftagent.wallpaperId";
@@ -13,6 +13,8 @@ class ParticleField {
     this.active = false;
     this.frame = null;
     this.lastTime = 0;
+    this.density = 1;
+    this.speed = 1;
     this.reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -26,7 +28,7 @@ class ParticleField {
     this.canvas.width = Math.round(width * ratio);
     this.canvas.height = Math.round(height * ratio);
     this.context.setTransform(ratio, 0, 0, ratio, 0, 0);
-    const count = Math.max(48, Math.min(130, Math.round((width * height) / 9000)));
+    const count = Math.max(24, Math.min(130, Math.round(((width * height) / 9000) * this.density)));
     this.particles = Array.from({ length: count }, () => this.createParticle(width, height));
   }
 
@@ -35,7 +37,7 @@ class ParticleField {
       x: Math.random() * width,
       y: fromBottom ? height + Math.random() * 24 : Math.random() * height,
       radius: .8 + Math.random() * 1.7,
-      speed: 9 + Math.random() * 16,
+      speed: (9 + Math.random() * 16) * this.speed,
       drift: -5 + Math.random() * 10,
       alpha: .42 + Math.random() * .5,
       phase: Math.random() * Math.PI * 2,
@@ -58,6 +60,12 @@ class ParticleField {
       this.frame = null;
       this.context.clearRect(0, 0, this.canvas.clientWidth, this.canvas.clientHeight);
     }
+  }
+
+  setProfile({ density = 1, speed = 1 } = {}) {
+    this.density = Math.max(0.25, Number(density) || 1);
+    this.speed = Math.max(0.25, Number(speed) || 1);
+    this.resize();
   }
 
   draw(time) {
@@ -130,7 +138,17 @@ export class WallpaperController {
     this.idleTimer = null;
     this.particles = new ParticleField(canvas);
     this.enabled = localStorage.getItem(WALLPAPER_ENABLED_STORAGE_KEY) !== "false";
-    this.wallpaperId = wallpaperById(localStorage.getItem(WALLPAPER_ID_STORAGE_KEY) || DEFAULT_WALLPAPER_ID).id;
+    this.seasonId = "set-17";
+    this.defaultWallpaperId = DEFAULT_WALLPAPER_ID;
+    this.wallpapers = wallpapersForSeason(this.seasonId);
+    this.fallbackColors = { primary: "#3eaeeb", secondary: "#5678e8" };
+    this.wallpaperId = wallpaperById(
+      localStorage.getItem(`${WALLPAPER_ID_STORAGE_KEY}.${this.seasonId}`)
+        || localStorage.getItem(WALLPAPER_ID_STORAGE_KEY)
+        || this.defaultWallpaperId,
+      this.seasonId,
+      this.defaultWallpaperId
+    )?.id ?? null;
 
     this.populateSelect();
     this.populateMobileOptions();
@@ -167,7 +185,7 @@ export class WallpaperController {
   }
 
   populateSelect() {
-    this.select.replaceChildren(...WALLPAPERS.map((wallpaper) => {
+    this.select.replaceChildren(...this.wallpapers.map((wallpaper) => {
       const option = document.createElement("option");
       option.value = wallpaper.id;
       option.dataset.labelKey = wallpaper.labelKey;
@@ -177,7 +195,7 @@ export class WallpaperController {
   }
 
   populateMobileOptions() {
-    this.mobileOptions.replaceChildren(...WALLPAPERS.map((wallpaper) => {
+    this.mobileOptions.replaceChildren(...this.wallpapers.map((wallpaper) => {
       const button = document.createElement("button");
       button.type = "button";
       button.className = "wallpaper-mobile-option";
@@ -217,34 +235,75 @@ export class WallpaperController {
   }
 
   setWallpaper(id) {
-    this.wallpaperId = wallpaperById(id).id;
+    const wallpaper = wallpaperById(id, this.seasonId, this.defaultWallpaperId);
+    if (!wallpaper) return;
+    this.wallpaperId = wallpaper.id;
     this.select.value = this.wallpaperId;
     localStorage.setItem(WALLPAPER_ID_STORAGE_KEY, this.wallpaperId);
+    localStorage.setItem(`${WALLPAPER_ID_STORAGE_KEY}.${this.seasonId}`, this.wallpaperId);
     this.applyWallpaper();
     this.refreshMobileOptions();
     if (this.enabled) this.enterIdleMode();
   }
 
   applyWallpaper() {
-    const wallpaper = wallpaperById(this.wallpaperId);
+    const wallpaper = wallpaperById(this.wallpaperId, this.seasonId, this.defaultWallpaperId);
+    if (!wallpaper) {
+      this.shell.style.removeProperty("--wallpaper-image");
+      this.shell.style.removeProperty("--wallpaper-position");
+      this.shell.style.removeProperty("--wallpaper-focus-size");
+      this.shell.style.setProperty("--wallpaper-accent", this.fallbackColors.primary);
+      this.shell.style.setProperty("--wallpaper-accent-secondary", this.fallbackColors.secondary);
+      return;
+    }
     this.shell.style.setProperty("--wallpaper-image", `url("${wallpaper.url}")`);
     this.shell.style.setProperty("--wallpaper-position", wallpaper.position);
     this.shell.style.setProperty("--wallpaper-focus-size", wallpaper.focusSize ?? "cover");
-    this.shell.style.setProperty("--wallpaper-accent", wallpaper.accent ?? "#3eaeeb");
-    this.shell.style.setProperty("--wallpaper-accent-secondary", wallpaper.accentSecondary ?? "#5678e8");
+    this.shell.style.setProperty("--wallpaper-accent", wallpaper.accent ?? this.fallbackColors.primary);
+    this.shell.style.setProperty("--wallpaper-accent-secondary", wallpaper.accentSecondary ?? this.fallbackColors.secondary);
+  }
+
+  setSeason(seasonId, defaultWallpaperId = null, theme = {}) {
+    this.seasonId = seasonId || "set-17";
+    this.defaultWallpaperId = defaultWallpaperId;
+    this.wallpapers = wallpapersForSeason(this.seasonId);
+    this.fallbackColors = {
+      primary: theme.primary ?? "#3eaeeb",
+      secondary: theme.secondary ?? "#5678e8"
+    };
+    this.particles.setProfile(theme.particles);
+    const storedId = localStorage.getItem(`${WALLPAPER_ID_STORAGE_KEY}.${this.seasonId}`);
+    this.wallpaperId = wallpaperById(
+      storedId || defaultWallpaperId,
+      this.seasonId,
+      defaultWallpaperId
+    )?.id ?? null;
+    this.populateSelect();
+    this.populateMobileOptions();
+    this.select.value = this.wallpaperId ?? "";
+    const available = this.wallpapers.length > 0;
+    this.control.classList.toggle("wallpaper-unavailable", !available);
+    this.toggle.disabled = !available;
+    this.mobileButton.disabled = !available;
+    this.select.disabled = !available || !this.enabled;
+    this.shell.classList.toggle("wallpaper-enabled", available && this.enabled);
+    if (!available) this.particles.setActive(false);
+    this.applyWallpaper();
+    this.refreshLocale();
   }
 
   setEnabled(enabled, { persist = true } = {}) {
+    const available = this.wallpapers.length > 0;
     this.enabled = Boolean(enabled);
-    this.shell.classList.toggle("wallpaper-enabled", this.enabled);
+    this.shell.classList.toggle("wallpaper-enabled", available && this.enabled);
     this.control.classList.toggle("active", this.enabled);
     this.toggle.setAttribute("aria-checked", String(this.enabled));
     this.mobileToggle.setAttribute("aria-checked", String(this.enabled));
     this.mobileButton.classList.toggle("wallpaper-off", !this.enabled);
-    this.select.disabled = !this.enabled;
+    this.select.disabled = !available || !this.enabled;
     if (persist) localStorage.setItem(WALLPAPER_ENABLED_STORAGE_KEY, String(this.enabled));
     this.refreshLocale();
-    if (this.enabled) this.enterIdleMode();
+    if (available && this.enabled) this.enterIdleMode();
     else {
       clearTimeout(this.idleTimer);
       this.particles.setActive(false);

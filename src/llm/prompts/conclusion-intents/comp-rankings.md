@@ -11,5 +11,7 @@
 5. 趋势标记只能作为补充，不能替代当前前四率、登顶率、平均名次和样本判断。
 6. 必须覆盖 `directAnalysisEvidenceIds` 中的全部可见阵容；阵容较多时拆分到多条 `reasons` 和 `alternatives`。
 7. 阵容名称、棋子、羁绊和数值只能来自对应证据。
+8. 当 `compRankingContext.preferenceSearch` 存在时，只解释确定性代码已经筛选出的结果和结构化条件；不得新增、替换或重新排序阵容，也不得放宽 `count`、样本门槛、Profile 或 strategy 条件。
+9. `insufficient_profile`、`insufficient_evidence`、`low_sample_only` 或 `zero_results` 时必须明确说明没有正式推荐，并复述对应的证据缺口；不得凭模型知识补一套阵容。
 
 不得把样本量最大、热度最高或单项指标第一直接写成“当前最强”，除非 Evidence Pack 的确定性决策明确支持该结论。
