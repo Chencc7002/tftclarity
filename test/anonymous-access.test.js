@@ -109,7 +109,7 @@ test("public HTTP mode keeps two browser visitors isolated", async () => {
   try {
     const firstAccess = await fetch(`${started.url}api/access`);
     const firstCookie = cookieHeader(firstAccess.headers.get("set-cookie"));
-    assert.equal((await firstAccess.json()).access.quota.remaining, 5);
+    assert.equal((await firstAccess.json()).access.quota.remaining, 10);
 
     const saved = await fetch(`${started.url}api/preferences`, {
       method: "POST",

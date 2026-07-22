@@ -346,7 +346,7 @@ function inferUnresolvedEntityHints(input, entities) {
   }
 
   if (entities.traits.length === 0) {
-    const levelTrait = normalized.match(/[1-9一二三四五六七八九]([\p{Script=Han}a-z]{2,12}?)(?:羁绊|开了|已开|装备|三件套|三件|怎么|如何|$)/u);
+    const levelTrait = normalized.match(/[1-9一二三四五六七八九](?!套|个|种)([\p{Script=Han}a-z]{2,12}?)(?:羁绊|开了|已开|装备|三件套|三件|怎么|如何|$)/u);
     const beforeOpen = normalized.match(/([\p{Script=Han}a-z]{2,12}?)(?:开了|已开)/u);
     const afterOpen = normalized.match(/(?:开了|已开)([\p{Script=Han}a-z]{2,12}?)(?:装备|怎么|如何|$)/u);
     const fragment = cleanUnresolvedFragment(levelTrait?.[1] ?? beforeOpen?.[1] ?? afterOpen?.[1], entities)

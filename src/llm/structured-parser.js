@@ -109,7 +109,9 @@ const ALLOWED_CONSTRAINT_KEYS = new Set([
   "difficulty",
   "beginner_friendly",
   "beginnerFriendly",
-  "count"
+  "count",
+  "return_all",
+  "returnAll"
 ]);
 
 const ROOT_ALIAS_PAIRS = [
@@ -135,7 +137,8 @@ const CONSTRAINT_ALIAS_PAIRS = [
   ["excluded_items", "excludedItems"],
   ["min_samples", "minSamples"],
   ["rank_filter", "rankFilter"],
-  ["beginner_friendly", "beginnerFriendly"]
+  ["beginner_friendly", "beginnerFriendly"],
+  ["return_all", "returnAll"]
 ];
 
 function isPlainObject(value) {
@@ -382,7 +385,12 @@ export function validateStructuredParserOutput(rawValue) {
         "constraints.beginner_friendly",
         errors
       ),
-      count: readInteger(constraints.count, "constraints.count", errors, { min: 1, max: 10 })
+      count: readInteger(constraints.count, "constraints.count", errors, { min: 1, max: 10 }),
+      returnAll: readNullableBoolean(
+        constraints.return_all ?? constraints.returnAll,
+        "constraints.return_all",
+        errors
+      )
     },
     needsClarification,
     clarificationQuestion
@@ -394,7 +402,8 @@ export function validateStructuredParserOutput(rawValue) {
     || value.constraints.contested !== undefined
     || value.constraints.difficulty !== undefined
     || value.constraints.beginnerFriendly !== undefined
-    || value.constraints.count !== undefined;
+    || value.constraints.count !== undefined
+    || value.constraints.returnAll !== undefined;
 
   if (intent === "comp_rankings" || intent === "comp_trends") {
     const entityMentions = [

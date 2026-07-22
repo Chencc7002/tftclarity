@@ -47,7 +47,7 @@ export function resolveAnonymousAccessConfig(options = {}, env = process.env) {
     trustProxy: booleanValue(options.trustProxy ?? env.TFT_AGENT_TRUST_PROXY, false),
     visitorDailyLimit: nonNegativeInteger(
       options.visitorDailyLimit ?? env.TFT_AGENT_VISITOR_DAILY_LLM_LIMIT,
-      5
+      10
     ),
     ipDailyLimit: nonNegativeInteger(
       options.ipDailyLimit ?? env.TFT_AGENT_IP_DAILY_LLM_LIMIT,

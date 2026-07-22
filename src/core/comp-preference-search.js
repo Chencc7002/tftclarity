@@ -56,7 +56,7 @@ export function validateCompPreferenceConditions(value = {}, options = {}) {
     throw preferenceError("自然语言阵容条件必须是对象");
   }
   const allowedFields = new Set([
-    "strategy", "reroll", "goal", "contested", "difficulty", "beginnerFriendly", "count"
+    "strategy", "reroll", "goal", "contested", "difficulty", "beginnerFriendly", "count", "returnAll"
   ]);
   const unknownFields = Object.keys(value).filter((field) => !allowedFields.has(field));
   if (unknownFields.length) {
@@ -69,7 +69,8 @@ export function validateCompPreferenceConditions(value = {}, options = {}) {
     contested: nullableEnum(value.contested, LEVELS, "contested"),
     difficulty: nullableEnum(value.difficulty, LEVELS, "difficulty"),
     beginnerFriendly: nullableBoolean(value.beginnerFriendly, "beginnerFriendly"),
-    count: requestedCount(value.count, options.defaultCount ?? DEFAULT_COUNT)
+    count: requestedCount(value.count, options.defaultCount ?? DEFAULT_COUNT),
+    returnAll: nullableBoolean(value.returnAll, "returnAll")
   };
   if (normalized.strategy === "reroll" && normalized.reroll === false) {
     throw preferenceError("strategy=reroll 与 reroll=false 冲突", "reroll");
@@ -121,13 +122,22 @@ export function parseCompPreferenceConditions(input) {
   else if (/(?:不适合新手|老手向|高手向)/u.test(text)) beginnerFriendly = false;
 
   const count = parseCount(text);
+  const returnAll = /(?:所有|全部)/u.test(text) && (
+    strategy !== null
+    || negativeReroll
+    || goal !== null
+    || contested !== null
+    || difficulty !== null
+    || beginnerFriendly !== null
+  );
   const requested = strategy !== null
     || negativeReroll
     || goal !== null
     || contested !== null
     || difficulty !== null
     || beginnerFriendly !== null
-    || count !== null;
+    || count !== null
+    || returnAll;
   return {
     requested,
     conditions: {
@@ -137,7 +147,8 @@ export function parseCompPreferenceConditions(input) {
       contested,
       difficulty,
       beginnerFriendly,
-      count: count ?? DEFAULT_COUNT
+      count: count ?? DEFAULT_COUNT,
+      returnAll: returnAll ? true : null
     }
   };
 }
@@ -329,10 +340,10 @@ export function applyCompPreferenceSearch(result, options = {}) {
   scored.sort((left, right) => right.preferenceMatch.ranking.score - left.preferenceMatch.ranking.score
     || finite(right?.stats?.games, 0) - finite(left?.stats?.games, 0)
     || finite(left?.pageOrder, Number.MAX_SAFE_INTEGER) - finite(right?.pageOrder, Number.MAX_SAFE_INTEGER));
-  const recommendations = scored.slice(0, conditions.count);
+  const recommendations = conditions.returnAll ? scored : scored.slice(0, conditions.count);
   const lowSampleReferences = lowSampleMatches
     .sort((left, right) => finite(right?.stats?.games, 0) - finite(left?.stats?.games, 0))
-    .slice(0, conditions.count)
+    .slice(0, conditions.returnAll ? lowSampleMatches.length : conditions.count)
     .map((comp) => ({ ...comp, lowSample: true }));
   const warnings = warningSummary(excluded, lowSampleMatches.length, recommendations.length);
   const profileDependent = Boolean(conditions.difficulty || conditions.contested || conditions.beginnerFriendly !== null);
@@ -351,7 +362,9 @@ export function applyCompPreferenceSearch(result, options = {}) {
   }).map((key) => [key, key === rankingKey ? recommendations : []]));
   if (!Object.hasOwn(rankings, rankingKey)) rankings[rankingKey] = recommendations;
   const text = recommendations.length
-    ? `确定性代码按结构化条件筛选并排序，返回 ${recommendations.length}/${conditions.count} 套阵容。`
+    ? conditions.returnAll
+      ? `确定性代码按结构化条件筛选并排序，返回全部 ${recommendations.length} 套匹配阵容。`
+      : `确定性代码按结构化条件筛选并排序，返回 ${recommendations.length}/${conditions.count} 套阵容。`
     : status === "low_sample_only"
       ? "符合玩法条件的阵容均未达到样本门槛，未生成正式推荐。"
       : "没有证据完整且同时满足全部结构化条件的阵容，未生成推荐。";
@@ -366,7 +379,7 @@ export function applyCompPreferenceSearch(result, options = {}) {
       searchVersion: COMP_PREFERENCE_SEARCH_VERSION,
       conditions,
       status,
-      requestedCount: conditions.count,
+      requestedCount: conditions.returnAll ? null : conditions.count,
       returnedCount: recommendations.length,
       evaluatedCandidates: candidates.length,
       conditionMatches: conditionMatches.length,

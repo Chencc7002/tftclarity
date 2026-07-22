@@ -105,7 +105,8 @@ test("combined conditions merge without dropping count, negation, or goal", () =
     contested: "low",
     difficulty: null,
     beginnerFriendly: true,
-    count: 3
+    count: 3,
+    returnAll: null
   });
   assert.deepEqual(parseCompPreferenceConditions("我不想赌狗，只想稳定上分").conditions, {
     strategy: null,
@@ -114,7 +115,8 @@ test("combined conditions merge without dropping count, negation, or goal", () =
     contested: null,
     difficulty: null,
     beginnerFriendly: null,
-    count: 3
+    count: 3,
+    returnAll: null
   });
   assert.deepEqual(parseCompPreferenceConditions("给我两套吃鸡上限高但不要太难的阵容").conditions, {
     strategy: null,
@@ -123,10 +125,56 @@ test("combined conditions merge without dropping count, negation, or goal", () =
     contested: null,
     difficulty: "low",
     beginnerFriendly: null,
-    count: 2
+    count: 2,
+    returnAll: null
   });
   assert.equal(parseCompPreferenceConditions("推荐11套不卷阵容").conditions.count, 10);
   assert.equal(parseCompPreferenceConditions("推荐0套不卷阵容").conditions.count, 1);
+});
+
+test("all reroll semantics skip truncation while explicit numeric counts remain exact", () => {
+  const all = parseCompPreferenceConditions("列出所有的赌狗阵容");
+  assert.equal(all.requested, true);
+  assert.deepEqual({
+    strategy: all.conditions.strategy,
+    reroll: all.conditions.reroll,
+    returnAll: all.conditions.returnAll
+  }, { strategy: "reroll", reroll: true, returnAll: true });
+
+  for (const requestedCount of [4, 5]) {
+    const numeric = parseCompPreferenceConditions(`给我推荐${requestedCount}套赌狗阵容`);
+    assert.equal(numeric.conditions.count, requestedCount);
+    assert.equal(numeric.conditions.returnAll, null);
+  }
+
+  const parsed = parseQuery("给我推荐4套赌狗阵容", { catalog: createCatalog() });
+  assert.equal(parsed.preferenceRequested, true);
+  assert.equal(parsed.preferenceConditions.count, 4);
+  assert.deepEqual(parsed.parser.unresolvedEntityHints, []);
+
+  const fiveLimited = applyCompPreferenceSearch(result([
+    comp("five-a", { strategy: "reroll" }),
+    comp("five-b", { strategy: "reroll" }),
+    comp("five-c", { strategy: "reroll" }),
+    comp("five-d", { strategy: "reroll" }),
+    comp("five-e", { strategy: "reroll" }),
+    comp("five-f", { strategy: "reroll" })
+  ]), { conditions: parseCompPreferenceConditions("推荐5套赌狗阵容").conditions });
+  assert.equal(fiveLimited.preferenceSearch.returnedCount, 5);
+  assert.equal(fiveLimited.preferenceSearch.requestedCount, 5);
+
+  const searched = applyCompPreferenceSearch(result([
+    comp("reroll-a", { strategy: "reroll" }),
+    comp("reroll-b", { strategy: "reroll" }),
+    comp("reroll-c", { strategy: "reroll" }),
+    comp("reroll-d", { strategy: "reroll" }),
+    comp("reroll-e", { strategy: "reroll" }),
+    comp("fast-nine", { strategy: "fast9" })
+  ]), { conditions: all.conditions });
+  assert.equal(searched.preferenceSearch.returnedCount, 5);
+  assert.equal(searched.preferenceSearch.requestedCount, null);
+  assert.equal(searched.preferenceSearch.conditions.returnAll, true);
+  assert.equal(Object.values(searched.rankings).flat().length, 5);
 });
 
 test("protocol rejects unknown fields and contradictory reroll conditions", () => {

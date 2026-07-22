@@ -887,7 +887,9 @@ function renderCompPreferenceSummary(data) {
   if (conditions.beginnerFriendly !== null && conditions.beginnerFriendly !== undefined) {
     chips.push(t(conditions.beginnerFriendly ? "preferenceBeginner" : "preferenceExperienced"));
   }
-  chips.push(t("preferenceCount", { value: conditions.count ?? search.requestedCount ?? 3 }));
+  chips.push(conditions.returnAll
+    ? t("preferenceAll")
+    : t("preferenceCount", { value: conditions.count ?? search.requestedCount ?? 3 }));
   const statusKey = {
     ok: "preferenceStatusOk",
     low_sample_only: "preferenceStatusLowSample",
@@ -898,7 +900,9 @@ function renderCompPreferenceSummary(data) {
   return `<section class="comp-preference-summary" data-status="${escapeHtml(search.status ?? "unknown")}">
     <div><strong>${t("preferenceSearchTitle")}</strong><span>${escapeHtml(t(statusKey))}</span></div>
     <div class="comp-preference-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</div>
-    <small>${t("preferenceReturned", { returned: search.returnedCount ?? 0, requested: search.requestedCount ?? conditions.count ?? 3 })} · ${t("deterministicRanking")}</small>
+    <small>${conditions.returnAll
+      ? t("preferenceReturnedAll", { returned: search.returnedCount ?? 0 })
+      : t("preferenceReturned", { returned: search.returnedCount ?? 0, requested: search.requestedCount ?? conditions.count ?? 3 })} · ${t("deterministicRanking")}</small>
   </section>`;
 }
 

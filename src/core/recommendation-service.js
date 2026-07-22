@@ -277,7 +277,7 @@ function inheritCompRankingFromSession(parsed, sessionValue, options = {}) {
     const current = next.preferenceConditions ?? {};
     const previous = previousQuery.preferenceConditions ?? {};
     const merged = { ...current };
-    for (const key of ["strategy", "reroll", "goal", "contested", "difficulty", "beginnerFriendly", "count"]) {
+    for (const key of ["strategy", "reroll", "goal", "contested", "difficulty", "beginnerFriendly", "count", "returnAll"]) {
       const missing = merged[key] === undefined || merged[key] === null;
       if (!missing || previous[key] === undefined || previous[key] === null) continue;
       if (key === "strategy" && current.reroll === false && previous[key] === "reroll") continue;
@@ -638,7 +638,8 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     contested: structured.constraints.contested,
     difficulty: structured.constraints.difficulty,
     beginnerFriendly: structured.constraints.beginnerFriendly,
-    count: structured.constraints.count
+    count: structured.constraints.count,
+    returnAll: structured.constraints.returnAll
   };
   const hasStructuredPreferences = Object.values(structuredPreferences)
     .some((value) => value !== undefined);
@@ -646,7 +647,7 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     const existing = parsed.preferenceRequested ? parsed.preferenceConditions ?? {} : {};
     const rejected = [];
     const merged = {};
-    for (const key of ["strategy", "reroll", "goal", "contested", "difficulty", "beginnerFriendly", "count"]) {
+    for (const key of ["strategy", "reroll", "goal", "contested", "difficulty", "beginnerFriendly", "count", "returnAll"]) {
       const current = existing[key];
       const proposed = structuredPreferences[key];
       merged[key] = current !== undefined && current !== null ? current : proposed ?? null;
@@ -660,6 +661,7 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
       rejected.push("reroll");
     }
     merged.count = Number.isInteger(merged.count) ? merged.count : 3;
+    merged.returnAll = merged.returnAll === true;
     next.preferenceRequested = true;
     next.preferenceConditions = merged;
     next.intent = "comp_rankings";
