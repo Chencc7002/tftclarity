@@ -250,6 +250,8 @@ export {
   CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION,
   classifyConclusionValidationErrors,
   createConclusionValidationFeedback,
+  findConclusionCitationCandidates,
+  repairConclusionCitations,
   validateConclusionOutput
 } from "./llm/conclusion-validator.js";
 export {

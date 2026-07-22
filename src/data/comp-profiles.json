@@ -1,5 +1,1563 @@
 {
   "schemaVersion": "comp-profile-seed.v1",
-  "profiles": [],
-  "bindings": []
+  "generatedAt": "2026-07-22T12:25:07.273Z",
+  "source": {
+    "provider": "metatft-live",
+    "clusterId": "409",
+    "updatedAt": "2026-07-22T12:25:10.806Z",
+    "patch": "current",
+    "days": 3,
+    "queue": "1100",
+    "rankFilter": [
+      "CHALLENGER",
+      "DIAMOND",
+      "EMERALD",
+      "GRANDMASTER",
+      "MASTER",
+      "PLATINUM"
+    ]
+  },
+  "profiles": [
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "nunu-fast9-shieldtank",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ShieldTank · Nunu。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-astrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ASTrait · MissFortune。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast9-darkstar",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DarkStar · AurelionSol。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "corki-fast8-astronaut",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 3,
+      "positionDifficulty": 3,
+      "contestTolerance": 3,
+      "econDifficulty": 4,
+      "notes": [
+        "自动初稿：按 fast8 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Astronaut · Corki。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-drx",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ManaTrait · MissFortune。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "viktor-reroll-aptrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：FlexTrait · Viktor。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "xayah-fast9-blitzcrankuniquetrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：RangedTrait · 霞。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "lulu-reroll-aptrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Stargazer_Mountain · Lulu。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "jhin-fast9-darkstar",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DarkStar · Jhin。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ornn-reroll-spacegroove",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：SpaceGroove · Ornn。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "urgot-reroll-drx",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DRX · Urgot。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "masteryi-fast9-hptank",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：MeleeTrait · MasterYi。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "illaoi-reroll-darkstar",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DarkStar · Illaoi。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "illaoi-reroll-admin",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：FlexTrait · Illaoi。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "belveth-reroll-astrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ASTrait · Belveth。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "rammus-fast9-rangedtrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：RangedTrait · Rammus。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "akali-reroll-drx",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DRX · Akali。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-admin",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ASTrait · MissFortune。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "xayah-fast9-stargazer_mountain",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Stargazer_Mountain · 霞。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast9-manatrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ManaTrait · AurelionSol。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "nami-fast9-spacegroove",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：SpaceGroove · Nami。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "pyke-reroll-aptrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Timebreaker · Pyke。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-astrait-3d4992",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ASTrait · MissFortune。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leblanc-fast9-flextrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：SummonTrait · Leblanc。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "galio-fast8-mecha",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 3,
+      "positionDifficulty": 3,
+      "contestTolerance": 3,
+      "econDifficulty": 4,
+      "notes": [
+        "自动初稿：按 fast8 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Mecha · Galio。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "pyke-reroll-flextrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：FlexTrait · Pyke。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ornn-reroll-spacegroove-629b58",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：SpaceGroove · Ornn。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "lulu-reroll-aptrait-37a8db",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：APTrait · Lulu。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast8-mecha",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 3,
+      "positionDifficulty": 3,
+      "contestTolerance": 3,
+      "econDifficulty": 4,
+      "notes": [
+        "自动初稿：按 fast8 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Mecha · AurelionSol。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "chogath-reroll-darkstar",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DarkStar · Chogath。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leblanc-reroll-shieldtank",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ShieldTank · Leblanc。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "twistedfate-reroll-fateweaver",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Fateweaver · TwistedFate。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ezreal-reroll-hptank",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Timebreaker · Ezreal。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast8-mecha-784b7d",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 3,
+      "positionDifficulty": 3,
+      "contestTolerance": 3,
+      "econDifficulty": 4,
+      "notes": [
+        "自动初稿：按 fast8 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Mecha · AurelionSol。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leona-reroll-shieldtank",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ShieldTank · Leona。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "akali-reroll-drx-568102",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 1,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：DRX · Akali。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "nami-fast9-flextrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：FlexTrait · Nami。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "diana-reroll-admin",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ASTrait · Diana。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "veigar-reroll-astronaut",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Astronaut · Veigar。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "galio-fast9-flextrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：FlexTrait · Galio。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "reksai-reroll-astrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Primordian · RekSai。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "rammus-reroll-astronaut",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Astronaut · Rammus。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "zoe-reroll-manatrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ManaTrait · Zoe。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "kaisa-reroll-assassintrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：AssassinTrait · Kaisa。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "corki-reroll-drx",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ResistTank · Corki。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "xayah-fast9-shieldtank",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ShieldTank · 霞。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "vex-fast9-blitzcrankuniquetrait",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：SpaceGroove · Vex。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "pantheon-reroll-hptank",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Timebreaker · Pantheon。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "diana-reroll-admin-da410b",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ADMIN · Diana。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "lulu-reroll-stargazer_serpent",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：Stargazer_Mountain · Lulu。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "diana-reroll-admin-f655ef",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ASTrait · Diana。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "viktor-reroll-flextrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：PsyOps · Viktor。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "maokai-fast9-hptank",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：HPTank · Maokai。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leona-reroll-manatrait",
+      "difficulty": 4,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 5,
+      "positionDifficulty": 3,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ManaTrait · Leona。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurora-reroll-animasquad",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：FlexTrait · Aurora。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ornn-fast9-resisttank",
+      "difficulty": 5,
+      "beginnerFriendly": false,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 3,
+      "econDifficulty": 5,
+      "notes": [
+        "自动初稿：按 fast9 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：ResistTank · Ornn。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "jinx-reroll-animasquad",
+      "difficulty": 3,
+      "beginnerFriendly": true,
+      "pivotDifficulty": 4,
+      "positionDifficulty": 4,
+      "contestTolerance": 2,
+      "econDifficulty": 3,
+      "notes": [
+        "自动初稿：按 reroll 阵容骨架生成，难度画像需结合实战复核。",
+        "MetaTFT 生成时名称：AnimaSquad · Jinx。",
+        "生成口径：当前版本、近 3 天、可见阵容；来源更新时间 2026-07-22T12:25:10.806Z。"
+      ],
+      "enabled": true,
+      "source": "metatft_auto_seed"
+    }
+  ],
+  "bindings": [
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "nunu-fast9-shieldtank",
+      "provider": "metatft-live",
+      "clusterId": "409002",
+      "lineupSignature": "sha256:4e35aa48fe28d6fd2e03608f88c9be4f118840f40a9f8c151470270a1e23b56a",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-astrait",
+      "provider": "metatft-live",
+      "clusterId": "409003",
+      "lineupSignature": "sha256:a2735fd7a95d6618a26a8b1269c7a776535854b2b48c1a6110ffecf995acf8e9",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast9-darkstar",
+      "provider": "metatft-live",
+      "clusterId": "409004",
+      "lineupSignature": "sha256:f1d28c55647a21de3f37918269cacdb35c015bc7e8bc130e72443405bac9dc88",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "corki-fast8-astronaut",
+      "provider": "metatft-live",
+      "clusterId": "409005",
+      "lineupSignature": "sha256:e00d348acdcadff63574c54f95e03bd85e288c5a4bdf2a5dc4be6eadb1b9a36d",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-drx",
+      "provider": "metatft-live",
+      "clusterId": "409008",
+      "lineupSignature": "sha256:078ae1dcab8147c669fa885db7f7d484ef84db7d9dab999c91f0f0ae54c8dce4",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "viktor-reroll-aptrait",
+      "provider": "metatft-live",
+      "clusterId": "409009",
+      "lineupSignature": "sha256:13dc1f82125e56ef66eca72e7845b7ec4ef9610f4a5b4a2c47a128b293204783",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "xayah-fast9-blitzcrankuniquetrait",
+      "provider": "metatft-live",
+      "clusterId": "409010",
+      "lineupSignature": "sha256:f17c26a2f10cf21dedc1b71ffcdf09ec2d64a9c65244c715427842c51e9d1580",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "lulu-reroll-aptrait",
+      "provider": "metatft-live",
+      "clusterId": "409011",
+      "lineupSignature": "sha256:d32ff66a8a3538c9f1b7542b5b8d14f5b525d2d8a1ec762d2277ba2713724cb6",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "jhin-fast9-darkstar",
+      "provider": "metatft-live",
+      "clusterId": "409012",
+      "lineupSignature": "sha256:a4083b25ec0832150028569fa9f02520cdb351b25e64ea71288505ac79c29e66",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ornn-reroll-spacegroove",
+      "provider": "metatft-live",
+      "clusterId": "409013",
+      "lineupSignature": "sha256:ca840c2cc4c792ece97e924011b7f751b2e811cc90e8610d8f53211a22568ab4",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "urgot-reroll-drx",
+      "provider": "metatft-live",
+      "clusterId": "409014",
+      "lineupSignature": "sha256:fbc30b08877b4750cddbcfa646fabe2bf97767ca63e45c4aeb4b1842d9d30245",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "masteryi-fast9-hptank",
+      "provider": "metatft-live",
+      "clusterId": "409015",
+      "lineupSignature": "sha256:debf61bb45c063d90d88860d1febd11a429a8f8ae5eefbe5a22f84c8c8646f48",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "illaoi-reroll-darkstar",
+      "provider": "metatft-live",
+      "clusterId": "409016",
+      "lineupSignature": "sha256:e0a6895579c12731b20b4f542d0eb4b3aef2a6e5b08dab3963df74e28cf9c18b",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "illaoi-reroll-admin",
+      "provider": "metatft-live",
+      "clusterId": "409018",
+      "lineupSignature": "sha256:f7ea67a496f5dd0a19ff450afe710793868f9cfa3d80b6a4855b855309743564",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "belveth-reroll-astrait",
+      "provider": "metatft-live",
+      "clusterId": "409019",
+      "lineupSignature": "sha256:43b8ef36255de231fe80db8d49ec0c5c3cf28ff5f51364fb163d694f2ab3f05b",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "rammus-fast9-rangedtrait",
+      "provider": "metatft-live",
+      "clusterId": "409021",
+      "lineupSignature": "sha256:1d6dddaf5b10596d717fe47c7783ff2d1300588e3cca39605a0d61eb2ae31d1d",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "akali-reroll-drx",
+      "provider": "metatft-live",
+      "clusterId": "409022",
+      "lineupSignature": "sha256:de10f8dc9f20a77430f7f2e78e07e59e6c9f9fde16d77e7d9716c09e0ddc4f5d",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-admin",
+      "provider": "metatft-live",
+      "clusterId": "409023",
+      "lineupSignature": "sha256:5ef4a84d3995ab7cc56e47e540d2361e3cb0588191a3843903ae72ef088e7dd0",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "xayah-fast9-stargazer_mountain",
+      "provider": "metatft-live",
+      "clusterId": "409024",
+      "lineupSignature": "sha256:65a510d589a652f3f8c699963c14cd12b1cb797b1a66263d05333e0c433c32b5",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast9-manatrait",
+      "provider": "metatft-live",
+      "clusterId": "409026",
+      "lineupSignature": "sha256:c1e7357ca8cc51dc8f27cdab5ba62396c5907810438a3371f85639a8bc0e64d2",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "nami-fast9-spacegroove",
+      "provider": "metatft-live",
+      "clusterId": "409028",
+      "lineupSignature": "sha256:eedc4a1cc90cc8de6d3be0015e237aad06b6860e489ba744cc0cd50dfcbb50fa",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "pyke-reroll-aptrait",
+      "provider": "metatft-live",
+      "clusterId": "409029",
+      "lineupSignature": "sha256:eee1c8b8d7ab518ce0f29420dde5884b8f19e6c26f5b1a69d3e09aa5aade8172",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "missfortune-reroll-astrait-3d4992",
+      "provider": "metatft-live",
+      "clusterId": "409030",
+      "lineupSignature": "sha256:3d4992f90ab7e46e6b344137c1c257cd410e51f63c72347dee83c7060aa144a2",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leblanc-fast9-flextrait",
+      "provider": "metatft-live",
+      "clusterId": "409031",
+      "lineupSignature": "sha256:f494624681725ec8b8c325c85c1f369df3cfcf763cacfc4edab0927cc127d707",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "galio-fast8-mecha",
+      "provider": "metatft-live",
+      "clusterId": "409032",
+      "lineupSignature": "sha256:a5ddb5fdcda98bf3f65526179b38a5532ffe376f22e059d896aaa361fd17496a",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "pyke-reroll-flextrait",
+      "provider": "metatft-live",
+      "clusterId": "409033",
+      "lineupSignature": "sha256:e314f61dd491d340dbd18ab51090f5ee4be053e5bafa126585d81acd149a35e3",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ornn-reroll-spacegroove-629b58",
+      "provider": "metatft-live",
+      "clusterId": "409034",
+      "lineupSignature": "sha256:629b58d57f85b6c6e12bda979b0fa9cda20d2ebc71a854b2f56f3d36f961cd9a",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "lulu-reroll-aptrait-37a8db",
+      "provider": "metatft-live",
+      "clusterId": "409035",
+      "lineupSignature": "sha256:37a8db124f112c944eb0c9e0f9bb21505b690aa6c706b93610ec4380d08a2aba",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast8-mecha",
+      "provider": "metatft-live",
+      "clusterId": "409036",
+      "lineupSignature": "sha256:21f60f3fe4aa4b5614789991fd324271e3073c4c82913aac23b8ca3fcc15824e",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "chogath-reroll-darkstar",
+      "provider": "metatft-live",
+      "clusterId": "409037",
+      "lineupSignature": "sha256:95a829d057f9798f009b324446a08b70e93fcbcae346db90387c7d1ec247deaa",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leblanc-reroll-shieldtank",
+      "provider": "metatft-live",
+      "clusterId": "409040",
+      "lineupSignature": "sha256:c6908421e7057be9e73a19270140d724e35b2ee386668b1d65b0df1e2b409e47",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "twistedfate-reroll-fateweaver",
+      "provider": "metatft-live",
+      "clusterId": "409041",
+      "lineupSignature": "sha256:815b766c0aab54c4721e80c6df98e31bd6921fe13118cd20fbda86ef2b2d525a",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ezreal-reroll-hptank",
+      "provider": "metatft-live",
+      "clusterId": "409042",
+      "lineupSignature": "sha256:889a772f5e3c48adba09e4c156cf6500de124173d08cde87004db7c7c026258c",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurelionsol-fast8-mecha-784b7d",
+      "provider": "metatft-live",
+      "clusterId": "409043",
+      "lineupSignature": "sha256:784b7dcd5433fcd6b245840990a58871a8faad3a7e6b971f0411068dfc410b01",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leona-reroll-shieldtank",
+      "provider": "metatft-live",
+      "clusterId": "409044",
+      "lineupSignature": "sha256:2b866eaa4f67797d644f2b625e2b9408e25e8ba319d3fc766c7f9d7009afe55f",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "akali-reroll-drx-568102",
+      "provider": "metatft-live",
+      "clusterId": "409045",
+      "lineupSignature": "sha256:56810244bdcfce44a1858d017ff74ae0921580a81cd1e594a82814d541507988",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "nami-fast9-flextrait",
+      "provider": "metatft-live",
+      "clusterId": "409046",
+      "lineupSignature": "sha256:79862f71b49e5e885e00213f05246ad37be0b2fc5edbc6a822bb4adef4a0e539",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "diana-reroll-admin",
+      "provider": "metatft-live",
+      "clusterId": "409047",
+      "lineupSignature": "sha256:3868ebef9c115869ca39742538371b45f7bbe3651477a1147e14c319c10d7954",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "veigar-reroll-astronaut",
+      "provider": "metatft-live",
+      "clusterId": "409049",
+      "lineupSignature": "sha256:523327a4ff31b0438768cb4274893ed3a68d749640cfa2f895e949c4112a2f40",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "galio-fast9-flextrait",
+      "provider": "metatft-live",
+      "clusterId": "409051",
+      "lineupSignature": "sha256:4a51742f961dcd1a3a8931dacd1e65d5705288ce0f41fc36470c9d2ed3281edd",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "reksai-reroll-astrait",
+      "provider": "metatft-live",
+      "clusterId": "409052",
+      "lineupSignature": "sha256:abbe2c9f4abdc0834de1fcc963008d310c81cb00bb6508d1f27756dab7ac4726",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "rammus-reroll-astronaut",
+      "provider": "metatft-live",
+      "clusterId": "409053",
+      "lineupSignature": "sha256:f6e054074864853ffac7f8ce7f9264e71421d9bc787c716db5496b143ddbd095",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "zoe-reroll-manatrait",
+      "provider": "metatft-live",
+      "clusterId": "409054",
+      "lineupSignature": "sha256:25d34aab7bbfeae505325c488a27886439feb5764986560ef5c2206a22364694",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "kaisa-reroll-assassintrait",
+      "provider": "metatft-live",
+      "clusterId": "409055",
+      "lineupSignature": "sha256:2df9a1ca44fac34fcb4af02a7385fc2a8648a2e25798be0784f44a6a794d3216",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "corki-reroll-drx",
+      "provider": "metatft-live",
+      "clusterId": "409056",
+      "lineupSignature": "sha256:8c15efc242881a05e17537b5ee53d663611162f00e7299a470b97ead41b44786",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "xayah-fast9-shieldtank",
+      "provider": "metatft-live",
+      "clusterId": "409057",
+      "lineupSignature": "sha256:dba8e1a0d7f48bfb0d1a866117484f19544095221cc0a5c806e9314cc3fbe5f5",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "vex-fast9-blitzcrankuniquetrait",
+      "provider": "metatft-live",
+      "clusterId": "409058",
+      "lineupSignature": "sha256:913da3bb30757c0c118b7892c4ffe325dc6644cc938cb540e18370f982f57144",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "pantheon-reroll-hptank",
+      "provider": "metatft-live",
+      "clusterId": "409059",
+      "lineupSignature": "sha256:99764bb08ab579d789ddecc903bdb36caa98a35f4e512e57c63874efc0f1d7ab",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "diana-reroll-admin-da410b",
+      "provider": "metatft-live",
+      "clusterId": "409060",
+      "lineupSignature": "sha256:da410baf2d9f888eb2dcc9b16402b5ff09da7d1083b25010e152fadda2db3801",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "lulu-reroll-stargazer_serpent",
+      "provider": "metatft-live",
+      "clusterId": "409061",
+      "lineupSignature": "sha256:95b6a70cd9acb81da78dc419c4f807b0b7fd5f1cc1a729e91208743f6b37a82d",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "diana-reroll-admin-f655ef",
+      "provider": "metatft-live",
+      "clusterId": "409062",
+      "lineupSignature": "sha256:f655ef230b4af43842464fdaabf3f132944033c2c363760efb1ef3f335079e5a",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "viktor-reroll-flextrait",
+      "provider": "metatft-live",
+      "clusterId": "409063",
+      "lineupSignature": "sha256:6972d75eb8bf3b2ddae9b6493a6b4588329f5e36b95ff1fc26fbc475b36259ae",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "maokai-fast9-hptank",
+      "provider": "metatft-live",
+      "clusterId": "409064",
+      "lineupSignature": "sha256:de8fcfef68e32cfd785778f255a51f0c7307ba4d97d23bd08c020994b952b209",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "leona-reroll-manatrait",
+      "provider": "metatft-live",
+      "clusterId": "409065",
+      "lineupSignature": "sha256:25d34aab7bbfeae505325c488a27886439feb5764986560ef5c2206a22364694",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "aurora-reroll-animasquad",
+      "provider": "metatft-live",
+      "clusterId": "409066",
+      "lineupSignature": "sha256:4210ebe6cec709f54a1091b758a0c3aedc2f8bf591edadf3ea89917ea75c9d8f",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "ornn-fast9-resisttank",
+      "provider": "metatft-live",
+      "clusterId": "409067",
+      "lineupSignature": "sha256:2134696c8ae2e03e996692d72ad185063bd554b01e87cc648bf442e430b3b260",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    },
+    {
+      "seasonContextId": "set17-live",
+      "profileKey": "jinx-reroll-animasquad",
+      "provider": "metatft-live",
+      "clusterId": "409068",
+      "lineupSignature": "sha256:be59f4f9d402fe739e300fd729733d981cb06cf891e9e7040207d067f776bb1d",
+      "signatureVersion": "lineup-signature-v1",
+      "matchConfidence": 1,
+      "matchStatus": "verified"
+    }
+  ]
 }

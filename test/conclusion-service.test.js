@@ -89,30 +89,66 @@ test("conclusion service falls back on invalid output without changing the recom
   });
   assert.equal(conclusion.status, "fallback");
   assert.equal(conclusion.reason, "invalid_output");
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.deepEqual(result, before);
 });
 
-test("conclusion service retries once with validator feedback and accepts the correction", async () => {
+test("conclusion service gives an ambiguous citation one corrective LLM attempt", async () => {
+  const ambiguousResult = buildResult();
+  ambiguousResult.rankedBuilds[1].stats.winRate = 0.183;
+  ambiguousResult.rankedBuilds.push({
+    ...structuredClone(ambiguousResult.rankedBuilds[1]),
+    stats: { ...ambiguousResult.rankedBuilds[1].stats, winRate: 0.205 }
+  });
   const calls = [];
   const conclusion = await generateEvidenceBackedConclusion({
-    result: buildResult(),
+    result: ambiguousResult,
     catalog,
     input: "霞怎么出装？",
-    config,
+    config: { ...config, maxCorrections: 3 },
     provider: async (request) => {
       calls.push(request);
-      return calls.length === 1
-        ? { ...output(request.evidence), reasons: [{ dimension: "build_performance", evidenceIds: ["build:1"], text: "前四率99.9%。" }] }
-        : output(request.evidence);
+      if (calls.length > 1) return output(request.evidence);
+      const candidate = output(request.evidence);
+      candidate.alternatives = [{
+        dimension: "build_performance",
+        evidenceIds: ["build:3"],
+        text: "另一方案登顶率为18.3%。"
+      }];
+      return candidate;
     }
   });
   assert.equal(conclusion.status, "generated");
   assert.equal(calls.length, 2);
   assert.match(JSON.stringify(calls[1].validationFeedback), /unsupported percentage/u);
+  assert.equal(calls[1].previousOutput.alternatives[0].text, "另一方案登顶率为18.3%。");
 });
 
-test("conclusion service allows a third correction when validation errors keep converging", async () => {
+test("conclusion service accepts a uniquely repaired citation without another provider call", async () => {
+  let calls = 0;
+  const conclusion = await generateEvidenceBackedConclusion({
+    result: buildResult(),
+    catalog,
+    input: "霞已有羊刀，比较两套方案的登顶率。",
+    config,
+    provider: async ({ evidence }) => {
+      calls += 1;
+      const candidate = output(evidence);
+      candidate.alternatives = [{
+        dimension: "build_performance",
+        evidenceIds: ["build:2"],
+        text: "方案二登顶率20.5%，高于方案一的18.3%。"
+      }];
+      return candidate;
+    }
+  });
+  assert.equal(conclusion.status, "generated");
+  assert.equal(calls, 1);
+  assert.equal(conclusion.attempts, 1);
+  assert.deepEqual(conclusion.content.alternatives[0].evidenceIds, ["build:1", "build:2"]);
+});
+
+test("conclusion service rejects a missing required dimension without asking the LLM to rewrite facts", async () => {
   const calls = [];
   const conclusion = await generateEvidenceBackedConclusion({
     result: buildResult(),
@@ -148,11 +184,10 @@ test("conclusion service allows a third correction when validation errors keep c
       return candidate;
     }
   });
-  assert.equal(conclusion.status, "generated");
-  assert.equal(calls.length, 4);
-  assert.match(JSON.stringify(calls[1].validationFeedback), /missing_answer_dimension/u);
-  assert.match(JSON.stringify(calls[2].validationFeedback), /evidenceIds must contain 1 to 3/u);
-  assert.match(JSON.stringify(calls[3].validationFeedback), /unsupported percentage: 18\.3%/u);
+  assert.equal(conclusion.status, "fallback");
+  assert.equal(conclusion.reason, "invalid_output");
+  assert.equal(calls.length, 1);
+  assert.match(JSON.stringify(conclusion.validationFeedback), /missing_answer_dimension/u);
 });
 
 test("conclusion service classifies non-JSON provider output as invalid output", async () => {
@@ -240,6 +275,6 @@ test("conclusion cache keys isolate evidence, model, base prompt and the selecte
     conclusionSpec: { ...versionedEvidence.conclusionSpec, version: 2 }
   }, { model: "model-a" }), versionedBaseline);
   assert.notEqual(makeConclusionCacheKey(versionedEvidence, {
-    model: "model-a", validatorVersion: "conclusion-validator.v3"
+    model: "model-a", validatorVersion: "conclusion-validator.v4"
   }), versionedBaseline);
 });

@@ -130,8 +130,14 @@ test("OpenAI-compatible conclusion provider sends validation feedback on a corre
       return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(output) } }] }) };
     }
   });
-  await provider({ evidence: {}, validationFeedback: ["headline contains an unsupported entity"] });
+  await provider({
+    evidence: {},
+    previousOutput: output,
+    validationFeedback: ["headline contains an unsupported entity"]
+  });
   assert.equal(body.messages.length, 3);
   assert.match(body.messages[2].content, /headline contains an unsupported entity/u);
-  assert.match(body.messages[2].content, /重新生成完整 JSON/u);
+  assert.match(body.messages[2].content, /只修正 validationFeedback 指出的错误/u);
+  assert.match(body.messages[2].content, /上一版 JSON/u);
+  assert.match(body.messages[2].content, /"headline":"标题"/u);
 });

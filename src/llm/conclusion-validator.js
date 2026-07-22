@@ -392,7 +392,13 @@ function validateNumbers(text, records, evidence, path, errors) {
     const value = Number(match[1]);
     const approximateInteger = !match[1].includes(".")
       && /(?:约|大约|接近|近)\s*$/u.test(text.slice(Math.max(0, match.index - 4), match.index));
-    const supported = rates.some((allowed) => approximateInteger
+    const metric = percentageMetricFromText(text, value, match.index);
+    const metricRates = metric
+      ? [...records].map((record) => recordMetricValue(record, metric))
+        .filter(Number.isFinite)
+        .map((candidate) => Number((candidate * 100).toFixed(1)))
+      : rates;
+    const supported = metricRates.some((allowed) => approximateInteger
       ? Math.round(allowed) === value
       : Math.abs(allowed - value) <= 0.051);
     if (!supported) {
@@ -470,6 +476,22 @@ function inferEvidenceIds(entry, records) {
   return { ids, inferred: explicitIds.length === 0, explicitCount: explicitIds.length };
 }
 
+function expandEvidenceLineage(ids, records) {
+  const expanded = [];
+  const seen = new Set();
+  const add = (id) => {
+    if (seen.has(id) || !records.has(id)) return;
+    seen.add(id);
+    const record = records.get(id);
+    expanded.push(record);
+    if (record?.kind === "item_core_signal") {
+      for (const buildId of record.buildEvidenceIds ?? []) add(String(buildId));
+    }
+  };
+  ids.forEach(add);
+  return expanded;
+}
+
 function escapedPattern(value) {
   return String(value).replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
 }
@@ -530,13 +552,12 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
       errors.push(`${entryPath}.evidenceIds must contain 1 to 3 entries`);
     }
     const ids = resolvedIds.ids.slice(0, 3);
-    const linkedRecords = [];
     for (const id of ids) {
       if (!records.has(id)) errors.push(`${entryPath}.evidenceIds contains unknown evidence: ${id}`);
-      else linkedRecords.push(records.get(id));
     }
     const text = readText(entry.text, `${entryPath}.text`, 220, errors, { records });
-    validateTextFacts(text, linkedRecords, evidence, catalog, `${entryPath}.text`, errors);
+    const validationRecords = expandEvidenceLineage(ids, records);
+    validateTextFacts(text, validationRecords, evidence, catalog, `${entryPath}.text`, errors);
     return { ...(dimension ? { dimension } : {}), evidenceIds: ids, text };
   }).filter(Boolean);
 }
@@ -812,6 +833,164 @@ function missingEvidenceForUnsupportedNumber(message, evidence, linkedEvidenceId
     .slice(0, remainingSlots);
 }
 
+function validationErrorEntity(message) {
+  const match = String(message).match(/entity absent from evidence:\s*([^；\n]+?)(?:；|$)/u);
+  return match?.[1]?.trim() || null;
+}
+
+function recordSupportsValidationEntity(record, entityName, catalog) {
+  if (!entityName) return false;
+  const names = new Set(recordNames(record).flatMap(naturalEntityVariants));
+  for (const collection of [catalog?.items, catalog?.units, catalog?.traits]) {
+    for (const entity of collection ?? []) {
+      const aliases = catalogEntityNames(entity);
+      if (aliases.some((name) => names.has(name))) aliases.forEach((name) => names.add(name));
+    }
+  }
+  return names.has(entityName);
+}
+
+function citationEvidenceFamily(evidenceId) {
+  const prefix = String(evidenceId ?? "").split(":", 1)[0];
+  return prefix === "item-signal" ? "build" : prefix;
+}
+
+function citationFamilyMatches(evidenceId, linkedEvidenceIds) {
+  const linkedFamilies = new Set(linkedEvidenceIds.map(citationEvidenceFamily).filter(Boolean));
+  return linkedFamilies.size === 1 && linkedFamilies.has(citationEvidenceFamily(evidenceId));
+}
+
+function entityRepairEvidenceIds(message, evidence, linkedEvidenceIds, catalog) {
+  const entityName = validationErrorEntity(message);
+  if (!entityName) return [];
+  const linked = new Set(linkedEvidenceIds);
+  const records = evidenceRecords(evidence);
+  const candidates = new Set();
+  for (const [evidenceId, record] of records) {
+    if (linked.has(evidenceId)
+      || !citationFamilyMatches(evidenceId, linkedEvidenceIds)
+      || !recordSupportsValidationEntity(record, entityName, catalog)) continue;
+    if (record?.kind === "item_core_signal" && (record.buildEvidenceIds ?? []).length > 0) {
+      const lineageIds = record.buildEvidenceIds.map(String)
+        .filter((buildId) => !linked.has(buildId)
+          && records.has(buildId)
+          && recordSupportsValidationEntity(records.get(buildId), entityName, catalog));
+      if (lineageIds.length > 0) lineageIds.forEach((buildId) => candidates.add(buildId));
+      else candidates.add(evidenceId);
+    } else {
+      candidates.add(evidenceId);
+    }
+  }
+  return [...candidates];
+}
+
+const PERCENTAGE_METRICS = [
+  { key: "top4Rate", pattern: /前四率/u },
+  { key: "winRate", pattern: /(?:登顶率|吃鸡率|胜率)/u },
+  { key: "pickRate", pattern: /(?:登场率|选择率|使用率)/u },
+  { key: "appearanceRate", pattern: /出现率/u },
+  { key: "coverage", pattern: /覆盖率/u }
+];
+
+function percentageMetricFromText(text, value, targetIndex = null) {
+  const source = String(text ?? "");
+  const allNumberMatches = [...source.matchAll(/(\d+(?:\.\d+)?)\s*%/gu)];
+  const numberMatches = allNumberMatches
+    .filter((match) => Math.abs(Number(match[1]) - value) <= 0.051
+      && (targetIndex === null || match.index === targetIndex));
+  const allLabels = PERCENTAGE_METRICS.flatMap((metric) => (
+    [...source.matchAll(new RegExp(metric.pattern.source, "gu"))]
+      .map((match) => ({ key: metric.key, index: match.index }))
+  )).sort((left, right) => left.index - right.index);
+  const inferred = new Set();
+  for (const numberMatch of numberMatches) {
+    const numberIndex = allNumberMatches.findIndex((match) => match.index === numberMatch.index);
+    if (/分别/u.test(source) && allLabels.length === allNumberMatches.length && allLabels[numberIndex]) {
+      inferred.add(allLabels[numberIndex].key);
+      continue;
+    }
+    let nearest = null;
+    for (const labelMatch of allLabels) {
+        if (labelMatch.index <= numberMatch.index) {
+          const between = source.slice(labelMatch.index, numberMatch.index);
+          if (/[。；;！？!?]/u.test(between)) continue;
+          if (!nearest || labelMatch.index > nearest.index) nearest = labelMatch;
+          continue;
+        }
+        const numberEnd = numberMatch.index + numberMatch[0].length;
+        const between = source.slice(numberEnd, labelMatch.index);
+        if (/^[\s的为是:：]*$/u.test(between)
+          && (!nearest || labelMatch.index - numberEnd < numberMatch.index - nearest.index)) {
+          nearest = labelMatch;
+        }
+    }
+    if (nearest) inferred.add(nearest.key);
+  }
+  return inferred.size === 1 ? [...inferred][0] : null;
+}
+
+function recordMetricValue(record, metric) {
+  const value = metric === "appearanceRate" || metric === "coverage"
+    ? record?.[metric]
+    : record?.stats?.[metric];
+  return value === null || value === undefined || value === "" ? Number.NaN : Number(value);
+}
+
+function numberRepairMatches(message, text, evidence, linkedEvidenceIds) {
+  const value = validationErrorNumber(message);
+  if (!Number.isFinite(value)) return [];
+  const linked = new Set(linkedEvidenceIds);
+  const matches = [];
+  if (/unsupported percentage/u.test(message)) {
+    const metric = percentageMetricFromText(text, value);
+    if (!metric) return [];
+    for (const [evidenceId, record] of evidenceRecords(evidence)) {
+      if (linked.has(evidenceId) || !citationFamilyMatches(evidenceId, linkedEvidenceIds)) continue;
+      const candidate = recordMetricValue(record, metric);
+      if (Number.isFinite(candidate) && Math.abs(candidate * 100 - value) <= 0.051) {
+        matches.push({ evidenceId, metric });
+      }
+    }
+    return matches;
+  }
+  if (/unsupported sample count/u.test(message)) {
+    for (const [evidenceId, record] of evidenceRecords(evidence)) {
+      if (!linked.has(evidenceId)
+        && citationFamilyMatches(evidenceId, linkedEvidenceIds)
+        && Number(record?.stats?.games) === value) {
+        matches.push({ evidenceId, metric: "games" });
+      }
+    }
+    return matches;
+  }
+  if (/unsupported average placement/u.test(message)) {
+    for (const [evidenceId, record] of evidenceRecords(evidence)) {
+      const candidate = Number(record?.stats?.avgPlacement);
+      if (!linked.has(evidenceId)
+        && citationFamilyMatches(evidenceId, linkedEvidenceIds)
+        && Number.isFinite(candidate)
+        && Math.abs(Number(candidate.toFixed(2)) - value) <= 0.005) {
+        matches.push({ evidenceId, metric: "avgPlacement" });
+      }
+    }
+  }
+  return matches;
+}
+
+export function findConclusionCitationCandidates(issue, text, evidence, options = {}) {
+  const message = String(issue?.message ?? issue ?? "");
+  const linkedEvidenceIds = issue?.linkedEvidenceIds ?? [];
+  if (/entity absent from evidence/u.test(message)) {
+    return entityRepairEvidenceIds(message, evidence, linkedEvidenceIds, options.catalog)
+      .map((evidenceId) => ({ evidenceId, kind: "entity" }));
+  }
+  if (/unsupported (?:percentage|sample count|average placement)/u.test(message)) {
+    return numberRepairMatches(message, text, evidence, linkedEvidenceIds)
+      .map((match) => ({ ...match, kind: "number" }));
+  }
+  return [];
+}
+
 export function classifyConclusionValidationErrors(errors, evidence, options = {}) {
   return [...new Set((errors ?? []).map(String))].map((message) => {
     const category = categoryForError(message);
@@ -835,6 +1014,18 @@ export function classifyConclusionValidationErrors(errors, evidence, options = {
         issue.message = `${message}；该数值可由 ${issue.missingEvidenceIds.join(", ")} 支持。请在本条 evidenceIds 中补充实际使用的对应证据，或删除该数值及相关比较。`;
       }
     }
+    if (category === "unsupported_entity" || category === "wrong_target") {
+      const remainingSlots = Math.max(0, 3 - scope.evidenceIds.length);
+      issue.missingEvidenceIds = entityRepairEvidenceIds(
+        message,
+        evidence,
+        scope.evidenceIds,
+        options.catalog
+      ).slice(0, remainingSlots);
+      if (issue.missingEvidenceIds.length > 0) {
+        issue.message = `${message}；该实体可由 ${issue.missingEvidenceIds.join(", ")} 支持。请在本条 evidenceIds 中补充实际使用的对应证据，或删除该实体。`;
+      }
+    }
     if (category === "unsupported_entity") {
       issue.allowedValues = [...allowedNames(
         evidence,
@@ -854,6 +1045,44 @@ export function createConclusionValidationFeedback(validation, evidence, options
     valid: false,
     errors: issues.slice(0, maxErrors)
   };
+}
+
+function citationEntryAtPath(value, path) {
+  const match = String(path).match(/^(reasons|alternatives)\[(\d+)\]\.text$/u);
+  return match ? value?.[match[1]]?.[Number(match[2])] : null;
+}
+
+export function repairConclusionCitations(rawValue, evidence, options = {}) {
+  const initialValidation = options.validation
+    ?? validateConclusionOutput(rawValue, evidence, options);
+  if (initialValidation.valid || !isObject(rawValue)) {
+    return { changed: false, value: rawValue, validation: initialValidation, repairs: [] };
+  }
+
+  const value = structuredClone(rawValue);
+  const repairs = [];
+  for (const issue of initialValidation.issues ?? []) {
+    if (!["unsupported_number", "unsupported_entity", "wrong_target"].includes(issue.category)) continue;
+    const entry = citationEntryAtPath(value, issue.path);
+    if (!entry || !Array.isArray(entry.evidenceIds)) continue;
+    const candidates = findConclusionCitationCandidates(issue, entry.text, evidence, options);
+    if (candidates.length !== 1) continue;
+    const evidenceId = candidates[0].evidenceId;
+    if (entry.evidenceIds.includes(evidenceId) || entry.evidenceIds.length >= 3) continue;
+    entry.evidenceIds.push(evidenceId);
+    const evidenceOrder = new Map([...evidenceRecords(evidence).keys()].map((id, index) => [id, index]));
+    entry.evidenceIds.sort((left, right) => (
+      (evidenceOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+      - (evidenceOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
+    ));
+    repairs.push({ path: issue.path, evidenceId, kind: candidates[0].kind, metric: candidates[0].metric ?? null });
+  }
+
+  if (repairs.length === 0) {
+    return { changed: false, value: rawValue, validation: initialValidation, repairs };
+  }
+  const validation = validateConclusionOutput(value, evidence, options);
+  return { changed: true, value, validation, repairs };
 }
 
 export function validateConclusionOutput(rawValue, evidence, options = {}) {

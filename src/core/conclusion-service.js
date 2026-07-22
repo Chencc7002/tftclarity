@@ -14,6 +14,8 @@ import { createIntentEnvelope } from "../retrieval/contracts.js";
 import {
   CONCLUSION_VALIDATION_FEEDBACK_SCHEMA_VERSION,
   createConclusionValidationFeedback,
+  findConclusionCitationCandidates,
+  repairConclusionCitations,
   validateConclusionOutput
 } from "../llm/conclusion-validator.js";
 
@@ -171,13 +173,67 @@ function formatFeedback(message, category = "format_error") {
   };
 }
 
-function feedbackFingerprint(feedback) {
-  return JSON.stringify((feedback?.errors ?? []).map((error) => ({
-    category: error.category,
-    path: error.path,
-    message: error.message,
-    missingEvidenceIds: error.missingEvidenceIds
-  })));
+function invalidCandidateFingerprint(raw, feedback) {
+  return JSON.stringify(stableValue({ raw, errors: feedback?.errors ?? [] }));
+}
+
+function isBetterInvalidCandidate(validation, bestValidation) {
+  if (!bestValidation) return true;
+  const score = (candidate) => {
+    const issues = candidate?.issues ?? [];
+    const severity = issues.reduce((total, issue) => total + ({
+      missing_answer_dimension: 5,
+      dimension_without_evidence: 5,
+      unsupported_answer_dimension: 4,
+      unsupported_causal_claim: 4,
+      wrong_target: 3,
+      unsupported_entity: 3,
+      missing_coverage: 2,
+      format_error: 2,
+      unsupported_number: 1
+    }[issue.category] ?? 2), 0);
+    return [issues.length, severity];
+  };
+  const current = score(validation);
+  const best = score(bestValidation);
+  return current[0] < best[0] || (current[0] === best[0] && current[1] < best[1]);
+}
+
+function validationIssueText(raw, path) {
+  const match = String(path).match(/^(reasons|alternatives)\[(\d+)\]\.text$/u);
+  return match ? raw?.[match[1]]?.[Number(match[2])]?.text : "";
+}
+
+function conclusionCorrectionPolicy(validation, raw, evidence, catalog) {
+  const hardCategories = new Set([
+    "missing_answer_dimension",
+    "unsupported_answer_dimension",
+    "dimension_without_evidence",
+    "missing_coverage",
+    "unsupported_causal_claim",
+    "analysis_boundary",
+    "current_fact_used_as_history",
+    "question_focus_mismatch"
+  ]);
+  let ambiguousCitation = false;
+  for (const issue of validation?.issues ?? []) {
+    if (hardCategories.has(issue.category)) return "reject";
+    const citationError = ["unsupported_number", "unsupported_entity", "wrong_target"].includes(issue.category)
+      && /(?:unsupported (?:number|percentage|sample count|average placement|trend improvement)|entity absent from evidence)/u.test(issue.message);
+    if (!citationError) {
+      if (issue.category === "wrong_target") return "reject";
+      continue;
+    }
+    const candidates = findConclusionCitationCandidates(
+      issue,
+      validationIssueText(raw, issue.path),
+      evidence,
+      { catalog }
+    );
+    if (candidates.length === 0) return "reject";
+    if (candidates.length > 1) ambiguousCitation = true;
+  }
+  return ambiguousCitation ? "retry_once" : "retry";
 }
 
 function providerFailureReason(error) {
@@ -303,8 +359,10 @@ export async function generateEvidenceBackedConclusion({
   const maxCorrections = boundedInteger(config.maxCorrections ?? process.env.TFT_AGENT_CONCLUSION_MAX_CORRECTIONS, DEFAULT_CONCLUSION_MAX_CORRECTIONS, 5);
   const maxValidationErrors = boundedInteger(config.maxValidationErrors ?? process.env.TFT_AGENT_CONCLUSION_MAX_VALIDATION_ERRORS, DEFAULT_CONCLUSION_MAX_VALIDATION_ERRORS, 50);
   const maxTransportRetries = boundedInteger(config.maxTransportRetries, DEFAULT_CONCLUSION_MAX_TRANSPORT_RETRIES, 3);
+  let correctionLimit = maxCorrections;
   let validationFeedback = null;
-  let previousFeedbackFingerprint = null;
+  let previousOutput = null;
+  const seenInvalidCandidates = new Set();
   let attempts = 0;
   let corrections = 0;
   let transportRetries = 0;
@@ -317,14 +375,17 @@ export async function generateEvidenceBackedConclusion({
     try {
       const response = await callProvider(provider, {
         evidence,
-        ...(validationFeedback ? { validationFeedback } : {})
+        ...(validationFeedback ? { validationFeedback } : {}),
+        ...(previousOutput ? { previousOutput } : {})
       }, maxTransportRetries);
       raw = response.raw;
       transportRetries += response.transportRetries;
     } catch (error) {
       transportRetries += Number(error?.transportRetries ?? 0);
       if (["invalid_json", "truncated_output"].includes(error?.code) && version < maxCorrections) {
-        validationFeedback = formatFeedback("输出必须是完整、严格且不带 Markdown 围栏的 JSON 对象。", "format_error");
+        if (!validationFeedback) {
+          validationFeedback = formatFeedback("输出必须是完整、严格且不带 Markdown 围栏的 JSON 对象。", "format_error");
+        }
       } else {
         const reason = providerFailureReason(error);
         const value = envelope("fallback", {
@@ -343,21 +404,40 @@ export async function generateEvidenceBackedConclusion({
     }
 
     if (raw !== undefined) {
-      lastValidation = validateConclusionOutput(raw, evidence, { catalog, spec, questionContract });
-      if (lastValidation.valid) {
+      const validationOptions = { catalog, spec, questionContract };
+      let currentValidation = validateConclusionOutput(raw, evidence, validationOptions);
+      if (!currentValidation.valid) {
+        const repair = repairConclusionCitations(raw, evidence, {
+          ...validationOptions,
+          validation: currentValidation
+        });
+        if (repair.changed) {
+          raw = repair.value;
+          currentValidation = repair.validation;
+          emit(config, {
+            type: "conclusion_citations_repaired",
+            attempts,
+            corrections,
+            repairs: repair.repairs,
+            valid: currentValidation.valid,
+            model
+          });
+        }
+      }
+      if (currentValidation.valid) {
         const content = {
-          schemaVersion: lastValidation.value.schemaVersion,
-          status: lastValidation.value.status,
-          contractId: lastValidation.value.contractId,
-          addressedDimensions: lastValidation.value.addressedDimensions,
-          missingDimensions: lastValidation.value.missingDimensions,
-          missingEvidence: lastValidation.value.missingEvidence,
-          headline: lastValidation.value.headline,
-          summary: lastValidation.value.summary,
-          reasons: lastValidation.value.reasons,
-          alternatives: lastValidation.value.alternatives,
-          nextAction: lastValidation.value.nextAction,
-          riskNotice: lastValidation.value.riskNotice
+          schemaVersion: currentValidation.value.schemaVersion,
+          status: currentValidation.value.status,
+          contractId: currentValidation.value.contractId,
+          addressedDimensions: currentValidation.value.addressedDimensions,
+          missingDimensions: currentValidation.value.missingDimensions,
+          missingEvidence: currentValidation.value.missingEvidence,
+          headline: currentValidation.value.headline,
+          summary: currentValidation.value.summary,
+          reasons: currentValidation.value.reasons,
+          alternatives: currentValidation.value.alternatives,
+          nextAction: currentValidation.value.nextAction,
+          riskNotice: currentValidation.value.riskNotice
         };
         await cacheSet(cacheStore, cacheKey, {
           kind: "llm_conclusion",
@@ -386,8 +466,22 @@ export async function generateEvidenceBackedConclusion({
         emit(config, { type: corrections ? "conclusion_corrected" : "conclusion_generated", status: value.status, attempts, corrections, transportRetries, model });
         return value;
       }
-      validationFeedback = createConclusionValidationFeedback(lastValidation, evidence, { catalog, maxErrors: maxValidationErrors });
+      const currentFeedback = createConclusionValidationFeedback(currentValidation, evidence, { catalog, maxErrors: maxValidationErrors });
+      const fingerprint = invalidCandidateFingerprint(raw, currentFeedback);
+      const repeatedCandidate = seenInvalidCandidates.has(fingerprint);
+      seenInvalidCandidates.add(fingerprint);
+      if (isBetterInvalidCandidate(currentValidation, lastValidation)) {
+        lastValidation = currentValidation;
+        validationFeedback = currentFeedback;
+        previousOutput = raw;
+      }
+      if (repeatedCandidate) break;
     }
+
+    const correctionPolicy = lastValidation
+      ? conclusionCorrectionPolicy(lastValidation, previousOutput, evidence, catalog)
+      : "retry";
+    if (correctionPolicy === "retry_once") correctionLimit = Math.min(correctionLimit, 1);
 
     emit(config, {
       type: "conclusion_validation_failed",
@@ -396,9 +490,7 @@ export async function generateEvidenceBackedConclusion({
       errors: validationFeedback?.errors ?? [],
       model
     });
-    const fingerprint = feedbackFingerprint(validationFeedback);
-    if (version >= maxCorrections || (previousFeedbackFingerprint && fingerprint === previousFeedbackFingerprint)) break;
-    previousFeedbackFingerprint = fingerprint;
+    if (correctionPolicy === "reject" || version >= correctionLimit) break;
   }
 
   const value = envelope("fallback", {

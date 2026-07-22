@@ -2,7 +2,7 @@ import { existsSync } from "node:fs";
 
 export const CONCLUSION_SPEC_SCHEMA_VERSION = "conclusion-spec.v1";
 export const CONCLUSION_SPEC_REGISTRY_VERSION = "conclusion-spec-registry.v1";
-export const CONCLUSION_VALIDATOR_VERSION = "conclusion-validator.v2";
+export const CONCLUSION_VALIDATOR_VERSION = "conclusion-validator.v3";
 
 const VALID_EVIDENCE_REQUIREMENTS = new Set([
   "visible_builds", "visible_items", "visible_emblems", "visible_comps", "visible_trends",

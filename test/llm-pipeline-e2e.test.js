@@ -104,10 +104,7 @@ test("pipeline returns a corrected conclusion after the first generated version 
     conclusionProvider: async (request) => {
       calls.push(request);
       return calls.length === 1
-        ? { ...emblemOutput(request.evidence), reasons: [
-            { ...emblemOutput(request.evidence).reasons[0], text: "前四率99.9%。" },
-            ...emblemOutput(request.evidence).reasons.slice(1)
-          ] }
+        ? { ...emblemOutput(request.evidence), contractId: "wrong-contract-id" }
         : emblemOutput(request.evidence);
     }
   });
@@ -115,7 +112,7 @@ test("pipeline returns a corrected conclusion after the first generated version 
   assert.equal(result.conclusion.attempts, 2);
   assert.equal(result.conclusion.corrections, 1);
   assert.equal(calls[1].validationFeedback.schemaVersion, "conclusion_validation_feedback.v1");
-  assert.equal(calls[1].validationFeedback.errors[0].category, "unsupported_number");
+  assert.equal(calls[1].validationFeedback.errors[0].category, "contract_id_mismatch");
 });
 
 test("pipeline stops repeated semantic validation errors and exposes template fallback", async () => {
@@ -135,7 +132,7 @@ test("pipeline stops repeated semantic validation errors and exposes template fa
   assert.equal(result.status, "deterministic_fallback");
   assert.equal(result.conclusion.status, "fallback");
   assert.equal(result.conclusion.reason, "invalid_output");
-  assert.equal(calls, 2);
+  assert.equal(calls, 1);
   assert.equal(result.conclusion.validationFeedback.errors[0].category, "unsupported_number");
 });
 

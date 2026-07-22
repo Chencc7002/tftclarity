@@ -8,6 +8,7 @@ RUN npm ci --omit=dev
 
 COPY src ./src
 COPY scripts ./scripts
+COPY test/fixtures/conclusion-fixture.json ./test/fixtures/conclusion-fixture.json
 COPY README.md ./README.md
 
 RUN mkdir -p /app/.cache && chown -R node:node /app

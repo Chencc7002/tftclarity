@@ -1,8 +1,8 @@
 import { readFile } from "node:fs/promises";
 import { CONCLUSION_SPEC_REGISTRY } from "./conclusion-spec-registry.js";
 
-export const BASE_CONCLUSION_PROMPT_VERSION = "base-conclusion.v2";
-export const CORRECTION_PROMPT_VERSION = "conclusion-correction.v2";
+export const BASE_CONCLUSION_PROMPT_VERSION = "base-conclusion.v3";
+export const CORRECTION_PROMPT_VERSION = "conclusion-correction.v3";
 
 const BASE_PROMPT_URL = new URL("./prompts/base-conclusion.md", import.meta.url);
 const CORRECTION_PROMPT_URL = new URL("./prompts/conclusion-correction.md", import.meta.url);
