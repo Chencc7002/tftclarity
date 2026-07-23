@@ -295,6 +295,6 @@ test("conclusion cache keys isolate evidence, model, base prompt and the selecte
     conclusionSpec: { ...versionedEvidence.conclusionSpec, version: 2 }
   }, { model: "model-a" }), versionedBaseline);
   assert.notEqual(makeConclusionCacheKey(versionedEvidence, {
-    model: "model-a", validatorVersion: "conclusion-validator.v7"
+    model: "model-a", validatorVersion: "conclusion-validator.v8"
   }), versionedBaseline);
 });

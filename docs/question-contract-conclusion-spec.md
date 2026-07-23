@@ -142,7 +142,7 @@ Validator v4 在严格事实边界前增加确定性 Citation Enricher/Repair：
 - `specId`、`specVersion`
 - Question Contract schema 和 `contractId`
 - base/spec/provider Prompt 版本（当前基础 Prompt 为 `base-conclusion.v4`）
-- `conclusion-validator.v6`
+- `conclusion-validator.v7`
 - 完整 Evidence fingerprint
 - model
 

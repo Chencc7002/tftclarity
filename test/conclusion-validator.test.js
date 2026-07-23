@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   assembleEvidencePack,
   buildConclusionEvidence,
+  createConclusionValidationFeedback,
   createCatalog,
   repairConclusionCitations,
   validateConclusionOutput
@@ -204,6 +205,49 @@ test("validateConclusionOutput rounds integer percentages from the cited metric 
   assert.match(rejected.errors.join("\n"), /unsupported percentage: 69%/u);
 });
 
+test("percentage correction feedback uses the same metric and display precision as validation", () => {
+  const preciseEvidence = structuredClone(evidence);
+  preciseEvidence.recommendations.find((entry) => entry.evidenceId === "build:1").stats.top4Rate = 0.0841152655;
+  const invalidOutput = validOutput({
+    reasons: [{ evidenceIds: ["build:1"], text: "该方案前四率为8.0%。" }]
+  });
+  const invalid = validateConclusionOutput(invalidOutput, preciseEvidence, { catalog });
+  assert.equal(invalid.valid, false);
+  assert.match(invalid.errors.join("\n"), /unsupported percentage: 8\.0%/u);
+  const feedback = createConclusionValidationFeedback(invalid, preciseEvidence, { catalog });
+  const issue = feedback.errors.find((entry) => entry.path === "reasons[0].text");
+  assert.deepEqual(issue.allowedValues, [8.4]);
+  assert.equal(issue.allowedValues.includes(8), false);
+
+  const corrected = structuredClone(invalidOutput);
+  corrected.reasons[0].text = "该方案前四率为8.4%。";
+  assert.equal(validateConclusionOutput(corrected, preciseEvidence, { catalog }).valid, true);
+});
+
+test("validateConclusionOutput allows evidence-derived collection counts only in explicit count language", () => {
+  const countEvidence = structuredClone(evidence);
+  const seed = countEvidence.recommendations.find((entry) => entry.evidenceId === "build:1");
+  for (let index = 3; index <= 5; index += 1) {
+    countEvidence.recommendations.push({
+      ...structuredClone(seed),
+      evidenceId: `build:${index}`
+    });
+  }
+  const valid = validOutput({
+    reasons: [{
+      evidenceIds: ["build:1"],
+      text: "当前共5个候选方案，第一套使用现有证据作为优先参考。"
+    }]
+  });
+  assert.equal(validateConclusionOutput(valid, countEvidence, { catalog }).valid, true);
+
+  const invented = structuredClone(valid);
+  invented.reasons[0].text = "当前共6个候选方案，第一套使用现有证据作为优先参考。";
+  const rejected = validateConclusionOutput(invented, countEvidence, { catalog });
+  assert.equal(rejected.valid, false);
+  assert.match(rejected.errors.join("\n"), /unsupported number: 6/u);
+});
+
 test("validateConclusionOutput accepts evidence-backed dates and equivalent hour windows", () => {
   const datedEvidence = structuredClone(evidence);
   datedEvidence.dataStatus.updatedAt = "2026-07-16T08:00:00.000Z";
@@ -236,6 +280,49 @@ test("validateConclusionOutput does not treat generic stat aliases as unsupporte
   }), evidence, { catalog: aliasCatalog });
   assert.equal(inventedEntity.valid, false);
   assert.match(inventedEntity.errors.join("\n"), /catalog entity absent from evidence: 挑战者/u);
+});
+
+test("validateConclusionOutput prefers the longest catalog entity over nested aliases", () => {
+  const cappaApiName = "TFT_Item_Artifact_CappaJuice";
+  const overlappingCatalog = {
+    ...catalog,
+    items: [
+      ...catalog.items,
+      {
+        apiName: cappaApiName,
+        preferredDisplayName: "帽子饮品",
+        zhName: "帽子饮品",
+        shortName: "帽子饮品",
+        aliases: ["帽子饮品", "Cappa Juice"],
+        category: "artifact"
+      },
+      {
+        apiName: "TFT_Item_RabadonsDeathcap",
+        zhName: "灭世者的死亡之帽",
+        shortName: "帽子",
+        aliases: ["帽子", "大帽"],
+        category: "standard"
+      }
+    ]
+  };
+  const overlappingEvidence = structuredClone(evidence);
+  const first = overlappingEvidence.recommendations.find((entry) => entry.evidenceId === "build:1");
+  first.items.push({ apiName: cappaApiName, name: "帽子饮品" });
+
+  const valid = validOutput({
+    reasons: [{
+      evidenceIds: ["build:1"],
+      text: "帽子饮品出现在当前证据对应的候选方案中。"
+    }]
+  });
+  const accepted = validateConclusionOutput(valid, overlappingEvidence, { catalog: overlappingCatalog });
+  assert.equal(accepted.valid, true, accepted.errors.join("\n"));
+
+  const unsupportedShortAlias = structuredClone(valid);
+  unsupportedShortAlias.reasons[0].text = "帽子出现在当前证据对应的候选方案中。";
+  const rejected = validateConclusionOutput(unsupportedShortAlias, overlappingEvidence, { catalog: overlappingCatalog });
+  assert.equal(rejected.valid, false);
+  assert.match(rejected.errors.join("\n"), /catalog entity absent from evidence: 帽子/u);
 });
 
 test("validateConclusionOutput caps evidence id expansion at three entries", () => {
@@ -275,7 +362,8 @@ test("validateConclusionOutput reports allowed numbers from the linked evidence 
   assert.equal(result.valid, false);
   const issue = result.issues.find((entry) => entry.path === "reasons[0].text");
   assert.deepEqual(issue.linkedEvidenceIds, ["build:1"]);
-  assert.equal(issue.allowedValues.includes(1248), true);
+  assert.equal(issue.allowedValues.includes(61.2), true);
+  assert.equal(issue.allowedValues.includes(1248), false);
   assert.equal(issue.allowedValues.includes(846), false);
 });
 

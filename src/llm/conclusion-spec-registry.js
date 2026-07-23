@@ -4,7 +4,7 @@ import { CONCLUSION_DIMENSION_CONDITIONS } from "./conclusion-requirements.js";
 
 export const CONCLUSION_SPEC_SCHEMA_VERSION = "conclusion-spec.v2";
 export const CONCLUSION_SPEC_REGISTRY_VERSION = "conclusion-spec-registry.v2";
-export const CONCLUSION_VALIDATOR_VERSION = "conclusion-validator.v6";
+export const CONCLUSION_VALIDATOR_VERSION = "conclusion-validator.v7";
 
 const VALID_EVIDENCE_REQUIREMENTS = new Set([
   "visible_builds", "visible_items", "visible_emblems", "visible_comps", "visible_trends",
