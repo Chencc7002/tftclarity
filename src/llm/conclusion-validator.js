@@ -212,6 +212,40 @@ function catalogNames(catalog) {
   return names;
 }
 
+function entityNameOccurrences(text, name) {
+  const source = String(text ?? "");
+  const value = String(name ?? "");
+  if (!value) return [];
+  const output = [];
+  const asciiName = /^[A-Za-z0-9_ .'-]+$/u.test(value);
+  if (asciiName) {
+    const pattern = new RegExp(`(?<![A-Za-z0-9_])${escapedPattern(value)}(?![A-Za-z0-9_])`, "gu");
+    for (const match of source.matchAll(pattern)) {
+      output.push({ name: value, start: match.index, end: match.index + match[0].length });
+    }
+    return output;
+  }
+  let start = source.indexOf(value);
+  while (start >= 0) {
+    output.push({ name: value, start, end: start + value.length });
+    start = source.indexOf(value, start + 1);
+  }
+  return output;
+}
+
+function catalogEntityMentions(text, knownCatalogNames) {
+  const mentions = [...knownCatalogNames]
+    .filter((name) => String(name).length >= 2)
+    .flatMap((name) => entityNameOccurrences(text, name));
+  return mentions
+    .filter((mention) => !mentions.some((candidate) => (
+      candidate.start <= mention.start
+      && candidate.end >= mention.end
+      && candidate.end - candidate.start > mention.end - mention.start
+    )))
+    .sort((left, right) => left.start - right.start || right.end - right.start - (left.end - left.start));
+}
+
 function statsFor(records) {
   return [...records].map((record) => record?.stats).filter(Boolean);
 }
@@ -416,6 +450,33 @@ function containsPositiveLowSampleClaim(text) {
   return LOW_SAMPLE_CLAIM.test(remaining);
 }
 
+function evidenceCollectionCounts(records, evidence) {
+  const counts = new Set();
+  const scoped = [...records].filter((record) => record?.evidenceId);
+  if (scoped.length > 0) counts.add(scoped.length);
+  const families = new Map();
+  for (const [evidenceId] of evidenceRecords(evidence)) {
+    const family = String(evidenceId).split(":", 1)[0];
+    if (!["build", "item", "comparison", "comp"].includes(family)) continue;
+    families.set(family, (families.get(family) ?? 0) + 1);
+  }
+  for (const count of families.values()) {
+    if (count > 0) counts.add(count);
+  }
+  return counts;
+}
+
+function supportsEvidenceCollectionCount(text, index, tokenLength, value, records, evidence) {
+  if (!Number.isInteger(value) || value <= 0 || !evidenceCollectionCounts(records, evidence).has(value)) return false;
+  const source = String(text ?? "");
+  const before = source.slice(Math.max(0, index - 10), index);
+  const after = source.slice(index + tokenLength, Math.min(source.length, index + tokenLength + 18));
+  const countPrefix = /(?:共|总共|共有|返回|展示|列出|其中|上述|当前|前)?\s*$/u.test(before);
+  const countSuffix = /^\s*(?:个|件|项|种|套)(?:候选|装备|神器|光明(?:装|装备)|转职|纹章|阵容|方案|结果|记录|排名项)?/u.test(after);
+  const rankingCount = /前\s*$/u.test(before) && /^\s*(?:名|项)/u.test(after);
+  return (countPrefix && countSuffix) || rankingCount;
+}
+
 function validateGenericNumbers(text, records, evidence, path, errors) {
   let remaining = String(text ?? "")
     .replace(/\d+(?:\.\d+)?\s*%/gu, " ")
@@ -432,7 +493,15 @@ function validateGenericNumbers(text, records, evidence, path, errors) {
     const value = Number(match[1]);
     const supportedDerived = comparisonContext(remaining, match.index)
       && matchesAllowedNumber(value, derived);
-    if (!matchesAllowedNumber(value, allowed) && !supportedDerived) {
+    const supportedCollectionCount = supportsEvidenceCollectionCount(
+      remaining,
+      match.index,
+      match[0].length,
+      value,
+      records,
+      evidence
+    );
+    if (!matchesAllowedNumber(value, allowed) && !supportedDerived && !supportedCollectionCount) {
       errors.push(`${path} contains unsupported number: ${match[0]}`);
     }
   }
@@ -507,13 +576,9 @@ function validateNames(text, names, knownCatalogNames, path, errors) {
   for (const match of text.matchAll(API_NAME)) {
     if (!names.has(match[0])) errors.push(`${path} contains an API name absent from evidence: ${match[0]}`);
   }
-  for (const name of knownCatalogNames) {
-    const asciiName = /^[A-Za-z0-9_ .'-]+$/u.test(name);
-    const appears = asciiName
-      ? new RegExp(`(?<![A-Za-z0-9_])${escapedPattern(name)}(?![A-Za-z0-9_])`, "u").test(text)
-      : text.includes(name);
-    if (name.length >= 2 && appears && !names.has(name)) {
-      errors.push(`${path} contains a catalog entity absent from evidence: ${name}`);
+  for (const mention of catalogEntityMentions(text, knownCatalogNames)) {
+    if (!names.has(mention.name)) {
+      errors.push(`${path} contains a catalog entity absent from evidence: ${mention.name}`);
     }
   }
   for (const match of text.matchAll(QUOTED_ENTITY)) {
@@ -857,6 +922,63 @@ function allowedFeedbackNumbers(records, evidence) {
   return [...values].sort((left, right) => left - right);
 }
 
+function validationOutputText(output, path) {
+  const entryMatch = String(path).match(/^(reasons|alternatives)\[(\d+)\]\.text$/u);
+  if (entryMatch) return String(output?.[entryMatch[1]]?.[Number(entryMatch[2])]?.text ?? "");
+  return typeof output?.[path] === "string" ? output[path] : "";
+}
+
+function rawRecordPercentageValues(record, metric = null) {
+  if (metric) {
+    const value = recordMetricValue(record, metric);
+    return Number.isFinite(value) ? [value * 100] : [];
+  }
+  const values = [
+    record?.stats?.top4Rate,
+    record?.stats?.winRate,
+    record?.stats?.pickRate,
+    record?.appearanceRate,
+    record?.coverage
+  ].filter(Number.isFinite).map((value) => value * 100);
+  if (record?.authority === "official_static_catalog" || /description/u.test(String(record?.type ?? ""))) {
+    for (const match of String(record?.text ?? "").matchAll(/(\d+(?:\.\d+)?)\s*%/gu)) {
+      values.push(Number(match[1]));
+    }
+  }
+  return values;
+}
+
+function allowedPercentageFeedbackValues(message, text, records) {
+  const token = validationErrorNumberToken(message);
+  const value = token === null ? null : Number(token);
+  const digits = decimalPlaces(token ?? "");
+  const metric = Number.isFinite(value) ? percentageMetricFromText(text, value) : null;
+  const values = new Set(
+    [...records]
+      .flatMap((record) => rawRecordPercentageValues(record, metric))
+      .filter(Number.isFinite)
+      .map((candidate) => stableRound(candidate, digits))
+  );
+  return [...values].sort((left, right) => left - right);
+}
+
+function allowedPlacementFeedbackValues(message, records) {
+  const digits = decimalPlaces(validationErrorNumberToken(message) ?? "");
+  return [...new Set([...records]
+    .map((record) => Number(record?.stats?.avgPlacement))
+    .filter(Number.isFinite)
+    .map((value) => stableRound(value, digits)))]
+    .sort((left, right) => left - right);
+}
+
+function allowedTrendFeedbackValues(records) {
+  return [...new Set([...records]
+    .map((record) => Number(record?.trend?.placementImprovement))
+    .filter(Number.isFinite)
+    .map((value) => Number(value.toFixed(4))))]
+    .sort((left, right) => left - right);
+}
+
 function allowedSampleCounts(records) {
   return [...new Set([...records].flatMap((record) => [
     Number(record?.stats?.games),
@@ -865,10 +987,15 @@ function allowedSampleCounts(records) {
   ]).filter(Number.isFinite))].sort((left, right) => left - right);
 }
 
-function validationErrorNumber(message) {
+function validationErrorNumberToken(message) {
   const detail = String(message).split(":").slice(1).join(":");
   const match = detail.match(/-?\d+(?:\.\d+)?/u);
-  return match ? Number(match[0]) : null;
+  return match?.[0] ?? null;
+}
+
+function validationErrorNumber(message) {
+  const token = validationErrorNumberToken(message);
+  return token === null ? null : Number(token);
 }
 
 function recordPercentageValues(record) {
@@ -887,15 +1014,15 @@ function recordPercentageValues(record) {
 function recordSupportsValidationNumber(record, message, value) {
   if (!Number.isFinite(value)) return false;
   if (/unsupported percentage/u.test(message)) {
-    const digits = decimalPlaces(String(message).match(/-?\d+(?:\.\d+)?/u)?.[0] ?? value);
-    return recordPercentageValues(record).some((candidate) => supportsDisplayedNumber(candidate, value, digits));
+    const digits = decimalPlaces(validationErrorNumberToken(message) ?? value);
+    return rawRecordPercentageValues(record).some((candidate) => supportsDisplayedNumber(candidate, value, digits));
   }
   if (/unsupported sample count/u.test(message)) {
     return allowedSampleCounts([record]).includes(value);
   }
   if (/unsupported average placement/u.test(message)) {
     const placement = Number(record?.stats?.avgPlacement);
-    const digits = decimalPlaces(String(message).match(/-?\d+(?:\.\d+)?/u)?.[0] ?? value);
+    const digits = decimalPlaces(validationErrorNumberToken(message) ?? value);
     return Number.isFinite(placement) && supportsDisplayedNumber(placement, value, digits);
   }
   if (/unsupported trend improvement/u.test(message)) {
@@ -1034,7 +1161,7 @@ function numberRepairMatches(message, text, evidence, linkedEvidenceIds) {
   if (/unsupported percentage/u.test(message)) {
     const metric = percentageMetricFromText(text, value);
     if (!metric) return [];
-    const digits = decimalPlaces(String(message).match(/-?\d+(?:\.\d+)?/u)?.[0] ?? value);
+    const digits = decimalPlaces(validationErrorNumberToken(message) ?? value);
     for (const [evidenceId, record] of evidenceRecords(evidence)) {
       if (linked.has(evidenceId) || !citationFamilyMatches(evidenceId, linkedEvidenceIds)) continue;
       const candidate = recordMetricValue(record, metric);
@@ -1055,7 +1182,7 @@ function numberRepairMatches(message, text, evidence, linkedEvidenceIds) {
     return matches;
   }
   if (/unsupported average placement/u.test(message)) {
-    const digits = decimalPlaces(String(message).match(/-?\d+(?:\.\d+)?/u)?.[0] ?? value);
+    const digits = decimalPlaces(validationErrorNumberToken(message) ?? value);
     for (const [evidenceId, record] of evidenceRecords(evidence)) {
       const candidate = Number(record?.stats?.avgPlacement);
       if (!linked.has(evidenceId)
@@ -1097,11 +1224,19 @@ export function classifyConclusionValidationErrors(errors, evidence, options = {
     };
     if (category === "unsupported_number") {
       issue.missingEvidenceIds = missingEvidenceForUnsupportedNumber(message, evidence, scope.evidenceIds);
+      const scopedRecords = scope.records.length > 0 ? scope.records : [...evidenceRecords(evidence).values()];
+      const outputText = validationOutputText(options.output, issue.path);
       issue.allowedValues = /unsupported sample count/u.test(message)
-        ? allowedSampleCounts(scope.records.length > 0 ? scope.records : evidenceRecords(evidence).values())
-        : scope.records.length > 0
-          ? allowedFeedbackNumbers(scope.records, evidence)
-          : allowedNumbers(evidence);
+        ? allowedSampleCounts(scopedRecords)
+        : /unsupported percentage/u.test(message)
+          ? allowedPercentageFeedbackValues(message, outputText, scopedRecords)
+          : /unsupported average placement/u.test(message)
+            ? allowedPlacementFeedbackValues(message, scopedRecords)
+            : /unsupported trend improvement/u.test(message)
+              ? allowedTrendFeedbackValues(scopedRecords)
+              : scope.records.length > 0
+                ? allowedFeedbackNumbers(scope.records, evidence)
+                : allowedNumbers(evidence);
       if (issue.missingEvidenceIds.length > 0) {
         issue.message = `${message}；该数值可由 ${issue.missingEvidenceIds.join(", ")} 支持。请在本条 evidenceIds 中补充实际使用的对应证据，或删除该数值及相关比较。`;
       }
