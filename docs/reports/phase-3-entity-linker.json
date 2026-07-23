@@ -43,7 +43,19 @@
       "passed": 577,
       "failed": 0,
       "skipped": 20
-    }
+    },
+    "smokes": [
+      {
+        "command": "npm run smoke:small-window",
+        "status": "passed",
+        "hotCacheDurationMs": 3,
+        "localCacheDurationMs": 4
+      },
+      {
+        "command": "npm run smoke:comps",
+        "status": "passed"
+      }
+    ]
   },
   "behaviorDifference": "Shadow TaskFrames now link extracted mentions to current catalog entities and reusable game concepts with provenance and candidate confidence. Legacy IntentEnvelope, deterministic execution, statistics, filtering, ranking, evidence and user-visible responses remain unchanged.",
   "knownLimitations": [

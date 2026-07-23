@@ -26,7 +26,7 @@
 - report: `docs/reports/phase-2-semantic-parser.md`, `docs/reports/phase-2-semantic-parser.json`
 
 - phase: 3
-- tests: final `npm test` — 597 total / 577 passed / 0 failed / 20 skipped; targeted entity/evaluation/parser/shadow — 14 passed / 0 failed / 0 skipped
+- tests: final `npm test` — 597 total / 577 passed / 0 failed / 20 skipped; targeted entity/evaluation/parser/shadow — 14 passed / 0 failed / 0 skipped; small-window/comps smokes passed; final phase-0/1 evaluation rechecks passed
 - metrics: `entity-linking-phase3.v1` — core Top-1 100%; slang/alias Top-3 100%; concepts 100%; nonexistent false-hit 0%; phase-2 action/domain gates retained
 - report: `docs/reports/phase-3-entity-linker.md`, `docs/reports/phase-3-entity-linker.json`
 

@@ -35,6 +35,9 @@ Phase 2 regression after entity separation:
 
 - targeted entity/evaluation/parser/shadow tests: 14 passed, 0 failed, 0 skipped
 - full `npm test`: 597 total, 577 passed, 0 failed, 20 existing conditional skips
+- `npm run smoke:small-window`: passed; hot cache 3ms, reopened local cache 4ms
+- `npm run smoke:comps`: passed
+- final phase-0 dataset check and phase-1 50-case evaluation: passed
 
 ## Behavior difference and rollback
 
