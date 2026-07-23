@@ -14,6 +14,7 @@
     "eval:agent": "node scripts/run-agent-eval.mjs",
     "eval:phase2": "node scripts/run-phase2-eval.mjs",
     "eval:phase3": "node scripts/run-phase3-eval.mjs",
+    "eval:llm:live": "node scripts/run-live-llm-eval.mjs",
     "smoke": "node test/mvp-query.test.js",
     "smoke:small-window": "node scripts/smoke-small-window.mjs",
     "smoke:practical": "node scripts/smoke-second-round-practical.mjs",
