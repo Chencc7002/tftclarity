@@ -45,6 +45,8 @@ import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { analyzeCompRankingResult, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
+import { parseSemanticTask } from "../understanding/semantic-task-parser.js";
+import { runSemanticShadow } from "../understanding/semantic-shadow.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 import { StructuredRetriever } from "../retrieval/structured-retriever.js";
 import { SUPPORTED_CONCLUSION_INTENTS } from "../llm/conclusion-spec-registry.js";
@@ -1467,12 +1469,33 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
+  const semanticParser = options.semanticTaskParser ?? parseSemanticTask;
+  const semanticTaskPromise = options.semanticShadow === false
+    ? null
+    : Promise.resolve().then(() => semanticParser(input, {
+      conversation: options.semanticConversation ?? [],
+      dynamicContext: {
+        version: options.effectivePatch ?? catalog?.version ?? null,
+        currentTime: options.currentTime ?? null,
+        userState: options.semanticUserState ?? null
+      },
+      exampleStore: options.semanticExampleStore,
+      provider: options.semanticTaskProvider,
+      budget: options.semanticParserBudget
+    }));
+  semanticTaskPromise?.catch(() => {});
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options), storeOptionsFor(options));
   let deterministicParsed = parseQueryDeterministically(input, options, catalog);
   deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
   deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
+  if (semanticTaskPromise) {
+    await runSemanticShadow(input, deterministicParsed, {
+      parser: () => semanticTaskPromise,
+      agentRun: options.agentRun
+    });
+  }
   const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
   const initialCompSessionMerge = inheritCompRankingFromSession(
     deterministicParsed,

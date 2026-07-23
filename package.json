@@ -12,6 +12,7 @@
     "eval:phase0": "node scripts/run-phase0-eval.mjs",
     "eval:phase0:check": "node scripts/run-phase0-eval.mjs --check",
     "eval:agent": "node scripts/run-agent-eval.mjs",
+    "eval:phase2": "node scripts/run-phase2-eval.mjs",
     "smoke": "node test/mvp-query.test.js",
     "smoke:small-window": "node scripts/smoke-small-window.mjs",
     "smoke:practical": "node scripts/smoke-second-round-practical.mjs",
