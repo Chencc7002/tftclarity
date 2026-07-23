@@ -3235,6 +3235,14 @@ test("builds item catalog categories from captured MetaTFT items response", () =
   assert.ok(items.length > 100);
   assert.equal(byApiName.get("TFT_Item_RapidFireCannon").category, "ordinary_completed");
   assert.equal(byApiName.get("TFT_Item_RapidFireCannon").current, true);
+  assert.equal(byApiName.get("TFT_Item_RapidFireCannon").aliases.includes("红buff"), true);
+  assert.equal(byApiName.get("TFT_Item_RapidFireCannon").aliases.includes("火炮"), false);
+  assert.equal(byApiName.get("TFT_Item_RapidFireCannon").aliases.includes("疾射火炮"), false);
+  assert.equal(byApiName.get("TFT_Item_RapidFireCannon").aliases.includes("huopao"), false);
+  assert.equal(byApiName.get("TFT4_Item_OrnnDeathsDefiance").aliases.includes("死亡之舞"), true);
+  assert.equal(byApiName.get("TFT4_Item_OrnnDeathsDefiance").aliases.includes("死舞"), true);
+  assert.equal(byApiName.get("TFT4_Item_OrnnTheCollector").aliases.includes("收集者"), true);
+  assert.equal(byApiName.get("TFT_Item_Artifact_SeekersArmguard").aliases.includes("护臂"), true);
   assert.equal(byApiName.get("TFT_Item_JeweledGauntlet").shortName, "法爆");
   assert.equal(byApiName.get("TFT_Item_JeweledGauntlet").aliases.includes("珠光护手"), true);
   assert.equal(byApiName.get("TFT_Item_TitansResolve").aliases.includes("泰坦"), true);
@@ -3271,10 +3279,10 @@ test("builds item catalog categories from captured MetaTFT items response", () =
   assert.equal(byApiName.get("TFT17_Item_FavoredEmblemItem").shortName, "法官纹章");
   assert.equal(byApiName.get("TFT17_Item_FavoredEmblemItem").aliasSource, "derived_unknown_emblem_alias");
   assert.equal(byApiName.get("TFT5_Item_HandOfJusticeRadiant").aliases.includes("光明正义"), true);
-  assert.equal(byApiName.get("TFT_Item_TacticiansRing").shortName, "战术家戒指");
-  assert.equal(byApiName.get("TFT_Item_Leviathan").shortName, "利维坦");
+  assert.equal(byApiName.get("TFT_Item_TacticiansRing").shortName, "金锅铲冠冕");
+  assert.equal(byApiName.get("TFT_Item_Leviathan").shortName, "纳什");
   assert.equal(byApiName.get("TFT5_Item_LeviathanRadiant").aliases.includes("光明利维坦"), true);
-  assert.equal(byApiName.get("TFT_Item_Artifact_HellfireHatchet").shortName, "地狱火斧");
+  assert.equal(byApiName.get("TFT_Item_Artifact_HellfireHatchet").shortName, "恶火小斧");
   assert.equal(byApiName.get("TFT7_Item_ShimmerscaleGamblersBlade").shortName, "投机刀");
   assert.equal(byApiName.get("TFT17_AnimaSquadItem_Tier2_BattleBunnyCrossbow").category, "set_special");
   assert.equal(byApiName.get("TFT17_AnimaSquadItem_Tier2_BattleBunnyCrossbow").zhName, "战兔十字弩");

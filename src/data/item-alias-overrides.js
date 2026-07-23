@@ -129,11 +129,23 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_RedBuff",
-    zhName: "红霸符",
-    shortName: "红buff",
-    aliases: ["红buff", "红霸符", "红", "redbuff", "red buff"],
+    // The legacy API id is Sunfire Cape in the current official catalog.
+    // Red Buff aliases belong to TFT_Item_RapidFireCannon below.
+    shortName: "日炎",
+    aliases: ["日炎", "日炎斗篷", "sunfire", "sunfire cape"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
+  },
+  {
+    // The legacy API token says RapidFireCannon, but the current official
+    // catalog identifies it as Red Buff.
+    apiName: "TFT_Item_RapidFireCannon",
+    shortName: "红霸符",
+    aliases: ["红buff", "红霸符", "redbuff", "red buff"],
+    confidence: 1,
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Redemption",
@@ -209,11 +221,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_BFSword",
-    zhName: "暴风大剑",
     shortName: "大剑",
-    aliases: ["大剑", "暴风大剑", "bf", "bfsword"],
+    aliases: ["大剑", "暴风之剑", "暴风大剑", "bf", "bfsword"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_RecurveBow",
@@ -289,11 +301,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_ForceOfNature",
-    zhName: "自然之力",
-    shortName: "自然",
-    aliases: ["自然", "自然之力", "人口装", "force of nature", "fon"],
+    shortName: "金铲铲冠冕",
+    aliases: ["金铲铲冠冕", "自然", "自然之力", "人口装", "tactician's crown", "force of nature", "fon"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_FrozenHeart",
@@ -366,19 +378,19 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_TacticiansRing",
-    zhName: "战术家之戒",
-    shortName: "战术家戒指",
-    aliases: ["战术家戒指", "战术家之戒", "tactician ring", "tacticians ring"],
+    shortName: "金锅铲冠冕",
+    aliases: ["金锅铲冠冕", "tactician's cape"],
     confidence: 0.9,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_TacticiansScepter",
-    zhName: "战术家权杖",
-    shortName: "权杖",
-    aliases: ["权杖", "战术家权杖", "战术家之杖", "tactician scepter", "tacticians scepter"],
+    shortName: "金锅锅冠冕",
+    aliases: ["金锅锅冠冕", "tactician's shield"],
     confidence: 0.9,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_Fishbones",
@@ -422,19 +434,19 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_SeekersArmguard",
-    zhName: "探索者护臂",
     shortName: "护臂",
-    aliases: ["护臂", "探索者护臂", "seekers armguard"],
+    aliases: ["护臂", "探索者的护臂", "探索者护臂", "seekers armguard"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_SilvermereDawn",
-    zhName: "秘银黎明",
-    shortName: "秘银黎明",
-    aliases: ["秘银黎明", "秘银","silvermere dawn"],
+    shortName: "密银",
+    aliases: ["密银", "密银黎明", "秘银黎明", "秘银", "silvermere dawn"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_TalismanOfAscension",
@@ -454,11 +466,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_VoidGauntlet",
-    zhName: "虚空手套",
-    shortName: "虚空手套",
-    aliases: ["虚空手套", "void gauntlet"],
+    shortName: "虚空护手",
+    aliases: ["虚空护手", "虚空手套", "void gauntlet"],
     confidence: 0.9,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_WitsEnd",
@@ -470,11 +482,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT4_Item_OrnnDeathsDefiance",
-    zhName: "死亡之舞",
-    shortName: "死舞",
-    aliases: ["死舞", "死亡之舞", "death's defiance", "deaths defiance"],
+    shortName: "死亡之蔑",
+    aliases: ["死亡之蔑", "死亡之舞", "死舞", "death's defiance", "deaths defiance"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT4_Item_OrnnInfinityForce",
@@ -486,11 +498,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT4_Item_OrnnTheCollector",
-    zhName: "收集者",
-    shortName: "收集者",
-    aliases: ["收集者", "collector", "the collector"],
+    shortName: "金币收集者",
+    aliases: ["金币收集者", "收集者", "coin collector"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT4_Item_OrnnZhonyasParadox",
@@ -510,35 +522,37 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT9_Item_OrnnHorizonFocus",
-    zhName: "视界专注",
-    shortName: "视界",
-    aliases: ["视界", "视界专注", "horizon focus"],
+    shortName: "狙击",
+    aliases: ["狙击", "狙击手的专注", "sniper's focus"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT9_Item_OrnnHullbreaker",
-    zhName: "破舰者",
-    shortName: "破舰者",
-    aliases: ["破舰者", "hullbreaker"],
+    shortName: "碎舰",
+    aliases: ["碎舰", "碎舰者", "破舰者", "hullbreaker"],
     confidence: 1,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Leviathan",
-    zhName: "利维坦",
-    shortName: "利维坦",
-    aliases: ["利维坦", "leviathan"],
+    shortName: "纳什",
+    // Leviathan remains a valid historical lookup term for this current item
+    // and lets its radiant form derive the established "光明利维坦" alias.
+    aliases: ["纳什", "纳什之牙", "利维坦", "nashor's tooth", "leviathan"],
     confidence: 0.8,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_SpectralGauntlet",
-    zhName: "幽魂手套",
-    shortName: "幽魂手套",
-    aliases: ["幽魂手套", "幽灵手套", "spectral gauntlet"],
+    shortName: "薄暮",
+    aliases: ["薄暮", "薄暮法袍", "evenshroud"],
     confidence: 0.8,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_UnstableConcoction",
@@ -561,11 +575,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_AegisOfDusk",
-    zhName: "暮光圣盾",
-    shortName: "暮光盾",
-    aliases: ["暮光盾", "暮光圣盾", "aegis of dusk"],
+    shortName: "黄昏盾",
+    aliases: ["黄昏盾", "黄昏圣盾", "暮光盾", "暮光圣盾", "aegis of dusk"],
     confidence: 0.8,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_BlightingJewel",
@@ -600,19 +614,19 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_HellfireHatchet",
-    zhName: "地狱火战斧",
-    shortName: "地狱火斧",
-    aliases: ["地狱火斧", "地狱火战斧", "hellfire hatchet"],
+    shortName: "恶火小斧",
+    aliases: ["恶火小斧", "地狱火斧", "地狱火战斧", "hellfire hatchet"],
     confidence: 0.85,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_LightshieldCrest",
-    zhName: "光盾纹章",
     shortName: "光盾",
-    aliases: ["光盾", "光盾纹章", "lightshield crest"],
+    aliases: ["光盾", "光盾徽章", "光盾纹章", "lightshield crest"],
     confidence: 0.75,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT_Item_Artifact_Mittens",
@@ -624,11 +638,11 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "TFT_Item_Artifact_TheIndomitable",
-    zhName: "不屈意志",
-    shortName: "不屈",
-    aliases: ["不屈", "不屈意志", "the indomitable"],
+    shortName: "顽强不屈",
+    aliases: ["顽强不屈", "不屈", "不屈意志", "the indomitable"],
     confidence: 0.75,
-    source: "manual"
+    source: "manual_current_official_aliases",
+    season: "TFT17"
   },
   {
     apiName: "TFT7_Item_ShimmerscaleGamblersBlade",

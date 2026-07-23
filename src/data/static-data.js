@@ -72,7 +72,7 @@ export const ITEMS = [
     apiName: "TFT_Item_RapidFireCannon",
     zhName: "红霸符",
     shortName: "红霸符",
-    aliases: ["红霸符", "火炮", "疾射火炮", "RFC", "rapidfirecannon"],
+    aliases: ["红霸符", "红buff", "redbuff", "red buff"],
     category: "ordinary_completed",
     current: true,
     obtainable: true

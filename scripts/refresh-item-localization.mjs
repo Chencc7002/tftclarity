@@ -142,7 +142,12 @@ const [cnSource, enSource, itemsSource] = await Promise.all([
     : readLocalSource(options.en),
   options.remote ? readRemoteMetaTFTItems() : readLocalSource(options.items)
 ]);
-validatePatchIdentity(cnSource.json, enSource.json, options);
+// Offline inputs are deliberately used by deterministic fixture tests and
+// historical audits. Only a live refresh may claim to be the configured
+// current official patch, so only it is subject to the current-patch gate.
+if (options.remote) {
+  validatePatchIdentity(cnSource.json, enSource.json, options);
+}
 
 const scopeApiNames = normalizeItemRows(itemsSource.json)
   .map((row) => row.items ?? row.itemName ?? row.item ?? row.apiName ?? row.api_name)
