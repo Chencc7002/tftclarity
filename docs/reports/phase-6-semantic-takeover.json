@@ -1,0 +1,139 @@
+{
+  "schemaVersion": "agent_upgrade_phase_report.v1",
+  "phase": 6,
+  "status": "passed",
+  "baselineCommit": "3fedad8",
+  "implementationCommit": "bcaeeee",
+  "dataset": {
+    "version": "semantic-takeover-phase6.v1",
+    "cases": 120,
+    "repetitions": 5,
+    "runs": 600,
+    "actions": [
+      "search",
+      "rank",
+      "recommend",
+      "compare",
+      "explain",
+      "analyze"
+    ]
+  },
+  "evaluation": {
+    "command": "npm run eval:phase6",
+    "evaluationVersion": "semantic-takeover-phase6.v1",
+    "effectiveAnswerRate": 1,
+    "wrongToolCallRate": 0,
+    "shadowDifferenceRate": 0,
+    "fallbackRateAtFullRollout": 0,
+    "passAt5": 1,
+    "passPower5": 1,
+    "latencyMs": {
+      "p50": 0.04100000858306885,
+      "p95": 0.13660001754760742
+    },
+    "tokens": {
+      "inputP50": 143,
+      "inputP95": 207,
+      "cachedInputP50": 120,
+      "cachedInputP95": 120,
+      "outputP50": 49,
+      "outputP95": 73
+    }
+  },
+  "actionSlices": {
+    "search": { "quality": 1, "runs": 100, "expectedTool": "semantic_search" },
+    "rank": { "quality": 1, "runs": 100, "expectedTool": "comps_rankings" },
+    "recommend": { "quality": 1, "runs": 100, "expectedTool": "unit_builds" },
+    "compare": { "quality": 1, "runs": 100, "expectedTool": "unit_builds" },
+    "explain": { "quality": 1, "runs": 100, "expectedTool": "item_details" },
+    "analyze": { "quality": 1, "runs": 100, "expectedTool": "comps_trends" }
+  },
+  "canarySimulation": {
+    "search": { "semantic": 13, "legacyFallback": 87 },
+    "rank": { "semantic": 10, "legacyFallback": 90 },
+    "recommend": { "semantic": 13, "legacyFallback": 87 },
+    "compare": { "semantic": 9, "legacyFallback": 91 },
+    "explain": { "semantic": 12, "legacyFallback": 88 },
+    "analyze": { "semantic": 8, "legacyFallback": 92 }
+  },
+  "tests": {
+    "targeted": {
+      "command": "node --test test/phase6-takeover.test.js test/semantic-shadow.test.js",
+      "total": 7,
+      "passed": 7,
+      "failed": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "command": "npm test",
+      "total": 611,
+      "passed": 591,
+      "failed": 0,
+      "skipped": 20
+    },
+    "agentEvaluation": {
+      "command": "npm run eval:agent",
+      "total": 50,
+      "passed": 50,
+      "failed": 0,
+      "toolSelectionAccuracy": 1
+    },
+    "previousPhaseEvaluations": {
+      "phase0": "passed",
+      "phase2": "passed",
+      "phase3": "passed",
+      "phase4": "passed",
+      "phase5": "passed"
+    },
+    "smokes": [
+      {
+        "command": "npm run smoke:small-window",
+        "status": "passed",
+        "hotCacheDurationMs": 3,
+        "localCacheDurationMs": 4
+      },
+      {
+        "command": "npm run smoke:comps",
+        "status": "passed"
+      },
+      {
+        "command": "npm run smoke:sqlite",
+        "status": "conditional_skip",
+        "reason": "Node 18 has neither node:sqlite nor the optional better-sqlite3 driver"
+      }
+    ]
+  },
+  "liveLlm": {
+    "command": "TFT_AGENT_LIVE_LLM=1 npm run eval:llm:live",
+    "provider": "chat",
+    "model": "deepseek-v4-flash",
+    "total": 20,
+    "successfulRequests": 20,
+    "structuredOutputRate": 1,
+    "domainAccuracy": 0.95,
+    "actionAccuracy": 0.95,
+    "understandingStatusAccuracy": 0.8,
+    "entityMentionRecall": 0.9230769230769231,
+    "tokenBudgetPassRate": 1,
+    "latencyBudgetPassRate": 1,
+    "retries": 0
+  },
+  "trace": {
+    "schemaVersion": "agent-route-trace.v1",
+    "layers": [
+      "parsing",
+      "entity",
+      "context",
+      "planning",
+      "tool",
+      "conclusion"
+    ]
+  },
+  "behaviorDifference": "For supported requests whose semantic TaskPlan exactly matches the validated legacy RetrievalPlan tool set, the semantic route now authorizes deterministic execution. Any gate failure, shadow difference, unresolved execution entity, policy denial, plan mismatch or out-of-bucket request falls back to the legacy route. Routing metadata remains internal and non-enumerable, so serialized user-visible results remain compatible.",
+  "knownLimitations": [
+    "Canary traffic was replayed locally with deterministic request buckets; no production deployment or external traffic shift was performed.",
+    "The real LLM smoke is T2 with 20 cases; the 600-run phase gate is deterministic offline replay, not a 100-500 case paid T3 production-candidate run.",
+    "SQLite smoke remains conditionally skipped under Node 18 because neither node:sqlite nor better-sqlite3 is available."
+  ],
+  "rollback": "Set every action rolloutPercent to 0 for an immediate configuration rollback while retaining shadow traces, or revert bcaeeee to remove phase-6 routing. The legacy RetrievalPlan and deterministic execution remain intact; no production data migration is involved."
+}

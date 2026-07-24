@@ -2,11 +2,11 @@
 
 ## Current
 
-- phase: 5
+- phase: 6
 - status: completed
 - branch: codex/wechat-mobile-chat
 - baseline_commit: d9416b0
-- latest_verified_commit: 02559f2
+- latest_verified_commit: bcaeeee
 
 ## Completed gates
 
@@ -40,6 +40,12 @@
 - metrics: `capability-planning-phase5.v1` — tool selection 100%; meaningless single-tool multi-step plans 0; unsupported honest downgrade 100%; bounded composite plans 100%
 - report: `docs/reports/phase-5-capability-planner.md`, `docs/reports/phase-5-capability-planner.json`
 
+- phase: 6
+- tests: final `npm test` — 611 total / 591 passed / 0 failed / 20 skipped; targeted takeover/shadow — 7 passed / 0 failed / 0 skipped; 50-case Agent evaluation and phase-0 through phase-6 evaluations passed; small-window/comps smokes passed; SQLite conditionally skipped under Node 18
+- metrics: `semantic-takeover-phase6.v1` — 120 cases × 5 runs; effective answers 100%; wrong tools 0%; shadow differences 0%; Pass@5 100%; Pass^5 100%; all action/entity/style/version/tool slices 100%
+- live LLM: T2 20/20 requests; structured output 100%; domain/action 95% / 95%; entity recall 92.31%; Token/latency budgets 100%; 0 retries
+- report: `docs/reports/phase-6-semantic-takeover.md`, `docs/reports/phase-6-semantic-takeover.json`
+
 - acceptance audit: phases 0-3
 - artifact verification: phase reports are tracked and linked to implementation/verification commits `f551390`, `bfcaa5e`, `3c72699`, `2d16226`, `0d25453`, `fe84785`, `8b676fe`, `4996a7d`
 - real LLM: existing one-query `smoke:llm` passed; new T2 `eval:llm:live` passed 20/20 strict requests with `chat` / `deepseek-v4-flash`
@@ -50,17 +56,17 @@
 
 ## Current work
 
-- objective: phase 5 complete; begin phase 6 action-by-action takeover with offline/shadow/canary/active gates and legacy fallback
-- files: tool capability registry, `src/understanding/capability-matcher.js`, `src/agent/task-planner.js`, semantic shadow integration, phase-5 evaluation/tests/reports
-- assumptions: existing deterministic business rules and IntentEnvelope remain authoritative through phase 5; the untracked master-plan file remains user-owned and untouched
+- objective: phases 4-6 complete; semantic routing is gated by action order, exact registered-tool compatibility and legacy fallback
+- files: `src/agent/takeover-controller.js`, recommendation-route integration, phase-6 evaluation dataset/runner/tests and reports
+- assumptions: deterministic statistics, ranking, evidence and conclusion rules remain authoritative; production deployment and real traffic rollout were not authorized; the untracked master-plan file remains user-owned and untouched
 
 ## Blockers
 
 - blocker: none
-- evidence: no master-plan blocking condition has been triggered; phase 5 tool selection, planning, security, regression and smoke gates all passed
+- evidence: no master-plan blocking condition was triggered; phase 6 offline, shadow, canary replay, stability, full regression, prior evaluation, smoke and live-LLM T2 gates passed
 - user_input_needed: none
 
 ## Next
 
-- next_step: phase 6 — implement action-ordered rollout gates for search, rank, recommend, compare, explain and analyze with legacy fallback
-- required_checks: supported effective-answer rate at least 90%, legacy core regression 100%, wrong-tool rate below 1%, layer-locatable traces, 3–5 repeated runs with Pass@k/Pass^k, and sliced quality/latency/Token reporting
+- next_step: stop after the requested phase 4-6 report; phase 7 video tools require a separate continuation request and any needed platform access decision
+- required_checks: before phase 7, confirm external platform access method only if the implementation reaches the master-plan credential or paid-service blocker
