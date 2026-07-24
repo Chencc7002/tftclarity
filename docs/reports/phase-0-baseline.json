@@ -1,0 +1,47 @@
+{
+  "schemaVersion": "agent_upgrade_phase_report.v1",
+  "phase": 0,
+  "status": "passed",
+  "baselineCommit": "d9416b0",
+  "dataset": {
+    "version": "natural-language-agent-phase0.v1",
+    "total": 300,
+    "uniqueInputs": 300,
+    "privacyViolations": 0,
+    "nonStandardStyleRate": 0.9,
+    "anonymizedRuntimeQueries": 1,
+    "derivedRuntimeStyleQueries": 9,
+    "repositoryRegressionQueries": 29,
+    "derivedRealStyleQueries": 261
+  },
+  "tests": {
+    "baseline": {
+      "command": "npm test",
+      "total": 561,
+      "passed": 541,
+      "failed": 0,
+      "skipped": 20
+    },
+    "dataset": {
+      "command": "node --test test/phase0-evaluation-dataset.test.js",
+      "total": 3,
+      "passed": 3,
+      "failed": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "command": "npm test",
+      "total": 564,
+      "passed": 544,
+      "failed": 0,
+      "skipped": 20
+    }
+  },
+  "behaviorDifference": "No production request behavior changed. Phase 0 adds only a reproducible offline dataset, validation command, tests, reports, and the progress ledger.",
+  "knownLimitations": [
+    "The local query-event store contained 60 events but only one unique privacy-clean runtime question; repeated events were not counted as distinct samples.",
+    "The remaining startup cases come from repository regressions and deterministic real-style derivations; they are not claimed as 300 independent production conversations.",
+    "The system Node runtime does not provide node:sqlite, so 20 existing SQLite/provider/obsolete tests remain skipped and are not counted as passed."
+  ],
+  "rollback": "Remove the phase 0 dataset, runner, tests, reports and package scripts; no production module or data migration is involved."
+}

@@ -1,0 +1,150 @@
+{
+  "schemaVersion": "agent_upgrade_acceptance_audit.v1",
+  "auditDate": "2026-07-23",
+  "scope": [0, 1, 2, 3],
+  "status": "passed",
+  "artifactAudit": [
+    {
+      "phase": 0,
+      "implementationCommit": "f551390",
+      "report": "docs/reports/phase-0-baseline.json",
+      "tracked": true,
+      "status": "passed"
+    },
+    {
+      "phase": 1,
+      "implementationCommit": "bfcaa5e",
+      "verificationCommit": "3c72699",
+      "report": "docs/reports/phase-1-agent-runtime.json",
+      "tracked": true,
+      "status": "passed"
+    },
+    {
+      "phase": 2,
+      "implementationCommit": "2d16226",
+      "verificationCommit": "0d25453",
+      "report": "docs/reports/phase-2-semantic-parser.json",
+      "tracked": true,
+      "status": "passed"
+    },
+    {
+      "phase": 3,
+      "implementationCommit": "fe84785",
+      "verificationCommits": ["8b676fe", "4996a7d"],
+      "report": "docs/reports/phase-3-entity-linker.json",
+      "tracked": true,
+      "status": "passed"
+    }
+  ],
+  "missingAcceptanceItem": {
+    "item": "phase-specific T2 real LLM TaskFrame evaluation",
+    "previousState": "Historical real-provider evidence and a one-query connectivity smoke existed, but there was no 20-50 case live TaskFrame evaluation command or report.",
+    "resolution": "Added explicit live command, independent 20-case dataset, strict raw TaskFrame validation, hard budgets and full sanitized telemetry."
+  },
+  "liveLlm": {
+    "tier": "T2",
+    "command": "$env:TFT_AGENT_LIVE_LLM='1'; npm run eval:llm:live",
+    "executedAt": "2026-07-23T13:54:11.843Z",
+    "datasetVersion": "live-llm-smoke.v1",
+    "configuration": {
+      "provider": "chat",
+      "model": "deepseek-v4-flash",
+      "endpointHost": "api.deepseek.com",
+      "temperature": 0,
+      "responseFormat": "json_object",
+      "streaming": false,
+      "thinkingMode": "disabled"
+    },
+    "versions": {
+      "taskFrame": "task-frame.v1",
+      "semanticContext": "semantic-parser-context.v1",
+      "livePrompt": "live-semantic-task-contract.v2",
+      "toolRegistry": "agent_tool.v1"
+    },
+    "budget": {
+      "maxRequests": 20,
+      "maxInputTokensPerRequest": 2000,
+      "maxOutputTokensPerRequest": 1200,
+      "maxRequestLatencyMs": 45000,
+      "maxTotalTokens": 70000,
+      "maxWallMs": 720000
+    },
+    "metrics": {
+      "total": 20,
+      "successfulRequests": 20,
+      "structuredOutputRate": 1,
+      "domainAccuracy": 0.95,
+      "actionAccuracy": 0.95,
+      "understandingStatusAccuracy": 0.85,
+      "entityMentionRecall": 0.9230769230769231,
+      "inputBudgetPassRate": 1,
+      "outputBudgetPassRate": 1,
+      "latencyBudgetPassRate": 1,
+      "totalCachedInputTokens": 11648,
+      "totalUncachedInputTokens": 5802,
+      "totalOutputTokens": 3907,
+      "averageDurationMs": 1718.7745350003242,
+      "p95DurationMs": 2262.325299978256,
+      "totalDurationMs": 34408.41259992123,
+      "totalRetries": 0,
+      "firstTokenMs": null,
+      "firstTokenMeasurement": "unavailable_non_streaming",
+      "estimatedCostUsd": null
+    },
+    "gates": {
+      "requestSuccess": true,
+      "structuredOutput": true,
+      "domainAccuracy": true,
+      "actionAccuracy": true,
+      "understandingStatusAccuracy": true,
+      "entityMentionRecall": true,
+      "tokenBudget": true,
+      "latencyBudget": true
+    },
+    "observedIterations": [
+      "450 output tokens, thinking enabled: 0/20 strict outputs completed; failed.",
+      "1200 output tokens, thinking enabled: 15/20 strict outputs completed; failed.",
+      "1200 output tokens, thinking disabled: 20/20 strict outputs completed; passed."
+    ],
+    "rawReport": ".cache/eval/phase-0-3-live-llm.json",
+    "secretsRecorded": false
+  },
+  "finalVerification": {
+    "npmTest": {
+      "total": 599,
+      "passed": 579,
+      "failed": 0,
+      "skipped": 20
+    },
+    "phase0": {
+      "total": 300,
+      "passed": true
+    },
+    "phase1": {
+      "total": 50,
+      "passed": 50,
+      "failed": 0
+    },
+    "phase2": {
+      "actionAccuracy": 0.96,
+      "domainAccuracy": 0.9766666666666667,
+      "unsupportedUnderstandingRate": 1,
+      "passed": true
+    },
+    "phase3": {
+      "coreTop1Accuracy": 1,
+      "aliasTop3Recall": 1,
+      "conceptAccuracy": 1,
+      "nonexistentFalseHitRate": 0,
+      "passed": true
+    },
+    "smallWindowSmoke": true,
+    "compsSmoke": true
+  },
+  "limitations": [
+    "This is a T2 smoke evaluation, not a T3 release evaluation.",
+    "First-token latency is unavailable on the non-streaming request path.",
+    "Monetary cost is not estimated because provider pricing was not configured; token counts are recorded.",
+    "Five non-gating semantic disagreements are retained in the live report."
+  ]
+}

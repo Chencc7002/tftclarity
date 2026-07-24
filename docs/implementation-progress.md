@@ -397,3 +397,14 @@ availabilityPolicy=item-availability-overrides-only
 - `npm run smoke:sqlite`：系统 Node 18 因无 `node:sqlite` 且未安装可选 `better-sqlite3` 而明确跳过；随后使用 bundled Node 24.14.0 复验通过，生成 229,376 字节文件库并验证重开缓存命中、目录/会话/查询清理和零意外远程请求。
 
 管理员入口、鉴权、持久化选择、迁移边界和常用操作见 `docs/admin-season-operations.md`。
+
+## 2026-07-23 阶段 1：Agent Runtime、工具注册与最小评估
+
+- 新增版本化 `AgentRun`/公开摘要/事件、固定状态机与阶段、10 秒 deadline、step/tool/retry/event 预算、AbortSignal 取消和迟到结果终态保护。每个 `/api/recommend` 请求均经过 Runtime，响应向后兼容地增加安全 `run` 摘要。
+- 新增共享 `ToolRegistry`/`ToolExecutor`。`unit_builds`、`unit_comp_candidates`、三类 comps、三类详情和 `semantic_search` 从 `STRUCTURED_OPERATION_REGISTRY` 同源派生；未知工具、未知参数、来源不匹配均在 handler 前拒绝。
+- 工具执行统一处理 timeout、取消信号传播、有限幂等重试、结构化结果/事件和敏感错误脱敏。统计、排序、实体解析、Evidence 和结论校验仍由原模块负责。
+- 查询事件新增可选 `runId`；内存/JSON store 兼容读取，SQLite 以可重复附加列迁移保存并建立索引。
+- 新增 `core-agent-cases.v1` 50 条离线必选评估，覆盖主查询、详情、多轮、澄清、失败降级、工具安全、Runtime 边界、赛季隔离和 LLM 事实越权。最终 `npm run eval:agent` 为 50 passed / 0 failed / 0 skipped，任务/意图/澄清/工具/参数准确率均为 100%，预期 fallback 4%，预期 timeout 2%。
+- 定向测试为 80 total / 77 passed / 0 failed / 3 skipped；系统 Node 18.20.8 全量为 580 total / 560 passed / 0 failed / 20 skipped。20 个跳过未计为通过。
+- bundled Node 24.14.0 定向 SQLite/Runtime/工具/评估测试为 22/22、0 skipped；真实 SQLite 文件 smoke、`smoke:small-window` 和 `smoke:comps` 均通过。
+- 本阶段没有改变确定性统计、过滤、排序和产品规则，没有引入自主规划、ReAct、MCP、多 Agent、写工具、外部服务或凭据。

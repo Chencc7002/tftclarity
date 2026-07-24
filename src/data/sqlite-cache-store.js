@@ -142,6 +142,7 @@ ON traits(season_context_id, patch, current);
 
 CREATE TABLE IF NOT EXISTS query_events (
   query_id TEXT PRIMARY KEY,
+  run_id TEXT,
   season_context_id TEXT NOT NULL,
   visitor_scope TEXT NOT NULL,
   conversation_id TEXT,
@@ -461,6 +462,18 @@ function ensureFeedbackSchema(database) {
   `);
 }
 
+function ensureQueryEventSchema(database) {
+  try {
+    database.exec("ALTER TABLE query_events ADD COLUMN run_id TEXT");
+  } catch (error) {
+    if (!/duplicate column|already exists/iu.test(String(error?.message ?? error))) throw error;
+  }
+  database.exec(`
+    CREATE INDEX IF NOT EXISTS idx_query_events_run
+    ON query_events(run_id);
+  `);
+}
+
 function ensureEntityAliasAuditSchema(database) {
   for (const [name, type] of [["created_at", "TEXT"], ["updated_by", "TEXT"]]) {
     try {
@@ -578,6 +591,7 @@ function rowToFeedbackEvent(row) {
 function rowToQueryEvent(row) {
   return {
     queryId: row.query_id,
+    runId: row.run_id ?? null,
     seasonContextId: normalizeSeasonContextId(row.season_context_id),
     visitorScope: row.visitor_scope,
     conversationId: row.conversation_id ?? null,
@@ -644,6 +658,7 @@ export class SQLiteCacheStore {
     this.now = options.now ?? (() => Date.now());
     migrateSQLiteSeasonContextSchema(this.database);
     this.database.exec(SQLITE_CACHE_SCHEMA);
+    ensureQueryEventSchema(this.database);
     ensureEntityAliasAuditSchema(this.database);
     ensureCompProfileSchema(this.database);
     ensureFeedbackSchema(this.database);
@@ -1350,12 +1365,13 @@ export class SQLiteCacheStore {
     const seasonContextId = normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id);
     bindRun(this.database.prepare(`
       INSERT INTO query_events (
-        query_id, season_context_id, visitor_scope, conversation_id, input, result_type,
+        query_id, run_id, season_context_id, visitor_scope, conversation_id, input, result_type,
         query_json, response_json, patch, cache_hit, cache_stale,
         llm_used, llm_model, duration_ms, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     `), [
       queryId,
+      record.runId ?? record.run_id ?? null,
       seasonContextId,
       visitorScope,
       record.conversationId ?? record.conversation_id ?? null,
@@ -1378,7 +1394,7 @@ export class SQLiteCacheStore {
 
   getQueryEvent(queryId) {
     const row = bindGet(this.database.prepare(`
-      SELECT query_id, season_context_id, visitor_scope, conversation_id, input, result_type,
+      SELECT query_id, run_id, season_context_id, visitor_scope, conversation_id, input, result_type,
              query_json, response_json, patch, cache_hit, cache_stale,
              llm_used, llm_model, duration_ms, created_at
       FROM query_events

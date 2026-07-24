@@ -353,6 +353,10 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
 
   assert.equal(statusCode, 200);
   assert.equal(payload.ok, true);
+  assert.equal(payload.run.schemaVersion, "agent_run_public.v1");
+  assert.equal(payload.run.status, "completed");
+  assert.equal(payload.run.currentStage, "terminal");
+  assert.equal(runtime.cacheStore.getQueryEvent(payload.queryId).runId, payload.run.runId);
   assert.equal(payload.cards[0].title, "普适推荐");
   assert.equal(payload.cards[0].ranking.method, "robust_applicability_v1");
   assert.equal(payload.cards[0].ranking.coverageScore <= 100, true);
@@ -449,6 +453,8 @@ test("handleRecommendRequest returns official item encyclopedia details before r
   assert.equal(payload.intentEnvelope.intent, "item_details");
   assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "item_details");
   assert.equal(payload.retrievalPlan.promptKey, null);
+  assert.equal(payload.run.status, "completed");
+  assert.equal(payload.run.toolCallCount, 1);
 });
 
 test("handleRecommendRequest returns unit stats, ability, and three stable item recommendations", async () => {
@@ -513,6 +519,8 @@ test("handleRecommendRequest returns unit stats, ability, and three stable item 
   assert.equal(payload.intentEnvelope.intent, "unit_details");
   assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "unit_details");
   assert.equal(payload.retrievalPlan.promptKey, null);
+  assert.equal(payload.run.status, "completed");
+  assert.equal(payload.run.toolCallCount, 1);
 });
 
 test("handleRecommendRequest returns official trait effects and tiers", async () => {
@@ -549,6 +557,8 @@ test("handleRecommendRequest returns official trait effects and tiers", async ()
   assert.equal(payload.intentEnvelope.intent, "trait_details");
   assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "trait_details");
   assert.equal(payload.retrievalPlan.promptKey, null);
+  assert.equal(payload.run.status, "completed");
+  assert.equal(payload.run.toolCallCount, 1);
 });
 
 test("official entity catalogs resolve encyclopedia aliases when the MetaTFT catalog is unavailable", async () => {
@@ -997,6 +1007,7 @@ test("handleRecommendRequest serializes clarification prompts", async () => {
   assert.equal(payload.cards.length, 0);
   assert.equal(payload.clarification.needsClarification, true);
   assert.equal(payload.clarification.reason, "missing_unit_with_item");
+  assert.equal(payload.run.status, "clarification_required");
 });
 
 test("handleRecommendRequest serializes local entity candidates for clarification", async () => {

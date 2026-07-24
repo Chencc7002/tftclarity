@@ -1,0 +1,67 @@
+{
+  "schemaVersion": "agent_upgrade_phase_report.v1",
+  "phase": 3,
+  "status": "passed",
+  "baselineCommit": "0d25453",
+  "implementationCommit": "fe84785",
+  "dataset": {
+    "version": "entity-linking-phase3.v1",
+    "total": 177,
+    "core": 15,
+    "slangAndAliases": 50,
+    "gameConcepts": 12,
+    "nonexistent": 100
+  },
+  "evaluation": {
+    "command": "npm run eval:phase3",
+    "evaluationVersion": "entity-linker-phase3.v1",
+    "coreTop1Accuracy": 1,
+    "aliasTop3Recall": 1,
+    "conceptAccuracy": 1,
+    "nonexistentFalseHitRate": 0
+  },
+  "phase2Regression": {
+    "command": "npm run eval:phase2",
+    "actionAccuracy": 0.96,
+    "domainAccuracy": 0.9766666666666667,
+    "unsupportedUnderstandingRate": 1,
+    "inputBudgetPassRate": 1,
+    "outputBudgetPassRate": 1,
+    "latencyBudgetPassRate": 1
+  },
+  "tests": {
+    "targeted": {
+      "command": "node --test test/entity-linker.test.js test/phase2-semantic-evaluation.test.js test/phase3-entity-evaluation.test.js test/semantic-task-parser.test.js test/semantic-shadow.test.js",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "command": "npm test",
+      "total": 597,
+      "passed": 577,
+      "failed": 0,
+      "skipped": 20
+    },
+    "smokes": [
+      {
+        "command": "npm run smoke:small-window",
+        "status": "passed",
+        "hotCacheDurationMs": 3,
+        "localCacheDurationMs": 4
+      },
+      {
+        "command": "npm run smoke:comps",
+        "status": "passed"
+      }
+    ]
+  },
+  "behaviorDifference": "Shadow TaskFrames now link extracted mentions to current catalog entities and reusable game concepts with provenance and candidate confidence. Legacy IntentEnvelope, deterministic execution, statistics, filtering, ranking, evidence and user-visible responses remain unchanged.",
+  "knownLimitations": [
+    "The fixed phase-3 evaluation catalog is a deterministic contract set and does not replace a future independently sampled production holdout.",
+    "The current catalog has no verified unique target for the example alias 炼刀, so it remains an unresolved item mention instead of being forced to an incorrect ID.",
+    "Semantic retrieval and LLM candidate reranking are bounded optional stages; the default offline gate uses local aliases, pinyin and fuzzy retrieval only."
+  ],
+  "rollback": "Revert fe84785. Entity links are shadow-only and no production data or deterministic business rule requires rollback."
+}

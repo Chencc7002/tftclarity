@@ -27,7 +27,11 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
-  trait_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) })
+  trait_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
+  semantic_search: Object.freeze({
+    source: "semantic_index",
+    params: Object.freeze(["query", "documentTypes", "patch", "locale", "topK"])
+  })
 });
 
 function safeParams(query, registration) {

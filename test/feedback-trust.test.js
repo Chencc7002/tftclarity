@@ -117,7 +117,8 @@ test("SQLite is the final feedback uniqueness authority", async (t) => {
     }
     throw error;
   }
-  store.addQueryEvent({ queryId: "query-1", visitorScope: "visitor-a", input: "fixture" });
+  store.addQueryEvent({ queryId: "query-1", runId: "run-1", visitorScope: "visitor-a", input: "fixture" });
+  assert.equal(store.getQueryEvent("query-1").runId, "run-1");
   const options = {
     feedbackId: "query-1:recommendation:0",
     queryId: "query-1",

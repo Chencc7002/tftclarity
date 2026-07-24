@@ -4,6 +4,12 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import {
+  AgentRuntime,
+  ToolExecutor,
+  ToolRegistry,
+  createStructuredToolDefinitions
+} from "../agent/index.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import { normalizeAlias } from "../core/normalizer.js";
 import {
@@ -404,6 +410,11 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       catalogTimeoutMs: runtime.requestTimeouts?.catalogTimeoutMs ?? null,
       compsTimeoutMs: runtime.requestTimeouts?.compsTimeoutMs ?? null,
       compRankingsTimeoutMs: runtime.requestTimeouts?.compRankingsTimeoutMs ?? null
+    },
+    agent: {
+      schemaVersion: "agent_run.v1",
+      budget: runtime.agentRuntime?.budget ?? null,
+      registeredTools: runtime.toolRegistry?.list?.().map((tool) => tool.name) ?? []
     }
   };
 }
@@ -513,6 +524,19 @@ function attachDetailRetrievalMetadata(payload, input, catalog) {
   });
   const retrievalPlan = DETAIL_RETRIEVAL_PLANNER.plan(intentEnvelope);
   return { ...payload, intentEnvelope, retrievalPlan };
+}
+
+async function executeRegisteredDetailPayload(payload, runtime, context = {}) {
+  const query = payload?.retrievalPlan?.structuredQueries?.[0];
+  if (!query || !runtime.toolExecutor || !context.agentRun) return payload;
+  const result = await runtime.toolExecutor.execute(query.operation, query.params ?? {}, {
+    source: query.source,
+    handler: async () => payload,
+    run: context.agentRun,
+    signal: context.signal,
+    intent: payload.intentEnvelope?.intent
+  });
+  return result.value;
 }
 
 function isItemDetailsQuestion(input) {
@@ -1589,6 +1613,24 @@ export function createSmallWindowRuntime(options = {}) {
       cacheTtlMs: 30 * 60 * 1000
     }
     : { enabled: false, mode: "off", provider: "off" });
+  const toolRegistry = options.toolRegistry ?? new ToolRegistry(createStructuredToolDefinitions({
+    defaultTimeoutMs: requestTimeouts.compRankingsTimeoutMs,
+    timeoutByTool: {
+      unit_builds: requestTimeouts.explorerTimeoutMs,
+      unit_comp_candidates: requestTimeouts.explorerTimeoutMs,
+      comps_rankings: requestTimeouts.compRankingsTimeoutMs,
+      comps_trends: requestTimeouts.compRankingsTimeoutMs,
+      comps_analysis: requestTimeouts.compRankingsTimeoutMs,
+      unit_details: requestTimeouts.catalogTimeoutMs,
+      item_details: requestTimeouts.catalogTimeoutMs,
+      trait_details: requestTimeouts.catalogTimeoutMs
+    }
+  }));
+  const toolExecutor = options.toolExecutor ?? new ToolExecutor({ registry: toolRegistry });
+  const agentRuntime = options.agentRuntime ?? new AgentRuntime({
+    budget: options.agentRunBudget,
+    onEvent: options.agentRunEvent
+  });
 
   return {
     seasonContextService: options.seasonContextService ?? createSeasonContextService(),
@@ -1645,7 +1687,10 @@ export function createSmallWindowRuntime(options = {}) {
     queryEventRetentionDays: Number.isInteger(Number(options.queryEventRetentionDays))
       ? Math.max(0, Number(options.queryEventRetentionDays))
       : 30,
-    recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput
+    recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput,
+    agentRuntime,
+    toolRegistry,
+    toolExecutor
   };
 }
 
@@ -2221,6 +2266,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   payload.queryId = queryId;
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,
+    runId: details.runId ?? null,
     seasonContextId: payload.seasonContext?.id ?? payload.query?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
     visitorScope,
     conversationId: details.conversationId,
@@ -2250,7 +2296,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   return payload;
 }
 
-export async function handleRecommendRequest(body, runtime, context = {}) {
+async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const startedAt = Date.now();
   const input = String(body?.input ?? "").trim();
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
@@ -2311,7 +2357,8 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       scope,
       conversationId,
       input,
-      startedAt
+      startedAt,
+      runId: context.agentRun?.runId ?? null
     });
     if (context.accessService && context.visitor) {
       payload.access = context.accessService.publicStatus(context.visitor);
@@ -2350,11 +2397,13 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       aliasMemory,
       preferences
     };
-    return completeResponse(attachDetailRetrievalMetadata(entityDetailsPayload, input, catalog));
+    const payload = attachDetailRetrievalMetadata(entityDetailsPayload, input, catalog);
+    return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
   }
   const itemDetailsPayload = await serializeItemDetailsQuery(input, catalog, runtime);
   if (itemDetailsPayload) {
-    return completeResponse(attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog));
+    const payload = attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog);
+    return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
   }
   const parsedForIntent = parseQuery(input, { catalog });
   const compEntityClarification = serializeCompRankingEntityClarification(parsedForIntent, catalog);
@@ -2393,7 +2442,10 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     seasonContextId: seasonContext.id,
     providerVersion: seasonContext.source.providerVersion,
     effectivePatch: seasonContext.effectivePatch,
-    sessionKey
+    sessionKey,
+    toolExecutor: requestRuntime.toolExecutor,
+    agentRun: context.agentRun,
+    abortSignal: context.signal
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
   if (warnings) result.query.warnings = warnings;
@@ -2411,11 +2463,31 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
   let semanticEvidence = [];
   if (requestRuntime.semanticRetriever && result.retrievalPlan?.semanticQueries?.length) {
     try {
-      semanticEvidence = await retrieveSemanticPlan(result.retrievalPlan, requestRuntime.semanticRetriever, {
-        seasonContextId: seasonContext.id,
-        onFallback: requestRuntime.semanticConfig?.onFallback
-      });
+      const retrieve = () => retrieveSemanticPlan(result.retrievalPlan, requestRuntime.semanticRetriever, {
+          seasonContextId: seasonContext.id,
+          onFallback: requestRuntime.semanticConfig?.onFallback
+        });
+      const semanticQuery = result.retrievalPlan.semanticQueries[0];
+      const executeSemantic = context.agentRun && requestRuntime.toolExecutor
+        ? async () => (await requestRuntime.toolExecutor.execute("semantic_search", {
+          query: semanticQuery.query,
+          documentTypes: semanticQuery.types,
+          ...(semanticQuery.patch ? { patch: semanticQuery.patch } : {}),
+          ...(semanticQuery.locale ? { locale: semanticQuery.locale } : {}),
+          ...(semanticQuery.topK ? { topK: semanticQuery.topK } : {})
+        }, {
+          source: "semantic_index",
+          handler: retrieve,
+          run: context.agentRun,
+          signal: context.signal,
+          intent: result.intentEnvelope?.intent ?? result.type
+        })).value
+        : retrieve;
+      semanticEvidence = context.agentRun
+        ? await context.agentRun.stage("assembling_evidence", executeSemantic)
+        : await executeSemantic();
     } catch (error) {
+      if (["run_cancelled", "run_timed_out", "budget_exhausted"].includes(error?.code)) throw error;
       result.query.warnings = [...new Set([...(result.query?.warnings ?? []), `语义索引检索失败：${error.message}`])];
     }
   }
@@ -2444,7 +2516,15 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       createConclusionJob(runtime, conclusionOptions, scope),
       requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
     )
-    : await generateEvidenceBackedConclusion(conclusionOptions);
+    : context.agentRun
+      ? await context.agentRun.stage(
+        "generating_conclusion",
+        () => generateEvidenceBackedConclusion(conclusionOptions)
+      )
+      : await generateEvidenceBackedConclusion(conclusionOptions);
+  if (context.agentRun && !context.agentRun.terminal) {
+    await context.agentRun.stage("validating", async () => null);
+  }
 
   const payload = serializeRecommendation(result, catalog, {
     durationMs: Date.now() - startedAt,
@@ -2462,6 +2542,45 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
   if (result.retrievalPlan) payload.retrievalPlan = result.retrievalPlan;
   Object.assign(payload, conversationMeta({ conversationId }));
   return completeResponse(payload);
+}
+
+function classifyAgentHttpResult(value) {
+  const payload = value?.payload;
+  if (payload?.type === "clarification" || payload?.clarification?.needsClarification) {
+    return "clarification_required";
+  }
+  if (payload?.answer?.generatedConclusion?.status === "fallback") return "fallback";
+  return "completed";
+}
+
+export async function handleRecommendRequest(body, runtime, context = {}) {
+  if (context.agentRun || !runtime.agentRuntime) {
+    return handleRecommendRequestInternal(body, runtime, context);
+  }
+  const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
+  const execution = await runtime.agentRuntime.run({
+    conversationId,
+    principalId: context.visitor?.scope ?? "anonymous",
+    seasonContextId: body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID
+  }, async (agentRun) => {
+    await agentRun.stage("resolving", async () => null);
+    await agentRun.stage("planning", async () => null);
+    const value = await agentRun.stage(
+      "retrieving",
+      () => handleRecommendRequestInternal(body, runtime, {
+        ...context,
+        agentRun,
+        signal: context.signal
+      })
+    );
+    await agentRun.stage("responding", async () => null);
+    return value;
+  }, {
+    signal: context.signal,
+    classifyResult: classifyAgentHttpResult
+  });
+  if (execution.value?.payload) execution.value.payload.run = execution.publicRun;
+  return execution.value;
 }
 
 export async function handlePreferencesRequest(body, runtime, scope = null) {
@@ -3671,9 +3790,16 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/recommend") {
         const body = await readJsonRequest(req);
+        const controller = new AbortController();
+        const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
+        req.once("aborted", abortRequest);
+        res.once("close", () => {
+          if (!res.writableEnded) abortRequest();
+        });
         const { statusCode, payload } = await handleRecommendRequest(body, runtime, {
           visitor,
-          accessService
+          accessService,
+          signal: controller.signal
         });
         return sendJson(res, statusCode, payload);
       }
@@ -3982,6 +4108,7 @@ export function createSmallWindowHandler(options = {}) {
         ok: false,
         error: error.message,
         ...(error.code ? { code: error.code } : {}),
+        ...(error.publicRun ? { run: error.publicRun } : {}),
         ...(error.seasonContextId ? { seasonContextId: error.seasonContextId } : {}),
         ...(error.contextStatus ? { status: error.contextStatus } : {})
       });

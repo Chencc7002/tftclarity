@@ -404,6 +404,22 @@ export {
   generateEvidenceBackedConclusion,
   makeConclusionCacheKey
 } from "./core/conclusion-service.js";
+export {
+  AGENT_EVENT_SCHEMA_VERSION,
+  AGENT_RUN_PUBLIC_SCHEMA_VERSION,
+  AGENT_RUN_SCHEMA_VERSION,
+  AGENT_TOOL_RESULT_SCHEMA_VERSION,
+  AGENT_TOOL_SCHEMA_VERSION,
+  DEFAULT_AGENT_RUN_BUDGET,
+  AgentRun,
+  AgentRuntime,
+  RuntimeError,
+  ToolError,
+  ToolExecutor,
+  ToolRegistry,
+  createStructuredToolDefinitions,
+  normalizeRunBudget
+} from "./agent/index.js";
 
 export function planQuery(input, options = {}) {
   const catalog = options.catalog ?? createCatalog();

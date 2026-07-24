@@ -464,6 +464,7 @@ export class MemoryCacheStore {
     }
     const entry = {
       queryId,
+      runId: record.runId ?? record.run_id ?? null,
       seasonContextId: normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id),
       visitorScope,
       conversationId: record.conversationId ?? record.conversation_id ?? null,

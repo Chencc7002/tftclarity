@@ -45,6 +45,8 @@ import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { analyzeCompRankingResult, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
+import { parseSemanticTask } from "../understanding/semantic-task-parser.js";
+import { runSemanticShadow } from "../understanding/semantic-shadow.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 import { StructuredRetriever } from "../retrieval/structured-retriever.js";
 import { SUPPORTED_CONCLUSION_INTENTS } from "../llm/conclusion-spec-registry.js";
@@ -139,6 +141,17 @@ function structuredQueryFor(plan, operation) {
 async function executePlannedStructuredQuery(plan, operation, handler, context = {}) {
   const query = structuredQueryFor(plan, operation);
   if (!query) throw new Error(`RetrievalPlan does not allow structured operation: ${operation}`);
+  if (context.toolExecutor) {
+    const result = await context.toolExecutor.execute(operation, query.params ?? {}, {
+      source: query.source,
+      handler,
+      run: context.agentRun,
+      signal: context.signal,
+      maxRetriesPerTool: context.maxRetriesPerTool,
+      intent: context.intent
+    });
+    return result.value;
+  }
   const retriever = new StructuredRetriever({ handlers: { [operation]: handler } });
   return (await retriever.executeQuery(query, context)).value;
 }
@@ -1210,7 +1223,12 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
             ? options.metaTFTClient.getCompCandidates(explorerPlan)
             : options.metaTFTClient.getExactUnitsTraits2(explorerPlan.params);
         },
-        { intent: query.intent }
+        {
+          intent: query.intent,
+          toolExecutor: options.toolExecutor,
+          agentRun: options.agentRun,
+          signal: options.abortSignal
+        }
       );
       const stored = await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, {
         request: plan,
@@ -1451,12 +1469,37 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
 export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
+  const semanticParser = options.semanticTaskParser ?? parseSemanticTask;
+  const semanticTaskPromise = options.semanticShadow === false
+    ? null
+    : Promise.resolve().then(() => semanticParser(input, {
+      catalog,
+      conversation: options.semanticConversation ?? [],
+      dynamicContext: {
+        version: options.effectivePatch ?? catalog?.version ?? null,
+        currentTime: options.currentTime ?? null,
+        userState: options.semanticUserState ?? null
+      },
+      exampleStore: options.semanticExampleStore,
+      provider: options.semanticTaskProvider,
+      budget: options.semanticParserBudget,
+      entitySemanticRetriever: options.semanticRetriever,
+      entityCandidateRetriever: options.entityCandidateRetriever,
+      entityCandidateReranker: options.semanticEntityReranker
+    }));
+  semanticTaskPromise?.catch(() => {});
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options), storeOptionsFor(options));
   let deterministicParsed = parseQueryDeterministically(input, options, catalog);
   deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
   deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
+  if (semanticTaskPromise) {
+    await runSemanticShadow(input, deterministicParsed, {
+      parser: () => semanticTaskPromise,
+      agentRun: options.agentRun
+    });
+  }
   const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
   const initialCompSessionMerge = inheritCompRankingFromSession(
     deterministicParsed,
@@ -1588,7 +1631,12 @@ export async function recommendForInput(input, options = {}) {
               dataClusterId
             };
           },
-          { intent: query.intent }
+          {
+            intent: query.intent,
+            toolExecutor: options.toolExecutor,
+            agentRun: options.agentRun,
+            signal: options.abortSignal
+          }
         );
         const { dataParams, statsParams, dataClusterId } = retrieved;
         response = retrieved.response;
@@ -1926,7 +1974,12 @@ export async function recommendForInput(input, options = {}) {
           };
           return options.metaTFTClient?.getUnitBuilds(planMetaTFTUnitBuilds(plannedQuery));
         },
-        { intent: validatedQuery.intent }
+        {
+          intent: validatedQuery.intent,
+          toolExecutor: options.toolExecutor,
+          agentRun: options.agentRun,
+          signal: options.abortSignal
+        }
       );
       if (response !== undefined) {
         const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {

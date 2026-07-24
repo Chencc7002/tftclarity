@@ -1,0 +1,85 @@
+{
+  "schemaVersion": "agent_upgrade_phase_report.v1",
+  "phase": 1,
+  "status": "passed",
+  "baselineCommit": "f551390",
+  "implementationCommit": "bfcaa5e",
+  "dataset": {
+    "version": "core-agent-cases.v1",
+    "total": 50,
+    "required": 50,
+    "networkRequired": 0,
+    "llmKeyRequired": false
+  },
+  "evaluation": {
+    "command": "npm run eval:agent",
+    "total": 50,
+    "passed": 50,
+    "failed": 0,
+    "skipped": 0,
+    "taskSuccessRate": 1,
+    "intentAccuracy": 1,
+    "clarificationAccuracy": 1,
+    "toolSelectionAccuracy": 1,
+    "toolInputValidityRate": 1,
+    "fallbackRate": 0.04,
+    "timeoutRate": 0.02,
+    "averageDurationMs": 0,
+    "p95DurationMs": 0
+  },
+  "tests": {
+    "targeted": {
+      "command": "node --test test/agent-runtime.test.js test/agent-tools.test.js test/agent-evaluation.test.js test/small-window-server.test.js",
+      "total": 70,
+      "passed": 69,
+      "failed": 0,
+      "skipped": 1
+    },
+    "regression": {
+      "command": "npm test",
+      "runtime": "Node 18.20.8",
+      "total": 580,
+      "passed": 560,
+      "failed": 0,
+      "skipped": 20
+    },
+    "node24": {
+      "command": "bundled Node 24.14.0 --test test/feedback-trust.test.js test/agent-runtime.test.js test/agent-tools.test.js test/agent-evaluation.test.js",
+      "total": 22,
+      "passed": 22,
+      "failed": 0,
+      "skipped": 0
+    },
+    "smokes": [
+      {
+        "command": "npm run smoke:small-window",
+        "status": "passed",
+        "hotCacheDurationMs": 3,
+        "localCacheDurationMs": 4
+      },
+      {
+        "command": "npm run smoke:comps",
+        "status": "passed"
+      },
+      {
+        "command": "bundled Node 24.14.0 scripts/smoke-sqlite-cache.mjs",
+        "status": "passed",
+        "unexpectedRemoteCalls": 0
+      }
+    ]
+  },
+  "observedEvaluationIterations": [
+    "Initial 40-case run: 34 passed / 6 failed.",
+    "First corrected 40-case run: 38 passed / 2 failed.",
+    "First expanded 50-case run: 47 passed / 3 failed.",
+    "Final required run: 50 passed / 0 failed / 0 skipped."
+  ],
+  "behaviorDifference": "Every /api/recommend request now runs inside AgentRuntime and adds a safe run summary. Planned structured, detail and semantic capabilities execute through the shared Tool Registry/Executor; query events can correlate runId. Existing deterministic parsing, statistics, filtering, sorting, evidence, conclusion validation and response fields remain in their original modules.",
+  "knownLimitations": [
+    "Phase 1 deliberately retains the fixed workflow and existing IntentEnvelope; TaskFrame and shadow semantic parsing start in phase 2.",
+    "The 50-case dataset is the minimum fixed contract suite and does not replace the phase 0 300-case real-style failure dataset.",
+    "Evaluation latency uses an injected deterministic clock and is not a production network SLA.",
+    "System Node 18.20.8 lacks node:sqlite and an optional SQLite driver, so 20 SQLite/provider/obsolete full-suite cases remain skipped and are not counted as passed; Node 24 verification passed without skips."
+  ],
+  "rollback": "Revert implementation commit bfcaa5e. The nullable SQLite query_events.run_id column is backward-compatible and can remain unused; no destructive data rollback is required."
+}
