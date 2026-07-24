@@ -1,0 +1,68 @@
+{
+  "schemaVersion": "phase8a-report.v1",
+  "phase": "8A",
+  "status": "PASS",
+  "generatedAt": "2026-07-24T07:20:31.516Z",
+  "scope": {
+    "seasonContextId": "set17-live",
+    "patch": "17.4",
+    "providerVersion": "phase8a-fixture-provider.v1",
+    "catalogVersion": "phase8a-fixture-catalog.v1",
+    "parserVersion": "task-frame.v1",
+    "promptVersion": "not-used-by-loop.v1",
+    "toolRegistryVersion": "first-party-read-only.v1"
+  },
+  "datasetVersion": "phase8a-failure-candidates.v1",
+  "metrics": {
+    "totalQueryEvents": 6,
+    "candidateCount": 5,
+    "duplicateCount": 1,
+    "clusterCount": 5,
+    "privacyViolations": 0,
+    "reviewCounts": {
+      "candidate": 0,
+      "human_verified": 2,
+      "ignored": 2,
+      "rejected": 1,
+      "revoked": 0
+    },
+    "exportedCandidateCount": 2,
+    "injectionCasesExcluded": 1,
+    "unsupportedVideoStatus": "understood_but_unsupported",
+    "productionApplyHooks": 0
+  },
+  "gates": {
+    "queryEventToCandidate": true,
+    "privacyClean": true,
+    "deduplication": true,
+    "clustering": true,
+    "humanReviewRequired": true,
+    "noProductionApply": true,
+    "videoUnsupportedOnly": true,
+    "injectionIsolation": true
+  },
+  "lifecycle": [
+    "query_event",
+    "privacy_cleanup",
+    "failure_classification",
+    "candidate",
+    "deduplication",
+    "clustering",
+    "human_review",
+    "evaluation_export"
+  ],
+  "safety": {
+    "autoApply": false,
+    "productionEffect": "none",
+    "promptMutation": false,
+    "aliasMutation": false,
+    "toolMutation": false,
+    "videoToolsImplemented": false,
+    "bilibiliIntegrationImplemented": false
+  },
+  "limitations": [
+    "8A exports reviewed failure samples only; it does not repair prompts, aliases, tools or runtime behavior.",
+    "find_video is classified as understood_but_unsupported and no video search is implemented.",
+    "The store is an isolated candidate repository for this phase; production rollout and automatic learning remain disabled."
+  ]
+}

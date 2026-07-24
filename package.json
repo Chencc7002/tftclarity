@@ -18,6 +18,7 @@
     "eval:phase5": "node scripts/run-phase5-eval.mjs",
     "eval:phase6": "node scripts/run-phase6-eval.mjs",
     "eval:phase65": "node scripts/run-phase65-eval.mjs",
+    "eval:phase8a": "node scripts/run-phase8a-eval.mjs",
     "eval:llm:live": "node scripts/run-live-llm-eval.mjs",
     "eval:llm:t3": "node scripts/run-live-llm-t3-eval.mjs",
     "smoke": "node test/mvp-query.test.js",

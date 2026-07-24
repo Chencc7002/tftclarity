@@ -54,6 +54,11 @@
 - safety: legacy equivalent and fallback paths retained; `RetrievalPlan` retained; ExecutionPlan allows only registered first-party read-only tools; arbitrary tools and video tools remain disabled; no real canary was started
 - report: `docs/reports/phase-6-5-semantic-correction.md`, `docs/reports/phase-6-5-semantic-correction.json`, `docs/reports/phase-6-5-live-llm-t3.md`, `docs/reports/phase-6-5-live-llm-t3.json`
 
+- phase: 8A
+- tests: `npm test` — 625 total / 605 passed / 0 failed / 20 skipped; targeted phase-8A failure-loop tests — 5 passed / 0 failed; `npm run eval:phase8a` — PASS
+- metrics: 6 query events → 5 candidates; 1 duplicate; 5 clusters; 0 privacy violations; 2 human-verified exports; ignored/rejected states exercised; injection cases excluded; production apply hooks 0; `find_video` = `understood_but_unsupported`
+- report: `docs/reports/phase-8a-controlled-failure-loop.md`, `docs/reports/phase-8a-controlled-failure-loop.json`
+
 - acceptance audit: phases 0-3
 - artifact verification: phase reports are tracked and linked to implementation/verification commits `f551390`, `bfcaa5e`, `3c72699`, `2d16226`, `0d25453`, `fe84785`, `8b676fe`, `4996a7d`
 - real LLM: existing one-query `smoke:llm` passed; new T2 `eval:llm:live` passed 20/20 strict requests with `chat` / `deepseek-v4-flash`
@@ -64,9 +69,9 @@
 
 ## Current work
 
-- objective: phase 6.5 semantic-correction takeover and real-LLM T3 complete
-- files: semantic difference classifier, concept capability map, ExecutionPlan compiler/validator, controlled recommendation integration, phase-6.5 and T3 datasets/runners/tests/reports
-- assumptions: deterministic statistics, ranking, evidence and conclusion rules remain authoritative; production deployment and real traffic rollout were not authorized; the untracked master-plan file remains user-owned and untouched
+- objective: phase 8A controlled failure loop complete; stop here per task scope
+- files: isolated query_event failure classifier, privacy cleaner, candidate store with deduplication/clustering/review/revoke/delete, evaluation export, phase-8A runner/tests/reports
+- assumptions: candidate data is evaluation-only and never mutates prompts, aliases, tools, routing or production behavior; video tools and Bilibili integration remain unimplemented; the untracked master-plan file remains user-owned and untouched
 
 ## Blockers
 
@@ -76,5 +81,5 @@
 
 ## Next
 
-- next_step: real canary is now eligible but remains stopped until separately authorized; do not enter video-tool development under the phase-6.5 acceptance scope
-- required_checks: preserve first-party read-only allowlisting, monitor controlled fallback and T3 stability, and obtain separate authorization before any production canary
+- next_step: stop after phase 8A; do not enter phase 8B, phase 8C, phase 7, video-tool development or Bilibili integration
+- required_checks: future work must preserve exact version/scope isolation, human-review gating, revoke/delete semantics and zero automatic production application

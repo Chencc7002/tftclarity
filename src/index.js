@@ -393,6 +393,19 @@ export {
 } from "./retrieval/structured-retriever.js";
 export { runLlmRetrievalPipeline } from "./retrieval/llm-pipeline.js";
 export {
+  EVALUATION_CANDIDATE_SET_SCHEMA_VERSION,
+  FAILURE_CANDIDATE_PRIVACY_POLICY,
+  FAILURE_CANDIDATE_SCHEMA_VERSION,
+  FAILURE_CANDIDATE_STATUSES,
+  FAILURE_CATEGORIES,
+  FAILURE_LOOP_SCHEMA_VERSION,
+  FailureCandidateStore,
+  classifyFailure,
+  createFailureCandidate,
+  exportEvaluationCandidates,
+  sanitizeFailureRecord
+} from "./evaluation/failure-loop.js";
+export {
   CONTEXT_RESOLUTION_VERSION,
   resolveTaskFrameContext
 } from "./understanding/context-resolver.js";
