@@ -1,0 +1,65 @@
+{
+  "schemaVersion": "agent_upgrade_phase_report.v1",
+  "phase": 4,
+  "status": "passed",
+  "baselineCommit": "6bd77b8",
+  "implementationCommit": "8be6c2f",
+  "dataset": {
+    "version": "context-resolution-phase4.v1",
+    "total": 120,
+    "multiTurnReferences": 80,
+    "conditionSources": 20,
+    "necessaryClarifications": 10,
+    "freshExplicitQueries": 10
+  },
+  "evaluation": {
+    "command": "npm run eval:phase4",
+    "evaluationVersion": "context-clarification-phase4.v1",
+    "multiTurnReferenceAccuracy": 1,
+    "unnecessaryClarificationRate": 0,
+    "oneKeyQuestionRate": 1,
+    "conditionSourceAccuracy": 1
+  },
+  "tests": {
+    "targeted": {
+      "command": "node --test test/phase4-context-evaluation.test.js test/semantic-task-parser.test.js test/semantic-shadow.test.js",
+      "total": 10,
+      "passed": 10,
+      "failed": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "command": "npm test",
+      "total": 602,
+      "passed": 582,
+      "failed": 0,
+      "skipped": 20
+    },
+    "previousPhaseEvaluations": {
+      "phase0": "passed",
+      "phase2ActionAccuracy": 0.96,
+      "phase2DomainAccuracy": 0.9766666666666667,
+      "phase3CoreTop1Accuracy": 1,
+      "phase3AliasTop3Recall": 1
+    },
+    "smokes": [
+      {
+        "command": "npm run smoke:small-window",
+        "status": "passed",
+        "hotCacheDurationMs": 3,
+        "localCacheDurationMs": 4
+      },
+      {
+        "command": "npm run smoke:comps",
+        "status": "passed"
+      }
+    ]
+  },
+  "behaviorDifference": "The shadow TaskFrame now resolves plural, specific-item and prior-composition references, distinguishes explicit, conversation-inherited and system-default constraints, and asks one relevant question only for result- or tool-changing ambiguity. The legacy deterministic execution path remains authoritative.",
+  "knownLimitations": [
+    "The phase-4 dataset is an offline contract set rather than production traffic.",
+    "Context resolution consumes structured prior TaskFrames or validated legacy query snapshots; raw free-form transcript recovery remains delegated to the bounded semantic parser.",
+    "Candidate-parallel retrieval is represented by policy but is not executed until phase 5 planning."
+  ],
+  "rollback": "Revert 8be6c2f. Context resolution is attached to the semantic shadow result and requires no production data rollback."
+}

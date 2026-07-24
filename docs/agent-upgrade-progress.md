@@ -2,11 +2,11 @@
 
 ## Current
 
-- phase: 3
+- phase: 4
 - status: completed
 - branch: codex/wechat-mobile-chat
 - baseline_commit: d9416b0
-- latest_verified_commit: 1f505e7
+- latest_verified_commit: 8be6c2f
 
 ## Completed gates
 
@@ -30,6 +30,11 @@
 - metrics: `entity-linking-phase3.v1` — core Top-1 100%; slang/alias Top-3 100%; concepts 100%; nonexistent false-hit 0%; phase-2 action/domain gates retained
 - report: `docs/reports/phase-3-entity-linker.md`, `docs/reports/phase-3-entity-linker.json`
 
+- phase: 4
+- tests: final `npm test` — 602 total / 582 passed / 0 failed / 20 skipped; targeted context/parser/shadow — 10 passed / 0 failed / 0 skipped; phase-0/2/3 evaluations and small-window/comps smokes passed
+- metrics: `context-resolution-phase4.v1` — multi-turn reference accuracy 100%; unnecessary clarification 0%; one-key-question compliance 100%; explicit/conversation/default condition source accuracy 100%
+- report: `docs/reports/phase-4-context-clarification.md`, `docs/reports/phase-4-context-clarification.json`
+
 - acceptance audit: phases 0-3
 - artifact verification: phase reports are tracked and linked to implementation/verification commits `f551390`, `bfcaa5e`, `3c72699`, `2d16226`, `0d25453`, `fe84785`, `8b676fe`, `4996a7d`
 - real LLM: existing one-query `smoke:llm` passed; new T2 `eval:llm:live` passed 20/20 strict requests with `chat` / `deepseek-v4-flash`
@@ -40,17 +45,17 @@
 
 ## Current work
 
-- objective: phase 0-3 acceptance audit complete; preserve shadow-only behavior and wait for authorization to begin phase 4 context resolution
-- files: `src/understanding/`, live/phase-2/3 evaluation datasets and runners, tests, protocol and phase reports
-- assumptions: existing deterministic business rules and IntentEnvelope remain authoritative; live LLM evaluation is opt-in through `TFT_AGENT_LIVE_LLM=1`; the untracked master-plan file remains user-owned and untouched
+- objective: phase 4 complete; begin phase 5 machine-readable capabilities, deterministic matching and bounded planning
+- files: `src/understanding/context-resolver.js`, `src/understanding/ambiguity-policy.js`, phase-4 evaluation dataset/runner/tests and reports
+- assumptions: existing deterministic business rules and IntentEnvelope remain authoritative through phase 4; the untracked master-plan file remains user-owned and untouched
 
 ## Blockers
 
 - blocker: none
-- evidence: no master-plan blocking condition has been triggered; the configured real provider completed the final 20-case T2 smoke
+- evidence: no master-plan blocking condition has been triggered; phase 4 offline, regression and smoke gates all passed
 - user_input_needed: none
 
 ## Next
 
-- next_step: phase 4 — implement context reference resolution and clarification policy only after a new request authorizes continuing beyond phase 3
-- required_checks: multi-turn reference accuracy at least 90%, unnecessary clarification below 5%, one-key-question behavior, full regression and updated offline reports
+- next_step: phase 5 — add machine-readable tool capabilities, deterministic Capability Matcher and a registered-tool-only 1–3 step Planner
+- required_checks: tool selection accuracy at least 95%, no meaningless multi-step plans for single-tool requests, enforced step/tool/token budgets, no retry loops, and untrusted content cannot bypass policy
