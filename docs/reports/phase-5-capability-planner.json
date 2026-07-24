@@ -1,0 +1,75 @@
+{
+  "schemaVersion": "agent_upgrade_phase_report.v1",
+  "phase": 5,
+  "status": "passed",
+  "baselineCommit": "b960439",
+  "implementationCommit": "02559f2",
+  "dataset": {
+    "version": "capability-planning-phase5.v1",
+    "total": 190,
+    "singleToolSupported": 170,
+    "unsupported": 10,
+    "composite": 10
+  },
+  "evaluation": {
+    "command": "npm run eval:phase5",
+    "evaluationVersion": "capability-planner-phase5.v1",
+    "toolSelectionAccuracy": 1,
+    "meaninglessMultiStepPlans": 0,
+    "unsupportedCorrectRate": 1,
+    "compositeBoundedRate": 1
+  },
+  "tests": {
+    "targeted": {
+      "command": "node --test test/phase5-capability-planner.test.js test/agent-tools.test.js test/semantic-shadow.test.js",
+      "total": 14,
+      "passed": 14,
+      "failed": 0,
+      "skipped": 0
+    },
+    "regression": {
+      "command": "npm test",
+      "total": 607,
+      "passed": 587,
+      "failed": 0,
+      "skipped": 20
+    },
+    "previousPhaseEvaluations": {
+      "phase2ActionAccuracy": 0.96,
+      "phase2DomainAccuracy": 0.9766666666666667,
+      "phase3CoreTop1Accuracy": 1,
+      "phase3AliasTop3Recall": 1,
+      "phase4ReferenceAccuracy": 1,
+      "phase4UnnecessaryClarificationRate": 0
+    },
+    "smokes": [
+      {
+        "command": "npm run smoke:small-window",
+        "status": "passed",
+        "hotCacheDurationMs": 4,
+        "localCacheDurationMs": 5
+      },
+      {
+        "command": "npm run smoke:comps",
+        "status": "passed"
+      }
+    ]
+  },
+  "security": {
+    "registeredToolsOnly": true,
+    "maxPlanSteps": 3,
+    "inputSchemaValidation": true,
+    "dependencyValidation": true,
+    "budgetValidation": true,
+    "independentPolicyForExternalOrSideEffectingTools": true,
+    "sideEffectRetryRequiresIdempotencyKeyOrConfirmedFailure": true,
+    "untrustedDescriptionsExcludedFromPlannerCatalog": true
+  },
+  "behaviorDifference": "The semantic shadow chain now deterministically matches TaskFrames to machine-readable tool capabilities and produces a validated one-step plan when one registered tool is sufficient. Composite requests alone may invoke an injected planner, whose output remains limited to one to three registered tools. Legacy deterministic execution remains authoritative until phase 6.",
+  "knownLimitations": [
+    "The repository currently has nine tools, so the stable grouped capability catalog is used and hierarchical tool discovery remains intentionally disabled.",
+    "The phase-5 evaluation is an offline contract set and not production traffic.",
+    "Composite planning requires an injected planner and otherwise downgrades honestly; it cannot invent a tool."
+  ],
+  "rollback": "Revert 02559f2. Phase-5 matching and planning are shadow-only and require no production data rollback."
+}

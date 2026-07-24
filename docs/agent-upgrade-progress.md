@@ -2,11 +2,11 @@
 
 ## Current
 
-- phase: 4
+- phase: 5
 - status: completed
 - branch: codex/wechat-mobile-chat
 - baseline_commit: d9416b0
-- latest_verified_commit: 8be6c2f
+- latest_verified_commit: 02559f2
 
 ## Completed gates
 
@@ -35,6 +35,11 @@
 - metrics: `context-resolution-phase4.v1` — multi-turn reference accuracy 100%; unnecessary clarification 0%; one-key-question compliance 100%; explicit/conversation/default condition source accuracy 100%
 - report: `docs/reports/phase-4-context-clarification.md`, `docs/reports/phase-4-context-clarification.json`
 
+- phase: 5
+- tests: final `npm test` — 607 total / 587 passed / 0 failed / 20 skipped; targeted capability/planner/tool/shadow — 14 passed / 0 failed / 0 skipped; phase-2/3/4 evaluations and small-window/comps smokes passed
+- metrics: `capability-planning-phase5.v1` — tool selection 100%; meaningless single-tool multi-step plans 0; unsupported honest downgrade 100%; bounded composite plans 100%
+- report: `docs/reports/phase-5-capability-planner.md`, `docs/reports/phase-5-capability-planner.json`
+
 - acceptance audit: phases 0-3
 - artifact verification: phase reports are tracked and linked to implementation/verification commits `f551390`, `bfcaa5e`, `3c72699`, `2d16226`, `0d25453`, `fe84785`, `8b676fe`, `4996a7d`
 - real LLM: existing one-query `smoke:llm` passed; new T2 `eval:llm:live` passed 20/20 strict requests with `chat` / `deepseek-v4-flash`
@@ -45,17 +50,17 @@
 
 ## Current work
 
-- objective: phase 4 complete; begin phase 5 machine-readable capabilities, deterministic matching and bounded planning
-- files: `src/understanding/context-resolver.js`, `src/understanding/ambiguity-policy.js`, phase-4 evaluation dataset/runner/tests and reports
-- assumptions: existing deterministic business rules and IntentEnvelope remain authoritative through phase 4; the untracked master-plan file remains user-owned and untouched
+- objective: phase 5 complete; begin phase 6 action-by-action takeover with offline/shadow/canary/active gates and legacy fallback
+- files: tool capability registry, `src/understanding/capability-matcher.js`, `src/agent/task-planner.js`, semantic shadow integration, phase-5 evaluation/tests/reports
+- assumptions: existing deterministic business rules and IntentEnvelope remain authoritative through phase 5; the untracked master-plan file remains user-owned and untouched
 
 ## Blockers
 
 - blocker: none
-- evidence: no master-plan blocking condition has been triggered; phase 4 offline, regression and smoke gates all passed
+- evidence: no master-plan blocking condition has been triggered; phase 5 tool selection, planning, security, regression and smoke gates all passed
 - user_input_needed: none
 
 ## Next
 
-- next_step: phase 5 — add machine-readable tool capabilities, deterministic Capability Matcher and a registered-tool-only 1–3 step Planner
-- required_checks: tool selection accuracy at least 95%, no meaningless multi-step plans for single-tool requests, enforced step/tool/token budgets, no retry loops, and untrusted content cannot bypass policy
+- next_step: phase 6 — implement action-ordered rollout gates for search, rank, recommend, compare, explain and analyze with legacy fallback
+- required_checks: supported effective-answer rate at least 90%, legacy core regression 100%, wrong-tool rate below 1%, layer-locatable traces, 3–5 repeated runs with Pass@k/Pass^k, and sliced quality/latency/Token reporting
