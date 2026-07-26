@@ -3,7 +3,7 @@ import { runtimeError } from "./runtime-errors.js";
 export const DEFAULT_AGENT_RUN_BUDGET = Object.freeze({
   deadlineMs: 10000,
   maxSteps: 12,
-  maxToolCalls: 12,
+  maxToolCalls: 3,
   maxRetriesPerTool: 1,
   maxEvents: 100
 });

@@ -1,7 +1,7 @@
 import { normalizeText } from "../core/normalizer.js";
-import { classifyDomain } from "./domain-gate.js";
+import { classifyDomain } from "../domain/tft/domain-gate.js";
 import { defaultFewShotExampleStore } from "./few-shot-example-store.js";
-import { extractEntityMentions } from "./entity-mention-extractor.js";
+import { extractEntityMentions } from "../domain/tft/entity-mention-extractor.js";
 import { linkTaskFrameEntities } from "./entity-linker.js";
 import {
   buildSemanticParserMessages,
@@ -12,6 +12,11 @@ import {
 import { createTaskFrame, validateTaskFrame } from "./task-frame.js";
 import { resolveTaskFrameContext } from "./context-resolver.js";
 import { applyClarificationPolicy } from "./ambiguity-policy.js";
+import { resolveGameConcept } from "../domain/tft/concept-resolver.js";
+import {
+  deriveTftCapabilityRequirements,
+  isRecognizedTftDomainRequest
+} from "../domain/tft/semantic-capability-rules.js";
 
 const ACTION_PATTERNS = Object.freeze({
   find_video: /视频|視訊|视屏|影片|b站|bilibili/iu,
@@ -23,30 +28,18 @@ const ACTION_PATTERNS = Object.freeze({
   search: /只看|就看|查一下|查下|搜一下|数据|數據/iu
 });
 
-const UNSUPPORTED_PATTERNS = [
-  /视频|視訊|视屏|影片|b站|bilibili/iu,
-  /九五|95/iu,
-  /(?:17\.\d+|历史|歷史).*(?:现在|現在)|(?:现在|現在).*(?:17\.\d+|历史|歷史)/iu,
-  /(?:上个赛季|旧赛季|歷史版本|历史版本|十个版本前|上个版本).*(?:当前|现在|差异|趋势|勝率|胜率|强度)/iu,
-  /霞.*剑圣|霞.*劍聖|剑圣.*霞|劍聖.*霞/iu,
-  /数据库|資料庫|数剧库|數劇庫|任意sql|执行\s*sql|所有玩家信息|所有玩家資料|玩家信息|玩家资料|隐藏战绩|绕过限制|绕过权限|繞過限制|未授权接口|删除统计库|把库拖出来|把庫拖出來/iu
-];
-
 const MISSING_CONTEXT_PATTERNS = [
   /^(?:哥们|麻烦看下|我就想问下哈|想请问|想請問|局内问)?(?:哪个|哪個|啥)装备最(?:厉害|歷害|顶|頂)/u,
   /这套|這套|刚才|剛才/u
 ];
 
-const FAST9_CONCEPT_PATTERN = /(?:\u4e5d\u4e94|95|\u901f\u4e5d)/iu;
-const FAST9_SUPPORTED_ACTIONS = new Set(["recommend", "rank", "search"]);
-
 const EXPLICIT_ACTION_CUES = Object.freeze({
   find_video: /(?:\u89c6\u9891|B\u7ad9|bilibili|\u5f55\u50cf)/iu,
   compare: /(?:\u6bd4\u8f83|\u5bf9\u6bd4|\u8fd8\u662f|\u4e8c\u9009\u4e00|\u9009\u54ea\u4e2a|\u8c01\u66f4|\u8c01\u66f4\u7a33|\u8c01\u66f4\u597d|\u8c01\u66f4\u9ad8|\u9009\u54ea\u4ef6|\u9009\u90a3\u4ef6|(?:\u548c|\u4e0e|\u8ddf).{0,16}(?:\u600e\u4e48\u9009|\u8c01|\u54ea\u4e2a|\u54ea\u4ef6)|\u8fd9\u4fe9.{0,8}\u600e\u4e48\u9009|\u8ddf.{0,12}\u6bd4|\u4e0e.{0,12}\u6bd4|\u6bd4\u600e\u6837|\u6362.{0,8}\u4f1a\u66f4\u597d)/u,
   recommend: /(?:\u63a8\u8350|\u795e\u88c5|\u4e09\u4ef6\u5957|\u600e\u4e48\u51fa\u88c5|\u600e\u4e48\u914d|\u548b\u51fa|\u51fa[\u88c5\u5e84].{0,3}(?:\u600e\u4e48|\u548b)?\u9009|\u548b\u9009|\u548b\u585e|\u600e\u4e48\u585e|\u4e24\u4ef6\u548b\u5e26|\u7ed9\u5565|\u8865\u4e24\u4ef6|\u6765\u4e09\u5957|\u6765\u4e24\u5957|\u518d\u6765.{0,4}(?:\u5019\u9009|\u9635\u5bb9))/u,
-  rank: /(?:\u6392\u540d|\u6392\u884c|\u5f3a\u5ea6\u699c|\u600e\u4e48\u6392|\u6392\u4e00\u4e0b|\u4f18\u5148\u7ea7|\u8c01\u6700\u9876|\u5f3a\u7684[\u8f6c\u4e13]\u804c|\u90fd\u6700\u9ad8|\u6309.{0,18}\u6392|\u6700\u9ad8.{0,10}\u6392)/u,
-  explain: /(?:\u89e3\u91ca|\u4ec0\u4e48\u610f\u601d|\u5565\u610f\u601d|\u662f\u4ec0\u4e48|\u6548\u679c|\u8be6\u60c5|\u5c5e\u6027|\u6bcf\u6863|\u4e3a\u4ec0\u4e48|\u4e3a\u5565|\u4e3a\u751a\u4e48|\u7206\u706b)/u,
-  analyze: /(?:\u5206\u6790|\u8d8b\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u80dc\u7387|\u524d\u56db\u7387|\u5403\u5206\u7387|\u8868\u73b0|\u600e\u4e48\u6837|\u5f3a\u4e0d\u5f3a)/u,
+  rank: /(?:\u6392\u540d|\u6392\u884c|\u699c\u5355|\u5f3a\u5ea6\u699c|\u600e\u4e48\u6392|\u6392\u4e00\u4e0b|\u4f18\u5148\u7ea7|\u8c01\u6700\u9876|\u5f3a\u7684[\u8f6c\u4e13]\u804c|\u90fd\u6700\u9ad8|\u6309.{0,18}\u6392|\u6700\u9ad8.{0,10}\u6392)/u,
+  explain: /(?:\u89e3\u91ca|\u8bf4\u660e|\u4ec0\u4e48\u610f\u601d|\u5565\u610f\u601d|\u662f\u4ec0\u4e48|\u6548\u679c|\u8be6\u60c5|\u5c5e\u6027|\u6bcf\u6863|\u4e3a\u4ec0\u4e48|\u4e3a\u5565|\u4e3a\u751a\u4e48|\u7206\u706b)/u,
+  analyze: /(?:\u5206\u6790|\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u5dee\u591a\u5c11|\u7cbe\u786e.{0,4}\u80dc\u7387|\u70ed\u5ea6.{0,4}\u6da8|\u80dc\u7387|\u524d\u56db\u7387|\u5403\u5206\u7387|\u8868\u73b0|\u600e\u4e48\u6837|\u5f3a\u4e0d\u5f3a)/u,
   search: /(?:\u67e5|\u641c|\u53ea\u770b|\u6570\u636e|\u5019\u9009)/u
 });
 
@@ -79,6 +72,9 @@ function inferAction(text, domain, examples) {
 
 function constraintsFor(text) {
   const constraints = {};
+  if (/(?:\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u70ed\u5ea6.{0,4}\u6da8)/u.test(text)) {
+    constraints.trend = "up";
+  }
   if (/当前|當前|这版|這版|现在|現在/u.test(text)) constraints.patch = "current";
   const historicalPatch = text.match(/\b\d{1,2}\.\d{1,2}\b/u)?.[0];
   if (historicalPatch) constraints.patch = historicalPatch;
@@ -91,7 +87,6 @@ function constraintsFor(text) {
     const numberMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
     constraints.limit = finite(limit, numberMap[limit] ?? null);
   }
-  if (/九五|95|速九/u.test(text)) constraints.strategy = "fast9";
   if (/赌狗|賭狗|赌牌|賭牌|追三|reroll/iu.test(text)) constraints.strategy = "reroll";
   if (/不卷/u.test(text)) constraints.contested = "low";
   if (/新手|无脑|無腦/u.test(text)) constraints.beginnerFriendly = true;
@@ -132,9 +127,6 @@ function outputsFor(action) {
 
 function understandingStatus(text, domain, action, entityMentions, options) {
   if (domain === "out_of_domain") return "out_of_domain";
-  const unsupported = UNSUPPORTED_PATTERNS.some((pattern) => pattern.test(text));
-  const supportedFast9Request = FAST9_CONCEPT_PATTERN.test(text) && FAST9_SUPPORTED_ACTIONS.has(action);
-  if (unsupported && !supportedFast9Request) return "understood_but_unsupported";
   if (
     action === "compare"
     && /(?:\u53e6\u4e00\u4ef6\u88c5\u5907|\u4e24\u4ef6\u5019\u9009\u88c5\u5907|\u6ca1\u8bf4\u540d\u5b57)/u.test(text)
@@ -144,7 +136,11 @@ function understandingStatus(text, domain, action, entityMentions, options) {
   if (MISSING_CONTEXT_PATTERNS.some((pattern) => pattern.test(text)) && !(options.conversation ?? []).length) {
     return "understood_but_missing_context";
   }
-  if (action === "unknown" && entityMentions.length === 0) return "ambiguous";
+  if (
+    action === "unknown"
+    && entityMentions.length === 0
+    && !isRecognizedTftDomainRequest(text)
+  ) return "ambiguous";
   return "understood_and_supported";
 }
 
@@ -234,20 +230,31 @@ function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
     ? deterministicFrame.action
     : providerFrame.action;
   const actionChanged = action !== providerFrame.action;
-  const deterministicStatus = deterministicFrame.understandingStatus;
+  const normalizeUnderstandingStatus = (status) => (
+    status === "out_of_domain"
+      ? "out_of_domain"
+      : status === "understood_but_missing_context"
+        ? "understood_but_missing_context"
+        : status === "ambiguous"
+          ? "ambiguous"
+          : "understood_and_supported"
+  );
+  const deterministicStatus = normalizeUnderstandingStatus(
+    deterministicFrame.understandingStatus
+  );
+  const providerStatus = normalizeUnderstandingStatus(providerFrame.understandingStatus);
   const forceDeterministicStatus = deterministicDomain
-    || deterministicStatus === "understood_but_unsupported"
     || deterministicStatus === "understood_but_missing_context"
     || (
       deterministicStatus === "understood_and_supported"
-      && providerFrame.understandingStatus === "understood_but_missing_context"
+      && providerStatus === "understood_but_missing_context"
     );
   const understandingStatus = deterministicDomain || providerOutOfDomain
     ? "out_of_domain"
     : forceDeterministicStatus
     ? deterministicStatus
-    : providerFrame.understandingStatus;
-  const ambiguities = deterministicDomain || deterministicStatus === "understood_but_unsupported"
+    : providerStatus;
+  const ambiguities = deterministicDomain
     ? deterministicFrame.ambiguities
     : deterministicStatus === "understood_but_missing_context"
       ? deterministicFrame.ambiguities
@@ -486,6 +493,10 @@ export async function parseSemanticTask(input, options = {}) {
     options.clarificationPolicy
   );
   frame = clarificationPolicy.taskFrame;
+  frame = createTaskFrame({
+    ...frame,
+    capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
+  });
 
   const validation = validateTaskFrame(frame);
   if (!validation.valid) {

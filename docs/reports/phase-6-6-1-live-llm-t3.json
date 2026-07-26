@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "live-llm-t3-summary.v1",
+  "sourceReport": ".cache/eval/phase-6-6-1-live-llm-t3.json",
+  "evaluationVersion": "live-llm-t3-evaluation.v2",
+  "datasetVersion": "live-llm-t3-independent.v2",
+  "passed": true,
+  "configuration": {
+    "provider": "chat",
+    "model": "deepseek-v4-flash",
+    "temperature": 0,
+    "streaming": false,
+    "concurrency": 4
+  },
+  "metrics": {
+    "cases": 120,
+    "repetitions": 3,
+    "requests": 360,
+    "successfulRequests": 360,
+    "requestSuccessRate": 1,
+    "providerFallbackRate": 0,
+    "passAtK": 1,
+    "passPowerK": 1,
+    "domainAccuracy": 1,
+    "actionAccuracy": 1,
+    "statusAccuracy": 1,
+    "entityMentionRecall": 1,
+    "entityResolutionTop1Accuracy": 1,
+    "toolSelectionAccuracy": 1,
+    "argumentSemanticAccuracy": 1,
+    "planShapeAccuracy": 1,
+    "clarificationAccuracy": 1,
+    "unsupportedHonestDowngradeRate": 1,
+    "contextPassPowerK": 1,
+    "tokenBudgetPassRate": 1,
+    "latencyBudgetPassRate": 1,
+    "totalTokens": 488707,
+    "averageLatencyMs": 1529.3680877824625,
+    "p95LatencyMs": 1901.2045999765396,
+    "wallMs": 138549.3247998953
+  },
+  "executedAt": "2026-07-26T01:53:08.724Z"
+}

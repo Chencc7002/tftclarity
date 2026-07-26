@@ -179,6 +179,7 @@ const PARAMETER_SCHEMAS = Object.freeze({
   excludedItems: { type: "array", items: { type: "string" } },
   comparisonItems: { type: "array", items: { type: "string" } },
   minSamples: { type: "integer" },
+  strategy: { type: "string" },
   metrics: { type: "array", items: { type: "string" } },
   limit: { type: "integer" },
   query: { type: "string" },

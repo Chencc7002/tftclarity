@@ -30,6 +30,43 @@ export { ToolExecutor } from "./tools/executor.js";
 export { createStructuredToolDefinitions } from "./tools/definitions.js";
 export { STRUCTURED_OPERATION_REGISTRY } from "../retrieval/structured-retriever.js";
 export {
+  EXECUTION_PLAN_SCHEMA_VERSION,
+  EXECUTION_PLAN_VALIDATION_VERSION,
+  compileExecutionPlan,
+  finalizeExecutionPlanArguments,
+  planExecution,
+  validateExecutionPlan
+} from "./execution-plan.js";
+export {
+  EVIDENCE_VALIDATION_SCHEMA_VERSION,
+  EXECUTION_TRACE_SCHEMA_VERSION,
+  ExecutionPlanExecutor,
+  validateExecutionEvidence
+} from "./execution-plan-executor.js";
+export {
+  RESULT_POLICY_EXECUTION_VERSION,
+  RESULT_POLICY_TYPES,
+  RESULT_POLICY_VALIDATION_VERSION,
+  ResultPolicyExecutor,
+  resolveResultPath,
+  validateResultPolicy
+} from "./result-policy-executor.js";
+export {
+  AGENT_STATUS_ENUMS,
+  AGENT_STATUS_PROTOCOL_VERSION,
+  createAgentStatus,
+  statusAfterExecution,
+  statusAfterPlanning,
+  statusAfterUnderstanding,
+  validateAgentStatus
+} from "./status-protocol.js";
+export {
+  PUBLIC_RESULT_COMPARISON_VERSION,
+  SHADOW_COMPARISON_SCHEMA_VERSION,
+  compareExecutionAndLegacyPlans,
+  comparePublicBusinessResults
+} from "./shadow-comparison.js";
+export {
   TASK_PLAN_SCHEMA_VERSION,
   planTask,
   validateTaskPlan

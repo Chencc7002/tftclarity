@@ -23,11 +23,12 @@ test("semantic parser produces compositional task semantics for item comparison"
 test("semantic parser separates understanding from support and domain status", async () => {
   const video = await parseSemanticTask("帮我找个当前版本霞的攻略视频");
   assert.equal(video.taskFrame.action, "find_video");
-  assert.equal(video.taskFrame.understandingStatus, "understood_but_unsupported");
+  assert.equal(video.taskFrame.understandingStatus, "understood_and_supported");
+  assert.ok(video.taskFrame.capabilityRequirements.includes("strategy_video_search"));
 
   const concept = await parseSemanticTask("九五到底是啥意思？");
   assert.equal(concept.taskFrame.action, "explain");
-  assert.equal(concept.taskFrame.understandingStatus, "understood_but_unsupported");
+  assert.equal(concept.taskFrame.understandingStatus, "understood_and_supported");
 
   const mail = await parseSemanticTask("帮我写一封请假邮件");
   assert.equal(mail.taskFrame.domain, "out_of_domain");

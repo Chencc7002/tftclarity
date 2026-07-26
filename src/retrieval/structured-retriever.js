@@ -15,15 +15,15 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   comps_rankings: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   comps_trends: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   comps_analysis: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
