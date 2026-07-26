@@ -345,7 +345,6 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   const theme = context.theme ?? {};
   const colors = theme.colors ?? {};
   const wallpaper = theme.wallpaper ?? {};
-  document.title = theme.documentTitle || `tftclarity · Set ${context.season}`;
   shellEl.dataset.seasonContextId = context.id;
   shellEl.dataset.seasonEnvironment = context.environment;
   shellEl.style.setProperty("--season-primary", colors.primary ?? "#6b63df");

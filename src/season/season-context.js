@@ -22,7 +22,7 @@ const CONTEXTS = [
     },
     themeId: "set17",
     theme: {
-      documentTitle: "tftclarity · Set 17",
+      documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
         "zh-CN": "星神",
         "en-US": "Cosmic"
@@ -69,7 +69,7 @@ const CONTEXTS = [
     },
     themeId: "set18",
     theme: {
-      documentTitle: "tftclarity · Set 18 PBE",
+      documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
         "zh-CN": "PBE 预览",
         "en-US": "PBE Preview"
