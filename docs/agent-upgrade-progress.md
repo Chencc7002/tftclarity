@@ -6,7 +6,7 @@
 - status: completed
 - branch: codex/phase-6-6-execution-plan-cutover
 - baseline_commit: 8690451
-- latest_verified_commit: ee7bd11
+- latest_verified_commit: 03290a7
 - latest_verified_worktree: 2026-07-26
 
 ## Completed gates
@@ -94,5 +94,5 @@
 
 ## Next
 
-- next_step: review and commit the verified post-audit 6.6 hardening before authorizing any phase 7 capability work
+- next_step: review the committed post-audit 6.6 hardening before authorizing any phase 7 capability work
 - required_checks: preserve ExecutionPlan and result-policy sovereignty, strict evidence, split status ownership, three-step/tool-call ceiling, safety boundaries and legacy fallback observability
