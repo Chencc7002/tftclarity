@@ -69,8 +69,11 @@ test("九五 maps to current-patch candidate retrieval, never one hard-coded com
     ["comps_rankings"]
   );
   assert.equal(executionPlanning.plan.steps[0].arguments.patch, "current");
-  assert.equal(executionPlanning.plan.resultPolicy.type, "filter_comp_strategy");
-  assert.equal(executionPlanning.plan.finalEvidenceContract.requireStructuredStats, true);
+  assert.equal(executionPlanning.plan.resultPolicy.type, "filter_by_strategy");
+  assert.equal(
+    executionPlanning.plan.finalEvidenceContract.collectionPath,
+    "rankings.top4Rate"
+  );
 });
 
 test("ExecutionPlan validator rejects arbitrary or non-read-only tool execution", async () => {

@@ -178,6 +178,12 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
       ));
     }
     const previous = prior.frame;
+    const previousCandidatePool = uniqueEntities([
+      ...previous.candidates,
+      ...previous.concepts.filter((entity) => (
+        ["champion", "item"].includes(entity?.expectedType)
+      ))
+    ]);
     if (domain === "out_of_domain" && previous.domain === "tft") {
       domain = "tft";
       understandingStatus = previous.understandingStatus === "out_of_domain"
@@ -189,8 +195,14 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
       subjects = uniqueEntities(previous.subjects);
       inheritedFields.push("subjects");
     }
-    if (references.plural && candidates.length === 0 && previous.candidates.length >= 2) {
-      candidates = uniqueEntities(previous.candidates);
+    if (references.plural && candidates.length === 0 && previousCandidatePool.length >= 2) {
+      candidates = previousCandidatePool;
+      const candidateKeys = new Set(candidates.map((entity) => (
+        `${entity?.expectedType}:${entity?.resolvedId ?? entity?.rawText}`
+      )));
+      concepts = concepts.filter((entity) => !candidateKeys.has(
+        `${entity?.expectedType}:${entity?.resolvedId ?? entity?.rawText}`
+      ));
       inheritedFields.push("candidates");
     } else if (
       (references.deictic || references.generic)
@@ -250,7 +262,7 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
     .filter((entity) => Boolean(entity?.resolvedId));
   const deicticAlreadyGrounded = references.deictic
     && (
-      explicitResolvedEntities.length >= 2
+      explicitResolvedEntities.length >= 1
       || (
         current.action === "compare"
         && candidates.filter((entity) => Boolean(entity?.resolvedId)).length >= 2

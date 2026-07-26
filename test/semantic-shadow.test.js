@@ -4,6 +4,16 @@ import { readFileSync } from "node:fs";
 import { runSemanticShadow } from "../src/understanding/semantic-shadow.js";
 import { recommendForInput } from "../src/core/recommendation-service.js";
 import { createCatalog } from "../src/data/static-data.js";
+import {
+  ExecutionPlanExecutor,
+  ToolExecutor,
+  ToolRegistry,
+  createStructuredToolDefinitions
+} from "../src/agent/index.js";
+import {
+  TFT_COMP_PREFERENCE_RESULT_POLICY_ID,
+  createTftResultPolicyExecutor
+} from "../src/domain/tft/result-policy.js";
 
 const COMP_PAGE_FIXTURE = JSON.parse(readFileSync(
   new URL("./fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url),
@@ -80,10 +90,20 @@ test("production recommendation path runs semantic shadow without changing the l
 });
 
 test("production path routes 九五 through semantic correction and structured comp statistics", async () => {
+  const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({
+    registry: toolRegistry,
+    toolExecutor,
+    resultPolicyExecutor: createTftResultPolicyExecutor()
+  });
   const result = await recommendForInput("给我推荐九五阵容", {
     catalog: createCatalog(),
     useSession: false,
     compResponse: COMP_PAGE_FIXTURE,
+    toolRegistry,
+    toolExecutor,
+    executionPlanExecutor,
     semanticTakeoverKey: "phase65-fast9"
   });
   assert.equal(result.agentRouting.route, "semantic_correction");
@@ -91,6 +111,14 @@ test("production path routes 九五 through semantic correction and structured c
   assert.equal(result.agentRouting.semanticDifference.kind, "trusted_correction");
   assert.deepEqual(result.agentRouting.plannedTools, ["comps_rankings"]);
   assert.equal(result.query.preferenceRequested, true);
-  assert.equal(result.query.preferenceConditions.strategy, "fast9");
+  assert.equal(result.executionPlan.resultPolicy.type, "registered");
+  assert.equal(
+    result.executionPlan.resultPolicy.policyId,
+    TFT_COMP_PREFERENCE_RESULT_POLICY_ID
+  );
+  assert.equal(result.executionTrace.resultPolicy.status, "applied");
+  assert.equal(result.executionTrace.source, "execution_plan_cache");
   assert.equal(result.retrievalPlan.structuredQueries[0].operation, "comps_rankings");
+  assert.equal(result.agentRouting.shadowComparison.resultComparisonStatus, "compared");
+  assert.equal(result.agentRouting.shadowComparison.publicResultComparison.equivalent, true);
 });

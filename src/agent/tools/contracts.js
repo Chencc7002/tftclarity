@@ -65,8 +65,11 @@ export function createToolResult(value = {}) {
     error: value.error ?? null,
     metadata: {
       source: value.metadata?.source ?? null,
+      evidenceType: value.metadata?.evidenceType ?? null,
+      updatedAt: value.metadata?.updatedAt ?? null,
       patch: value.metadata?.patch ?? null,
-      cache: value.metadata?.cache ?? null
+      cache: value.metadata?.cache ?? null,
+      modelGeneratedStatistics: value.metadata?.modelGeneratedStatistics === true
     }
   };
 }

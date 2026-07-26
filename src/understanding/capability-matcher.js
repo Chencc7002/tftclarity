@@ -32,6 +32,7 @@ function scoreCapability(frame, definition, capability) {
   if (!array(capability.requiredConstraints).every((key) => frame?.constraints?.[key] !== undefined)) {
     return null;
   }
+  if (!includesAll(capability.features, frame?.capabilityRequirements)) return null;
 
   const goals = array(capability.goals);
   const outputs = array(capability.outputs);
@@ -72,6 +73,17 @@ function unsupported(frame, considered) {
 
 export function matchTaskCapabilities(taskFrame, registry, options = {}) {
   if (!registry?.list) throw new TypeError("Capability Matcher requires a ToolRegistry");
+  if (
+    taskFrame?.domain === "out_of_domain"
+    || [
+      "out_of_domain",
+      "ambiguous",
+      "understood_but_missing_context",
+      "understood_but_unsupported"
+    ].includes(taskFrame?.understandingStatus)
+  ) {
+    return unsupported(taskFrame, []);
+  }
   const matches = [];
   const considered = [];
   for (const definition of registry.list()) {

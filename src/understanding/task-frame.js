@@ -65,14 +65,36 @@ function normalizeEntity(value = {}) {
   };
 }
 
+function entityIdentity(entity) {
+  const type = entity?.expectedType ?? "game_concept";
+  const value = entity?.resolvedId ?? String(entity?.rawText ?? "").trim().toLocaleLowerCase();
+  return `${type}:${value}`;
+}
+
+function uniqueEntityGroup(values, seen) {
+  const result = [];
+  for (const value of array(values)) {
+    const entity = normalizeEntity(value);
+    const key = entityIdentity(entity);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    result.push(entity);
+  }
+  return result;
+}
+
 export function createTaskFrame(value = {}) {
+  const seenEntities = new Set();
+  const subjects = uniqueEntityGroup(value.subjects, seenEntities);
+  const candidates = uniqueEntityGroup(value.candidates, seenEntities);
+  const concepts = uniqueEntityGroup(value.concepts, seenEntities);
   return {
     schemaVersion: TASK_FRAME_SCHEMA_VERSION,
     domain: String(value.domain ?? "tft"),
     action: ACTION_SET.has(value.action) ? value.action : "unknown",
-    subjects: array(value.subjects).map(normalizeEntity),
-    candidates: array(value.candidates).map(normalizeEntity),
-    concepts: array(value.concepts).map(normalizeEntity),
+    subjects,
+    candidates,
+    concepts,
     constraints: value.constraints && typeof value.constraints === "object" && !Array.isArray(value.constraints)
       ? structuredClone(value.constraints)
       : {},
@@ -85,6 +107,7 @@ export function createTaskFrame(value = {}) {
       ambiguity && typeof ambiguity === "object" ? structuredClone(ambiguity) : String(ambiguity)
     )),
     assumptions: uniqueStrings(value.assumptions),
+    capabilityRequirements: uniqueStrings(value.capabilityRequirements),
     confidence: finiteConfidence(value.confidence, 0),
     understandingStatus: STATUS_SET.has(value.understandingStatus)
       ? value.understandingStatus
@@ -129,7 +152,16 @@ export function validateTaskFrame(value) {
     errors.push("domain must be tft or out_of_domain");
   }
   if (!ACTION_SET.has(value.action)) errors.push("action must be a supported action");
-  for (const key of ["subjects", "candidates", "concepts", "expectedOutput", "contextReferences", "ambiguities", "assumptions"]) {
+  for (const key of [
+    "subjects",
+    "candidates",
+    "concepts",
+    "expectedOutput",
+    "contextReferences",
+    "ambiguities",
+    "assumptions",
+    "capabilityRequirements"
+  ]) {
     if (!Array.isArray(value[key])) errors.push(`${key} must be an array`);
   }
   for (const key of ["subjects", "candidates", "concepts"]) {

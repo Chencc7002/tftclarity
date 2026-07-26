@@ -6,12 +6,18 @@ import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import {
   AgentRuntime,
+  ExecutionPlanExecutor,
   ToolExecutor,
   ToolRegistry,
+  createAgentStatus,
   createStructuredToolDefinitions
 } from "../agent/index.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import { normalizeAlias } from "../core/normalizer.js";
+import { compileExecutionPlan } from "../agent/execution-plan.js";
+import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
+import { matchTaskCapabilities } from "../understanding/capability-matcher.js";
+import { taskFrameFromIntentEnvelope } from "../understanding/task-frame.js";
 import {
   anonymousScopeKey,
   createAnonymousAccessService
@@ -109,6 +115,24 @@ const VALID_SORTS = new Set([
   "avg_first",
   "games_first"
 ]);
+
+function defaultAgentStatusForPayload(payload = {}) {
+  const clarification = payload.type === "clarification"
+    || payload.clarification?.needsClarification;
+  const refused = payload.type === "out_of_domain";
+  return createAgentStatus({
+    understandingStatus: refused
+      ? "out_of_domain"
+      : clarification
+        ? "missing_context"
+        : "understood",
+    capabilityStatus: refused ? "unsupported" : clarification ? "pending" : "supported",
+    planningStatus: clarification || refused ? "not_planned" : "planned",
+    executionStatus: clarification || refused ? "pending" : "completed",
+    evidenceStatus: clarification || refused ? "insufficient" : "sufficient",
+    finalOutcome: refused ? "refused" : clarification ? "clarified" : "answered"
+  });
+}
 const VALID_STRUCTURED_PARSER_MODES = new Set([
   "inherit",
   "auto",
@@ -523,12 +547,55 @@ function attachDetailRetrievalMetadata(payload, input, catalog) {
     catalog
   });
   const retrievalPlan = DETAIL_RETRIEVAL_PLANNER.plan(intentEnvelope);
-  return { ...payload, intentEnvelope, retrievalPlan };
+  const taskFrame = taskFrameFromIntentEnvelope(intentEnvelope);
+  return {
+    ...payload,
+    taskFrame,
+    intentEnvelope,
+    retrievalPlan
+  };
 }
 
 async function executeRegisteredDetailPayload(payload, runtime, context = {}) {
   const query = payload?.retrievalPlan?.structuredQueries?.[0];
   if (!query || !runtime.toolExecutor || !context.agentRun) return payload;
+  const taskFrame = await context.agentRun.stage("resolving", async () => payload.taskFrame);
+  const { capabilityMatch, executionPlanning } = await context.agentRun.stage("planning", async () => {
+    const matched = matchTaskCapabilities(taskFrame, runtime.toolRegistry);
+    return {
+      capabilityMatch: matched,
+      executionPlanning: compileExecutionPlan(taskFrame, matched, {
+        registry: runtime.toolRegistry
+      })
+    };
+  });
+  if (executionPlanning.plan && runtime.executionPlanExecutor) {
+    const execution = await runtime.executionPlanExecutor.execute(executionPlanning.plan, {
+      handlers: {
+        [query.operation]: async () => ({
+          ...payload,
+          updatedAt: payload.updatedAt
+            ?? payload.source?.updatedAt
+            ?? context.agentRun.startedAt
+            ?? new Date().toISOString()
+        })
+      },
+      run: context.agentRun,
+      signal: context.signal,
+      intent: payload.intentEnvelope?.intent
+    });
+    if (execution.status !== "completed") {
+      throw Object.assign(new Error("Detail ExecutionPlan failed"), {
+        code: "execution_plan_failed",
+        execution
+      });
+    }
+    const value = execution.results[0].toolResult.value;
+    value.capabilityMatch = capabilityMatch;
+    value.executionPlan = executionPlanning.plan;
+    value.executionTrace = execution.trace;
+    return value;
+  }
   const result = await runtime.toolExecutor.execute(query.operation, query.params ?? {}, {
     source: query.source,
     handler: async () => payload,
@@ -1627,6 +1694,12 @@ export function createSmallWindowRuntime(options = {}) {
     }
   }));
   const toolExecutor = options.toolExecutor ?? new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = options.executionPlanExecutor
+    ?? new ExecutionPlanExecutor({
+      registry: toolRegistry,
+      toolExecutor,
+      resultPolicyExecutor: createTftResultPolicyExecutor()
+    });
   const agentRuntime = options.agentRuntime ?? new AgentRuntime({
     budget: options.agentRunBudget,
     onEvent: options.agentRunEvent
@@ -1690,7 +1763,8 @@ export function createSmallWindowRuntime(options = {}) {
     recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput,
     agentRuntime,
     toolRegistry,
-    toolExecutor
+    toolExecutor,
+    executionPlanExecutor
   };
 }
 
@@ -2352,18 +2426,32 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const publicSeasonContext = runtime.seasonContextService.publicRecord(seasonContext);
 
   const completeResponse = async (payload) => {
-    payload.seasonContext = publicSeasonContext;
-    await persistQueryResponse(payload, runtime, {
-      scope,
-      conversationId,
-      input,
-      startedAt,
-      runId: context.agentRun?.runId ?? null
-    });
-    if (context.accessService && context.visitor) {
-      payload.access = context.accessService.publicStatus(context.visitor);
-    }
-    return { statusCode: 200, payload };
+    const respond = async () => {
+      payload.agent ??= {
+        status: defaultAgentStatusForPayload(payload),
+        route: null,
+        executionPlan: payload.executionPlan ?? null,
+        executionTrace: payload.executionTrace ?? null,
+        shadowComparison: null,
+        failureStage: null,
+        metrics: null
+      };
+      payload.seasonContext = publicSeasonContext;
+      await persistQueryResponse(payload, runtime, {
+        scope,
+        conversationId,
+        input,
+        startedAt,
+        runId: context.agentRun?.runId ?? null
+      });
+      if (context.accessService && context.visitor) {
+        payload.access = context.accessService.publicStatus(context.visitor);
+      }
+      return { statusCode: 200, payload };
+    };
+    return context.agentRun?.stage
+      ? context.agentRun.stage("responding", respond)
+      : respond();
   };
 
   const storedPreferences = await loadStoredSmallWindowPreferences(runtime, scope);
@@ -2444,6 +2532,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     effectivePatch: seasonContext.effectivePatch,
     sessionKey,
     toolExecutor: requestRuntime.toolExecutor,
+    toolRegistry: requestRuntime.toolRegistry,
+    executionPlanExecutor: requestRuntime.executionPlanExecutor,
+    executionPlanSovereignty: true,
     agentRun: context.agentRun,
     abortSignal: context.signal
   });
@@ -2461,7 +2552,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   }
 
   let semanticEvidence = [];
-  if (requestRuntime.semanticRetriever && result.retrievalPlan?.semanticQueries?.length) {
+  const usesExecutionPlanResult = String(result.executionTrace?.source ?? "").startsWith("execution_plan");
+  if (
+    !usesExecutionPlanResult
+    && requestRuntime.semanticRetriever
+    && result.retrievalPlan?.semanticQueries?.length
+  ) {
     try {
       const retrieve = () => retrieveSemanticPlan(result.retrievalPlan, requestRuntime.semanticRetriever, {
           seasonContextId: seasonContext.id,
@@ -2522,9 +2618,19 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         () => generateEvidenceBackedConclusion(conclusionOptions)
       )
       : await generateEvidenceBackedConclusion(conclusionOptions);
-  if (context.agentRun && !context.agentRun.terminal) {
-    await context.agentRun.stage("validating", async () => null);
-  }
+  const responseEvidenceValidation = context.agentRun && !context.agentRun.terminal
+    ? await context.agentRun.stage("validating", async () => {
+      const conclusionUsesEvidence = generatedConclusion?.status !== "generated"
+        || Boolean(result.source || result.executionTrace?.status === "completed");
+      return {
+        schemaVersion: "response-evidence-validation.v1",
+        sufficient: conclusionUsesEvidence,
+        executionSource: result.executionTrace?.source
+          ?? (result.retrievalPlan ? "legacy_fallback" : "structured_response"),
+        errors: conclusionUsesEvidence ? [] : ["generated_conclusion_without_structured_evidence"]
+      };
+    })
+    : null;
 
   const payload = serializeRecommendation(result, catalog, {
     durationMs: Date.now() - startedAt,
@@ -2536,7 +2642,26 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   });
   payload.answer = {
     ...(payload.answer ?? {}),
-    generatedConclusion
+    generatedConclusion,
+    evidenceValidation: responseEvidenceValidation
+  };
+  payload.agent = {
+    status: result.agentStatus ?? null,
+    route: result.agentRouting ? {
+      schemaVersion: result.agentRouting.schemaVersion,
+      selectedPath: result.agentRouting.route === "legacy_fallback"
+        ? "legacy"
+        : "execution_plan",
+      route: result.agentRouting.route,
+      fallbackReason: result.agentRouting.route === "legacy_fallback"
+        ? result.agentRouting.reason
+        : null
+    } : null,
+    executionPlan: result.executionPlan ?? null,
+    executionTrace: result.executionTrace ?? null,
+    shadowComparison: result.agentRouting?.shadowComparison ?? null,
+    failureStage: result.agentTrace?.failureLayer ?? null,
+    metrics: result.agentTrace?.metrics ?? null
   };
   if (result.intentEnvelope) payload.intentEnvelope = result.intentEnvelope;
   if (result.retrievalPlan) payload.retrievalPlan = result.retrievalPlan;
@@ -2563,18 +2688,11 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     principalId: context.visitor?.scope ?? "anonymous",
     seasonContextId: body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID
   }, async (agentRun) => {
-    await agentRun.stage("resolving", async () => null);
-    await agentRun.stage("planning", async () => null);
-    const value = await agentRun.stage(
-      "retrieving",
-      () => handleRecommendRequestInternal(body, runtime, {
-        ...context,
-        agentRun,
-        signal: context.signal
-      })
-    );
-    await agentRun.stage("responding", async () => null);
-    return value;
+    return handleRecommendRequestInternal(body, runtime, {
+      ...context,
+      agentRun,
+      signal: context.signal
+    });
   }, {
     signal: context.signal,
     classifyResult: classifyAgentHttpResult

@@ -2,11 +2,12 @@
 
 ## Current
 
-- phase: 6.5
+- phase: 6.6.1
 - status: completed
-- branch: codex/wechat-mobile-chat
-- baseline_commit: ea7617c
-- latest_verified_commit: this_phase_commit
+- branch: codex/phase-6-6-execution-plan-cutover
+- baseline_commit: 8690451
+- latest_verified_commit: 03290a7
+- latest_verified_worktree: 2026-07-26
 
 ## Completed gates
 
@@ -54,9 +55,21 @@
 - safety: legacy equivalent and fallback paths retained; `RetrievalPlan` retained; ExecutionPlan allows only registered first-party read-only tools; arbitrary tools and video tools remain disabled; no real canary was started
 - report: `docs/reports/phase-6-5-semantic-correction.md`, `docs/reports/phase-6-5-semantic-correction.json`, `docs/reports/phase-6-5-live-llm-t3.md`, `docs/reports/phase-6-5-live-llm-t3.json`
 
+- phase: 6.6.1
+- tests: final `npm test` — 644 total / 624 passed / 0 failed / 20 skipped; phase-6.6 architecture, parameter-integrity, status, domain-isolation and HTTP sovereignty tests passed; phase-2/6/6.6 evaluations passed
+- metrics: `architecture-convergence-phase66.v2` — 120 core cases plus 36 independent natural-language holdout cases; valid plans, tool names, complete arguments, ExecutionPlan source, parameter equivalence, deterministic public-projection equivalence and unsupported honest downgrade all 100%; average/max steps 1/1; wrong tools 0%; 3/3 arbitrary tool, URL and SQL attempts rejected
+- result sovereignty: `ResultPolicyExecutor` now applies filtering, ordering and trimming from ExecutionPlan; registered TFT policies reuse the deterministic domain algorithm without returning to RetrievalPlan
+- evidence: step and final contracts enforce evidence type, source, declared fields, timestamps and the prohibition on model-generated statistics
+- parameter integrity: TaskFrame removes cross-role duplicate resolved entities; ExecutionPlan and TFT query adapters preserve stable unique arrays; T3 rejects duplicate, missing and extra entity arguments
+- result comparison: production composition requests record actual post-policy ExecutionPlan and legacy public-result comparisons; offline deterministic projection evidence is labeled separately
+- real LLM T3: `live-llm-t3-evaluation.v2` / `live-llm-t3-independent.v2` — 120 independent cases × 3 runs; 360/360 requests; 0 provider fallback; Pass@3 and Pass^3 100%; executed at `2026-07-26T02:45:31.188Z`
+- T3 quality: domain/action/status, exact entity mention/Top-1, tool selection, duplicate-free complete argument semantics, plan shape, clarification, unsupported honest downgrade, context Pass^3, token and latency budgets all 100%
+- safety: production cut-over traffic executes directly from ExecutionPlan; default run budget permits at most three tool calls; RetrievalPlan remains observable fallback and is not a prerequisite for a valid sovereign ExecutionPlan; legacy semantic augmentation is disabled whenever the result source is ExecutionPlan
+- report: `docs/phase-6-6-architecture-convergence.md`, `docs/reports/phase-6-6-1-live-llm-t3.md`, `docs/reports/phase-6-6-1-live-llm-t3.json`
+
 - phase: 8A
 - tests: `npm test` — 625 total / 605 passed / 0 failed / 20 skipped; targeted phase-8A failure-loop tests — 5 passed / 0 failed; `npm run eval:phase8a` — PASS
-- metrics: 6 query events → 5 candidates; 1 duplicate; 5 clusters; 0 privacy violations; 2 human-verified exports; ignored/rejected states exercised; injection cases excluded; production apply hooks 0; `find_video` = `understood_but_unsupported`
+- metrics: 6 query events → 5 candidates; 1 duplicate; 5 clusters; 0 privacy violations; 2 human-verified exports; ignored/rejected states exercised; injection cases excluded; production apply hooks 0; `find_video` is understood by Parser and downgraded by Capability Matcher
 - report: `docs/reports/phase-8a-controlled-failure-loop.md`, `docs/reports/phase-8a-controlled-failure-loop.json`
 
 - acceptance audit: phases 0-3
@@ -69,17 +82,17 @@
 
 ## Current work
 
-- objective: phase 8A controlled failure loop complete; stop here per task scope
-- files: isolated query_event failure classifier, privacy cleaner, candidate store with deduplication/clustering/review/revoke/delete, evaluation export, phase-8A runner/tests/reports
-- assumptions: candidate data is evaluation-only and never mutates prompts, aliases, tools, routing or production behavior; video tools and Bilibili integration remain unimplemented; the untracked master-plan file remains user-owned and untouched
+- objective: phase 6.6.1 architecture convergence and post-audit parameter-integrity hardening completed; stop before phase 7 capability work
+- files: ExecutionPlan compiler/executor, ResultPolicyExecutor, strict evidence validation, runtime stage orchestration, split status protocol, TFT concept and result-policy registries, public-result shadow comparison, independent holdout, T3 v2 checks, phase-6.6 tests and governance docs
+- assumptions: legacy IntentEnvelope/RetrievalPlan and TaskPlan remain only behind compatibility surfaces during rollout; no new product capability, video tool, arbitrary SQL, arbitrary URL or unregistered tool is introduced
 
 ## Blockers
 
 - blocker: none
-- evidence: no master-plan blocking condition was triggered; phase 6.5 offline, compatibility, safety, stability, full regression and real-LLM T3 gates passed
+- evidence: full regression, Phase 2/6/6.6 offline evaluations and real-LLM T3 v2 all passed
 - user_input_needed: none
 
 ## Next
 
-- next_step: stop after phase 8A; do not enter phase 8B, phase 8C, phase 7, video-tool development or Bilibili integration
-- required_checks: future work must preserve exact version/scope isolation, human-review gating, revoke/delete semantics and zero automatic production application
+- next_step: review the committed post-audit 6.6 hardening before authorizing any phase 7 capability work
+- required_checks: preserve ExecutionPlan and result-policy sovereignty, strict evidence, split status ownership, three-step/tool-call ceiling, safety boundaries and legacy fallback observability

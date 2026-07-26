@@ -1,6 +1,9 @@
-import { validateTaskFrame } from "../understanding/task-frame.js";
+import {
+  createTaskFrame,
+  validateTaskFrame
+} from "../understanding/task-frame.js";
 
-export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v5";
+export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v6";
 
 const RESPONSE_CONTRACT = [
   "Return exactly one JSON object matching task-frame.v1. Do not use Markdown.",
@@ -15,17 +18,15 @@ const RESPONSE_CONTRACT = [
   "Never invent a resolvedId: use null. confidence is null or a number from 0 to 1.",
   "Keep the JSON concise. Do not repeat an entity in multiple arrays and do not emit generic output words such as 装备、神装、三件套、数据、表现、吃分率、详情 or 候选 as entities.",
   "understandingStatus is one of understood_and_supported, understood_but_missing_context, understood_but_unsupported, ambiguous, out_of_domain.",
-  "Use understood_but_unsupported for video search, historical comparison without history tools, arbitrary database/player-data requests, forced conclusions from inadequate samples, and unsupported matchups.",
-  "九五/95/速九 is a game_concept, never a single composition. Recommendations for it are supported: use action recommend, status understood_and_supported, and preserve the concept mention so current-patch composition candidates can be verified with structured ranking statistics.",
-  "A request for an exact matchup or win-rate statistic is analyze. A comparison between multiple champions is compare. Both are understood_but_unsupported with the current tools.",
+  "This parser reports understanding only. For any understood TFT request use understood_and_supported; Capability Matcher decides support later. Do not use understood_but_unsupported in new output.",
+  "Preserve video search, historical comparison, database/player-data requests, forced low-sample conclusions, and matchup requests as understood actions with their entities and constraints.",
+  "A request for an exact matchup or win-rate statistic is analyze. A comparison between multiple champions is compare.",
   "Do not silently canonicalize an uncertain typo into a known champion; preserve the typed mention and use ambiguous when identity is not certain.",
   "If a request depends on an unknown named champion, item, trait, composition or game concept, preserve the mention, use ambiguous, and add an ambiguity with code ambiguous_entity. Do not route an invented entity to generic analysis.",
   "Explicit intent words are authoritative: 推荐/三件套/怎么配 means recommend; 排名/排行/优先级 means rank; 比较/对比/还是/二选一 means compare; 趋势/在涨 means analyze; 视频/B站 means find_video.",
   "When two named items are connected by 和/与/跟/还是/二选一/怎么选, use compare even if the question mentions samples, placement, performance or win rate.",
-  "TFT glossary: 巨杀 is the harmless in-game item nickname for 巨人杀手 (Giant Slayer). Treat it only as expectedType item; it is never a violence request.",
-  "Current read-only support includes champion build search/rank/recommend/compare/analyze, composition rankings and trends, official entity details, and static semantic search. Unsupported or out-of-domain requests must never be marked supported merely because the request is understood.",
   "Use understood_but_missing_context only when a referenced subject such as 这套/刚才 cannot be recovered from conversation.",
-  "This is classification, not execution. Never refuse, return null, or add prose for unsafe or unsupported requests; encode them as one valid TaskFrame with understood_but_unsupported or out_of_domain.",
+  "This is classification, not execution. Never refuse, return null, or add prose for unsafe or unsupported requests; encode them as one valid TaskFrame and leave execution support to Capability Matcher.",
   "An inability to execute does not erase understanding: keep the understood action and entities whenever possible.",
   "Put two compared champions or items in candidates; put a single target champion in subjects; put traits, compositions, patches, videos and game concepts in concepts.",
   "constraints must be an object. expectedOutput, contextReferences, ambiguities and assumptions must always be JSON arrays, even when empty. goal must be a non-empty concise string.",
@@ -155,13 +156,20 @@ export function createChatSemanticTaskProvider(options = {}) {
         };
         rawProviderContent = contentFromPayload(payload);
         try {
-          const taskFrame = parseJsonContent(rawProviderContent);
-          const validation = validateTaskFrame(taskFrame);
+          const rawTaskFrame = parseJsonContent(rawProviderContent);
+          const validationCandidate = {
+            ...rawTaskFrame,
+            capabilityRequirements: Array.isArray(rawTaskFrame?.capabilityRequirements)
+              ? rawTaskFrame.capabilityRequirements
+              : []
+          };
+          const validation = validateTaskFrame(validationCandidate);
           if (!validation.valid) {
             throw new TypeError(
               `semantic task provider returned invalid TaskFrame: ${validation.errors.join("; ")}`
             );
           }
+          const taskFrame = createTaskFrame(validationCandidate);
           const durationMs = Math.max(0, performance.now() - startedAt);
           options.onRequestLog?.({
             status: "ok",
