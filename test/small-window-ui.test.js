@@ -371,9 +371,9 @@ test("result templates cover recommendations, item rankings, comps, risks, and e
   assert.match(appJs, /function renderRecommendationResult/);
   assert.match(appJs, /function renderItemRankings/);
   assert.match(appJs, /function renderCompRankings/);
-  assert.match(appJs, /renderCompCard\(comp, "trend", index\)/);
+  assert.match(appJs, /renderCompCards\(rising, "trend"\)/);
   assert.match(appJs, /data-comp-metric=/);
-  assert.match(appJs, /renderCompCard\(comp, "trendDown", index\)/);
+  assert.match(appJs, /renderCompCards\(falling, "trendDown"\)/);
   assert.match(appJs, /class="contested-label"/);
   assert.match(appJs, /winShareHighest/);
   assert.match(appJs, /class="best-label"/);
@@ -411,6 +411,46 @@ test("comp units are keyboard-accessible shortcuts for explicit high-sample buil
   assert.match(styles, /\.comp-unit-query:hover/);
   assert.match(styles, /\.comp-unit-query:focus-visible/);
   assert.match(i18n, /compUnitQueryDisplay/);
+});
+
+test("comp cards lazy-load verified formation and augment details", () => {
+  assert.match(appJs, /function compDetailDescriptor\(comp\)/);
+  assert.match(appJs, /comp: descriptor\.compId/);
+  assert.match(appJs, /clusterId: descriptor\.dataClusterId/);
+  assert.match(appJs, /units: descriptor\.units\.join\(","\)/);
+  assert.match(appJs, /units\.join\(","\)\]\.join\("\|"\)/);
+  assert.match(appJs, /const detailDataAttribute = detailDescriptor \? `data-comp-detail-key=/);
+  assert.match(appJs, /<details class="comp-card"[\s\S]*?\$\{detailDataAttribute\}/);
+  assert.match(appJs, /\[data-comp-detail\]\[data-comp-detail-key\]/);
+  assert.match(appJs, /function positionedFormationUnits/);
+  assert.match(appJs, /const metaTftCellIndex/);
+  assert.match(appJs, /\(3 - Math\.floor\(\(number - 1\) \/ 7\)\) \* 7 \+ \(\(number - 1\) % 7\)/);
+  const metaTftVisualCell = (number) => (3 - Math.floor((number - 1) / 7)) * 7 + ((number - 1) % 7);
+  assert.deepEqual([1, 7, 8, 22, 28].map(metaTftVisualCell), [21, 27, 14, 0, 6]);
+  assert.match(appJs, /Array\.from\(\{ length: 28 \}/);
+  assert.match(appJs, /resultContentEl\.addEventListener\("toggle"/);
+  assert.match(appJs, /let firstCompCard = true/);
+  assert.match(appJs, /const initiallyOpen = firstCompCard/);
+  assert.match(appJs, /compDetailRequests: new Map\(\)/);
+  assert.match(appJs, /function clearCompDetailState/);
+  assert.match(appJs, /state\.compDetailCache\.clear\(\)/);
+  assert.match(appJs, /state\.compDetailRequests\.clear\(\)/);
+  assert.match(appJs, /function augmentCompatibilityTier/);
+  assert.match(appJs, /\^\[SABCD\]\$/);
+  assert.match(appJs, /function augmentRarity\(entry\)/);
+  assert.match(appJs, /const DISPLAYED_COMP_AUGMENT_RARITIES = new Set\(\["gold", "prismatic"\]\)/);
+  assert.match(appJs, /const DISPLAYED_COMP_AUGMENT_LIMIT = 6/);
+  assert.match(appJs, /DISPLAYED_COMP_AUGMENT_RARITIES\.has\(augmentRarity\(entry\)\)/);
+  assert.match(appJs, /entry\.enName \?\? entry\.name \?\? localizedName\(entry, entry\.apiName\)/);
+  assert.match(styles, /\.comp-hex-board/);
+  assert.match(styles, /\.comp-hex-cell/);
+  assert.match(styles, /\.comp-augment-chip/);
+  assert.match(styles, /\.comp-augment-list \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.comp-augment-tier\[data-tier="S"\]/);
+  assert.match(styles, /\.comp-augment-tier\[data-tier="D"\]/);
+  assert.match(i18n, /compDetailLoading:/);
+  assert.match(i18n, /compFormation:/);
+  assert.match(i18n, /augmentCompatibilityTier:/);
 });
 
 test("comp unit drill-down preserves and restores the previous comp result", () => {

@@ -5,6 +5,10 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import {
+  normalizeCompAugmentTiers,
+  normalizeCompDetailsPositioning
+} from "../data/comp-detail-adapter.js";
+import {
   AgentRuntime,
   ExecutionPlanExecutor,
   ToolExecutor,
@@ -75,6 +79,11 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17317;
 export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
 export const DEFAULT_COMP_RANKINGS_TIMEOUT_MS = 8000;
+export const DEFAULT_COMP_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+export const DEFAULT_AUGMENT_LOOKUP_CACHE_TTL_MS = 30 * 60 * 1000;
+export const MAX_COMP_DETAIL_UNITS = 12;
+export const MAX_COMP_DETAIL_AUGMENTS = 6;
+const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
 export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
 export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
@@ -1713,6 +1722,18 @@ export function createSmallWindowRuntime(options = {}) {
     compsClient,
     cacheStore,
     cacheStoreInfo,
+    compDetailCache: options.compDetailCache ?? new Map(),
+    compDetailLoadPromises: options.compDetailLoadPromises ?? new Map(),
+    compDetailCacheTtlMs: Math.max(
+      1000,
+      Number(options.compDetailCacheTtlMs ?? DEFAULT_COMP_DETAIL_CACHE_TTL_MS)
+    ),
+    augmentLookupCache: options.augmentLookupCache ?? new Map(),
+    augmentLookupLoadPromises: options.augmentLookupLoadPromises ?? new Map(),
+    augmentLookupCacheTtlMs: Math.max(
+      1000,
+      Number(options.augmentLookupCacheTtlMs ?? DEFAULT_AUGMENT_LOOKUP_CACHE_TTL_MS)
+    ),
     requestTimeouts: {
       explorerTimeoutMs: metaTFTClient.timeoutMs ?? requestTimeouts.explorerTimeoutMs,
       catalogTimeoutMs: catalogMetaTFTClient.timeoutMs ?? requestTimeouts.catalogTimeoutMs,
@@ -2722,6 +2743,12 @@ export async function handleCacheClearRequest(runtime) {
     sessionState: 0
   };
   const catalogCache = invalidateRuntimeCatalog(runtime);
+  const compDetailCache = runtime.compDetailCache?.size ?? 0;
+  const augmentLookupCache = runtime.augmentLookupCache?.size ?? 0;
+  runtime.compDetailCache?.clear?.();
+  runtime.compDetailLoadPromises?.clear?.();
+  runtime.augmentLookupCache?.clear?.();
+  runtime.augmentLookupLoadPromises?.clear?.();
 
   return {
     ok: true,
@@ -2729,9 +2756,326 @@ export async function handleCacheClearRequest(runtime) {
       queryCache: storeCleared.queryCache ?? 0,
       defaultContextCache: storeCleared.defaultContextCache ?? 0,
       sessionState: storeCleared.sessionState ?? 0,
-      catalogCache
+      catalogCache,
+      compDetailCache,
+      augmentLookupCache
     }
   };
+}
+
+function normalizeCompDetailIdentifier(value, field) {
+  const normalized = String(value ?? "").trim();
+  if (!/^\d{1,12}$/u.test(normalized)) {
+    throw Object.assign(new TypeError(`${field} must be a MetaTFT numeric identifier`), {
+      statusCode: 400,
+      code: "invalid_comp_detail_identifier",
+      field
+    });
+  }
+  return normalized;
+}
+
+function normalizeCompDetailUnitApiNames(value) {
+  const candidates = Array.isArray(value)
+    ? value
+    : String(value ?? "").split(",");
+  const seen = new Set();
+  const units = [];
+  for (const candidate of candidates) {
+    const apiName = String(candidate ?? "").trim();
+    if (!apiName || seen.has(apiName)) continue;
+    if (!/^TFT[A-Za-z0-9_]+$/u.test(apiName)) {
+      throw Object.assign(new TypeError("units must contain TFT unit API identifiers"), {
+        statusCode: 400,
+        code: "invalid_comp_detail_unit",
+        field: "units"
+      });
+    }
+    seen.add(apiName);
+    units.push(apiName);
+  }
+  if (units.length === 0 || units.length > MAX_COMP_DETAIL_UNITS) {
+    throw Object.assign(new RangeError(`units must contain 1 to ${MAX_COMP_DETAIL_UNITS} unique champions`), {
+      statusCode: 400,
+      code: "invalid_comp_detail_units",
+      field: "units"
+    });
+  }
+  return units;
+}
+
+function metaTftDetailTimestamp(...responses) {
+  const value = responses
+    .map((response) => response?.updated)
+    .find((candidate) => candidate !== undefined && candidate !== null);
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0
+    ? new Date(timestamp).toISOString()
+    : null;
+}
+
+function catalogForCompDetail(runtime, seasonContext) {
+  if (runtime.catalog) return runtime.catalog;
+  const key = runtimeCatalogKey({
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
+    patch: seasonContext.providerPatch,
+    queue: seasonContext.source.queue
+  });
+  return runtime.catalogCache?.get(key)?.catalog ?? createCatalog();
+}
+
+function compDetailUnitLabel(apiName, catalog) {
+  const record = catalog?.unitByApiName?.get(apiName);
+  return record?.zhName ?? record?.displayName ?? record?.name ?? apiName;
+}
+
+function metaTftAugmentIconUrl(texture) {
+  const normalized = String(texture ?? "").trim();
+  if (!/^[A-Za-z0-9_-]+$/u.test(normalized)) return null;
+  return `https://cdn.metatft.com/file/metatft/augments/${normalized.toLowerCase()}.png`;
+}
+
+function normalizeCompDetailAugmentRarity(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "3" || /prismatic|orange|彩色|棱彩/u.test(normalized)) return "prismatic";
+  if (normalized === "2" || /gold|金色/u.test(normalized)) return "gold";
+  if (normalized === "1" || /silver|银色/u.test(normalized)) return "silver";
+  return "unknown";
+}
+
+function augmentLookupRecords(response) {
+  const content = response?.content?.content ?? response?.content ?? response ?? {};
+  const records = Array.isArray(content?.augments) ? content.augments : [];
+  return new Map(records
+    .map((record) => [String(record?.apiName ?? "").trim(), record])
+    .filter(([apiName]) => apiName));
+}
+
+function augmentLookupCacheKey(tftSet, locale) {
+  return `${String(tftSet ?? "").trim()}|${String(locale ?? "").trim().toLowerCase()}`;
+}
+
+async function loadCachedAugmentLookup(runtime, tftSet, locale = "zh_cn") {
+  if (!tftSet || typeof runtime.compsClient?.getAugmentLookup !== "function") return null;
+  runtime.augmentLookupCache ??= new Map();
+  runtime.augmentLookupLoadPromises ??= new Map();
+  const key = augmentLookupCacheKey(tftSet, locale);
+  const now = Date.now();
+  const cached = runtime.augmentLookupCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.response;
+  if (cached) runtime.augmentLookupCache.delete(key);
+
+  const existing = runtime.augmentLookupLoadPromises.get(key);
+  if (existing) return existing;
+
+  const load = Promise.resolve().then(() => runtime.compsClient.getAugmentLookup(tftSet, locale));
+  runtime.augmentLookupLoadPromises.set(key, load);
+  try {
+    const response = await load;
+    if (response) {
+      const ttlMs = Math.max(1000, Number(
+        runtime.augmentLookupCacheTtlMs ?? DEFAULT_AUGMENT_LOOKUP_CACHE_TTL_MS
+      ));
+      runtime.augmentLookupCache.set(key, {
+        response,
+        expiresAt: Date.now() + ttlMs
+      });
+    }
+    return response;
+  } finally {
+    if (runtime.augmentLookupLoadPromises.get(key) === load) {
+      runtime.augmentLookupLoadPromises.delete(key);
+    }
+  }
+}
+
+function decorateCompDetailFormation(positioning, catalog, updatedAt) {
+  return {
+    ...positioning,
+    units: positioning.units.map((unit) => {
+      const asset = ASSET_RESOLVER.resolveUnit(unit.apiName);
+      return {
+        ...unit,
+        name: compDetailUnitLabel(unit.apiName, catalog),
+        iconUrl: asset.iconUrl,
+        fallbackIconUrl: asset.fallbackIconUrl ?? null,
+        assetFallback: Boolean(asset.fallback),
+        items: []
+      };
+    }),
+    source: {
+      ...positioning.source,
+      updatedAt
+    }
+  };
+}
+
+function decorateCompDetailAugments(augments, lookupResponse, updatedAt) {
+  const lookup = augmentLookupRecords(lookupResponse);
+  const eligibleEntries = augments.augments.map((augment) => {
+    const record = lookup.get(augment.apiName);
+    const rarity = normalizeCompDetailAugmentRarity(record?.rarity);
+    return {
+      apiName: augment.apiName,
+      name: String(record?.name ?? augment.apiName),
+      iconUrl: metaTftAugmentIconUrl(record?.texture),
+      tier: augment.tier,
+      rarity,
+      tags: Array.isArray(record?.tags) ? record.tags.map(String).slice(0, 4) : []
+    };
+  }).filter((entry) => DISPLAYED_COMP_AUGMENT_RARITIES.has(entry.rarity));
+  const entries = eligibleEntries.slice(0, MAX_COMP_DETAIL_AUGMENTS);
+  const status = augments.status === "available" && entries.length === 0
+    ? "unavailable"
+    : augments.status;
+  const reasons = [...augments.reasons];
+  if (augments.status === "available" && entries.length === 0) {
+    reasons.push({
+      code: lookupResponse
+        ? "no_gold_or_prismatic_augments"
+        : "augment_rarity_lookup_unavailable"
+    });
+  }
+  return {
+    status,
+    semantics: "comp_compatibility_tier",
+    entries,
+    totalEntries: eligibleEntries.length,
+    totalCandidates: augments.totalAugments,
+    truncated: entries.length < eligibleEntries.length,
+    reasons,
+    filter: {
+      rarities: [...DISPLAYED_COMP_AUGMENT_RARITIES],
+      limit: MAX_COMP_DETAIL_AUGMENTS
+    },
+    source: {
+      ...augments.source,
+      updatedAt,
+      lookupEndpoint: lookupResponse ? "https://data.metatft.com/lookups/{set}_latest_zh_cn.json" : null,
+      lookupStatus: lookupResponse ? "available" : "unavailable"
+    }
+  };
+}
+
+async function createCompDetailPayload(input, runtime, seasonContext) {
+  const catalog = catalogForCompDetail(runtime, seasonContext);
+  const detailRequest = typeof runtime.compsClient?.getCompDetails === "function"
+    ? runtime.compsClient.getCompDetails({ comp: input.compId, cluster_id: input.clusterId })
+    : Promise.reject(new Error("MetaTFT comp-details client is unavailable"));
+  const augmentRequest = typeof runtime.compsClient?.getCompAugmentTiers === "function"
+    ? runtime.compsClient.getCompAugmentTiers({ cluster_id: input.clusterId })
+    : Promise.reject(new Error("MetaTFT comp-augment-tiers client is unavailable"));
+  const [detailResult, augmentResult] = await Promise.allSettled([detailRequest, augmentRequest]);
+  const detailResponse = detailResult.status === "fulfilled" ? detailResult.value : null;
+  const augmentResponse = augmentResult.status === "fulfilled" ? augmentResult.value : null;
+  const updatedAt = metaTftDetailTimestamp(detailResponse, augmentResponse);
+  const positioning = normalizeCompDetailsPositioning(detailResponse ?? {}, input.units, {
+    compId: input.compId,
+    clusterId: input.clusterId
+  });
+  const normalizedAugments = normalizeCompAugmentTiers(augmentResponse ?? {}, input.compId, {
+    clusterId: input.clusterId
+  });
+  const tftSet = String(detailResponse?.tft_set ?? augmentResponse?.tft_set ?? "").trim();
+  let lookupResponse = null;
+  let lookupWarning = null;
+  if (normalizedAugments.status === "available" && tftSet) {
+    try {
+      lookupResponse = await loadCachedAugmentLookup(runtime, tftSet, "zh_cn");
+    } catch {
+      lookupWarning = "MetaTFT augment lookup is temporarily unavailable; gold and prismatic recommendations are hidden because rarity cannot be verified.";
+    }
+  }
+
+  const warnings = [
+    ...(detailResult.status === "rejected" ? ["MetaTFT positioning detail is temporarily unavailable."] : []),
+    ...(augmentResult.status === "rejected" ? ["MetaTFT comp augment tiers are temporarily unavailable."] : []),
+    ...(lookupWarning ? [lookupWarning] : [])
+  ];
+  const formation = decorateCompDetailFormation(positioning, catalog, updatedAt);
+  const augmentRecommendations = decorateCompDetailAugments(normalizedAugments, lookupResponse, updatedAt);
+
+  return {
+    ok: true,
+    compId: input.compId,
+    clusterId: input.clusterId,
+    seasonContextId: seasonContext.id,
+    formation,
+    augmentRecommendations,
+    source: {
+      provider: "MetaTFT",
+      detailsEndpoint: formation.source.endpoint,
+      augmentEndpoint: augmentRecommendations.source.endpoint,
+      updatedAt,
+      risk: "MetaTFT is an unofficial third-party data source. Positioning and augment compatibility are refreshed on demand and may change."
+    },
+    warnings
+  };
+}
+
+function compDetailCacheKey(input, seasonContext) {
+  return [
+    seasonContext.id,
+    input.clusterId,
+    input.compId,
+    input.units.join(",")
+  ].join("|");
+}
+
+function withCompDetailCacheMetadata(payload, cache) {
+  return {
+    ...payload,
+    cache
+  };
+}
+
+export async function handleCompDetailRequest(options = {}, runtime) {
+  const input = {
+    compId: normalizeCompDetailIdentifier(options.compId ?? options.comp, "comp"),
+    clusterId: normalizeCompDetailIdentifier(options.clusterId ?? options.cluster_id, "clusterId"),
+    units: normalizeCompDetailUnitApiNames(options.units)
+  };
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const key = compDetailCacheKey(input, seasonContext);
+  runtime.compDetailCache ??= new Map();
+  runtime.compDetailLoadPromises ??= new Map();
+  const now = Date.now();
+  const cached = runtime.compDetailCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return withCompDetailCacheMetadata(cached.payload, {
+      hit: true,
+      updatedAt: cached.updatedAt,
+      expiresAt: new Date(cached.expiresAt).toISOString()
+    });
+  }
+  if (cached) runtime.compDetailCache.delete(key);
+
+  const existing = runtime.compDetailLoadPromises.get(key);
+  if (existing) {
+    const payload = await existing;
+    return withCompDetailCacheMetadata(payload, { hit: true, coalesced: true });
+  }
+
+  const load = createCompDetailPayload(input, runtime, seasonContext);
+  runtime.compDetailLoadPromises.set(key, load);
+  try {
+    const payload = await load;
+    const updatedAt = new Date().toISOString();
+    const ttlMs = Math.max(1000, Number(runtime.compDetailCacheTtlMs ?? DEFAULT_COMP_DETAIL_CACHE_TTL_MS));
+    const expiresAt = Date.now() + ttlMs;
+    runtime.compDetailCache.set(key, { payload, updatedAt, expiresAt });
+    return withCompDetailCacheMetadata(payload, {
+      hit: false,
+      updatedAt,
+      expiresAt: new Date(expiresAt).toISOString()
+    });
+  } finally {
+    if (runtime.compDetailLoadPromises.get(key) === load) {
+      runtime.compDetailLoadPromises.delete(key);
+    }
+  }
 }
 
 function normalizeFeedbackType(value) {
@@ -3922,6 +4266,15 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, statusCode, payload);
       }
 
+      if (req.method === "GET" && url.pathname === "/api/comp-details") {
+        return sendJson(res, 200, await handleCompDetailRequest({
+          compId: url.searchParams.get("comp"),
+          clusterId: url.searchParams.get("clusterId"),
+          units: url.searchParams.get("units"),
+          seasonContextId: url.searchParams.get("seasonContextId")
+        }, runtime));
+      }
+
       if (req.method === "GET" && url.pathname === "/api/season-contexts") {
         return sendJson(res, 200, {
           ok: true,
@@ -3980,7 +4333,14 @@ export function createSmallWindowHandler(options = {}) {
         if (accessService.config.enabled) {
           return sendJson(res, 200, {
             ok: true,
-            cleared: { queryCache: 0, defaultContextCache: 0, sessionState: 0, catalogCache: 0 }
+            cleared: {
+              queryCache: 0,
+              defaultContextCache: 0,
+              sessionState: 0,
+              catalogCache: 0,
+              compDetailCache: 0,
+              augmentLookupCache: 0
+            }
           });
         }
         return sendJson(res, 200, await handleCacheClearRequest(runtime));

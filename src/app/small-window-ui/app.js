@@ -41,6 +41,9 @@ const state = {
   responseCounter: 0,
   currentResponseId: null,
   compRankingMetric: null,
+  compDetailCache: new Map(),
+  compDetailRequests: new Map(),
+  compDetailDescriptors: new Map(),
   resultNavigation: [],
   feedbackByCard: {},
   explanationFeedback: null,
@@ -803,7 +806,311 @@ function renderCompUnit(unit, comp, expanded = false) {
   </div>`;
 }
 
-function renderCompCard(comp, metricKey, index) {
+function compDetailDescriptor(comp) {
+  const compId = String(comp?.source?.clusterId ?? "").trim();
+  const dataClusterId = String(comp?.source?.dataClusterId ?? "").trim();
+  if (!compId || !dataClusterId) return null;
+  const units = [...new Set((comp?.units ?? [])
+    .map((unit) => String(unit?.apiName ?? "").trim())
+    .filter((apiName) => /^TFT[\w-]+$/i.test(apiName)))];
+  const seasonContextId = String(state.seasonContextId ?? "").trim();
+  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|");
+  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units };
+  state.compDetailDescriptors.set(key, descriptor);
+  return descriptor;
+}
+
+function normalizedCompDetailStatus(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function boardCellIndex(cell) {
+  const coordinate = (value, maximum) => {
+    if (value === "" || value === null || value === undefined) return null;
+    const number = Number(value);
+    return Number.isInteger(number) && number >= 0 && number <= maximum ? number : null;
+  };
+  const zeroBasedIndex = (value) => {
+    const number = coordinate(value, 27);
+    return number === null ? null : number;
+  };
+  const metaTftCellIndex = (value) => {
+    const number = Number(value);
+    // MetaTFT counts cells bottom-first, without serpentine rows: 1..7 => 21..27, 22..28 => 0..6.
+    return Number.isInteger(number) && number >= 1 && number <= 28
+      ? (3 - Math.floor((number - 1) / 7)) * 7 + ((number - 1) % 7)
+      : null;
+  };
+
+  if (Array.isArray(cell) && cell.length >= 2) {
+    const row = coordinate(cell[0], 3);
+    const column = coordinate(cell[1], 6);
+    return row === null || column === null ? null : row * 7 + column;
+  }
+  if (cell && typeof cell === "object") {
+    const direct = zeroBasedIndex(cell.index ?? cell.cellIndex);
+    if (direct !== null) return direct;
+    const row = coordinate(cell.row ?? cell.r ?? cell.y, 3);
+    const column = coordinate(cell.column ?? cell.col ?? cell.c ?? cell.x, 6);
+    return row === null || column === null ? null : row * 7 + column;
+  }
+  if (typeof cell === "string") {
+    const trimmed = cell.trim();
+    if (/^\d+$/u.test(trimmed)) return metaTftCellIndex(trimmed);
+    const match = trimmed.match(/^(\d+)\s*[,/:|-]\s*(\d+)$/u);
+    if (match) {
+      const row = coordinate(match[1], 3);
+      const column = coordinate(match[2], 6);
+      return row === null || column === null ? null : row * 7 + column;
+    }
+    return null;
+  }
+  return metaTftCellIndex(cell);
+}
+
+function normalizedDetailItem(item) {
+  if (typeof item === "string") return { apiName: item, name: item };
+  return item && typeof item === "object" ? item : {};
+}
+
+function positionedFormationUnits(comp, formation) {
+  const status = normalizedCompDetailStatus(formation?.status);
+  if (status === "unavailable" || status === "error" || status === "missing") return new Map();
+  const listedUnits = new Map((comp?.units ?? []).map((unit) => [String(unit?.apiName ?? ""), unit]));
+  const placed = new Map();
+  for (const sourceUnit of formation?.units ?? []) {
+    const cell = boardCellIndex(sourceUnit?.cell);
+    const apiName = String(sourceUnit?.apiName ?? "").trim();
+    if (cell === null || !apiName || placed.has(cell)) continue;
+    const listedUnit = listedUnits.get(apiName) ?? {};
+    const detailItems = Array.isArray(sourceUnit?.items) ? sourceUnit.items : null;
+    placed.set(cell, {
+      ...listedUnit,
+      ...sourceUnit,
+      apiName,
+      name: sourceUnit?.name ?? listedUnit.name ?? apiName,
+      iconUrl: sourceUnit?.iconUrl ?? listedUnit.iconUrl ?? null,
+      fallbackIconUrl: sourceUnit?.fallbackIconUrl ?? listedUnit.fallbackIconUrl ?? null,
+      targetStarLevel: sourceUnit?.targetStarLevel ?? listedUnit.targetStarLevel ?? null,
+      items: detailItems?.length ? detailItems : (listedUnit.items ?? [])
+    });
+  }
+  return placed;
+}
+
+function renderCompBoardUnit(unit, comp) {
+  const unitName = localizedName(unit, unit.apiName);
+  const targetStarLevel = Number(unit.targetStarLevel);
+  const queryStarLevel = targetStarLevel === 3 ? 3 : 2;
+  const queryLabel = t("queryCompUnit", {
+    star: queryStarLevel,
+    unit: unitName,
+    comp: localizedName(comp)
+  });
+  const targetStars = Number.isInteger(targetStarLevel) && targetStarLevel >= 3
+    ? `<span class="board-target-star" aria-hidden="true">${"★".repeat(Math.min(4, targetStarLevel))}</span>`
+    : "";
+  const items = (unit.items ?? []).slice(0, 3).map(normalizedDetailItem);
+  return `<div class="comp-board-unit comp-unit-query${unit.core ? " core" : ""}"
+    data-comp-unit-query
+    data-unit-api-name="${escapeHtml(unit.apiName)}"
+    data-unit-name="${escapeHtml(unitName)}"
+    data-unit-star-level="${queryStarLevel}"
+    role="button"
+    tabindex="0"
+    title="${escapeHtml(queryLabel)}"
+    aria-label="${escapeHtml(queryLabel)}">
+    ${targetStars}
+    ${assetThumb(unit.iconUrl, unitName, "board-unit-icon", unit.fallbackIconUrl)}
+    ${items.length ? `<span class="comp-board-unit-items">${items.map((item) => assetThumb(item.iconUrl, localizedName(item, item.name ?? item.apiName), "tiny-item-icon")).join("")}</span>` : ""}
+  </div>`;
+}
+
+function renderCompFormation(comp, formation, placedUnits) {
+  if (!placedUnits.size) {
+    return `<section class="comp-formation" data-status="unavailable"><h3>${escapeHtml(t("compFormation"))}</h3><p>${escapeHtml(t("compFormationUnavailable"))}</p></section>`;
+  }
+  return `<section class="comp-formation" data-status="available">
+    <h3>${escapeHtml(t("compFormation"))}</h3>
+    <div class="comp-hex-board" role="group" aria-label="${escapeHtml(t("compFormation"))}">
+      ${Array.from({ length: 28 }, (_, cell) => {
+        const row = Math.floor(cell / 7);
+        const unit = placedUnits.get(cell);
+        return `<div class="comp-hex-cell${row % 2 ? " is-offset" : ""}${unit ? " is-occupied" : ""}" data-cell="${cell}" data-row="${row}" data-column="${cell % 7}">${unit ? renderCompBoardUnit(unit, comp) : ""}</div>`;
+      }).join("")}
+    </div>
+  </section>`;
+}
+
+function augmentCompatibilityTier(entry) {
+  const tier = String(entry?.tier ?? "").trim().toUpperCase();
+  return /^[SABCD]$/u.test(tier) ? tier : "unknown";
+}
+
+function augmentCompatibilityLabel(tier) {
+  return tier === "unknown"
+    ? t("augmentCompatibilityUnavailable")
+    : t("augmentCompatibilityTier", { value: tier });
+}
+
+function augmentRarity(entry) {
+  const raw = String(entry?.rarity ?? "").trim().toLowerCase();
+  if (raw === "3" || /prismatic|orange/u.test(raw)) return "prismatic";
+  if (raw === "2" || /gold/u.test(raw)) return "gold";
+  if (raw === "1" || /silver/u.test(raw)) return "silver";
+  return "unknown";
+}
+
+function augmentRarityLabel(rarity) {
+  return t({
+    prismatic: "augmentRarityPrismatic",
+    gold: "augmentRarityGold",
+    silver: "augmentRaritySilver",
+    unknown: "augmentRarityUnknown"
+  }[rarity] ?? "augmentRarityUnknown");
+}
+
+const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
+const DISPLAYED_COMP_AUGMENT_LIMIT = 6;
+
+function availableAugmentEntries(recommendations) {
+  const status = normalizedCompDetailStatus(recommendations?.status);
+  if (status === "unavailable" || status === "error" || status === "missing") return [];
+  return (recommendations?.entries ?? [])
+    .filter((entry) => (
+      entry
+      && typeof entry === "object"
+      && (entry.apiName || entry.name)
+      && DISPLAYED_COMP_AUGMENT_RARITIES.has(augmentRarity(entry))
+    ))
+    .slice(0, DISPLAYED_COMP_AUGMENT_LIMIT);
+}
+
+function renderCompAugments(entries) {
+  if (!entries.length) return "";
+  return `<section class="comp-augment-recommendations">
+    <h3>${escapeHtml(t("compAugmentRecommendations"))}</h3>
+    <div class="comp-augment-list">
+      ${entries.map((entry) => {
+        const tier = augmentCompatibilityTier(entry);
+        const rarity = augmentRarity(entry);
+        const name = entry.enName ?? entry.name ?? localizedName(entry, entry.apiName);
+        const compatibilityLabel = augmentCompatibilityLabel(tier);
+        return `<div class="comp-augment-chip" data-tier="${tier}" data-rarity="${rarity}" title="${escapeHtml(`${name} · ${compatibilityLabel}`)}">
+          ${assetThumb(entry.iconUrl, name, "augment-icon", entry.fallbackIconUrl)}
+          <span class="comp-augment-copy"><strong>${escapeHtml(name)}</strong>${rarity === "unknown" ? "" : `<small>${escapeHtml(augmentRarityLabel(rarity))}</small>`}</span>
+          <span class="comp-augment-tier" data-tier="${tier}">${escapeHtml(compatibilityLabel)}</span>
+        </div>`;
+      }).join("")}
+    </div>
+  </section>`;
+}
+
+function compDetailSourceLabel(source) {
+  return [source?.provider, source?.endpoint].map((value) => String(value ?? "").trim()).filter(Boolean).join(" / ");
+}
+
+function renderCompDetailContent(descriptor) {
+  const detailState = state.compDetailCache.get(descriptor.key);
+  if (!detailState || detailState.status === "loading") {
+    return `<div class="comp-detail-state" data-status="loading" aria-live="polite">${escapeHtml(t("compDetailLoading"))}</div>`;
+  }
+  if (detailState.status === "error") {
+    return `<div class="comp-detail-state" data-status="error" role="alert"><span>${escapeHtml(t("compDetailLoadFailed"))}</span><small>${escapeHtml(detailState.error ?? "")}</small><button type="button" data-retry-comp-detail data-comp-detail-key="${escapeHtml(descriptor.key)}">${escapeHtml(t("retry"))}</button></div>`;
+  }
+  const detail = detailState.data ?? {};
+  const placedUnits = positionedFormationUnits(descriptor.comp, detail.formation);
+  const augmentEntries = availableAugmentEntries(detail.augmentRecommendations);
+  if (!placedUnits.size && !augmentEntries.length) {
+    return `<div class="comp-detail-state" data-status="unavailable">${escapeHtml(t("compDetailUnavailable"))}</div>`;
+  }
+  const sourceLabel = compDetailSourceLabel(detail.source);
+  return `${renderCompFormation(descriptor.comp, detail.formation, placedUnits)}${renderCompAugments(augmentEntries)}${sourceLabel ? `<small class="comp-detail-source">${escapeHtml(t("sourceLabel"))}：${escapeHtml(sourceLabel)}</small>` : ""}`;
+}
+
+function renderCompDetailPanel(descriptor) {
+  if (!descriptor) {
+    return `<section class="comp-tactical-detail" data-status="unavailable"><div class="comp-detail-state" data-status="unavailable">${escapeHtml(t("compDetailUnavailable"))}</div></section>`;
+  }
+  return `<section class="comp-tactical-detail" data-comp-detail data-comp-detail-key="${escapeHtml(descriptor.key)}" data-comp-detail-comp="${escapeHtml(descriptor.compId)}" data-comp-detail-cluster-id="${escapeHtml(descriptor.dataClusterId)}" data-comp-detail-units="${escapeHtml(descriptor.units.join(","))}">${renderCompDetailContent(descriptor)}</section>`;
+}
+
+function updateCompDetailPanels(key) {
+  const descriptor = state.compDetailDescriptors.get(key);
+  if (!descriptor) return;
+  for (const panel of resultContentEl.querySelectorAll("[data-comp-detail][data-comp-detail-key]")) {
+    if (panel.dataset.compDetailKey === key) panel.innerHTML = renderCompDetailContent(descriptor);
+  }
+}
+
+async function loadCompDetail(descriptor, { retry = false } = {}) {
+  const cached = state.compDetailCache.get(descriptor.key);
+  if (!retry && (cached?.status === "ready" || cached?.status === "unavailable" || cached?.status === "loading")) return;
+  if (state.compDetailRequests.has(descriptor.key)) return state.compDetailRequests.get(descriptor.key);
+
+  state.compDetailCache.set(descriptor.key, { status: "loading" });
+  updateCompDetailPanels(descriptor.key);
+  const request = (async () => {
+    try {
+      const params = new URLSearchParams({
+        comp: descriptor.compId,
+        clusterId: descriptor.dataClusterId,
+        seasonContextId: descriptor.seasonContextId,
+        units: descriptor.units.join(",")
+      });
+      const response = await fetch(`/api/comp-details?${params.toString()}`, {
+        headers: { accept: "application/json" }
+      });
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      if (!response.ok || payload?.ok === false) throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      const detail = payload?.detail ?? payload?.data ?? payload ?? {};
+      const hasFormation = positionedFormationUnits(descriptor.comp, detail.formation).size > 0;
+      const hasAugments = availableAugmentEntries(detail.augmentRecommendations).length > 0;
+      state.compDetailCache.set(descriptor.key, {
+        status: hasFormation || hasAugments ? "ready" : "unavailable",
+        data: detail
+      });
+    } catch (error) {
+      state.compDetailCache.set(descriptor.key, {
+        status: "error",
+        error: error?.message ?? t("compDetailLoadFailed")
+      });
+    } finally {
+      state.compDetailRequests.delete(descriptor.key);
+      updateCompDetailPanels(descriptor.key);
+    }
+  })();
+  state.compDetailRequests.set(descriptor.key, request);
+  return request;
+}
+
+function loadCompDetailForCard(card) {
+  const key = card?.dataset?.compDetailKey;
+  const descriptor = key ? state.compDetailDescriptors.get(key) : null;
+  if (!descriptor) return;
+  return loadCompDetail(descriptor);
+}
+
+function queueOpenCompDetailLoads() {
+  queueMicrotask(() => {
+    for (const card of resultContentEl.querySelectorAll(".comp-card[open][data-comp-detail-key]")) {
+      void loadCompDetailForCard(card);
+    }
+  });
+}
+
+function clearCompDetailState() {
+  state.compDetailCache.clear();
+  state.compDetailRequests.clear();
+  state.compDetailDescriptors.clear();
+}
+
+function renderCompCard(comp, metricKey, initiallyOpen = false) {
   const mainTraits = (comp.traits ?? []).filter((trait) => !/UniqueTrait|SummonTrait/.test(trait.filterId ?? trait.apiName)).slice(0, 3);
   const coreUnits = (comp.units ?? []).filter((unit) => unit.core).slice(0, 4);
   const foldedUnits = coreUnits.length ? coreUnits : (comp.units ?? []).slice(0, 5);
@@ -817,11 +1124,14 @@ function renderCompCard(comp, metricKey, index) {
     : `${formatNumber(comp.stats?.games ?? 0)} ${t("games")}`;
   const trendVariant = metricKey === "trend" ? "trend" : metricKey === "trendDown" ? "trend-down" : "ranking";
   const signature = compSignature(comp);
+  const detailDescriptor = compDetailDescriptor(comp);
+  const detailDataAttribute = detailDescriptor ? `data-comp-detail-key="${escapeHtml(detailDescriptor.key)}"` : "";
   return `
     <details class="comp-card" data-variant="${trendVariant}"
       data-comp-name="${escapeHtml(localizedName(comp))}"
       data-comp-signature="${escapeHtml(signature)}"
-      ${index === 0 ? "open" : ""}>
+      ${detailDataAttribute}
+      ${initiallyOpen ? "open" : ""}>
       <summary>
         <div class="comp-summary-main">
           <strong>${escapeHtml(localizedName(comp))}</strong>
@@ -844,6 +1154,7 @@ function renderCompCard(comp, metricKey, index) {
           <span>${t("appearanceShort")} ${rate(appearanceRate)}</span>
         </div>
         ${metricKey === "trend" || metricKey === "trendDown" ? `<div class="trend-model-line"><span>${escapeHtml(compTrendSourceLabel(comp))}</span><small>${t("trendWindow")}</small></div>` : ""}
+        ${renderCompDetailPanel(detailDescriptor)}
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, comp, true)).join("")}</div>
         <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
         <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
@@ -952,6 +1263,12 @@ function renderCompRankings(data) {
       <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
     return;
   }
+  let firstCompCard = true;
+  const renderCompCards = (comps, metricKey) => (comps ?? []).map((comp) => {
+    const initiallyOpen = firstCompCard;
+    firstCompCard = false;
+    return renderCompCard(comp, metricKey, initiallyOpen);
+  }).join("");
   setResponseHtml(`
     <div class="comp-overview">
       <strong>${t(isTrendView ? "currentCompTrends" : "currentCompRanking")}</strong>
@@ -962,12 +1279,13 @@ function renderCompRankings(data) {
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${isTrendView ? renderCompTrendNotice(data, [...rising, ...falling]) : ""}
     ${isPopularView ? `<div class="popular-ranking-toolbar"><span>${t("popularCompSample", { value: 21 })}</span>${metricSwitch}</div>` : ""}
-    ${isTrendView && rising.length ? `<section class="ranking-section improving-section"><h2>${t("risingComps")}</h2><p class="trend-method">${t("risingFormula")}</p>${rising.map((comp, index) => renderCompCard(comp, "trend", index)).join("")}</section>` : ""}
-    ${isTrendView && falling.length ? `<section class="ranking-section falling-section"><h2>${t("fallingComps")}</h2><p class="trend-method">${t("fallingFormula")}</p>${falling.map((comp, index) => renderCompCard(comp, "trendDown", index)).join("")}</section>` : ""}
-    ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${popularity.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
-    ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
-    ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
+    ${isTrendView && rising.length ? `<section class="ranking-section improving-section"><h2>${t("risingComps")}</h2><p class="trend-method">${t("risingFormula")}</p>${renderCompCards(rising, "trend")}</section>` : ""}
+    ${isTrendView && falling.length ? `<section class="ranking-section falling-section"><h2>${t("fallingComps")}</h2><p class="trend-method">${t("fallingFormula")}</p>${renderCompCards(falling, "trendDown")}</section>` : ""}
+    ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${renderCompCards(popularity, "popularity")}</section>` : ""}
+    ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${renderCompCards(comps, key)}</section>`).join("")}
+    ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${renderCompCards(references, "popularity")}</section>` : ""}
     <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
+  queueOpenCompDetailLoads();
 }
 
 function feedbackActions(cardIndex) {
@@ -1590,11 +1908,12 @@ function renderCompAnalysis(data) {
       ${(answer.evidence ?? []).length ? `<h3>${escapeHtml(t("compAnalysisData"))}</h3><ul>${answer.evidence.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
       ${(answer.risks ?? []).length ? `<h3>${escapeHtml(t("compAnalysisRisks"))}</h3><ul>${answer.risks.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
     </section>
-    ${target ? `<section class="ranking-section"><h2>${escapeHtml(t("compAnalysisTargetData"))}</h2>${renderCompCard(target, "avgPlacement", 0)}</section>` : ""}
+    ${target ? `<section class="ranking-section"><h2>${escapeHtml(t("compAnalysisTargetData"))}</h2>${renderCompCard(target, "avgPlacement", true)}</section>` : ""}
     <div class="comp-footnote">${escapeHtml(t("compAnalysisSources", { value: sourceTypes.join(" / ") || "unavailable" }))}</div>
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${sourceAndRisk(data)}
   `);
+  queueOpenCompDetailLoads();
 }
 
 const EQUIPMENT_CORE_RESULT_TYPES = new Set([
@@ -1915,6 +2234,7 @@ function renderResult(data) {
   }
   state.lastResult = data;
   state.compRankingMetric = null;
+  clearCompDetailState();
   state.lastResultId = data.queryId ?? null;
   state.feedbackByCard = {};
   state.explanationFeedback = null;
@@ -2590,6 +2910,14 @@ async function handleResultClick(event) {
     restorePreviousCompResult();
     return;
   }
+  const retryCompDetailButton = event.target.closest("button[data-retry-comp-detail]");
+  if (retryCompDetailButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const descriptor = state.compDetailDescriptors.get(retryCompDetailButton.dataset.compDetailKey);
+    if (descriptor) void loadCompDetail(descriptor, { retry: true });
+    return;
+  }
   const compUnitTarget = event.target.closest("[data-comp-unit-query]");
   if (compUnitTarget) {
     event.preventDefault();
@@ -2781,6 +3109,11 @@ async function handleResultClick(event) {
 
 resultEl.addEventListener("click", handleResultClick);
 resultContentEl.addEventListener("click", handleResultClick);
+resultContentEl.addEventListener("toggle", (event) => {
+  const card = event.target;
+  if (!card?.matches?.(".comp-card[open][data-comp-detail-key]")) return;
+  void loadCompDetailForCard(card);
+}, true);
 mobileResultBackButton.addEventListener("click", returnToMobileChat);
 window.addEventListener("popstate", (event) => {
   setMobileView(event.state?.tftclarityMobileView === "result" ? "result" : "chat");
@@ -2827,6 +3160,7 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.responsesById.clear();
   state.currentResponseId = null;
   state.resultNavigation = [];
+  clearCompDetailState();
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   rawOutputEl.textContent = "";
@@ -3024,6 +3358,7 @@ clearCacheButton.addEventListener("click", async () => {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("clearFailed"));
+    clearCompDetailState();
     rawOutputEl.textContent = "";
     renderEmptyResult();
     setStatusKey("clearHistory");
