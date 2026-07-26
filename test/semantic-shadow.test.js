@@ -119,4 +119,6 @@ test("production path routes 九五 through semantic correction and structured c
   assert.equal(result.executionTrace.resultPolicy.status, "applied");
   assert.equal(result.executionTrace.source, "execution_plan_cache");
   assert.equal(result.retrievalPlan.structuredQueries[0].operation, "comps_rankings");
+  assert.equal(result.agentRouting.shadowComparison.resultComparisonStatus, "compared");
+  assert.equal(result.agentRouting.shadowComparison.publicResultComparison.equivalent, true);
 });

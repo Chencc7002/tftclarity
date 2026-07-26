@@ -308,6 +308,10 @@ export async function runPhase66Evaluation() {
     schemaVersion: "phase66-evaluation-report.v1",
     evaluationVersion: PHASE66_EVALUATION_VERSION,
     datasetVersion: "semantic-takeover-phase6.v1",
+    evidenceLevels: {
+      publicResultEquivalence: "deterministic_public_projection_fixture",
+      productionResultEquivalence: "runtime_shadow_comparison_test"
+    },
     passed: Object.values(gates).every(Boolean),
     gates,
     metrics,

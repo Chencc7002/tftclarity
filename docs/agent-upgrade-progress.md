@@ -56,12 +56,14 @@
 - report: `docs/reports/phase-6-5-semantic-correction.md`, `docs/reports/phase-6-5-semantic-correction.json`, `docs/reports/phase-6-5-live-llm-t3.md`, `docs/reports/phase-6-5-live-llm-t3.json`
 
 - phase: 6.6.1
-- tests: final `npm test` — 640 total / 620 passed / 0 failed / 20 skipped; phase-6.6 architecture/status, domain-isolation and HTTP sovereignty tests — 24 passed / 0 failed; phase-2/6/6.6 evaluations passed
-- metrics: `architecture-convergence-phase66.v2` — 120 core cases plus 36 independent natural-language holdout cases; valid plans, tool names, complete arguments, ExecutionPlan source, parameter equivalence, public business-result equivalence and unsupported honest downgrade all 100%; average/max steps 1/1; wrong tools 0%; 3/3 arbitrary tool, URL and SQL attempts rejected
+- tests: final `npm test` — 644 total / 624 passed / 0 failed / 20 skipped; phase-6.6 architecture, parameter-integrity, status, domain-isolation and HTTP sovereignty tests passed; phase-2/6/6.6 evaluations passed
+- metrics: `architecture-convergence-phase66.v2` — 120 core cases plus 36 independent natural-language holdout cases; valid plans, tool names, complete arguments, ExecutionPlan source, parameter equivalence, deterministic public-projection equivalence and unsupported honest downgrade all 100%; average/max steps 1/1; wrong tools 0%; 3/3 arbitrary tool, URL and SQL attempts rejected
 - result sovereignty: `ResultPolicyExecutor` now applies filtering, ordering and trimming from ExecutionPlan; registered TFT policies reuse the deterministic domain algorithm without returning to RetrievalPlan
 - evidence: step and final contracts enforce evidence type, source, declared fields, timestamps and the prohibition on model-generated statistics
-- real LLM T3: `live-llm-t3-evaluation.v2` / `live-llm-t3-independent.v2` — 120 independent cases × 3 runs; 360/360 requests; 0 provider fallback; Pass@3 and Pass^3 100%
-- T3 quality: domain/action/status, entity mention/Top-1, tool selection, complete argument semantics, plan shape, clarification, unsupported honest downgrade, context Pass^3, token and latency budgets all 100%
+- parameter integrity: TaskFrame removes cross-role duplicate resolved entities; ExecutionPlan and TFT query adapters preserve stable unique arrays; T3 rejects duplicate, missing and extra entity arguments
+- result comparison: production composition requests record actual post-policy ExecutionPlan and legacy public-result comparisons; offline deterministic projection evidence is labeled separately
+- real LLM T3: `live-llm-t3-evaluation.v2` / `live-llm-t3-independent.v2` — 120 independent cases × 3 runs; 360/360 requests; 0 provider fallback; Pass@3 and Pass^3 100%; executed at `2026-07-26T02:45:31.188Z`
+- T3 quality: domain/action/status, exact entity mention/Top-1, tool selection, duplicate-free complete argument semantics, plan shape, clarification, unsupported honest downgrade, context Pass^3, token and latency budgets all 100%
 - safety: production cut-over traffic executes directly from ExecutionPlan; default run budget permits at most three tool calls; RetrievalPlan remains observable fallback and is not a prerequisite for a valid sovereign ExecutionPlan; legacy semantic augmentation is disabled whenever the result source is ExecutionPlan
 - report: `docs/phase-6-6-architecture-convergence.md`, `docs/reports/phase-6-6-1-live-llm-t3.md`, `docs/reports/phase-6-6-1-live-llm-t3.json`
 
@@ -80,7 +82,7 @@
 
 ## Current work
 
-- objective: phase 6.6.1 architecture convergence completed; stop before phase 7 capability work
+- objective: phase 6.6.1 architecture convergence and post-audit parameter-integrity hardening completed; stop before phase 7 capability work
 - files: ExecutionPlan compiler/executor, ResultPolicyExecutor, strict evidence validation, runtime stage orchestration, split status protocol, TFT concept and result-policy registries, public-result shadow comparison, independent holdout, T3 v2 checks, phase-6.6 tests and governance docs
 - assumptions: legacy IntentEnvelope/RetrievalPlan and TaskPlan remain only behind compatibility surfaces during rollout; no new product capability, video tool, arbitrary SQL, arbitrary URL or unregistered tool is introduced
 
@@ -92,5 +94,5 @@
 
 ## Next
 
-- next_step: review the completed 6.6 commit before authorizing any phase 7 capability work
+- next_step: review and commit the verified post-audit 6.6 hardening before authorizing any phase 7 capability work
 - required_checks: preserve ExecutionPlan and result-policy sovereignty, strict evidence, split status ownership, three-step/tool-call ceiling, safety boundaries and legacy fallback observability

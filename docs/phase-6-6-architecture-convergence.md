@@ -69,10 +69,11 @@ Every routed request records selected path, fallback reason, tool difference, pa
 
 ## Final verification
 
-- Full regression: `npm test` — 640 total, 620 passed, 0 failed, 20 conditionally skipped.
+- Full regression: `npm test` — 644 total, 624 passed, 0 failed, 20 conditionally skipped.
 - Architecture evaluation: `architecture-convergence-phase66.v2` — 120 core cases and 36 independent holdout cases; every gate passed.
-- Execution sovereignty, tool-name accuracy, complete parameter semantics, parameter equivalence, public business-result equivalence and unsupported honest downgrade: 100%.
+- Execution sovereignty, tool-name accuracy, complete parameter semantics, parameter equivalence, deterministic public-projection equivalence and unsupported honest downgrade: 100%.
+- Production composition requests attach an actual new/legacy result shadow comparison after ResultPolicy execution; deterministic fixture projection and production result evidence are reported separately.
 - Real LLM T3 v2: 120 independent cases × 3 repetitions, 360/360 successful requests, 0 provider fallback, Pass@3 100%, Pass^3 100%.
-- T3 tool selection, complete arguments, plan shape, context Pass^3 and unsupported honest downgrade: 100%.
-- Provider/model: `chat` / `deepseek-v4-flash`; executed at `2026-07-26T01:53:08.724Z`.
+- T3 tool selection, exact entity resolution, duplicate-free complete arguments, plan shape, context Pass^3 and unsupported honest downgrade: 100%.
+- Provider/model: `chat` / `deepseek-v4-flash`; executed at `2026-07-26T02:45:31.188Z`.
 - Reports: `docs/reports/phase-6-6-1-live-llm-t3.md` and `docs/reports/phase-6-6-1-live-llm-t3.json`; full per-run artifacts remain under `.cache/eval/`.

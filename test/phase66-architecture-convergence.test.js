@@ -25,6 +25,12 @@ import {
 } from "../src/agent/shadow-comparison.js";
 import { createTaskFrame } from "../src/understanding/task-frame.js";
 import { matchTaskCapabilities } from "../src/understanding/capability-matcher.js";
+import { compileTftToolArguments } from "../src/domain/tft/execution-arguments.js";
+import {
+  evaluateEntities,
+  semanticArgumentsCorrect
+} from "../eval/live-llm-t3-runner.mjs";
+import { createPhase3EvaluationCatalog } from "../eval/datasets/entity-linking-phase3-cases.mjs";
 
 function recommendationFrame() {
   return createTaskFrame({
@@ -521,4 +527,175 @@ test("generic Agent and parser layers contain no named TFT business instances", 
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.doesNotMatch(source, namedInstances, file);
   }
+});
+
+test("ExecutionPlan and TFT query adapters keep entity arguments stable and unique", async () => {
+  const registry = new ToolRegistry(createStructuredToolDefinitions());
+  const frame = createTaskFrame({
+    action: "compare",
+    subjects: [{
+      rawText: "target",
+      expectedType: "champion",
+      resolvedId: "TFT17_Xayah",
+      confidence: 1
+    }],
+    candidates: [
+      {
+        rawText: "item-a",
+        expectedType: "item",
+        resolvedId: "TFT_Item_GuinsoosRageblade",
+        confidence: 1
+      },
+      {
+        rawText: "item-b",
+        expectedType: "item",
+        resolvedId: "TFT_Item_Artifact_TitanicHydra",
+        confidence: 1
+      }
+    ],
+    concepts: [{
+      rawText: "item-a-again",
+      expectedType: "item",
+      resolvedId: "TFT_Item_GuinsoosRageblade",
+      confidence: 1
+    }],
+    goal: "choose_best",
+    expectedOutput: ["comparison", "evidence"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const planning = await planExecution(
+    frame,
+    matchTaskCapabilities(frame, registry),
+    { registry }
+  );
+
+  assert.deepEqual(planning.plan.steps[0].arguments.comparisonItems, [
+    "TFT_Item_GuinsoosRageblade",
+    "TFT_Item_Artifact_TitanicHydra"
+  ]);
+  assert.deepEqual(compileTftToolArguments("unit_builds", {
+    unit: "TFT17_Xayah",
+    comparisonItems: [
+      "TFT_Item_GuinsoosRageblade",
+      "TFT_Item_Artifact_TitanicHydra",
+      "TFT_Item_GuinsoosRageblade"
+    ],
+    lockedItems: ["TFT_Item_GuinsoosRageblade", "TFT_Item_GuinsoosRageblade"]
+  }), {
+    unit: "TFT17_Xayah",
+    lockedItems: ["TFT_Item_GuinsoosRageblade"],
+    comparisonItems: [
+      "TFT_Item_GuinsoosRageblade",
+      "TFT_Item_Artifact_TitanicHydra"
+    ]
+  });
+});
+
+test("T3 complete-argument evaluation rejects duplicate, missing and extra item arguments", () => {
+  const registry = new ToolRegistry(createStructuredToolDefinitions());
+  const catalog = createPhase3EvaluationCatalog();
+  const frame = createTaskFrame({
+    action: "compare",
+    subjects: [{
+      rawText: "霞",
+      expectedType: "champion",
+      resolvedId: "TFT17_Xayah",
+      confidence: 1
+    }],
+    candidates: [
+      {
+        rawText: "羊刀",
+        expectedType: "item",
+        resolvedId: "TFT_Item_GuinsoosRageblade",
+        confidence: 1
+      },
+      {
+        rawText: "巨九",
+        expectedType: "item",
+        resolvedId: "TFT_Item_Artifact_TitanicHydra",
+        confidence: 1
+      }
+    ],
+    goal: "choose_best",
+    expectedOutput: ["comparison", "evidence"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const testCase = {
+    category: "comparison",
+    expected: { entityMentions: ["霞", "羊刀", "巨九"] }
+  };
+  const planning = (comparisonItems) => ({
+    validation: { valid: true },
+    plan: {
+      steps: [{
+        tool: "unit_builds",
+        arguments: {
+          unit: "TFT17_Xayah",
+          comparisonItems
+        }
+      }]
+    }
+  });
+
+  assert.equal(semanticArgumentsCorrect(
+    frame,
+    planning(["TFT_Item_GuinsoosRageblade", "TFT_Item_Artifact_TitanicHydra"]),
+    registry,
+    testCase,
+    catalog
+  ), true);
+  for (const invalid of [
+    ["TFT_Item_GuinsoosRageblade"],
+    [
+      "TFT_Item_GuinsoosRageblade",
+      "TFT_Item_Artifact_TitanicHydra",
+      "TFT_Item_GuinsoosRageblade"
+    ],
+    [
+      "TFT_Item_GuinsoosRageblade",
+      "TFT_Item_Artifact_TitanicHydra",
+      "TFT_Item_InfinityEdge"
+    ]
+  ]) {
+    assert.equal(semanticArgumentsCorrect(
+      frame,
+      planning(invalid),
+      registry,
+      testCase,
+      catalog
+    ), false);
+  }
+});
+
+test("T3 entity evaluation validates exact patch IDs without false negatives", () => {
+  const catalog = createPhase3EvaluationCatalog();
+  const frame = createTaskFrame({
+    action: "compare",
+    candidates: [
+      {
+        rawText: "霞",
+        expectedType: "champion",
+        resolvedId: "TFT17_Xayah",
+        confidence: 1
+      },
+      {
+        rawText: "17.4",
+        expectedType: "patch",
+        resolvedId: "patch.17.4",
+        confidence: 1
+      }
+    ],
+    goal: "compare_versions",
+    confidence: 1,
+    understandingStatus: "understood_but_unsupported"
+  });
+  const evaluation = evaluateEntities(frame, {
+    category: "unsupported",
+    expected: { entityMentions: ["霞", "17.4"] }
+  }, catalog);
+
+  assert.equal(evaluation.mentionRecall, 1);
+  assert.equal(evaluation.top1Accuracy, 1);
 });

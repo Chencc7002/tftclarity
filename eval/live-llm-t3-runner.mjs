@@ -46,19 +46,34 @@ function matchesMention(entity, mention) {
   });
 }
 
-function expectedResolvedId(mention, catalog) {
+function expectedEntity(mention, catalog) {
+  const patch = String(mention ?? "").trim();
+  if (/^\d{1,2}\.\d{1,2}$/u.test(patch)) {
+    return { type: "patch", resolvedId: `patch.${patch}` };
+  }
+  if (/^(?:当前版本|當前版本|这版本|這版本|当前补丁|當前補丁)$/u.test(patch)) {
+    return { type: "patch", resolvedId: "patch.current" };
+  }
   const concept = resolveGameConcept(mention);
-  if (concept.resolvedId) return concept.resolvedId;
-  return resolveEntities(mention, { catalog }).all?.[0]?.target ?? null;
+  if (concept.resolvedId) {
+    return { type: "game_concept", resolvedId: concept.resolvedId };
+  }
+  const resolved = resolveEntities(mention, { catalog }).all?.[0] ?? null;
+  if (!resolved) return null;
+  return {
+    type: resolved.entityType === "unit" ? "champion" : resolved.entityType,
+    resolvedId: resolved.target
+  };
 }
 
-function evaluateEntities(frame, testCase, catalog) {
+export function evaluateEntities(frame, testCase, catalog) {
   const expectedMentions = array(testCase.expected.entityMentions);
   const entities = allEntities(frame);
   const matches = expectedMentions.map((mention) => {
-    const resolvedId = testCase.category === "unknown_entity"
+    const expected = testCase.category === "unknown_entity"
       ? null
-      : expectedResolvedId(mention, catalog);
+      : expectedEntity(mention, catalog);
+    const resolvedId = expected?.resolvedId ?? null;
     const candidates = entities.filter((entity) => (
       matchesMention(entity, mention)
       || (resolvedId && entity?.resolvedId === resolvedId)
@@ -68,10 +83,12 @@ function evaluateEntities(frame, testCase, catalog) {
     )) ?? candidates[0] ?? null;
   });
   const matched = matches.filter(Boolean).length;
-  const shouldResolve = testCase.category !== "unknown_entity";
-  const resolutionCorrect = matches.filter((entity) => (
-    entity && (shouldResolve ? Boolean(entity.resolvedId) : !entity.resolvedId)
-  )).length;
+  const resolutionCorrect = matches.filter((entity, index) => {
+    if (!entity) return false;
+    if (testCase.category === "unknown_entity") return !entity.resolvedId;
+    const expected = expectedEntity(expectedMentions[index], catalog);
+    return Boolean(expected?.resolvedId) && entity.resolvedId === expected.resolvedId;
+  }).length;
   return {
     expected: expectedMentions.length,
     matched,
@@ -106,22 +123,69 @@ function evaluationStatus(statusProtocol) {
   return "understood_and_supported";
 }
 
-function semanticArgumentsCorrect(frame, executionPlanning, registry) {
+function stableUnique(values) {
+  return [...new Set(array(values).filter(Boolean).map(String))];
+}
+
+function sameValues(actual, expected) {
+  return JSON.stringify(array(actual)) === JSON.stringify(array(expected));
+}
+
+function arraysContainNoDuplicates(argumentsValue) {
+  return Object.values(argumentsValue ?? {}).every((value) => (
+    !Array.isArray(value) || value.length === stableUnique(value).length
+  ));
+}
+
+function expectedIds(testCase, catalog, type) {
+  return stableUnique(array(testCase.expected.entityMentions)
+    .map((mention) => expectedEntity(mention, catalog))
+    .filter((entity) => entity?.type === type)
+    .map((entity) => entity.resolvedId));
+}
+
+export function semanticArgumentsCorrect(
+  frame,
+  executionPlanning,
+  registry,
+  testCase,
+  catalog
+) {
   if (executionPlanning?.validation?.valid !== true) return true;
   const steps = array(executionPlanning.plan?.steps);
   if (steps.length < 1 || steps.length > 3) return false;
   const entities = allEntities(frame);
   const constraints = frame.constraints ?? {};
-  const championIds = entities
+  const frameChampionIds = stableUnique(entities
     .filter((entity) => entity.expectedType === "champion" && entity.resolvedId)
-    .map((entity) => entity.resolvedId);
+    .map((entity) => entity.resolvedId));
+  const expectedChampionIds = expectedIds(testCase, catalog, "champion");
+  const expectedItemIds = expectedIds(testCase, catalog, "item");
+  const expectedTraitIds = expectedIds(testCase, catalog, "trait");
   for (const step of steps) {
-    if (step.tool === "unit_builds" && championIds.length && step.arguments.unit !== championIds[0]) {
+    if (!arraysContainNoDuplicates(step.arguments)) return false;
+    if (step.tool === "unit_builds") {
+      const championIds = expectedChampionIds.length ? expectedChampionIds : frameChampionIds;
+      if (championIds.length && step.arguments.unit !== championIds[0]) return false;
+      if (!sameValues(step.arguments.comparisonItems, expectedItemIds)) return false;
+    }
+    if (
+      step.tool === "unit_details"
+      && expectedChampionIds.length
+      && step.arguments.apiName !== expectedChampionIds[0]
+    ) {
       return false;
     }
-    if (step.tool === "unit_details" && championIds.length && step.arguments.apiName !== championIds[0]) {
-      return false;
-    }
+    if (
+      step.tool === "item_details"
+      && expectedItemIds.length
+      && step.arguments.apiName !== expectedItemIds[0]
+    ) return false;
+    if (
+      step.tool === "trait_details"
+      && expectedTraitIds.length
+      && step.arguments.apiName !== expectedTraitIds[0]
+    ) return false;
     const supportedArguments = registry.get(step.tool)?.inputSchema?.properties ?? {};
     for (const key of ["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"]) {
       if (
@@ -256,7 +320,13 @@ async function evaluateRun(testCase, repetition, options) {
       entityMention: entity.mentionRecall === 1,
       entityResolution: entity.top1Accuracy === 1,
       tool: tool === testCase.expected.tool,
-      arguments: semanticArgumentsCorrect(frame, executionPlanning, options.registry),
+      arguments: semanticArgumentsCorrect(
+        frame,
+        executionPlanning,
+        options.registry,
+        testCase,
+        options.catalog
+      ),
       planShape: executionPlanning.plan
         ? executionPlanning.plan.steps.length >= 1
           && executionPlanning.plan.steps.length <= 3

@@ -33,10 +33,10 @@
     "contextPassPowerK": 1,
     "tokenBudgetPassRate": 1,
     "latencyBudgetPassRate": 1,
-    "totalTokens": 488707,
-    "averageLatencyMs": 1529.3680877824625,
-    "p95LatencyMs": 1901.2045999765396,
-    "wallMs": 138549.3247998953
+    "totalTokens": 488591,
+    "averageLatencyMs": 1477.462833614813,
+    "p95LatencyMs": 1843.7168999910355,
+    "wallMs": 133501.9864000082
   },
-  "executedAt": "2026-07-26T01:53:08.724Z"
+  "executedAt": "2026-07-26T02:45:31.188Z"
 }

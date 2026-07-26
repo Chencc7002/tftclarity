@@ -215,11 +215,11 @@ function allEntities(frame) {
 }
 
 function resolvedIds(values, type = null) {
-  return array(values)
+  return [...new Set(array(values)
     .filter((entity) => !type || entity?.expectedType === type)
     .map((entity) => entity?.resolvedId ?? entity?.rawText)
     .filter(Boolean)
-    .map(String);
+    .map(String))];
 }
 
 function allowlistedArguments(tool, frame) {

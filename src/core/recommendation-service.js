@@ -1959,6 +1959,17 @@ export async function recommendForInput(input, options = {}) {
       }
     }
     const searched = executionPlanRun?.result ?? legacySearched;
+    if (semanticRouting && executionPlanRun) {
+      semanticRouting.shadowComparison = compareExecutionAndLegacyPlans(
+        executionPlanRun.plan ?? executionPlan,
+        retrievalAudit.retrievalPlan,
+        {
+          selectedPath: "execution_plan",
+          executionResult: searched,
+          legacyResult: legacySearched
+        }
+      );
+    }
     const analyzed = query.analysisRequested
       ? analyzeCompRankingResult(searched, query.analysis ?? {})
       : searched;
