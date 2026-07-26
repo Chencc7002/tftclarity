@@ -3780,6 +3780,29 @@ test("MetaTFT clients default to the API host, not the website host", () => {
   assert.equal(new CompsContextClient().maxRetries, 1);
 });
 
+test("MetaTFT comps client uses structured detail, augment, and localized lookup endpoints", async () => {
+  const requestedUrls = [];
+  const client = new CompsContextClient({
+    fetchImpl: async (url) => {
+      requestedUrls.push(new URL(String(url)));
+      return fakeJsonResponse({ ok: true });
+    }
+  });
+
+  await client.getCompDetails({ comp: "409000", cluster_id: "409" });
+  await client.getCompAugmentTiers({ cluster_id: "409" });
+  await client.getAugmentLookup("TFTSet17", "zh_cn");
+
+  assert.equal(requestedUrls[0].origin, "https://api-hc.metatft.com");
+  assert.equal(requestedUrls[0].pathname, "/tft-comps-api/comp_details");
+  assert.equal(requestedUrls[0].searchParams.get("comp"), "409000");
+  assert.equal(requestedUrls[0].searchParams.get("cluster_id"), "409");
+  assert.equal(requestedUrls[1].pathname, "/tft-comps-api/comp_augment_tiers");
+  assert.equal(requestedUrls[1].searchParams.get("cluster_id"), "409");
+  assert.equal(requestedUrls[2].href, "https://data.metatft.com/lookups/TFTSet17_latest_zh_cn.json");
+  await assert.rejects(() => client.getAugmentLookup("invalid set", "zh_cn"), /valid TFT set name/);
+});
+
 test("MetaTFT clients retry one transient server failure and preserve attempt counts", async () => {
   let calls = 0;
   const delays = [];

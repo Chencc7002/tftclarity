@@ -200,6 +200,31 @@ export class CompsContextClient {
     return this.#get("/tft-comps-api/comp_builds", params);
   }
 
+  async getCompDetails(params = {}) {
+    return this.#get("/tft-comps-api/comp_details", params, this.rankingsTimeoutMs);
+  }
+
+  async getCompAugmentTiers(params = {}) {
+    return this.#get("/tft-comps-api/comp_augment_tiers", params, this.rankingsTimeoutMs);
+  }
+
+  async getAugmentLookup(tftSet, locale = "zh_cn") {
+    if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
+    const setName = String(tftSet ?? "").trim();
+    const language = String(locale ?? "").trim().toLowerCase();
+    if (!/^TFTSet\d+(?:[A-Za-z0-9_-]+)?$/u.test(setName)) {
+      throw new TypeError("MetaTFT augment lookup requires a valid TFT set name");
+    }
+    if (!/^[a-z]{2}_[a-z]{2}$/u.test(language)) {
+      throw new TypeError("MetaTFT augment lookup requires a valid locale");
+    }
+    const url = new URL(`/lookups/${encodeURIComponent(setName)}_latest_${encodeURIComponent(language)}.json`, "https://data.metatft.com");
+    return fetchJsonWithRetry(this.fetchImpl, url, {
+      ...requestOptions(this),
+      timeoutMs: this.rankingsTimeoutMs
+    });
+  }
+
   async getCompsData(params = {}) {
     return this.#get("/tft-comps-api/comps_data", params, this.rankingsTimeoutMs);
   }

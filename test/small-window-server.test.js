@@ -12,6 +12,7 @@ import {
   createSmallWindowRuntimeAsync,
   createSmallWindowRuntime,
   handleCacheClearRequest,
+  handleCompDetailRequest,
   handleEntityAliasBatchReviewRequest,
   handleEntityAliasExportRequest,
   handleEntityAliasReviewRequest,
@@ -1778,6 +1779,15 @@ test("small-window cache clear removes query history without resetting preferenc
   runtime.catalogCache.set("set17-live:metatft-live.v1:current:1100", {
     catalog: createCatalog()
   });
+  runtime.compDetailCache.set("set17-live|409|409000|TFT17_Xayah", {
+    payload: { ok: true },
+    updatedAt: new Date().toISOString(),
+    expiresAt: Date.now() + 60_000
+  });
+  runtime.augmentLookupCache.set("TFTSet17|zh_cn", {
+    response: { augments: [] },
+    expiresAt: Date.now() + 60_000
+  });
   await handlePreferencesRequest({
     preferences: {
       minSamples: 500,
@@ -1793,13 +1803,237 @@ test("small-window cache clear removes query history without resetting preferenc
     queryCache: 1,
     defaultContextCache: 1,
     sessionState: 1,
-    catalogCache: 1
+    catalogCache: 1,
+    compDetailCache: 1,
+    augmentLookupCache: 1
   });
   assert.equal(cacheStore.getQuery("query:history"), null);
   assert.equal(cacheStore.getDefaultContext("default_context:history"), null);
   assert.equal(cacheStore.getSessionState(SESSION_LAST_QUERY_KEY), null);
   assert.equal(preferences.minSamples, 500);
   assert.deepEqual(preferences.rankFilter, ["MASTER"]);
+});
+
+test("comp details preserve observed positioning, expose compatible augments, and use a short cache", async () => {
+  const calls = { details: 0, tiers: 0, lookup: 0 };
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [
+        { apiName: "TFT17_Front", zhName: "Frontline", aliases: [] },
+        { apiName: "TFT17_Back", zhName: "Backline", aliases: [] }
+      ],
+      traits: [],
+      items: []
+    }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {
+      async getCompDetails(params) {
+        calls.details += 1;
+        assert.equal(params.cluster_id, "409");
+        assert.ok(["409000", "409001"].includes(params.comp));
+        return {
+          updated: 1_700_000_000_000,
+          tft_set: "TFTSet17",
+          results: {
+            positioning: {
+              units: {
+                TFT17_Front: { positions: [{ cell: "cell_24", count: 10 }] },
+                TFT17_Back: { positions: [{ cell: "cell_1", count: 20 }] },
+                TFT17_NotInComp: { positions: [{ cell: "cell_2", count: 99 }] }
+              }
+            }
+          }
+        };
+      },
+      async getCompAugmentTiers(params) {
+        calls.tiers += 1;
+        assert.deepEqual(params, { cluster_id: "409" });
+        return {
+          updated: 1_700_000_000_000,
+          tft_set: "TFTSet17",
+          results: {
+            409000: {
+              augments: [
+                { id: "TFT_Augment_Silver", tier: "S" },
+                { id: "TFT_Augment_A", tier: "A" },
+                { id: "TFT_Augment_S", tier: "S" },
+                { id: "TFT_Augment_B", tier: "B" },
+                { id: "TFT_Augment_C1", tier: "C" },
+                { id: "TFT_Augment_C2", tier: "C" },
+                { id: "TFT_Augment_D1", tier: "D" },
+                { id: "TFT_Augment_D2", tier: "D" }
+              ]
+            },
+            409001: {
+              augments: [
+                { id: "TFT_Augment_Silver", tier: "S" },
+                { id: "TFT_Augment_A", tier: "A" },
+                { id: "TFT_Augment_S", tier: "S" },
+                { id: "TFT_Augment_B", tier: "B" },
+                { id: "TFT_Augment_C1", tier: "C" },
+                { id: "TFT_Augment_C2", tier: "C" },
+                { id: "TFT_Augment_D1", tier: "D" },
+                { id: "TFT_Augment_D2", tier: "D" }
+              ]
+            }
+          }
+        };
+      },
+      async getAugmentLookup(tftSet, locale) {
+        calls.lookup += 1;
+        assert.equal(tftSet, "TFTSet17");
+        assert.equal(locale, "zh_cn");
+        return {
+          augments: [
+            { apiName: "TFT_Augment_Silver", name: "Silver augment", rarity: "Silver", texture: "Augment_Silver" },
+            { apiName: "TFT_Augment_A", name: "A augment", rarity: "Gold", texture: "Augment_A" },
+            { apiName: "TFT_Augment_S", name: "S augment", rarity: "Prismatic", texture: "Augment_S" },
+            { apiName: "TFT_Augment_B", name: "B augment", rarity: "Gold", texture: "Augment_B" },
+            { apiName: "TFT_Augment_C1", name: "C1 augment", rarity: "Prismatic", texture: "Augment_C1" },
+            { apiName: "TFT_Augment_C2", name: "C2 augment", rarity: "Gold", texture: "Augment_C2" },
+            { apiName: "TFT_Augment_D1", name: "D1 augment", rarity: "Gold", texture: "Augment_D1" },
+            { apiName: "TFT_Augment_D2", name: "D2 augment", rarity: "Prismatic", texture: "Augment_D2" }
+          ]
+        };
+      }
+    }
+  });
+
+  const request = {
+    compId: "409000",
+    clusterId: "409",
+    units: "TFT17_Front,TFT17_Back",
+    seasonContextId: "set17-live"
+  };
+  const first = await handleCompDetailRequest(request, runtime);
+  const second = await handleCompDetailRequest(request, runtime);
+  const anotherComp = await handleCompDetailRequest({ ...request, compId: "409001" }, runtime);
+
+  assert.equal(first.ok, true);
+  assert.equal(first.cache.hit, false);
+  assert.equal(first.formation.status, "available");
+  assert.deepEqual(first.formation.units.map(({ apiName, cell, name }) => ({ apiName, cell, name })), [
+    { apiName: "TFT17_Front", cell: 24, name: "Frontline" },
+    { apiName: "TFT17_Back", cell: 1, name: "Backline" }
+  ]);
+  assert.equal(first.formation.units.some((unit) => unit.apiName === "TFT17_NotInComp"), false);
+  assert.equal(first.augmentRecommendations.semantics, "comp_compatibility_tier");
+  assert.deepEqual(first.augmentRecommendations.entries.map(({ apiName, name, tier }) => ({ apiName, name, tier })), [
+    { apiName: "TFT_Augment_S", name: "S augment", tier: "S" },
+    { apiName: "TFT_Augment_A", name: "A augment", tier: "A" },
+    { apiName: "TFT_Augment_B", name: "B augment", tier: "B" },
+    { apiName: "TFT_Augment_C1", name: "C1 augment", tier: "C" },
+    { apiName: "TFT_Augment_C2", name: "C2 augment", tier: "C" },
+    { apiName: "TFT_Augment_D1", name: "D1 augment", tier: "D" }
+  ]);
+  assert.equal(first.augmentRecommendations.entries[0].iconUrl, "https://cdn.metatft.com/file/metatft/augments/augment_s.png");
+  assert.equal(first.augmentRecommendations.entries.length, 6);
+  assert.equal(first.augmentRecommendations.totalEntries, 7);
+  assert.equal(first.augmentRecommendations.truncated, true);
+  assert.equal(first.augmentRecommendations.entries.some((entry) => entry.rarity === "silver"), false);
+  assert.deepEqual(first.augmentRecommendations.filter, {
+    rarities: ["gold", "prismatic"],
+    limit: 6
+  });
+  assert.equal(second.cache.hit, true);
+  assert.equal(anotherComp.cache.hit, false);
+  assert.deepEqual(calls, { details: 2, tiers: 2, lookup: 1 });
+});
+
+test("comp-detail HTTP route accepts a rendered card's MetaTFT identifiers", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [{ apiName: "TFT17_Front", zhName: "Frontline", aliases: [] }],
+      traits: [],
+      items: []
+    }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {
+      async getCompDetails(params) {
+        assert.deepEqual(params, { comp: "409000", cluster_id: "409" });
+        return {
+          tft_set: "TFTSet17",
+          results: {
+            positioning: {
+              units: {
+                TFT17_Front: { positions: [{ cell: "cell_22", count: 12 }] }
+              }
+            }
+          }
+        };
+      },
+      async getCompAugmentTiers() {
+        return { tft_set: "TFTSet17", results: {} };
+      }
+    }
+  });
+  const started = await startSmallWindowServer({ host: "127.0.0.1", port: 0, runtime });
+
+  try {
+    const url = new URL("/api/comp-details", started.url);
+    url.search = new URLSearchParams({
+      comp: "409000",
+      clusterId: "409",
+      units: "TFT17_Front",
+      seasonContextId: "set17-live"
+    }).toString();
+    const response = await fetch(url, { headers: { connection: "close" } });
+    const payload = await response.json();
+
+    assert.equal(response.status, 200);
+    assert.equal(payload.ok, true);
+    assert.equal(payload.compId, "409000");
+    assert.deepEqual(payload.formation.units.map(({ apiName, cell }) => ({ apiName, cell })), [
+      { apiName: "TFT17_Front", cell: 22 }
+    ]);
+  } finally {
+    started.server.closeIdleConnections?.();
+    await closeServer(started.server);
+  }
+});
+
+test("comp detail keeps compatible augments when positioning data is temporarily unavailable", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({ units: [], traits: [], items: [] }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {
+      async getCompDetails() {
+        throw new Error("positioning unavailable");
+      },
+      async getCompAugmentTiers() {
+        return {
+          tft_set: "TFTSet17",
+          results: {
+            409000: { augments: [{ id: "TFT_Augment_S", tier: "S" }] }
+          }
+        };
+      },
+      async getAugmentLookup() {
+        return {
+          augments: [{ apiName: "TFT_Augment_S", name: "S augment", rarity: "Gold", texture: "Augment_S" }]
+        };
+      }
+    }
+  });
+
+  const result = await handleCompDetailRequest({
+    compId: "409000",
+    clusterId: "409",
+    units: "TFT17_Front",
+    seasonContextId: "set17-live"
+  }, runtime);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.formation.status, "unavailable");
+  assert.equal(result.augmentRecommendations.status, "available");
+  assert.deepEqual(result.augmentRecommendations.entries.map((entry) => entry.name), ["S augment"]);
+  assert.deepEqual(result.warnings, ["MetaTFT positioning detail is temporarily unavailable."]);
 });
 
 test("small-window feedback request stores correction events and disabled alias candidates", async () => {

@@ -65,6 +65,29 @@ const itemCompVisualResponse = {
   }],
   filter_adjustment: { sample_size: 123456 }
 };
+const visualCompPositioning = Object.fromEntries(Object.entries(
+  compVisualResponse.compsData.results.data.cluster_details
+).map(([clusterId, cluster]) => {
+  const cells = [1, 2, 3, 4, 11, 18, 24, 28];
+  const units = String(cluster.units_string ?? "")
+    .split(/\s*,\s*/u)
+    .filter(Boolean);
+  return [clusterId, Object.fromEntries(units.map((apiName, index) => [apiName, {
+    positions: [{ cell: `cell_${cells[index % cells.length]}`, count: 100 - index }]
+  }]))];
+}));
+const visualCompAugmentTiers = Object.fromEntries(Object.keys(visualCompPositioning).map((clusterId) => [clusterId, {
+  augments: [
+    { id: "TFT_Augment_VisualS", tier: "S" },
+    { id: "TFT_Augment_VisualA", tier: "A" }
+  ]
+}]));
+const visualAugmentLookup = {
+  augments: [
+    { apiName: "TFT_Augment_VisualS", name: "Visual S augment", rarity: "Prismatic", texture: "Visual_S" },
+    { apiName: "TFT_Augment_VisualA", name: "Visual A augment", rarity: "Gold", texture: "Visual_A" }
+  ]
+};
 
 function argument(name) {
   const index = process.argv.indexOf(name);
@@ -242,6 +265,7 @@ if (playwright) {
   let nowMs = Date.now();
   let failCompRequest = false;
   let emptyCompRequest = false;
+  let compDetailRequestCount = 0;
   const cacheStore = new MemoryCacheStore({ now: () => nowMs });
   const baseSeasonService = createSeasonContextService();
   const set17Context = baseSeasonService.getDefault();
@@ -332,6 +356,28 @@ if (playwright) {
       async getCompsStats() {
         if (emptyCompRequest) return { cluster_id: 409, results: [{ cluster: "", places: [0] }] };
         return compVisualResponse.compsStats;
+      },
+      async getCompDetails({ comp }) {
+        compDetailRequestCount += 1;
+        return {
+          updated: 1_783_929_862_735,
+          tft_set: "TFTSet17",
+          results: {
+            positioning: {
+              units: visualCompPositioning[String(comp)] ?? {}
+            }
+          }
+        };
+      },
+      async getCompAugmentTiers() {
+        return {
+          updated: 1_783_929_862_735,
+          tft_set: "TFTSet17",
+          results: visualCompAugmentTiers
+        };
+      },
+      async getAugmentLookup() {
+        return visualAugmentLookup;
       }
     },
     recommendForInputImpl: (input, options) => recommendForInput(input, {
@@ -374,6 +420,13 @@ if (playwright) {
       await route.continue();
     });
     await page.route("https://ddragon.leagueoflegends.com/**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "image/svg+xml",
+        body: visualFixtureIcon(route.request().url())
+      });
+    });
+    await page.route("https://cdn.metatft.com/**", async (route) => {
       await route.fulfill({
         status: 200,
         contentType: "image/svg+xml",
@@ -665,6 +718,23 @@ if (playwright) {
     await page.fill("#query-input", "当前版本最强阵容有哪些？");
     await page.click("#query-form button.primary");
     await openCurrentMobileResult(page, ".comp-card");
+    await page.waitForSelector(".comp-hex-board");
+    await page.waitForSelector(".comp-augment-chip");
+    const compFormation = await page.evaluate(() => {
+      const board = document.querySelector(".comp-hex-board");
+      return {
+        cells: board?.querySelectorAll(".comp-hex-cell").length ?? 0,
+        units: board?.querySelectorAll(".comp-board-unit").length ?? 0,
+        scrollWidth: board?.scrollWidth ?? 0,
+        clientWidth: board?.clientWidth ?? 0,
+        augmentText: document.querySelector(".comp-augment-chip")?.textContent?.trim() ?? ""
+      };
+    });
+    assertSmoke(compDetailRequestCount > 0, "opening a comp card did not request its tactical detail");
+    assertSmoke(compFormation.cells === 28, `formation board did not render 28 cells: ${compFormation.cells}`);
+    assertSmoke(compFormation.units > 0, "formation board rendered no positioned champions");
+    assertSmoke(compFormation.scrollWidth <= compFormation.clientWidth + 1, "formation board has horizontal overflow");
+    assertSmoke(compFormation.augmentText.includes("S"), `augment compatibility tier was not rendered: ${compFormation.augmentText}`);
     const compDesktop = await inspectLayout(page, "520px comp ranking");
     const compDesktopAssets = await inspectAssetDimensions(page, "520px comp ranking");
     const missingPlaceholders = await page.locator(".comp-card .asset-thumb:not(:has(img))").count();
@@ -830,6 +900,7 @@ if (playwright) {
         clarification,
         compDesktop,
         compDesktopAssets,
+        compFormation,
         compNarrow,
         compNarrowAssets,
         compStale,
