@@ -235,6 +235,10 @@ export {
   resolveStructuredParserConfig
 } from "./llm/chat-structured-parser.js";
 export {
+  LIVE_SEMANTIC_TASK_PROMPT_VERSION,
+  createChatSemanticTaskProvider
+} from "./llm/chat-semantic-task-provider.js";
+export {
   buildStructuredParserExpansion,
   shouldUseStructuredParser,
   validateStructuredParserOutput
@@ -410,6 +414,68 @@ export {
   resolveTaskFrameContext
 } from "./understanding/context-resolver.js";
 export {
+  TASK_FRAME_ACTIONS,
+  TASK_FRAME_ENTITY_TYPES,
+  TASK_FRAME_SCHEMA_VERSION,
+  TASK_FRAME_UNDERSTANDING_STATUSES,
+  createTaskFrame,
+  migrateTaskFrame,
+  taskFrameFromIntentEnvelope,
+  validateTaskFrame
+} from "./understanding/task-frame.js";
+export {
+  CONVERSATION_STATE_SCHEMA_VERSION,
+  MAX_CONVERSATION_SHOWN_IDS,
+  MAX_CONVERSATION_TASK_HISTORY,
+  conversationStateSessionKey,
+  createConversationState,
+  migrateLegacySessionToConversationState,
+  validateConversationState
+} from "./understanding/conversation-state.js";
+export {
+  TURN_DELTA_SCHEMA_VERSION,
+  TURN_DELTA_CONSTRAINT_FIELDS,
+  TURN_DELTA_DIALOGUE_ACTS,
+  TURN_DELTA_ENTITY_FIELDS,
+  TURN_DELTA_OPERATIONS,
+  TURN_DELTA_TASK_RELATIONS,
+  createTurnDelta,
+  unknownTurnDelta,
+  validateTurnDelta
+} from "./understanding/turn-delta.js";
+export {
+  TURN_INTERPRETER_VERSION,
+  buildTurnInterpreterMessages,
+  compactConversationStateForInterpreter,
+  interpretTurn
+} from "./understanding/turn-interpreter.js";
+export {
+  CONTEXT_REDUCER_VERSION,
+  normalizeContextualTurnDelta,
+  reduceConversationState
+} from "./understanding/context-reducer.js";
+export {
+  CONVERSATION_RESULT_STATE_VERSION,
+  conversationResultStateFromResponse,
+  updateConversationStateFromResult
+} from "./understanding/conversation-result-state.js";
+export {
+  CONVERSATION_PRESENTATION_VERSION,
+  applyConversationResultPresentation
+} from "./understanding/conversation-presentation.js";
+export {
+  CONVERSATION_STATE_V2_SHADOW_VERSION,
+  compareConversationStateV2Shadow
+} from "./understanding/conversation-shadow.js";
+export {
+  TFT_CONVERSATION_POLICY_VERSION,
+  tftConversationPolicy
+} from "./domain/tft/conversation-policy.js";
+export {
+  TFT_RESOLVED_TASK_FRAME_ADAPTER_VERSION,
+  resolvedTaskFrameToParsed
+} from "./domain/tft/resolved-task-frame-adapter.js";
+export {
   CLARIFICATION_POLICY_VERSION,
   applyClarificationPolicy
 } from "./understanding/ambiguity-policy.js";
@@ -419,6 +485,7 @@ export {
 } from "./understanding/capability-matcher.js";
 export {
   createRecommendationFromRows,
+  conversationStateV2ModeFor,
   recommendForInput,
   SESSION_LAST_QUERY_KEY
 } from "./core/recommendation-service.js";

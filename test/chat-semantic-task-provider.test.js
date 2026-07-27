@@ -52,7 +52,7 @@ test("chat semantic task provider validates raw TaskFrame and maps provider usag
     budget: { maxOutputTokens: 300 }
   });
 
-  assert.equal(LIVE_SEMANTIC_TASK_PROMPT_VERSION, "live-semantic-task-contract.v6");
+  assert.equal(LIVE_SEMANTIC_TASK_PROMPT_VERSION, "live-semantic-task-contract.v9");
   assert.equal(observedBody.response_format.type, "json_object");
   assert.equal(observedBody.max_tokens, 300);
   assert.deepEqual(result.taskFrame, {
@@ -85,4 +85,87 @@ test("chat semantic task provider rejects invalid raw output before normalizatio
     () => provider({ messages: [], budget: { maxOutputTokens: 300 } }),
     /invalid TaskFrame/u
   );
+});
+
+test("chat semantic task provider validates TurnDelta responses independently from TaskFrame", async () => {
+  const rawDelta = {
+    schemaVersion: "turn-delta.v1",
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    explicitTaskFrame: null,
+    entityOperations: [],
+    constraintOperations: [{
+      operation: "set",
+      field: "rank",
+      value: "MASTER_PLUS"
+    }],
+    presentation: {
+      requestedCount: null,
+      pageDirection: null,
+      avoidSeen: false
+    },
+    confidence: 0.92,
+    ambiguities: []
+  };
+  let observedBody;
+  const provider = createChatSemanticTaskProvider({
+    endpoint: "https://llm.example/v1/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, init) => {
+      observedBody = JSON.parse(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(rawDelta) } }]
+        })
+      };
+    }
+  });
+
+  const result = await provider({
+    schemaVersion: "turn-delta.v1",
+    messages: [{ role: "user", content: "follow-up" }],
+    budget: { maxOutputTokens: 240 }
+  });
+
+  assert.deepEqual(result.turnDelta, rawDelta);
+  assert.equal(observedBody.response_format.type, "json_object");
+  assert.match(observedBody.messages[0].content, /turn-delta\.v1/u);
+});
+
+test("chat semantic task provider rejects invalid TurnDelta before normalization", async () => {
+  const observedBodies = [];
+  const provider = createChatSemanticTaskProvider({
+    endpoint: "https://llm.example/v1/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, init) => {
+      observedBodies.push(JSON.parse(init.body));
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{
+            message: {
+              content: JSON.stringify({
+                schemaVersion: "turn-delta.v1",
+                dialogueAct: "modify",
+                taskRelation: "new"
+              })
+            }
+          }]
+        })
+      };
+    }
+  });
+
+  await assert.rejects(
+    () => provider({
+      schemaVersion: "turn-delta.v1",
+      messages: [],
+      budget: { maxOutputTokens: 240 }
+    }),
+    /invalid TurnDelta/u
+  );
+  assert.equal(observedBodies.length, 2);
+  assert.match(observedBodies[1].messages.at(-1).content, /Validation errors to correct/u);
+  assert.match(observedBodies[1].messages.at(-1).content, /explicitTaskFrame/u);
 });

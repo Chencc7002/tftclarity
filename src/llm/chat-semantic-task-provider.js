@@ -2,8 +2,13 @@ import {
   createTaskFrame,
   validateTaskFrame
 } from "../understanding/task-frame.js";
+import {
+  createTurnDelta,
+  TURN_DELTA_CONSTRAINT_FIELDS,
+  validateTurnDelta
+} from "../understanding/turn-delta.js";
 
-export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v6";
+export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v9";
 
 const RESPONSE_CONTRACT = [
   "Return exactly one JSON object matching task-frame.v1. Do not use Markdown.",
@@ -31,6 +36,37 @@ const RESPONSE_CONTRACT = [
   "Put two compared champions or items in candidates; put a single target champion in subjects; put traits, compositions, patches, videos and game concepts in concepts.",
   "constraints must be an object. expectedOutput, contextReferences, ambiguities and assumptions must always be JSON arrays, even when empty. goal must be a non-empty concise string.",
   'Minimal shape example: {"schemaVersion":"task-frame.v1","domain":"tft","action":"search","subjects":[],"candidates":[],"concepts":[],"constraints":{},"goal":"find_data","expectedOutput":["results"],"contextReferences":[],"ambiguities":[],"assumptions":[],"confidence":0.9,"understandingStatus":"understood_and_supported"}.'
+].join("\n");
+
+const TURN_DELTA_RESPONSE_CONTRACT = [
+  "Return exactly one JSON object matching turn-delta.v1. Do not use Markdown.",
+  "Interpret the current user turn as a change relative to the compact conversation state supplied in turn_context.",
+  "Required keys: schemaVersion, dialogueAct, taskRelation, explicitTaskFrame, entityOperations, constraintOperations, presentation, confidence, ambiguities.",
+  'schemaVersion must be "turn-delta.v1".',
+  "dialogueAct is one of start_task, continue, request_more, request_less, next_page, previous_page, modify, compare, switch_task, confirm, reject, cancel, clarify, unknown.",
+  "taskRelation is one of new, continue, modify, switch, return, cancel, unknown.",
+  "Use request_more for an additional batch even when lastResultSummary.exhausted is true; do not change tasks because a result is exhausted.",
+  "For another batch or a different batch, set presentation.pageDirection to next and presentation.avoidSeen to true.",
+  "new and switch require one complete task-frame.v1 explicitTaskFrame. For a purely elliptical continuation explicitTaskFrame may be null.",
+  "For modify or return, prefer explicitTaskFrame null when operations completely describe the change. Otherwise it contains only current-turn task semantics and every required TaskFrame key.",
+  "A non-null explicitTaskFrame must contain schemaVersion, domain, action, subjects, candidates, concepts, constraints, goal, expectedOutput, contextReferences, ambiguities, assumptions, capabilityRequirements, confidence, and understandingStatus.",
+  'TaskFrame schemaVersion is "task-frame.v1"; all collection fields are arrays; understandingStatus is one of understood_and_supported, understood_but_missing_context, understood_but_unsupported, ambiguous, out_of_domain.',
+  "TaskFrame entity expectedType is one of champion, item, trait, composition, augment, patch, game_concept, video, player_context. Do not add prefixes or use concept as an expectedType.",
+  "Entity and constraint operation names are limited to set, add, remove, replace, clear. Each operation uses exactly operation, field, value, and for replace oldValue.",
+  "Entity operation field is exactly subjects, candidates, or concepts. value and oldValue are arrays of TaskFrame entity objects.",
+  `Constraint fields are limited to: ${TURN_DELTA_CONSTRAINT_FIELDS.join(", ")}.`,
+  "For new deltas prefer the canonical fields rank, lockedItems, and strategy; rankFilter, ownedItems, and specialMode exist only for compatibility input.",
+  "rank is an array containing only IRON, BRONZE, SILVER, GOLD, PLATINUM, EMERALD, DIAMOND, MASTER, GRANDMASTER, CHALLENGER. MASTER and above is [MASTER, GRANDMASTER, CHALLENGER].",
+  "Any entity or constraint operation changes the taskRelation to modify. continue is only for turns that leave task semantics unchanged.",
+  "To remove an entire scalar constraint such as strategy, use clear with only operation and field. Do not use an empty array.",
+  "For replace operations include both oldValue and value.",
+  "presentation contains requestedCount (null or integer 1..100), pageDirection (null, next, previous, same), and avoidSeen (boolean).",
+  "When pendingClarification is present and the user supplies its missing field, use continue or modify rather than new.",
+  "Any request to resume, restore, or go back to a task present in recentTaskSummaries uses taskRelation return; pair it with dialogueAct continue or switch_task, never invent a return dialogueAct.",
+  "Switching from a champion build task to composition rankings uses taskRelation switch and a rank TaskFrame for the composition ranking goal.",
+  "Do not output a tool name, endpoint, complete tool arguments, statistics, ranking, or evidence decision.",
+  "Do not invent resolved entity ids. Use rawText with resolvedId null when an entity is mentioned.",
+  "When relation or a material field is uncertain, return taskRelation unknown, dialogueAct unknown, confidence below 0.5, and a structured ambiguity."
 ].join("\n");
 
 function contentFromPayload(payload) {
@@ -99,10 +135,13 @@ export function createChatSemanticTaskProvider(options = {}) {
     let providerUsage = null;
     let rawProviderContent = null;
     let retryCount = 0;
+    let invalidFeedback = null;
+    const turnDeltaRequest = request.schemaVersion === "turn-delta.v1";
+    const responseContract = turnDeltaRequest ? TURN_DELTA_RESPONSE_CONTRACT : RESPONSE_CONTRACT;
     const body = {
       model: options.model,
       messages: [
-        { role: "system", content: RESPONSE_CONTRACT },
+        { role: "system", content: responseContract },
         ...(request.messages ?? []).map((message) => ({
           role: message.role,
           content: message.content
@@ -130,7 +169,10 @@ export function createChatSemanticTaskProvider(options = {}) {
             ...body.messages,
             {
               role: "system",
-              content: "The previous response was invalid. Return one concise, non-null task-frame.v1 JSON object now; no prose."
+              content: [
+                `The previous response was invalid. Return one concise, non-null ${turnDeltaRequest ? "turn-delta.v1" : "task-frame.v1"} JSON object now; no prose.`,
+                invalidFeedback ? `Validation errors to correct: ${invalidFeedback}` : ""
+              ].filter(Boolean).join("\n")
             }
           ]
         };
@@ -156,11 +198,31 @@ export function createChatSemanticTaskProvider(options = {}) {
         };
         rawProviderContent = contentFromPayload(payload);
         try {
-          const rawTaskFrame = parseJsonContent(rawProviderContent);
+          const rawStructuredValue = parseJsonContent(rawProviderContent);
+          if (turnDeltaRequest) {
+            const validation = validateTurnDelta(rawStructuredValue);
+            if (!validation.valid) {
+              throw new TypeError(
+                `semantic task provider returned invalid TurnDelta: ${validation.errors.join("; ")}`
+              );
+            }
+            const turnDelta = createTurnDelta(rawStructuredValue);
+            const durationMs = Math.max(0, performance.now() - startedAt);
+            options.onRequestLog?.({
+              status: "ok",
+              durationMs,
+              firstTokenMs: null,
+              firstTokenMeasurement: "unavailable_non_streaming",
+              retryCount,
+              usage: providerUsage,
+              rawStructuredOutput: turnDelta
+            });
+            return { turnDelta, usage: providerUsage };
+          }
           const validationCandidate = {
-            ...rawTaskFrame,
-            capabilityRequirements: Array.isArray(rawTaskFrame?.capabilityRequirements)
-              ? rawTaskFrame.capabilityRequirements
+            ...rawStructuredValue,
+            capabilityRequirements: Array.isArray(rawStructuredValue?.capabilityRequirements)
+              ? rawStructuredValue.capabilityRequirements
               : []
           };
           const validation = validateTaskFrame(validationCandidate);
@@ -183,6 +245,7 @@ export function createChatSemanticTaskProvider(options = {}) {
           return { taskFrame, usage: providerUsage };
         } catch (error) {
           if (attempt >= maxInvalidRetries) throw error;
+          invalidFeedback = safeErrorMessage(error);
           retryCount += 1;
         }
       }

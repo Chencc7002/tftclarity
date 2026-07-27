@@ -22,6 +22,7 @@
     "eval:phase8a": "node scripts/run-phase8a-eval.mjs",
     "eval:llm:live": "node scripts/run-live-llm-eval.mjs",
     "eval:llm:t3": "node scripts/run-live-llm-t3-eval.mjs",
+    "eval:conversation:v2:live": "node scripts/run-conversation-state-v2-live-eval.mjs",
     "smoke": "node test/mvp-query.test.js",
     "smoke:small-window": "node scripts/smoke-small-window.mjs",
     "smoke:practical": "node scripts/smoke-second-round-practical.mjs",

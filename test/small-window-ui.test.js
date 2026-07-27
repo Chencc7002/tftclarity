@@ -18,8 +18,9 @@ const termsHtml = ui("terms.html");
 const legalCss = ui("legal.css");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
-  assert.match(indexHtml, /<title>tftclarity · Set 17<\/title>/);
-  assert.match(indexHtml, /<link rel="icon" type="image\/png" href="\/favicon\.png">/);
+  assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
+  assert.match(indexHtml, /<meta name="description" content="tftclarity 是面向云顶之弈的对话式数据助手/);
+  assert.match(indexHtml, /<link rel="icon" type="image\/png" href="\/favicon\.png\?v=20260727">/);
   assert.ok(statSync(new URL("../src/app/small-window-ui/favicon.png", import.meta.url)).size > 0);
   assert.doesNotMatch(indexHtml, />TFTAgent</);
   assert.match(indexHtml, /id="app-shell"/);
@@ -52,7 +53,8 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.match(appJs, /seasonContextId: state\.seasonContextId/);
   assert.match(appJs, /resetConversation\(\{ previousSeasonContextId/);
   assert.match(appJs, /seasonContextId: previousSeasonContextId/);
-  assert.match(appJs, /document\.title = theme\.documentTitle/);
+  assert.doesNotMatch(appJs, /document\.title\s*=/);
+  assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
   assert.match(appJs, /wallpaperController\.setSeason/);
   assert.match(appJs, /option\.disabled = !context\.selectable/);
   assert.match(appJs, /theme\?\.patchNoteVersion/);

@@ -62,10 +62,24 @@ import { compileTftResultPolicy } from "../domain/tft/result-policy.js";
 import {
   adaptTftExecutionPlanToParsed
 } from "../domain/tft/execution-query-adapter.js";
+import { tftConversationPolicy } from "../domain/tft/conversation-policy.js";
+import { resolvedTaskFrameToParsed } from "../domain/tft/resolved-task-frame-adapter.js";
+import {
+  createConversationState,
+  migrateLegacySessionToConversationState
+} from "../understanding/conversation-state.js";
+import { reduceConversationState } from "../understanding/context-reducer.js";
+import { interpretTurn } from "../understanding/turn-interpreter.js";
+import {
+  updateConversationStateFromResult
+} from "../understanding/conversation-result-state.js";
+import { applyConversationResultPresentation } from "../understanding/conversation-presentation.js";
+import { compareConversationStateV2Shadow } from "../understanding/conversation-shadow.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
 const RETRIEVAL_PLANNER = new RetrievalPlanner();
 const SEMANTIC_INTENTS = new Set(SUPPORTED_CONCLUSION_INTENTS);
+const CONVERSATION_STATE_V2_MODES = new Set(["off", "shadow", "on"]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -428,6 +442,154 @@ function storeOptionsFor(options = {}, extra = {}) {
   return {
     ...extra,
     seasonContextId: seasonContextIdFor(options)
+  };
+}
+
+export function conversationStateV2ModeFor(options = {}) {
+  const value = String(
+    options.conversationStateV2Mode
+    ?? process.env.TFT_AGENT_CONVERSATION_STATE_V2_MODE
+    ?? "off"
+  ).trim().toLowerCase();
+  return CONVERSATION_STATE_V2_MODES.has(value) ? value : "off";
+}
+
+function semanticResultForConversationResolution(resolution, interpretation) {
+  const frame = resolution.resolvedTaskFrame;
+  return {
+    taskFrame: frame,
+    telemetry: {
+      schemaVersion: "semantic-parser-telemetry.v1",
+      durationMs: 0,
+      usage: { cachedInputTokens: 0, uncachedInputTokens: 0, outputTokens: 0 },
+      budget: {
+        maxInputTokens: 1200,
+        maxOutputTokens: 300,
+        maxLatencyMs: 1500,
+        maxExamples: 0
+      },
+      exampleIds: [],
+      provider: interpretation?.telemetry?.provider ?? "conversation_state_v2",
+      providerFallback: interpretation?.telemetry?.providerFallback ?? null
+    },
+    stateBar: {
+      objective: frame.goal,
+      unresolvedAmbiguities: frame.ambiguities,
+      remainingBudget: {}
+    },
+    contextResolution: {
+      schemaVersion: resolution.schemaVersion,
+      taskFrame: frame,
+      resolved: true,
+      usedConversation: resolution.inheritedFields.length > 0,
+      inheritedFields: resolution.inheritedFields,
+      changedFields: resolution.changedFields
+    },
+    clarificationPolicy: {
+      taskFrame: frame,
+      needsClarification: false,
+      blocking: false,
+      strategy: "conversation_state_v2"
+    }
+  };
+}
+
+async function interpretConversationV2(input, state, options, catalog) {
+  const interpreter = options.turnInterpreter ?? interpretTurn;
+  const raw = await interpreter({
+    currentMessage: input,
+    conversationState: state,
+    semanticProvider: options.turnDeltaProvider ?? options.semanticTaskProvider,
+    semanticTaskParser: options.semanticTaskParser ?? parseSemanticTask,
+    semanticExampleStore: options.semanticExampleStore,
+    catalog,
+    version: options.effectivePatch ?? catalog?.version ?? null,
+    currentTime: options.currentTime ?? null,
+    entitySemanticRetriever: options.semanticRetriever,
+    entityCandidateRetriever: options.entityCandidateRetriever,
+    entityCandidateReranker: options.semanticEntityReranker,
+    domainPolicy: options.conversationDomainPolicy ?? tftConversationPolicy,
+    budget: options.turnInterpreterBudget
+  });
+  const interpretation = raw?.turnDelta
+    ? raw
+    : {
+      schemaVersion: "turn-interpreter.v1",
+      turnDelta: raw,
+      telemetry: { provider: "injected", providerFallback: null },
+      messages: []
+    };
+  const resolution = reduceConversationState({
+    state,
+    delta: interpretation.turnDelta,
+    defaults: options.conversationDefaults ?? {},
+    domainPolicy: options.conversationDomainPolicy ?? tftConversationPolicy
+  });
+  return { interpretation, resolution };
+}
+
+function controlledConversationText(resolution, state) {
+  if (resolution.decision === "exhausted") {
+    const shown = state.lastResult?.shownIds?.length ?? state.lastResult?.returnedCount ?? 0;
+    const total = state.lastResult?.totalCount;
+    const count = total == null ? String(shown) : `${shown}/${total}`;
+    return `当前条件下的结果已全部展示（${count}）。你可以明确修改一个条件后继续。`;
+  }
+  if (resolution.decision === "cancelled") return "已取消当前任务。";
+  if (resolution.decision === "unsupported") return "我理解了任务变化，但当前能力不支持执行。";
+  if (resolution.decision === "invalid_delta") return "本轮任务变化不符合受控协议，请换一种方式说明要继续、修改还是切换任务。";
+  return "我还不能确定本轮是继续当前任务、修改条件还是开始新任务，请补充一个关键信息。";
+}
+
+async function controlledConversationResponse(input, state, interpretation, resolution, options) {
+  if (resolution.decision === "cancelled") {
+    await setStoreEntry(
+      sessionStoreFor(options),
+      "deleteSessionState",
+      sessionKeyFor(options),
+      storeOptionsFor(options)
+    );
+  } else if (resolution.decision === "clarify" || resolution.decision === "invalid_delta") {
+    await setStoreEntry(
+      sessionStoreFor(options),
+      "setSessionState",
+      sessionKeyFor(options),
+      resolution.nextState,
+      storeOptionsFor(options, { ttlMs: options.sessionTtlMs })
+    );
+  }
+  return {
+    type: resolution.decision === "exhausted"
+      ? "conversation_exhausted"
+      : resolution.decision === "cancelled"
+        ? "conversation_cancelled"
+        : "clarification",
+    parsed: null,
+    query: state.query ?? null,
+    validation: {
+      valid: resolution.decision === "exhausted" || resolution.decision === "cancelled",
+      errors: resolution.warnings,
+      warnings: []
+    },
+    clarification: resolution.decision === "clarify" || resolution.decision === "invalid_delta"
+      ? {
+        needsClarification: true,
+        blocking: true,
+        reason: resolution.nextState.pendingClarification?.reason ?? resolution.decision,
+        question: controlledConversationText(resolution, state)
+      }
+      : null,
+    filteredBuilds: [],
+    rankedBuilds: [],
+    results: [],
+    text: controlledConversationText(resolution, state),
+    conversation: {
+      mode: "on",
+      stateVersion: state.schemaVersion,
+      delta: interpretation.turnDelta,
+      resolution
+    },
+    rawInput: input
   };
 }
 
@@ -1499,14 +1661,59 @@ function serializeResultIds(rankedBuilds) {
 
 async function writeLastQuerySession(result, options) {
   if (options.useSession === false) return null;
+  const conversation = options.conversationStateV2Context;
+  if (conversation?.mode === "on") {
+    if (
+      result.type === "clarification"
+      || result.clarification?.blocking
+      || result.validation?.valid === false
+      || result.localDecision
+    ) return null;
+    const compatibilityQuery = isCompIntent(result.type)
+      ? result.query
+      : serializeQueryForSession(result.query);
+    const state = updateConversationStateFromResult({
+      previousState: conversation.previousState,
+      resolution: conversation.resolution,
+      result,
+      delta: conversation.interpretation.turnDelta,
+      updatedAt: new Date().toISOString(),
+      compatibilityQuery
+    });
+    if (
+      state === conversation.previousState
+      || (
+        state.lastResult == null
+        && conversation.previousState.lastResult != null
+      )
+    ) return null;
+    const entry = await setStoreEntry(
+      sessionStoreFor(options),
+      "setSessionState",
+      sessionKeyFor(options),
+      state,
+      storeOptionsFor(options, { ttlMs: options.sessionTtlMs })
+    );
+    Object.defineProperty(result, "conversationState", {
+      enumerable: false,
+      value: state
+    });
+    return entry;
+  }
   const pendingComparison = options.allowPendingComparison === true
     && result.query?.intent === "unit_item_comparison"
     && Boolean(result.query?.unit);
-  if (!result.validation?.valid && !pendingComparison) return null;
+  if (result.validation && !result.validation.valid && !pendingComparison) return null;
+  const compatibilityQuery = isCompIntent(result.type)
+    ? result.query
+    : serializeQueryForSession(result.query);
+  const resultIds = isCompIntent(result.type)
+    ? Object.values(result.rankings ?? {}).flat().slice(0, 10).map((comp) => comp.compId)
+    : serializeResultIds(result.rankedBuilds);
 
   return setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
-    query: serializeQueryForSession(result.query),
-    lastResultIds: serializeResultIds(result.rankedBuilds),
+    query: compatibilityQuery,
+    lastResultIds: resultIds,
     updatedAt: new Date().toISOString()
   }, {
     ...storeOptionsFor(options, { ttlMs: options.sessionTtlMs })
@@ -1649,30 +1856,72 @@ export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
   const semanticParser = options.semanticTaskParser ?? parseSemanticTask;
-  const semanticTaskPromise = options.semanticShadow === false
-    ? null
-    : Promise.resolve().then(() => semanticParser(input, {
-      catalog,
-      conversation: options.semanticConversation ?? [],
-      dynamicContext: {
-        version: options.effectivePatch ?? catalog?.version ?? null,
-        currentTime: options.currentTime ?? null,
-        userState: options.semanticUserState ?? null
-      },
-      exampleStore: options.semanticExampleStore,
-      provider: options.semanticTaskProvider,
-      budget: options.semanticParserBudget,
-      entitySemanticRetriever: options.semanticRetriever,
-      entityCandidateRetriever: options.entityCandidateRetriever,
-      entityCandidateReranker: options.semanticEntityReranker
-    }));
-  semanticTaskPromise?.catch(() => {});
+  const conversationMode = conversationStateV2ModeFor(options);
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options), storeOptionsFor(options));
+  const conversationState = migrateLegacySessionToConversationState(
+    initialSessionEntry?.value ?? {},
+    { seasonContextId: seasonContextIdFor(options) }
+  );
+  let conversationV2 = null;
+  if (conversationMode !== "off") {
+    const { interpretation, resolution } = await interpretConversationV2(
+      input,
+      conversationState,
+      options,
+      catalog
+    );
+    conversationV2 = {
+      mode: conversationMode,
+      previousState: conversationState,
+      interpretation,
+      resolution,
+      semanticShadow: null,
+      comparison: null
+    };
+    if (conversationMode === "on" && resolution.decision !== "execute") {
+      return controlledConversationResponse(
+        input,
+        conversationState,
+        interpretation,
+        resolution,
+        options
+      );
+    }
+    options = {
+      ...options,
+      conversationStateV2Context: conversationV2
+    };
+  }
+  const semanticTaskPromise = options.semanticShadow === false
+    ? null
+    : conversationMode === "on"
+      ? Promise.resolve(semanticResultForConversationResolution(
+        conversationV2.resolution,
+        conversationV2.interpretation
+      ))
+      : Promise.resolve().then(() => semanticParser(input, {
+        catalog,
+        conversation: options.semanticConversation ?? [],
+        dynamicContext: {
+          version: options.effectivePatch ?? catalog?.version ?? null,
+          currentTime: options.currentTime ?? null,
+          userState: options.semanticUserState ?? null
+        },
+        exampleStore: options.semanticExampleStore,
+        provider: options.semanticTaskProvider,
+        budget: options.semanticParserBudget,
+        entitySemanticRetriever: options.semanticRetriever,
+        entityCandidateRetriever: options.entityCandidateRetriever,
+        entityCandidateReranker: options.semanticEntityReranker
+      }));
+  semanticTaskPromise?.catch(() => {});
   let deterministicParsed = parseQueryDeterministically(input, options, catalog);
-  deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
-  deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
+  if (conversationMode !== "on") {
+    deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
+    deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
+  }
   let semanticShadowResult = null;
   if (semanticTaskPromise) {
     semanticShadowResult = await runSemanticShadow(input, deterministicParsed, {
@@ -1681,34 +1930,62 @@ export async function recommendForInput(input, options = {}) {
       legacyTaskPlanCompatibility: options.executionPlanSovereignty !== true
     });
   }
+  if (
+    conversationMode === "shadow"
+    && conversationV2?.resolution?.decision === "execute"
+  ) {
+    conversationV2.semanticShadow = await runSemanticShadow(input, deterministicParsed, {
+      parser: async () => semanticResultForConversationResolution(
+        conversationV2.resolution,
+        conversationV2.interpretation
+      ),
+      legacyTaskPlanCompatibility: false
+    });
+  }
   const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
-  const initialCompSessionMerge = inheritCompRankingFromSession(
-    deterministicParsed,
-    initialSessionEntry?.value,
-    options
-  );
-  const initialUnitSessionMerge = !isCompIntent(initialCompSessionMerge.parsed.intent)
-    && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
-    ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
-    : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
-  let parsedInput = await parseQueryWithOptionalStructuredParser(
-    input,
-    {
-      ...options,
-      forceStructuredParser: Boolean(options.forceStructuredParser || structuredParserNeededBeforeSession)
-    },
-    catalog,
-    initialUnitSessionMerge.parsed
-  );
-  const compSessionMerge = initialCompSessionMerge.inherited
-    ? {
-      parsed: parsedInput,
-      inherited: true,
-      inheritedKeys: initialCompSessionMerge.inheritedKeys
-    }
-    : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
+  const noSessionMerge = { parsed: deterministicParsed, inherited: false, inheritedKeys: [] };
+  const initialCompSessionMerge = conversationMode === "on"
+    ? noSessionMerge
+    : inheritCompRankingFromSession(deterministicParsed, initialSessionEntry?.value, options);
+  const initialUnitSessionMerge = conversationMode === "on"
+    ? noSessionMerge
+    : !isCompIntent(initialCompSessionMerge.parsed.intent)
+      && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
+      ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
+      : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
+  let parsedInput = conversationMode === "on"
+    ? resolvedTaskFrameToParsed(conversationV2.resolution.resolvedTaskFrame, {
+      input,
+      executionPlan: semanticShadowResult?.executionPlanning?.plan,
+      presentation: conversationV2.interpretation.turnDelta.presentation,
+      taskRelation: conversationV2.interpretation.turnDelta.taskRelation,
+      dialogueAct: conversationV2.interpretation.turnDelta.dialogueAct,
+      lastResult: conversationState.lastResult,
+      providerUsed: conversationV2.interpretation.telemetry?.provider === "injected"
+        && !conversationV2.interpretation.telemetry?.providerFallback?.used
+    })
+    : await parseQueryWithOptionalStructuredParser(
+      input,
+      {
+        ...options,
+        forceStructuredParser: Boolean(options.forceStructuredParser || structuredParserNeededBeforeSession)
+      },
+      catalog,
+      initialUnitSessionMerge.parsed
+    );
+  const compSessionMerge = conversationMode === "on"
+    ? { parsed: parsedInput, inherited: false, inheritedKeys: [] }
+    : initialCompSessionMerge.inherited
+      ? {
+        parsed: parsedInput,
+        inherited: true,
+        inheritedKeys: initialCompSessionMerge.inheritedKeys
+      }
+      : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
   parsedInput = compSessionMerge.parsed;
-  parsedInput = applyControlledSemanticCorrection(parsedInput, semanticShadowResult, options);
+  if (conversationMode !== "on") {
+    parsedInput = applyControlledSemanticCorrection(parsedInput, semanticShadowResult, options);
+  }
 
   if (isCompIntent(parsedInput.intent)) {
     const query = buildCompRankingQuery(parsedInput, {
@@ -1978,23 +2255,13 @@ export async function recommendForInput(input, options = {}) {
       catalog
     });
     decorated.parsed = parsedInput;
-    const sessionWrite = options.useSession === false
-      ? null
-      : await setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
-        query: decorated.query,
-        lastResultIds: Object.values(decorated.rankings ?? {})
-          .flat()
-          .slice(0, 10)
-          .map((comp) => comp.compId),
-        updatedAt: new Date().toISOString()
-      }, storeOptionsFor(options, { ttlMs: options.sessionTtlMs }));
     decorated.cache = {
       query: queryCache,
       session: {
         inherited: compSessionMerge.inherited,
         inheritedKeys: compSessionMerge.inheritedKeys,
         updatedAt: initialSessionEntry?.updatedAt ?? null,
-        writtenAt: sessionWrite?.updatedAt ?? null
+        writtenAt: null
       }
     };
     decorated.text = decorated.text ?? "";
@@ -2017,17 +2284,49 @@ export async function recommendForInput(input, options = {}) {
           : semanticShadowResult?.statusProtocol ?? null
     });
     attachRetrievalAudit(decorated, input, catalog, retrievalAudit);
+    if (conversationMode === "on") {
+      applyConversationResultPresentation(decorated, {
+        dialogueAct: conversationV2.interpretation.turnDelta.dialogueAct,
+        presentation: conversationV2.interpretation.turnDelta.presentation,
+        lastResult: conversationState.lastResult
+      });
+    }
+    const sessionWrite = await writeLastQuerySession(decorated, options);
+    decorated.cache.session.writtenAt = sessionWrite?.updatedAt ?? null;
+    if (conversationMode === "shadow" && conversationV2) {
+      conversationV2.comparison = compareConversationStateV2Shadow({
+        delta: conversationV2.interpretation.turnDelta,
+        resolution: conversationV2.resolution,
+        executionPlan: conversationV2.semanticShadow?.executionPlanning?.plan,
+        legacyResult: decorated
+      });
+      Object.defineProperty(decorated, "conversationShadow", {
+        enumerable: false,
+        value: conversationV2.comparison
+      });
+      try {
+        options.agentRun?.emit?.({
+          type: "conversation_state_v2_shadow",
+          stage: "responding",
+          data: conversationV2.comparison
+        });
+      } catch {
+        // Shadow observability cannot alter the response.
+      }
+    }
     return decorated;
   }
 
   const sessionEntry = initialSessionEntry;
-  const sessionMerge = initialUnitSessionMerge.inherited
-    ? {
-      parsed: parsedInput,
-      inherited: true,
-      inheritedKeys: initialUnitSessionMerge.inheritedKeys
-    }
-    : inheritParsedFromSession(parsedInput, sessionEntry?.value);
+  const sessionMerge = conversationMode === "on"
+    ? { parsed: parsedInput, inherited: false, inheritedKeys: [] }
+    : initialUnitSessionMerge.inherited
+      ? {
+        parsed: parsedInput,
+        inherited: true,
+        inheritedKeys: initialUnitSessionMerge.inheritedKeys
+      }
+      : inheritParsedFromSession(parsedInput, sessionEntry?.value);
   const parsed = sessionMerge.parsed;
   const parsedUnavailableItems = unavailableItemRecords(referencedItemApiNames(parsed), catalog);
   const preflightEntityCandidates = buildClarificationEntityCandidates(input, parsed, {
@@ -2376,11 +2675,6 @@ export async function recommendForInput(input, options = {}) {
     cacheDetail: queryCache
   };
 
-  const sessionWrite = await writeLastQuerySession(result, options);
-  if (sessionWrite) {
-    result.cache.session.writtenAt = sessionWrite.updatedAt;
-  }
-
   attachSemanticTakeover(result, semanticRouting, {
     toolStatus: queryCache.stale ? "degraded" : queryCache.hit ? "cache_hit" : "completed",
     conclusionStatus: "completed",
@@ -2394,5 +2688,36 @@ export async function recommendForInput(input, options = {}) {
       ? statusAfterExecution(semanticShadowResult?.statusProtocol, executionPlanRun)
       : semanticShadowResult?.statusProtocol ?? null
   });
-  return attachRetrievalAudit(result, input, catalog, finalRetrievalAudit);
+  attachRetrievalAudit(result, input, catalog, finalRetrievalAudit);
+  if (conversationMode === "on") {
+    applyConversationResultPresentation(result, {
+      dialogueAct: conversationV2.interpretation.turnDelta.dialogueAct,
+      presentation: conversationV2.interpretation.turnDelta.presentation,
+      lastResult: conversationState.lastResult
+    });
+  }
+  const sessionWrite = await writeLastQuerySession(result, options);
+  if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+  if (conversationMode === "shadow" && conversationV2) {
+    conversationV2.comparison = compareConversationStateV2Shadow({
+      delta: conversationV2.interpretation.turnDelta,
+      resolution: conversationV2.resolution,
+      executionPlan: conversationV2.semanticShadow?.executionPlanning?.plan,
+      legacyResult: result
+    });
+    Object.defineProperty(result, "conversationShadow", {
+      enumerable: false,
+      value: conversationV2.comparison
+    });
+    try {
+      options.agentRun?.emit?.({
+        type: "conversation_state_v2_shadow",
+        stage: "responding",
+        data: conversationV2.comparison
+      });
+    } catch {
+      // Shadow observability cannot alter the response.
+    }
+  }
+  return result;
 }
