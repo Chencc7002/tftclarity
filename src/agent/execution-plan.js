@@ -239,11 +239,26 @@ function allowlistedArguments(tool, frame) {
     };
   }
   if (["comps_rankings", "comps_trends", "comps_analysis"].includes(tool)) {
-    return Object.fromEntries(
-      ["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"]
-        .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
-        .map((key) => [key, structuredClone(constraints[key])])
-    );
+    return {
+      ...(resolvedIds(entities, "champion")[0]
+        ? { unit: resolvedIds(entities, "champion")[0] }
+        : {}),
+      ...Object.fromEntries(
+        ["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"]
+          .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
+          .map((key) => [key, structuredClone(constraints[key])])
+      )
+    };
+  }
+  if (tool === "item_carrier_rankings") {
+    return {
+      item: resolvedIds(entities, "item")[0],
+      ...Object.fromEntries(
+        ["days", "patch", "queue", "rank", "minSamples", "limit", "buildLimit", "positiveOnly", "sort"]
+          .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
+          .map((key) => [key, structuredClone(constraints[key])])
+      )
+    };
   }
   if (["unit_details", "item_details", "trait_details"].includes(tool)) {
     const type = tool === "unit_details" ? "champion" : tool.replace("_details", "");

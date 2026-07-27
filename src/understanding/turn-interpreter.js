@@ -95,8 +95,24 @@ function materialFrame(frame) {
   );
 }
 
+function clarifiableFirstTurnFrame(frame) {
+  return Boolean(
+    frame
+    && frame.domain === "tft"
+    && frame.understandingStatus === "understood_but_missing_context"
+    && frame.ambiguities.some((entry) => entry?.affectsToolSelection === true)
+    && (
+      frame.subjects.length
+      || frame.candidates.length
+      || frame.concepts.length
+    )
+  );
+}
+
 function deterministicFallbackDelta(frame, state) {
-  if (!materialFrame(frame)) return unknownTurnDelta("provider_unavailable");
+  if (!materialFrame(frame) && !clarifiableFirstTurnFrame(frame)) {
+    return unknownTurnDelta("provider_unavailable");
+  }
   if (state?.activeTask?.taskFrame || state?.pendingClarification) {
     return unknownTurnDelta("provider_required_for_contextual_turn");
   }

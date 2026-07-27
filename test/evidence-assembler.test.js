@@ -98,3 +98,27 @@ test("EvidenceAssembler redacts secrets, endpoints and local paths from semantic
   assert.doesNotMatch(serialized, /secretsecret|secret\.example|C:\\\\Users/u);
   assert.match(serialized, /redacted-secret/u);
 });
+
+test("EvidenceAssembler carries official item effects and unit role as visible static evidence", () => {
+  const result = structuredClone(fixture);
+  result.query.lockedItems = [];
+  const pack = assembleEvidencePack({
+    result,
+    catalog: createCatalog(),
+    officialItemDetails: new Map([
+      ["TFT_Item_GuinsoosRageblade", { effect: "每次攻击提供攻击速度。" }]
+    ]),
+    officialEntityDetails: {
+      units: new Map([["TFT17_Xayah", { role: "远程物理输出", traitNames: ["不得进入"] }]]),
+      meta: { version: "17.7" }
+    }
+  });
+
+  const itemMechanic = pack.structuredEvidence.find((entry) => entry.kind === "official_item_mechanics");
+  const unitMechanic = pack.structuredEvidence.find((entry) => entry.kind === "official_unit_mechanics");
+  assert.equal(itemMechanic.authority, "official_static_catalog");
+  assert.equal(itemMechanic.officialEffect, "每次攻击提供攻击速度。");
+  assert.equal(unitMechanic.authority, "official_static_catalog");
+  assert.equal(unitMechanic.officialRole, "远程物理输出");
+  assert.equal(JSON.stringify(unitMechanic).includes("traitNames"), false);
+});

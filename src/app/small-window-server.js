@@ -37,6 +37,7 @@ import {
   SQLiteCacheStore,
   SQLiteSemanticDocumentStore,
   applyEnabledEntityAliasesFromStore,
+  analyzeItemDifferentiation,
   buildEntityAliasOverrideDraft,
   buildCompRankings,
   buildItemCatalogAudit,
@@ -1266,6 +1267,67 @@ function serializeRecommendation(result, catalog, meta = {}) {
     return serializeCompRankings(result, publicMeta);
   }
   const query = result.query ?? {};
+  if (result.type === "item_carrier_rankings") {
+    const itemApiName = result.item ?? query.item;
+    const carriers = (result.carriers ?? []).slice(0, 8).map((carrier) => ({
+      unit: {
+        apiName: carrier.unitApiName,
+        name: unitName(carrier.unitApiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveUnit(carrier.unitApiName).iconUrl
+      },
+      stats: {
+        top4: percent(carrier.stats.top4Rate),
+        win: percent(carrier.stats.winRate),
+        avg: Number(carrier.stats.avgPlacement.toFixed(2)),
+        games: carrier.stats.games
+      },
+      baselineAvgPlacement: Number(carrier.baselineAvgPlacement.toFixed(2)),
+      unitDelta: Number(carrier.unitDelta.toFixed(3)),
+      placementUplift: Number(carrier.placementUplift.toFixed(3)),
+      builds: (carrier.builds ?? []).map((build) => ({
+        items: build.items.map((apiName) => ({
+          apiName,
+          name: itemName(apiName, catalog),
+          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
+          target: apiName === itemApiName
+        })),
+        stats: {
+          top4: percent(build.stats.top4Rate),
+          win: percent(build.stats.winRate),
+          avg: Number(build.stats.avgPlacement.toFixed(2)),
+          games: build.stats.games
+        }
+      }))
+    }));
+    return {
+      ok: true,
+      type: "item_carrier_rankings",
+      text: result.text,
+      answer: {
+        summary: result.text,
+        warnings: result.warnings ?? [],
+        methodology: "仅保留携带该装备后平均名次优于该棋子自身基线的棋子；默认按样本量排序。"
+      },
+      item: {
+        apiName: itemApiName,
+        name: itemName(itemApiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveItem(itemApiName).iconUrl
+      },
+      carriers,
+      query: {
+        ...query,
+        itemName: itemName(itemApiName, catalog)
+      },
+      methodology: result.methodology,
+      diagnostics: result.diagnostics,
+      source: sourcePayload(result, meta),
+      cache: result.cache ?? null,
+      meta: {
+        returnedCarriers: carriers.length,
+        ...publicMeta
+      }
+    };
+  }
   if (result.type === "unit_item_rankings" || result.type === "unit_emblem_rankings") {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
@@ -1365,13 +1427,19 @@ function serializeRecommendation(result, catalog, meta = {}) {
         avg: Number(build.stats.avgPlacement.toFixed(2)),
         games: build.stats.games
       },
-      ranking: build.ranking?.method === "robust_applicability_v1"
+      ranking: build.ranking?.method === "robust_applicability_v3"
         ? {
           method: build.ranking.method,
           score: Number((build.ranking.score * 100).toFixed(1)),
+          baseScore: Number((build.ranking.baseScore * 100).toFixed(1)),
           performanceScore: Number((build.ranking.performanceScore * 100).toFixed(1)),
           coverageScore: Number((build.ranking.coverageScore * 100).toFixed(1)),
-          priorSamples: build.ranking.priorSamples
+          priorSamples: build.ranking.priorSamples,
+          generalRecommendation: build.ranking.generalRecommendation === true,
+          sampleLeadRatio: Number.isFinite(build.ranking.sampleLeadRatio)
+            ? Number(build.ranking.sampleLeadRatio.toFixed(1))
+            : null,
+          applicabilityBasis: build.ranking.applicabilityBasis
         }
         : null,
       lowSample
@@ -1413,6 +1481,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
     }))
   });
   const coreFrequency = summarizeCoreItemFrequency(cards);
+  const lockedItemSet = new Set(lockedItemApiNames);
+  coreFrequency.items = coreFrequency.items.filter((entry) => !lockedItemSet.has(entry.apiName));
+  coreFrequency.coreItems = coreFrequency.coreItems.filter((entry) => !lockedItemSet.has(entry.apiName));
   const coreItems = coreFrequency.coreItems.map((entry) => ({
     apiName: entry.apiName,
     name: itemName(entry.apiName, catalog),
@@ -1429,6 +1500,19 @@ function serializeRecommendation(result, catalog, meta = {}) {
     requiredAppearances: coreFrequency.requiredAppearances,
     items: coreItems
   };
+  const itemDifferentiation = hasLockedItems
+    ? analyzeItemDifferentiation({
+      recommendations: (result.rankedBuilds ?? []).slice(0, 3).map((build, index) => ({
+        evidenceId: `build:${index + 1}`,
+        items: build.items.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+        stats: build.stats,
+        stable: !isLowSampleBuild(build, query),
+        lowSample: isLowSampleBuild(build, query)
+      })),
+      lockedItems: lockedItemApiNames.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+      primaryMetric: query.primaryMetric ?? query.sort ?? "avgPlacement"
+    })
+    : null;
   const referenceCard = cards[0] ?? null;
   cards.forEach((card, index) => {
     card.difference = index === 0 ? null : itemDifferences(referenceCard, card, catalog);
@@ -1476,8 +1560,8 @@ function serializeRecommendation(result, catalog, meta = {}) {
         : `${compAnswerPrefix(query.comp)}${result.clarification?.question ?? result.text}`,
       evidence: cards[0]?.stats ?? null,
       warnings: query.warnings ?? [],
-      methodology: cards[0]?.ranking?.method === "robust_applicability_v1"
-        ? "稳健普适评分：对前四率、吃鸡率和平均名次做同查询样本的贝叶斯收缩校正，再加入 8% 的对数样本覆盖权重；表现接近时优先高覆盖方案，显著更强的方案仍可胜出。"
+      methodology: cards[0]?.ranking?.method === "robust_applicability_v3"
+        ? "稳健普适评分：前四率、吃鸡率和平均名次先做同查询样本的贝叶斯收缩校正，组成 90% 表现分；样本置信度按相对最大样本量的平方根连续计算，占 10%。前四率低于 50%或平均名次高于 4.5 的方案不获得样本加分。"
         : null,
       coreConclusion: coreItemSummary
     },
@@ -1489,6 +1573,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     cards,
     coreItemSummary,
     commonCore: coreItems,
+    itemDifferentiation,
     comparison: serializedComparison,
     results: serializedComparison?.entries ?? [],
     overlap: serializedComparison?.overlap ?? null,
@@ -2596,14 +2681,34 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
   if (warnings) result.query.warnings = warnings;
-  let comparisonItemDetails = runtime.officialItemDetails;
-  if (result.comparison && !comparisonItemDetails) {
+  let conclusionItemDetails = runtime.officialItemDetails;
+  let conclusionEntityDetails = runtime.officialEntityDetails;
+  const equipmentConclusion = [
+    "unit_build_rankings",
+    "unit_build_completion",
+    "unit_best_3_items"
+  ].includes(result.type ?? result.query?.intent);
+  const needsConclusionMechanics = equipmentConclusion
+    && preferences.conclusionMode !== "off"
+    && requestRuntime.conclusionGeneratorConfig?.enabled
+    && requestRuntime.conclusionProvider;
+  if ((result.comparison || needsConclusionMechanics) && !conclusionItemDetails) {
     try {
-      comparisonItemDetails = await loadOfficialItemDetails(runtime);
+      conclusionItemDetails = await loadOfficialItemDetails(runtime);
     } catch (error) {
-      const detailWarning = `官方装备图标加载失败：${error.message}`;
+      const detailWarning = `官方装备详情加载失败：${error.message}`;
       result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
-      result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+      if (result.comparison) {
+        result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+      }
+    }
+  }
+  if (needsConclusionMechanics && !conclusionEntityDetails) {
+    try {
+      conclusionEntityDetails = await loadOfficialEntityDetails(runtime);
+    } catch (error) {
+      const detailWarning = `官方棋子定位加载失败：${error.message}`;
+      result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
     }
   }
 
@@ -2657,7 +2762,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     seasonContextId: seasonContext.id,
     principalId: scope ?? "anonymous",
     conversationId,
-    semanticEvidence
+    semanticEvidence,
+    officialItemDetails: conclusionItemDetails,
+    officialEntityDetails: conclusionEntityDetails
   };
   const canDeferConclusion = body?.deferConclusion === true
     && conclusionOptions.requestEnabled
@@ -2694,7 +2801,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     aliasMemory,
     preferences,
     conversationId,
-    itemDetails: comparisonItemDetails
+    itemDetails: conclusionItemDetails
   });
   payload.answer = {
     ...(payload.answer ?? {}),

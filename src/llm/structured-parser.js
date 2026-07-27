@@ -5,6 +5,7 @@ const VALID_INTENTS = new Set([
   "unit_item_rankings",
   "unit_build_completion",
   "unit_item_comparison",
+  "item_carrier_rankings",
   "clarification",
   "comp_rankings",
   "comp_trends",
@@ -35,7 +36,8 @@ const VALID_SORTS = new Set([
   "win_first",
   "robust_first",
   "avg_first",
-  "games_first"
+  "games_first",
+  "uplift_first"
 ]);
 
 const VALID_COMPARISON_MODES = new Set(["exclusive_presence"]);
@@ -407,7 +409,6 @@ export function validateStructuredParserOutput(rawValue) {
 
   if (intent === "comp_rankings" || intent === "comp_trends") {
     const entityMentions = [
-      ...value.entities.unitMentions,
       ...value.entities.itemMentions,
       ...value.entities.traitMentions,
       ...value.constraints.lockedItemMentions,
@@ -415,7 +416,10 @@ export function validateStructuredParserOutput(rawValue) {
       ...value.constraints.excludedItemMentions
     ];
     if (entityMentions.length > 0) {
-      errors.push(`${intent} cannot include unit, item, or trait mentions`);
+      errors.push(`${intent} cannot include item or trait mentions`);
+    }
+    if (value.entities.unitMentions.length > 1) {
+      errors.push(`${intent} can include at most one unit mention`);
     }
     if (value.constraints.starLevel.length > 0
       || value.constraints.itemCount !== undefined
@@ -449,6 +453,23 @@ export function validateStructuredParserOutput(rawValue) {
       || value.constraints.sort !== undefined
       || preferenceMode) {
       errors.push("comp_analysis cannot include single-unit item or preference constraints");
+    }
+  } else if (intent === "item_carrier_rankings") {
+    const itemMentions = [
+      ...value.entities.itemMentions,
+      ...value.constraints.lockedItemMentions
+    ];
+    if (itemMentions.length !== 1) {
+      errors.push("item_carrier_rankings requires exactly one item mention");
+    }
+    if (value.entities.unitMentions.length > 0 || value.entities.traitMentions.length > 0) {
+      errors.push("item_carrier_rankings cannot include unit or trait mentions");
+    }
+    if (value.constraints.limit !== undefined && value.constraints.limit > 8) {
+      errors.push("item_carrier_rankings limit must be <= 8");
+    }
+    if (value.constraints.metrics.length > 0 || preferenceMode) {
+      errors.push("item_carrier_rankings cannot include comp metrics or preference conditions");
     }
   } else if (value.constraints.metrics.length > 0
     || value.constraints.limit !== undefined

@@ -45,11 +45,11 @@ function decorateStructured(record, metadata) {
     ...record,
     evidenceId: String(record.evidenceId),
     visible: true,
-    authority: "primary_statistics",
-    source: metadata.provider,
+    authority: record.authority ?? "primary_statistics",
+    source: record.source ?? metadata.provider,
     patch: metadata.patch,
     cluster: metadata.cluster,
-    updatedAt: metadata.updatedAt,
+    updatedAt: record.sourceUpdatedAt ?? metadata.updatedAt,
     filters: metadata.filters,
     cacheStatus: metadata.cache
   };
@@ -130,6 +130,8 @@ function criticalErrors(legacy) {
 function derivedSignals(legacy) {
   return {
     itemSignals: array(legacy?.itemSignals),
+    itemDifferentiation: legacy?.itemDifferentiation ?? null,
+    mechanicsStatus: legacy?.mechanicsStatus ?? null,
     itemRankingContext: legacy?.itemRankingContext ?? null,
     compRankingContext: legacy?.compRankingContext ?? null,
     compAnalysis: legacy?.compRankingContext?.analysis ?? null,
@@ -158,8 +160,29 @@ export class EvidenceAssembler {
     this.options = options;
   }
 
-  assemble({ result, catalog, input = "", locale = "zh-CN", previousQuery = null, semanticEvidence = [], plan = null, questionContract = null, spec = null } = {}) {
-    const legacy = buildConclusionEvidence({ result, catalog, input, locale, previousQuery, spec });
+  assemble({
+    result,
+    catalog,
+    input = "",
+    locale = "zh-CN",
+    previousQuery = null,
+    semanticEvidence = [],
+    plan = null,
+    questionContract = null,
+    spec = null,
+    officialItemDetails = null,
+    officialEntityDetails = null
+  } = {}) {
+    const legacy = buildConclusionEvidence({
+      result,
+      catalog,
+      input,
+      locale,
+      previousQuery,
+      spec,
+      officialItemDetails,
+      officialEntityDetails
+    });
     const requestIntent = result?.type ?? result?.query?.intent;
     if (requestIntent === "unit_emblem_rankings") {
       legacy.request.intent = "unit_emblem_rankings";
@@ -190,7 +213,11 @@ export class EvidenceAssembler {
     }));
     const structuredEvidence = [
       ...array(legacy.recommendations),
-      ...array(legacy.itemSignals)
+      ...array(legacy.itemSignals),
+      ...array(legacy.itemDifferentiation?.pairSignals),
+      ...array(legacy.itemDifferentiation?.itemSignals),
+      ...array(legacy.itemMechanics),
+      ...array(legacy.unitMechanics)
     ].map((record) => decorateStructured(record, metadata)).concat(analysisEvidence);
     const configuredBudget = plan?.evidenceBudget ?? this.options.evidenceBudget ?? {};
     const maxItems = Math.max(1, Number(configuredBudget.maxItems ?? DEFAULT_EVIDENCE_MAX_ITEMS));
@@ -273,6 +300,10 @@ export class EvidenceAssembler {
       ...pack,
       recommendations: legacy.recommendations,
       itemSignals: legacy.itemSignals,
+      itemDifferentiation: legacy.itemDifferentiation,
+      itemMechanics: legacy.itemMechanics,
+      unitMechanics: legacy.unitMechanics,
+      mechanicsStatus: legacy.mechanicsStatus,
       itemRankingContext: legacy.itemRankingContext,
       compRankingContext: legacy.compRankingContext,
       comparison: legacy.comparison,

@@ -14,6 +14,11 @@ function ambiguityIsMaterial(ambiguity = {}) {
 
 function questionFor(frame, ambiguity) {
   const missing = array(ambiguity?.missingFields);
+  if (missing.includes("query_type")) {
+    const unit = array(frame.subjects).find((entity) => entity?.expectedType === "champion");
+    const name = unit?.canonicalName ?? unit?.rawText ?? "这个英雄";
+    return `你想查询${name}的推荐装备，还是包含${name}的阵容？`;
+  }
   if (missing.includes("candidate_group")) {
     return `我理解你要${frame.goal || "继续比较"}，但当前对话里没有可确定的两个候选。请只补充要比较的两个对象。`;
   }

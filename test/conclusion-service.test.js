@@ -30,7 +30,7 @@ function output(evidence = {}) {
       { dimension: "sample_risk", evidenceIds: ["build:1"], text: "当前样本可用于复核这套方案。" }
     ],
     alternatives: [{ dimension: "build_performance", evidenceIds: ["build:2"], text: "若更看重登顶率，可参考第二套组合。" }],
-    nextAction: "保留已有羊刀，再按散件补齐另外两件。",
+    nextAction: "保留已有羊刀，再从当前展示方案中补齐另外两件。",
     riskNotice: null
   };
 }
@@ -295,6 +295,6 @@ test("conclusion cache keys isolate evidence, model, base prompt and the selecte
     conclusionSpec: { ...versionedEvidence.conclusionSpec, version: 2 }
   }, { model: "model-a" }), versionedBaseline);
   assert.notEqual(makeConclusionCacheKey(versionedEvidence, {
-    model: "model-a", validatorVersion: "conclusion-validator.v8"
+    model: "model-a", validatorVersion: "conclusion-validator.v17"
   }), versionedBaseline);
 });

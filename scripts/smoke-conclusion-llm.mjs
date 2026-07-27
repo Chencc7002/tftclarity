@@ -4,6 +4,7 @@ import { loadLocalEnvironment } from "../src/config/load-env.js";
 import {
   createCatalog,
   createConclusionProviderFromConfig,
+  fetchOfficialTftItemDetails,
   generateEvidenceBackedConclusion,
   resolveConclusionProviderConfig
 } from "../src/index.js";
@@ -27,6 +28,7 @@ if (!config.enabled) {
 
 const requestLogs = [];
 const responseMetadata = [];
+const responseContents = [];
 function safeProviderError(payload) {
   const error = payload?.error;
   if (!error || typeof error !== "object") return null;
@@ -40,13 +42,14 @@ function safeProviderError(payload) {
     message: clipped(error.message, 500)
   };
 }
-const provider = createConclusionProviderFromConfig(config, {
+const configuredProvider = createConclusionProviderFromConfig(config, {
   async fetchImpl(...args) {
     const response = await fetch(...args);
     try {
       const payload = await response.clone().json();
       const content = payload?.choices?.[0]?.message?.content ?? payload?.choices?.[0]?.text ?? payload?.output_text;
       const text = typeof content === "string" ? content.trim() : "";
+      responseContents.push(text.slice(0, 5000));
       responseMetadata.push({
         httpStatus: response.status,
         finishReason: payload?.choices?.[0]?.finish_reason ?? null,
@@ -65,23 +68,56 @@ const provider = createConclusionProviderFromConfig(config, {
     requestLogs.push(event);
   }
 });
+let lastEvidence = null;
+const provider = async (request) => {
+  lastEvidence = request.evidence;
+  return configuredProvider(request);
+};
 const result = JSON.parse(readFileSync(
   new URL("../test/fixtures/conclusion-fixture.json", import.meta.url),
   "utf8"
 ));
+const smokeScenario = String(process.env.SMOKE_CONCLUSION_SCENARIO ?? "completion").trim().toLowerCase();
+if (smokeScenario === "ordinary") {
+  result.query.lockedItems = [];
+}
+const smokeInput = String(
+  process.env.SMOKE_CONCLUSION_INPUT
+    ?? (smokeScenario === "ordinary" ? "查询霞的当前版本最稳三件装备" : "霞已有羊刀，剩下两件怎么带？")
+).trim();
+const officialItemDetails = await fetchOfficialTftItemDetails({ timeoutMs: smokeTimeoutMs });
 const conclusion = await generateEvidenceBackedConclusion({
   result,
   catalog: createCatalog(),
-  input: "霞已有羊刀，剩下两件怎么带？",
+  input: smokeInput,
   config,
   provider,
+  officialItemDetails,
   requestEnabled: true,
   bypassCache: true
 });
 
 if (conclusion.status !== "generated") {
   const providerError = requestLogs.at(-1)?.error ?? "none";
-  throw new Error(`Real conclusion smoke failed: ${conclusion.status}/${conclusion.reason}; provider=${providerError}; metadata=${JSON.stringify(responseMetadata.at(-1) ?? null)}`);
+  const validationErrors = (conclusion.validationFeedback?.errors ?? []).map((issue) => ({
+    category: issue.category,
+    path: issue.path,
+    message: issue.message
+  }));
+  const evidenceMap = {
+    itemSignals: (lastEvidence?.itemSignals ?? []).map((entry) => ({
+      evidenceId: entry.evidenceId,
+      name: entry.item?.name,
+      apiName: entry.item?.apiName,
+      core: entry.core
+    })),
+    itemMechanics: (lastEvidence?.itemMechanics ?? []).map((entry) => ({
+      evidenceId: entry.evidenceId,
+      name: entry.item?.name,
+      apiName: entry.item?.apiName
+    }))
+  };
+  throw new Error(`Real conclusion smoke failed: ${conclusion.status}/${conclusion.reason}; provider=${providerError}; metadata=${JSON.stringify(responseMetadata.at(-1) ?? null)}; validation=${JSON.stringify(validationErrors)}; evidence=${JSON.stringify(evidenceMap)}; output=${responseContents.at(-1) ?? "(none)"}`);
 }
 
 console.log(JSON.stringify({
@@ -94,5 +130,8 @@ console.log(JSON.stringify({
   maxOutputTokens: config.maxOutputTokens,
   attempts: requestLogs.length,
   contentFields: Object.keys(conclusion.content ?? {}),
-  headlineLength: conclusion.content?.headline?.length ?? 0
+  headlineLength: conclusion.content?.headline?.length ?? 0,
+  scenario: smokeScenario,
+  input: smokeInput,
+  content: conclusion.content
 }, null, 2));

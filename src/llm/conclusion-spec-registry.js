@@ -4,7 +4,7 @@ import { CONCLUSION_DIMENSION_CONDITIONS } from "./conclusion-requirements.js";
 
 export const CONCLUSION_SPEC_SCHEMA_VERSION = "conclusion-spec.v2";
 export const CONCLUSION_SPEC_REGISTRY_VERSION = "conclusion-spec-registry.v2";
-export const CONCLUSION_VALIDATOR_VERSION = "conclusion-validator.v7";
+export const CONCLUSION_VALIDATOR_VERSION = "conclusion-validator.v16";
 
 const VALID_EVIDENCE_REQUIREMENTS = new Set([
   "visible_builds", "visible_items", "visible_emblems", "visible_comps", "visible_trends",
@@ -76,8 +76,8 @@ const COMP_EVIDENCE = ["visible_comps", "games", "avgPlacement", "top4Rate", "wi
 const RAW_SPECS = [
   spec({
     id: "unit_build_rankings.default", intent: "unit_build_rankings",
-    version: 2,
-    prompt: prompt("unit-build-rankings", "unit-build-rankings.v3", "unit-build-rankings.md"),
+    version: 6,
+    prompt: prompt("unit-build-rankings", "unit-build-rankings.v9", "unit-build-rankings.md"),
     requiredAnswerDimensions: ["build_performance", "core_item_tendency", "sample_risk"],
     requiredEvidence: {
       build_performance: ["visible_builds", "games", "avgPlacement", "top4Rate", "winRate"],
@@ -91,8 +91,8 @@ const RAW_SPECS = [
   }),
   spec({
     id: "unit_build_completion.default", intent: "unit_build_completion",
-    version: 2,
-    prompt: prompt("unit-build-rankings", "unit-build-rankings.v3", "unit-build-rankings.md"),
+    version: 6,
+    prompt: prompt("unit-build-rankings", "unit-build-rankings.v9", "unit-build-rankings.md"),
     requiredAnswerDimensions: ["completion_options", "locked_item_compatibility", "sample_risk"],
     requiredEvidence: {
       completion_options: BUILD_EVIDENCE, locked_item_compatibility: ["visible_builds", "lockedItems"],
@@ -101,8 +101,8 @@ const RAW_SPECS = [
   }),
   spec({
     id: "unit_best_3_items.default", intent: "unit_best_3_items",
-    version: 2,
-    prompt: prompt("unit-build-rankings", "unit-build-rankings.v3", "unit-build-rankings.md"),
+    version: 6,
+    prompt: prompt("unit-build-rankings", "unit-build-rankings.v9", "unit-build-rankings.md"),
     requiredAnswerDimensions: ["build_performance", "core_item_tendency", "sample_risk"],
     requiredEvidence: {
       build_performance: BUILD_EVIDENCE, core_item_tendency: ["visible_builds"], sample_risk: ["sample_status"]

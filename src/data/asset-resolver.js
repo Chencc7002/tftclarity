@@ -7,6 +7,11 @@ const ITEM_ASSET_ALIASES = new Map([
   ["TFT_Item_GiantSlayer", "TFT_Item_MadredsBloodrazor"]
 ]);
 
+export function resolveItemApiNameAlias(apiName) {
+  const requested = String(apiName ?? "");
+  return ITEM_ASSET_ALIASES.get(requested) ?? requested;
+}
+
 function traitBase(value) {
   return String(value ?? "").replace(/_\d+$/, "");
 }
@@ -38,7 +43,7 @@ export function createAssetResolver(options = {}) {
     const lookup = entityType === "trait"
       ? traitBase(requested)
       : entityType === "item"
-        ? ITEM_ASSET_ALIASES.get(requested) ?? requested
+        ? resolveItemApiNameAlias(requested)
         : requested;
     const record = byKey.get(`${entityType}:${requested}`) ?? byKey.get(`${entityType}:${lookup}`);
     const manifestIconUrl = normalizeAssetUrl(record?.iconUrl);

@@ -145,6 +145,10 @@ export class MetaTFTClient {
     return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
   }
 
+  async getItemCarrierBuilds(plan) {
+    return this.getUnitBuilds(plan);
+  }
+
   async getItems(params = {}) {
     return this.#get("/tft-explorer-api/items", params);
   }
@@ -231,6 +235,10 @@ export class CompsContextClient {
 
   async getCompsStats(params = {}) {
     return this.#get("/tft-comps-api/comps_stats", params, this.rankingsTimeoutMs);
+  }
+
+  async getUnitItemsProcessed(params = {}) {
+    return this.#get("/tft-comps-api/unit_items_processed", params, this.rankingsTimeoutMs);
   }
 
   async #get(path, params, timeoutMs = this.timeoutMs) {

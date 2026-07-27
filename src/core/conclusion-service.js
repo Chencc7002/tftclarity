@@ -83,7 +83,10 @@ function contractDiagnostics(questionContract, spec) {
 }
 
 function visibleSupportingEvidence(evidence) {
-  return (evidence?.semanticEvidence ?? [])
+  return [
+    ...(evidence?.semanticEvidence ?? []),
+    ...(evidence?.structuredEvidence ?? []).filter((record) => record?.authority === "official_static_catalog")
+  ]
     .filter((record) => record?.visible !== false && record?.text)
     .map((record) => ({
       evidenceId: String(record.evidenceId),
@@ -254,6 +257,8 @@ export async function generateEvidenceBackedConclusion({
   bypassCache = false,
   retrievalPlan = null,
   semanticEvidence = [],
+  officialItemDetails = null,
+  officialEntityDetails = null,
   principalId = "anonymous",
   conversationId = "default"
 } = {}) {
@@ -319,7 +324,9 @@ export async function generateEvidenceBackedConclusion({
       semanticEvidence: semanticEvidence.length ? semanticEvidence : result?.semanticEvidence ?? [],
       plan: retrievalPlan ?? result?.retrievalPlan ?? null,
       questionContract,
-      spec
+      spec,
+      officialItemDetails,
+      officialEntityDetails
     });
   } catch (error) {
     const value = envelope("skipped", { reason: "unsafe_state", model, latencyMs: Date.now() - startedAt });

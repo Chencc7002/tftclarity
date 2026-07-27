@@ -128,6 +128,10 @@ export function buildCompRankings(response = {}, options = {}) {
       rejected.push({ clusterId: row.clusterId, reason: "missing_comp_definition" });
       continue;
     }
+    if (query.unit && !definition.units.includes(query.unit)) {
+      rejected.push({ clusterId: row.clusterId, reason: "missing_target_unit", unit: query.unit });
+      continue;
+    }
     if (!pageVisible(definition, row.stats, query, minPlayrate)) {
       rejected.push({
         clusterId: row.clusterId,

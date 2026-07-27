@@ -4,6 +4,7 @@ import { resolveEntities } from "./entity-resolver.js";
 import { resolveHighConfidenceEntityCandidates } from "./high-confidence-entity-resolver.js";
 import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
 import { isCompAnalysisInput, parseCompAnalysisRequest } from "./comp-analysis.js";
+import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
 
 function parseStarLevels(input) {
   const matches = [...normalizeText(input).matchAll(/([123一二三两])星/g)];
@@ -154,6 +155,9 @@ export function parseCompMention(input) {
 function parseSort(input) {
   const normalized = normalizeText(input);
   const intents = [];
+  if (/(?:提升|增益|改善).{0,4}(?:最大|最高|最多)|(?:棋子|英雄).{0,4}变化.{0,4}(?:最大|最好)/.test(normalized)) {
+    intents.push("uplift_first");
+  }
   if (/(前四优先|前四率优先|按前四|前四率最高|哪个(?:更)?稳|哪件(?:更)?稳|谁更稳)/.test(normalized)) {
     intents.push("top4_first");
   }
@@ -200,6 +204,7 @@ function parseItemPolicy(input, itemMatches = []) {
 
 function inferIntent(input, details = {}) {
   const normalized = normalizeText(input);
+  if (details.itemCarrierRequested) return "item_carrier_rankings";
   if (normalized.includes("能不能带") || normalized.includes("可不可以带")) {
     return "unit_item_availability";
   }
@@ -236,9 +241,16 @@ function inferIntent(input, details = {}) {
   return "unit_build_rankings";
 }
 
-function hasExplicitIntent(input, comparison, ownedItems, itemCategories = [], performanceItem = null) {
+function hasExplicitIntent(
+  input,
+  comparison,
+  ownedItems,
+  itemCategories = [],
+  performanceItem = null,
+  itemCarrierRequested = false
+) {
   const normalized = normalizeText(input);
-  return Boolean(performanceItem)
+  return Boolean(performanceItem || itemCarrierRequested)
     || comparison?.requested
     || ((itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized))
     || /(单件|单装备|哪个装备|哪件装备|三件套|出装|一套|换一套|阵容|能不能带|可不可以带)/.test(normalized)
@@ -336,6 +348,23 @@ function cleanUnresolvedFragment(value, entities) {
     if (alias) fragment = fragment.replaceAll(alias, "");
   }
   return fragment.replace(/(?:一个|一件|两件|三件|那个|普通|光明|神器|特殊|装备|羁绊|已经|当前|版本|什么|怎么|如何|可以|能不能|可不可以|包含|允许|含|不要|别带|别用|不用|排除|剔除|去掉|换掉|换成|替换成|改成|把|避开|规避|不考虑|不想要|不需要|前四|吃鸡|稳健|高样本|样本|优先|吗|呢|呀|啊|的)/g, "");
+}
+
+function requestsItemCarrierRanking(input) {
+  return isItemCarrierRequest(input);
+}
+
+function isBareSingleUnitInput(input, entities, intentExplicit) {
+  if (
+    intentExplicit
+    || entities.units.length !== 1
+    || entities.items.length > 0
+    || entities.traits.length > 0
+    || entities.ambiguities.length > 0
+  ) return false;
+  const unitAlias = normalizeAlias(entities.units[0]?.alias);
+  if (!unitAlias) return false;
+  return normalizeAlias(input).replace(unitAlias, "") === "";
 }
 
 function inferUnresolvedEntityHints(input, entities) {
@@ -440,14 +469,19 @@ export function parseQuery(input, options = {}) {
   const excludedItemSet = new Set(excludedItems);
   const comparisonItems = comparison.itemApiNames;
   const activeItemMatches = entities.items.filter((item) => !excludedItemSet.has(item.target));
+  const itemCarrierRequested = !unit
+    && activeItemMatches.length === 1
+    && requestsItemCarrierRanking(input);
+  const carrierItem = itemCarrierRequested ? activeItemMatches[0].target : null;
   const performanceItem = !comparison.requested
+    && !itemCarrierRequested
     && activeItemMatches.length === 1
     && /(?:表现|数据).{0,6}(?:怎么样|如何|好不好)|(?:强不强|好不好|值不值得(?:做|出|拿|带)?)/.test(normalizeText(input))
     ? activeItemMatches[0].target
     : null;
   const lockedItems = comparison.requested
     ? comparison.ownedItemApiNames
-    : performanceItem ? [] : allItems.filter((apiName) => !excludedItemSet.has(apiName));
+    : (performanceItem || itemCarrierRequested) ? [] : allItems.filter((apiName) => !excludedItemSet.has(apiName));
   const ownedItems = lockedItems;
   const comparisonMetric = parseComparisonMetric(input, comparison.requested);
   const primaryMetric = comparisonMetric.value;
@@ -476,7 +510,13 @@ export function parseQuery(input, options = {}) {
     && !/(带|用|给|装备|已有|已经有|有了|拿了|锁定|不要|排除|剔除|去掉|换掉)/.test(normalizeText(input));
   const intent = comparison.requested
     ? "unit_item_comparison"
-    : inferIntent(input, { comparison, ownedItems, itemCategories, performanceItem });
+    : inferIntent(input, {
+      comparison,
+      ownedItems,
+      itemCategories,
+      performanceItem,
+      itemCarrierRequested
+    });
   const compQuery = ["comp_rankings", "comp_trends", "comp_analysis"].includes(intent)
     ? parseCompRankingQuery(input, { ...(options.compQuery ?? {}), intent })
     : null;
@@ -489,6 +529,15 @@ export function parseQuery(input, options = {}) {
   const effectiveUnresolvedEntityHints = ["comp_rankings", "comp_trends", "comp_analysis"].includes(intent)
     ? unresolvedEntityHints.filter((hint) => !/^(?:阵容|体系)$/u.test(normalizeAlias(hint.inputFragment)))
     : unresolvedEntityHints;
+  const intentExplicit = hasExplicitIntent(
+    input,
+    comparison,
+    ownedItems,
+    itemCategories,
+    performanceItem,
+    itemCarrierRequested
+  );
+  const bareUnitIntentAmbiguous = isBareSingleUnitInput(input, entities, intentExplicit);
 
   return {
     rawInput: String(input ?? ""),
@@ -502,6 +551,7 @@ export function parseQuery(input, options = {}) {
     itemPolicy: parseItemPolicy(input, activeItemMatches),
     itemCategories,
     performanceItem,
+    carrierItem,
     lockedItems,
     comparisonItems,
     comparisonMode: comparison.requested ? "exclusive_presence" : undefined,
@@ -524,7 +574,8 @@ export function parseQuery(input, options = {}) {
     analysis,
     parser: {
       usedLLM: false,
-      intentExplicit: hasExplicitIntent(input, comparison, ownedItems, itemCategories, performanceItem),
+      intentExplicit,
+      bareUnitIntentAmbiguous,
       constraintConflicts: [
         ...(sort.intents.length > 1 ? [{ type: "sort", values: sort.intents }] : []),
         ...(comparisonMetric.intents.length > 1

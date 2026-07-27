@@ -16,7 +16,14 @@ const RANKS = new Set([
   "CHALLENGER"
 ]);
 const STRATEGIES = new Set(["reroll", "fast8", "fast9"]);
-const SORTS = new Set(["top4_first", "win_first", "avg_first", "games_first", "robust_first"]);
+const SORTS = new Set([
+  "top4_first",
+  "win_first",
+  "avg_first",
+  "games_first",
+  "robust_first",
+  "uplift_first"
+]);
 const METRICS = new Set(["top4_rate", "win_rate", "win_share", "avg_placement", "popularity"]);
 const ITEM_POLICIES = new Set([
   "ordinary_only",
@@ -118,7 +125,10 @@ function normalizeResolvedTaskFrame(frame) {
     constraints.strategy = "reroll";
   }
   delete constraints.specialMode;
-  const compositionGoal = ["comp_rankings", "composition_rankings", "rank_options"].includes(frame.goal);
+  // `rank_options` is a generic semantic goal shared by unit, item, and
+  // composition ranking tools. Keep it generic here and let capability
+  // matching select the concrete tool from the resolved entities.
+  const compositionGoal = ["comp_rankings", "composition_rankings"].includes(frame.goal);
   return createTaskFrame({
     ...frame,
     action: compositionGoal ? "rank" : frame.action,

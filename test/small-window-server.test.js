@@ -346,7 +346,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   });
 
   const { statusCode, payload } = await handleRecommendRequest({
-    input: "xayah",
+    input: "xayah 推荐装备",
     preferences: {
       minSamples: 100
     }
@@ -359,7 +359,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(payload.run.currentStage, "terminal");
   assert.equal(runtime.cacheStore.getQueryEvent(payload.queryId).runId, payload.run.runId);
   assert.equal(payload.cards[0].title, "普适推荐");
-  assert.equal(payload.cards[0].ranking.method, "robust_applicability_v1");
+  assert.equal(payload.cards[0].ranking.method, "robust_applicability_v3");
   assert.equal(payload.cards[0].ranking.coverageScore <= 100, true);
   assert.match(payload.answer.methodology, /贝叶斯收缩校正/);
   assert.deepEqual(payload.unit, {
@@ -398,6 +398,9 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(owned.statusCode, 200);
   assert.equal(owned.payload.cards[0].title, "普适补齐");
   assert.equal(owned.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
+  assert.equal(owned.payload.commonCore.some((item) => item.name === "羊刀"), false);
+  assert.equal(owned.payload.coreItemSummary.items.some((item) => item.name === "羊刀"), false);
+  assert.equal(owned.payload.itemDifferentiation.hasClearLeader, false);
 
   const localized = await handleRecommendRequest({
     input: "２星 xia，３guanxing，已經有yangdao，剩下兩件怎麼帶？",
@@ -2481,10 +2484,10 @@ test("handleRecommendRequest uses saved preferences unless request overrides the
   }, runtime);
 
   const savedOnly = await handleRecommendRequest({
-    input: "xayah"
+    input: "xayah 推荐装备"
   }, runtime);
   const overridden = await handleRecommendRequest({
-    input: "xayah",
+    input: "xayah 推荐装备",
     preferences: {
       minSamples: 100,
       structuredParserMode: "always"

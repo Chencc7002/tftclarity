@@ -13,9 +13,9 @@ Prompt 路由由服务端根据已校验的结果类型或意图执行，模型�
 
 | 结果类型或意图 | 专用 Prompt | Prompt 版本建议 |
 |---|---|---|
-| `unit_build_rankings` | `conclusion-intents/unit-build-rankings.md` | `unit-build-rankings.v1` |
-| `unit_build_completion` | `conclusion-intents/unit-build-rankings.md` | `unit-build-rankings.v1` |
-| `unit_best_3_items` | `conclusion-intents/unit-build-rankings.md` | `unit-build-rankings.v1` |
+| `unit_build_rankings` | `conclusion-intents/unit-build-rankings.md` | `unit-build-rankings.v9` |
+| `unit_build_completion` | `conclusion-intents/unit-build-rankings.md` | `unit-build-rankings.v9` |
+| `unit_best_3_items` | `conclusion-intents/unit-build-rankings.md` | `unit-build-rankings.v9` |
 | `unit_item_rankings` | `conclusion-intents/unit-item-rankings.md` | `unit-item-rankings.v2` |
 | `unit_item_comparison` | `conclusion-intents/unit-item-comparison.md` | `unit-item-comparison.v1` |
 | `unit_emblem_rankings` | `conclusion-intents/unit-emblem-rankings.md` | `unit-emblem-rankings.v1` |

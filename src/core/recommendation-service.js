@@ -18,7 +18,11 @@ import { buildQueryContext } from "./context-builder.js";
 import { evaluateClarification } from "./clarification-policy.js";
 import { filterBuildRows } from "./item-policy-filter.js";
 import { parseQuery } from "./query-parser.js";
-import { planMetaTFTCompCandidates, planMetaTFTUnitBuilds } from "./query-planner.js";
+import {
+  planMetaTFTCompCandidates,
+  planMetaTFTItemCarrierBuilds,
+  planMetaTFTUnitBuilds
+} from "./query-planner.js";
 import {
   COMP_FILTER_SEMANTICS_VERSION,
   createAppliedCompConstraint,
@@ -30,6 +34,11 @@ import { validateQueryContext } from "./query-validator.js";
 import { rankBuilds } from "./ranker.js";
 import { compareItemOptions, comparisonRankedBuilds } from "./item-comparison.js";
 import { aggregateUnitItemRankings } from "./item-ranking.js";
+import {
+  ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
+  ITEM_CARRIER_MAX_LIMIT,
+  aggregateItemCarrierRankings
+} from "./item-carrier-ranking.js";
 import { formatRecommendation } from "./response-formatter.js";
 import { normalizeAlias } from "./normalizer.js";
 import {
@@ -101,6 +110,7 @@ function referencedItemApiNames(query) {
     ...(query?.ownedItems ?? []),
     ...(query?.comparisonItems ?? []),
     ...(query?.performanceItem ? [query.performanceItem] : []),
+    ...(query?.carrierItem ? [query.carrierItem] : []),
     ...(query?.comparison?.itemApiNames ?? []),
     ...(query?.parser?.comparison?.itemApiNames ?? [])
   ]);
@@ -133,6 +143,40 @@ function responseTypeForQuery(query, clarification = null) {
 
 function isCompIntent(intent) {
   return intent === "comp_rankings" || intent === "comp_trends" || intent === "comp_analysis";
+}
+
+function itemCarrierLimit(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0
+    ? Math.min(ITEM_CARRIER_MAX_LIMIT, number)
+    : ITEM_CARRIER_MAX_LIMIT;
+}
+
+function itemCarrierQuery(parsed, options = {}) {
+  const preferences = { ...DEFAULT_QUERY_OPTIONS, ...(options.preferences ?? {}) };
+  return {
+    seasonContextId: String(preferences.seasonContextId ?? "set17-live"),
+    providerVersion: preferences.providerVersion ?? null,
+    effectivePatch: String(
+      preferences.currentPatch
+      ?? preferences.effectivePatch
+      ?? parsed.patch
+      ?? preferences.patch
+      ?? "current"
+    ),
+    intent: "item_carrier_rankings",
+    item: parsed.carrierItem,
+    days: Number(parsed.days ?? preferences.days ?? 3),
+    patch: String(parsed.patch ?? preferences.patch ?? "current"),
+    queue: String(parsed.queue ?? preferences.queue ?? "1100"),
+    rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
+    minSamples: Math.max(0, Number(parsed.minSamples ?? options.itemCarrierMinSamples ?? 100)),
+    limit: itemCarrierLimit(parsed.limit ?? options.itemCarrierLimit),
+    buildLimit: ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
+    positiveOnly: true,
+    sort: parsed.sort === "uplift_first" ? "uplift_first" : "games_first",
+    dataVersion: "item-carrier-unit-delta-v1"
+  };
 }
 
 function createRetrievalAudit(result, input, catalog, planner = RETRIEVAL_PLANNER) {
@@ -529,6 +573,17 @@ async function interpretConversationV2(input, state, options, catalog) {
 }
 
 function controlledConversationText(resolution, state) {
+  const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
+    entry?.code === "ambiguous_query_type"
+    || entry?.missingFields?.includes?.("query_type")
+  ));
+  if (queryTypeAmbiguity) {
+    const unit = resolution.resolvedTaskFrame?.subjects?.find((entity) => (
+      entity?.expectedType === "champion"
+    ));
+    const name = unit?.canonicalName ?? unit?.rawText ?? "这个英雄";
+    return `你想查询${name}的推荐装备，还是包含${name}的阵容？`;
+  }
   if (resolution.decision === "exhausted") {
     const shown = state.lastResult?.shownIds?.length ?? state.lastResult?.returnedCount ?? 0;
     const total = state.lastResult?.totalCount;
@@ -896,7 +951,7 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     applied.push(key);
   };
 
-  if (isCompIntent(structured.intent) && (!parsed.unit || structured.intent === "comp_analysis")) {
+  if (isCompIntent(structured.intent)) {
     next.intent = structured.intent;
     applied.push("intent");
   }
@@ -915,12 +970,28 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     structured.constraints.comparisonItemMentions,
     reparsed
   );
+  if (structured.intent === "item_carrier_rankings") {
+    const carrierItems = resolvedItemApiNamesForMentions(
+      [
+        ...(structured.entities.itemMentions ?? []),
+        ...(structured.constraints.lockedItemMentions ?? [])
+      ],
+      reparsed
+    );
+    if (carrierItems.length === 1) {
+      next.intent = "item_carrier_rankings";
+      next.carrierItem = carrierItems[0];
+      next.lockedItems = [];
+      next.ownedItems = [];
+      applied.push("intent", "carrierItem");
+    }
+  }
   const reclassifyAmbiguousItems = parsed.parser?.multipleItemRelationAmbiguous
     && structured.intent === "unit_item_comparison";
   const lockedItems = uniqueArray([
     ...(reclassifyAmbiguousItems ? [] : (parsed.lockedItems ?? parsed.ownedItems ?? [])),
     ...(reclassifyAmbiguousItems ? [] : (reparsed.lockedItems ?? reparsed.ownedItems ?? [])),
-    ...structuredLockedItems
+    ...(structured.intent === "item_carrier_rankings" ? [] : structuredLockedItems)
   ]);
   const comparisonItems = uniqueArray([
     ...(parsed.comparisonItems ?? []),
@@ -1458,6 +1529,7 @@ function serializeQueryForSession(query) {
     comparisonItems: query.comparisonItems,
     comparisonMode: query.comparisonMode,
     performanceItem: query.performanceItem ?? null,
+    carrierItem: query.carrierItem ?? query.item ?? null,
     primaryMetric: query.primaryMetric,
     pendingComparison: Boolean(query.pendingComparison),
     comp: query.comp?.status === "applied" && query.comp?.value?.selection === "explicit"
@@ -1653,7 +1725,215 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
   };
 }
 
-function serializeResultIds(rankedBuilds) {
+async function recommendItemCarriersForInput(
+  input,
+  parsed,
+  options,
+  catalog,
+  semanticShadowResult
+) {
+  const query = itemCarrierQuery(parsed, options);
+  const itemRecord = catalog.itemByApiName.get(query.item);
+  if (!itemRecord) {
+    return attachRetrievalAudit({
+      type: "clarification",
+      parsed,
+      query,
+      validation: { valid: false, errors: ["缺少可识别的装备"], warnings: [] },
+      clarification: {
+        needsClarification: true,
+        blocking: true,
+        question: "请指定要查询携带者的装备名称。"
+      },
+      carriers: [],
+      rankedBuilds: [],
+      text: "请指定要查询携带者的装备名称。"
+    }, input, catalog);
+  }
+
+  const localDecision = unavailableItemDecision({ ...query, carrierItem: query.item }, catalog);
+  if (localDecision) {
+    return attachRetrievalAudit({
+      type: "item_carrier_rankings",
+      parsed,
+      query,
+      validation: { valid: true, errors: [], warnings: [] },
+      localDecision,
+      carriers: [],
+      rankedBuilds: [],
+      text: localDecision.text
+    }, input, catalog);
+  }
+
+  const validation = { valid: true, errors: [], warnings: [] };
+  const retrievalAudit = createRetrievalAudit({
+    parsed,
+    query,
+    validation,
+    clarification: null
+  }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
+  const semanticRouting = semanticTakeoverDecision(
+    semanticShadowResult,
+    retrievalAudit.retrievalPlan,
+    options
+  );
+  const executionPlan = activeExecutionPlan(
+    semanticShadowResult,
+    semanticRouting,
+    "item_carrier_rankings",
+    query,
+    options.toolRegistry ?? options.executionPlanExecutor?.registry
+  );
+  const queryCacheKey = makeQueryCacheKey(query);
+  const cacheStore = options.cacheStore ?? null;
+  let packet = options.itemCarrierResponse;
+  let queryCache = { key: queryCacheKey, hit: false, stale: false };
+  const warnings = [];
+
+  if (packet === undefined && !options.bypassQueryCache) {
+    const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
+    if (cached?.value?.response !== undefined) {
+      packet = cached.value.response;
+      queryCache = {
+        key: queryCacheKey,
+        hit: true,
+        stale: false,
+        updatedAt: cached.updatedAt,
+        expiresAt: cached.expiresAt
+      };
+    }
+  }
+
+  if (packet === undefined) {
+    try {
+      packet = await executePlannedStructuredQuery(
+        retrievalAudit.retrievalPlan,
+        "item_carrier_rankings",
+        async (params) => {
+          const plannedQuery = {
+            ...query,
+            item: params.item,
+            days: params.days,
+            patch: params.patch,
+            queue: params.queue,
+            rankFilter: params.rank,
+            minSamples: params.minSamples,
+            limit: params.limit,
+            buildLimit: params.buildLimit,
+            positiveOnly: params.positiveOnly,
+            sort: params.sort
+          };
+          if (typeof options.metaTFTClient?.getItemCarrierBuilds !== "function") {
+            throw new Error("item carrier rankings require getItemCarrierBuilds()");
+          }
+          if (typeof options.compsClient?.getUnitItemsProcessed !== "function") {
+            throw new Error("item carrier rankings require getUnitItemsProcessed()");
+          }
+          const baselineParams = {
+            queue: plannedQuery.queue,
+            patch: plannedQuery.patch,
+            days: plannedQuery.days,
+            permit_filter_adjustment: "true",
+            ...(plannedQuery.queue === "1100" && plannedQuery.rankFilter?.length
+              ? { rank: [...plannedQuery.rankFilter].sort().join(",") }
+              : {})
+          };
+          const [buildResponse, baselineResponse] = await Promise.all([
+            options.metaTFTClient.getItemCarrierBuilds(planMetaTFTItemCarrierBuilds(plannedQuery)),
+            options.compsClient.getUnitItemsProcessed(baselineParams)
+          ]);
+          return {
+            source: "metatft",
+            updatedAt: baselineResponse?.updated
+              ?? baselineResponse?.data?.updated
+              ?? buildResponse?.capture?.capturedAt
+              ?? new Date().toISOString(),
+            buildResponse,
+            baselineResponse
+          };
+        },
+        {
+          intent: query.intent,
+          toolExecutor: options.toolExecutor,
+          executionPlanExecutor: options.executionPlanExecutor,
+          executionPlan,
+          agentRun: options.agentRun,
+          signal: options.abortSignal
+        }
+      );
+      const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
+        request: planMetaTFTItemCarrierBuilds(query),
+        response: packet,
+        source: "metatft",
+        patch: query.patch
+      }, storeOptionsFor(options, { ttlMs: options.queryTtlMs }));
+      queryCache.updatedAt = stored?.updatedAt ?? packet.updatedAt ?? new Date().toISOString();
+      queryCache.expiresAt = stored?.expiresAt ?? null;
+    } catch (error) {
+      const stale = await getStoreEntry(
+        cacheStore,
+        "getQuery",
+        queryCacheKey,
+        storeOptionsFor(options, { allowExpired: true })
+      );
+      if (stale?.value?.response === undefined) throw error;
+      packet = stale.value.response;
+      queryCache = {
+        key: queryCacheKey,
+        hit: true,
+        stale: true,
+        updatedAt: stale.updatedAt,
+        expiresAt: stale.expiresAt
+      };
+      warnings.push(`MetaTFT 请求失败，已使用 ${stale.updatedAt} 的过期装备携带者缓存`);
+    }
+  }
+
+  const buildResponse = packet?.buildResponse ?? packet?.response ?? packet;
+  const baselineResponse = packet?.baselineResponse ?? options.itemCarrierBaselineResponse;
+  if (!baselineResponse) throw new Error("item carrier rankings require unit baseline data");
+
+  const result = aggregateItemCarrierRankings(buildResponse, baselineResponse, query);
+  result.parsed = parsed;
+  result.validation = validation;
+  result.rankedBuilds = [];
+  result.warnings = warnings;
+  result.source = {
+    provider: "MetaTFT",
+    endpoint: "tft-explorer-api/unit_builds + tft-comps-api/unit_items_processed",
+    patch: query.patch,
+    updatedAt: packet?.updatedAt ?? queryCache.updatedAt ?? null,
+    cache: queryCache.stale ? "stale" : queryCache.hit ? "hit" : "miss"
+  };
+  result.cache = {
+    query: queryCache,
+    session: {
+      inherited: false,
+      inheritedKeys: [],
+      updatedAt: null,
+      writtenAt: null
+    }
+  };
+  const itemName = itemRecord.preferredDisplayName
+    ?? itemRecord.shortName
+    ?? itemRecord.zhName
+    ?? query.item;
+  result.text = result.carriers.length
+    ? `${itemName}共找到 ${result.carriers.length} 个正向提升携带者。`
+    : `${itemName}在当前样本门槛下没有正向提升携带者。`;
+  attachSemanticTakeover(result, semanticRouting, {
+    toolStatus: queryCache.stale ? "degraded" : queryCache.hit ? "cache_hit" : "completed",
+    conclusionStatus: "not_requested",
+    failureLayer: queryCache.stale ? "tool" : null,
+    latencyMs: semanticShadowResult?.semanticResult?.telemetry?.durationMs ?? 0
+  });
+  attachRetrievalAudit(result, input, catalog, retrievalAudit);
+  const sessionWrite = await writeLastQuerySession(result, options);
+  result.cache.session.writtenAt = sessionWrite?.updatedAt ?? null;
+  return result;
+}
+
+function serializeResultIds(rankedBuilds = []) {
   return rankedBuilds
     .slice(0, 3)
     .map((build) => build.raw?.unit_builds ?? build.raw?.unit_build ?? build.items.join("|"));
@@ -1709,7 +1989,9 @@ async function writeLastQuerySession(result, options) {
     : serializeQueryForSession(result.query);
   const resultIds = isCompIntent(result.type)
     ? Object.values(result.rankings ?? {}).flat().slice(0, 10).map((comp) => comp.compId)
-    : serializeResultIds(result.rankedBuilds);
+    : result.type === "item_carrier_rankings"
+      ? (result.carriers ?? []).map((carrier) => carrier.unitApiName).slice(0, ITEM_CARRIER_MAX_LIMIT)
+      : serializeResultIds(result.rankedBuilds);
 
   return setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
     query: compatibilityQuery,
@@ -1987,6 +2269,16 @@ export async function recommendForInput(input, options = {}) {
     parsedInput = applyControlledSemanticCorrection(parsedInput, semanticShadowResult, options);
   }
 
+  if (parsedInput.intent === "item_carrier_rankings") {
+    return recommendItemCarriersForInput(
+      input,
+      parsedInput,
+      options,
+      catalog,
+      semanticShadowResult
+    );
+  }
+
   if (isCompIntent(parsedInput.intent)) {
     const query = buildCompRankingQuery(parsedInput, {
       preferences: options.preferences,
@@ -1997,7 +2289,7 @@ export async function recommendForInput(input, options = {}) {
     query.sort = parsedInput.sort;
     query.sessionContext = parsedInput.sessionContext ?? null;
     query.constraintSources = Object.fromEntries(
-      ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit"]
+      ["unit", "rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit"]
         .map((key) => [key, compConstraintSource(parsedInput, options, key)])
     );
     if (query.preferenceRequested) {

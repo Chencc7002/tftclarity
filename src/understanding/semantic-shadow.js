@@ -17,6 +17,7 @@ const LEGACY_ACTIONS = Object.freeze({
   unit_item_rankings: "rank",
   unit_emblem_rankings: "rank",
   unit_item_comparison: "compare",
+  item_carrier_rankings: "rank",
   unit_item_availability: "search",
   unit_details: "explain",
   item_details: "explain",

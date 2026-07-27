@@ -168,6 +168,18 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
     );
   }
 
+  if (parsed.parser?.bareUnitIntentAmbiguous && query.unit) {
+    const unit = catalog.unitByApiName.get(query.unit);
+    const name = unit?.zhName ?? unit?.displayName ?? parsed.unitAlias ?? query.unit;
+    return buildClarification(
+      "ambiguous_unit_query_type",
+      `你想查询${name}的推荐装备，还是包含${name}的阵容？`,
+      {
+        suggestions: [`${name}推荐装备`, `${name}所在阵容`]
+      }
+    );
+  }
+
   if (entityAmbiguity?.candidates?.length > 1) {
     const labels = candidateLabels(entityAmbiguity.candidates);
     return buildClarification(
