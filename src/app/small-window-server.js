@@ -55,6 +55,7 @@ import {
   createIntentEnvelope,
   createPersistentSemanticRetriever,
   createAssetResolver,
+  createChatSemanticTaskProvider,
   createStructuredParserFromConfig,
   fetchOfficialTftEntityDetails,
   fetchOfficialTftItemDetails,
@@ -436,6 +437,11 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
   return {
     cache,
     structuredParser: summarizeStructuredParserConfig(runtime.structuredParserConfig ?? {}),
+    conversationState: {
+      schemaVersion: "conversation-state.v2",
+      mode: runtime.conversationStateV2Mode ?? "off",
+      turnDeltaProviderConfigured: typeof runtime.turnDeltaProvider === "function"
+    },
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
     semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
     requests: {
@@ -1767,6 +1773,8 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParser: options.structuredParser ?? null,
     useStructuredParser: options.useStructuredParser ?? "auto",
     structuredParserConfig: options.structuredParserConfig ?? null,
+    turnDeltaProvider: options.turnDeltaProvider ?? options.semanticTaskProvider ?? null,
+    conversationStateV2Mode: options.conversationStateV2Mode ?? "off",
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
     conclusionJobs: new Map(),
@@ -1809,6 +1817,23 @@ export function createSmallWindowCacheStore(options = {}) {
 
 export async function createSmallWindowRuntimeAsync(options = {}, env = process.env) {
   const structuredParserRuntime = createSmallWindowStructuredParser(options, env);
+  const conversationStateV2Mode = String(
+    options.conversationStateV2Mode
+    ?? env.TFT_AGENT_CONVERSATION_STATE_V2_MODE
+    ?? "off"
+  ).trim().toLowerCase();
+  const turnDeltaProvider = options.turnDeltaProvider
+    ?? options.semanticTaskProvider
+    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+      ? createChatSemanticTaskProvider({
+        ...structuredParserRuntime.structuredParserConfig,
+        fetchImpl: options.structuredParserFetch ?? options.llmFetch,
+        onRequestLog: options.turnDeltaRequestLog
+          ?? options.semanticTaskRequestLog
+          ?? options.structuredParserRequestLog
+          ?? options.llmRequestLog
+      })
+      : null);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
@@ -1816,6 +1841,8 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ...options,
     ...requestTimeouts,
     ...structuredParserRuntime,
+    conversationStateV2Mode,
+    turnDeltaProvider,
     ...conclusionRuntime,
     ...semanticRuntime,
     adminToken: options.adminToken ?? env.TFT_AGENT_ADMIN_TOKEN,
@@ -2411,6 +2438,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         context.visitor,
         reserveLlmUseForRequest
       ),
+      turnDeltaProvider: quotaWrappedCallable(
+        runtime.turnDeltaProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
+      ),
       conclusionProvider: quotaWrappedCallable(
         runtime.conclusionProvider,
         context.accessService,
@@ -2546,6 +2579,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     bypassDefaultContextCache: Boolean(body.refresh),
     structuredParser: requestRuntime.structuredParser,
     useStructuredParser: structuredParserMode,
+    turnDeltaProvider: requestRuntime.turnDeltaProvider,
+    conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
     semanticRetriever: requestRuntime.semanticRetriever,
     semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
     seasonContextId: seasonContext.id,
