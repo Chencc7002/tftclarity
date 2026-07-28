@@ -7,6 +7,7 @@ const TOOL_INTENTS = Object.freeze({
   unit_details: "unit_details",
   item_details: "item_details",
   trait_details: "trait_details",
+  item_carrier_rankings: "item_carrier_rankings",
   comps_rankings: "comp_rankings",
   comps_trends: "comp_trends",
   comps_analysis: "comp_analysis",

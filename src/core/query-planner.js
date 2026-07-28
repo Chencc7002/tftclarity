@@ -52,6 +52,26 @@ export function planMetaTFTCompCandidates(query) {
   };
 }
 
+export function planMetaTFTItemCarrierBuilds(query) {
+  const item = String(query.item ?? "").trim();
+  if (!item) throw new TypeError("planMetaTFTItemCarrierBuilds requires item");
+  return {
+    endpoint: "unit_builds",
+    method: "GET",
+    path: "/tft-explorer-api/unit_builds",
+    params: {
+      formatnoarray: "true",
+      compact: "true",
+      queue: query.queue ?? DEFAULT_QUERY_OPTIONS.queue,
+      patch: query.patch ?? DEFAULT_QUERY_OPTIONS.patch,
+      days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+      rank: (query.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter).join(","),
+      permit_filter_adjustment: "true",
+      item_unique: `${item}-1`
+    }
+  };
+}
+
 export function buildUrl(baseUrl, plan) {
   const url = new URL(plan.path, baseUrl);
   for (const [key, value] of Object.entries(plan.params ?? {})) {

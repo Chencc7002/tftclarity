@@ -1192,7 +1192,7 @@ test.skip("obsolete: recommendForInput prefers special context only for explicit
     useSession: false
   };
 
-  const ordinary = await recommendForInput("xayah", options);
+  const ordinary = await recommendForInput("xayah 推荐装备", options);
   const special = await recommendForInput("xayah \u82f1\u96c4\u5f3a\u5316", options);
 
   assert.equal(ordinary.query.defaultContext.clusterId, "ordinary");
@@ -1368,7 +1368,7 @@ test.skip("obsolete: close default contexts with materially different traits req
     }
   };
 
-  const result = await recommendForInput("xayah", options);
+  const result = await recommendForInput("xayah 推荐装备", options);
 
   assert.equal(result.validation.valid, true);
   assert.equal(result.query.defaultContext.ambiguity.significant, true);
@@ -1434,7 +1434,7 @@ test("clarification policy asks for the missing unit", () => {
 });
 
 test("clarification policy does not block a valid query", () => {
-  const planned = planQuery("xayah");
+  const planned = planQuery("xayah 推荐装备");
   const clarification = evaluateClarification(planned.parsed, planned.query, planned.validation);
 
   assert.equal(clarification.needsClarification, false);
@@ -1529,7 +1529,7 @@ test("alias collisions are not overwritten by session inheritance or automatic L
   const cacheStore = new MemoryCacheStore();
   let structuredParserCalls = 0;
 
-  await recommendForInput("xayah", {
+  await recommendForInput("xayah 推荐装备", {
     catalog,
     response: fixtureRows,
     cacheStore
@@ -2228,7 +2228,7 @@ test("structured parser exclusion output is resolved locally and never becomes a
 
 test("structured parser stays out of the hot path when rules resolve the unit", async () => {
   let calls = 0;
-  const result = await recommendForInput("xayah", {
+  const result = await recommendForInput("xayah 推荐装备", {
     response: fixtureRows,
     structuredParser: async () => {
       calls += 1;
@@ -2483,7 +2483,7 @@ test.skip("obsolete: recommendForInput can use captured comps data for lazy defa
 test("session memory lets an item-only follow-up inherit the previous unit", async () => {
   const cacheStore = new MemoryCacheStore();
 
-  await recommendForInput("xayah", {
+  await recommendForInput("xayah 推荐装备", {
     response: fixtureRows,
     cacheStore
   });
@@ -2695,7 +2695,7 @@ test.skip("obsolete: session follow-ups restore default comps context from cache
     compsData
   };
 
-  const first = await recommendForInput("xayah", options);
+  const first = await recommendForInput("xayah 推荐装备", options);
   const followUp = await recommendForInput("guinsoo", options);
 
   assert.equal(first.query.defaultContext.clusterId, "session-context");
@@ -2721,12 +2721,12 @@ test("recommendForInput reuses cached MetaTFT unit_builds responses", async () =
     }
   };
 
-  const first = await recommendForInput("xayah", {
+  const first = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     cacheStore,
     useSession: false
   });
-  const second = await recommendForInput("xayah", {
+  const second = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     cacheStore,
     useSession: false
@@ -2801,7 +2801,7 @@ test.skip("obsolete: recommendForInput reuses cached default context", async () 
     }
   };
 
-  const first = await recommendForInput("xayah", {
+  const first = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     compsClient,
     cacheStore,
@@ -2810,7 +2810,7 @@ test.skip("obsolete: recommendForInput reuses cached default context", async () 
     },
     useSession: false
   });
-  const second = await recommendForInput("xayah", {
+  const second = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     compsClient,
     cacheStore,
@@ -2861,7 +2861,7 @@ test.skip("obsolete: recommendForInput invalidates cached default context when f
     ]
   };
 
-  const first = await recommendForInput("xayah", {
+  const first = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     compsData: oldCompsData,
     cacheStore,
@@ -2870,7 +2870,7 @@ test.skip("obsolete: recommendForInput invalidates cached default context when f
     },
     useSession: false
   });
-  const second = await recommendForInput("xayah", {
+  const second = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     compsData: newCompsData,
     cacheStore,
@@ -2905,7 +2905,7 @@ test.skip("obsolete: recommendForInput refreshes cached comp_builds evidence wit
     }
   ];
 
-  const first = await recommendForInput("xayah", {
+  const first = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     compsData: {
       latestClusterInfo: [],
@@ -2917,7 +2917,7 @@ test.skip("obsolete: recommendForInput refreshes cached comp_builds evidence wit
     },
     useSession: false
   });
-  const second = await recommendForInput("xayah", {
+  const second = await recommendForInput("xayah 推荐装备", {
     metaTFTClient,
     compsData: {
       latestClusterInfo: [],
@@ -2953,7 +2953,7 @@ test.skip("obsolete: recommendForInput refreshes cached comp_builds evidence wit
 
 test("recommendForInput ignores prefetched Comp context unless the user specifies a Comp", async () => {
   let compsCalls = 0;
-  const result = await recommendForInput("xayah", {
+  const result = await recommendForInput("xayah 推荐装备", {
     response: fixtureRows,
     compsData: {
       latestClusterInfo: [],

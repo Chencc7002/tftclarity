@@ -66,19 +66,31 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.match(i18n, /seasonRevivalStatus/);
 });
 
-test("welcome view exposes localized, actionable quick tasks", () => {
+test("welcome view exposes categorized, localized, actionable quick tasks", () => {
   assert.match(indexHtml, /class="quick-tasks"/);
-  assert.equal((indexHtml.match(/class="quick-task-card/g) ?? []).length, 4);
-  assert.match(indexHtml, /data-quick-task="comp-rankings"/);
-  assert.match(indexHtml, /data-quick-task="comp-trends"/);
-  assert.match(indexHtml, /data-quick-task="patch-notes"/);
+  assert.equal((indexHtml.match(/class="quick-category-card/g) ?? []).length, 4);
+  assert.match(indexHtml, /data-quick-category="equipment"/);
+  assert.match(indexHtml, /data-quick-category="comps"/);
+  assert.match(indexHtml, /data-quick-category="library"/);
+  assert.match(indexHtml, /data-quick-category="news"/);
+  assert.match(appJs, /const QUICK_TASK_CATEGORIES/);
   assert.match(appJs, /const QUICK_TASKS/);
+  assert.equal((appJs.match(/category: "comps"/g) ?? []).length, 3);
+  assert.match(appJs, /id: "comp-rankings"/);
+  assert.match(appJs, /id: "comp-trends"/);
+  assert.match(appJs, /id: "hero-comps"/);
   assert.match(appJs, /inputTemplateKey: "quickTaskBuildTemplate"/);
+  assert.match(appJs, /inputTemplateKey: "quickTaskCompletionTemplate"/);
+  assert.match(appJs, /inputTemplateKey: "quickTaskPerformanceTemplate"/);
+  assert.match(appJs, /inputTemplateKey: "quickTaskComparisonTemplate"/);
+  assert.match(appJs, /inputTemplateKey: "quickTaskCarriersTemplate"/);
   assert.match(appJs, /queryInput\.setSelectionRange/);
   assert.match(appJs, /queryInput\.reportValidity/);
-  assert.match(i18n, /enterChampion/);
+  assert.match(appJs, /unresolvedQuickTaskPlaceholder/);
+  assert.match(i18n, /completeQuickTaskFields/);
   assert.doesNotMatch(i18n, /霞|Xayah/);
   assert.match(appJs, /quickTasksHtml/);
+  assert.match(appJs, /button\[data-quick-category\]/);
   assert.match(appJs, /button\[data-quick-task\]/);
   assert.match(appJs, /QUICK_TASKS\.find/);
   assert.match(appJs, /queryInput\.value = quickTask\.query/);
@@ -89,7 +101,9 @@ test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
-  assert.match(styles, /\.quick-task-grid/);
+  assert.match(styles, /\.quick-category-grid/);
+  assert.match(styles, /\.quick-category-card/);
+  assert.match(styles, /\.quick-task-panel/);
   assert.match(styles, /\.quick-task-card/);
   assert.match(styles, /min-height: 54px/);
   assert.match(styles, /var\(--wallpaper-accent\)/);
@@ -224,7 +238,7 @@ test("small-window cards render the sample-risk marker", () => {
 test("small-window defaults to an explained robust applicability recommendation", () => {
   assert.match(indexHtml, /value="robust_first"[^>]*selected/);
   assert.match(appJs, /sort: "robust_first"/);
-  assert.match(appJs, /card\.ranking\?\.method === "robust_applicability_v1"/);
+  assert.match(appJs, /card\.ranking\?\.method === "robust_applicability_v3"/);
   assert.match(appJs, /applicabilityRecommendation/);
   assert.match(i18n, /普适推荐/);
   assert.match(styles, /\.ranking-rationale/);
@@ -413,6 +427,23 @@ test("comp units are keyboard-accessible shortcuts for explicit high-sample buil
   assert.match(styles, /\.comp-unit-query:hover/);
   assert.match(styles, /\.comp-unit-query:focus-visible/);
   assert.match(i18n, /compUnitQueryDisplay/);
+});
+
+test("small-window exposes current-set entity catalogs with direct detail navigation", () => {
+  assert.match(appJs, /id: "unit-catalog"/);
+  assert.match(appJs, /id: "trait-catalog"/);
+  assert.match(appJs, /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.inputTemplateKey/);
+  assert.match(appJs, /data-entity-catalog/);
+  assert.match(appJs, /data-entity-detail/);
+  assert.match(appJs, /\/api\/entity-details/);
+  assert.match(appJs, /function restorePreviousCatalogResult\(\)/);
+  assert.match(appJs, /data-return-catalog/);
+  assert.match(styles, /\.entity-catalog-grid/);
+  assert.match(styles, /\.entity-catalog-card/);
+  assert.match(styles, /\.entity-catalog-empty\[hidden\]\s*\{\s*display:\s*none/);
+  assert.match(i18n, /unitCatalog:/);
+  assert.match(i18n, /traitCatalog:/);
+  assert.match(i18n, /backToCatalog:/);
 });
 
 test("comp cards lazy-load verified formation and augment details", () => {

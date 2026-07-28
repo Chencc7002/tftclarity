@@ -35,12 +35,12 @@
 {
   "schemaVersion": "llm_conclusion.v1",
   "status": "ok",
-  "headline": "不超过 80 字",
-  "summary": "不超过 300 字",
-  "reasons": [{ "evidenceIds": ["build:1"], "text": "不超过 220 字" }],
-  "alternatives": [{ "evidenceIds": ["build:2"], "text": "不超过 220 字" }],
-  "nextAction": "不超过 200 字",
+  "headline": "一句话直接结论",
+  "summary": "简洁总览，不重复下方条目",
+  "reasons": [{ "evidenceIds": ["build:1"], "text": "只写最关键且有证据支持的信息" }],
+  "alternatives": [{ "evidenceIds": ["build:2"], "text": "只写最关键且有证据支持的信息" }],
+  "nextAction": "一句可执行建议；无额外建议时保持极简",
   "riskNotice": null
 }
 
-若证据不足以形成自然语言解读，仍返回同一结构，将 status 设为 `insufficient_evidence`，其余文字保持简短并说明证据不足。
+若证据不足以形成自然语言解读，仍返回同一结构，将 status 设为 `insufficient_evidence`，其余文字保持简短并说明证据不足。所有用户可见文案不设固定字数限制，但必须尽量简洁，避免重复同一事实。

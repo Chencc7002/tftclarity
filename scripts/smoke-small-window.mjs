@@ -106,12 +106,15 @@ async function verifyPersistentLocalCacheTarget() {
         },
         async getUnitBuilds() {
           firstRemoteCalls += 1;
-          return { data: fixtureRows };
+          return {
+            data: fixtureRows,
+            capture: { capturedAt: "2026-07-27T00:00:00.000Z" }
+          };
         }
       },
       compsClient: {}
     });
-    const first = await handleRecommendRequest({ input: "xayah" }, firstRuntime);
+    const first = await handleRecommendRequest({ input: "xayah 推荐装备" }, firstRuntime);
     assertSmoke(first.payload.ok === true, "persistent cache seed query failed");
     assertSmoke(firstRemoteCalls === 1, "persistent cache seed query did not use remote fixture once");
 
@@ -131,7 +134,7 @@ async function verifyPersistentLocalCacheTarget() {
       },
       compsClient: {}
     });
-    const cached = await handleRecommendRequest({ input: "xayah" }, reopenedRuntime);
+    const cached = await handleRecommendRequest({ input: "xayah 推荐装备" }, reopenedRuntime);
     assertSmoke(cached.payload.cache?.query?.hit === true, "reopened JSON cache did not hit query cache");
     assertSmoke(unexpectedRemoteCalls === 0, "reopened JSON cache called the remote client");
     assertSmoke(
@@ -192,7 +195,10 @@ const runtime = createSmallWindowRuntime({
     },
     async getUnitBuilds() {
       unitBuildCalls += 1;
-      return { data: fixtureRows };
+      return {
+        data: fixtureRows,
+        capture: { capturedAt: "2026-07-27T00:00:00.000Z" }
+      };
     }
   },
   compsClient: {}
@@ -342,7 +348,7 @@ try {
   const resolved = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
     body: JSON.stringify({
-      input: "xayha"
+      input: "xayha 推荐装备"
     })
   });
   assertSmoke(resolved.query.unit === "TFT17_Xayah", "enabled alias did not resolve through catalog memory");
@@ -351,7 +357,7 @@ try {
   const hotCached = await jsonRequest(`${baseUrl}/api/recommend`, {
     method: "POST",
     body: JSON.stringify({
-      input: "xayha"
+      input: "xayha 推荐装备"
     })
   });
   assertSmoke(hotCached.cache?.query?.hit === true, "repeated query did not hit hot cache");

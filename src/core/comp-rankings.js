@@ -80,8 +80,7 @@ function inheritedValue(parsed, previousQuery, preferences, key, fallback) {
 
 export function hasUnsupportedCompRankingEntities(parsed) {
   return Boolean(
-    parsed?.unit
-    || (parsed?.ownedItems ?? []).length
+    (parsed?.ownedItems ?? []).length
     || (parsed?.comparisonItems ?? []).length
     || parsed?.parser?.comparison?.requested
     || (parsed?.excludedItems ?? []).length
@@ -107,6 +106,7 @@ export function buildCompRankings(parsed, options = {}) {
   const previousQuery = ["comp_rankings", "comp_trends"].includes(options.previousQuery?.intent) ? options.previousQuery : null;
   const query = {
     intent: parsed?.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
+    unit: inheritedValue(parsed, previousQuery, preferences, "unit", null),
     rankFilter: inheritedValue(parsed, previousQuery, preferences, "rankFilter", DEFAULT_QUERY_OPTIONS.rankFilter),
     days: inheritedValue(parsed, previousQuery, preferences, "days", DEFAULT_QUERY_OPTIONS.days),
     patch: inheritedValue(parsed, previousQuery, preferences, "patch", DEFAULT_QUERY_OPTIONS.patch),
@@ -116,7 +116,7 @@ export function buildCompRankings(parsed, options = {}) {
     limit: previousQuery?.limit ?? options.limit ?? 5
   };
   query.constraintSources = Object.fromEntries(
-    ["rankFilter", "days", "patch", "queue", "minSamples", "sort"]
+    ["unit", "rankFilter", "days", "patch", "queue", "minSamples", "sort"]
       .map((key) => [key, sourceOf(parsed, previousQuery, preferences, key)])
   );
 

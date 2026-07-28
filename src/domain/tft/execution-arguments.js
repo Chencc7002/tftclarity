@@ -37,6 +37,7 @@ export function compileTftToolArguments(tool, query = {}) {
   }
   if (["comps_rankings", "comps_trends", "comps_analysis"].includes(tool)) {
     return definedEntries({
+      unit: query.unit ?? undefined,
       days: query.days,
       patch: query.patch,
       queue: query.queue,
@@ -45,6 +46,20 @@ export function compileTftToolArguments(tool, query = {}) {
       metrics: query.metrics,
       limit: query.limit,
       strategy: query.preferenceConditions?.strategy
+    });
+  }
+  if (tool === "item_carrier_rankings") {
+    return definedEntries({
+      item: query.item ?? query.carrierItem ?? query.lockedItems?.[0],
+      days: query.days,
+      patch: query.patch,
+      queue: query.queue,
+      rank: uniqueValues(query.rankFilter),
+      minSamples: query.minSamples,
+      limit: query.limit,
+      buildLimit: query.buildLimit,
+      positiveOnly: query.positiveOnly,
+      sort: query.sort
     });
   }
   return {};

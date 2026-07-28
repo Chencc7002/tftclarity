@@ -119,6 +119,7 @@ export function makeQueryCacheKey(query) {
     effective_patch: query.effectivePatch ?? query.effective_patch ?? query.patch ?? "current",
     intent: query.intent ?? null,
     unit: query.unit ?? null,
+    item: query.item ?? query.carrierItem ?? query.carrier_item ?? null,
     star_level: sortNumbers(query.starLevel ?? query.star_level),
     item_count: query.itemCount ?? query.item_count ?? null,
     trait_filters: sortStrings(query.traitFilters ?? query.trait_filters),
@@ -142,6 +143,8 @@ export function makeQueryCacheKey(query) {
     catalog_version: query.catalogVersion ?? query.catalog_version ?? null,
     metrics: sortStrings(query.metrics),
     limit: query.limit ?? null,
+    build_limit: query.buildLimit ?? query.build_limit ?? null,
+    positive_only: query.positiveOnly ?? query.positive_only ?? null,
     special_mode: query.specialMode ?? null,
     data_version: query.dataVersion ?? null
   };

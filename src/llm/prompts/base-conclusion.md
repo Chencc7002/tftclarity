@@ -39,26 +39,28 @@
   "addressedDimensions": ["已回答的维度"],
   "missingDimensions": [],
   "missingEvidence": [],
-  "headline": "不超过 80 字",
-  "summary": "不超过 300 字",
+  "headline": "一句话直接结论",
+  "summary": "简洁总览，不重复下方条目",
   "reasons": [
     {
       "dimension": "Question Contract 允许的维度",
       "evidenceIds": ["真实 evidenceId"],
-      "text": "不超过 220 字"
+      "text": "只写该维度最关键且有证据支持的信息"
     }
   ],
   "alternatives": [
     {
       "dimension": "Question Contract 允许的维度",
       "evidenceIds": ["真实 evidenceId"],
-      "text": "不超过 220 字"
+      "text": "只写该维度最关键且有证据支持的信息"
     }
   ],
-  "nextAction": "不超过 200 字",
+  "nextAction": "一句可执行建议；无额外建议时保持极简",
   "riskNotice": null
 }
 
 `status` 只能是 `ok` 或 `insufficient_evidence`。`status=ok` 时必须覆盖全部 `requiredAnswerDimensions`，且 `missingDimensions`/`missingEvidence` 为空。`allowedAnswerDimensions` 是本次合同允许回答的完整维度集合；可以回答其中未列入 `requiredAnswerDimensions` 的可选维度，但仍必须提供满足该维度要求的证据。不得输出允许集合之外的维度。证据不足时必须返回 `insufficient_evidence`，列明已经回答和缺失的必答维度，并在 `missingEvidence` 中给出每个缺失维度需要的证据类型；不得用其他维度替代。`riskNotice` 没有风险时为 `null`，有风险时为简短字符串。
+
+所有用户可见文案不设固定字数区间或总字数上限，但必须尽量简洁：先写结论，只保留影响判断的证据，不重复同一指标、装备作用或风险说明。
 
 `addressedDimensions` 必须与 `reasons` 和 `alternatives` 中实际出现的不同 `dimension` 完全一致。每个已回答维度至少要有一条带对应 Evidence ID 的 `reasons` 或 `alternatives`；不得只在 `summary`、`nextAction` 或 `riskNotice` 中提到该维度。只有当 `sample_risk` 出现在本次合同的 `requiredAnswerDimensions` 中时才必须回答；如果回答了可选的 `sample_risk`，即使风险已写入 `riskNotice`，仍必须保留一条 `dimension="sample_risk"` 的结构化条目并绑定样本证据。

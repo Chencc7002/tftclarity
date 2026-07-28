@@ -590,6 +590,14 @@ test("ExecutionPlan and TFT query adapters keep entity arguments stable and uniq
       "TFT_Item_Artifact_TitanicHydra"
     ]
   });
+  assert.deepEqual(compileTftToolArguments("comps_rankings", {
+    unit: null,
+    days: 3,
+    preferenceConditions: { strategy: "fast9" }
+  }), {
+    days: 3,
+    strategy: "fast9"
+  });
 });
 
 test("T3 complete-argument evaluation rejects duplicate, missing and extra item arguments", () => {

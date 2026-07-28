@@ -30,7 +30,12 @@ export {
 export { evaluateClarification } from "./core/clarification-policy.js";
 export { buildQueryContext } from "./core/context-builder.js";
 export { validateQueryContext } from "./core/query-validator.js";
-export { planMetaTFTCompCandidates, planMetaTFTUnitBuilds, buildUrl } from "./core/query-planner.js";
+export {
+  planMetaTFTCompCandidates,
+  planMetaTFTItemCarrierBuilds,
+  planMetaTFTUnitBuilds,
+  buildUrl
+} from "./core/query-planner.js";
 export {
   COMP_CANDIDATE_ENDPOINT,
   COMP_FILTER_SEMANTICS_VERSION,
@@ -87,6 +92,12 @@ export {
 } from "./core/ranker.js";
 export { compareItemOptions, comparisonRankedBuilds } from "./core/item-comparison.js";
 export { aggregateUnitItemRankings } from "./core/item-ranking.js";
+export {
+  ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
+  ITEM_CARRIER_MAX_BUILD_LIMIT,
+  ITEM_CARRIER_MAX_LIMIT,
+  aggregateItemCarrierRankings
+} from "./core/item-carrier-ranking.js";
 export { formatRecommendation } from "./core/response-formatter.js";
 export {
   normalizeCompBuildsResponse,
@@ -137,6 +148,10 @@ export {
   calculateMetaTftPagePlacementChange,
   normalizeMetaTftDailyTrends
 } from "./core/metatft-page-trend.js";
+export {
+  buildEntityCatalog,
+  normalizeEntityCatalogType
+} from "./core/entity-catalog.js";
 export {
   OFFICIAL_TFT_EQUIPMENT_URL,
   buildOfficialTftItemDetailsCatalog,
@@ -496,6 +511,12 @@ export {
   generateEvidenceBackedConclusion,
   makeConclusionCacheKey
 } from "./core/conclusion-service.js";
+export {
+  ITEM_DIFFERENTIATION_ALGORITHM_VERSION,
+  ITEM_DIFFERENTIATION_MINIMUMS,
+  analyzeItemDifferentiation,
+  subtractLockedItems
+} from "./core/item-differentiation.js";
 export {
   AGENT_EVENT_SCHEMA_VERSION,
   AGENT_RUN_PUBLIC_SCHEMA_VERSION,

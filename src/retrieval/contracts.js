@@ -66,6 +66,7 @@ function buildEntities(parsed, query, catalog) {
 
   for (const match of matches) add(match.entityType, match.apiName, match.alias, match);
   add("unit", query?.unit ?? parsed?.unit, parsed?.unitAlias, matches.find((match) => match.entityType === "unit"));
+  add("item", query?.item ?? parsed?.carrierItem, null, matches.find((match) => match.entityType === "item"));
   for (const apiName of unique([
     ...array(query?.lockedItems),
     ...array(query?.comparisonItems),
@@ -83,6 +84,9 @@ function metricsFor(intent, query) {
   if (intent === "comp_trends") return ["placementImprovement", "pickRate", "games", "trendScore"];
   if (intent === "comp_analysis") return ["avgPlacement", "top4Rate", "winRate", "pickRate", "games", "historicalComparison", "officialPatch"];
   if (intent === "comp_rankings") return ["top4Rate", "winRate", "avgPlacement", "pickRate", "games"];
+  if (intent === "item_carrier_rankings") {
+    return ["games", "avgPlacement", "top4Rate", "winRate", "placementUplift"];
+  }
   if (["unit_build_rankings", "unit_build_completion", "unit_best_3_items"].includes(intent)) {
     return ["games", "avgPlacement", "top4Rate", "winRate"];
   }
@@ -168,6 +172,9 @@ export function createIntentEnvelope({ input = "", parsed = {}, query = {}, vali
       comp: comp.resolved,
       metrics: unique(query?.metrics).map(String),
       limit: finite(query?.limit),
+      buildLimit: finite(query?.buildLimit),
+      positiveOnly: query?.positiveOnly === undefined ? null : Boolean(query.positiveOnly),
+      sort: query?.sort ?? null,
       preferenceRequested: Boolean(query?.preferenceRequested),
       preferenceConditions: query?.preferenceConditions ?? null,
       trendRequested: Boolean(query?.trendRequested),

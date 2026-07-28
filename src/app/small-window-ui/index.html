@@ -73,31 +73,35 @@
               <div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong data-i18n="assistant">tftclarity</strong></div>
               <div class="message-body" data-i18n="welcome">直接问我英雄出装、单件装备或阵容排行。你也可以连续追问。</div>
             </article>
-            <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="常用任务">
+            <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="功能分类与快捷查询">
               <div class="quick-tasks-heading">
-                <strong data-i18n="quickTasksTitle">常用任务</strong>
-                <span data-i18n="quickTasksHint">选择一个入口快速开始</span>
+                <strong data-i18n="quickTasksTitle">功能导航</strong>
+                <span data-i18n="quickTasksHint">按类型查看当前已支持的功能</span>
               </div>
-              <div class="quick-task-grid">
-                <button type="button" class="quick-task-card" data-quick-task="comp-rankings">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskCompsTitle">热门阵容</strong><small data-i18n="quickTaskCompsBody">当前版本上分阵容排行</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+              <div class="quick-category-grid">
+                <button type="button" class="quick-category-card" data-quick-category="equipment" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryEquipmentTitle">装备分析</strong><small data-i18n="quickCategoryEquipmentBody">出装、补装、评估与对比</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryEquipmentCount">6 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
-                <button type="button" class="quick-task-card" data-quick-task="comp-trends">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskTrendsTitle">阵容趋势</strong><small data-i18n="quickTaskTrendsBody">发现近期上升阵容</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+                <button type="button" class="quick-category-card" data-quick-category="comps" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryCompsTitle">阵容决策</strong><small data-i18n="quickCategoryCompsBody">排行、趋势、指定英雄</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryCompsCount">3 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
-                <button type="button" class="quick-task-card" data-quick-task="unit-build">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskBuildTitle">英雄出装</strong><small data-i18n="quickTaskBuildBody">指定英雄后查询三件套</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+                <button type="button" class="quick-category-card" data-quick-category="library" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 16h10M9 8h5M9 11h6"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryLibraryTitle">资料百科</strong><small data-i18n="quickCategoryLibraryBody">英雄、装备与羁绊资料</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryLibraryCount">5 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
-                <button type="button" class="quick-task-card" data-quick-task="patch-notes">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 5h12v14H6z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskUpdatesTitle">更新公告</strong><small data-i18n="quickTaskUpdatesBody">17.7 版本要点与改动</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+                <button type="button" class="quick-category-card" data-quick-category="news" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryNewsTitle">版本资讯</strong><small data-i18n="quickCategoryNewsBody">版本公告与重点改动</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryNewsCount">1 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
               </div>
             </section>

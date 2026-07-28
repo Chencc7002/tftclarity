@@ -124,6 +124,7 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     seasonContextId: String(preferences.seasonContextId ?? "set17-live"),
     providerVersion: preferences.providerVersion ?? null,
     effectivePatch: String(preferences.currentPatch ?? preferences.effectivePatch ?? parsed.patch ?? preferences.patch ?? "current"),
+    unit: parsed.unit ?? null,
     intent,
     metrics: preferenceRequested
       ? preferenceMetrics

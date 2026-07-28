@@ -103,6 +103,7 @@ function compQuery(envelope) {
         ? "comps_analysis"
         : "comps_rankings",
     params: compactParams({
+      unit: entity(envelope, "unit")?.apiName,
       days: constraints.days,
       patch: constraints.patch,
       queue: constraints.queue,
@@ -110,6 +111,28 @@ function compQuery(envelope) {
       minSamples: constraints.minSamples,
       metrics: constraints.metrics,
       limit: constraints.limit
+    }),
+    required: true
+  };
+}
+
+function itemCarrierQuery(envelope) {
+  const constraints = envelope.constraints;
+  return {
+    id: "structured:item_carrier_rankings",
+    source: "metatft",
+    operation: "item_carrier_rankings",
+    params: compactParams({
+      item: entity(envelope, "item")?.apiName,
+      days: constraints.days,
+      patch: constraints.patch,
+      queue: constraints.queue,
+      rank: constraints.rankFilter,
+      minSamples: constraints.minSamples,
+      limit: constraints.limit,
+      buildLimit: constraints.buildLimit,
+      positiveOnly: constraints.positiveOnly,
+      sort: constraints.sort
     }),
     required: true
   };
@@ -168,6 +191,8 @@ export class RetrievalPlanner {
         structuredQueries.push(unitCompCandidatesQuery(envelope));
       }
       structuredQueries.push(unitBuildQuery(envelope));
+    } else if (envelope.intent === "item_carrier_rankings") {
+      structuredQueries.push(itemCarrierQuery(envelope));
     } else if (["comp_rankings", "comp_trends", "comp_analysis"].includes(envelope.intent)) {
       structuredQueries.push(compQuery(envelope));
     } else if (DETAIL_OPERATIONS[envelope.intent]) {

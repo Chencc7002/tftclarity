@@ -17,6 +17,10 @@ import {
   createStructuredToolDefinitions
 } from "../agent/index.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
+import {
+  buildEntityCatalog,
+  normalizeEntityCatalogType
+} from "../core/entity-catalog.js";
 import { normalizeAlias } from "../core/normalizer.js";
 import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
@@ -37,6 +41,7 @@ import {
   SQLiteCacheStore,
   SQLiteSemanticDocumentStore,
   applyEnabledEntityAliasesFromStore,
+  analyzeItemDifferentiation,
   buildEntityAliasOverrideDraft,
   buildCompRankings,
   buildItemCatalogAudit,
@@ -1086,6 +1091,62 @@ function explicitTraitDetailsQuestion(input) {
     && !/(装备|出装|转职|纹章|阵容|排行|排名|推荐)/u.test(text);
 }
 
+function requestedEntityCatalogType(input) {
+  const text = String(input ?? "").replace(/\s+/gu, "");
+  const lower = text.toLowerCase();
+  const listWording = /(?:全部|所有|完整|大全|一览|列表|图鉴)/u;
+  if (
+    /(?:全部|所有|完整)(?:的)?(?:棋子|英雄)/u.test(text)
+    || /(?:棋子|英雄)(?:大全|一览|列表|图鉴)/u.test(text)
+    || (listWording.test(text) && /(?:棋子|英雄)/u.test(text))
+    || /(?:all|every)(?:champion|champions|unit|units)|(?:champion|unit)(?:list|catalog)/u.test(lower)
+  ) {
+    return "unit";
+  }
+  if (
+    /(?:全部|所有|完整)(?:的)?羁绊/u.test(text)
+    || /羁绊(?:大全|一览|列表|图鉴)/u.test(text)
+    || (listWording.test(text) && /羁绊/u.test(text))
+    || /(?:all|every)(?:trait|traits)|trait(?:list|catalog)/u.test(lower)
+  ) {
+    return "trait";
+  }
+  return null;
+}
+
+function entityCatalogText(entityType, count) {
+  return entityType === "unit"
+    ? `当前赛季共找到 ${count} 个棋子，点击棋子可以查看属性、技能和羁绊详情。`
+    : `当前赛季共找到 ${count} 个羁绊，点击羁绊可以查看效果和激活档位。`;
+}
+
+async function serializeEntityCatalog(catalog, runtime, options = {}) {
+  const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
+  if (!entityType) {
+    throw Object.assign(new TypeError("entityType must be unit or trait"), {
+      statusCode: 400,
+      code: "invalid_entity_catalog_type"
+    });
+  }
+  const details = await loadOfficialEntityDetails(runtime);
+  const view = buildEntityCatalog(catalog, details, {
+    ...options,
+    entityType,
+    assetResolver: ASSET_RESOLVER
+  });
+  const text = entityCatalogText(entityType, view.pagination.total);
+  return {
+    ok: true,
+    ...view,
+    text,
+    answer: {
+      summary: text,
+      methodology: "当前赛季动态实体目录限定可见范围，官方目录补充详情；羁绊按基础 API 名称合并档位。"
+    },
+    source: details.meta ?? null
+  };
+}
+
 function normalizeRange(value, min, max, inverse = false) {
   if (!Number.isFinite(value)) return 0;
   if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return 1;
@@ -1236,6 +1297,82 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
   };
 }
 
+function entityCatalogPreferences(runtime, seasonContext) {
+  return {
+    ...DEFAULT_SMALL_WINDOW_PREFERENCES,
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
+    currentPatch: seasonContext.currentPatch,
+    previousPatch: seasonContext.previousPatch,
+    patch: seasonContext.providerPatch ?? "current",
+    queue: seasonContext.source.queue
+  };
+}
+
+export async function handleEntityCatalogRequest(runtime, options = {}) {
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  const { catalog, warning, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const payload = await serializeEntityCatalog(catalog, runtime, options);
+  payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  payload.meta = {
+    catalogWarning: warning,
+    aliasMemory,
+    preferences
+  };
+  return payload;
+}
+
+export async function handleEntityDetailRequest(runtime, options = {}) {
+  const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
+  if (!entityType) {
+    throw Object.assign(new TypeError("entityType must be unit or trait"), {
+      statusCode: 400,
+      code: "invalid_entity_catalog_type"
+    });
+  }
+  const apiName = String(options.apiName ?? options.id ?? "").trim();
+  if (!/^[A-Za-z0-9_:.-]{1,128}$/u.test(apiName)) {
+    throw Object.assign(new TypeError("A valid entity id is required"), {
+      statusCode: 400,
+      code: "invalid_entity_id"
+    });
+  }
+
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const input = entityType === "unit"
+    ? `${apiName} 棋子技能属性详情`
+    : `${apiName} 羁绊效果详情`;
+  const payload = await serializeEntityDetailsQuery(input, catalog, runtime, {
+    preferences,
+    compsData,
+    refresh: Boolean(options.refresh)
+  });
+  const returnedApiName = entityType === "unit"
+    ? payload?.unit?.apiName
+    : payload?.trait?.apiName;
+  if (!payload || returnedApiName !== apiName) {
+    throw Object.assign(new Error("Entity was not found in the current season catalog"), {
+      statusCode: 404,
+      code: "entity_not_found"
+    });
+  }
+
+  payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  payload.meta = {
+    ...(payload.meta ?? {}),
+    catalogWarning: warning,
+    aliasMemory,
+    preferences
+  };
+  return attachDetailRetrievalMetadata(payload, input, catalog);
+}
+
 export async function loadSmallWindowPreferences(runtime, scope = null) {
   return completeSmallWindowPreferences(await loadStoredSmallWindowPreferences(runtime, scope));
 }
@@ -1266,6 +1403,67 @@ function serializeRecommendation(result, catalog, meta = {}) {
     return serializeCompRankings(result, publicMeta);
   }
   const query = result.query ?? {};
+  if (result.type === "item_carrier_rankings") {
+    const itemApiName = result.item ?? query.item;
+    const carriers = (result.carriers ?? []).slice(0, 8).map((carrier) => ({
+      unit: {
+        apiName: carrier.unitApiName,
+        name: unitName(carrier.unitApiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveUnit(carrier.unitApiName).iconUrl
+      },
+      stats: {
+        top4: percent(carrier.stats.top4Rate),
+        win: percent(carrier.stats.winRate),
+        avg: Number(carrier.stats.avgPlacement.toFixed(2)),
+        games: carrier.stats.games
+      },
+      baselineAvgPlacement: Number(carrier.baselineAvgPlacement.toFixed(2)),
+      unitDelta: Number(carrier.unitDelta.toFixed(3)),
+      placementUplift: Number(carrier.placementUplift.toFixed(3)),
+      builds: (carrier.builds ?? []).map((build) => ({
+        items: build.items.map((apiName) => ({
+          apiName,
+          name: itemName(apiName, catalog),
+          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
+          target: apiName === itemApiName
+        })),
+        stats: {
+          top4: percent(build.stats.top4Rate),
+          win: percent(build.stats.winRate),
+          avg: Number(build.stats.avgPlacement.toFixed(2)),
+          games: build.stats.games
+        }
+      }))
+    }));
+    return {
+      ok: true,
+      type: "item_carrier_rankings",
+      text: result.text,
+      answer: {
+        summary: result.text,
+        warnings: result.warnings ?? [],
+        methodology: "仅保留携带该装备后平均名次优于该棋子自身基线的棋子；默认按样本量排序。"
+      },
+      item: {
+        apiName: itemApiName,
+        name: itemName(itemApiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveItem(itemApiName).iconUrl
+      },
+      carriers,
+      query: {
+        ...query,
+        itemName: itemName(itemApiName, catalog)
+      },
+      methodology: result.methodology,
+      diagnostics: result.diagnostics,
+      source: sourcePayload(result, meta),
+      cache: result.cache ?? null,
+      meta: {
+        returnedCarriers: carriers.length,
+        ...publicMeta
+      }
+    };
+  }
   if (result.type === "unit_item_rankings" || result.type === "unit_emblem_rankings") {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
@@ -1365,13 +1563,19 @@ function serializeRecommendation(result, catalog, meta = {}) {
         avg: Number(build.stats.avgPlacement.toFixed(2)),
         games: build.stats.games
       },
-      ranking: build.ranking?.method === "robust_applicability_v1"
+      ranking: build.ranking?.method === "robust_applicability_v3"
         ? {
           method: build.ranking.method,
           score: Number((build.ranking.score * 100).toFixed(1)),
+          baseScore: Number((build.ranking.baseScore * 100).toFixed(1)),
           performanceScore: Number((build.ranking.performanceScore * 100).toFixed(1)),
           coverageScore: Number((build.ranking.coverageScore * 100).toFixed(1)),
-          priorSamples: build.ranking.priorSamples
+          priorSamples: build.ranking.priorSamples,
+          generalRecommendation: build.ranking.generalRecommendation === true,
+          sampleLeadRatio: Number.isFinite(build.ranking.sampleLeadRatio)
+            ? Number(build.ranking.sampleLeadRatio.toFixed(1))
+            : null,
+          applicabilityBasis: build.ranking.applicabilityBasis
         }
         : null,
       lowSample
@@ -1413,6 +1617,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
     }))
   });
   const coreFrequency = summarizeCoreItemFrequency(cards);
+  const lockedItemSet = new Set(lockedItemApiNames);
+  coreFrequency.items = coreFrequency.items.filter((entry) => !lockedItemSet.has(entry.apiName));
+  coreFrequency.coreItems = coreFrequency.coreItems.filter((entry) => !lockedItemSet.has(entry.apiName));
   const coreItems = coreFrequency.coreItems.map((entry) => ({
     apiName: entry.apiName,
     name: itemName(entry.apiName, catalog),
@@ -1429,6 +1636,19 @@ function serializeRecommendation(result, catalog, meta = {}) {
     requiredAppearances: coreFrequency.requiredAppearances,
     items: coreItems
   };
+  const itemDifferentiation = hasLockedItems
+    ? analyzeItemDifferentiation({
+      recommendations: (result.rankedBuilds ?? []).slice(0, 3).map((build, index) => ({
+        evidenceId: `build:${index + 1}`,
+        items: build.items.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+        stats: build.stats,
+        stable: !isLowSampleBuild(build, query),
+        lowSample: isLowSampleBuild(build, query)
+      })),
+      lockedItems: lockedItemApiNames.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+      primaryMetric: query.primaryMetric ?? query.sort ?? "avgPlacement"
+    })
+    : null;
   const referenceCard = cards[0] ?? null;
   cards.forEach((card, index) => {
     card.difference = index === 0 ? null : itemDifferences(referenceCard, card, catalog);
@@ -1476,8 +1696,8 @@ function serializeRecommendation(result, catalog, meta = {}) {
         : `${compAnswerPrefix(query.comp)}${result.clarification?.question ?? result.text}`,
       evidence: cards[0]?.stats ?? null,
       warnings: query.warnings ?? [],
-      methodology: cards[0]?.ranking?.method === "robust_applicability_v1"
-        ? "稳健普适评分：对前四率、吃鸡率和平均名次做同查询样本的贝叶斯收缩校正，再加入 8% 的对数样本覆盖权重；表现接近时优先高覆盖方案，显著更强的方案仍可胜出。"
+      methodology: cards[0]?.ranking?.method === "robust_applicability_v3"
+        ? "稳健普适评分：前四率、吃鸡率和平均名次先做同查询样本的贝叶斯收缩校正，组成 90% 表现分；样本置信度按相对最大样本量的平方根连续计算，占 10%。前四率低于 50%或平均名次高于 4.5 的方案不获得样本加分。"
         : null,
       coreConclusion: coreItemSummary
     },
@@ -1489,6 +1709,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     cards,
     coreItemSummary,
     commonCore: coreItems,
+    itemDifferentiation,
     comparison: serializedComparison,
     results: serializedComparison?.entries ?? [],
     overlap: serializedComparison?.overlap ?? null,
@@ -2527,6 +2748,19 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
   const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const requestedCatalogType = requestedEntityCatalogType(input);
+  if (requestedCatalogType) {
+    const payload = await serializeEntityCatalog(catalog, requestRuntime, {
+      entityType: requestedCatalogType
+    });
+    payload.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return completeResponse(payload);
+  }
   const entityDetailsPayload = await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
     preferences,
     compsData,
@@ -2596,14 +2830,34 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
   if (warnings) result.query.warnings = warnings;
-  let comparisonItemDetails = runtime.officialItemDetails;
-  if (result.comparison && !comparisonItemDetails) {
+  let conclusionItemDetails = runtime.officialItemDetails;
+  let conclusionEntityDetails = runtime.officialEntityDetails;
+  const equipmentConclusion = [
+    "unit_build_rankings",
+    "unit_build_completion",
+    "unit_best_3_items"
+  ].includes(result.type ?? result.query?.intent);
+  const needsConclusionMechanics = equipmentConclusion
+    && preferences.conclusionMode !== "off"
+    && requestRuntime.conclusionGeneratorConfig?.enabled
+    && requestRuntime.conclusionProvider;
+  if ((result.comparison || needsConclusionMechanics) && !conclusionItemDetails) {
     try {
-      comparisonItemDetails = await loadOfficialItemDetails(runtime);
+      conclusionItemDetails = await loadOfficialItemDetails(runtime);
     } catch (error) {
-      const detailWarning = `官方装备图标加载失败：${error.message}`;
+      const detailWarning = `官方装备详情加载失败：${error.message}`;
       result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
-      result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+      if (result.comparison) {
+        result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+      }
+    }
+  }
+  if (needsConclusionMechanics && !conclusionEntityDetails) {
+    try {
+      conclusionEntityDetails = await loadOfficialEntityDetails(runtime);
+    } catch (error) {
+      const detailWarning = `官方棋子定位加载失败：${error.message}`;
+      result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
     }
   }
 
@@ -2657,7 +2911,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     seasonContextId: seasonContext.id,
     principalId: scope ?? "anonymous",
     conversationId,
-    semanticEvidence
+    semanticEvidence,
+    officialItemDetails: conclusionItemDetails,
+    officialEntityDetails: conclusionEntityDetails
   };
   const canDeferConclusion = body?.deferConclusion === true
     && conclusionOptions.requestEnabled
@@ -2694,7 +2950,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     aliasMemory,
     preferences,
     conversationId,
-    itemDetails: comparisonItemDetails
+    itemDetails: conclusionItemDetails
   });
   payload.answer = {
     ...(payload.answer ?? {}),
@@ -4182,7 +4438,8 @@ function enforceSameOrigin(req) {
 }
 
 function isPublicMaintenanceRoute(pathname) {
-  return pathname.startsWith("/api/entity-")
+  return pathname === "/api/entity-memory/clear"
+    || pathname.startsWith("/api/entity-aliases")
     || pathname === "/api/item-catalog-audit";
 }
 
@@ -4281,6 +4538,30 @@ export function createSmallWindowHandler(options = {}) {
           availability: url.searchParams.get("availability") ?? undefined,
           issues: url.searchParams.get("issues") ?? undefined,
           format: url.searchParams.get("format") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/entity-catalog") {
+        return sendJson(res, 200, await handleEntityCatalogRequest(runtime, {
+          entityType: url.searchParams.get("type"),
+          query: url.searchParams.get("query") ?? undefined,
+          cost: url.searchParams.get("cost") ?? undefined,
+          role: url.searchParams.get("role") ?? undefined,
+          trait: url.searchParams.get("trait") ?? undefined,
+          traitType: url.searchParams.get("traitType") ?? undefined,
+          page: url.searchParams.get("page") ?? undefined,
+          limit: url.searchParams.get("limit") ?? undefined,
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/entity-details") {
+        return sendJson(res, 200, await handleEntityDetailRequest(runtime, {
+          entityType: url.searchParams.get("type"),
+          apiName: url.searchParams.get("id"),
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
           refresh: url.searchParams.get("refresh") === "1"
         }));
       }

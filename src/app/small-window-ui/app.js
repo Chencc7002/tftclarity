@@ -211,6 +211,16 @@ function compCardNavigationKey(card) {
 function renderResultNavigation() {
   const snapshot = state.resultNavigation.at(-1);
   if (!snapshot) return "";
+  if (snapshot.kind === "entity_catalog") {
+    return `
+      <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
+        <button type="button" data-return-catalog ${state.requestInFlight ? "disabled" : ""}>
+          <span aria-hidden="true">←</span>
+          <span>${escapeHtml(t("backToCatalog", { name: snapshot.catalogName }))}</span>
+        </button>
+        <small>${escapeHtml(t("catalogResultPreserved"))}</small>
+      </nav>`;
+  }
   return `
     <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
       <button type="button" data-return-comp ${state.requestInFlight ? "disabled" : ""}>
@@ -242,6 +252,49 @@ function captureCompNavigationSnapshot(compName) {
     openCompKeys,
     scrollTop: resultContentEl.scrollTop
   };
+}
+
+function captureEntityCatalogNavigationSnapshot(catalogName) {
+  if (state.lastResult?.type !== "entity_catalog") return null;
+  return {
+    kind: "entity_catalog",
+    catalogName,
+    data: state.lastResult,
+    lastInput: state.lastInput,
+    lastDisplayInput: state.lastDisplayInput,
+    lastResultId: state.lastResultId,
+    lastSuggestions: state.lastSuggestions,
+    lastEntityCandidates: state.lastEntityCandidates,
+    currentResponseId: state.currentResponseId,
+    feedbackByCard: { ...state.feedbackByCard },
+    explanationFeedback: state.explanationFeedback,
+    rawOutput: rawOutputEl.textContent,
+    scrollTop: resultContentEl.scrollTop
+  };
+}
+
+function restorePreviousCatalogResult() {
+  if (state.requestInFlight) return;
+  const snapshot = state.resultNavigation.at(-1);
+  if (snapshot?.kind !== "entity_catalog") return;
+  state.resultNavigation.pop();
+  state.lastInput = snapshot.lastInput;
+  state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastResult = snapshot.data;
+  state.lastResultId = snapshot.lastResultId;
+  state.lastSuggestions = snapshot.lastSuggestions;
+  state.lastEntityCandidates = snapshot.lastEntityCandidates;
+  state.currentResponseId = snapshot.currentResponseId;
+  state.feedbackByCard = { ...snapshot.feedbackByCard };
+  state.explanationFeedback = snapshot.explanationFeedback;
+  state.resultView = { type: "result", data: snapshot.data };
+  rawOutputEl.textContent = snapshot.rawOutput;
+  resultTitleEl.textContent = t("resultTitle");
+  renderCurrentResult(snapshot.data);
+  resultContentEl.scrollTop = snapshot.scrollTop;
+  resultRefreshButton.disabled = !state.lastInput;
+  setStatusKey("statusReady", "ready");
+  resultPane.focus();
 }
 
 function restorePreviousCompResult() {
@@ -422,62 +475,247 @@ async function loadSeasonContexts() {
   }
 }
 
-const QUICK_TASKS = [
+const QUICK_TASK_CATEGORIES = [
   {
-    id: "comp-rankings",
-    query: "\u63a8\u8350\u5f53\u524d\u7248\u672c\u70ed\u95e8\u9635\u5bb9",
-    promptKey: "quickTaskCompsPrompt",
-    titleKey: "quickTaskCompsTitle",
-    bodyKey: "quickTaskCompsBody",
+    id: "equipment",
+    titleKey: "quickCategoryEquipmentTitle",
+    bodyKey: "quickCategoryEquipmentBody",
+    countKey: "quickCategoryEquipmentCount",
+    icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
+  },
+  {
+    id: "comps",
+    titleKey: "quickCategoryCompsTitle",
+    bodyKey: "quickCategoryCompsBody",
+    countKey: "quickCategoryCompsCount",
     icon: '<path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/>'
   },
   {
-    id: "comp-trends",
-    query: "\u5f53\u524d\u7248\u672c\u9635\u5bb9\u8d8b\u52bf",
-    promptKey: "quickTaskTrendsPrompt",
-    titleKey: "quickTaskTrendsTitle",
-    bodyKey: "quickTaskTrendsBody",
-    icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
+    id: "library",
+    titleKey: "quickCategoryLibraryTitle",
+    bodyKey: "quickCategoryLibraryBody",
+    countKey: "quickCategoryLibraryCount",
+    icon: '<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 16h10M9 8h5M9 11h6"/>'
   },
   {
+    id: "news",
+    titleKey: "quickCategoryNewsTitle",
+    bodyKey: "quickCategoryNewsBody",
+    countKey: "quickCategoryNewsCount",
+    icon: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>'
+  }
+];
+
+const QUICK_TASKS = [
+  {
+    category: "equipment",
     id: "unit-build",
     inputTemplateKey: "quickTaskBuildTemplate",
     selectionKey: "quickTaskBuildSelection",
     titleKey: "quickTaskBuildTitle",
     bodyKey: "quickTaskBuildBody",
+    exampleKey: "quickTaskBuildExample",
     icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
   },
   {
+    category: "equipment",
+    id: "unit-build-completion",
+    inputTemplateKey: "quickTaskCompletionTemplate",
+    selectionKey: "quickTaskBuildSelection",
+    titleKey: "quickTaskCompletionTitle",
+    bodyKey: "quickTaskCompletionBody",
+    exampleKey: "quickTaskCompletionExample",
+    icon: '<path d="M5 12h14M12 5v14"/><circle cx="12" cy="12" r="9"/>'
+  },
+  {
+    category: "equipment",
+    id: "item-performance",
+    inputTemplateKey: "quickTaskPerformanceTemplate",
+    selectionKey: "quickTaskItemSelection",
+    titleKey: "quickTaskPerformanceTitle",
+    bodyKey: "quickTaskPerformanceBody",
+    exampleKey: "quickTaskPerformanceExample",
+    icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
+  },
+  {
+    category: "equipment",
+    id: "item-comparison",
+    inputTemplateKey: "quickTaskComparisonTemplate",
+    selectionKey: "quickTaskBuildSelection",
+    titleKey: "quickTaskComparisonTitle",
+    bodyKey: "quickTaskComparisonBody",
+    exampleKey: "quickTaskComparisonExample",
+    icon: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>'
+  },
+  {
+    category: "equipment",
+    id: "item-carriers",
+    inputTemplateKey: "quickTaskCarriersTemplate",
+    selectionKey: "quickTaskItemSelection",
+    titleKey: "quickTaskCarriersTitle",
+    bodyKey: "quickTaskCarriersBody",
+    exampleKey: "quickTaskCarriersExample",
+    icon: '<circle cx="12" cy="8" r="3"/><path d="M5.5 19c.8-3.4 3-5 6.5-5s5.7 1.6 6.5 5"/>'
+  },
+  {
+    category: "equipment",
+    id: "special-items",
+    inputTemplateKey: "quickTaskSpecialTemplate",
+    selectionKey: "quickTaskBuildSelection",
+    titleKey: "quickTaskSpecialTitle",
+    bodyKey: "quickTaskSpecialBody",
+    exampleKey: "quickTaskSpecialExample",
+    icon: '<path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>'
+  },
+  {
+    category: "comps",
+    id: "comp-rankings",
+    query: "\u63a8\u8350\u5f53\u524d\u7248\u672c\u70ed\u95e8\u9635\u5bb9",
+    promptKey: "quickTaskCompsPrompt",
+    titleKey: "quickTaskCompsTitle",
+    bodyKey: "quickTaskCompsBody",
+    exampleKey: "quickTaskCompsExample",
+    icon: '<path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/>'
+  },
+  {
+    category: "comps",
+    id: "comp-trends",
+    query: "\u5f53\u524d\u7248\u672c\u9635\u5bb9\u8d8b\u52bf",
+    promptKey: "quickTaskTrendsPrompt",
+    titleKey: "quickTaskTrendsTitle",
+    bodyKey: "quickTaskTrendsBody",
+    exampleKey: "quickTaskTrendsExample",
+    icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
+  },
+  {
+    category: "comps",
+    id: "hero-comps",
+    inputTemplateKey: "quickTaskHeroCompsTemplate",
+    selectionKey: "quickTaskBuildSelection",
+    titleKey: "quickTaskHeroCompsTitle",
+    bodyKey: "quickTaskHeroCompsBody",
+    exampleKey: "quickTaskHeroCompsExample",
+    icon: '<circle cx="9" cy="9" r="4"/><path d="m12 12 7 7M15 15l2-2"/>'
+  },
+  {
+    category: "library",
+    id: "unit-details",
+    inputTemplateKey: "quickTaskUnitDetailsTemplate",
+    selectionKey: "quickTaskBuildSelection",
+    titleKey: "quickTaskUnitDetailsTitle",
+    bodyKey: "quickTaskUnitDetailsBody",
+    exampleKey: "quickTaskUnitDetailsExample",
+    icon: '<circle cx="12" cy="8" r="3"/><path d="M6 19c.7-3.4 2.7-5 6-5s5.3 1.6 6 5"/>'
+  },
+  {
+    category: "library",
+    id: "unit-catalog",
+    queryKey: "quickTaskUnitCatalogPrompt",
+    promptKey: "quickTaskUnitCatalogPrompt",
+    titleKey: "quickTaskUnitCatalogTitle",
+    bodyKey: "quickTaskUnitCatalogBody",
+    exampleKey: "quickTaskUnitCatalogExample",
+    icon: '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5M11 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5"/>'
+  },
+  {
+    category: "library",
+    id: "item-details",
+    inputTemplateKey: "quickTaskItemDetailsTemplate",
+    selectionKey: "quickTaskItemSelection",
+    titleKey: "quickTaskItemDetailsTitle",
+    bodyKey: "quickTaskItemDetailsBody",
+    exampleKey: "quickTaskItemDetailsExample",
+    icon: '<path d="m8 16 8-8M7 5l12 12M5 7l2-2M17 19l2-2"/>'
+  },
+  {
+    category: "library",
+    id: "trait-details",
+    inputTemplateKey: "quickTaskTraitDetailsTemplate",
+    selectionKey: "quickTaskTraitSelection",
+    titleKey: "quickTaskTraitDetailsTitle",
+    bodyKey: "quickTaskTraitDetailsBody",
+    exampleKey: "quickTaskTraitDetailsExample",
+    icon: '<path d="M12 3 5 7v5c0 4.3 2.8 7.4 7 9 4.2-1.6 7-4.7 7-9V7z"/><path d="m9 12 2 2 4-5"/>'
+  },
+  {
+    category: "library",
+    id: "trait-catalog",
+    queryKey: "quickTaskTraitCatalogPrompt",
+    promptKey: "quickTaskTraitCatalogPrompt",
+    titleKey: "quickTaskTraitCatalogTitle",
+    bodyKey: "quickTaskTraitCatalogBody",
+    exampleKey: "quickTaskTraitCatalogExample",
+    icon: '<path d="M4 6h6v5H4zM14 6h6v5h-6zM9 15h6v5H9z"/><path d="M7 11v2h5M17 11v2h-5v2"/>'
+  },
+  {
+    category: "news",
     id: "patch-notes",
     view: "patch-note",
     titleKey: "quickTaskUpdatesTitle",
     bodyKey: "quickTaskUpdatesBody",
+    exampleKey: "quickTaskUpdatesExample",
     icon: '<path d="M6 5h12v14H6z"/><path d="M9 9h6M9 12h6M9 15h4"/>'
   }
 ];
 
 function quickTasksForSeason() {
   const configured = localizedThemeValue(state.seasonContext?.theme?.quickQuestions, []);
-  return QUICK_TASKS.map((task, index) => (
-    index < 2 && configured[index] ? { ...task, query: configured[index] } : task
-  ));
+  const configuredIndexes = new Map([
+    ["comp-rankings", 0],
+    ["comp-trends", 1]
+  ]);
+  return QUICK_TASKS.map((task) => {
+    const configuredIndex = configuredIndexes.get(task.id);
+    return configuredIndex !== undefined && configured[configuredIndex]
+      ? { ...task, query: configured[configuredIndex] }
+      : task;
+  });
+}
+
+function quickTaskCardHtml(task) {
+  const isInteractive = task.query || task.queryKey || task.view || task.inputTemplateKey;
+  const action = isInteractive
+    ? ` data-quick-task="${escapeHtml(task.id)}"`
+    : " disabled";
+  return `
+    <button type="button" class="quick-task-card${isInteractive ? "" : " is-planned"}"${action}>
+      <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${task.icon}</svg></span>
+      <span class="quick-task-copy">
+        <strong data-i18n="${task.titleKey}">${escapeHtml(t(task.titleKey))}</strong>
+        <small data-i18n="${task.bodyKey}">${escapeHtml(t(task.bodyKey))}</small>
+        <span class="quick-task-example" data-i18n="${task.exampleKey}">${escapeHtml(t(task.exampleKey))}</span>
+      </span>
+      <span class="quick-task-arrow" aria-hidden="true">→</span>
+    </button>
+  `;
 }
 
 function quickTasksHtml() {
-  const cards = quickTasksForSeason().map((task) => {
-    const isInteractive = task.query || task.view || task.inputTemplateKey;
-    const action = isInteractive
-      ? ` data-quick-task="${escapeHtml(task.id)}"`
-      : " disabled";
-    const trailing = task.badgeKey
-      ? `<span class="quick-task-badge" data-i18n="${task.badgeKey}">${escapeHtml(t(task.badgeKey))}</span>`
-      : '<span class="quick-task-arrow" aria-hidden="true">↗</span>';
+  const tasks = quickTasksForSeason();
+  const categoryCards = QUICK_TASK_CATEGORIES.map((category) => `
+    <button type="button" class="quick-category-card" data-quick-category="${escapeHtml(category.id)}" aria-expanded="false" aria-controls="quick-category-panel-${escapeHtml(category.id)}">
+      <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${category.icon}</svg></span>
+      <span class="quick-category-copy">
+        <strong data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
+        <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
+      </span>
+      <span class="quick-category-count" data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
+      <span class="quick-category-chevron" aria-hidden="true">⌄</span>
+    </button>
+  `).join("");
+  const panels = QUICK_TASK_CATEGORIES.map((category) => {
+    const categoryTasks = tasks.filter((task) => task.category === category.id);
     return `
-      <button type="button" class="quick-task-card${isInteractive ? "" : " is-planned"}"${action}>
-        <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${task.icon}</svg></span>
-        <span class="quick-task-copy"><strong data-i18n="${task.titleKey}">${escapeHtml(t(task.titleKey))}</strong><small data-i18n="${task.bodyKey}">${escapeHtml(t(task.bodyKey))}</small></span>
-        ${trailing}
-      </button>
+      <section class="quick-task-panel" id="quick-category-panel-${escapeHtml(category.id)}" data-quick-category-panel="${escapeHtml(category.id)}" aria-labelledby="quick-category-title-${escapeHtml(category.id)}" hidden>
+        <header class="quick-task-panel-heading">
+          <div>
+            <strong id="quick-category-title-${escapeHtml(category.id)}" data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
+            <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
+          </div>
+          <span data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
+        </header>
+        <div class="quick-task-list">${categoryTasks.map(quickTaskCardHtml).join("")}</div>
+      </section>
     `;
   }).join("");
   return `
@@ -486,9 +724,38 @@ function quickTasksHtml() {
         <strong data-i18n="quickTasksTitle">${escapeHtml(t("quickTasksTitle"))}</strong>
         <span data-i18n="quickTasksHint">${escapeHtml(t("quickTasksHint"))}</span>
       </div>
-      <div class="quick-task-grid">${cards}</div>
+      <div class="quick-category-grid">${categoryCards}</div>
+      ${panels}
     </section>
   `;
+}
+
+function unresolvedQuickTaskPlaceholder(value) {
+  return String(value ?? "").match(/【[^】]+】|\[[^\]]+\]/u)?.[0] ?? null;
+}
+
+function collapseQuickTaskCategories(section) {
+  if (!section) return;
+  for (const button of section.querySelectorAll("[data-quick-category]")) {
+    button.setAttribute("aria-expanded", "false");
+  }
+  for (const panel of section.querySelectorAll("[data-quick-category-panel]")) {
+    panel.hidden = true;
+  }
+}
+
+function toggleQuickTaskCategory(button) {
+  const section = button.closest(".quick-tasks");
+  if (!section) return;
+  const category = button.dataset.quickCategory;
+  const shouldExpand = button.getAttribute("aria-expanded") !== "true";
+  collapseQuickTaskCategories(section);
+  if (!shouldExpand) return;
+  const panel = [...section.querySelectorAll("[data-quick-category-panel]")]
+    .find((entry) => entry.dataset.quickCategoryPanel === category);
+  if (!panel) return;
+  button.setAttribute("aria-expanded", "true");
+  panel.hidden = false;
 }
 
 function welcomeConversationHtml(messageKey = "newConversation") {
@@ -1482,6 +1749,105 @@ function entityStat(label, value, suffix = "") {
   return `<div class="entity-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(display)}</strong></div>`;
 }
 
+function entityCatalogCard(entry) {
+  const search = [
+    entry.name,
+    entry.apiName,
+    entry.role,
+    entry.traitType,
+    ...(entry.traitNames ?? [])
+  ].filter(Boolean).join(" ").toLocaleLowerCase(getLocale());
+  const isUnit = entry.entityType === "unit";
+  const metadata = isUnit
+    ? [
+      entry.cost ? t("unitCost", { value: entry.cost }) : null,
+      entry.role
+    ].filter(Boolean).join(" · ")
+    : entry.traitType === "race"
+      ? t("catalogOrigin")
+      : entry.traitType === "job"
+        ? t("catalogClass")
+        : "";
+  const chips = isUnit
+    ? (entry.traitNames ?? []).slice(0, 3)
+    : (entry.tierCounts ?? []).map((value) => t("unitsRequired", { value }));
+
+  return `
+    <button type="button"
+      class="entity-catalog-card"
+      data-entity-detail
+      data-entity-type="${escapeHtml(entry.entityType)}"
+      data-entity-id="${escapeHtml(entry.apiName)}"
+      data-catalog-search="${escapeHtml(search)}"
+      data-catalog-cost="${escapeHtml(entry.cost ?? "")}"
+      data-catalog-trait-type="${escapeHtml(entry.traitType ?? "")}"
+      aria-label="${escapeHtml(t("openEntityDetails", { name: entry.name }))}">
+      ${assetThumb(entry.iconUrl, entry.name, "entity-catalog-icon")}
+      <span class="entity-catalog-copy">
+        <strong>${escapeHtml(entry.name)}</strong>
+        ${metadata ? `<small>${escapeHtml(metadata)}</small>` : ""}
+        ${chips.length ? `<span class="entity-catalog-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</span>` : ""}
+      </span>
+      <span class="entity-catalog-arrow" aria-hidden="true">→</span>
+    </button>`;
+}
+
+function applyEntityCatalogFilters() {
+  const root = resultContentEl.querySelector("[data-entity-catalog]");
+  if (!root) return;
+  const search = root.querySelector("[data-catalog-query]")?.value.trim().toLocaleLowerCase(getLocale()) ?? "";
+  const selected = root.querySelector("[data-catalog-filter]")?.value ?? "";
+  let visible = 0;
+  const cards = [...root.querySelectorAll("[data-entity-detail]")];
+  for (const card of cards) {
+    const matchesSearch = !search || String(card.dataset.catalogSearch ?? "").includes(search);
+    const filterValue = root.dataset.entityType === "unit"
+      ? card.dataset.catalogCost
+      : card.dataset.catalogTraitType;
+    const matchesFilter = !selected || filterValue === selected;
+    const show = matchesSearch && matchesFilter;
+    card.hidden = !show;
+    if (show) visible += 1;
+  }
+  const count = root.querySelector("[data-catalog-visible-count]");
+  if (count) count.textContent = t("catalogVisibleCount", { visible, total: cards.length });
+  const empty = root.querySelector("[data-catalog-empty]");
+  if (empty) empty.hidden = visible > 0;
+}
+
+function renderEntityCatalog(data) {
+  const entityType = data.entityType === "trait" ? "trait" : "unit";
+  const title = entityType === "unit" ? t("unitCatalog") : t("traitCatalog");
+  const items = data.items ?? [];
+  const costs = [...new Set(items.map((entry) => Number(entry.cost)).filter(Number.isFinite))].sort((a, b) => a - b);
+  const filterOptions = entityType === "unit"
+    ? costs.map((cost) => `<option value="${cost}">${escapeHtml(t("unitCost", { value: cost }))}</option>`).join("")
+    : `<option value="race">${escapeHtml(t("catalogOrigin"))}</option><option value="job">${escapeHtml(t("catalogClass"))}</option>`;
+
+  setResponseHtml(`
+    ${resultHeader(title, data.text, t("catalogCount", { value: data.pagination?.total ?? items.length }))}
+    <section class="entity-catalog" data-entity-catalog data-entity-type="${entityType}">
+      <div class="entity-catalog-controls">
+        <label>
+          <span class="sr-only">${escapeHtml(t("catalogSearch"))}</span>
+          <input type="search" data-catalog-query placeholder="${escapeHtml(t("catalogSearch"))}" autocomplete="off">
+        </label>
+        <label>
+          <span class="sr-only">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</span>
+          <select data-catalog-filter>
+            <option value="">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</option>
+            ${filterOptions}
+          </select>
+        </label>
+        <span class="entity-catalog-count" data-catalog-visible-count>${escapeHtml(t("catalogVisibleCount", { visible: items.length, total: items.length }))}</span>
+      </div>
+      <div class="entity-catalog-grid">${items.map(entityCatalogCard).join("")}</div>
+      <div class="empty-state entity-catalog-empty" data-catalog-empty ${items.length ? "hidden" : ""}>${escapeHtml(t("catalogEmpty"))}</div>
+    </section>
+    ${entitySourceLine(data.source)}
+  `);
+}
+
 function renderUnitDetails(data) {
   const unit = data.unit ?? {};
   const stats = unit.stats ?? {};
@@ -1746,6 +2112,46 @@ function sourceAndRisk(data) {
   `;
 }
 
+const EQUIPMENT_CONCLUSION_RESULT_TYPES = new Set([
+  "unit_build_rankings",
+  "unit_build_completion",
+  "unit_best_3_items"
+]);
+
+function equipmentConclusionViewModel(data, content) {
+  if (!EQUIPMENT_CONCLUSION_RESULT_TYPES.has(data?.type) || !content) return null;
+  const entries = [...(content.reasons ?? []), ...(content.alternatives ?? [])];
+  const uniqueText = (dimensions) => [...new Set(entries
+    .filter((entry) => dimensions.includes(entry?.dimension))
+    .map((entry) => String(entry?.text ?? "").trim())
+    .filter(Boolean))].join("；");
+  const completion = data.type === "unit_build_completion";
+  const prioritize = completion && data?.itemDifferentiation?.hasClearLeader === true;
+  const coreText = uniqueText(completion
+    ? ["locked_item_compatibility"]
+    : ["core_item_tendency"]);
+  const candidateText = uniqueText(completion
+    ? ["completion_options"]
+    : ["build_performance"]);
+  return [
+    {
+      key: "recommendation",
+      title: t("conclusionRecommendation"),
+      text: content.headline
+    },
+    {
+      key: "core-items",
+      title: t(prioritize ? "conclusionPrioritize" : "conclusionCoreItems"),
+      text: coreText || content.summary
+    },
+    {
+      key: "candidate-analysis",
+      title: t("conclusionCandidateAnalysis"),
+      text: candidateText || content.nextAction
+    }
+  ];
+}
+
 function generatedConclusionCard(data) {
   const conclusion = data?.answer?.generatedConclusion;
   if (!conclusion || conclusion.status === "disabled" || conclusion.status === "skipped") return "";
@@ -1773,6 +2179,18 @@ function generatedConclusionCard(data) {
     </li>
   `).join("");
   const feedback = state.explanationFeedback;
+  const equipmentSections = equipmentConclusionViewModel(data, content);
+  if (equipmentSections) {
+    return `<section class="generated-conclusion equipment-conclusion" data-conclusion-status="generated">
+      <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
+      <div class="equipment-conclusion-sections">
+        ${equipmentSections.map((section) => `<section class="conclusion-section ${section.key}"><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p></section>`).join("")}
+      </div>
+      ${missingDimensions ? `<div class="conclusion-missing"><strong>${t("conclusionMissingDimensions")}</strong><span>${escapeHtml(missingDimensions)}</span></div>` : ""}
+      ${supportingEvidence ? `<details class="conclusion-supporting-evidence"><summary>${t("staticEvidence")}</summary><ul>${supportingEvidence}</ul></details>` : ""}
+      <div class="conclusion-footer"><small>${escapeHtml(conclusion.model ?? "LLM")} · ${formatNumber(conclusion.latencyMs ?? 0)}ms</small><div class="result-feedback" data-explanation-feedback-group><button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button><button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button><span class="feedback-status">${feedback ? t("recorded") : ""}</span>${feedbackReasonPicker("explanation")}</div></div>
+    </section>`;
+  }
   return `<section class="generated-conclusion" data-conclusion-status="generated">
     <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
     <h3>${escapeHtml(content.headline)}</h3>
@@ -1975,9 +2393,13 @@ function chatCoreScopeText(data) {
   return isItemPerformance(data) ? "\u6307\u5b9a\u88c5\u5907\u4e0e\u540c\u6761\u4ef6 Top 3 \u5bf9\u6bd4" : isSpecialItemRanking(data) ? t("chatSpecialRankingScope") : t("chatCoreScope");
 }
 
-function generatedConclusionText(conclusion) {
+function generatedConclusionText(conclusion, data = null) {
   const content = conclusion?.content;
   if (!content) return "";
+  const equipmentSections = equipmentConclusionViewModel(data, content);
+  if (equipmentSections) {
+    return equipmentSections.map((section) => `${section.title}\n${section.text}`).join("\n\n");
+  }
   const missingDimensions = conclusionMissingDimensions(content);
   return [
     content.headline,
@@ -1998,7 +2420,7 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
   const interpretation = conclusion?.status === "pending"
     ? state.conclusionStreamText || t("conclusionStreaming")
     : conclusion?.status === "generated"
-      ? generatedConclusionText(conclusion)
+      ? generatedConclusionText(conclusion, data)
       : "";
   return `<section class="chat-core-conclusion" data-chat-core-conclusion="${escapeHtml(responseId)}">
     <header><strong>${t("chatCoreTitle")}</strong><small>${chatCoreScopeText(data)}</small></header>
@@ -2163,6 +2585,51 @@ function renderItemRankings(data) {
   `);
 }
 
+function renderItemCarrierRankings(data) {
+  const carriers = data.carriers ?? [];
+  const itemLabel = localizedName(data.item, data.query?.itemName ?? t("item"));
+  if (!carriers.length) {
+    setResponseHtml(`
+      ${resultHeader(t("itemCarriers"), data.text ?? t("noPositiveCarriers"), t("noResult"))}
+      <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noPositiveCarriers"))}</strong></div>
+      ${conditionPanel(data)}${sourceAndRisk(data)}
+    `);
+    return;
+  }
+  setResponseHtml(`
+    ${resultHeader(t("itemCarriers"), data.text, itemLabel)}
+    <div class="carrier-ranking-list">
+      ${carriers.map((carrier, index) => `
+        <article class="carrier-ranking-card">
+          <div class="carrier-ranking-head">
+            <div class="carrier-unit">
+              ${assetThumb(carrier.unit?.iconUrl, localizedName(carrier.unit), "equipment-unit-icon")}
+              <div><strong>${index + 1}. ${escapeHtml(localizedName(carrier.unit))}</strong><small>${t("positivePlacementUplift", { value: formatNumber(carrier.placementUplift, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</small></div>
+            </div>
+            ${data.item ? assetThumb(data.item.iconUrl, itemLabel, "tiny-item-icon") : ""}
+          </div>
+          <div class="stats">
+            ${metric(t("top4"), `${formatNumber(carrier.stats.top4)}%`)}
+            ${metric(t("win"), `${formatNumber(carrier.stats.win)}%`)}
+            ${metric(t("avg"), formatNumber(carrier.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+            ${metric(t("samples"), formatNumber(carrier.stats.games))}
+          </div>
+          <div class="carrier-baseline">${t("unitBaselineAvg", { value: formatNumber(carrier.baselineAvgPlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</div>
+          <div class="carrier-builds">
+            ${(carrier.builds ?? []).map((build) => `
+              <div class="carrier-build">
+                <div class="items">${build.items.map(itemPill).join("")}</div>
+                <small>${t("avg")} ${formatNumber(build.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${t("samples")} ${formatNumber(build.stats.games)}</small>
+              </div>
+            `).join("")}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+    ${conditionPanel(data)}${sourceAndRisk(data)}
+  `);
+}
+
 function recommendationCard(data, card, index) {
   const unitLabel = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? t("hero"));
   const comparedItem = card.items?.find((item) => item.compared);
@@ -2178,7 +2645,7 @@ function recommendationCard(data, card, index) {
   const difference = card.difference
     ? `<div class="difference-note">${t("relativeRecommendation")}：${card.difference.removed?.length ? `${t("replace")} ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : t("sameItems")}；${t("top4Short")} ${card.difference.top4Delta >= 0 ? "+" : ""}${formatNumber(card.difference.top4Delta)}pp，${t("samples")} ${card.difference.gamesDelta >= 0 ? "+" : ""}${formatNumber(card.difference.gamesDelta)}</div>`
     : "";
-  const rankingRationale = card.ranking?.method === "robust_applicability_v1"
+  const rankingRationale = card.ranking?.method === "robust_applicability_v3"
     ? `<div class="ranking-rationale${card.winner ? " primary" : ""}">
       <strong>${t(card.winner ? "applicabilityRecommendation" : "applicabilityScore")}</strong>
       <span>${t("applicabilityScoreValue", { score: formatNumber(card.ranking.score, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}</span>
@@ -2218,11 +2685,13 @@ function renderRecommendationResult(data) {
 }
 
 function renderCurrentResult(data) {
-  if (data.type === "unit_details") renderUnitDetails(data);
+  if (data.type === "entity_catalog") renderEntityCatalog(data);
+  else if (data.type === "unit_details") renderUnitDetails(data);
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
+  else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else renderRecommendationResult(data);
 }
@@ -2725,6 +3194,7 @@ function setRequestRunning(running) {
   form.querySelector("button[type=submit]").disabled = running;
   for (const button of resultEl.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
+  for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
 }
 
 async function requestRecommendation(refresh = false, displayInput = null) {
@@ -2734,12 +3204,12 @@ async function requestRecommendation(refresh = false, displayInput = null) {
     return;
   }
   if (!refresh) {
-    const championPlaceholder = t("quickTaskBuildSelection");
-    const selectionStart = queryInput.value.indexOf(championPlaceholder);
+    const pendingPlaceholder = unresolvedQuickTaskPlaceholder(queryInput.value);
+    const selectionStart = pendingPlaceholder ? queryInput.value.indexOf(pendingPlaceholder) : -1;
     if (selectionStart >= 0) {
-      queryInput.setCustomValidity(t("enterChampion"));
+      queryInput.setCustomValidity(t("completeQuickTaskFields"));
       queryInput.focus();
-      queryInput.setSelectionRange(selectionStart, selectionStart + championPlaceholder.length);
+      queryInput.setSelectionRange(selectionStart, selectionStart + pendingPlaceholder.length);
       queryInput.reportValidity();
       return;
     }
@@ -2846,6 +3316,58 @@ async function requestCompUnitRecommendation(target) {
   await requestRecommendation(false, displayInput);
 }
 
+async function requestEntityDetail(target) {
+  if (state.requestInFlight) return;
+  const entityType = target.dataset.entityType === "trait" ? "trait" : "unit";
+  const apiName = target.dataset.entityId?.trim();
+  if (!apiName) return;
+  const catalogName = entityType === "unit" ? t("unitCatalog") : t("traitCatalog");
+  const snapshot = captureEntityCatalogNavigationSnapshot(catalogName);
+  if (!snapshot) return;
+  state.resultNavigation.push(snapshot);
+  setRequestRunning(true);
+  setStatusKey("statusQuerying", "loading");
+  renderLoadingResult(false);
+  const controller = new AbortController();
+  state.currentController = controller;
+  let detailLoaded = false;
+
+  try {
+    const params = new URLSearchParams({
+      type: entityType,
+      id: apiName,
+      seasonContextId: state.seasonContextId
+    });
+    const response = await fetch(`/api/entity-details?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    state.lastResult = data;
+    state.lastResultId = null;
+    state.resultView = { type: "result", data };
+    rawOutputEl.textContent = JSON.stringify(data, null, 2);
+    resultTitleEl.textContent = t("resultTitle");
+    renderCurrentResult(data);
+    detailLoaded = true;
+    setStatusKey("statusLive", "ready");
+    openMobileResult();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      restorePreviousCatalogResult();
+      setStatusKey("statusStopped", "error");
+    } else {
+      renderError(error.message, false);
+      setStatusKey("statusFailed", "error");
+    }
+  } finally {
+    state.currentController = null;
+    setRequestRunning(false);
+    if (detailLoaded) resultRefreshButton.disabled = true;
+  }
+}
+
 bindSegmented("#sample-control", "minSamples", Number);
 bindSegmented("#policy-control", "itemPolicy");
 
@@ -2896,7 +3418,7 @@ queryInput.addEventListener("keydown", (event) => {
 });
 
 queryInput.addEventListener("input", () => {
-  if (!queryInput.value.includes(t("quickTaskBuildSelection"))) queryInput.setCustomValidity("");
+  if (!unresolvedQuickTaskPlaceholder(queryInput.value)) queryInput.setCustomValidity("");
 });
 
 stopButton.addEventListener("click", () => {
@@ -2904,6 +3426,11 @@ stopButton.addEventListener("click", () => {
 });
 
 async function handleResultClick(event) {
+  const returnCatalogButton = event.target.closest("[data-return-catalog]");
+  if (returnCatalogButton) {
+    restorePreviousCatalogResult();
+    return;
+  }
   const returnCompButton = event.target.closest("[data-return-comp]");
   if (returnCompButton) {
     restorePreviousCompResult();
@@ -2924,15 +3451,27 @@ async function handleResultClick(event) {
     await requestCompUnitRecommendation(compUnitTarget);
     return;
   }
+  const entityDetailTarget = event.target.closest("[data-entity-detail]");
+  if (entityDetailTarget) {
+    event.preventDefault();
+    await requestEntityDetail(entityDetailTarget);
+    return;
+  }
   const compMetricButton = event.target.closest("button[data-comp-metric]");
   if (compMetricButton && state.lastResult?.type === "comp_rankings") {
     state.compRankingMetric = compMetricButton.dataset.compMetric;
     renderCompRankings(state.lastResult);
     return;
   }
+  const quickCategoryButton = event.target.closest("button[data-quick-category]");
+  if (quickCategoryButton) {
+    toggleQuickTaskCategory(quickCategoryButton);
+    return;
+  }
   const quickTaskButton = event.target.closest("button[data-quick-task]");
   if (quickTaskButton) {
     if (state.requestInFlight) return;
+    collapseQuickTaskCategories(quickTaskButton.closest(".quick-tasks"));
     const baseQuickTask = QUICK_TASKS.find((task) => task.id === quickTaskButton.dataset.quickTask);
     const quickTask = quickTasksForSeason().find((task) => task.id === quickTaskButton.dataset.quickTask) ?? baseQuickTask;
     if (quickTask?.view === "patch-note") {
@@ -2954,8 +3493,10 @@ async function handleResultClick(event) {
       queryInput.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
-    if (!quickTask?.query) return;
-    queryInput.value = quickTask.query;
+    const quickQuery = quickTask?.queryKey ? t(quickTask.queryKey) : quickTask?.query;
+    if (!quickQuery) return;
+    if (quickTask.query) queryInput.value = quickTask.query;
+    else queryInput.value = quickQuery;
     await requestRecommendation(false, t(quickTask.promptKey));
     return;
   }
@@ -3108,6 +3649,12 @@ async function handleResultClick(event) {
 
 resultEl.addEventListener("click", handleResultClick);
 resultContentEl.addEventListener("click", handleResultClick);
+resultContentEl.addEventListener("input", (event) => {
+  if (event.target.closest("[data-catalog-query]")) applyEntityCatalogFilters();
+});
+resultContentEl.addEventListener("change", (event) => {
+  if (event.target.closest("[data-catalog-filter]")) applyEntityCatalogFilters();
+});
 resultContentEl.addEventListener("toggle", (event) => {
   const card = event.target;
   if (!card?.matches?.(".comp-card[open][data-comp-detail-key]")) return;
@@ -3381,6 +3928,7 @@ resetPreferencesButton.addEventListener("click", async () => {
   }
 });
 
+resultEl.innerHTML = welcomeConversationHtml("welcome");
 setMobileView("chat", { replaceHistory: true });
 setLocale(getLocale());
 wallpaperController.refreshLocale();

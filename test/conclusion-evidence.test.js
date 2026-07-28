@@ -61,12 +61,14 @@ test("buildConclusionEvidence creates a bounded whitelist pack with raw metrics"
   assert.equal(evidence.recommendations[0].evidenceId, "build:1");
   assert.equal(evidence.recommendations[0].stats.top4Rate, 0.612);
   assert.equal(evidence.recommendations[0].stats.games, 1248);
-  assert.equal(evidence.itemSignals[0].kind, "item_core_signal");
+  assert.equal(evidence.itemSignals[0].kind, "locked_condition_signal");
   assert.equal(evidence.itemSignals[0].item.apiName, "TFT_Item_GuinsoosRageblade");
   assert.equal(evidence.itemSignals[0].appearances, 2);
   assert.equal(evidence.itemSignals[0].recommendationCount, 2);
   assert.equal(evidence.itemSignals[0].requiredAppearances, 2);
-  assert.equal(evidence.itemSignals[0].core, true);
+  assert.equal(evidence.itemSignals[0].eligibleForCore, false);
+  assert.equal(evidence.itemSignals[0].core, false);
+  assert.equal(evidence.itemSignals[0].exclusionReason, "user_locked");
   assert.equal(evidence.itemSignals[0].stable, true);
   assert.deepEqual(evidence.itemSignals[0].buildEvidenceIds, ["build:1", "build:2"]);
   assert.equal(evidence.query.lockedItems[0].apiName, "TFT_Item_GuinsoosRageblade");
@@ -79,8 +81,26 @@ test("buildConclusionEvidence creates a bounded whitelist pack with raw metrics"
   assert.match(serialized, /redacted-url/u);
 });
 
+test("buildConclusionEvidence keeps a locked-condition signal when only one build is visible", () => {
+  const result = buildResult();
+  result.rankedBuilds = result.rankedBuilds.slice(0, 1);
+
+  const evidence = buildConclusionEvidence({
+    result,
+    catalog,
+    input: "霞已有羊刀，剩下两件怎么带？"
+  });
+
+  const locked = evidence.itemSignals.find((signal) => signal.kind === "locked_condition_signal");
+  assert.equal(locked.item.apiName, "TFT_Item_GuinsoosRageblade");
+  assert.equal(locked.recommendationCount, 1);
+  assert.equal(locked.eligibleForCore, false);
+  assert.equal(locked.core, false);
+});
+
 test("buildConclusionEvidence marks repeated items as low-sample core trends when linked builds are unstable", () => {
   const result = buildResult();
+  result.query.lockedItems = [];
   result.rankedBuilds = result.rankedBuilds.map((build) => ({
     ...build,
     stats: { ...build.stats, games: 120 }
@@ -233,4 +253,94 @@ test("build completion is normalized to the three-item recommendation evidence c
   assert.equal(evidence.request.intent, "unit_build_rankings");
   assert.equal(evidence.request.requestedIntent, "unit_build_completion");
   assert.equal(evidence.recommendations[0].evidenceId, "build:1");
+});
+
+test("build evidence includes only visible official item effects and the target unit role", () => {
+  const result = buildResult();
+  result.query.lockedItems = [];
+  const officialItemDetails = new Map([
+    ["TFT_Item_GuinsoosRageblade", { effect: "攻击会提供 5% 攻击速度。" }],
+    ["TFT_Item_InfinityEdge", { effect: "提供暴击相关效果。" }],
+    ["TFT_Item_MadredsBloodrazor", { effect: "对高生命值目标提供额外伤害。" }],
+    ["TFT_Item_LastWhisper", { effect: "提供破甲效果。" }],
+    ["TFT_Item_Deathblade", { effect: "提供攻击力。" }],
+    ["fourth-build-only", { effect: "不得进入结论证据。" }]
+  ]);
+  const officialEntityDetails = {
+    units: new Map([["TFT17_Xayah", { role: "远程物理输出", traitNames: ["星神"] }]]),
+    traits: new Map([["trait", { description: "不得进入装备结论" }]]),
+    meta: { version: "17.7" }
+  };
+  const evidence = buildConclusionEvidence({
+    result,
+    catalog,
+    officialItemDetails,
+    officialEntityDetails
+  });
+
+  assert.equal(evidence.itemMechanics.length, 5);
+  assert.equal(evidence.itemMechanics.some((entry) => entry.item.apiName === "fourth-build-only"), false);
+  assert.equal(evidence.itemMechanics.some((entry) => "recipe" in entry), false);
+  assert.equal(evidence.unitMechanics.length, 1);
+  assert.equal(evidence.unitMechanics[0].officialRole, "远程物理输出");
+  assert.equal(JSON.stringify(evidence.unitMechanics).includes("trait"), false);
+});
+
+test("official item mechanics remove unresolved TFT template tokens", () => {
+  const itemDetails = new Map([[
+    "TFT_Item_InfinityEdge",
+    {
+      effect: "+35%攻击力；获得【技能暴击】。 {{TFT_Keyword_Precision}}"
+    }
+  ]]);
+  const evidence = buildConclusionEvidence({
+    result: buildResult({
+      query: {
+        ...buildResult().query,
+        lockedItems: []
+      },
+      rankedBuilds: [{
+        items: ["TFT_Item_InfinityEdge"],
+        stats: {
+          games: 100,
+          top4Rate: 0.5,
+          winRate: 0.1,
+          avgPlacement: 4
+        }
+      }]
+    }),
+    catalog,
+    officialItemDetails: itemDetails
+  });
+
+  assert.equal(evidence.itemMechanics.length, 1);
+  assert.equal(evidence.itemMechanics[0].officialEffect, "+35%攻击力；获得【技能暴击】。");
+  assert.doesNotMatch(evidence.itemMechanics[0].text, /\{\{TFT_/u);
+});
+
+test("completion evidence keeps the locked item non-core and emits the locked-item/Rageblade differentiator", () => {
+  const result = buildResult({
+    type: "unit_build_completion",
+    query: {
+      ...buildResult().query,
+      intent: "unit_build_completion",
+      lockedItems: ["dawn"],
+      minSamples: 10,
+      primaryMetric: "avgPlacement"
+    },
+    rankedBuilds: [
+      { items: ["dawn", "rageblade", "infinity-edge"], stats: { games: 500, avgPlacement: 2.97, top4Rate: 0.6, winRate: 0.2 } },
+      { items: ["dawn", "deathblade", "rageblade"], stats: { games: 500, avgPlacement: 2.13, top4Rate: 0.7, winRate: 0.3 } },
+      { items: ["dawn", "deathblade", "infinity-edge"], stats: { games: 500, avgPlacement: 3.58, top4Rate: 0.5, winRate: 0.1 } }
+    ]
+  });
+  const evidence = buildConclusionEvidence({ result, catalog });
+
+  const locked = evidence.itemSignals.find((entry) => entry.item.apiName === "dawn");
+  const rageblade = evidence.itemDifferentiation.itemSignals
+    .find((entry) => entry.item.apiName === "rageblade");
+  assert.equal(locked.kind, "locked_condition_signal");
+  assert.equal(locked.core, false);
+  assert.equal(rageblade.score, 1.03);
+  assert.equal(rageblade.keyDifferentiator, true);
 });

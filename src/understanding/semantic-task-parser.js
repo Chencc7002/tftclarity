@@ -1,4 +1,4 @@
-import { normalizeText } from "../core/normalizer.js";
+import { normalizeAlias, normalizeText } from "../core/normalizer.js";
 import { classifyDomain } from "../domain/tft/domain-gate.js";
 import { defaultFewShotExampleStore } from "./few-shot-example-store.js";
 import { extractEntityMentions } from "../domain/tft/entity-mention-extractor.js";
@@ -17,6 +17,10 @@ import {
   deriveTftCapabilityRequirements,
   isRecognizedTftDomainRequest
 } from "../domain/tft/semantic-capability-rules.js";
+import {
+  HERO_COMP_REQUEST_PATTERN,
+  ITEM_CARRIER_REQUEST_PATTERN
+} from "../domain/tft/intent-patterns.js";
 
 const ACTION_PATTERNS = Object.freeze({
   find_video: /视频|視訊|视屏|影片|b站|bilibili/iu,
@@ -56,6 +60,7 @@ function inferAction(text, domain, examples) {
   if (ACTION_PATTERNS.find_video.test(text)) return "find_video";
   const explicit = explicitAction(text);
   if (explicit) return explicit;
+  if (ITEM_CARRIER_REQUEST_PATTERN.test(text)) return "rank";
   if (ACTION_PATTERNS.explain.test(text)) return "explain";
   if (/(?:往上冲|往上沖|上升|起飞|起飛|趋势|趨勢|变热门|變熱門)/iu.test(text)) return "analyze";
   if (ACTION_PATTERNS.analyze.test(text)) {
@@ -64,6 +69,7 @@ function inferAction(text, domain, examples) {
   for (const action of ["compare", "recommend", "rank", "search"]) {
     if (ACTION_PATTERNS[action].test(text)) return action;
   }
+  if (HERO_COMP_REQUEST_PATTERN.test(text)) return "rank";
   if (/(?:当前|當前|挡前|这版|這版).*(?:版本|板本)|(?:版本|板本).*(?:当前|當前|挡前)/u.test(text)) {
     return "search";
   }
@@ -72,6 +78,8 @@ function inferAction(text, domain, examples) {
 
 function constraintsFor(text) {
   const constraints = {};
+  if (/(?:提升|增益)(?:最大|最高)/u.test(text)) constraints.sort = "uplift_first";
+  if (/(?:携带|使用|样本)(?:最多|最高)|高频/u.test(text)) constraints.sort = "games_first";
   if (/(?:\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u70ed\u5ea6.{0,4}\u6da8)/u.test(text)) {
     constraints.trend = "up";
   }
@@ -142,6 +150,13 @@ function understandingStatus(text, domain, action, entityMentions, options) {
     && !isRecognizedTftDomainRequest(text)
   ) return "ambiguous";
   return "understood_and_supported";
+}
+
+function isBareChampionRequest(text, entityMentions) {
+  const champions = entityMentions.filter((entity) => entity.expectedType === "champion");
+  if (champions.length !== 1 || entityMentions.length !== 1) return false;
+  const alias = normalizeAlias(champions[0].rawText);
+  return Boolean(alias) && normalizeAlias(text).replace(alias, "") === "";
 }
 
 function candidateRole(entity, action, allEntities) {
@@ -380,9 +395,17 @@ export async function parseSemanticTask(input, options = {}) {
   }
   let action = inferAction(text, domainResult.domain, examples);
   const entityMentions = extractEntityMentions(text, { catalog: options.catalog });
+  const bareChampionRequest = isBareChampionRequest(text, entityMentions);
   if (
     domainResult.domain === "out_of_domain"
-    && entityMentions.some((entity) => entity.expectedType === "game_concept")
+    && (
+      entityMentions.some((entity) => entity.expectedType === "game_concept")
+      || bareChampionRequest
+      || (
+        ITEM_CARRIER_REQUEST_PATTERN.test(text)
+        && entityMentions.some((entity) => entity.expectedType === "item")
+      )
+    )
   ) {
     domainResult = {
       domain: "tft",
@@ -391,8 +414,18 @@ export async function parseSemanticTask(input, options = {}) {
     };
     action = inferAction(text, domainResult.domain, examples);
   }
-  const status = understandingStatus(text, domainResult.domain, action, entityMentions, options);
-  const ambiguities = status === "understood_but_missing_context"
+  if (bareChampionRequest) action = "unknown";
+  const status = bareChampionRequest
+    ? "understood_but_missing_context"
+    : understandingStatus(text, domainResult.domain, action, entityMentions, options);
+  const ambiguities = bareChampionRequest
+    ? [{
+      code: "ambiguous_query_type",
+      affectsResult: true,
+      affectsToolSelection: true,
+      missingFields: ["query_type"]
+    }]
+    : status === "understood_but_missing_context"
     ? [{ code: "missing_context", affectsResult: true }]
     : status === "ambiguous"
       ? [{ code: "unclassified_tft_request", affectsResult: true }]
