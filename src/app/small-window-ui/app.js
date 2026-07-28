@@ -211,6 +211,16 @@ function compCardNavigationKey(card) {
 function renderResultNavigation() {
   const snapshot = state.resultNavigation.at(-1);
   if (!snapshot) return "";
+  if (snapshot.kind === "entity_catalog") {
+    return `
+      <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
+        <button type="button" data-return-catalog ${state.requestInFlight ? "disabled" : ""}>
+          <span aria-hidden="true">←</span>
+          <span>${escapeHtml(t("backToCatalog", { name: snapshot.catalogName }))}</span>
+        </button>
+        <small>${escapeHtml(t("catalogResultPreserved"))}</small>
+      </nav>`;
+  }
   return `
     <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
       <button type="button" data-return-comp ${state.requestInFlight ? "disabled" : ""}>
@@ -242,6 +252,49 @@ function captureCompNavigationSnapshot(compName) {
     openCompKeys,
     scrollTop: resultContentEl.scrollTop
   };
+}
+
+function captureEntityCatalogNavigationSnapshot(catalogName) {
+  if (state.lastResult?.type !== "entity_catalog") return null;
+  return {
+    kind: "entity_catalog",
+    catalogName,
+    data: state.lastResult,
+    lastInput: state.lastInput,
+    lastDisplayInput: state.lastDisplayInput,
+    lastResultId: state.lastResultId,
+    lastSuggestions: state.lastSuggestions,
+    lastEntityCandidates: state.lastEntityCandidates,
+    currentResponseId: state.currentResponseId,
+    feedbackByCard: { ...state.feedbackByCard },
+    explanationFeedback: state.explanationFeedback,
+    rawOutput: rawOutputEl.textContent,
+    scrollTop: resultContentEl.scrollTop
+  };
+}
+
+function restorePreviousCatalogResult() {
+  if (state.requestInFlight) return;
+  const snapshot = state.resultNavigation.at(-1);
+  if (snapshot?.kind !== "entity_catalog") return;
+  state.resultNavigation.pop();
+  state.lastInput = snapshot.lastInput;
+  state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastResult = snapshot.data;
+  state.lastResultId = snapshot.lastResultId;
+  state.lastSuggestions = snapshot.lastSuggestions;
+  state.lastEntityCandidates = snapshot.lastEntityCandidates;
+  state.currentResponseId = snapshot.currentResponseId;
+  state.feedbackByCard = { ...snapshot.feedbackByCard };
+  state.explanationFeedback = snapshot.explanationFeedback;
+  state.resultView = { type: "result", data: snapshot.data };
+  rawOutputEl.textContent = snapshot.rawOutput;
+  resultTitleEl.textContent = t("resultTitle");
+  renderCurrentResult(snapshot.data);
+  resultContentEl.scrollTop = snapshot.scrollTop;
+  resultRefreshButton.disabled = !state.lastInput;
+  setStatusKey("statusReady", "ready");
+  resultPane.focus();
 }
 
 function restorePreviousCompResult() {
@@ -556,6 +609,16 @@ const QUICK_TASKS = [
   },
   {
     category: "library",
+    id: "unit-catalog",
+    queryKey: "quickTaskUnitCatalogPrompt",
+    promptKey: "quickTaskUnitCatalogPrompt",
+    titleKey: "quickTaskUnitCatalogTitle",
+    bodyKey: "quickTaskUnitCatalogBody",
+    exampleKey: "quickTaskUnitCatalogExample",
+    icon: '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5M11 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5"/>'
+  },
+  {
+    category: "library",
     id: "item-details",
     inputTemplateKey: "quickTaskItemDetailsTemplate",
     selectionKey: "quickTaskItemSelection",
@@ -573,6 +636,16 @@ const QUICK_TASKS = [
     bodyKey: "quickTaskTraitDetailsBody",
     exampleKey: "quickTaskTraitDetailsExample",
     icon: '<path d="M12 3 5 7v5c0 4.3 2.8 7.4 7 9 4.2-1.6 7-4.7 7-9V7z"/><path d="m9 12 2 2 4-5"/>'
+  },
+  {
+    category: "library",
+    id: "trait-catalog",
+    queryKey: "quickTaskTraitCatalogPrompt",
+    promptKey: "quickTaskTraitCatalogPrompt",
+    titleKey: "quickTaskTraitCatalogTitle",
+    bodyKey: "quickTaskTraitCatalogBody",
+    exampleKey: "quickTaskTraitCatalogExample",
+    icon: '<path d="M4 6h6v5H4zM14 6h6v5h-6zM9 15h6v5H9z"/><path d="M7 11v2h5M17 11v2h-5v2"/>'
   },
   {
     category: "news",
@@ -600,7 +673,7 @@ function quickTasksForSeason() {
 }
 
 function quickTaskCardHtml(task) {
-  const isInteractive = task.query || task.view || task.inputTemplateKey;
+  const isInteractive = task.query || task.queryKey || task.view || task.inputTemplateKey;
   const action = isInteractive
     ? ` data-quick-task="${escapeHtml(task.id)}"`
     : " disabled";
@@ -1676,6 +1749,105 @@ function entityStat(label, value, suffix = "") {
   return `<div class="entity-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(display)}</strong></div>`;
 }
 
+function entityCatalogCard(entry) {
+  const search = [
+    entry.name,
+    entry.apiName,
+    entry.role,
+    entry.traitType,
+    ...(entry.traitNames ?? [])
+  ].filter(Boolean).join(" ").toLocaleLowerCase(getLocale());
+  const isUnit = entry.entityType === "unit";
+  const metadata = isUnit
+    ? [
+      entry.cost ? t("unitCost", { value: entry.cost }) : null,
+      entry.role
+    ].filter(Boolean).join(" · ")
+    : entry.traitType === "race"
+      ? t("catalogOrigin")
+      : entry.traitType === "job"
+        ? t("catalogClass")
+        : "";
+  const chips = isUnit
+    ? (entry.traitNames ?? []).slice(0, 3)
+    : (entry.tierCounts ?? []).map((value) => t("unitsRequired", { value }));
+
+  return `
+    <button type="button"
+      class="entity-catalog-card"
+      data-entity-detail
+      data-entity-type="${escapeHtml(entry.entityType)}"
+      data-entity-id="${escapeHtml(entry.apiName)}"
+      data-catalog-search="${escapeHtml(search)}"
+      data-catalog-cost="${escapeHtml(entry.cost ?? "")}"
+      data-catalog-trait-type="${escapeHtml(entry.traitType ?? "")}"
+      aria-label="${escapeHtml(t("openEntityDetails", { name: entry.name }))}">
+      ${assetThumb(entry.iconUrl, entry.name, "entity-catalog-icon")}
+      <span class="entity-catalog-copy">
+        <strong>${escapeHtml(entry.name)}</strong>
+        ${metadata ? `<small>${escapeHtml(metadata)}</small>` : ""}
+        ${chips.length ? `<span class="entity-catalog-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</span>` : ""}
+      </span>
+      <span class="entity-catalog-arrow" aria-hidden="true">→</span>
+    </button>`;
+}
+
+function applyEntityCatalogFilters() {
+  const root = resultContentEl.querySelector("[data-entity-catalog]");
+  if (!root) return;
+  const search = root.querySelector("[data-catalog-query]")?.value.trim().toLocaleLowerCase(getLocale()) ?? "";
+  const selected = root.querySelector("[data-catalog-filter]")?.value ?? "";
+  let visible = 0;
+  const cards = [...root.querySelectorAll("[data-entity-detail]")];
+  for (const card of cards) {
+    const matchesSearch = !search || String(card.dataset.catalogSearch ?? "").includes(search);
+    const filterValue = root.dataset.entityType === "unit"
+      ? card.dataset.catalogCost
+      : card.dataset.catalogTraitType;
+    const matchesFilter = !selected || filterValue === selected;
+    const show = matchesSearch && matchesFilter;
+    card.hidden = !show;
+    if (show) visible += 1;
+  }
+  const count = root.querySelector("[data-catalog-visible-count]");
+  if (count) count.textContent = t("catalogVisibleCount", { visible, total: cards.length });
+  const empty = root.querySelector("[data-catalog-empty]");
+  if (empty) empty.hidden = visible > 0;
+}
+
+function renderEntityCatalog(data) {
+  const entityType = data.entityType === "trait" ? "trait" : "unit";
+  const title = entityType === "unit" ? t("unitCatalog") : t("traitCatalog");
+  const items = data.items ?? [];
+  const costs = [...new Set(items.map((entry) => Number(entry.cost)).filter(Number.isFinite))].sort((a, b) => a - b);
+  const filterOptions = entityType === "unit"
+    ? costs.map((cost) => `<option value="${cost}">${escapeHtml(t("unitCost", { value: cost }))}</option>`).join("")
+    : `<option value="race">${escapeHtml(t("catalogOrigin"))}</option><option value="job">${escapeHtml(t("catalogClass"))}</option>`;
+
+  setResponseHtml(`
+    ${resultHeader(title, data.text, t("catalogCount", { value: data.pagination?.total ?? items.length }))}
+    <section class="entity-catalog" data-entity-catalog data-entity-type="${entityType}">
+      <div class="entity-catalog-controls">
+        <label>
+          <span class="sr-only">${escapeHtml(t("catalogSearch"))}</span>
+          <input type="search" data-catalog-query placeholder="${escapeHtml(t("catalogSearch"))}" autocomplete="off">
+        </label>
+        <label>
+          <span class="sr-only">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</span>
+          <select data-catalog-filter>
+            <option value="">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</option>
+            ${filterOptions}
+          </select>
+        </label>
+        <span class="entity-catalog-count" data-catalog-visible-count>${escapeHtml(t("catalogVisibleCount", { visible: items.length, total: items.length }))}</span>
+      </div>
+      <div class="entity-catalog-grid">${items.map(entityCatalogCard).join("")}</div>
+      <div class="empty-state entity-catalog-empty" data-catalog-empty ${items.length ? "hidden" : ""}>${escapeHtml(t("catalogEmpty"))}</div>
+    </section>
+    ${entitySourceLine(data.source)}
+  `);
+}
+
 function renderUnitDetails(data) {
   const unit = data.unit ?? {};
   const stats = unit.stats ?? {};
@@ -2513,7 +2685,8 @@ function renderRecommendationResult(data) {
 }
 
 function renderCurrentResult(data) {
-  if (data.type === "unit_details") renderUnitDetails(data);
+  if (data.type === "entity_catalog") renderEntityCatalog(data);
+  else if (data.type === "unit_details") renderUnitDetails(data);
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
@@ -3021,6 +3194,7 @@ function setRequestRunning(running) {
   form.querySelector("button[type=submit]").disabled = running;
   for (const button of resultEl.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
+  for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
 }
 
 async function requestRecommendation(refresh = false, displayInput = null) {
@@ -3142,6 +3316,58 @@ async function requestCompUnitRecommendation(target) {
   await requestRecommendation(false, displayInput);
 }
 
+async function requestEntityDetail(target) {
+  if (state.requestInFlight) return;
+  const entityType = target.dataset.entityType === "trait" ? "trait" : "unit";
+  const apiName = target.dataset.entityId?.trim();
+  if (!apiName) return;
+  const catalogName = entityType === "unit" ? t("unitCatalog") : t("traitCatalog");
+  const snapshot = captureEntityCatalogNavigationSnapshot(catalogName);
+  if (!snapshot) return;
+  state.resultNavigation.push(snapshot);
+  setRequestRunning(true);
+  setStatusKey("statusQuerying", "loading");
+  renderLoadingResult(false);
+  const controller = new AbortController();
+  state.currentController = controller;
+  let detailLoaded = false;
+
+  try {
+    const params = new URLSearchParams({
+      type: entityType,
+      id: apiName,
+      seasonContextId: state.seasonContextId
+    });
+    const response = await fetch(`/api/entity-details?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    state.lastResult = data;
+    state.lastResultId = null;
+    state.resultView = { type: "result", data };
+    rawOutputEl.textContent = JSON.stringify(data, null, 2);
+    resultTitleEl.textContent = t("resultTitle");
+    renderCurrentResult(data);
+    detailLoaded = true;
+    setStatusKey("statusLive", "ready");
+    openMobileResult();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      restorePreviousCatalogResult();
+      setStatusKey("statusStopped", "error");
+    } else {
+      renderError(error.message, false);
+      setStatusKey("statusFailed", "error");
+    }
+  } finally {
+    state.currentController = null;
+    setRequestRunning(false);
+    if (detailLoaded) resultRefreshButton.disabled = true;
+  }
+}
+
 bindSegmented("#sample-control", "minSamples", Number);
 bindSegmented("#policy-control", "itemPolicy");
 
@@ -3200,6 +3426,11 @@ stopButton.addEventListener("click", () => {
 });
 
 async function handleResultClick(event) {
+  const returnCatalogButton = event.target.closest("[data-return-catalog]");
+  if (returnCatalogButton) {
+    restorePreviousCatalogResult();
+    return;
+  }
   const returnCompButton = event.target.closest("[data-return-comp]");
   if (returnCompButton) {
     restorePreviousCompResult();
@@ -3218,6 +3449,12 @@ async function handleResultClick(event) {
     event.preventDefault();
     event.stopPropagation();
     await requestCompUnitRecommendation(compUnitTarget);
+    return;
+  }
+  const entityDetailTarget = event.target.closest("[data-entity-detail]");
+  if (entityDetailTarget) {
+    event.preventDefault();
+    await requestEntityDetail(entityDetailTarget);
     return;
   }
   const compMetricButton = event.target.closest("button[data-comp-metric]");
@@ -3256,8 +3493,10 @@ async function handleResultClick(event) {
       queryInput.dispatchEvent(new Event("input", { bubbles: true }));
       return;
     }
-    if (!quickTask?.query) return;
-    queryInput.value = quickTask.query;
+    const quickQuery = quickTask?.queryKey ? t(quickTask.queryKey) : quickTask?.query;
+    if (!quickQuery) return;
+    if (quickTask.query) queryInput.value = quickTask.query;
+    else queryInput.value = quickQuery;
     await requestRecommendation(false, t(quickTask.promptKey));
     return;
   }
@@ -3410,6 +3649,12 @@ async function handleResultClick(event) {
 
 resultEl.addEventListener("click", handleResultClick);
 resultContentEl.addEventListener("click", handleResultClick);
+resultContentEl.addEventListener("input", (event) => {
+  if (event.target.closest("[data-catalog-query]")) applyEntityCatalogFilters();
+});
+resultContentEl.addEventListener("change", (event) => {
+  if (event.target.closest("[data-catalog-filter]")) applyEntityCatalogFilters();
+});
 resultContentEl.addEventListener("toggle", (event) => {
   const card = event.target;
   if (!card?.matches?.(".comp-card[open][data-comp-detail-key]")) return;

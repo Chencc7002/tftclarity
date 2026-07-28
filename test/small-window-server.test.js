@@ -13,6 +13,8 @@ import {
   createSmallWindowRuntime,
   handleCacheClearRequest,
   handleCompDetailRequest,
+  handleEntityCatalogRequest,
+  handleEntityDetailRequest,
   handleEntityAliasBatchReviewRequest,
   handleEntityAliasExportRequest,
   handleEntityAliasReviewRequest,
@@ -563,6 +565,151 @@ test("handleRecommendRequest returns official trait effects and tiers", async ()
   assert.equal(payload.retrievalPlan.promptKey, null);
   assert.equal(payload.run.status, "completed");
   assert.equal(payload.run.toolCallCount, 1);
+});
+
+test("entity catalog returns current units and groups trait tiers", async () => {
+  const catalog = createCatalog({
+    units: [
+      { apiName: "TFT17_Xayah", zhName: "霞", cost: 4, aliases: ["霞"] },
+      { apiName: "TFT17_MasterYi", zhName: "剑圣", cost: 4, aliases: ["剑圣", "易"] }
+    ],
+    traits: [
+      { apiName: "TFT17_Stargazer", filterId: "TFT17_Stargazer_1", zhName: "观星者", aliases: ["2观星"] },
+      { apiName: "TFT17_Stargazer", filterId: "TFT17_Stargazer_2", zhName: "观星者", aliases: ["4观星"] }
+    ],
+    items: []
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails: {
+      units: new Map([
+        ["TFT17_Xayah", {
+          apiName: "TFT17_Xayah",
+          name: "霞",
+          cost: 4,
+          role: "物理输出",
+          traitNames: ["观星者"]
+        }],
+        ["TFT17_MasterYi", {
+          apiName: "TFT17_MasterYi",
+          name: "易",
+          cost: 4,
+          role: "物理战士",
+          traitNames: ["决斗大师"]
+        }]
+      ]),
+      traits: new Map([["TFT17_Stargazer", {
+        apiName: "TFT17_Stargazer",
+        name: "观星者",
+        type: "race",
+        description: "技能可以暴击。",
+        levels: [{ units: 2, effect: "获得暴击率" }, { units: 4, effect: "获得更多暴击率" }]
+      }]]),
+      meta: { version: "16.14", season: "2026.S17" }
+    },
+    recommendForInputImpl: async () => ({ itemRankings: [] })
+  });
+
+  const units = await handleEntityCatalogRequest(runtime, { entityType: "unit" });
+  const traits = await handleEntityCatalogRequest(runtime, { entityType: "trait" });
+  const naturalLanguage = await handleRecommendRequest({ input: "返回全部的棋子" }, runtime);
+
+  assert.equal(units.type, "entity_catalog");
+  assert.equal(units.entityType, "unit");
+  assert.equal(units.items.length, 2);
+  assert.equal(units.items[0].hasDetails, true);
+  assert.equal(traits.items.length, 1);
+  assert.deepEqual(traits.items[0].tierCounts, [2, 4]);
+  assert.equal(naturalLanguage.statusCode, 200);
+  assert.equal(naturalLanguage.payload.type, "entity_catalog");
+  assert.equal(naturalLanguage.payload.entityType, "unit");
+});
+
+test("entity detail endpoint contract opens a catalog entry by stable id", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [{ apiName: "TFT17_MasterYi", zhName: "剑圣", aliases: ["剑圣", "易"] }],
+      traits: [],
+      items: []
+    }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails: {
+      units: new Map([["TFT17_MasterYi", {
+        apiName: "TFT17_MasterYi",
+        name: "易",
+        cost: 4,
+        role: "物理战士",
+        traitNames: ["决斗大师"],
+        stats: { health: 1100 },
+        ability: { name: "灵能打击", description: "造成伤害。" }
+      }]]),
+      traits: new Map(),
+      meta: { version: "16.14", season: "2026.S17" }
+    },
+    recommendForInputImpl: async () => ({ itemRankings: [] })
+  });
+
+  const payload = await handleEntityDetailRequest(runtime, {
+    entityType: "unit",
+    apiName: "TFT17_MasterYi"
+  });
+
+  assert.equal(payload.type, "unit_details");
+  assert.equal(payload.unit.apiName, "TFT17_MasterYi");
+  assert.equal(payload.unit.ability.name, "灵能打击");
+  assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "unit_details");
+});
+
+test("entity catalog and detail HTTP routes are publicly readable", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [{ apiName: "TFT17_MasterYi", zhName: "剑圣", aliases: ["剑圣", "易"] }],
+      traits: [],
+      items: []
+    }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails: {
+      units: new Map([["TFT17_MasterYi", {
+        apiName: "TFT17_MasterYi",
+        name: "易",
+        cost: 4,
+        role: "物理战士",
+        traitNames: ["决斗大师"],
+        stats: { health: 1100 },
+        ability: { name: "灵能打击", description: "造成伤害。" }
+      }]]),
+      traits: new Map(),
+      meta: { version: "16.14", season: "2026.S17" }
+    },
+    recommendForInputImpl: async () => ({ itemRankings: [] })
+  });
+  const started = await startSmallWindowServer({ host: "127.0.0.1", port: 0, runtime });
+
+  try {
+    const catalogUrl = new URL("/api/entity-catalog?type=unit&seasonContextId=set17-live", started.url);
+    const catalogResponse = await fetch(catalogUrl, { headers: { connection: "close" } });
+    const catalogPayload = await catalogResponse.json();
+    const detailUrl = new URL(
+      "/api/entity-details?type=unit&id=TFT17_MasterYi&seasonContextId=set17-live",
+      started.url
+    );
+    const detailResponse = await fetch(detailUrl, { headers: { connection: "close" } });
+    const detailPayload = await detailResponse.json();
+
+    assert.equal(catalogResponse.status, 200);
+    assert.equal(catalogPayload.type, "entity_catalog");
+    assert.equal(catalogPayload.items[0].apiName, "TFT17_MasterYi");
+    assert.equal(detailResponse.status, 200);
+    assert.equal(detailPayload.type, "unit_details");
+    assert.equal(detailPayload.unit.apiName, "TFT17_MasterYi");
+  } finally {
+    started.server.closeIdleConnections?.();
+    await closeServer(started.server);
+  }
 });
 
 test("official entity catalogs resolve encyclopedia aliases when the MetaTFT catalog is unavailable", async () => {

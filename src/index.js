@@ -149,6 +149,10 @@ export {
   normalizeMetaTftDailyTrends
 } from "./core/metatft-page-trend.js";
 export {
+  buildEntityCatalog,
+  normalizeEntityCatalogType
+} from "./core/entity-catalog.js";
+export {
   OFFICIAL_TFT_EQUIPMENT_URL,
   buildOfficialTftItemDetailsCatalog,
   fetchOfficialTftItemDetails,

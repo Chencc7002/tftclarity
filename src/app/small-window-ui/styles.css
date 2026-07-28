@@ -1137,6 +1137,26 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .detail-label { color: var(--ink); font-size: 11px; }
 .detail-effect { color: var(--ink); font-size: 12px; line-height: 1.65; overflow-wrap: anywhere; }
 .detail-muted, .detail-category, .recipe-plus { align-self: center; color: var(--muted); font-size: 11px; }
+.entity-catalog { display: grid; gap: 10px; }
+.entity-catalog-controls { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(110px, .38fr) auto; align-items: center; gap: 7px; }
+.entity-catalog-controls label { min-width: 0; }
+.entity-catalog-controls input, .entity-catalog-controls select { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: rgba(255,255,255,.9); font: inherit; }
+.entity-catalog-controls input:focus, .entity-catalog-controls select:focus { outline: 2px solid rgba(62,174,235,.3); border-color: var(--star-cyan); }
+.entity-catalog-count { color: var(--muted); font-size: 10px; white-space: nowrap; }
+.entity-catalog-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.entity-catalog-card { min-width: 0; min-height: 76px; padding: 9px; display: grid; grid-template-columns: 48px minmax(0, 1fr) auto; align-items: center; gap: 8px; border: 1px solid var(--line); border-radius: 11px; color: var(--ink); background: var(--panel-soft); text-align: left; }
+.entity-catalog-card:hover { border-color: var(--star-cyan); background: rgba(255,255,255,.94); box-shadow: 0 7px 18px rgba(43,111,151,.12); transform: translateY(-1px); }
+.entity-catalog-card:focus-visible { outline: 2px solid var(--star-cyan); outline-offset: 2px; }
+.entity-catalog-card[hidden] { display: none; }
+.entity-catalog-icon { width: 48px; height: 48px; border-radius: 9px; }
+.entity-catalog-copy { min-width: 0; display: grid; gap: 3px; }
+.entity-catalog-copy > strong { overflow: hidden; font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+.entity-catalog-copy > small { overflow: hidden; color: var(--muted); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.entity-catalog-chips { min-width: 0; display: flex; flex-wrap: wrap; gap: 3px; }
+.entity-catalog-chips span { max-width: 100%; padding: 2px 5px; overflow: hidden; border-radius: 999px; color: var(--star-indigo); background: rgba(92,103,216,.1); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.entity-catalog-arrow { color: var(--star-cyan); font-weight: 800; }
+.entity-catalog-empty { padding: 24px 10px; }
+.entity-catalog-empty[hidden] { display: none; }
 .entity-detail-card { gap: 12px; }
 .entity-detail-head { display: flex; align-items: center; gap: 10px; }
 .entity-detail-head .entity-icon { width: 54px; height: 54px; flex: 0 0 54px; border-radius: 11px; }
@@ -1170,6 +1190,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 @media (max-width: 760px) {
   .audit-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   #item-audit-query, #item-audit-source { grid-column: 1 / -1; }
+  .entity-catalog-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (min-width: 401px) and (max-width: 520px) {
@@ -1183,6 +1204,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   #item-audit-query, #item-audit-source { grid-column: auto; }
   .audit-toolbar { align-items: flex-start; flex-direction: column; }
   .audit-toolbar > div { justify-content: flex-start; }
+  .entity-catalog-controls { grid-template-columns: minmax(0, 1fr) minmax(100px, .45fr); }
+  .entity-catalog-count { grid-column: 1 / -1; }
   .entity-stat-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .stable-item-grid { grid-template-columns: 1fr; }
 }
@@ -1192,6 +1215,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .comparison-primary strong { font-size: 20px; }
   .audit-row { grid-template-columns: 36px minmax(0, 1fr); }
   .audit-icon { width: 36px; height: 36px; }
+  .entity-catalog-grid { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {

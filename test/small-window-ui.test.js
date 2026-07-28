@@ -429,6 +429,23 @@ test("comp units are keyboard-accessible shortcuts for explicit high-sample buil
   assert.match(i18n, /compUnitQueryDisplay/);
 });
 
+test("small-window exposes current-set entity catalogs with direct detail navigation", () => {
+  assert.match(appJs, /id: "unit-catalog"/);
+  assert.match(appJs, /id: "trait-catalog"/);
+  assert.match(appJs, /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.inputTemplateKey/);
+  assert.match(appJs, /data-entity-catalog/);
+  assert.match(appJs, /data-entity-detail/);
+  assert.match(appJs, /\/api\/entity-details/);
+  assert.match(appJs, /function restorePreviousCatalogResult\(\)/);
+  assert.match(appJs, /data-return-catalog/);
+  assert.match(styles, /\.entity-catalog-grid/);
+  assert.match(styles, /\.entity-catalog-card/);
+  assert.match(styles, /\.entity-catalog-empty\[hidden\]\s*\{\s*display:\s*none/);
+  assert.match(i18n, /unitCatalog:/);
+  assert.match(i18n, /traitCatalog:/);
+  assert.match(i18n, /backToCatalog:/);
+});
+
 test("comp cards lazy-load verified formation and augment details", () => {
   assert.match(appJs, /function compDetailDescriptor\(comp\)/);
   assert.match(appJs, /comp: descriptor\.compId/);

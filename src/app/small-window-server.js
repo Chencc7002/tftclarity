@@ -17,6 +17,10 @@ import {
   createStructuredToolDefinitions
 } from "../agent/index.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
+import {
+  buildEntityCatalog,
+  normalizeEntityCatalogType
+} from "../core/entity-catalog.js";
 import { normalizeAlias } from "../core/normalizer.js";
 import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
@@ -1087,6 +1091,62 @@ function explicitTraitDetailsQuestion(input) {
     && !/(装备|出装|转职|纹章|阵容|排行|排名|推荐)/u.test(text);
 }
 
+function requestedEntityCatalogType(input) {
+  const text = String(input ?? "").replace(/\s+/gu, "");
+  const lower = text.toLowerCase();
+  const listWording = /(?:全部|所有|完整|大全|一览|列表|图鉴)/u;
+  if (
+    /(?:全部|所有|完整)(?:的)?(?:棋子|英雄)/u.test(text)
+    || /(?:棋子|英雄)(?:大全|一览|列表|图鉴)/u.test(text)
+    || (listWording.test(text) && /(?:棋子|英雄)/u.test(text))
+    || /(?:all|every)(?:champion|champions|unit|units)|(?:champion|unit)(?:list|catalog)/u.test(lower)
+  ) {
+    return "unit";
+  }
+  if (
+    /(?:全部|所有|完整)(?:的)?羁绊/u.test(text)
+    || /羁绊(?:大全|一览|列表|图鉴)/u.test(text)
+    || (listWording.test(text) && /羁绊/u.test(text))
+    || /(?:all|every)(?:trait|traits)|trait(?:list|catalog)/u.test(lower)
+  ) {
+    return "trait";
+  }
+  return null;
+}
+
+function entityCatalogText(entityType, count) {
+  return entityType === "unit"
+    ? `当前赛季共找到 ${count} 个棋子，点击棋子可以查看属性、技能和羁绊详情。`
+    : `当前赛季共找到 ${count} 个羁绊，点击羁绊可以查看效果和激活档位。`;
+}
+
+async function serializeEntityCatalog(catalog, runtime, options = {}) {
+  const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
+  if (!entityType) {
+    throw Object.assign(new TypeError("entityType must be unit or trait"), {
+      statusCode: 400,
+      code: "invalid_entity_catalog_type"
+    });
+  }
+  const details = await loadOfficialEntityDetails(runtime);
+  const view = buildEntityCatalog(catalog, details, {
+    ...options,
+    entityType,
+    assetResolver: ASSET_RESOLVER
+  });
+  const text = entityCatalogText(entityType, view.pagination.total);
+  return {
+    ok: true,
+    ...view,
+    text,
+    answer: {
+      summary: text,
+      methodology: "当前赛季动态实体目录限定可见范围，官方目录补充详情；羁绊按基础 API 名称合并档位。"
+    },
+    source: details.meta ?? null
+  };
+}
+
 function normalizeRange(value, min, max, inverse = false) {
   if (!Number.isFinite(value)) return 0;
   if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return 1;
@@ -1235,6 +1295,82 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
     },
     source: official?.source ?? details.meta ?? null
   };
+}
+
+function entityCatalogPreferences(runtime, seasonContext) {
+  return {
+    ...DEFAULT_SMALL_WINDOW_PREFERENCES,
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.effectivePatch,
+    currentPatch: seasonContext.currentPatch,
+    previousPatch: seasonContext.previousPatch,
+    patch: seasonContext.providerPatch ?? "current",
+    queue: seasonContext.source.queue
+  };
+}
+
+export async function handleEntityCatalogRequest(runtime, options = {}) {
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  const { catalog, warning, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const payload = await serializeEntityCatalog(catalog, runtime, options);
+  payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  payload.meta = {
+    catalogWarning: warning,
+    aliasMemory,
+    preferences
+  };
+  return payload;
+}
+
+export async function handleEntityDetailRequest(runtime, options = {}) {
+  const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
+  if (!entityType) {
+    throw Object.assign(new TypeError("entityType must be unit or trait"), {
+      statusCode: 400,
+      code: "invalid_entity_catalog_type"
+    });
+  }
+  const apiName = String(options.apiName ?? options.id ?? "").trim();
+  if (!/^[A-Za-z0-9_:.-]{1,128}$/u.test(apiName)) {
+    throw Object.assign(new TypeError("A valid entity id is required"), {
+      statusCode: 400,
+      code: "invalid_entity_id"
+    });
+  }
+
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const input = entityType === "unit"
+    ? `${apiName} 棋子技能属性详情`
+    : `${apiName} 羁绊效果详情`;
+  const payload = await serializeEntityDetailsQuery(input, catalog, runtime, {
+    preferences,
+    compsData,
+    refresh: Boolean(options.refresh)
+  });
+  const returnedApiName = entityType === "unit"
+    ? payload?.unit?.apiName
+    : payload?.trait?.apiName;
+  if (!payload || returnedApiName !== apiName) {
+    throw Object.assign(new Error("Entity was not found in the current season catalog"), {
+      statusCode: 404,
+      code: "entity_not_found"
+    });
+  }
+
+  payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  payload.meta = {
+    ...(payload.meta ?? {}),
+    catalogWarning: warning,
+    aliasMemory,
+    preferences
+  };
+  return attachDetailRetrievalMetadata(payload, input, catalog);
 }
 
 export async function loadSmallWindowPreferences(runtime, scope = null) {
@@ -2612,6 +2748,19 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
   const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const requestedCatalogType = requestedEntityCatalogType(input);
+  if (requestedCatalogType) {
+    const payload = await serializeEntityCatalog(catalog, requestRuntime, {
+      entityType: requestedCatalogType
+    });
+    payload.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return completeResponse(payload);
+  }
   const entityDetailsPayload = await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
     preferences,
     compsData,
@@ -4289,7 +4438,8 @@ function enforceSameOrigin(req) {
 }
 
 function isPublicMaintenanceRoute(pathname) {
-  return pathname.startsWith("/api/entity-")
+  return pathname === "/api/entity-memory/clear"
+    || pathname.startsWith("/api/entity-aliases")
     || pathname === "/api/item-catalog-audit";
 }
 
@@ -4388,6 +4538,30 @@ export function createSmallWindowHandler(options = {}) {
           availability: url.searchParams.get("availability") ?? undefined,
           issues: url.searchParams.get("issues") ?? undefined,
           format: url.searchParams.get("format") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/entity-catalog") {
+        return sendJson(res, 200, await handleEntityCatalogRequest(runtime, {
+          entityType: url.searchParams.get("type"),
+          query: url.searchParams.get("query") ?? undefined,
+          cost: url.searchParams.get("cost") ?? undefined,
+          role: url.searchParams.get("role") ?? undefined,
+          trait: url.searchParams.get("trait") ?? undefined,
+          traitType: url.searchParams.get("traitType") ?? undefined,
+          page: url.searchParams.get("page") ?? undefined,
+          limit: url.searchParams.get("limit") ?? undefined,
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/entity-details") {
+        return sendJson(res, 200, await handleEntityDetailRequest(runtime, {
+          entityType: url.searchParams.get("type"),
+          apiName: url.searchParams.get("id"),
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
           refresh: url.searchParams.get("refresh") === "1"
         }));
       }
