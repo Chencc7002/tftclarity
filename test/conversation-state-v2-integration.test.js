@@ -56,6 +56,19 @@ function unitFrame(unit, constraints = {}) {
   });
 }
 
+function itemComparisonFrame(unit, items) {
+  return createTaskFrame({
+    action: "compare",
+    goal: "unit_item_comparison",
+    subjects: [entity(unit, "champion", unit)],
+    constraints: {
+      comparisonItems: items.map((item) => entity(item, "item", item))
+    },
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+}
+
 function catalogWithKaisa() {
   const base = createCatalog();
   return createCatalog({
@@ -396,6 +409,101 @@ test("unit build follow-ups inherit, exclude items, replace the champion, and re
   const returned = await recommendForInput("回到刚才霞的出装", options);
   assert.equal(returned.query.unit, "TFT17_Xayah");
   assert.deepEqual(returned.query.excludedItems, ["TFT_Item_LastWhisper"]);
+});
+
+test("item comparison clarification preserves the champion and replaces the compared items", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const sessionKey = "v2-item-comparison-clarification";
+  const qss = "TFT_Item_Quicksilver";
+  const titan = "TFT_Item_TitansResolve";
+  const edgeOfNight = "TFT_Item_GuardianAngel";
+  const masterYi = "TFT17_MasterYi";
+  const baseCatalog = createCatalog();
+  const catalog = createCatalog({
+    units: [
+      ...baseCatalog.units,
+      {
+        apiName: masterYi,
+        zhName: "易大师",
+        aliases: ["易大师", "剑圣", "无极剑圣", "master yi", "yi"],
+        current: true
+      }
+    ],
+    items: [
+      ...baseCatalog.items,
+      {
+        apiName: titan,
+        zhName: "泰坦的坚决",
+        shortName: "泰坦",
+        aliases: ["泰坦", "泰坦的坚决"],
+        category: "ordinary_completed",
+        current: true,
+        obtainable: true
+      },
+      {
+        apiName: edgeOfNight,
+        zhName: "夜之锋刃",
+        shortName: "夜刃",
+        aliases: ["夜刃", "夜之锋刃"],
+        category: "ordinary_completed",
+        current: true,
+        obtainable: true
+      }
+    ]
+  });
+  const rows = [
+    [qss, "TFT_Item_GuinsoosRageblade", "TFT_Item_Deathblade"],
+    [titan, "TFT_Item_GuinsoosRageblade", "TFT_Item_Deathblade"],
+    [edgeOfNight, "TFT_Item_GuinsoosRageblade", "TFT_Item_Deathblade"]
+  ].map((items, index) => ({
+    unit_builds: `${masterYi}&${items.join("|")}`,
+    placement_count: [60 - index * 5, 50, 40, 30, 20, 10, 5, 2]
+  }));
+  const replacementFrame = itemComparisonFrame(masterYi, [qss, edgeOfNight]);
+  const turnInterpreter = queuedInterpreter([
+    newTask(itemComparisonFrame(masterYi, [qss, titan])),
+    createTurnDelta({
+      dialogueAct: "clarify",
+      taskRelation: "unknown",
+      explicitTaskFrame: replacementFrame,
+      confidence: 0.4,
+      ambiguities: [{
+        code: "ambiguous_item_operation",
+        affectsToolSelection: true,
+        missingFields: ["taskRelation"]
+      }]
+    }),
+    createTurnDelta({
+      dialogueAct: "compare",
+      taskRelation: "modify",
+      confidence: 1
+    })
+  ]);
+  const options = {
+    cacheStore,
+    sessionKey,
+    catalog,
+    response: rows,
+    preferences: { minSamples: 1 },
+    conversationStateV2Mode: "on",
+    semanticShadow: false,
+    turnInterpreter
+  };
+
+  const first = await recommendForInput("比较剑圣使用水银和泰坦时的表现", options);
+  assert.equal(first.type, "unit_item_comparison");
+  assert.equal(first.query.unit, masterYi);
+  assert.deepEqual(first.query.comparisonItems, [qss, titan]);
+
+  const clarification = await recommendForInput("水银和夜刃呢？", options);
+  assert.equal(clarification.type, "clarification");
+  assert.equal(clarification.conversation.resolution.nextState.pendingClarification.reason, "turn_relation_uncertain");
+
+  const completed = await recommendForInput("比较这些装备哪个好", options);
+  assert.equal(completed.type, "unit_item_comparison");
+  assert.equal(completed.query.unit, masterYi);
+  assert.deepEqual(completed.query.comparisonItems, [qss, edgeOfNight]);
+  assert.equal(completed.conversationState.pendingClarification, null);
 });
 
 test("interleaved conversation ids remain isolated", async () => {

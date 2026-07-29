@@ -1943,6 +1943,13 @@ async function writeLastQuerySession(result, options) {
   if (options.useSession === false) return null;
   const conversation = options.conversationStateV2Context;
   if (conversation?.mode === "on") {
+    result.conversation = {
+      mode: "on",
+      stateVersion: conversation.previousState.schemaVersion,
+      delta: conversation.interpretation.turnDelta,
+      resolution: conversation.resolution,
+      providerFallback: conversation.interpretation.telemetry?.providerFallback ?? null
+    };
     if (
       result.type === "clarification"
       || result.clarification?.blocking

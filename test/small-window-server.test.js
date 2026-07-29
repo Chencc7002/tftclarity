@@ -417,6 +417,60 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(localized.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
 });
 
+test("controlled conversation results tolerate catalog warnings without a query object", async () => {
+  let receivedTurnInterpreterBudget = null;
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    recommendForInputImpl: async (_input, options) => {
+      receivedTurnInterpreterBudget = options.turnInterpreterBudget;
+      return {
+        type: "conversation_exhausted",
+        parsed: null,
+        query: null,
+        validation: { valid: true, errors: [], warnings: [] },
+        clarification: null,
+        filteredBuilds: [],
+        rankedBuilds: [],
+        results: [],
+        text: "当前条件下的结果已全部展示（3/3）。",
+        conversation: {
+          mode: "on",
+          resolution: {
+            decision: "exhausted",
+            resolvedTaskFrame: {
+              goal: "comp_rankings",
+              constraints: { strategy: "reroll" }
+            }
+          }
+        }
+      };
+    }
+  });
+  const catalogState = await loadRuntimeCatalog(runtime, {});
+  catalogState.warning = "fixture catalog warning";
+
+  const { statusCode, payload } = await handleRecommendRequest({
+    input: "可以多推荐几套吗",
+    conversationId: "conversation-warning-exhausted"
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.type, "conversation_exhausted");
+  assert.equal(payload.meta.catalogWarning, "fixture catalog warning");
+  assert.match(payload.text, /结果已全部展示/u);
+  assert.equal(payload.conversation.resolution.decision, "exhausted");
+  assert.equal(payload.conversation.resolution.resolvedTaskFrame.goal, "comp_rankings");
+  assert.deepEqual(receivedTurnInterpreterBudget, {
+    maxInputTokens: 1600,
+    maxOutputTokens: 900,
+    maxLatencyMs: 45000
+  });
+});
+
 test("handleRecommendRequest returns official item encyclopedia details before recommendation logic", async () => {
   const catalog = createCatalog({
     items: [{

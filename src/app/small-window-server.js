@@ -93,6 +93,11 @@ const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
 export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
 export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
+export const DEFAULT_TURN_INTERPRETER_BUDGET = Object.freeze({
+  maxInputTokens: 1600,
+  maxOutputTokens: 900,
+  maxLatencyMs: 45000
+});
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
@@ -1719,6 +1724,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     })),
     decision: serializedComparison?.decision ?? result.localDecision ?? null,
     clarification: result.clarification ?? null,
+    conversation: result.conversation ?? null,
     query: {
       intent: query.intent,
       unit: query.unit,
@@ -1858,6 +1864,7 @@ function serializeCompRankings(result, meta = {}) {
     references: (result.references ?? []).map(serializeComp),
     trend: result.trend ?? null,
     query: result.query,
+    conversation: result.conversation ?? null,
     text: result.text ?? "",
     answer: result.analysis ? {
       summary: result.analysis.answer?.conclusion ?? result.text ?? "",
@@ -1996,6 +2003,7 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParserConfig: options.structuredParserConfig ?? null,
     turnDeltaProvider: options.turnDeltaProvider ?? options.semanticTaskProvider ?? null,
     conversationStateV2Mode: options.conversationStateV2Mode ?? "off",
+    turnInterpreterBudget: options.turnInterpreterBudget ?? DEFAULT_TURN_INTERPRETER_BUDGET,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
     conclusionJobs: new Map(),
@@ -2815,6 +2823,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     useStructuredParser: structuredParserMode,
     turnDeltaProvider: requestRuntime.turnDeltaProvider,
     conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
+    turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
     semanticRetriever: requestRuntime.semanticRetriever,
     semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
     seasonContextId: seasonContext.id,
@@ -2829,7 +2838,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     abortSignal: context.signal
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
-  if (warnings) result.query.warnings = warnings;
+  if (warnings && result.query && typeof result.query === "object") {
+    result.query.warnings = warnings;
+  }
   let conclusionItemDetails = runtime.officialItemDetails;
   let conclusionEntityDetails = runtime.officialEntityDetails;
   const equipmentConclusion = [

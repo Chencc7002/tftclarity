@@ -94,6 +94,35 @@ test("Turn Interpreter rejects provider failure into an unknown delta when deter
   assert.equal(response.telemetry.providerFallback.reason, "provider_error");
 });
 
+test("Turn Interpreter never substitutes a full task parser after provider failure", async () => {
+  let fallbackParserCalls = 0;
+  const response = await interpretTurn({
+    currentMessage: "self-contained task",
+    conversationState: createConversationState(),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => {
+      throw new Error("provider unavailable");
+    },
+    semanticTaskParser: async () => {
+      fallbackParserCalls += 1;
+      return {
+        taskFrame: createTaskFrame({
+          action: "recommend",
+          goal: "recommend_best_option",
+          concepts: [reference("task concept", "game_concept")],
+          confidence: 0.95,
+          understandingStatus: "understood_and_supported"
+        })
+      };
+    }
+  });
+
+  assert.equal(fallbackParserCalls, 0);
+  assert.equal(response.turnDelta.taskRelation, "unknown");
+  assert.equal(response.turnDelta.dialogueAct, "unknown");
+  assert.equal(response.telemetry.providerFallback.reason, "provider_error");
+});
+
 test("Turn Interpreter does not guess a contextual relation after provider failure", async () => {
   const activeFrame = createTaskFrame({
     action: "recommend",

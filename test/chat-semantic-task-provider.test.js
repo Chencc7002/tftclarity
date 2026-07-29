@@ -52,7 +52,7 @@ test("chat semantic task provider validates raw TaskFrame and maps provider usag
     budget: { maxOutputTokens: 300 }
   });
 
-  assert.equal(LIVE_SEMANTIC_TASK_PROMPT_VERSION, "live-semantic-task-contract.v9");
+  assert.equal(LIVE_SEMANTIC_TASK_PROMPT_VERSION, "live-semantic-task-contract.v10");
   assert.equal(observedBody.response_format.type, "json_object");
   assert.equal(observedBody.max_tokens, 300);
   assert.deepEqual(result.taskFrame, {
@@ -131,6 +131,10 @@ test("chat semantic task provider validates TurnDelta responses independently fr
   assert.deepEqual(result.turnDelta, rawDelta);
   assert.equal(observedBody.response_format.type, "json_object");
   assert.match(observedBody.messages[0].content, /turn-delta\.v1/u);
+  assert.match(observedBody.messages[0].content, /no active task.+self-contained TFT request/u);
+  assert.match(observedBody.messages[0].content, /composition or lineup recommendations.+comp_rankings/u);
+  assert.match(observedBody.messages[0].content, /multiple items for one champion.+unit_item_comparison/u);
+  assert.match(observedBody.messages[0].content, /keep those semantics in explicitTaskFrame/u);
 });
 
 test("chat semantic task provider rejects invalid TurnDelta before normalization", async () => {
