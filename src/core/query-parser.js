@@ -280,6 +280,24 @@ function parseExcludedItems(input, entities) {
     .map((item) => item.target));
 }
 
+function parseAvoidItemComponents(input, entities) {
+  const normalized = normalizeText(input);
+  const fragments = [];
+  const patterns = [
+    /(?:最好|尽量|优先).{0,6}(?:少用|少拿|减少|降低|避免)([^,，。！？?；;]*)/g,
+    /(?:少用|少拿|减少)([^,，。！？?；;]*)/g
+  ];
+  for (const pattern of patterns) {
+    for (const match of normalized.matchAll(pattern)) {
+      if (match[1]) fragments.push(normalizeAlias(match[1]));
+    }
+  }
+  if (fragments.length === 0) return [];
+  return uniqueValues(entities.items
+    .filter((item) => fragments.some((fragment) => fragment.includes(item.normalizedAlias)))
+    .map((item) => item.target));
+}
+
 function hasExclusionIntent(input) {
   return /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要)/
     .test(normalizeText(input));
@@ -461,12 +479,13 @@ export function parseQuery(input, options = {}) {
     : uniqueValues(entities.traits.map((trait) => trait.target));
   const allItems = uniqueValues(entities.items.map((item) => item.target));
   const excludedItems = parseExcludedItems(input, entities);
+  const avoidItemComponents = parseAvoidItemComponents(input, entities);
   const starLevel = parseStarLevels(input);
   const itemCount = parseItemCount(input);
   const sort = parseSort(input);
   const itemCategories = parseItemCategories(input);
   const comparison = parseComparison(input, entities, excludedItems, itemCategories);
-  const excludedItemSet = new Set(excludedItems);
+  const excludedItemSet = new Set([...excludedItems, ...avoidItemComponents]);
   const comparisonItems = comparison.itemApiNames;
   const activeItemMatches = entities.items.filter((item) => !excludedItemSet.has(item.target));
   const itemCarrierRequested = !unit
@@ -558,6 +577,7 @@ export function parseQuery(input, options = {}) {
     primaryMetric,
     ownedItems,
     excludedItems,
+    avoidItemComponents,
     minSamples: parseMinSamples(input),
     sort: sort.value ?? comparisonSort(primaryMetric),
     rankFilter: parseRankFilter(input),

@@ -60,11 +60,15 @@ const TURN_DELTA_RESPONSE_CONTRACT = [
   "Entity operation field is exactly subjects, candidates, or concepts. value and oldValue are arrays of TaskFrame entity objects.",
   `Constraint fields are limited to: ${TURN_DELTA_CONSTRAINT_FIELDS.join(", ")}.`,
   "For new deltas prefer the canonical fields rank, lockedItems, and strategy; rankFilter, ownedItems, and specialMode exist only for compatibility input.",
+  "TaskFrame action is exactly one of search, recommend, compare, rank, explain, analyze, summarize, find_video, unknown. Composition recommendations use rank or recommend, never find_compositions.",
   "rank is an array containing only IRON, BRONZE, SILVER, GOLD, PLATINUM, EMERALD, DIAMOND, MASTER, GRANDMASTER, CHALLENGER. MASTER and above is [MASTER, GRANDMASTER, CHALLENGER].",
+  "Constraint values must use only values authorized by the supplied domain policy. Never invent substitute labels or encode scalar constraints as arrays.",
   "Any entity or constraint operation changes the taskRelation to modify. continue is only for turns that leave task semantics unchanged.",
   "To remove an entire scalar constraint such as strategy, use clear with only operation and field. Do not use an empty array.",
   "For replace operations include both oldValue and value.",
-  "presentation contains requestedCount (null or integer 1..100), pageDirection (null, next, previous, same), and avoidSeen (boolean).",
+  "presentation contains requestedCount (null or integer 1..100), pageDirection (null, next, previous, same), avoidSeen (boolean), and resultReference (null or an object with scope and ordinal).",
+  "For an ordinal reference to an already displayed result such as 第二套, set resultReference to {\"scope\":\"last_result\",\"ordinal\":2}. The ordered ids are in lastResultSummary.shownIds.",
+  "For an instruction about a result that this same turn will produce, such as 第二套详细讲, set resultReference to {\"scope\":\"current_output\",\"ordinal\":2}. This is an output directive, not missing conversation context.",
   "When pendingClarification is present and the user supplies its missing field, use continue or modify rather than new.",
   "Any request to resume, restore, or go back to a task present in recentTaskSummaries uses taskRelation return; pair it with dialogueAct continue or switch_task, never invent a return dialogueAct.",
   "Switching from a champion build task to composition rankings uses taskRelation switch and a rank TaskFrame for the composition ranking goal.",
@@ -141,7 +145,13 @@ export function createChatSemanticTaskProvider(options = {}) {
     let retryCount = 0;
     let invalidFeedback = null;
     const turnDeltaRequest = request.schemaVersion === "turn-delta.v1";
-    const responseContract = turnDeltaRequest ? TURN_DELTA_RESPONSE_CONTRACT : RESPONSE_CONTRACT;
+    const domainPromptRules = turnDeltaRequest
+      ? (request.domainPolicy?.semanticTurnDeltaPromptRules ?? [])
+      : [];
+    const responseContract = [
+      turnDeltaRequest ? TURN_DELTA_RESPONSE_CONTRACT : RESPONSE_CONTRACT,
+      ...domainPromptRules
+    ].join("\n");
     const body = {
       model: options.model,
       messages: [
@@ -204,7 +214,9 @@ export function createChatSemanticTaskProvider(options = {}) {
         try {
           const rawStructuredValue = parseJsonContent(rawProviderContent);
           if (turnDeltaRequest) {
-            const validation = validateTurnDelta(rawStructuredValue);
+            const validation = validateTurnDelta(rawStructuredValue, {
+              domainPolicy: request.domainPolicy
+            });
             if (!validation.valid) {
               throw new TypeError(
                 `semantic task provider returned invalid TurnDelta: ${validation.errors.join("; ")}`

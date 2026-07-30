@@ -80,6 +80,9 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
     .filter((entity) => entity.expectedType === "item");
   const traitConcepts = concepts.filter((entity) => entity.expectedType === "trait");
   const compConcept = concepts.find((entity) => entity.expectedType === "composition");
+  const compConstraint = constraints.comp?.expectedType === "composition"
+    ? constraints.comp
+    : null;
   const intent = intentFor(frame, options.executionPlan);
   const carrierItem = intent === "item_carrier_rankings"
     ? resolvedValue(itemCandidates[0])
@@ -97,8 +100,17 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
   );
   const lockedItems = constraintEntityValues(constraints.lockedItems ?? constraints.ownedItems);
   const excludedItems = constraintEntityValues(constraints.excludedItems);
+  const avoidItemComponents = constraintEntityValues(constraints.avoidItemComponents);
   const traitFilters = constraintEntityValues(constraints.traitFilters ?? traitConcepts);
   const strategy = constraints.strategy ?? (constraints.specialMode ? "reroll" : undefined);
+  const reroll = constraints.reroll ?? (strategy === "reroll" ? true : null);
+  const preferenceRequested = intent === "comp_rankings" && (
+    strategy != null
+    || reroll != null
+    || constraints.contested != null
+    || constraints.beginnerFriendly != null
+    || avoidItemComponents.length > 0
+  );
   const popularRequested = intent === "comp_rankings"
     && array(constraints.metrics).includes("popularity")
     && (
@@ -113,8 +125,12 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
     ...(carrierItem ? { carrierItem } : {}),
     ...(lockedItems.length ? { lockedItems, ownedItems: lockedItems } : {}),
     ...(excludedItems.length ? { excludedItems } : {}),
+    ...(avoidItemComponents.length ? { avoidItemComponents } : {}),
     ...(traitFilters.length ? { traitFilters } : {}),
-    ...(compConcept ? { compMention: resolvedValue(compConcept) } : {}),
+    ...(compConstraint ? {
+      compId: resolvedValue(compConstraint),
+      compMention: compConstraint.rawText
+    } : compConcept ? { compMention: resolvedValue(compConcept) } : {}),
     ...(constraints.rank ?? constraints.rankFilter ? { rankFilter: constraints.rank ?? constraints.rankFilter } : {}),
     ...Object.fromEntries(
       ["days", "patch", "queue", "starLevel", "itemCount", "minSamples", "sort", "metrics", "specialMode",
@@ -123,11 +139,11 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
         .map((key) => [key, structuredClone(constraints[key])])
     ),
     ...(limit !== undefined ? { limit } : {}),
-    ...(strategy ? {
-      preferenceRequested: intent === "comp_rankings",
+    ...(preferenceRequested ? {
+      preferenceRequested: true,
       preferenceConditions: {
-        strategy,
-        reroll: strategy === "reroll" ? true : null,
+        strategy: strategy ?? null,
+        reroll,
         goal: null,
         contested: constraints.contested ?? null,
         difficulty: null,

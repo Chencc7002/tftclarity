@@ -45,6 +45,7 @@ function comp(id, options = {}) {
       selectionRate: options.selectionRate ?? 0.3,
       pickRate: (options.selectionRate ?? 0.3) / 8
     },
+    units: options.units ?? [],
     source: { clusterId: id }
   };
 }
@@ -95,6 +96,55 @@ test("base natural-language comp preferences map to the strict protocol", () => 
     assert.equal(parsed.requested, true, input);
     for (const [key, value] of Object.entries(expected)) assert.equal(parsed.conditions[key], value, input);
   }
+});
+
+test("soft component demand is parsed as a preference and is visible before retrieval", async () => {
+  const catalog = createCatalog({
+    items: [{
+      apiName: "TFT_Item_BFSword",
+      shortName: "暴风大剑",
+      aliases: ["大剑", "暴风大剑"],
+      category: "component",
+      current: true,
+      obtainable: true
+    }]
+  });
+  const input = "我不想玩赌狗，想找三套稳定、没那么卷的阵容，最好少用大剑";
+  const parsed = parseQuery(input, { catalog });
+  const progress = [];
+
+  assert.deepEqual(parsed.avoidItemComponents, ["TFT_Item_BFSword"]);
+  assert.deepEqual(parsed.lockedItems, []);
+  assert.equal(parsed.preferenceConditions.reroll, false);
+  assert.equal(parsed.preferenceConditions.goal, "top4");
+  assert.equal(parsed.preferenceConditions.contested, "low");
+
+  await recommendForInput(input, {
+    catalog,
+    compResponse: PAGE_FIXTURE,
+    useSession: false,
+    preferences: {
+      minSamples: 0,
+      days: 3,
+      patch: "current",
+      queue: "1100",
+      rankFilter: []
+    },
+    onProgress(event) {
+      progress.push(event);
+    }
+  });
+
+  const planEvent = progress.find((event) => event.type === "plan.ready");
+  assert.ok(planEvent);
+  assert.deepEqual(
+    planEvent.data.intentEnvelope.constraints.avoidItemComponents,
+    ["TFT_Item_BFSword"]
+  );
+  assert.equal(planEvent.data.intentEnvelope.constraints.reroll, false);
+  assert.equal(planEvent.data.intentEnvelope.constraints.goal, "top4");
+  assert.equal(planEvent.data.intentEnvelope.constraints.contested, "low");
+  assert.equal(planEvent.data.intentEnvelope.constraints.limit, 3);
 });
 
 test("combined conditions merge without dropping count, negation, or goal", () => {
@@ -186,7 +236,7 @@ test("protocol rejects unknown fields and contradictory reroll conditions", () =
   ));
 });
 
-test("deterministic filtering applies strategy, Profile, contest evidence, reliability sorting, and count", () => {
+test("deterministic filtering applies hard profile constraints and soft contest preference before count", () => {
   const searched = applyCompPreferenceSearch(result([
     comp("a", { top4Rate: 0.62, games: 1200, pageOrder: 0 }),
     comp("b", { top4Rate: 0.70, games: 110, pageOrder: 1 }),
@@ -207,7 +257,83 @@ test("deterministic filtering applies strategy, Profile, contest evidence, relia
   assert.ok(searched.rankings.top4Rate[0].preferenceMatch.ranking.reliability
     < searched.rankings.top4Rate[1].preferenceMatch.ranking.reliability);
   assert.ok(searched.preferenceSearch.excluded.strategy_mismatch >= 1);
-  assert.ok(searched.preferenceSearch.excluded.contested_mismatch >= 1);
+  assert.equal(searched.preferenceSearch.excluded.contested_mismatch, undefined);
+  assert.ok(searched.rankings.top4Rate.every((entry) => (
+    Number.isFinite(entry.preferenceMatch.ranking.contestPenalty)
+  )));
+});
+
+test("low-contest requests backfill higher-contest candidates to satisfy the requested count", () => {
+  const searched = applyCompPreferenceSearch(result([
+    comp("low", { selectionRate: 0.25, top4Rate: 0.61 }),
+    comp("medium", { selectionRate: 0.6, top4Rate: 0.62 }),
+    comp("high", { selectionRate: 0.9, top4Rate: 0.63 })
+  ]), {
+    conditions: {
+      contested: "low",
+      goal: "top4",
+      count: 3
+    }
+  });
+
+  assert.equal(searched.preferenceSearch.returnedCount, 3);
+  assert.deepEqual(
+    searched.rankings.top4Rate.map((entry) => entry.compId),
+    ["cluster:low", "cluster:medium", "cluster:high"]
+  );
+});
+
+test("soft component preferences lower item-demand-heavy compositions without hard exclusion", () => {
+  const sword = "TFT_Item_BFSword";
+  const infinityEdge = "TFT_Item_InfinityEdge";
+  const shojin = "TFT_Item_SpearOfShojin";
+  const itemDetails = new Map([
+    [infinityEdge, {
+      craftable: true,
+      recipe: [{ apiName: sword }, { apiName: "TFT_Item_SparringGloves" }]
+    }],
+    [shojin, {
+      craftable: true,
+      recipe: [{ apiName: sword }, { apiName: "TFT_Item_TearOfTheGoddess" }]
+    }]
+  ]);
+  const swordHeavy = comp("sword-heavy", {
+    top4Rate: 0.62,
+    units: [{
+      items: [
+        { apiName: infinityEdge },
+        { apiName: shojin }
+      ]
+    }]
+  });
+  const lowDemand = comp("low-demand", {
+    top4Rate: 0.6,
+    units: [{
+      items: [{ apiName: "TFT_Item_WarmogsArmor" }]
+    }]
+  });
+  itemDetails.set("TFT_Item_WarmogsArmor", {
+    craftable: true,
+    recipe: [
+      { apiName: "TFT_Item_GiantsBelt" },
+      { apiName: "TFT_Item_GiantsBelt" }
+    ]
+  });
+
+  const searched = applyCompPreferenceSearch(result([swordHeavy, lowDemand]), {
+    conditions: { count: 2 },
+    avoidItemComponents: [sword],
+    itemDetails
+  });
+  const recommendations = searched.rankings.avgPlacement;
+
+  assert.equal(recommendations.length, 2);
+  assert.equal(recommendations[0].compId, "cluster:low-demand");
+  assert.equal(
+    recommendations[1].preferenceMatch.itemDemand.componentCount,
+    2
+  );
+  assert.equal(searched.preferenceSearch.ranking.avoidItemComponents[0], sword);
 });
 
 test("missing Profile, low samples, and true zero results are explicit and never promoted", () => {
@@ -257,8 +383,12 @@ test("explicit null Profile and metric values remain missing evidence", () => {
   })]), {
     conditions: { contested: "low", count: 3 }
   });
-  assert.equal(missingContest.preferenceSearch.status, "insufficient_evidence");
-  assert.equal(missingContest.preferenceSearch.returnedCount, 0);
+  assert.equal(missingContest.preferenceSearch.status, "ok");
+  assert.equal(missingContest.preferenceSearch.returnedCount, 1);
+  assert.equal(
+    missingContest.rankings.avgPlacement[0].preferenceMatch.ranking.contestPenalty,
+    0.04
+  );
 
   const metricNullComp = comp("metric-null", { games: 40 });
   metricNullComp.stats.top4Rate = null;

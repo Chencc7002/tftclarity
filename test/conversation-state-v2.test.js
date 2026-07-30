@@ -4,11 +4,41 @@ import {
   CONVERSATION_STATE_SCHEMA_VERSION,
   MAX_CONVERSATION_SHOWN_IDS,
   MemoryCacheStore,
+  conversationResultStateFromResponse,
   conversationStateSessionKey,
   createConversationState,
   migrateLegacySessionToConversationState,
   validateConversationState
 } from "../src/index.js";
+
+test("pending orchestration status does not discard already returned composition evidence", () => {
+  const metadata = conversationResultStateFromResponse({
+    type: "comp_rankings",
+    query: {
+      intent: "comp_rankings",
+      preferenceConditions: { count: 3 }
+    },
+    preferenceSearch: {
+      returnedCount: 3,
+      conditionMatches: 3,
+      lowSampleMatches: 0
+    },
+    rankings: {
+      top4Rate: [
+        { compId: "comp-a" },
+        { compId: "comp-b" },
+        { compId: "comp-c" }
+      ]
+    },
+    agentStatus: {
+      executionStatus: "pending",
+      evidenceStatus: "pending"
+    }
+  });
+
+  assert.deepEqual(metadata.shownIds, ["comp-a", "comp-b", "comp-c"]);
+  assert.equal(metadata.returnedCount, 3);
+});
 
 test("ConversationState.v2 normalizes bounded result metadata and validates its schema", () => {
   const shownIds = Array.from({ length: MAX_CONVERSATION_SHOWN_IDS + 20 }, (_, index) => `id-${index}`);

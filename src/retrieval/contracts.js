@@ -127,6 +127,7 @@ function compConstraint(query, parsed) {
 
 export function createIntentEnvelope({ input = "", parsed = {}, query = {}, validation = {}, clarification = null, catalog = null } = {}) {
   const intent = query?.intent ?? parsed?.intent ?? null;
+  const preferenceConditions = query?.preferenceConditions ?? parsed?.preferenceConditions ?? {};
   const entities = buildEntities(parsed, query, catalog);
   const unresolved = array(parsed?.parser?.unresolvedEntityHints);
   const conflicts = [
@@ -167,16 +168,27 @@ export function createIntentEnvelope({ input = "", parsed = {}, query = {}, vali
       itemCategories: unique(query?.itemCategories).map(String),
       lockedItems: unique(query?.lockedItems).map(String),
       excludedItems: unique(query?.excludedItems).map(String),
+      avoidItemComponents: unique(
+        query?.avoidItemComponents ?? parsed?.avoidItemComponents
+      ).map(String),
       comparisonItems: unique(query?.comparisonItems).map(String),
       compMention: comp.mention,
       comp: comp.resolved,
       metrics: unique(query?.metrics).map(String),
-      limit: finite(query?.limit),
+      limit: finite(query?.limit ?? preferenceConditions.count),
       buildLimit: finite(query?.buildLimit),
       positiveOnly: query?.positiveOnly === undefined ? null : Boolean(query.positiveOnly),
       sort: query?.sort ?? null,
+      strategy: preferenceConditions.strategy ?? null,
+      reroll: preferenceConditions.reroll ?? null,
+      goal: preferenceConditions.goal ?? null,
+      contested: preferenceConditions.contested ?? null,
+      difficulty: preferenceConditions.difficulty ?? null,
+      beginnerFriendly: preferenceConditions.beginnerFriendly ?? null,
       preferenceRequested: Boolean(query?.preferenceRequested),
-      preferenceConditions: query?.preferenceConditions ?? null,
+      preferenceConditions: Object.keys(preferenceConditions).length
+        ? preferenceConditions
+        : null,
       trendRequested: Boolean(query?.trendRequested),
       analysisRequested: Boolean(query?.analysisRequested),
       analysis: query?.analysis ?? null

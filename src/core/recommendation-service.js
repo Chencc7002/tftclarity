@@ -145,6 +145,24 @@ function isCompIntent(intent) {
   return intent === "comp_rankings" || intent === "comp_trends" || intent === "comp_analysis";
 }
 
+function focusCompRankingResult(result, compId) {
+  if (!compId) return result;
+  const matches = (values) => asArray(values).filter((entry) => (
+    String(entry?.compId ?? entry?.source?.clusterId ?? "") === String(compId)
+  ));
+  return {
+    ...result,
+    candidates: matches(result?.candidates),
+    rankings: Object.fromEntries(
+      Object.entries(result?.rankings ?? {}).map(([key, values]) => [key, matches(values)])
+    ),
+    references: matches(result?.references),
+    rising: matches(result?.rising),
+    falling: matches(result?.falling),
+    improving: matches(result?.improving)
+  };
+}
+
 function itemCarrierLimit(value) {
   const number = Number(value);
   return Number.isInteger(number) && number > 0
@@ -496,6 +514,19 @@ export function conversationStateV2ModeFor(options = {}) {
     ?? "off"
   ).trim().toLowerCase();
   return CONVERSATION_STATE_V2_MODES.has(value) ? value : "off";
+}
+
+function emitRecommendationProgress(options, type, data = {}) {
+  if (typeof options?.onProgress !== "function") return;
+  try {
+    options.onProgress({
+      schemaVersion: "recommendation-progress.v1",
+      type,
+      data
+    });
+  } catch {
+    // Progress reporting is observational and cannot change recommendation results.
+  }
 }
 
 function semanticResultForConversationResolution(resolution, interpretation) {
@@ -1981,6 +2012,11 @@ async function writeLastQuerySession(result, options) {
       updatedAt: new Date().toISOString(),
       compatibilityQuery
     });
+    result.conversation.resultState = {
+      shownCount: state.lastResult?.shownIds?.length ?? 0,
+      returnedCount: state.lastResult?.returnedCount ?? 0,
+      totalCount: state.lastResult?.totalCount ?? null
+    };
     if (
       state === conversation.previousState
       || (
@@ -2183,6 +2219,15 @@ export async function recommendForInput(input, options = {}) {
       semanticShadow: null,
       comparison: null
     };
+    emitRecommendationProgress(options, "understanding.resolved", {
+      conversation: {
+        mode: conversationMode,
+        stateVersion: conversationState.schemaVersion,
+        delta: interpretation.turnDelta,
+        resolution,
+        providerFallback: interpretation.telemetry?.providerFallback ?? null
+      }
+    });
     if (conversationMode === "on" && resolution.decision !== "execute") {
       return controlledConversationResponse(
         input,
@@ -2289,6 +2334,29 @@ export async function recommendForInput(input, options = {}) {
   if (conversationMode !== "on") {
     parsedInput = applyControlledSemanticCorrection(parsedInput, semanticShadowResult, options);
   }
+  const progressIntentEnvelope = createIntentEnvelope({
+    input,
+    parsed: parsedInput,
+    query: parsedInput,
+    catalog
+  });
+  emitRecommendationProgress(options, "plan.ready", {
+    conversation: conversationV2 ? {
+      mode: conversationMode,
+      stateVersion: conversationState.schemaVersion,
+      delta: conversationV2.interpretation.turnDelta,
+      resolution: conversationV2.resolution,
+      providerFallback: conversationV2.interpretation.telemetry?.providerFallback ?? null
+    } : null,
+    agent: {
+      executionPlan: semanticShadowResult?.executionPlanning?.plan ?? null
+    },
+    intentEnvelope: progressIntentEnvelope,
+    intent: parsedInput.intent ?? null
+  });
+  emitRecommendationProgress(options, "retrieval.started", {
+    source: isCompIntent(parsedInput.intent) ? "metatft_compositions" : "metatft_structured"
+  });
 
   if (parsedInput.intent === "item_carrier_rankings") {
     return recommendItemCarriersForInput(
@@ -2497,12 +2565,17 @@ export async function recommendForInput(input, options = {}) {
       catalog,
       warnings
     });
+    const focusedResult = focusCompRankingResult(result, query.compId);
+    const officialItemDetails = options.officialItemDetails
+      ?? (typeof options.loadOfficialItemDetails === "function"
+        ? await options.loadOfficialItemDetails()
+        : null);
     const enriched = options.compEnrichmentService
-      ? await options.compEnrichmentService.enrichRankingResult(result, {
+      ? await options.compEnrichmentService.enrichRankingResult(focusedResult, {
         seasonContextId: query.seasonContextId,
         provider: options.provider ?? "metatft-live"
       })
-      : result;
+      : focusedResult;
     const usesExecutionResultPolicy = (
       executionPlanRun?.plan
       ?? executionPlan
@@ -2510,7 +2583,9 @@ export async function recommendForInput(input, options = {}) {
     const legacySearched = query.preferenceRequested
       ? applyCompPreferenceSearch(enriched, {
         conditions: query.preferenceConditions,
-        minSamples: query.minSamples
+        minSamples: query.minSamples,
+        avoidItemComponents: query.avoidItemComponents,
+        itemDetails: officialItemDetails
       })
       : enriched;
     if (executionPlanRun && options.executionPlanExecutor) {

@@ -128,6 +128,38 @@ function applyConstraintOperations(frame, operations, changedFields) {
   return createTaskFrame({ ...frame, constraints });
 }
 
+function bindCompositionResultReference(frame, resolution) {
+  const reference = resolution.resultReference;
+  if (
+    reference?.scope !== "last_result"
+    || !reference.resultId
+    || frame?.goal !== "comp_rankings"
+  ) return createTaskFrame(frame);
+  const constraints = clone(frame.constraints ?? {});
+  constraints.comp = {
+    rawText: `result ${reference.ordinal}`,
+    expectedType: "composition",
+    resolvedId: String(reference.resultId),
+    confidence: 1,
+    source: "conversation_result_reference"
+  };
+  if (array(constraints.excludedItems).length) {
+    constraints.avoidItemComponents = addValues(
+      constraints.avoidItemComponents,
+      constraints.excludedItems
+    );
+    delete constraints.excludedItems;
+    resolution.changedFields.push(
+      "constraints.avoidItemComponents",
+      "constraints.excludedItems"
+    );
+    resolution.trace.steps.push("reinterpret_selected_comp_item_exclusion");
+  }
+  resolution.changedFields.push("constraints.comp");
+  resolution.trace.steps.push("bind_selected_composition");
+  return createTaskFrame({ ...frame, constraints });
+}
+
 function explicitFrameHasMaterial(frame) {
   return Boolean(
     frame
@@ -309,6 +341,7 @@ function baseResolution(state, delta) {
     nextState: createConversationState(state),
     decision: "clarify",
     presentation: clone(delta?.presentation ?? null),
+    resultReference: null,
     inheritedFields: [],
     changedFields: [],
     warnings: [],
@@ -348,6 +381,34 @@ export function reduceConversationState({
     resolution.decision = "invalid_delta";
     resolution.warnings.push(...deltaValidation.errors);
     return resolution;
+  }
+  const requestedReference = delta.presentation?.resultReference;
+  if (requestedReference?.scope === "last_result") {
+    const resultId = normalizedState.lastResult?.shownIds?.[requestedReference.ordinal - 1] ?? null;
+    if (!resultId) {
+      resolution.decision = "clarify";
+      resolution.nextState.pendingClarification = {
+        reason: "result_reference_out_of_range",
+        expectedFields: ["resultReference"],
+        candidateTask: delta.explicitTaskFrame ? { taskFrame: clone(delta.explicitTaskFrame) } : null,
+        askedAt: null
+      };
+      resolution.warnings.push("result_reference_out_of_range");
+      resolution.trace.steps.push("reject_unresolved_result_reference");
+      return resolution;
+    }
+    resolution.resultReference = {
+      ...clone(requestedReference),
+      resultId: String(resultId)
+    };
+    resolution.inheritedFields.push("lastResult.shownIds");
+    resolution.trace.steps.push("resolve_last_result_reference");
+  } else if (requestedReference?.scope === "current_output") {
+    resolution.resultReference = {
+      ...clone(requestedReference),
+      resultId: null
+    };
+    resolution.trace.steps.push("defer_current_output_reference");
   }
   if (
     delta.taskRelation === "unknown"
@@ -440,6 +501,7 @@ export function reduceConversationState({
   }
   frame = applyEntityOperations(frame, delta.entityOperations, resolution.changedFields);
   frame = applyConstraintOperations(frame, delta.constraintOperations, resolution.changedFields);
+  frame = bindCompositionResultReference(frame, resolution);
   frame = completePendingTaskFrame(
     frame,
     normalizedState.pendingClarification,

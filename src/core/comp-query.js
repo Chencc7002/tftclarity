@@ -125,6 +125,7 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     providerVersion: preferences.providerVersion ?? null,
     effectivePatch: String(preferences.currentPatch ?? preferences.effectivePatch ?? parsed.patch ?? preferences.patch ?? "current"),
     unit: parsed.unit ?? null,
+    compId: parsed.compId ?? null,
     intent,
     metrics: preferenceRequested
       ? preferenceMetrics
@@ -137,6 +138,7 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     patch: String(parsed.patch ?? preferences.patch ?? "current"),
     queue: String(parsed.queue ?? preferences.queue ?? "1100"),
     rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
+    avoidItemComponents: [...(parsed.avoidItemComponents ?? [])],
     specialMode: Boolean(parsed.specialMode),
     popularRequested,
     trendRequested,

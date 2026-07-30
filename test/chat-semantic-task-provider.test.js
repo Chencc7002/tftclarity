@@ -4,6 +4,7 @@ import {
   LIVE_SEMANTIC_TASK_PROMPT_VERSION,
   createChatSemanticTaskProvider
 } from "../src/llm/chat-semantic-task-provider.js";
+import { tftConversationPolicy } from "../src/domain/tft/conversation-policy.js";
 
 const validFrame = {
   schemaVersion: "task-frame.v1",
@@ -128,13 +129,69 @@ test("chat semantic task provider validates TurnDelta responses independently fr
     budget: { maxOutputTokens: 240 }
   });
 
-  assert.deepEqual(result.turnDelta, rawDelta);
+  assert.deepEqual(result.turnDelta, {
+    ...rawDelta,
+    presentation: {
+      ...rawDelta.presentation,
+      resultReference: null
+    }
+  });
   assert.equal(observedBody.response_format.type, "json_object");
   assert.match(observedBody.messages[0].content, /turn-delta\.v1/u);
   assert.match(observedBody.messages[0].content, /no active task.+self-contained TFT request/u);
   assert.match(observedBody.messages[0].content, /composition or lineup recommendations.+comp_rankings/u);
   assert.match(observedBody.messages[0].content, /multiple items for one champion.+unit_item_comparison/u);
   assert.match(observedBody.messages[0].content, /keep those semantics in explicitTaskFrame/u);
+  assert.match(observedBody.messages[0].content, /Constraint values must use only values authorized/u);
+  assert.match(observedBody.messages[0].content, /resultReference/u);
+});
+
+test("chat semantic task provider applies domain validation to explicit TaskFrame constraints", async () => {
+  const invalidDelta = {
+    schemaVersion: "turn-delta.v1",
+    dialogueAct: "start_task",
+    taskRelation: "new",
+    explicitTaskFrame: {
+      ...validFrame,
+      action: "rank",
+      goal: "comp_rankings",
+      capabilityRequirements: [],
+      constraints: {
+        strategy: ["non-vertical", "flexible"]
+      }
+    },
+    entityOperations: [],
+    constraintOperations: [],
+    presentation: {
+      requestedCount: 3,
+      pageDirection: null,
+      avoidSeen: false,
+      resultReference: null
+    },
+    confidence: 0.9,
+    ambiguities: []
+  };
+  const provider = createChatSemanticTaskProvider({
+    endpoint: "https://llm.example/v1/chat/completions",
+    model: "test-model",
+    maxInvalidRetries: 0,
+    fetchImpl: async () => ({
+      ok: true,
+      json: async () => ({
+        choices: [{ message: { content: JSON.stringify(invalidDelta) } }]
+      })
+    })
+  });
+
+  await assert.rejects(
+    () => provider({
+      schemaVersion: "turn-delta.v1",
+      domainPolicy: tftConversationPolicy,
+      messages: [],
+      budget: { maxOutputTokens: 300 }
+    }),
+    /constraints\.strategy is invalid/u
+  );
 });
 
 test("chat semantic task provider rejects invalid TurnDelta before normalization", async () => {

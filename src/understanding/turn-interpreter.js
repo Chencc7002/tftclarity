@@ -31,6 +31,83 @@ function clone(value) {
   return value == null ? value : structuredClone(value);
 }
 
+function chineseOrdinalNumber(value) {
+  const text = String(value ?? "").trim();
+  if (/^\d{1,3}$/u.test(text)) return Number(text);
+  const digits = new Map([
+    ["零", 0],
+    ["〇", 0],
+    ["一", 1],
+    ["二", 2],
+    ["两", 2],
+    ["三", 3],
+    ["四", 4],
+    ["五", 5],
+    ["六", 6],
+    ["七", 7],
+    ["八", 8],
+    ["九", 9]
+  ]);
+  if (text === "十") return 10;
+  if (text.includes("十")) {
+    const [left, right] = text.split("十");
+    const tens = left ? digits.get(left) : 1;
+    const ones = right ? digits.get(right) : 0;
+    if (tens == null || ones == null) return null;
+    return (tens * 10) + ones;
+  }
+  return digits.get(text) ?? null;
+}
+
+function explicitOrdinalResultReference(currentMessage, state) {
+  const input = String(currentMessage ?? "");
+  const match = input.match(
+    /第\s*([零〇一二两三四五六七八九十\d]{1,3})\s*(?:套|个|项|种|组|方案|阵容|推荐)/u
+  );
+  const ordinal = chineseOrdinalNumber(match?.[1]);
+  if (!Number.isInteger(ordinal) || ordinal < 1 || ordinal > 100) return null;
+  return {
+    scope: state?.lastResult ? "last_result" : "current_output",
+    ordinal
+  };
+}
+
+function enforceExplicitOrdinalReference(delta, currentMessage, state) {
+  const reference = explicitOrdinalResultReference(currentMessage, state);
+  if (!reference) return createTurnDelta(delta);
+  const explicitItemExclusion = /(?:不用|不要|别用|排除|不能用|不带)/u.test(
+    String(currentMessage ?? "")
+  );
+  const constraintOperations = explicitItemExclusion
+    ? delta.constraintOperations.map((operation) => (
+      ["excludedItems", "avoidItemComponents"].includes(operation.field)
+      && ["remove", "clear"].includes(operation.operation)
+      && operation.value !== undefined
+        ? {
+          operation: "add",
+          field: "excludedItems",
+          value: operation.value
+        }
+        : operation
+    ))
+    : delta.constraintOperations;
+  const presentation = {
+    ...(delta?.presentation ?? {}),
+    resultReference: delta?.presentation?.resultReference ?? reference
+  };
+  if (presentation.resultReference.scope !== "last_result") {
+    return createTurnDelta({ ...delta, constraintOperations, presentation });
+  }
+  return createTurnDelta({
+    ...delta,
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    constraintOperations,
+    presentation,
+    confidence: Math.max(Number(delta?.confidence ?? 0), 0.9)
+  });
+}
+
 function compactFrame(frame) {
   if (!frame) return null;
   const compactEntity = (entity) => ({
@@ -60,6 +137,7 @@ export function compactConversationStateForInterpreter(state = {}) {
       returnedCount: state.lastResult.returnedCount,
       totalCount: state.lastResult.totalCount,
       exhausted: state.lastResult.exhausted,
+      shownIds: array(state.lastResult.shownIds).map(String),
       appliedConstraints: clone(state.lastResult.appliedConstraints)
     } : null,
     pendingClarification: clone(state.pendingClarification)
@@ -160,6 +238,7 @@ async function linkConstraintReferences(frame, options) {
     ["lockedItems", "item"],
     ["ownedItems", "item"],
     ["excludedItems", "item"],
+    ["avoidItemComponents", "item"],
     ["comparisonItems", "item"],
     ["traitFilters", "trait"]
   ]) {
@@ -236,6 +315,7 @@ async function linkTurnDeltaReferences(delta, options) {
     ["lockedItems", ["item", "candidates"]],
     ["ownedItems", ["item", "candidates"]],
     ["excludedItems", ["item", "candidates"]],
+    ["avoidItemComponents", ["item", "candidates"]],
     ["comparisonItems", ["item", "candidates"]],
     ["traitFilters", ["trait", "concepts"]],
     ["comp", ["composition", "concepts"]]
@@ -310,7 +390,8 @@ export async function interpretTurn({
       const response = await semanticProvider({
         messages,
         schemaVersion: "turn-delta.v1",
-        budget: options.budget
+        budget: options.budget,
+        domainPolicy
       });
       rawDelta = response?.turnDelta ?? response;
       const rawValidation = validateTurnDelta(rawDelta);
@@ -338,7 +419,11 @@ export async function interpretTurn({
   }
   let delta;
   if (rawDelta) {
-    delta = createTurnDelta(rawDelta);
+    delta = enforceExplicitOrdinalReference(
+      createTurnDelta(rawDelta),
+      currentMessage,
+      conversationState
+    );
   } else {
     const hasConversationContext = Boolean(
       conversationState?.activeTask?.taskFrame

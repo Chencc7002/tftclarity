@@ -3,6 +3,11 @@ import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
+import {
+  formatProcessingDuration,
+  formatDecisionAuditPayload,
+  renderUnderstandingPanel
+} from "./understanding-panel.js";
 import { WallpaperController } from "./wallpaper-controller.js";
 
 const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
@@ -123,6 +128,7 @@ const itemAuditExportCsv = document.querySelector("#item-audit-export-csv");
 let saveTimer = null;
 let itemAuditTimer = null;
 let activeResponseEl = null;
+let activeRecommendationProgress = null;
 let activeQuickTask = null;
 
 const conversationPane = new ConversationPane(resultEl);
@@ -165,6 +171,12 @@ void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, comp
 
 function setResponseHtml(html) {
   resultPane.setHtml(`${renderResultNavigation()}${html}`);
+}
+
+function setDeveloperOutput(data) {
+  rawOutputEl.textContent = formatDecisionAuditPayload(data)
+    ?? data?.text
+    ?? JSON.stringify(data, null, 2);
 }
 
 const mobileLayoutQuery = window.matchMedia("(max-width: 759px)");
@@ -2518,8 +2530,14 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
   if (data?.type === "system_interaction") {
     return systemInteractionAnswerHtml(data);
   }
+  const understanding = renderUnderstandingPanel(data, {
+    locale: getLocale(),
+    surface: "chat",
+    traceState: data?.processingTrace,
+    completed: true
+  });
   if (data?.clarification?.needsClarification && !data?.assistantResponse?.text) {
-    return `<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
+    return `${understanding}<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
   }
   const summary = data?.assistantResponse?.text
     ?? data?.answer?.summary
@@ -2529,7 +2547,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
-  return `${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -2600,7 +2618,7 @@ function activateResponseResult(record) {
   state.explanationFeedback = null;
   state.conclusionStreamText = "";
   state.resultView = { type: "result", data: record.data };
-  rawOutputEl.textContent = record.data.text ?? JSON.stringify(record.data, null, 2);
+  setDeveloperOutput(record.data);
   resultTitleEl.textContent = t("resultTitle");
   renderCurrentResult(record.data);
   refreshButton.disabled = state.requestInFlight || !state.lastInput;
@@ -2614,7 +2632,18 @@ function rerenderLocalizedState() {
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
   }
-  if (state.requestInFlight && activeResponseEl?.isConnected) activeResponseEl.innerHTML = progressStepsHtml(state.progressIndex);
+  if (
+    state.requestInFlight
+    && activeResponseEl?.isConnected
+    && activeRecommendationProgress
+  ) {
+    const understandingOpen = activeResponseEl
+      .querySelector(".chat-understanding-panel")
+      ?.hasAttribute("open");
+    activeResponseEl.innerHTML = recommendationProgressHtml(activeRecommendationProgress, {
+      understandingOpen: understandingOpen ?? true
+    });
+  }
   if (state.resultView.type === "result" && state.resultView.data) renderCurrentResult(state.resultView.data);
   else if (state.resultView.type === "loading") renderLoadingResult(false);
   else if (state.resultView.type === "error") renderErrorResult(state.resultView.message, false, state.resultView.messageKey);
@@ -2947,7 +2976,7 @@ function renderResult(data) {
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   state.conclusionStreamText = "";
-  rawOutputEl.textContent = data.text ?? JSON.stringify(data, null, 2);
+  setDeveloperOutput(data);
   state.lastSuggestions = data.clarification?.suggestions ?? [];
   state.lastEntityCandidates = data.clarification?.entityCandidates ?? [];
   state.currentResponseId = recordAssistantResponse(data);
@@ -2979,7 +3008,7 @@ function applyConclusionEvent(data, event) {
     resultContentEl.scrollTop = scrollTop;
     const record = state.responsesById.get(state.currentResponseId);
     if (record?.data === data) rerenderAssistantRecord(record);
-    rawOutputEl.textContent = JSON.stringify(data, null, 2);
+    setDeveloperOutput(data);
     return true;
   }
   return event.type === "start";
@@ -3415,15 +3444,168 @@ function appendUserMessage(input) {
   conversationPane.appendUser(escapeHtml(input), `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
 }
 
-function appendAssistantMessage() {
+function appendAssistantMessage(progress = null) {
   const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  return conversationPane.appendAssistant(progressStepsHtml(state.progressIndex), `<strong>${t("assistant")}</strong><time>${escapeHtml(time)}</time>`);
+  return conversationPane.appendAssistant(
+    progress ? recommendationProgressHtml(progress) : progressStepsHtml(state.progressIndex),
+    `<strong>${t("assistant")}</strong><time>${escapeHtml(time)}</time>`
+  );
 }
 
-function updateProgress(target, index) {
-  if (target === activeResponseEl) state.progressIndex = index;
-  const steps = target?.querySelectorAll?.(".progress-step") ?? [];
-  steps.forEach((step, stepIndex) => step.classList.toggle("active", stepIndex === index));
+function createRecommendationProgressState() {
+  return {
+    phase: "request.accepted",
+    data: null,
+    completed: new Set(),
+    active: "understanding",
+    startedAt: Date.now(),
+    completedAt: null,
+    clockTimer: null
+  };
+}
+
+function mergeRecommendationProgressData(current, incoming = {}) {
+  return {
+    ...(current ?? {}),
+    ...incoming,
+    conversation: incoming.conversation ?? current?.conversation,
+    answerModeRoute: incoming.answerModeRoute ?? current?.answerModeRoute,
+    agent: {
+      ...(current?.agent ?? {}),
+      ...(incoming.agent ?? {})
+    }
+  };
+}
+
+function applyRecommendationProgressState(progress, event) {
+  const phase = String(event?.phase ?? "");
+  progress.phase = phase;
+  progress.data = mergeRecommendationProgressData(progress.data, event?.data ?? {});
+  if (phase === "understanding.started" || phase === "request.accepted") {
+    progress.active = "understanding";
+  } else if (phase === "understanding.resolved") {
+    progress.completed.add("understanding");
+    progress.active = "plan";
+  } else if (phase === "plan.ready") {
+    progress.completed.add("understanding");
+    progress.completed.add("plan");
+    progress.active = "retrieval";
+  } else if (phase === "retrieval.started") {
+    progress.active = "retrieval";
+  } else if (phase === "retrieval.completed") {
+    progress.completed.add("retrieval");
+    progress.active = "answer";
+  } else if (phase === "answer.started") {
+    progress.active = "answer";
+  }
+}
+
+function recommendationProgressHtml(progress, options = {}) {
+  return renderUnderstandingPanel(progress.data, {
+    locale: getLocale(),
+    surface: "chat",
+    open: options.understandingOpen !== false,
+    traceState: progress,
+    now: options.now
+  });
+}
+
+function updateRecommendationProgressClock(target, progress) {
+  const elapsed = target?.querySelector("[data-processing-elapsed]");
+  if (!elapsed) return;
+  const end = Number.isFinite(progress.completedAt) ? progress.completedAt : Date.now();
+  elapsed.textContent = formatProcessingDuration(end - progress.startedAt);
+}
+
+function startRecommendationProgressClock(target, progress) {
+  if (progress.clockTimer) clearInterval(progress.clockTimer);
+  updateRecommendationProgressClock(target, progress);
+  progress.clockTimer = setInterval(() => {
+    if (!target?.isConnected) {
+      clearInterval(progress.clockTimer);
+      progress.clockTimer = null;
+      return;
+    }
+    updateRecommendationProgressClock(target, progress);
+  }, 1000);
+}
+
+function stopRecommendationProgressClock(progress) {
+  if (!progress?.clockTimer) return;
+  clearInterval(progress.clockTimer);
+  progress.clockTimer = null;
+}
+
+function completeRecommendationProgress(progress, data) {
+  progress.completedAt = Date.now();
+  progress.completed.add("answer");
+  progress.active = null;
+  stopRecommendationProgressClock(progress);
+  data.processingTrace = {
+    startedAt: progress.startedAt,
+    completedAt: progress.completedAt,
+    phase: "complete",
+    completed: [...progress.completed]
+  };
+}
+
+function renderRecommendationProgress(target, progress) {
+  if (!target?.isConnected) return;
+  const currentPanel = target.querySelector(".chat-understanding-panel");
+  target.innerHTML = recommendationProgressHtml(progress, {
+    understandingOpen: currentPanel ? currentPanel.hasAttribute("open") : true
+  });
+  const phaseIndex = progress.active === "understanding"
+    ? 0
+    : progress.active === "plan" || progress.active === "retrieval"
+      ? 1
+      : 2;
+  if (target === activeResponseEl) state.progressIndex = phaseIndex;
+  if (state.resultView.type === "loading") renderLoadingResult(false);
+  scrollConversation();
+}
+
+async function readRecommendationStream(response, target, progress, requestId, signal) {
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.body?.getReader) throw new Error("recommendation progress stream is unavailable");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completion = null;
+  const applyLine = (line) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (event.type === "progress") {
+      applyRecommendationProgressState(progress, event.event);
+      if (requestId === state.requestSerial) renderRecommendationProgress(target, progress);
+      return;
+    }
+    if (event.type === "error") {
+      throw new Error(event.error ?? t("queryFailed"));
+    }
+    if (event.type === "complete") completion = event;
+  };
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) applyLine(line);
+    if (done) {
+      if (buffer.trim()) applyLine(buffer);
+      break;
+    }
+  }
+  if (signal.aborted) {
+    const abortError = new Error("recommendation request aborted");
+    abortError.name = "AbortError";
+    throw abortError;
+  }
+  if (!completion) throw new Error("recommendation stream ended before completion");
+  if (Number(completion.statusCode ?? 200) >= 400 || !completion.payload?.ok) {
+    throw new Error(completion.payload?.error ?? t("queryFailed"));
+  }
+  return completion.payload;
 }
 
 function setRequestRunning(running) {
@@ -3452,8 +3634,11 @@ async function requestRecommendation(refresh = false, displayInput = null) {
   state.lastInput = input;
   state.lastDisplayInput = refresh ? state.lastDisplayInput ?? input : displayInput ?? input;
   appendUserMessage(state.lastDisplayInput);
-  activeResponseEl = appendAssistantMessage();
+  const recommendationProgress = createRecommendationProgressState();
+  activeRecommendationProgress = recommendationProgress;
+  activeResponseEl = appendAssistantMessage(recommendationProgress);
   const assistantTarget = activeResponseEl;
+  startRecommendationProgressClock(assistantTarget, recommendationProgress);
   if (!refresh) composer.clear();
   scrollConversation();
   setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
@@ -3461,17 +3646,13 @@ async function requestRecommendation(refresh = false, displayInput = null) {
   state.currentController = controller;
   setRequestRunning(true);
   renderLoadingResult();
-  const progressTimers = [
-    setTimeout(() => updateProgress(assistantTarget, 1), 280),
-    setTimeout(() => updateProgress(assistantTarget, 2), 720)
-  ];
-
   try {
-    const response = await fetch("/api/recommend", {
+    const response = await fetch("/api/recommend/stream", {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
+        accept: "application/x-ndjson"
       },
       body: JSON.stringify({
         input,
@@ -3490,9 +3671,16 @@ async function requestRecommendation(refresh = false, displayInput = null) {
         }
       })
     });
-    const data = await response.json();
+    const data = await readRecommendationStream(
+      response,
+      assistantTarget,
+      recommendationProgress,
+      requestId,
+      controller.signal
+    );
     if (requestId !== state.requestSerial) return;
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    completeRecommendationProgress(recommendationProgress, data);
     if (data.access) renderAccessStatus(data.access);
     renderResult(data);
     if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
@@ -3510,11 +3698,12 @@ async function requestRecommendation(refresh = false, displayInput = null) {
       setStatusKey("statusFailed", "error");
     }
   } finally {
-    progressTimers.forEach(clearTimeout);
+    stopRecommendationProgressClock(recommendationProgress);
     if (requestId === state.requestSerial) {
       state.currentController = null;
       setRequestRunning(false);
       activeResponseEl = null;
+      activeRecommendationProgress = null;
       scrollConversation();
     }
   }
@@ -3575,7 +3764,7 @@ async function requestEntityDetail(target) {
     state.lastResult = data;
     state.lastResultId = null;
     state.resultView = { type: "result", data };
-    rawOutputEl.textContent = JSON.stringify(data, null, 2);
+    setDeveloperOutput(data);
     resultTitleEl.textContent = t("resultTitle");
     renderCurrentResult(data);
     detailLoaded = true;
@@ -3913,6 +4102,7 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.currentController = null;
   state.currentConclusionController = null;
   activeResponseEl = null;
+  activeRecommendationProgress = null;
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   state.lastInput = "";
   state.lastDisplayInput = "";

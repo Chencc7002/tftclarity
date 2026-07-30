@@ -1160,6 +1160,16 @@ function explicitTraitDetailsQuestion(input) {
     && !/(装备|出装|转职|纹章|阵容|排行|排名|推荐)/u.test(text);
 }
 
+function requestsSoftCompItemDemand(input, parsed = {}) {
+  const text = String(input ?? "");
+  const softPreference = /(?:最好|尽量|优先).{0,8}(?:少用|不用|避免|减少).{0,8}(?:装备|散件|大剑|反曲弓|大棒|眼泪|腰带|锁子甲|斗篷|拳套)/u.test(text)
+    || /(?:少用|减少).{0,8}(?:装备|散件|大剑|反曲弓|大棒|眼泪|腰带|锁子甲|斗篷|拳套)/u.test(text);
+  return softPreference && (
+    /阵容|体系/u.test(text)
+    || ["comp_rankings", "comp_trends", "comp_analysis"].includes(parsed?.intent)
+  );
+}
+
 function requestedEntityCatalogType(input) {
   const text = String(input ?? "").replace(/\s+/gu, "");
   const lower = text.toLowerCase();
@@ -2098,6 +2108,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ?? (structuredParserRuntime.structuredParserConfig?.enabled
       ? createChatSemanticTaskProvider({
         ...structuredParserRuntime.structuredParserConfig,
+        thinkingMode: options.turnDeltaThinkingMode ?? "disabled",
         fetchImpl: options.structuredParserFetch ?? options.llmFetch,
         onRequestLog: options.turnDeltaRequestLog
           ?? options.semanticTaskRequestLog
@@ -2896,6 +2907,18 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const input = String(body?.input ?? "").trim();
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
   const scope = context.visitor?.scope ?? null;
+  const reportProgress = (type, data = {}) => {
+    if (typeof context.onProgress !== "function") return;
+    try {
+      context.onProgress({
+        schemaVersion: "recommendation-progress.v1",
+        type,
+        data
+      });
+    } catch {
+      // Streaming progress is observational and cannot change the request result.
+    }
+  };
   let llmUseReserved = false;
   const reserveLlmUseForRequest = () => {
     if (llmUseReserved) return;
@@ -2940,6 +2963,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       }
     };
   }
+  reportProgress("understanding.started");
 
   const systemInteraction = requestRuntime.systemInteractionRouter.route({ input });
   if (systemInteraction.handled) {
@@ -3068,6 +3092,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
   }
   const parsedForIntent = parseQuery(input, { catalog });
+  const shouldLoadCompItemDetails = requestsSoftCompItemDemand(input, parsedForIntent);
   const answerModeRoute = requestRuntime.answerModeRouter.route({
     input,
     parsed: parsedForIntent
@@ -3087,11 +3112,28 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     region: String(body.region ?? "global").toLowerCase(),
     locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
   };
-  const coachKnowledgePromise = answerModeRoute.mode === "structured"
-    ? Promise.resolve({ evidence: [], warnings: [], currentStats: null })
-    : retrieveCoachKnowledge(input, answerModeRoute, requestRuntime, coachKnowledgeOptions);
+  let coachKnowledgePromise = null;
+  const getCoachKnowledge = () => {
+    if (!coachKnowledgePromise) {
+      coachKnowledgePromise = answerModeRoute.mode === "structured"
+        ? Promise.resolve({ evidence: [], warnings: [], currentStats: null })
+        : retrieveCoachKnowledge(input, answerModeRoute, requestRuntime, coachKnowledgeOptions);
+    }
+    return coachKnowledgePromise;
+  };
   if (answerModeRoute.mode === "rag") {
-    const knowledge = await coachKnowledgePromise;
+    reportProgress("understanding.resolved", {
+      answerModeRoute,
+      intent: parsedForIntent.intent ?? "knowledge_question"
+    });
+    reportProgress("plan.ready", { answerModeRoute });
+    reportProgress("retrieval.started", { source: "knowledge_index" });
+    const knowledge = await getCoachKnowledge();
+    reportProgress("retrieval.completed", {
+      source: "knowledge_index",
+      evidenceCount: knowledge.evidence.length
+    });
+    reportProgress("answer.started");
     const coach = await createHybridAnswerService({
       provider: requestRuntime.coachProvider
     }).answer({
@@ -3125,7 +3167,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     };
     return completeResponse(payload);
   }
-  const compEntityClarification = serializeCompRankingEntityClarification(parsedForIntent, catalog);
+  const compEntityClarification = requestsSoftCompItemDemand(input, parsedForIntent)
+    ? null
+    : serializeCompRankingEntityClarification(parsedForIntent, catalog);
   if (compEntityClarification) {
     compEntityClarification.meta = {
       durationMs: Date.now() - startedAt,
@@ -3148,6 +3192,10 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
     compEnrichmentService: runtime.compEnrichmentService,
+    officialItemDetails: runtime.officialItemDetails,
+    loadOfficialItemDetails: shouldLoadCompItemDetails
+      ? () => loadOfficialItemDetails(runtime)
+      : null,
     compsData,
     cacheStore: runtime.cacheStore,
     preferences,
@@ -3160,6 +3208,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     turnDeltaProvider: requestRuntime.turnDeltaProvider,
     conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
     turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
+    onProgress(event) {
+      reportProgress(event?.type ?? "unknown", {
+        ...(event?.data ?? {}),
+        answerModeRoute
+      });
+    },
     semanticRetriever: requestRuntime.semanticRetriever,
     semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
     seasonContextId: seasonContext.id,
@@ -3178,7 +3232,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     result.query.warnings = warnings;
   }
   let coachKnowledge = answerModeRoute.mode === "hybrid"
-    ? await coachKnowledgePromise
+    ? await getCoachKnowledge()
     : { evidence: [], warnings: [], currentStats: null };
   if (
     answerModeRoute.mode === "hybrid"
@@ -3295,6 +3349,21 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     && requestRuntime.conclusionProvider;
   let coachAnswer = null;
   let generatedConclusion;
+  if (
+    result.type !== "clarification"
+    && !result.clarification?.blocking
+    && result.validation?.valid !== false
+  ) {
+    reportProgress("retrieval.completed", {
+      source: result.source?.provider ?? "structured_data",
+      resultType: result.type ?? null,
+      evidenceCount: coachKnowledge.evidence.length + semanticEvidence.length
+    });
+  }
+  reportProgress("answer.started", {
+    resultType: result.type ?? null,
+    answerMode: answerModeRoute.mode
+  });
   if (answerModeRoute.mode === "hybrid") {
     const generateCoachAnswer = () => createHybridAnswerService({
       provider: requestRuntime.coachProvider
@@ -3421,6 +3490,44 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
   });
   if (execution.value?.payload) execution.value.payload.run = execution.publicRun;
   return execution.value;
+}
+
+export async function streamRecommendResponse(req, res, body, runtime, context = {}) {
+  let sequence = 0;
+  beginNdjson(res);
+  const writeProgress = (event) => {
+    sequence += 1;
+    writeNdjson(res, {
+      type: "progress",
+      event: {
+        schemaVersion: "recommendation-progress.v1",
+        sequence,
+        phase: String(event?.type ?? "unknown"),
+        data: event?.data ?? {}
+      }
+    });
+  };
+  writeProgress({ type: "request.accepted" });
+  try {
+    const { statusCode, payload } = await handleRecommendRequest(body, runtime, {
+      ...context,
+      onProgress: writeProgress
+    });
+    if (res.destroyed || res.writableEnded) return;
+    writeNdjson(res, {
+      type: "complete",
+      statusCode,
+      payload
+    });
+  } catch (error) {
+    if (res.destroyed || res.writableEnded) return;
+    writeNdjson(res, {
+      type: "error",
+      statusCode: Number(error?.statusCode ?? 500),
+      error: String(error?.message ?? "recommendation stream failed").slice(0, 500)
+    });
+  }
+  res.end();
 }
 
 export async function handlePreferencesRequest(body, runtime, scope = null) {
@@ -4992,6 +5099,21 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, statusCode, payload);
       }
 
+      if (req.method === "POST" && url.pathname === "/api/recommend/stream") {
+        const body = await readJsonRequest(req);
+        const controller = new AbortController();
+        const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
+        req.once("aborted", abortRequest);
+        res.once("close", () => {
+          if (!res.writableEnded) abortRequest();
+        });
+        return streamRecommendResponse(req, res, body, runtime, {
+          visitor,
+          accessService,
+          signal: controller.signal
+        });
+      }
+
       if (req.method === "GET" && url.pathname === "/api/comp-details") {
         return sendJson(res, 200, await handleCompDetailRequest({
           compId: url.searchParams.get("comp"),
@@ -5454,7 +5576,11 @@ export async function startSmallWindowServer(options = {}) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   loadLocalEnvironment();
-  startSmallWindowServer(parseCliOptions(process.argv.slice(2)))
+  const cliOptions = parseCliOptions(process.argv.slice(2));
+  startSmallWindowServer({
+    conversationStateV2Mode: process.env.TFT_AGENT_CONVERSATION_STATE_V2_MODE ?? "on",
+    ...cliOptions
+  })
     .then(({ url }) => {
       console.log(`tftclarity small window: ${url}`);
     })

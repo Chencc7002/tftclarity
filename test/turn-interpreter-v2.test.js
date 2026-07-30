@@ -2,6 +2,7 @@ import test from "node:test";
 import assert from "node:assert/strict";
 
 import {
+  compactConversationStateForInterpreter,
   createConversationState,
   createTaskFrame,
   createTurnDelta,
@@ -13,6 +14,129 @@ import { createPhase3EvaluationCatalog } from "../eval/datasets/entity-linking-p
 function reference(rawText, expectedType) {
   return { rawText, expectedType, resolvedId: null, confidence: 0.9 };
 }
+
+test("Turn Interpreter supplies ordered shown result ids for ordinal references", () => {
+  const state = createConversationState({
+    lastResult: {
+      resultType: "comp_rankings",
+      toolName: "comps_rankings",
+      shownIds: ["comp-a", "comp-b", "comp-c"],
+      returnedCount: 3,
+      totalCount: 8,
+      exhausted: false,
+      appliedConstraints: {}
+    }
+  });
+
+  assert.deepEqual(
+    compactConversationStateForInterpreter(state).lastResultSummary.shownIds,
+    ["comp-a", "comp-b", "comp-c"]
+  );
+});
+
+test("explicit ordinal follow-ups override a provider's mistaken new-task relation", async () => {
+  const activeFrame = createTaskFrame({
+    action: "rank",
+    goal: "comp_rankings",
+    constraints: {
+      reroll: false,
+      limit: 3
+    },
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const response = await interpretTurn({
+    currentMessage: "第二套不用大剑的话怎么办？",
+    conversationState: createConversationState({
+      activeTask: {
+        taskFrame: activeFrame,
+        legacyIntent: "comp_rankings"
+      },
+      lastResult: {
+        resultType: "comp_rankings",
+        toolName: "comps_rankings",
+        shownIds: ["comp-a", "comp-b", "comp-c"],
+        returnedCount: 3,
+        totalCount: 8,
+        exhausted: false,
+        appliedConstraints: activeFrame.constraints
+      }
+    }),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "start_task",
+        taskRelation: "new",
+        explicitTaskFrame: createTaskFrame({
+          action: "rank",
+          goal: "comp_rankings",
+          constraints: {
+            excludedItems: [reference("大剑", "item")]
+          },
+          confidence: 0.9,
+          understandingStatus: "understood_and_supported"
+        }),
+        confidence: 0.9
+      })
+    })
+  });
+
+  assert.equal(response.turnDelta.taskRelation, "modify");
+  assert.equal(response.turnDelta.dialogueAct, "modify");
+  assert.deepEqual(response.turnDelta.presentation.resultReference, {
+    scope: "last_result",
+    ordinal: 2
+  });
+});
+
+test("explicit equipment exclusion wording cannot be inverted into removing the restriction", async () => {
+  const sword = reference("大剑", "item");
+  const response = await interpretTurn({
+    currentMessage: "第二套不用大剑的话怎么办？",
+    conversationState: createConversationState({
+      activeTask: {
+        taskFrame: createTaskFrame({
+          action: "rank",
+          goal: "comp_rankings",
+          constraints: { avoidItemComponents: ["TFT_Item_BFSword"] },
+          confidence: 1,
+          understandingStatus: "understood_and_supported"
+        }),
+        legacyIntent: "comp_rankings"
+      },
+      lastResult: {
+        resultType: "comp_rankings",
+        toolName: "comps_rankings",
+        shownIds: ["comp-a", "comp-b", "comp-c"],
+        returnedCount: 3,
+        totalCount: 3,
+        exhausted: true,
+        appliedConstraints: {}
+      }
+    }),
+    catalog: createPhase3EvaluationCatalog(),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "modify",
+        taskRelation: "modify",
+        constraintOperations: [{
+          operation: "remove",
+          field: "avoidItemComponents",
+          value: [sword]
+        }],
+        confidence: 0.9
+      })
+    })
+  });
+
+  assert.equal(response.turnDelta.constraintOperations[0].operation, "add");
+  assert.equal(response.turnDelta.constraintOperations[0].field, "excludedItems");
+  assert.equal(
+    response.turnDelta.constraintOperations[0].value[0].rawText,
+    "大剑"
+  );
+});
 
 test("Turn Interpreter links entity and constraint operation values before reduction", async () => {
   const response = await interpretTurn({
