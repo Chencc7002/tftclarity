@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "youtube_acceptance_set.v1",
+  "name": "tftclarity-youtube-rag-ai-provisional-v1",
+  "annotationPolicy": {
+    "requireIndependentHumanReview": false,
+    "annotationOrigin": "ai_generated_provisional",
+    "humanReviewRecommended": true,
+    "disclosureRequired": true,
+    "contentDisclosure": "Acceptance annotations and extracted guide summaries are AI-generated and have not been independently human-reviewed.",
+    "claimTimestampToleranceSeconds": 5,
+    "entityMatching": "case-insensitive normalized exact-or-contained",
+    "claimMatching": "type + reviewed subjects + frozen reviewed claim",
+    "notes": "The frozen seed annotations are AI-generated provisional material. Every claim retains a source transcript window, all user-visible summaries disclose AI generation, and independent human review remains an optional upgrade."
+  },
+  "thresholds": {
+    "enforcement": "advisory",
+    "minimum": {
+      "entityPrecision": 0.9,
+      "entityRecall": 0.9,
+      "claimAccuracy": 0.85,
+      "claimRecall": 0.85,
+      "conditionExtractionRate": 0.8,
+      "timestampAccuracy": 0.9,
+      "irrelevantContentFilteringRate": 0.95
+    },
+    "maximum": {
+      "duplicateKnowledgeRate": 0.05
+    }
+  },
+  "cases": [
+    {
+      "id": "short-fundamentals",
+      "annotationFile": "annotations/short-fundamentals.json"
+    },
+    {
+      "id": "long-video",
+      "annotationFile": "annotations/long-video.json"
+    },
+    {
+      "id": "poor-auto-captions",
+      "annotationFile": "annotations/poor-auto-captions.json"
+    },
+    {
+      "id": "single-unit-items",
+      "annotationFile": "annotations/single-unit-items.json"
+    },
+    {
+      "id": "comp-operations",
+      "annotationFile": "annotations/comp-operations.json"
+    },
+    {
+      "id": "mixed-gameplay-chatter",
+      "annotationFile": "annotations/mixed-gameplay-chatter.json"
+    }
+  ]
+}

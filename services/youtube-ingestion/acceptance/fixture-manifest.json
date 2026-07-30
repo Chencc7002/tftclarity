@@ -1,0 +1,30 @@
+{
+  "schemaVersion": "youtube_acceptance_set.v1",
+  "name": "tftclarity-youtube-rag-deterministic-fixture-v1",
+  "annotationPolicy": {
+    "claimTimestampToleranceSeconds": 8,
+    "entityMatching": "case-insensitive normalized exact-or-contained",
+    "claimMatching": "type + annotated subjects + annotated keywords",
+    "notes": "This is a deterministic, human-authored transcript fixture. It is not evidence of live YouTube fetching."
+  },
+  "thresholds": {
+    "minimum": {
+      "entityPrecision": 0.9,
+      "entityRecall": 0.9,
+      "claimAccuracy": 0.85,
+      "claimRecall": 0.85,
+      "conditionExtractionRate": 0.8,
+      "timestampAccuracy": 0.9,
+      "irrelevantContentFilteringRate": 0.95
+    },
+    "maximum": {
+      "duplicateKnowledgeRate": 0.05
+    }
+  },
+  "cases": [
+    {
+      "annotationFile": "fixtures/reliability-mixed-long.annotation.json",
+      "output": "reliability-reextract-v4-normalizer-v2.json"
+    }
+  ]
+}

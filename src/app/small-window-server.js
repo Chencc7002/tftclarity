@@ -10,6 +10,7 @@ import {
 } from "../data/comp-detail-adapter.js";
 import {
   AgentRuntime,
+  DEFAULT_AGENT_RUN_BUDGET,
   ExecutionPlanExecutor,
   ToolExecutor,
   ToolRegistry,
@@ -51,10 +52,14 @@ import {
   buildUnitCatalogFromCompsData,
   buildUnitCatalogFromExplorerRows,
   createCatalog,
+  createAnswerModeRouter,
+  createSystemInteractionRouter,
+  createCoachProviderFromConfig,
   createCompsPageSnapshot,
   createConclusionProviderFromConfig,
   createCompEnrichmentService,
   createEmbeddingProviderFromConfig,
+  createHybridAnswerService,
   createSeasonContextService,
   createLineupSignature,
   createIntentEnvelope,
@@ -71,11 +76,13 @@ import {
   normalizeCompProfileRecord,
   isLowSampleBuild,
   itemCatalogAuditToCsv,
+  KnowledgeRetriever,
   parseQuery,
   recommendForInput,
   generateEvidenceBackedConclusion,
   RetrievalPlanner,
   resolveConclusionProviderConfig,
+  resolveCoachProviderConfig,
   resolveEmbeddingProviderConfig,
   retrieveSemanticPlan,
   resolveStructuredParserConfig
@@ -93,6 +100,11 @@ const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
 export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
 export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
+export const DEFAULT_TURN_INTERPRETER_BUDGET = Object.freeze({
+  maxInputTokens: 1600,
+  maxOutputTokens: 900,
+  maxLatencyMs: 45000
+});
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
@@ -234,6 +246,19 @@ export function resolveSmallWindowRequestTimeouts(options = {}, env = process.en
   };
 }
 
+export function resolveSmallWindowAgentRunBudget(options = {}, env = process.env) {
+  const configured = options.agentRunBudget ?? {};
+  return {
+    ...configured,
+    deadlineMs: positiveTimeout(
+      configured.deadlineMs
+        ?? options.agentRunDeadlineMs
+        ?? env.TFT_AGENT_RUN_DEADLINE_MS,
+      DEFAULT_AGENT_RUN_BUDGET.deadlineMs
+    )
+  };
+}
+
 export function resolveSmallWindowStructuredParserConfig(options = {}, env = process.env) {
   return resolveStructuredParserConfig({
     ...(options.structuredParserConfig ?? {}),
@@ -313,6 +338,41 @@ function createSmallWindowConclusionGenerator(options = {}, env = process.env) {
   };
 }
 
+export function resolveSmallWindowCoachConfig(options = {}, env = process.env) {
+  return resolveCoachProviderConfig({
+    ...(options.coachConfig ?? {}),
+    mode: options.coachMode ?? options.coachConfig?.mode,
+    endpoint: options.coachEndpoint ?? options.coachConfig?.endpoint,
+    model: options.coachModel ?? options.coachConfig?.model,
+    apiKey: options.coachApiKey ?? options.coachConfig?.apiKey,
+    timeoutMs: options.coachTimeoutMs ?? options.coachConfig?.timeoutMs,
+    maxOutputTokens: options.coachMaxOutputTokens ?? options.coachConfig?.maxOutputTokens,
+    allowUnauthenticated: options.coachAllowUnauthenticated ?? options.coachConfig?.allowUnauthenticated
+  }, env);
+}
+
+function createSmallWindowCoachRuntime(options = {}, env = process.env) {
+  if (options.coachProvider) {
+    return {
+      coachProvider: options.coachProvider,
+      coachConfig: {
+        enabled: true,
+        mode: "on",
+        provider: "injected",
+        model: options.coachModel ?? options.coachProvider.model ?? "injected-model",
+        ...(options.coachConfig ?? {})
+      }
+    };
+  }
+  const config = resolveSmallWindowCoachConfig(options, env);
+  return {
+    coachProvider: createCoachProviderFromConfig(config, {
+      fetchImpl: options.coachFetch ?? options.conclusionFetch ?? options.llmFetch
+    }),
+    coachConfig: config
+  };
+}
+
 export function resolveSmallWindowSemanticConfig(options = {}, env = process.env) {
   const config = resolveEmbeddingProviderConfig({
     ...(options.embeddingConfig ?? {}),
@@ -326,8 +386,15 @@ export function resolveSmallWindowSemanticConfig(options = {}, env = process.env
     batchSize: options.embeddingBatchSize ?? options.embeddingConfig?.batchSize,
     allowUnauthenticated: options.embeddingAllowUnauthenticated ?? options.embeddingConfig?.allowUnauthenticated
   }, env);
+  const knowledgeMode = String(
+    options.knowledgeMode
+      ?? env.TFT_AGENT_KNOWLEDGE_MODE
+      ?? "off"
+  ).trim().toLowerCase();
   return {
     ...config,
+    knowledgeEnabled: ["1", "true", "on", "enabled", "auto"].includes(knowledgeMode),
+    knowledgeMode,
     indexPath: resolve(String(options.semanticIndexPath ?? env.TFT_AGENT_SEMANTIC_INDEX_PATH ?? DEFAULT_SEMANTIC_INDEX_PATH)),
     locale: String(options.semanticLocale ?? env.TFT_AGENT_SEMANTIC_LOCALE ?? "zh-CN")
   };
@@ -342,16 +409,18 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     };
   }
   const config = resolveSmallWindowSemanticConfig(options, env);
-  if (!config.enabled) {
+  if (!config.enabled && !config.knowledgeEnabled) {
     return { semanticRetriever: null, semanticDocumentStore: null, semanticConfig: config };
   }
-  if (!config.configured && !options.embeddingProvider) {
+  if (config.enabled && !config.configured && !options.embeddingProvider) {
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
-  const provider = options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
-    fetchImpl: options.embeddingFetch
-  });
+  const provider = config.enabled
+    ? options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
+        fetchImpl: options.embeddingFetch
+      })
+    : null;
   return {
     semanticRetriever: createPersistentSemanticRetriever({ store, provider }),
     semanticDocumentStore: store,
@@ -1147,14 +1216,7 @@ async function serializeEntityCatalog(catalog, runtime, options = {}) {
   };
 }
 
-function normalizeRange(value, min, max, inverse = false) {
-  if (!Number.isFinite(value)) return 0;
-  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return 1;
-  const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
-  return inverse ? 1 - normalized : normalized;
-}
-
-function scoreStableItemRecommendations(entries, catalog) {
+function rankStableItemRecommendationsBySamples(entries, catalog) {
   const candidates = (entries ?? []).filter((entry) => {
     const item = catalog.itemByApiName.get(entry.apiName);
     return item?.category === "ordinary_completed"
@@ -1163,31 +1225,14 @@ function scoreStableItemRecommendations(entries, catalog) {
       && Number(entry.stats?.games) > 0
       && Number.isFinite(Number(entry.stats?.avgPlacement));
   });
-  if (!candidates.length) return [];
-  const observedMaxGames = Math.max(...candidates.map((entry) => Number(entry.stats.games)), 1);
-  const highFrequency = candidates.filter((entry) => Number(entry.stats.games) >= observedMaxGames * 0.10);
-  const stableCandidates = highFrequency.length >= 3 ? highFrequency : candidates;
-  const games = stableCandidates.map((entry) => Number(entry.stats.games));
-  const top4 = stableCandidates.map((entry) => Number(entry.stats.top4Rate)).filter(Number.isFinite);
-  const averages = stableCandidates.map((entry) => Number(entry.stats.avgPlacement)).filter(Number.isFinite);
-  const maxGames = Math.max(...games, 1);
-  const top4Min = Math.min(...top4);
-  const top4Max = Math.max(...top4);
-  const avgMin = Math.min(...averages);
-  const avgMax = Math.max(...averages);
-  const scored = stableCandidates.map((entry) => {
-    const frequencyScore = Math.log1p(Number(entry.stats.games)) / Math.log1p(maxGames);
-    const top4Score = normalizeRange(Number(entry.stats.top4Rate), top4Min, top4Max);
-    const placementScore = normalizeRange(Number(entry.stats.avgPlacement), avgMin, avgMax, true);
-    return {
-      entry,
-      score: 0.55 * frequencyScore + 0.30 * top4Score + 0.15 * placementScore,
-      acceptablePlacement: Number(entry.stats.avgPlacement) <= 4.5
-    };
-  });
-  const acceptable = scored.filter((entry) => entry.acceptablePlacement);
-  const pool = acceptable.length >= 3 ? acceptable : scored;
-  return pool.sort((a, b) => b.score - a.score || b.entry.stats.games - a.entry.stats.games).slice(0, 3);
+  return candidates
+    .sort((a, b) => (
+      Number(b.stats.games) - Number(a.stats.games)
+      || Number(a.stats.avgPlacement) - Number(b.stats.avgPlacement)
+      || Number(b.stats.top4Rate ?? 0) - Number(a.stats.top4Rate ?? 0)
+      || String(a.apiName).localeCompare(String(b.apiName))
+    ))
+    .slice(0, 3);
 }
 
 async function stableUnitItems(apiName, catalog, runtime, context = {}) {
@@ -1206,10 +1251,8 @@ async function stableUnitItems(apiName, catalog, runtime, context = {}) {
     useStructuredParser: "never",
     useSession: false
   });
-  return scoreStableItemRecommendations(result.itemRankings, catalog).map(({ entry, score }) => ({
-    ...serializeItemRanking(entry, catalog),
-    recommendationScore: Number(score.toFixed(3))
-  }));
+  return rankStableItemRecommendationsBySamples(result.itemRankings, catalog)
+    .map((entry) => serializeItemRanking(entry, catalog));
 }
 
 async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}) {
@@ -1264,7 +1307,7 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
       text: official ? `${name}：${official.ability?.name ?? "技能信息"}` : `${name}暂无官方棋子详情。`,
       answer: {
         summary: `${name}的属性、技能与稳定装备推荐`,
-        methodology: "先排除样本不足最高频装备 10% 的极低频候选，再按 55% 对数登场频率 + 30% 前四率 + 15% 平均名次计算稳定分，并优先保留平均名次不高于 4.5 的装备。"
+        methodology: "仅统计当前可获取的普通成装，并按样本数从高到低排序；平均名次与前四率仅用于展示，不参与排序。"
       },
       unit: {
         ...(official ?? { stats: {}, ability: {}, traitNames: [] }),
@@ -1719,6 +1762,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     })),
     decision: serializedComparison?.decision ?? result.localDecision ?? null,
     clarification: result.clarification ?? null,
+    conversation: result.conversation ?? null,
     query: {
       intent: query.intent,
       unit: query.unit,
@@ -1858,6 +1902,7 @@ function serializeCompRankings(result, meta = {}) {
     references: (result.references ?? []).map(serializeComp),
     trend: result.trend ?? null,
     query: result.query,
+    conversation: result.conversation ?? null,
     text: result.text ?? "",
     answer: result.analysis ? {
       summary: result.analysis.answer?.conclusion ?? result.text ?? "",
@@ -1996,8 +2041,13 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParserConfig: options.structuredParserConfig ?? null,
     turnDeltaProvider: options.turnDeltaProvider ?? options.semanticTaskProvider ?? null,
     conversationStateV2Mode: options.conversationStateV2Mode ?? "off",
+    turnInterpreterBudget: options.turnInterpreterBudget ?? DEFAULT_TURN_INTERPRETER_BUDGET,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
+    coachProvider: options.coachProvider ?? null,
+    coachConfig: options.coachConfig ?? { enabled: false, mode: "off", provider: "off" },
+    systemInteractionRouter: options.systemInteractionRouter ?? createSystemInteractionRouter(),
+    answerModeRouter: options.answerModeRouter ?? createAnswerModeRouter(),
     conclusionJobs: new Map(),
     conclusionJobTtlMs: Math.max(1000, Number(options.conclusionJobTtlMs ?? DEFAULT_CONCLUSION_JOB_TTL_MS)),
     conclusionJobLimit: Math.max(8, Number(options.conclusionJobLimit ?? DEFAULT_CONCLUSION_JOB_LIMIT)),
@@ -2056,15 +2106,18 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       })
       : null);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
+  const coachRuntime = createSmallWindowCoachRuntime(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
   const runtimeOptions = {
     ...options,
     ...requestTimeouts,
+    agentRunBudget: resolveSmallWindowAgentRunBudget(options, env),
     ...structuredParserRuntime,
     conversationStateV2Mode,
     turnDeltaProvider,
     ...conclusionRuntime,
+    ...coachRuntime,
     ...semanticRuntime,
     adminToken: options.adminToken ?? env.TFT_AGENT_ADMIN_TOKEN,
     queryEventRetentionDays: options.queryEventRetentionDays
@@ -2639,6 +2692,205 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   return payload;
 }
 
+async function retrieveCoachKnowledge(input, route, runtime, options = {}) {
+  if (!runtime.semanticRetriever || !route?.retrievalScopes?.length) {
+    return {
+      evidence: [],
+      warnings: ["knowledge_index_unavailable"],
+      currentStats: null
+    };
+  }
+  try {
+    const retriever = new KnowledgeRetriever({ retriever: runtime.semanticRetriever });
+    return retriever.searchWithStatus(input, {
+      scopes: route.retrievalScopes,
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      season: options.season ?? null,
+      patch: options.patch ?? null,
+      rank: options.rank ?? null,
+      timeWindow: options.timeWindow ?? null,
+      region: options.region ?? null,
+      locale: options.locale ?? "zh-CN",
+      topK: options.topK ?? 8,
+      minimumScore: options.minimumScore ?? 0.08
+    });
+  } catch (error) {
+    return {
+      evidence: [],
+      warnings: [`knowledge_retrieval_failed:${error?.code ?? error?.name ?? "error"}`],
+      currentStats: null
+    };
+  }
+}
+
+function assistantResponseFromCoach(result) {
+  return {
+    status: result.status,
+    text: result.text,
+    citations: result.citations ?? [],
+    warnings: result.warnings ?? [],
+    model: result.model ?? null,
+    latencyMs: result.latencyMs ?? 0,
+    content: result.content
+  };
+}
+
+function localizeCoachStructuredResult(result, catalog) {
+  return {
+    ...result,
+    rankedBuilds: (result?.rankedBuilds ?? []).map((record) => ({
+      ...record,
+      items: (record.items ?? []).map((value) => ({
+        apiName: value?.apiName ?? value,
+        name: itemName(value?.apiName ?? value, catalog)
+      }))
+    })),
+    itemRankings: (result?.itemRankings ?? []).map((record) => ({
+      ...record,
+      name: itemName(record?.apiName ?? record?.item ?? record, catalog)
+    }))
+  };
+}
+
+function serializeSystemInteraction(result, options = {}) {
+  const outOfDomain = result.interactionType === "out_of_domain";
+  return {
+    ok: true,
+    type: "system_interaction",
+    handled: true,
+    interactionType: result.interactionType,
+    answerMode: result.answerMode,
+    mode: result.answerMode,
+    text: result.answer,
+    answer: {
+      summary: result.answer,
+      generatedConclusion: {
+        status: "skipped",
+        reason: "deterministic_system_interaction",
+        model: null
+      }
+    },
+    systemInteraction: result,
+    showEvidencePanel: false,
+    conversation: {
+      mode: options.conversationStateV2Mode ?? "off",
+      stateVersion: "conversation-state.v2",
+      delta: null,
+      resolution: null,
+      stateMutation: "none"
+    },
+    agent: {
+      status: outOfDomain
+        ? createAgentStatus({
+          understandingStatus: "out_of_domain",
+          capabilityStatus: "unsupported",
+          planningStatus: "not_planned",
+          executionStatus: "pending",
+          evidenceStatus: "insufficient",
+          finalOutcome: "refused"
+        })
+        : createAgentStatus({
+          understandingStatus: "understood",
+          capabilityStatus: "supported",
+          planningStatus: "planned",
+          executionStatus: "completed",
+          evidenceStatus: "sufficient",
+          finalOutcome: "answered"
+        }),
+      route: {
+        schemaVersion: result.schemaVersion,
+        selectedPath: "system_interaction",
+        route: result.interactionType,
+        fallbackReason: null
+      },
+      executionPlan: null,
+      executionTrace: null,
+      shadowComparison: null,
+      failureStage: null,
+      metrics: null
+    },
+    meta: {
+      deterministic: true,
+      llmUsed: false,
+      metatftUsed: false,
+      retrievalUsed: false
+    },
+    ...(options.seasonContext ? { seasonContext: options.seasonContext } : {}),
+    ...conversationMeta({ conversationId: options.conversationId })
+  };
+}
+
+function serializeKnowledgeAnswer({
+  input,
+  route,
+  coach,
+  knowledge,
+  parsed,
+  preferences
+}) {
+  const aiGeneratedKnowledgeEvidenceCount = (knowledge.evidence ?? []).filter(
+    (record) => record?.aiGenerated === true
+      || record?.contentOrigin === "ai_generated_transcript_summary"
+  ).length;
+  const query = {
+    intent: "knowledge_question",
+    requestedIntent: parsed?.intent ?? null,
+    entities: {
+      unit: parsed?.unit ?? null,
+      items: parsed?.ownedItems ?? []
+    },
+    constraints: {
+      patch: preferences?.effectivePatch ?? preferences?.patch ?? null,
+      locale: "zh-CN"
+    },
+    warnings: [...new Set([...(knowledge.warnings ?? []), ...(coach.warnings ?? [])])]
+  };
+  return {
+    ok: true,
+    type: "coach_answer",
+    mode: route.mode,
+    text: coach.text,
+    answer: {
+      summary: coach.text,
+      generatedConclusion: {
+        status: "skipped",
+        reason: "coach_answer_service",
+        model: coach.model ?? null
+      }
+    },
+    assistantResponse: assistantResponseFromCoach(coach),
+    answerModeRoute: route,
+    query,
+    queryResult: coach.evidenceBundle?.queryResult ?? {
+      resultType: null,
+      source: null,
+      candidates: []
+    },
+    knowledgeEvidence: knowledge.evidence,
+    currentStatsScope: knowledge.currentStats ?? null,
+    evidenceBundle: coach.evidenceBundle,
+    source: {
+      provider: "knowledge_index",
+      patch: query.constraints.patch,
+      updatedAt: null,
+      risk: knowledge.evidence.length
+        ? aiGeneratedKnowledgeEvidenceCount
+          ? "攻略摘要由 AI 从视频字幕生成，未经人工复核；需核对原视频，并结合版本和适用条件。"
+          : "攻略属于创作者观点，需结合版本和适用条件。"
+        : "未检索到足够相关的攻略知识。"
+    },
+    meta: {
+      input,
+      knowledgeEvidenceCount: knowledge.evidence.length,
+      aiGeneratedContent: aiGeneratedKnowledgeEvidenceCount > 0,
+      aiGeneratedKnowledgeEvidenceCount,
+      aiContentDisclosure: aiGeneratedKnowledgeEvidenceCount
+        ? "YouTube 攻略摘要由 AI 从字幕提取和概括，未经人工复核。"
+        : null
+    }
+  };
+}
+
 async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const startedAt = Date.now();
   const input = String(body?.input ?? "").trim();
@@ -2670,6 +2922,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         context.accessService,
         context.visitor,
         reserveLlmUseForRequest
+      ),
+      coachProvider: quotaWrappedCallable(
+        runtime.coachProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
       )
     }
     : runtime;
@@ -2681,6 +2939,34 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         error: "请输入查询内容"
       }
     };
+  }
+
+  const systemInteraction = requestRuntime.systemInteractionRouter.route({ input });
+  if (systemInteraction.handled) {
+    const respond = async () => {
+      const interactionSeasonContext = runtime.seasonContextService.resolveForQuery(
+        body?.seasonContextId
+      );
+      const payload = serializeSystemInteraction(systemInteraction, {
+        conversationId,
+        conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
+        seasonContext: runtime.seasonContextService.publicRecord(interactionSeasonContext)
+      });
+      await persistQueryResponse(payload, runtime, {
+        scope,
+        conversationId,
+        input,
+        startedAt,
+        runId: context.agentRun?.runId ?? null
+      });
+      if (context.accessService && context.visitor) {
+        payload.access = context.accessService.publicStatus(context.visitor);
+      }
+      return { statusCode: 200, payload };
+    };
+    return context.agentRun?.stage
+      ? context.agentRun.stage("responding", respond)
+      : respond();
   }
 
   let seasonContext;
@@ -2782,6 +3068,63 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
   }
   const parsedForIntent = parseQuery(input, { catalog });
+  const answerModeRoute = requestRuntime.answerModeRouter.route({
+    input,
+    parsed: parsedForIntent
+  });
+  const currentStatsRank = [
+    ...(parsedForIntent.rankFilter ?? preferences.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter)
+  ].map((rank) => String(rank).toUpperCase()).sort().join(",");
+  const currentStatsDays = Number(
+    parsedForIntent.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
+  );
+  const coachKnowledgeOptions = {
+    seasonContextId: seasonContext.id,
+    season: seasonContext.id,
+    patch: seasonContext.currentPatch ?? seasonContext.effectivePatch,
+    rank: currentStatsRank,
+    timeWindow: `${currentStatsDays}d`,
+    region: String(body.region ?? "global").toLowerCase(),
+    locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
+  };
+  const coachKnowledgePromise = answerModeRoute.mode === "structured"
+    ? Promise.resolve({ evidence: [], warnings: [], currentStats: null })
+    : retrieveCoachKnowledge(input, answerModeRoute, requestRuntime, coachKnowledgeOptions);
+  if (answerModeRoute.mode === "rag") {
+    const knowledge = await coachKnowledgePromise;
+    const coach = await createHybridAnswerService({
+      provider: requestRuntime.coachProvider
+    }).answer({
+      question: input,
+      mode: "rag",
+      query: {
+        intent: "knowledge_question",
+        requestedIntent: parsedForIntent.intent ?? null,
+        constraints: {
+          patch: seasonContext.effectivePatch,
+          locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
+        }
+      },
+      knowledgeEvidence: knowledge.evidence,
+      warnings: knowledge.warnings
+    });
+    const payload = serializeKnowledgeAnswer({
+      input,
+      route: answerModeRoute,
+      coach,
+      knowledge,
+      parsed: parsedForIntent,
+      preferences
+    });
+    payload.meta = {
+      ...payload.meta,
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return completeResponse(payload);
+  }
   const compEntityClarification = serializeCompRankingEntityClarification(parsedForIntent, catalog);
   if (compEntityClarification) {
     compEntityClarification.meta = {
@@ -2809,12 +3152,14 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     cacheStore: runtime.cacheStore,
     preferences,
     explicitPreferences,
-    bypassQueryCache: Boolean(body.refresh),
+    bypassQueryCache: Boolean(body.refresh)
+      || requestRuntime.conversationStateV2Mode === "on",
     bypassDefaultContextCache: Boolean(body.refresh),
     structuredParser: requestRuntime.structuredParser,
     useStructuredParser: structuredParserMode,
     turnDeltaProvider: requestRuntime.turnDeltaProvider,
     conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
+    turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
     semanticRetriever: requestRuntime.semanticRetriever,
     semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
     seasonContextId: seasonContext.id,
@@ -2829,7 +3174,35 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     abortSignal: context.signal
   });
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
-  if (warnings) result.query.warnings = warnings;
+  if (warnings && result.query && typeof result.query === "object") {
+    result.query.warnings = warnings;
+  }
+  let coachKnowledge = answerModeRoute.mode === "hybrid"
+    ? await coachKnowledgePromise
+    : { evidence: [], warnings: [], currentStats: null };
+  if (
+    answerModeRoute.mode === "hybrid"
+    && answerModeRoute.retrievalScopes.includes("current_stats")
+  ) {
+    const finalRank = [
+      ...(result.query?.rankFilter ?? preferences.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter)
+    ].map((rank) => String(rank).toUpperCase()).sort().join(",");
+    const finalDays = Number(
+      result.query?.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
+    );
+    if (finalRank !== currentStatsRank || finalDays !== currentStatsDays) {
+      coachKnowledge = await retrieveCoachKnowledge(
+        input,
+        answerModeRoute,
+        requestRuntime,
+        {
+          ...coachKnowledgeOptions,
+          rank: finalRank,
+          timeWindow: `${finalDays}d`
+        }
+      );
+    }
+  }
   let conclusionItemDetails = runtime.officialItemDetails;
   let conclusionEntityDetails = runtime.officialEntityDetails;
   const equipmentConclusion = [
@@ -2915,21 +3288,49 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     officialItemDetails: conclusionItemDetails,
     officialEntityDetails: conclusionEntityDetails
   };
-  const canDeferConclusion = body?.deferConclusion === true
+  const canDeferConclusion = answerModeRoute.mode !== "hybrid"
+    && body?.deferConclusion === true
     && conclusionOptions.requestEnabled
     && requestRuntime.conclusionGeneratorConfig?.enabled
     && requestRuntime.conclusionProvider;
-  const generatedConclusion = canDeferConclusion
-    ? pendingConclusion(
-      createConclusionJob(runtime, conclusionOptions, scope),
-      requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
-    )
-    : context.agentRun
-      ? await context.agentRun.stage(
-        "generating_conclusion",
-        () => generateEvidenceBackedConclusion(conclusionOptions)
+  let coachAnswer = null;
+  let generatedConclusion;
+  if (answerModeRoute.mode === "hybrid") {
+    const generateCoachAnswer = () => createHybridAnswerService({
+      provider: requestRuntime.coachProvider
+    }).answer({
+      question: input,
+      mode: "hybrid",
+      query: result.query,
+      structuredResult: localizeCoachStructuredResult(result, catalog),
+      knowledgeEvidence: coachKnowledge.evidence,
+      warnings: [
+        ...(result.query?.warnings ?? []),
+        ...coachKnowledge.warnings
+      ]
+    });
+    coachAnswer = context.agentRun
+      ? await context.agentRun.stage("generating_conclusion", generateCoachAnswer)
+      : await generateCoachAnswer();
+    generatedConclusion = {
+      status: "skipped",
+      reason: "coach_answer_service",
+      model: coachAnswer.model ?? null,
+      latencyMs: coachAnswer.latencyMs ?? 0
+    };
+  } else {
+    generatedConclusion = canDeferConclusion
+      ? pendingConclusion(
+        createConclusionJob(runtime, conclusionOptions, scope),
+        requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
       )
-      : await generateEvidenceBackedConclusion(conclusionOptions);
+      : context.agentRun
+        ? await context.agentRun.stage(
+          "generating_conclusion",
+          () => generateEvidenceBackedConclusion(conclusionOptions)
+        )
+        : await generateEvidenceBackedConclusion(conclusionOptions);
+  }
   const responseEvidenceValidation = context.agentRun && !context.agentRun.terminal
     ? await context.agentRun.stage("validating", async () => {
       const conclusionUsesEvidence = generatedConclusion?.status !== "generated"
@@ -2957,6 +3358,15 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     generatedConclusion,
     evidenceValidation: responseEvidenceValidation
   };
+  payload.mode = answerModeRoute.mode;
+  payload.answerModeRoute = answerModeRoute;
+  if (coachAnswer) {
+    payload.assistantResponse = assistantResponseFromCoach(coachAnswer);
+    payload.knowledgeEvidence = coachKnowledge.evidence;
+    payload.currentStatsScope = coachKnowledge.currentStats ?? null;
+    payload.evidenceBundle = coachAnswer.evidenceBundle;
+    payload.queryResult = coachAnswer.evidenceBundle?.queryResult ?? null;
+  }
   payload.agent = {
     status: result.agentStatus ?? null,
     route: result.agentRouting ? {

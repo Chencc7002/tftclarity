@@ -79,15 +79,21 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /id: "comp-rankings"/);
   assert.match(appJs, /id: "comp-trends"/);
   assert.match(appJs, /id: "hero-comps"/);
-  assert.match(appJs, /inputTemplateKey: "quickTaskBuildTemplate"/);
-  assert.match(appJs, /inputTemplateKey: "quickTaskCompletionTemplate"/);
-  assert.match(appJs, /inputTemplateKey: "quickTaskPerformanceTemplate"/);
-  assert.match(appJs, /inputTemplateKey: "quickTaskComparisonTemplate"/);
-  assert.match(appJs, /inputTemplateKey: "quickTaskCarriersTemplate"/);
-  assert.match(appJs, /queryInput\.setSelectionRange/);
-  assert.match(appJs, /queryInput\.reportValidity/);
-  assert.match(appJs, /unresolvedQuickTaskPlaceholder/);
-  assert.match(i18n, /completeQuickTaskFields/);
+  assert.match(appJs, /formFields: \["champion"\]/);
+  assert.match(appJs, /queryTemplateKey: "quickTaskBuildTemplate"/);
+  assert.match(appJs, /formFields: \["champion", "item1", "item2Optional"\]/);
+  assert.match(appJs, /optionalQueryTemplateKey: "quickTaskCompletionWithSecondTemplate"/);
+  assert.match(appJs, /formFields: \["item", "champion"\]/);
+  assert.match(appJs, /formFields: \["champion", "comparisonItem1", "item2"\]/);
+  assert.match(appJs, /queryTemplateKey: "quickTaskCarriersTemplate"/);
+  assert.match(indexHtml, /id="quick-task-form"/);
+  assert.match(indexHtml, /id="quick-task-fields"/);
+  assert.match(appJs, /function openQuickTaskForm\(task\)/);
+  assert.match(appJs, /function submitQuickTaskForm\(\)/);
+  assert.doesNotMatch(appJs, /unresolvedQuickTaskPlaceholder/);
+  assert.doesNotMatch(i18n, /【英雄名称】|\[champion name\]/);
+  assert.match(i18n, /quickTaskCompletionTitle: "条件查询"/);
+  assert.match(i18n, /quickTaskCarriersTitle: "神器\/装备定阵"/);
   assert.doesNotMatch(i18n, /霞|Xayah/);
   assert.match(appJs, /quickTasksHtml/);
   assert.match(appJs, /button\[data-quick-category\]/);
@@ -105,6 +111,7 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(styles, /\.quick-category-card/);
   assert.match(styles, /\.quick-task-panel/);
   assert.match(styles, /\.quick-task-card/);
+  assert.match(styles, /\.quick-task-form/);
   assert.match(styles, /min-height: 54px/);
   assert.match(styles, /var\(--wallpaper-accent\)/);
   assert.match(styles, /\.composer-actions \.send-button[\s\S]*var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
@@ -112,6 +119,18 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("assistant messages use the Tangyuan penguin brand mark", () => {
+  assert.match(indexHtml, /class="assistant-avatar"[^>]*><img src="\/favicon\.png\?v=20260727"/u);
+  assert.match(conversation, /class="assistant-avatar"[^>]*><img src="\/favicon\.png\?v=20260727"/u);
+  assert.match(styles, /\.assistant-avatar img \{/u);
+});
+
+test("mobile result toolbar uses one consistent control system", () => {
+  assert.match(indexHtml, /class="result-heading-main"/u);
+  assert.match(styles, /\.language-toggle\.top-language-toggle \{ display: none; \}/u);
+  assert.match(styles, /\.mobile-result-back, \.result-heading \.subtle-button \{[^}]*height: 38px[^}]*border-radius: 11px/u);
 });
 
 test("composer keeps one refresh action and a distinct accessible clear action", () => {
@@ -199,6 +218,16 @@ test("small-window clarification renders actionable entity candidates", () => {
   assert.match(styles, /\.entity-candidates/);
   assert.match(styles, /\.candidate-row/);
   assert.match(styles, /\.candidate-actions/);
+});
+
+test("system interactions render inline without a details button or evidence panel", () => {
+  assert.match(appJs, /function systemInteractionAnswerHtml\(data\)/);
+  assert.match(appJs, /data\?\.type === "system_interaction"/);
+  assert.match(appJs, /function renderSystemInteractionResult\(data\)/);
+  assert.match(appJs, /if \(data\.type === "system_interaction"\) renderSystemInteractionResult\(data\)/);
+  assert.match(styles, /\.system-interaction-answer/);
+  assert.match(styles, /\.system-interaction-card/);
+  assert.match(appJs, /if \(!evidence\.length\) return ""/);
 });
 
 test("responsive layout supports three, two, single, and compact modes without a 460px cap", () => {
@@ -432,7 +461,7 @@ test("comp units are keyboard-accessible shortcuts for explicit high-sample buil
 test("small-window exposes current-set entity catalogs with direct detail navigation", () => {
   assert.match(appJs, /id: "unit-catalog"/);
   assert.match(appJs, /id: "trait-catalog"/);
-  assert.match(appJs, /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.inputTemplateKey/);
+  assert.match(appJs, /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.formFields/);
   assert.match(appJs, /data-entity-catalog/);
   assert.match(appJs, /data-entity-detail/);
   assert.match(appJs, /\/api\/entity-details/);
@@ -441,6 +470,10 @@ test("small-window exposes current-set entity catalogs with direct detail naviga
   assert.match(styles, /\.entity-catalog-grid/);
   assert.match(styles, /\.entity-catalog-card/);
   assert.match(styles, /\.entity-catalog-empty\[hidden\]\s*\{\s*display:\s*none/);
+  assert.match(styles, /\.sr-only\s*\{[\s\S]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/);
+  assert.match(appJs, /class="entity-catalog-control entity-catalog-search"/);
+  assert.match(appJs, /class="entity-catalog-control entity-catalog-filter"/);
+  assert.match(styles, /\.entity-catalog-controls select\s*\{[\s\S]*appearance:\s*none/);
   assert.match(i18n, /unitCatalog:/);
   assert.match(i18n, /traitCatalog:/);
   assert.match(i18n, /backToCatalog:/);

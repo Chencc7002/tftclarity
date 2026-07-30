@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import {
   buildOfficialTftEntityDetails,
   decodeOfficialTftHtml,
-  fetchOfficialTftEntityDetails
+  fetchOfficialTftEntityDetails,
+  inspectOfficialTftTokens
 } from "../src/index.js";
 
 const chess = {
@@ -95,6 +96,18 @@ test("official trait details select the static default branch instead of leaking
     effect: "(2) 【暗星】创造【黑洞】，【黑洞】会吞噬最大生命值低于8%的敌人。"
   }]);
   assert.doesNotMatch(darkStar.levels[0].effect, /TFTUnitProperty|ShowIf|@/u);
+});
+
+test("official text replaces known templates and exposes unavailable runtime values as quality metadata", () => {
+  const raw = "进入{{TFT17_SpaceGroove_TheGroove}}，获得%i:set14AmpIcon%，当前值@TFTUnitProperty.:Value@";
+  assert.equal(
+    decodeOfficialTftHtml(raw),
+    "进入律动状态，获得[官方运行时增幅值]，当前值[局内动态值]"
+  );
+  const tokens = inspectOfficialTftTokens(raw);
+  assert.equal(tokens.length, 3);
+  assert.equal(tokens.filter((token) => token.resolution === "official_value_unavailable").length, 1);
+  assert.equal(tokens.filter((token) => token.resolution === "runtime_only").length, 1);
 });
 
 test("official entity details fetch all three official catalogs", async () => {

@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tftclarity.local/schemas/knowledge-document.v1.json",
+  "title": "KnowledgeDocument",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "id", "documentType", "title", "text", "metadata"],
+  "properties": {
+    "schemaVersion": { "const": "knowledge_document.v1" },
+    "id": { "type": "string", "minLength": 1 },
+    "documentType": {
+      "enum": [
+        "meta_snapshot",
+        "unit_stats",
+        "comp_stats",
+        "item_stats",
+        "trend_snapshot",
+        "video_guide",
+        "mechanism_knowledge",
+        "patch_note",
+        "static_game_knowledge"
+      ]
+    },
+    "title": { "type": "string", "minLength": 1 },
+    "text": { "type": "string", "minLength": 1 },
+    "metadata": {
+      "type": "object",
+      "required": ["source", "locale", "topics", "claimType", "conditions", "namespace"],
+      "properties": {
+        "source": { "type": "string", "minLength": 1 },
+        "sourceId": { "type": ["string", "null"] },
+        "sourceTitle": { "type": ["string", "null"] },
+        "author": { "type": ["string", "null"] },
+        "publishedAt": { "type": ["string", "null"], "format": "date" },
+        "season": { "type": ["string", "null"] },
+        "patch": { "type": ["string", "null"] },
+        "rank": { "type": ["string", "null"] },
+        "timeWindow": { "type": ["string", "null"] },
+        "region": { "type": ["string", "null"] },
+        "locale": { "type": "string" },
+        "topics": { "type": "array", "items": { "type": "string" } },
+        "timestampStart": { "type": ["number", "null"], "minimum": 0 },
+        "timestampEnd": { "type": ["number", "null"], "minimum": 0 },
+        "claimType": {
+          "enum": [
+            "statistics",
+            "official_fact",
+            "mechanism",
+            "creator_advice",
+            "strategic_advice",
+            "speculation"
+          ]
+        },
+        "conditions": { "type": "array", "items": { "type": "string" } },
+        "sourceUrl": { "type": ["string", "null"], "format": "uri" },
+        "generatedAt": { "type": "string", "format": "date-time" },
+        "expiresAt": { "type": ["string", "null"], "format": "date-time" },
+        "videoVersion": { "type": ["string", "null"] },
+        "transcriptHash": { "type": ["string", "null"] },
+        "segmentId": { "type": ["string", "null"] },
+        "segmentIndex": { "type": ["integer", "null"], "minimum": 0 },
+        "segmentStatus": { "type": ["string", "null"] },
+        "ingestionRunId": { "type": ["string", "null"] },
+        "ingestionStatus": {
+          "type": ["string", "null"],
+          "enum": ["success", "partial_success", null]
+        },
+        "extractionModel": { "type": ["string", "null"] },
+        "extractionPromptVersion": { "type": ["string", "null"] },
+        "aiGenerated": { "type": ["boolean", "null"] },
+        "contentOrigin": {
+          "type": ["string", "null"],
+          "enum": ["ai_generated_transcript_summary", null]
+        },
+        "reviewStatus": {
+          "type": ["string", "null"],
+          "enum": ["ai_generated_unreviewed", "human_reviewed", null]
+        },
+        "contentDisclosure": { "type": ["string", "null"], "minLength": 1 },
+        "isCurrentVersion": { "type": ["boolean", "null"] },
+        "namespace": { "type": "string", "minLength": 1 }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "documentType": { "const": "video_guide" } },
+        "required": ["documentType"]
+      },
+      "then": {
+        "properties": {
+          "metadata": {
+            "required": [
+              "source",
+              "sourceId",
+              "sourceTitle",
+              "author",
+              "publishedAt",
+              "season",
+              "patch",
+              "locale",
+              "topics",
+              "timestampStart",
+              "claimType",
+              "conditions",
+              "sourceUrl",
+              "namespace",
+              "videoVersion",
+              "transcriptHash",
+              "segmentId",
+              "segmentIndex",
+              "segmentStatus",
+              "ingestionStatus",
+              "aiGenerated",
+              "contentOrigin",
+              "reviewStatus",
+              "contentDisclosure",
+              "isCurrentVersion"
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

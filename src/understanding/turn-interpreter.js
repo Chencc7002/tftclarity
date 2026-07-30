@@ -110,11 +110,11 @@ function clarifiableFirstTurnFrame(frame) {
 }
 
 function deterministicFallbackDelta(frame, state) {
-  if (!materialFrame(frame) && !clarifiableFirstTurnFrame(frame)) {
-    return unknownTurnDelta("provider_unavailable");
-  }
   if (state?.activeTask?.taskFrame || state?.pendingClarification) {
     return unknownTurnDelta("provider_required_for_contextual_turn");
+  }
+  if (!materialFrame(frame) && !clarifiableFirstTurnFrame(frame)) {
+    return unknownTurnDelta("provider_unavailable");
   }
   if (!state?.activeTask?.taskFrame) {
     return createTurnDelta({
@@ -340,7 +340,15 @@ export async function interpretTurn({
   if (rawDelta) {
     delta = createTurnDelta(rawDelta);
   } else {
-    const explicit = await explicitFrameForFallback(currentMessage, options);
+    const hasConversationContext = Boolean(
+      conversationState?.activeTask?.taskFrame
+      || conversationState?.pendingClarification
+    );
+    const explicit = options.explicitTaskFrame
+      ? createTaskFrame(options.explicitTaskFrame)
+      : typeof semanticProvider !== "function" || !hasConversationContext
+        ? await explicitFrameForFallback(currentMessage, options)
+        : null;
     delta = deterministicFallbackDelta(explicit, conversationState);
   }
   delta = await linkTurnDeltaReferences(delta, options);

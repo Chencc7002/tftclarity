@@ -89,6 +89,50 @@ const runtime = createSmallWindowRuntime({
   catalog: visualCatalog,
   cacheStore,
   fetchItems: false,
+  semanticConfig: { enabled: true, provider: "visual-fixture", locale: "zh-CN" },
+  semanticRetriever: {
+    async search(_query, options = {}) {
+      if (!(options.documentTypes ?? []).includes("video_guide")) return [];
+      return [{
+        id: "youtube:abc123xyz00:item_priority:1",
+        seasonContextId: options.seasonContextId ?? "set17-live",
+        documentType: "video_guide",
+        score: 0.94,
+        patch: options.patch ?? "17.7",
+        locale: "zh-CN",
+        source: "youtube",
+        metadata: {
+          source: "youtube",
+          sourceId: "abc123xyz00",
+          sourceTitle: "霞完整攻略：装备、过渡与站位",
+          author: "测试攻略频道",
+          publishedAt: "2026-07-20",
+          season: options.seasonContextId ?? "set17-live",
+          patch: options.patch ?? "17.7",
+          timestampStart: 332,
+          timestampEnd: 351,
+          claimType: "creator_advice",
+          content: "作者建议在没有其他稳定攻速来源时优先保证羊刀；如果装备散件不支持，则先做可立即提升战力的成装。",
+          conditions: ["没有其他稳定攻速来源", "散件允许优先合成羊刀"],
+          topics: ["霞", "羊刀", "装备"],
+          sourceUrl: "https://www.youtube.com/watch?v=abc123xyz00",
+          namespace: "video_guides",
+          videoVersion: "version-001",
+          transcriptHash: "transcript-hash-001",
+          segmentId: "version-001:0000:segment",
+          segmentIndex: 0,
+          segmentStatus: "success",
+          ingestionStatus: "success",
+          aiGenerated: true,
+          contentOrigin: "ai_generated_transcript_summary",
+          reviewStatus: "ai_generated_unreviewed",
+          contentDisclosure: "AI-generated from the transcript; not human-reviewed.",
+          extractionModel: "visual-fixture-model",
+          isCurrentVersion: true
+        }
+      }];
+    }
+  },
   conclusionProvider: async ({ evidence }) => {
     const primary = evidence.recommendations?.[0];
     const games = primary?.stats?.games ?? 0;

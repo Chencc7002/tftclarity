@@ -1,21 +1,12 @@
+import {
+  decodeOfficialTftHtml,
+  inspectOfficialTftTokens
+} from "./official-entity-details.js";
+
 export const OFFICIAL_TFT_EQUIPMENT_URL = "https://game.gtimg.cn/images/lol/act/img/tft/js/equip.js";
 
 function compact(values) {
   return [...new Set(values.filter(Boolean))];
-}
-
-function decodeHtml(value) {
-  return String(value ?? "")
-    .replace(/<br\s*\/?>(\r?\n)?/gi, "\n")
-    .replace(/<li>/gi, "\n• ")
-    .replace(/<\/li>/gi, "")
-    .replace(/<[^>]+>/g, "")
-    .replace(/&nbsp;/gi, " ")
-    .replace(/&amp;/gi, "&")
-    .replace(/&lt;/gi, "<")
-    .replace(/&gt;/gi, ">")
-    .replace(/\n{3,}/g, "\n\n")
-    .trim();
 }
 
 function rowsFromPayload(payload) {
@@ -56,11 +47,15 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
         iconUrl: component.imagePath ?? null
       }));
     const apiName = String(row.englishName);
+    const effectTokens = inspectOfficialTftTokens(row.effect);
     byApiName.set(apiName, {
       apiName,
       equipId: String(row.equipId),
       name: row.name ?? apiName,
-      effect: decodeHtml(row.effect),
+      effect: decodeOfficialTftHtml(row.effect),
+      sourceTokens: effectTokens,
+      unresolvedTokens: effectTokens.filter((token) => token.resolution !== "mapped_label"),
+      numericFormulaComplete: effectTokens.every((token) => token.resolution !== "official_value_unavailable"),
       keywords: compact(String(row.keywords ?? "").split(/[;,，、]/).map((value) => value.trim())),
       recipe,
       craftable: recipe.length > 0,

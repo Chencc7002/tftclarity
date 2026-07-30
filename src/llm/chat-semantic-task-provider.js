@@ -8,7 +8,7 @@ import {
   validateTurnDelta
 } from "../understanding/turn-delta.js";
 
-export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v9";
+export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v10";
 
 const RESPONSE_CONTRACT = [
   "Return exactly one JSON object matching task-frame.v1. Do not use Markdown.",
@@ -45,6 +45,10 @@ const TURN_DELTA_RESPONSE_CONTRACT = [
   'schemaVersion must be "turn-delta.v1".',
   "dialogueAct is one of start_task, continue, request_more, request_less, next_page, previous_page, modify, compare, switch_task, confirm, reject, cancel, clarify, unknown.",
   "taskRelation is one of new, continue, modify, switch, return, cancel, unknown.",
+  "When there is no active task and the current message is a self-contained TFT request, use dialogueAct start_task with taskRelation new and a complete explicitTaskFrame. Do not use unknown merely because there is no prior task.",
+  "Classify by the requested object: composition or lineup recommendations and rankings are rank tasks with goal comp_rankings. Strategy or playstyle qualifiers belong in constraints and must not turn a composition task into a champion or item task.",
+  "A performance comparison between multiple items for one champion is a compare task with goal unit_item_comparison: put the champion in subjects and the compared items in constraints.comparisonItems.",
+  "When entities and task semantics are clear but their requested operation or relation is ambiguous, keep those semantics in explicitTaskFrame while marking the relation unknown so a clarification answer can resume without losing them.",
   "Use request_more for an additional batch even when lastResultSummary.exhausted is true; do not change tasks because a result is exhausted.",
   "For another batch or a different batch, set presentation.pageDirection to next and presentation.avoidSeen to true.",
   "new and switch require one complete task-frame.v1 explicitTaskFrame. For a purely elliptical continuation explicitTaskFrame may be null.",

@@ -31,6 +31,7 @@ import {
   normalizeSmallWindowPreferences,
   normalizeSmallWindowCacheStoreType,
   prewarmSmallWindowCatalog,
+  resolveSmallWindowAgentRunBudget,
   resolveSmallWindowCacheOptions,
   resolveSmallWindowRequestTimeouts,
   startSmallWindowServer
@@ -230,6 +231,28 @@ test("resolves bounded small-window request timeouts from options and environmen
   });
 });
 
+test("resolves the outer Agent run deadline from options and environment", () => {
+  assert.deepEqual(resolveSmallWindowAgentRunBudget({}, {}), {
+    deadlineMs: 10000
+  });
+  assert.deepEqual(resolveSmallWindowAgentRunBudget({}, {
+    TFT_AGENT_RUN_DEADLINE_MS: "60000"
+  }), {
+    deadlineMs: 60000
+  });
+  assert.deepEqual(resolveSmallWindowAgentRunBudget({
+    agentRunBudget: {
+      deadlineMs: 45000,
+      maxSteps: 20
+    }
+  }, {
+    TFT_AGENT_RUN_DEADLINE_MS: "60000"
+  }), {
+    deadlineMs: 45000,
+    maxSteps: 20
+  });
+});
+
 test("query snapshots default to 30 days and honor an explicit override", async () => {
   const baseOptions = {
     cacheStore: new MemoryCacheStore(),
@@ -417,6 +440,60 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(localized.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
 });
 
+test("controlled conversation results tolerate catalog warnings without a query object", async () => {
+  let receivedTurnInterpreterBudget = null;
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    recommendForInputImpl: async (_input, options) => {
+      receivedTurnInterpreterBudget = options.turnInterpreterBudget;
+      return {
+        type: "conversation_exhausted",
+        parsed: null,
+        query: null,
+        validation: { valid: true, errors: [], warnings: [] },
+        clarification: null,
+        filteredBuilds: [],
+        rankedBuilds: [],
+        results: [],
+        text: "当前条件下的结果已全部展示（3/3）。",
+        conversation: {
+          mode: "on",
+          resolution: {
+            decision: "exhausted",
+            resolvedTaskFrame: {
+              goal: "comp_rankings",
+              constraints: { strategy: "reroll" }
+            }
+          }
+        }
+      };
+    }
+  });
+  const catalogState = await loadRuntimeCatalog(runtime, {});
+  catalogState.warning = "fixture catalog warning";
+
+  const { statusCode, payload } = await handleRecommendRequest({
+    input: "可以多推荐几套吗",
+    conversationId: "conversation-warning-exhausted"
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.type, "conversation_exhausted");
+  assert.equal(payload.meta.catalogWarning, "fixture catalog warning");
+  assert.match(payload.text, /结果已全部展示/u);
+  assert.equal(payload.conversation.resolution.decision, "exhausted");
+  assert.equal(payload.conversation.resolution.resolvedTaskFrame.goal, "comp_rankings");
+  assert.deepEqual(receivedTurnInterpreterBudget, {
+    maxInputTokens: 1600,
+    maxOutputTokens: 900,
+    maxLatencyMs: 45000
+  });
+});
+
 test("handleRecommendRequest returns official item encyclopedia details before recommendation logic", async () => {
   const catalog = createCatalog({
     items: [{
@@ -506,9 +583,9 @@ test("handleRecommendRequest returns unit stats, ability, and three stable item 
     metaTFTClient: {},
     compsClient: {},
     recommendForInputImpl: async () => ({ itemRankings: [
-      ranking("TFT_Item_A", 800, 0.60, 3.8),
-      ranking("TFT_Item_B", 700, 0.58, 3.9),
-      ranking("TFT_Item_C", 500, 0.57, 4.0),
+      ranking("TFT_Item_A", 500, 0.72, 3.2),
+      ranking("TFT_Item_B", 800, 0.52, 4.3),
+      ranking("TFT_Item_C", 700, 0.57, 4.0),
       ranking("TFT_Item_D", 20, 0.75, 3.2)
     ] })
   });
@@ -520,13 +597,19 @@ test("handleRecommendRequest returns unit stats, ability, and three stable item 
   assert.equal(payload.unit.stats.health, 1100);
   assert.equal(payload.unit.ability.name, "灵能打击");
   assert.equal(payload.recommendedItems.length, 3);
-  assert.deepEqual(payload.recommendedItems.map((item) => item.name), ["装备甲", "装备乙", "装备丙"]);
-  assert.match(payload.answer.methodology, /登场频率/);
+  assert.deepEqual(payload.recommendedItems.map((item) => item.name), ["装备乙", "装备丙", "装备甲"]);
+  assert.deepEqual(payload.recommendedItems.map((item) => item.stats.games), [800, 700, 500]);
+  assert.match(payload.answer.methodology, /样本数从高到低/);
   assert.equal(payload.intentEnvelope.intent, "unit_details");
   assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "unit_details");
   assert.equal(payload.retrievalPlan.promptKey, null);
   assert.equal(payload.run.status, "completed");
   assert.equal(payload.run.toolCallCount, 1);
+
+  const suggestionResult = await handleRecommendRequest({ input: "剑圣技能描述（棋子资料）" }, runtime);
+  assert.equal(suggestionResult.statusCode, 200);
+  assert.equal(suggestionResult.payload.type, "unit_details");
+  assert.equal(suggestionResult.payload.unit.apiName, "TFT17_MasterYi");
 });
 
 test("handleRecommendRequest returns official trait effects and tiers", async () => {
@@ -565,6 +648,7 @@ test("handleRecommendRequest returns official trait effects and tiers", async ()
   assert.equal(payload.retrievalPlan.promptKey, null);
   assert.equal(payload.run.status, "completed");
   assert.equal(payload.run.toolCallCount, 1);
+
 });
 
 test("entity catalog returns current units and groups trait tiers", async () => {
@@ -2697,6 +2781,39 @@ test("refresh requests bypass query and default-context cache reads", async () =
 
   assert.equal(capturedOptions.bypassQueryCache, true);
   assert.equal(capturedOptions.bypassDefaultContextCache, true);
+});
+
+test("ConversationState v2 on mode never reuses a context-free query result cache", async () => {
+  let capturedOptions = null;
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    conversationStateV2Mode: "on",
+    recommendForInputImpl: async (_input, options) => {
+      capturedOptions = options;
+      return {
+        type: "clarification",
+        query: {},
+        clarification: {
+          needsClarification: true,
+          blocking: true,
+          question: "fixture"
+        },
+        text: "fixture"
+      };
+    }
+  });
+
+  await handleRecommendRequest({
+    input: "context-sensitive request",
+    conversationId: "v2-cache-isolation"
+  }, runtime);
+
+  assert.equal(capturedOptions.bypassQueryCache, true);
+  assert.equal(capturedOptions.bypassDefaultContextCache, false);
 });
 
 test("refresh requests invalidate only the active runtime catalog entry", async () => {

@@ -1,0 +1,329 @@
+{
+  "schemaVersion": "youtube_acceptance_annotation.v1",
+  "id": "mixed-gameplay-chatter",
+  "category": "tft_with_unrelated_chatter",
+  "sourceUrl": "https://www.youtube.com/watch?v=aSW-okm70Ns",
+  "videoId": "aSW-okm70Ns",
+  "season": "set17-live",
+  "patch": "17.7",
+  "locale": "en",
+  "output": "aSW-okm70Ns.json",
+  "extractionInput": {
+    "mode": "authenticated_browser_capture",
+    "timedtextJson3": "aSW-okm70Ns.en.json3",
+    "sourceMetadata": "aSW-okm70Ns.metadata.json",
+    "chunkSeconds": 300
+  },
+  "annotationStatus": "provisional",
+  "annotationProvenance": {
+    "reviewer": "Codex transcript-window review",
+    "reviewerType": "codex",
+    "method": "claim-by-claim source transcript window review",
+    "independentHumanReview": false,
+    "seedSource": "model_output",
+    "sourceTranscriptHash": "9d63981818155986026d711710f9bbe4adb149bad08c9321eeb39524c56c303f",
+    "videoVersion": "85611a7cd4c4f4c5f0cc",
+    "note": "Model-output-derived review seed; not independent human ground truth. Human verification and sign-off are required."
+  },
+  "annotations": {
+    "claims": [
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Varis",
+          "Evelyn"
+        ],
+        "claimKeywords": [
+          "At the start of the game, two gods appear. In stage 2-4, players choose to align with one god, gaining specific rewards; choosing Evelyn also loses player health if more players align with her. Similar choices at stage 3-4 and 4-4."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 49.04,
+        "timestampEnd": 196.48000000000002,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "At the start of the game, two gods appear. In stage 2-4, players choose to align with one god, gaining specific rewards; choosing Evelyn also loses player health if more players align with her. Similar choices at stage 3-4 and 4-4.",
+        "transcriptExcerpt": "[42.48] meeps. The set mechanic can look quite\n[44.60] overwhelming at first glance, but is\n[46.56] easy to understand after a few games.\n[49.04] First of all, the starting encounters\n[51.28] and carousels are gone. If you hated the\n[54.04] three emblem start, you can rejoice, it\n[56.40] won't ruin your games anymore. At the\n[58.24] start of the game, two different gods\n[60.04] will appear that give out different\n[61.68] rewards over the course of the game. In\n[63.64] this example, the gods are Varis and\n[66.28] Evelyn. In stage 2-4, every player makes\n[69.08] their first selection. You can choose to\n[70.84] align with Varis, who grants you a three\n[73.04] cost and a two cost that share a trait\n[75.56] together with a tier as your item\n[77.60] component. Evelyn on the other hand,\n[79.64] offers you eight gold and a giant's\n[81.44] belt. Choosing Evelyn is a bit risky\n[84.08] since you also lose player health if\n[86.12] more players align with her. In stage\n[88.36] 3-4, the choice is between a small\n[90.80] duplicator and a cloak versus a three\n[93.16] star one cost champion, a bow, and\n[95.24] losing three health. The final choice is\n[97.72] made in stage 4-4. You can either take a\n[100.20] five cost and a four cost that share a\n[102.08] trait together with a cloak, or you get\n[104.16] a random two star three four champion\n[106.16] with a bow and lose three health. In\n[108.20] some games, you will make the choice\n[110.16] based on the effect\n[111.35] >> [music]\n[111.36] >> and in other games, you will make your\n[112.92] choice based on the item component to\n[115.16] make sure you complete a core item for\n[117.56] your comp. However, there's one more\n[119.56] aspect to consider. The game tracks your\n[121.84] choices and gives you a final reward\n[124.16] based on the god you aligned with the\n[125.88] most. [music] For example, after the\n[127.76] stage three carousel, I've already sided\n[130.28] with Varis twice. Even if I choose\n[132.40] Evelyn in stage four, it doesn't matter\n[134.72] because two out of three choices were\n[136.76] made in favor of Varis. The consequence\n[139.44] of this choice can be seen in stage 4-7.\n[142.08] Here, you get a treasure armory where\n[144.20] you can roll to finalize your item\n[146.20] build, but you're always guaranteed a\n[148.40] specific fourth augment based on the god\n[151.36] you've aligned with. The Varis blessing\n[153.52] grants my team 18 health for each total\n[156.12] star level in my army and my five cost\n[158.48] odds are increased by 2%. While there\n[160.88] are a lot of different choices for the\n[162.84] different gods in stage two, three, and\n[164.84] four, the blessings in stage 4-7 are\n[167.60] always the same. There are a total of\n[169.72] nine space gods, which means there are\n[171.68] nine different blessings that can appear\n[173.84] as the fourth augment throughout the\n[175.52] set. Overall, I would say I like the set\n[178.04] mechanic, especially because there are a\n[180.12] lot of meaningful choices to be made.\n[182.24] Sometimes you end up with a quest that\n[183.92] grants you a better reward and other\n[185.88] times, you just want to roll the dice\n[188.08] and align with fresh randomizes your\n[190.20] rewards. Next, let's talk about the more\n[192.52] interesting traits this set has to\n[194.16] offer. The gotcha trait for set 17 is\n[196.48] called anima and is very reminiscent of\n[198.88] chembarons in set 13. You collect points"
+      },
+      {
+        "type": "patch_specific",
+        "subjects": [
+          "Varis"
+        ],
+        "claimKeywords": [
+          "Varis blessing grants 18 health for each total star level in your army and increases five cost odds by 2%."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 136.76,
+        "timestampEnd": 164.84,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Varis blessing grants 18 health for each total star level in your army and increases five cost odds by 2%.",
+        "transcriptExcerpt": "[130.28] with Varis twice. Even if I choose\n[132.40] Evelyn in stage four, it doesn't matter\n[134.72] because two out of three choices were\n[136.76] made in favor of Varis. The consequence\n[139.44] of this choice can be seen in stage 4-7.\n[142.08] Here, you get a treasure armory where\n[144.20] you can roll to finalize your item\n[146.20] build, but you're always guaranteed a\n[148.40] specific fourth augment based on the god\n[151.36] you've aligned with. The Varis blessing\n[153.52] grants my team 18 health for each total\n[156.12] star level in my army and my five cost\n[158.48] odds are increased by 2%. While there\n[160.88] are a lot of different choices for the\n[162.84] different gods in stage two, three, and\n[164.84] four, the blessings in stage 4-7 are\n[167.60] always the same. There are a total of"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Anima"
+        ],
+        "claimKeywords": [
+          "Anima trait collects points based on lose streak; every 100 points, you can cash out or gather 100 more for a better reward, receiving powerful items."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 192.52,
+        "timestampEnd": 229.32000000000002,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Anima trait collects points based on lose streak; every 100 points, you can cash out or gather 100 more for a better reward, receiving powerful items.",
+        "transcriptExcerpt": "[185.88] times, you just want to roll the dice\n[188.08] and align with fresh randomizes your\n[190.20] rewards. Next, let's talk about the more\n[192.52] interesting traits this set has to\n[194.16] offer. The gotcha trait for set 17 is\n[196.48] called anima and is very reminiscent of\n[198.88] chembarons in set 13. You collect points\n[201.60] based on your lose streak and every time\n[203.56] you reach 100 points, you can choose to\n[205.72] take the cash out or gather another 100\n[208.08] points for a better reward. Similar to\n[210.32] chembarons, you mainly receive very\n[212.56] powerful items to overwhelm your\n[214.64] opponents after getting a big cash out.\n[216.84] It's a tried and tested system, plus the\n[218.92] items are inspired by the swarm game\n[221.56] mode, so I'm definitely looking forward\n[223.60] to playing this trait a lot more in the\n[225.36] future. Meeple is definitely a trait\n[227.68] worth highlighting because it's\n[229.32] literally based around meeps. Not only\n[231.88] is this trait incredibly fun to watch,"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Meeple"
+        ],
+        "claimKeywords": [
+          "With seven Meeple on board, your bench receives a special hex that can clone your units; you can use it to finish three stars or wait multiple rounds to print a higher tier unit."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 225.36,
+        "timestampEnd": 252.28,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "With seven Meeple on board, your bench receives a special hex that can clone your units; you can use it to finish three stars or wait multiple rounds to print a higher tier unit.",
+        "transcriptExcerpt": "[218.92] items are inspired by the swarm game\n[221.56] mode, so I'm definitely looking forward\n[223.60] to playing this trait a lot more in the\n[225.36] future. Meeple is definitely a trait\n[227.68] worth highlighting because it's\n[229.32] literally based around meeps. Not only\n[231.88] is this trait incredibly fun to watch,\n[234.12] if you have seven meeple on your board,\n[236.08] your bench receives a special hex that\n[238.24] can clone your units. It works like way\n[240.76] from set 11, so you can either use it to\n[243.32] finish your three stars or wait multiple\n[245.52] rounds to print a higher tier unit. Will\n[247.76] you be able to print animals or a second\n[250.20] gold neck again? I haven't tested it\n[252.28] yet, but I certainly hope so. Stargazer\n[254.96] is also a very crazy trait because it"
+      },
+      {
+        "type": "transition",
+        "subjects": [
+          "Stargazer",
+          "Boar"
+        ],
+        "claimKeywords": [
+          "Stargazer with Boar constellation grants bonus stats and gold for winning fights; you want to max out the trait early to boost your economy."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "if you have the Boar constellation"
+        ],
+        "timestampStart": 252.28,
+        "timestampEnd": 276.40000000000003,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Stargazer with Boar constellation grants bonus stats and gold for winning fights; you want to max out the trait early to boost your economy.",
+        "transcriptExcerpt": "[245.52] rounds to print a higher tier unit. Will\n[247.76] you be able to print animals or a second\n[250.20] gold neck again? I haven't tested it\n[252.28] yet, but I certainly hope so. Stargazer\n[254.96] is also a very crazy trait because it\n[257.44] has seven different constellations that\n[259.40] are wildly different from each other.\n[261.44] Just to make an example, in your first\n[263.28] game, you might get the boar. This\n[265.28] grants your team bonus stats and gold\n[267.24] for winning fights, so you want to max\n[269.12] out the trait early to boost your\n[270.92] economy. In the next game, you might end\n[272.92] up with the medallion. Now the trait\n[275.00] caps out at three. In this\n[276.40] constellation, units standing on\n[278.20] specific hexes get damage amp, which is"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Stargazer",
+          "Medallion",
+          "Caitlyn",
+          "Aatrox"
+        ],
+        "claimKeywords": [
+          "Stargazer Medallion constellation caps at 3; units on specific hexes get damage amp amplified for every three star unit, enabling T1 reroll with early game stargazers and units like Caitlyn or Aatrox."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "if you have Medallion constellation"
+        ],
+        "timestampStart": 272.92,
+        "timestampEnd": 294.92,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Stargazer Medallion constellation caps at 3; units on specific hexes get damage amp amplified for every three star unit, enabling T1 reroll with early game stargazers and units like Caitlyn or Aatrox.",
+        "transcriptExcerpt": "[267.24] for winning fights, so you want to max\n[269.12] out the trait early to boost your\n[270.92] economy. In the next game, you might end\n[272.92] up with the medallion. Now the trait\n[275.00] caps out at three. In this\n[276.40] constellation, units standing on\n[278.20] specific hexes get damage amp, which is\n[280.76] heavily amplified for every three star\n[282.80] unit on your board. This is a great way\n[285.08] to enable T1 reroll where you collect\n[287.60] the early game stargazers and other\n[289.56] early game units like Caitlyn or Aatrox.\n[292.32] Mecha is also a very satisfying trait to\n[294.92] watch. This trait has Urgot, Aurelion,\n[297.32] and the mighty mech. You can change the"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Mecha",
+          "Urgot",
+          "Aurelion"
+        ],
+        "claimKeywords": [
+          "Mecha trait has Urgot, Aurelion, and a mech; you can change the form of each mecha to upgrade or change."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 294.92,
+        "timestampEnd": 303.8,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Mecha trait has Urgot, Aurelion, and a mech; you can change the form of each mecha to upgrade or change.",
+        "transcriptExcerpt": "[287.60] the early game stargazers and other\n[289.56] early game units like Caitlyn or Aatrox.\n[292.32] Mecha is also a very satisfying trait to\n[294.92] watch. This trait has Urgot, Aurelion,\n[297.32] and the mighty mech. You can change the\n[299.08] form of each mecha to upgrade or change\n[301.68] their ability, give them bonus stats,\n[303.80] and cause them to take up two unit slots\n[306.20] instead of one. I have to say"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "arbiter",
+          "trait"
+        ],
+        "claimKeywords": [
+          "Arbiter trait lets you choose a rule set that only applies for you, e.g., receive 10% health shield at combat start for each interest you would gain."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "requires activating the trait"
+        ],
+        "timestampStart": 315.6,
+        "timestampEnd": 340.92,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Arbiter trait lets you choose a rule set that only applies for you, e.g., receive 10% health shield at combat start for each interest you would gain.",
+        "transcriptExcerpt": "[308.08] transforming Urgot into a siege tank or\n[310.88] Aurelion into a flying spaceship was\n[313.28] definitely one of my favorite moments in\n[315.60] the playtest. The final trait I want to\n[317.52] highlight is called arbiter. It is a new\n[319.52] version of admin from set eight.\n[321.64] Activating the trait lets you choose a\n[323.64] rule set that only applies for you. For\n[325.76] example, in this game, my arbiters\n[327.96] receive a 10% health shield at combat\n[330.00] start for each interest I would gain. If\n[332.48] I have 50 gold, that means a 50% max\n[335.04] health shield at the start of combat.\n[336.88] But enough about traits. What does this\n[338.68] set have to offer in terms of units? For\n[340.92] starters, Bard is back and he's\n[342.92] hilarious. He spawns a flying saucer"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Bard",
+          "elder dragon",
+          "unit"
+        ],
+        "claimKeywords": [
+          "Bard can kidnap the elder dragon and play him as one of your units."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 360.44,
+        "timestampEnd": 371.64,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Bard can kidnap the elder dragon and play him as one of your units.",
+        "transcriptExcerpt": "[354.44] gave him something even crazier. You\n[356.40] might remember that in the past, for a\n[358.20] brief period of time, you were able to\n[360.44] pilfer the elder dragon and play him on\n[362.68] your board. Thanks to Bard, this is now\n[364.92] an intended mechanic. You can kidnap the\n[367.28] elder dragon and play him as one of your\n[369.44] units. One of my favorite legendaries in\n[371.64] the playtest was Sona. She gives out\n[373.80] special modules you can place on your"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Riven",
+          "item"
+        ],
+        "claimKeywords": [
+          "Riven can effectively use any item because her damage type adapts to her higher stat."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Riven's damage type changes based on which stat is higher"
+        ],
+        "timestampStart": 444.12,
+        "timestampEnd": 464.96,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Riven can effectively use any item because her damage type adapts to her higher stat.",
+        "transcriptExcerpt": "[438.00] would not be surprised if Jhin ends up\n[440.04] being the most played legendary in set\n[441.92] 17. I also want to highlight some\n[444.12] non-legendaries like Riven and Miss\n[446.16] Fortune. Riven is a tier four unit with\n[448.28] a very interesting gimmick that changes\n[450.20] her entire damage to either physical or\n[452.48] magical depending on which of her stats\n[454.84] is higher. Her ability stays the same,\n[457.20] so she makes for a great addition to a\n[458.96] lot of comps because she can effectively\n[461.20] perform with every item in the game.\n[463.12] Miss Fortune is a powerful tier three\n[464.96] unit that can change her trait. If you\n[466.88] place her on the board, you can choose"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Miss Fortune",
+          "channeler",
+          "challenger",
+          "replicator"
+        ],
+        "claimKeywords": [
+          "Miss Fortune is a tier 3 unit that can change her trait between channeler, challenger, and replicator, with different abilities for each."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "place her on board, can choose trait"
+        ],
+        "timestampStart": 463.12,
+        "timestampEnd": 481.35999999999996,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Miss Fortune is a tier 3 unit that can change her trait between channeler, challenger, and replicator, with different abilities for each.",
+        "transcriptExcerpt": "[457.20] so she makes for a great addition to a\n[458.96] lot of comps because she can effectively\n[461.20] perform with every item in the game.\n[463.12] Miss Fortune is a powerful tier three\n[464.96] unit that can change her trait. If you\n[466.88] place her on the board, you can choose\n[468.52] between channeler, challenger, and\n[470.56] replicator. As a channeler, she gets a\n[472.84] tiny bullet time that hits two different\n[475.12] units for a lot of damage. As a\n[476.96] replicator, her ability is a lot more\n[479.16] hit or miss, but it's definitely better\n[481.36] at sniping the enemy backlines with a\n[483.48] long cone-like ability. If you enjoyed"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Yasuo's blade work",
+          "divine artifact",
+          "Caitlyn"
+        ],
+        "claimKeywords": [
+          "Yasuo's blade work gives 10 AD, AP, and attack speed, and grants bonus attacks every 3 seconds, making units like Caitlyn more viable due to her low base attack speed."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "unit has low base attack speed"
+        ],
+        "timestampStart": 546.04,
+        "timestampEnd": 561.8,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Yasuo's blade work gives 10 AD, AP, and attack speed, and grants bonus attacks every 3 seconds, making units like Caitlyn more viable due to her low base attack speed.",
+        "transcriptExcerpt": "[538.84] divine artifacts are a lot more about\n[541.20] meaningful effects and a lot less about\n[543.64] granting a ton of stats. For example,\n[546.04] Yasuo's blade work only gives 10 AD, AP,\n[549.08] and attack speed, but grants bonus\n[551.04] attacks every three seconds. This can\n[553.32] help to make units like Caitlyn more\n[555.32] viable because while she hits hard, she\n[557.92] has a horrendous base attack speed. The\n[560.20] Thresh lantern is also a very\n[561.80] interesting artifact. After six seconds\n[563.92] in combat have passed, one random unit"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Zed",
+          "augment",
+          "clone"
+        ],
+        "claimKeywords": [
+          "Zed can only be obtained via a stage 3 augment, unlocks in stage 4, appears as legendary unit in shop, and can clone himself to fill the board."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "stage 3 augment that unlocks him in stage 4"
+        ],
+        "timestampStart": 396.32,
+        "timestampEnd": 407.48,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Zed can only be obtained via a stage 3 augment, unlocks in stage 4, appears as legendary unit in shop, and can clone himself to fill the board.",
+        "transcriptExcerpt": "[389.52] heard me right. One of the most infamous\n[391.80] units in the history of TFT is back. You\n[394.52] can only get him with a stage three\n[396.32] augment that unlocks him in stage four,\n[398.64] where he can appear as a legendary unit\n[400.64] in your shop. He is capable of cloning\n[403.04] himself and the clones can do the same\n[405.16] to potentially fill up the entire board.\n[407.48] Obviously, he's much more balanced than\n[409.24] before, but I'm definitely excited to"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Jhin"
+        ],
+        "claimKeywords": [
+          "Jhin spawns four portals that attack enemies alongside him; the fourth shot pierces units."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 419.76,
+        "timestampEnd": 441.92,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Jhin spawns four portals that attack enemies alongside him; the fourth shot pierces units.",
+        "transcriptExcerpt": "[413.52] in the future. The final legendary unit\n[415.64] I want to talk about is Jhin. Over the\n[417.64] course of TFT, we've seen a lot of\n[419.76] different versions of Jhin, so it's\n[421.52] honestly quite impressive how Riot still\n[424.12] manages to keep him fresh. Set 17 Jhin\n[427.08] will spawn four portals with amazing\n[429.36] visuals that attack enemy units\n[431.36] alongside Jhin. On the fourth shot, the\n[433.52] bullets are piercing through the units\n[435.48] making for a very satisfying finish. I\n[438.00] would not be surprised if Jhin ends up\n[440.04] being the most played legendary in set\n[441.92] 17. I also want to highlight some\n[444.12] non-legendaries like Riven and Miss"
+      },
+      {
+        "type": "risk",
+        "subjects": [
+          "Echo",
+          "emblem"
+        ],
+        "claimKeywords": [
+          "unless you have Echo, you should not make a plan based around a specific emblem"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "having Echo"
+        ],
+        "timestampStart": 606.64,
+        "timestampEnd": 616.84,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "unless you have Echo, you should not make a plan based around a specific emblem",
+        "transcriptExcerpt": "[600.64] random emblems and you can still reach a\n[602.64] prismatic trait with something like\n[604.44] trade tree into Pandora, but unless you\n[606.64] have a game with a specific space god\n[608.80] like Echo, you should probably never\n[610.92] make a plan based around a specific\n[612.84] emblem. I definitely had a lot of fun\n[614.80] during the play test and I can't wait to\n[616.84] play more. If you want to try set 17\n[619.08] yourself, it will be available on the"
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 8.6,
+        "timestampEnd": 40,
+        "reason": "merchandise promotion before set discussion"
+      }
+    ]
+  }
+}

@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 
-export const SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION = "semantic_index.v2";
+export const SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION = "semantic_index.v3";
 
 export const SQLITE_SEMANTIC_INDEX_SCHEMA = `
 CREATE TABLE IF NOT EXISTS semantic_documents (
@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS semantic_documents (
   intent TEXT,
   content TEXT NOT NULL,
   content_hash TEXT NOT NULL,
+  record_hash TEXT NOT NULL,
   embedding BLOB,
   embedding_dimensions INTEGER,
   embedding_model TEXT,
@@ -44,13 +45,64 @@ function contentHash(value) {
   return createHash("sha256").update(String(value ?? "")).digest("hex");
 }
 
-function normalizeDocument(value = {}) {
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.keys(value)
+      .sort()
+      .filter((key) => value[key] !== undefined)
+      .map((key) => [key, canonicalValue(value[key])])
+  );
+}
+
+function defaultRecordHash(value) {
+  const metadata = { ...(value.metadata ?? {}) };
+  // generatedAt is a write timestamp, not a semantic record field. Pipelines
+  // that need freshness-sensitive updates (for example current_stats) provide
+  // their own recordHash. Other provenance such as ingestionRunId,
+  // reviewStatus and disclosure remains hash-sensitive.
+  delete metadata.generatedAt;
+  return contentHash(JSON.stringify(canonicalValue({
+    id: value.id,
+    documentType: value.documentType,
+    contentHash: value.contentHash,
+    apiName: value.apiName,
+    intent: value.intent,
+    patch: value.patch,
+    locale: value.locale,
+    source: value.source,
+    metadata
+  })));
+}
+
+const CURRENT_STATS_DOCUMENT_TYPES = new Set([
+  "meta_snapshot",
+  "unit_stats",
+  "comp_stats",
+  "item_stats",
+  "trend_snapshot"
+]);
+
+function normalizeDocument(value = {}, options = {}) {
   const content = String(value.content ?? value.text ?? "").trim();
   if (!value.id || !value.documentType || !content) throw new TypeError("Semantic document requires id, documentType and content");
   if (value.realtime === true || value.metadata?.realtime === true || /metatft.*(?:daily|realtime|statistics)/iu.test(String(value.source ?? ""))) {
     throw new RangeError("Realtime MetaTFT statistics cannot be stored in the static semantic index");
   }
-  return {
+  if (CURRENT_STATS_DOCUMENT_TYPES.has(String(value.documentType))) {
+    if (options.allowCurrentStats !== true) {
+      throw new RangeError("Current stats documents require the dedicated current-stats index manager");
+    }
+    if (
+      value.source !== "metatft"
+      || value.metadata?.namespace !== "current_stats"
+      || value.metadata?.currentStatsSchemaVersion !== "current_stats.v2"
+    ) {
+      throw new RangeError("Current stats documents must pass the dedicated current_stats schema");
+    }
+  }
+  const normalized = {
     seasonContextId: String(value.seasonContextId ?? value.season_context_id ?? "set17-live"),
     id: String(value.id),
     documentType: String(value.documentType),
@@ -66,6 +118,12 @@ function normalizeDocument(value = {}) {
     updatedAt: value.updatedAt ?? new Date().toISOString(),
     metadata: value.metadata && typeof value.metadata === "object" ? { ...value.metadata } : {}
   };
+  normalized.recordHash = (
+    value.recordHash
+    ?? value.record_hash
+    ?? defaultRecordHash(normalized)
+  );
+  return normalized;
 }
 
 function bindRun(statement, params = []) {
@@ -180,6 +238,7 @@ function rowToDocument(row) {
     intent: row.intent ?? null,
     content: row.content,
     contentHash: row.content_hash,
+    recordHash: row.record_hash ?? row.content_hash,
     embedding: decodeEmbedding(row.embedding, row.embedding_dimensions),
     embeddingModel: row.embedding_model ?? null,
     patch: row.patch ?? null,
@@ -267,13 +326,21 @@ export class MemorySemanticDocumentStore extends SemanticDocumentStore {
     }
   }
 
-  async upsert(documents) {
+  async upsert(documents, options = {}) {
     const result = { inserted: 0, updated: 0, unchanged: 0 };
     for (const value of Array.isArray(documents) ? documents : [documents]) {
-      const document = normalizeDocument(value);
+      const document = normalizeDocument(value, options);
       const key = `${document.seasonContextId}\u0000${document.id}`;
       const existing = this.documents.get(key);
-      if (existing?.contentHash === document.contentHash && existing?.embeddingModel === document.embeddingModel) {
+      if (
+        existing?.contentHash === document.contentHash
+        && !document.embedding
+        && existing.embedding
+      ) {
+        document.embedding = [...existing.embedding];
+        document.embeddingModel = existing.embeddingModel;
+      }
+      if (existing?.recordHash === document.recordHash && existing?.embeddingModel === document.embeddingModel) {
         result.unchanged += 1;
         continue;
       }
@@ -323,6 +390,11 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
     this.ownsDatabase = Boolean(options.ownsDatabase);
     migrateSQLiteSemanticSeasonContext(this.database);
     this.database.exec(SQLITE_SEMANTIC_INDEX_SCHEMA);
+    const columns = semanticTableColumns(this.database, "semantic_documents");
+    if (!columns.includes("record_hash")) {
+      this.database.exec("ALTER TABLE semantic_documents ADD COLUMN record_hash TEXT");
+      this.database.exec("UPDATE semantic_documents SET record_hash = content_hash WHERE record_hash IS NULL");
+    }
     this.setMeta("schemaVersion", SQLITE_SEMANTIC_INDEX_SCHEMA_VERSION);
   }
 
@@ -340,26 +412,42 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
     return row ? { value: row.value, updatedAt: row.updated_at } : null;
   }
 
-  async upsert(documents) {
+  async upsert(documents, options = {}) {
     const result = { inserted: 0, updated: 0, unchanged: 0 };
     const select = this.database.prepare(`
-      SELECT content_hash, embedding_model, embedding IS NOT NULL AS has_embedding
+      SELECT content_hash, record_hash, embedding_model, embedding IS NOT NULL AS has_embedding
       FROM semantic_documents WHERE season_context_id = ? AND id = ?
     `);
     const upsert = this.database.prepare(`
       INSERT INTO semantic_documents (
-        season_context_id, id, document_type, api_name, intent, content, content_hash, embedding,
+        season_context_id, id, document_type, api_name, intent, content, content_hash, record_hash, embedding,
         embedding_dimensions, embedding_model, patch, locale, source, metadata_json, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT(season_context_id, id) DO UPDATE SET
         document_type = excluded.document_type,
         api_name = excluded.api_name,
         intent = excluded.intent,
         content = excluded.content,
         content_hash = excluded.content_hash,
-        embedding = excluded.embedding,
-        embedding_dimensions = excluded.embedding_dimensions,
-        embedding_model = excluded.embedding_model,
+        record_hash = excluded.record_hash,
+        embedding = CASE
+          WHEN semantic_documents.content_hash = excluded.content_hash
+            AND excluded.embedding IS NULL
+          THEN semantic_documents.embedding
+          ELSE excluded.embedding
+        END,
+        embedding_dimensions = CASE
+          WHEN semantic_documents.content_hash = excluded.content_hash
+            AND excluded.embedding IS NULL
+          THEN semantic_documents.embedding_dimensions
+          ELSE excluded.embedding_dimensions
+        END,
+        embedding_model = CASE
+          WHEN semantic_documents.content_hash = excluded.content_hash
+            AND excluded.embedding IS NULL
+          THEN semantic_documents.embedding_model
+          ELSE excluded.embedding_model
+        END,
         patch = excluded.patch,
         locale = excluded.locale,
         source = excluded.source,
@@ -368,13 +456,14 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
     `);
 
     for (const value of Array.isArray(documents) ? documents : [documents]) {
-      const document = normalizeDocument(value);
+      const document = normalizeDocument(value, options);
       const existing = bindGet(select, [document.seasonContextId, document.id]);
       const sameContent = existing?.content_hash === document.contentHash;
+      const sameRecord = existing?.record_hash === document.recordHash;
       const preservesExistingEmbedding = sameContent && !document.embedding && Boolean(existing?.has_embedding);
       const sameVectorState = existing?.embedding_model === document.embeddingModel
         && Boolean(existing?.has_embedding) === Boolean(document.embedding);
-      if (existing && (preservesExistingEmbedding || (sameContent && sameVectorState))) {
+      if (existing && sameRecord && (preservesExistingEmbedding || sameVectorState)) {
         result.unchanged += 1;
         continue;
       }
@@ -386,6 +475,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
         document.intent,
         document.content,
         document.contentHash,
+        document.recordHash,
         encodeEmbedding(document.embedding),
         document.embedding?.length ?? null,
         document.embeddingModel,
@@ -406,7 +496,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
       ? Math.min(Number(filters.limit), 100000)
       : null;
     const rows = bindAll(this.database.prepare(`
-      SELECT season_context_id, id, document_type, api_name, intent, content, content_hash, embedding,
+      SELECT season_context_id, id, document_type, api_name, intent, content, content_hash, record_hash, embedding,
              embedding_dimensions, embedding_model, patch, locale, source, metadata_json, updated_at
       FROM semantic_documents
       ${where}

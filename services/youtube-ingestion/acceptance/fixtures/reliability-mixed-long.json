@@ -1,0 +1,59 @@
+{
+  "metadata": {
+    "videoId": "testmix0001",
+    "title": "人工标注的长视频容错与无关内容过滤基准",
+    "author": "TFTClarity Acceptance",
+    "publishedAt": "2026-07-29",
+    "sourceUrl": "https://www.youtube.com/watch?v=testmix0001",
+    "warnings": [
+      "acceptance_fixture_not_live_youtube"
+    ]
+  },
+  "transcript": {
+    "videoId": "testmix0001",
+    "durationSeconds": 1905,
+    "language": "zh-Hans",
+    "snippets": [
+      {
+        "text": "大家好，欢迎来到频道，记得点赞订阅。今天还会聊一点我昨天吃了什么。",
+        "start": 0,
+        "duration": 8
+      },
+      {
+        "text": "先说霞的装备。如果没有其他稳定攻速来源，第一件优先做鬼索的狂暴之刃。",
+        "start": 45,
+        "duration": 8
+      },
+      {
+        "text": "对面前排护甲很高时，后续要补最后的轻语；如果前排不硬，就可以先做无尽之刃。",
+        "start": 62,
+        "duration": 10
+      },
+      {
+        "text": "刚才外卖到了，这段和游戏没关系。我还在想周末去哪里玩。",
+        "start": 510,
+        "duration": 9
+      },
+      {
+        "text": "运营方面，二阶段只在能保持连胜时主动升五，否则优先存到十块钱。",
+        "start": 905,
+        "duration": 8
+      },
+      {
+        "text": "三杠二通常升六并补齐两星前排；如果血量低于五十，就在六级小搜稳定质量。",
+        "start": 930,
+        "duration": 10
+      },
+      {
+        "text": "八级找到核心四费主C和两星主坦以后再考虑升九，不要为了升九把阵容质量卖掉。",
+        "start": 1510,
+        "duration": 10
+      },
+      {
+        "text": "这期先到这里，下期再见，欢迎在评论区聊天。",
+        "start": 1890,
+        "duration": 8
+      }
+    ]
+  }
+}

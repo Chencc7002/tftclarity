@@ -50,6 +50,42 @@ export {
 } from "./core/comp-filter.js";
 export { calculatePlacementStats } from "./core/stats-calculator.js";
 export {
+  entityContentHash,
+  extractStatAtoms,
+  extractTextNumericAtoms,
+  sha256 as sha256MechanismValue,
+  stableStringify
+} from "./knowledge/mechanic-atom-extractor.js";
+export {
+  classifySampleEvidence,
+  createMechanismCase,
+  createQueryFingerprint,
+  createSingleItemReplacementComparisons,
+  MECHANISM_CASE_SCHEMA_VERSION,
+  REPLACEMENT_COMPARISON_SCHEMA_VERSION,
+  selectStandardCases,
+  validateMechanismCase
+} from "./knowledge/mechanism-case-builder.js";
+export {
+  FACTOR_CANDIDATE_SCHEMA_VERSION,
+  FACTOR_DISCOVERY_PACK_SCHEMA_VERSION,
+  FACTOR_SCHEMA_VERSION,
+  assignUnitsToDiscoverySplits,
+  buildFactorDiscoveryPack,
+  normalizeFactorCandidate,
+  selectStratifiedDiscoveryCases,
+  validateFactorCandidate
+} from "./knowledge/mechanism-discovery.js";
+export {
+  createMechanismExtractionProvider,
+  resolveMechanismExtractionConfig
+} from "./knowledge/mechanism-extraction-provider.js";
+export {
+  buildFactorSchemaEnvelope,
+  collectFactorObservations,
+  validateNormalizedFactorSchema
+} from "./knowledge/mechanism-factor-normalizer.js";
+export {
   COMP_METRICS,
   buildCompRankingQuery,
   isCompRankingInput,
@@ -165,6 +201,7 @@ export {
   buildOfficialTftEntityDetails,
   decodeOfficialTftHtml,
   fetchOfficialTftEntityDetails,
+  inspectOfficialTftTokens,
   parseOfficialTftEntityPayload
 } from "./data/official-entity-details.js";
 export { auditItemPatchChanges } from "./data/item-patch-audit.js";
@@ -486,6 +523,108 @@ export {
   TFT_CONVERSATION_POLICY_VERSION,
   tftConversationPolicy
 } from "./domain/tft/conversation-policy.js";
+export {
+  ANSWER_MODE_ROUTER_SCHEMA_VERSION,
+  ANSWER_MODES,
+  AnswerModeRouter,
+  createAnswerModeRouter,
+  routeAnswerMode
+} from "./routing/answer-mode-router.js";
+export {
+  SYSTEM_INTERACTION_ROUTE_SCHEMA_VERSION,
+  SYSTEM_INTERACTION_ANSWER_MODE,
+  SYSTEM_INTERACTION_TYPES,
+  compactSystemInteractionInput,
+  createSystemInteractionResult,
+  normalizeSystemInteractionInput,
+  unhandledSystemInteraction,
+  validateSystemInteractionResult
+} from "./system-interaction/system-interaction-contracts.js";
+export {
+  TFT_CAPABILITY_REGISTRY,
+  getTftCapabilityRegistry
+} from "./system-interaction/capability-registry.js";
+export {
+  DEFAULT_SYSTEM_INTERACTION_HANDLERS,
+  SystemInteractionRouter,
+  createSystemInteractionRouter,
+  routeSystemInteraction
+} from "./system-interaction/system-interaction-router.js";
+export {
+  CURRENT_STATS_DOCUMENT_TYPES,
+  CURRENT_STATS_SCHEMA_VERSION,
+  KNOWLEDGE_CLAIM_TYPES,
+  KNOWLEDGE_DOCUMENT_JSON_SCHEMA,
+  KNOWLEDGE_DOCUMENT_SCHEMA_VERSION,
+  KNOWLEDGE_DOCUMENT_TYPES,
+  KNOWLEDGE_NAMESPACES,
+  assertCurrentStatsKnowledgeDocument,
+  assertKnowledgeDocument,
+  createKnowledgeDocument,
+  knowledgeDocumentToSemanticDocument,
+  validateKnowledgeDocument
+} from "./knowledge/knowledge-document-schema.js";
+export {
+  buildCompStatsDocuments,
+  buildMetaSnapshotDocument,
+  buildTrendSnapshotDocument,
+  buildUnitStatsDocuments,
+  createCurrentStatsScope,
+  currentStatsScopeKey,
+  generateCurrentStatsDocuments
+} from "./knowledge/metatft-document-generator.js";
+export {
+  CURRENT_STATS_SEMANTIC_PROJECTION_VERSION,
+  DEFAULT_CURRENT_STATS_SEMANTIC_CONFIG,
+  renderCurrentStatsSemanticProjection,
+  resolveCurrentStatsSemanticConfig,
+  semanticAveragePlacement,
+  semanticPercentage,
+  stabilizeCurrentStatsSemanticProjection
+} from "./knowledge/current-stats-semantic-projection.js";
+export {
+  CurrentStatsIndexManager,
+  createCurrentStatsIndexManager
+} from "./knowledge/current-stats-index-manager.js";
+export {
+  fetchMetaTftCurrentStats,
+  runMetaTftCurrentStatsPipeline
+} from "./knowledge/metatft-current-stats-pipeline.js";
+export {
+  millisecondsUntilDailyRun,
+  runCurrentStatsJob
+} from "./knowledge/current-stats-job-runner.js";
+export {
+  KnowledgeIndexer,
+  createKnowledgeIndexer
+} from "./knowledge/knowledge-indexer.js";
+export {
+  YouTubeKnowledgeIndexManager,
+  createYouTubeKnowledgeIndexManager
+} from "./knowledge/youtube-index-manager.js";
+export {
+  KnowledgeRetriever,
+  createKnowledgeRetriever,
+  semanticHitToKnowledgeEvidence
+} from "./knowledge/knowledge-retriever.js";
+export {
+  EVIDENCE_BUNDLE_SCHEMA_VERSION,
+  buildEvidenceBundle,
+  createEvidenceBundle,
+  validateEvidenceBundle
+} from "./knowledge/evidence-bundle-builder.js";
+export {
+  COACH_ANSWER_SCHEMA_VERSION,
+  COACH_RESPONSE_SCHEMA,
+  createCoachProviderFromConfig,
+  createOpenAICompatibleCoachProvider,
+  resolveCoachProviderConfig
+} from "./coach/coach-provider.js";
+export {
+  HybridAnswerService,
+  createHybridAnswerService,
+  validateCoachAnswer
+} from "./coach/hybrid-answer-service.js";
 export {
   TFT_RESOLVED_TASK_FRAME_ADAPTER_VERSION,
   resolvedTaskFrameToParsed

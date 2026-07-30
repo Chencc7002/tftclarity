@@ -1,0 +1,208 @@
+{
+  "schemaVersion": "youtube_acceptance_annotation.v1",
+  "id": "short-fundamentals",
+  "category": "short_video",
+  "sourceUrl": "https://www.youtube.com/watch?v=BpFL4kmfp1Q",
+  "videoId": "BpFL4kmfp1Q",
+  "season": "set17-live",
+  "patch": "17.7",
+  "locale": "en",
+  "output": "BpFL4kmfp1Q-v5.json",
+  "extractionInput": {
+    "mode": "source_envelope",
+    "sourceEnvelope": "BpFL4kmfp1Q.json",
+    "chunkSeconds": 90
+  },
+  "annotationStatus": "provisional",
+  "annotationProvenance": {
+    "reviewer": "Codex transcript-window review",
+    "reviewerType": "codex",
+    "method": "claim-by-claim source transcript window review",
+    "independentHumanReview": false,
+    "seedSource": "model_output",
+    "sourceTranscriptHash": "935bbea8be83dd6977c67cdb85b200990f8ee1237d0db6c667a1f83e69c6afa4",
+    "videoVersion": "69688f6117e4d18f63d3",
+    "note": "Model-output-derived review seed; not independent human ground truth. Human verification and sign-off are required."
+  },
+  "annotations": {
+    "claims": [
+      {
+        "type": "item_priority",
+        "subjects": [
+          "shred",
+          "sunder",
+          "Last Whisper",
+          "Shroud",
+          "Void Staff",
+          "Ionic Spark",
+          "Gargoyle Stoneplate",
+          "Bramble Vest",
+          "Dragon's Claw",
+          "AD comp",
+          "AP comp"
+        ],
+        "claimKeywords": [
+          "Shred and sunder are mandatory in every game; they reduce resistances by 30% and can be equivalent to a 25% damage increase for your entire team. For AD comps you need sunder (Last Whisper or Shroud). For AP comps you need shred (Void Staff or Ionic Spark)."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "when playing an AD composition",
+          "when playing an AP composition"
+        ],
+        "timestampStart": 41.88,
+        "timestampEnd": 90.84,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Shred and sunder are mandatory in every game; they reduce resistances by 30% and can be equivalent to a 25% damage increase for your entire team. For AD comps you need sunder (Last Whisper or Shroud). For AP comps you need shred (Void Staff or Ionic Spark).",
+        "transcriptExcerpt": "[36.52] you'll be building challenger level\n[37.76] boards in no time. So, item priority.\n[40.12] The first thing you must understand,\n[41.88] shred and sunder are not optional.\n[44.24] They're mandatory in every single game.\n[46.12] Shred reduces magic resist, and sunder\n[48.32] reduces armor, and they generally reduce\n[50.20] it by 30%. Now, here's why it's\n[52.04] mandatory to have. When tanks stack\n[53.68] their armor and magic resist through\n[55.40] items like gargoyle stone plates,\n[56.88] bramble vest, and dragon's claw, or\n[59.24] traits and abilities that give them\n[60.88] resistances, these defensive stats start\n[63.12] getting crazy high. When resistances are\n[65.72] as are high, reducing them by 30% can be\n[68.64] equivalent or more than a 25% damage\n[71.96] increase for your entire team. Not just\n[75.12] one unit, your entire team's damage. So,\n[78.60] if you're playing an AD comp, you need\n[80.52] sunder either in the form of last\n[82.24] whisper or even shroud. If you're\n[83.92] playing AP, you need shred either in the\n[86.20] form of void staff or ionic spark. If\n[88.88] you don't build this, you're basically\n[90.84] trying to punch through a brick wall\n[92.48] with your bare fist. Make one of these"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "anti-heal",
+          "wound"
+        ],
+        "claimKeywords": [
+          "Build anti-heal early, ideally by stage 4 and definitely by stage 5."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 94.52,
+        "timestampEnd": 102.44,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Build anti-heal early, ideally by stage 4 and definitely by stage 5.",
+        "transcriptExcerpt": "[88.88] you don't build this, you're basically\n[90.84] trying to punch through a brick wall\n[92.48] with your bare fist. Make one of these\n[94.52] as early as possible, ideally by stage\n[97.04] four and definitely by stage five.\n[98.92] Guaranteeing it early is almost always\n[101.00] better. The next thing we need to talk\n[102.44] about is anti-heal, otherwise known as\n[104.80] wound. Healing in TFT is absurd. In"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "anti-heal",
+          "wound"
+        ],
+        "claimKeywords": [
+          "Anti-heal reduces healing by 33% and adds a burn effect with 1% true damage."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 102.44,
+        "timestampEnd": 133.04,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Anti-heal reduces healing by 33% and adds a burn effect with 1% true damage.",
+        "transcriptExcerpt": "[97.04] four and definitely by stage five.\n[98.92] Guaranteeing it early is almost always\n[101.00] better. The next thing we need to talk\n[102.44] about is anti-heal, otherwise known as\n[104.80] wound. Healing in TFT is absurd. In\n[107.20] other games, if a tank is healing, you\n[108.88] try to kill their healer as quickly as\n[110.60] possible. Well, in TFT, you just cut\n[113.00] their healing by 33%. In every set,\n[115.64] there's always some tank unit that heals\n[117.40] a ton either through their own ability\n[119.28] like Garen and Swain in set 16 or\n[121.44] through items like Hextech Gunblade and\n[123.60] Spirit Visage and sometimes even through\n[125.16] traits. If we cut their healing by 33%\n[128.20] we reduce their overall effective HP.\n[131.04] These items are called D pay bis because\n[133.04] you need to build at least one of them,\n[135.76] one of these anti-heal items for every"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "anti-heal",
+          "shred",
+          "sunder"
+        ],
+        "claimKeywords": [
+          "Anti-heal, shred, and sunder are mandatory items, not suggested. They let your carry cut through the main tank faster."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 149.88,
+        "timestampEnd": 154.88,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Anti-heal, shred, and sunder are mandatory items, not suggested. They let your carry cut through the main tank faster.",
+        "transcriptExcerpt": "[143.68] items, you also get a burn effect with\n[145.72] 1% true damage with these anti-heal\n[147.72] items which is a great added bonus.\n[149.88] Anti-heal shred and sunder are not\n[151.84] suggested items. They're mandatory. They\n[154.88] let your carry actually play the game\n[157.00] and cut through the main tank faster."
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "main carry",
+          "main tank",
+          "secondary carry"
+        ],
+        "claimKeywords": [
+          "Fully itemize one main carry and one main tank before moving on to build for your secondary carry."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 172.52,
+        "timestampEnd": 181.36,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Fully itemize one main carry and one main tank before moving on to build for your secondary carry.",
+        "transcriptExcerpt": "[167.76] balancing front line and back line\n[169.32] items.\n[170.52] As a general rule of thumb, you want to\n[172.52] fully itemize one main carry and one\n[175.12] main tank before moving on to build for\n[177.36] your secondary carry. Too many players\n[179.32] build four back line items split across\n[181.36] two carries with only two real items on\n[183.80] their main tank. Remember from our last"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Armor",
+          "Magic Resist",
+          "Damage Reduction",
+          "HP",
+          "Main Tank",
+          "Carry"
+        ],
+        "claimKeywords": [
+          "Armor, magic resist, and damage reduction all multiply with HP; fully itemizing your main tank buys more time for carry to do damage."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 183.8,
+        "timestampEnd": 205.32,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Armor, magic resist, and damage reduction all multiply with HP; fully itemizing your main tank buys more time for carry to do damage.",
+        "transcriptExcerpt": "[177.36] your secondary carry. Too many players\n[179.32] build four back line items split across\n[181.36] two carries with only two real items on\n[183.80] their main tank. Remember from our last\n[185.92] video, damage scales multiplicatively,\n[188.80] but so do tank stats. Armor, magic\n[191.32] resist, and damage reduction all\n[193.08] multiply with HP. When you fully itemize\n[195.40] your main tank, you're not just making\n[197.04] them tankier, you're buying more time\n[199.12] for your carry to do more damage. If\n[201.44] your front line lives longer, your carry\n[203.12] gets more casts, more autos, and more\n[205.32] damage overall. So, don't just stack\n[207.20] damage, use the power of multiplicative"
+      },
+      {
+        "type": "late_game_pivot",
+        "subjects": [
+          "utility items",
+          "shred",
+          "sunder",
+          "anti-heal",
+          "Last Whisper",
+          "Kraken's Fury",
+          "primary carry",
+          "main tank",
+          "secondary carry"
+        ],
+        "claimKeywords": [
+          "Utility items like shred, sunder, and anti-heal provide team utility, not raw stats; in late game, move these items off your primary carry or main tank onto secondary carry when you have overflow of items beyond three-item main tank and three-item carry."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "overflow of items after three-item main tank and three-item carry"
+        ],
+        "timestampStart": 214.4,
+        "timestampEnd": 248.08,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Utility items like shred, sunder, and anti-heal provide team utility, not raw stats; in late game, move these items off your primary carry or main tank onto secondary carry when you have overflow of items beyond three-item main tank and three-item carry.",
+        "transcriptExcerpt": "[207.20] damage, use the power of multiplicative\n[209.24] stats for both damage and tanking. Now,\n[212.00] here's an important insight into our D\n[214.40] pay bis items like shred, sunder, and\n[216.84] anti-heal. The power in these items come\n[219.32] from the utility it provides for your\n[221.12] entire team, not the raw individual\n[224.32] stats it provides for the carrier. So, a\n[226.84] Last Whisper has less good individual\n[229.08] stats than a Kraken's Fury for example.\n[231.28] So, in the late game, if you have an\n[233.00] overflow of items after you have your\n[234.96] three item main tank and your three item\n[237.16] carry, these utility items often move\n[240.60] off your primary carry or main tank and\n[243.08] go on to your secondary carry. This is\n[245.80] an optimization. It's not mandatory\n[248.08] early, but it's really, really important\n[250.60] late game. Winning fights are not about"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Main Tank"
+        ],
+        "claimKeywords": [
+          "Winning fights is about killing the enemy main tank first; if you kill their main tank first, the rest of the board falls easily."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 250.6,
+        "timestampEnd": 263.16,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Winning fights is about killing the enemy main tank first; if you kill their main tank first, the rest of the board falls easily.",
+        "transcriptExcerpt": "[243.08] go on to your secondary carry. This is\n[245.80] an optimization. It's not mandatory\n[248.08] early, but it's really, really important\n[250.60] late game. Winning fights are not about\n[252.52] the perfect items. They're about solving\n[254.72] the fundamental question, how do I kill\n[256.76] their main tank? If you can consistently\n[258.72] kill their main tank first, the rest of\n[260.96] the board falls like flies. Build your\n[263.16] items for that and use the power of\n[264.92] multiplicative scaling in your favor. If"
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 273.68,
+        "timestampEnd": 290.88,
+        "reason": "site promotion and outro"
+      }
+    ]
+  }
+}

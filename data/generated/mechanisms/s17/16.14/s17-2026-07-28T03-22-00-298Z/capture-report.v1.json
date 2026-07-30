@@ -1,0 +1,1293 @@
+{
+  "schemaVersion": "s17_mechanism_capture_report.v1",
+  "snapshotId": "s17-2026-07-28T03-22-00-298Z",
+  "capturedAt": "2026-07-28T03:22:00.298Z",
+  "generatedAt": "2026-07-28T03:44:19.342Z",
+  "provenance": {
+    "mode": "offline_replay",
+    "sourceCapturedAt": "2026-07-28T03:22:00.298Z",
+    "generatedAt": "2026-07-28T03:44:19.342Z",
+    "replayedFromSnapshot": "s17-2026-07-28T03-22-00-298Z",
+    "rawSnapshotReused": true
+  },
+  "season": "S17",
+  "officialPatch": "16.14",
+  "statisticsPatchRequest": "current",
+  "queryContext": {
+    "queue": "RANKED_TFT",
+    "providerQueue": "1100",
+    "days": 30,
+    "rankFilter": [
+      "CHALLENGER",
+      "GRANDMASTER",
+      "MASTER"
+    ],
+    "starLevel": 2,
+    "itemCount": 3
+  },
+  "sources": {
+    "officialChess": {
+      "url": "https://game.gtimg.cn/images/lol/act/img/tft/js/chess.js",
+      "version": "16.14",
+      "season": "2026.S17",
+      "updatedAt": "2026-07-15 16:27:53",
+      "sha256": "83dfc18e4c1220475efe4530adc7b9d3a813ceec5057fc4c65bcd6d06682102f",
+      "capturedFrom": "C:\\Users\\Chencc\\Desktop\\TFTAgent\\.cache\\s17-mechanisms\\s17-2026-07-28T03-22-00-298Z\\official-chess.json"
+    },
+    "officialEquipment": {
+      "url": "https://game.gtimg.cn/images/lol/act/img/tft/js/equip.js",
+      "version": "16.14",
+      "season": "2026.S17",
+      "updatedAt": "2026-07-15 16:27:55",
+      "sha256": "1906157d992039097cd28989b6bf8cccaf55cf5ef8626dd2a66e96ce418cdbf3",
+      "capturedFrom": "C:\\Users\\Chencc\\Desktop\\TFTAgent\\.cache\\s17-mechanisms\\s17-2026-07-28T03-22-00-298Z\\official-equipment.json"
+    },
+    "statistics": {
+      "provider": "MetaTFT",
+      "baseUrl": "https://api-hc.metatft.com",
+      "endpoint": "/tft-explorer-api/unit_builds/{unit}",
+      "unitsEndpoint": "/tft-explorer-api/units_unique",
+      "requestedPatch": "current",
+      "note": "Third-party observational statistics; not an official mechanics source."
+    }
+  },
+  "coverage": {
+    "officialS17UnitCount": 73,
+    "queryableUnitCount": 66,
+    "playableCandidateCount": 62,
+    "auxiliaryUnitCount": 4,
+    "capturedUnitCount": 63,
+    "emptyUnitCount": 3,
+    "failedUnitCount": 0,
+    "officialUnitLinkRate": 1,
+    "responseRowCount": 37144,
+    "traceableCaseCount": 36952,
+    "playableCaseCount": 36352,
+    "auxiliaryCaseCount": 600,
+    "completeOfficialTextCaseCount": 29456,
+    "partialOfficialTextCaseCount": 6896,
+    "numericFormulaIncompleteCaseCount": 35861,
+    "rejectedRowCount": 192,
+    "referencedOfficialItemCount": 174,
+    "standardCaseCount": 300,
+    "partialPublishedCaseCount": 100,
+    "auxiliaryPublishedCaseCount": 50,
+    "replacementComparisonCandidateCount": 62711,
+    "standardReplacementComparisonCount": 147,
+    "mechanismOnlyReplacementComparisonCount": 200
+  },
+  "integrity": {
+    "duplicateCaseIds": [],
+    "duplicateCaseCount": 0,
+    "rejectionReasons": {
+      "expected_3_items_received_1": 114,
+      "expected_3_items_received_2": 78
+    },
+    "missingOfficialItems": [],
+    "statsValidatedCaseCount": 36952,
+    "queryFingerprintIncludesProviderParameters": true,
+    "comparisonsAreNonCausal": true,
+    "fullComparisonPerUnitLimit": 1000
+  },
+  "artifacts": {
+    "publishedSnapshotDirectory": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z",
+    "standardCases": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z/standard-cases.v1.jsonl",
+    "partialOfficialCases": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z/partial-official-cases.v1.jsonl",
+    "auxiliaryCases": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z/auxiliary-cases.v1.jsonl",
+    "standardComparisons": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z/replacement-comparisons.v1.jsonl",
+    "mechanismOnlyComparisons": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z/mechanism-only-replacement-comparisons.v1.jsonl",
+    "fullCases": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/derived/2026-07-28T03-44-19-342Z/mechanism-cases.full.v1.jsonl.gz",
+    "comparisonCandidates": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/derived/2026-07-28T03-44-19-342Z/replacement-comparisons.candidates.v1.jsonl.gz",
+    "rawSnapshotDirectory": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z"
+  },
+  "units": [
+    {
+      "unitApiName": "TFT17_Aatrox",
+      "unitName": "亚托克斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "97e47f45476e6f9c1049a1c2ada7c14505e6b3656842374ca690c8f99ffcc0e1",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Aatrox.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Akali",
+      "unitName": "阿卡丽",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "64786f17b3dabce43c8190dde752a35d869524d08459fcb28b3ada91e9c829c0",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Akali.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_AurelionSol",
+      "unitName": "奥瑞利安·索尔",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "620b16c2df2e6a901376e84d4dffe6e081fe578d1a0d7bac2014b87cddfd5915",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_AurelionSol.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Aurora",
+      "unitName": "阿萝拉",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "e3ef680f0f2d19a167d21b3fd0026635d49372bc5bf5663034b04fbffa5bad3c",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Aurora.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Bard",
+      "unitName": "巴德",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "0155ba3e5241c3646aad7847bb512324bb2ad02f8d8fbaf9fc78bc620cee70b8",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Bard.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Belveth",
+      "unitName": "卑尔维斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "f38591ade91b5bf1b77d51aa536c362c16fc9bceb4d7cf85b3a842ccb82d5130",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Belveth.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Blitzcrank",
+      "unitName": "布里茨",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "308d280684a8626432714a4b60ca2eedc5f98c8048c055d9ae3a66d5e9ca32d5",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Blitzcrank.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Briar",
+      "unitName": "贝蕾亚",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "37ae133f158b4352e559ea31de912ef0fe6b3cf0a018d0e99eb2003b42ec8944",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Briar.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Caitlyn",
+      "unitName": "凯特琳",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "be8bce2bc6f9235b092613bcadc3c108a2bb903ccf71bdf7344365dc0e93d931",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Caitlyn.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Chogath",
+      "unitName": "科加斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "64e3ace4594ba20c258771fa3320b5aa5aa4c552fa6558fca749068dd45deed1",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Chogath.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Corki",
+      "unitName": "库奇",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 593,
+      "rejectedRows": 7,
+      "responseHash": "fe71285c1cb9db8e56ea234ce4334ed56b831892a8a1f02ea0ec9c6a526aeecd",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Corki.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Diana",
+      "unitName": "黛安娜",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 598,
+      "rejectedRows": 2,
+      "responseHash": "95ec4069b6fb64b26f9a61d4b450eefcab25d484bea52e5e34d1d10f3642fb6f",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Diana.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Enemy_Aatrox",
+      "unitName": "海魔至尊",
+      "unitKind": "auxiliary",
+      "officialLinked": true,
+      "status": "empty",
+      "responseRows": 0,
+      "traceableCases": 0,
+      "rejectedRows": 0,
+      "responseHash": "91ee2efa946baeb45c041274346577308225dca381b83528564d4a63d803eab3",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Enemy_Aatrox.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Ezreal",
+      "unitName": "伊泽瑞尔",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 527,
+      "traceableCases": 527,
+      "rejectedRows": 0,
+      "responseHash": "b23af72e1dc0a8995e3de49be4d2b4d9ff8595da709e4c9226238d24732885e5",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Ezreal.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Fiora",
+      "unitName": "菲奥娜",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 598,
+      "rejectedRows": 2,
+      "responseHash": "724abf578ca1ad50e1c5c05ba36f601fbd2eb6d637f60e59f0dba576b615b653",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Fiora.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Fizz",
+      "unitName": "菲兹",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "3d0b6cc2c46b039e7f393163fabf3a0cb00b585413ef1f1a9e776f5b62639e7d",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Fizz.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Galio",
+      "unitName": "超级机甲",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "9ba6a534733a84fe4a44dc42a632f2e3efbcf7ab168ec859f266a33d3434de4e",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Galio.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Gnar",
+      "unitName": "纳尔",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "5657fbd34d8fd75b009eb9c26d72a11e30f13a748bb8fc069846339c2dc62703",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Gnar.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Gragas",
+      "unitName": "古拉加斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "8aff880a8df62349437c8cb001f34084c868f2f0482a2bd77218cbf75a6e27c1",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Gragas.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Graves",
+      "unitName": "格雷福斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "e8c217c9b758f5d637bb8d2055e8a94a181a2ceff0a22a4bd33009617d1d1a7c",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Graves.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Gwen",
+      "unitName": "格温",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "55cbb4bfe3368f7f454584ad4352a4c80502a4c9beb37ad26e4e52a5e4f5d3a1",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Gwen.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Illaoi",
+      "unitName": "俄洛伊",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "3f1e887a85346972ffb3bd337bffcf6d80ce3662ba84bfd868df6c62d6a04ab7",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Illaoi.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_IvernMinion",
+      "unitName": "小木灵",
+      "unitKind": "auxiliary",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "4d0ec12cb0d2f83905b96bff4d7c1a62a1f2a83524a2fe13c1701ba1ccd0a457",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_IvernMinion.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Jax",
+      "unitName": "贾克斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "aa27aff086d14bf44b4863415b45eacf3ff67c28967c5202dd0d1be16dd3b65e",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Jax.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Jhin",
+      "unitName": "烬",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "8f57a8ae889211ed2577dbfec4f3f98b67e9a9b48684e959db4bda47f9a6b647",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Jhin.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Jinx",
+      "unitName": "金克丝",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "a67e5374f25abd236650485b577f5a355c24e1e2ec90b35fcd0365c7a4474da2",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Jinx.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Kaisa",
+      "unitName": "卡莎",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "2c394a2134b328703c79dc71964b0b3a4ae869609f01483e5d6a5af63d52e6bc",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Kaisa.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Karma",
+      "unitName": "卡尔玛",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "97c6ebffcc0f9132cac3b981cbb8f5c2c23330705227bb1244de13673b2d7b23",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Karma.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Kindred",
+      "unitName": "千珏",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "a6db64a4acea768f530324a787c3fb938ad5cfa0b119f7b2fb5fac5a4eeda954",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Kindred.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Leblanc",
+      "unitName": "乐芙兰",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "cb12e791b8782aaa810dc5f4890cd8a4cba89ceccaa713d8c1676722c8955ad6",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Leblanc.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Leona",
+      "unitName": "蕾欧娜",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "bc021780c1eefb0acf10266a93d253d916ae82cc32b3ddc4797202a6dd9ff3c7",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Leona.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Lissandra",
+      "unitName": "丽桑卓",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "63160128e5d01822a50c7b396113bcd552f3d798517329d2c42a468019d995bb",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Lissandra.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Lulu",
+      "unitName": "璐璐",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "b2c671fefb7cf69abfb82799ffd0e490859831c11e527daed21912205a2fad6e",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Lulu.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Maokai",
+      "unitName": "茂凯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "bd85b44a3fd4ffab2326a4fa95c3b63db791ead9a7aa3296d0c8195cf4ec79f1",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Maokai.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_MasterYi",
+      "unitName": "易",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "f00e93a989f3702756f7bc7c94b3e08d3544fc453c94831d29403baac4ccbbc3",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_MasterYi.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Milio",
+      "unitName": "米利欧",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "bae185f1fc2acb3ae0a1f1911cbf4ef7cc3e3a7fc6ea77369e983d2208e0a583",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Milio.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_MissFortune",
+      "unitName": "厄运小姐",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 598,
+      "rejectedRows": 2,
+      "responseHash": "db5879e0b568e151435064a489b77b339ee930935d54042986e7ff585ae626ef",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_MissFortune.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Mordekaiser",
+      "unitName": "莫德凯撒",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "d22b09ba4d171f142b10716b527bcdda0043460f2298cc5561f20e11b56f17ef",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Mordekaiser.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Morgana",
+      "unitName": "莫甘娜",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "1c89fdc6265304eb08110fb756d53b45e500d8fb86d35f630ef9cf4644548e3e",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Morgana.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Nami",
+      "unitName": "娜美",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 587,
+      "rejectedRows": 13,
+      "responseHash": "b1cd0c9270c08f9207bc9552d28b0a4c9c20c01525af95c167531ada62cfef27",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Nami.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Nasus",
+      "unitName": "内瑟斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 522,
+      "traceableCases": 522,
+      "rejectedRows": 0,
+      "responseHash": "c7cb6df8d411748c25d09dcd36e4c562af423856aca5841b6689a9c165a2b55a",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Nasus.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Nunu",
+      "unitName": "努努和威朗普",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "a3f11d3f877fe5d14dd5a3bb5bc16ec84115edf9aa0b1000df41b48abb0e7cf4",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Nunu.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Ornn",
+      "unitName": "奥恩",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 572,
+      "rejectedRows": 28,
+      "responseHash": "9676b5e06915e9d4928b0ce429f37e3834c7e754f7f30a45a0af4935cc80defc",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Ornn.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_PVE_ElderDragon",
+      "unitName": "星界远古巨龙",
+      "unitKind": "auxiliary",
+      "officialLinked": true,
+      "status": "empty",
+      "responseRows": 0,
+      "traceableCases": 0,
+      "rejectedRows": 0,
+      "responseHash": "91ee2efa946baeb45c041274346577308225dca381b83528564d4a63d803eab3",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_PVE_ElderDragon.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Pantheon",
+      "unitName": "潘森",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "60effed39a267a282fe79f804234fefda4f70be29d264e34858e823bb05ccc0f",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Pantheon.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Poppy",
+      "unitName": "波比",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "81fd09c3083e50200194285aa67ff32ca7f5521e9e433ef712ee69f38807ace2",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Poppy.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Pyke",
+      "unitName": "派克",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "106c59267b25669988ce76ee9889eff92f0c2b46b075c653da7f66c9c01359e1",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Pyke.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Rammus",
+      "unitName": "拉莫斯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "e180c43e08a2b40a2f61ecd5d675027ab29d9e4c2ceca259770513eb036ee45b",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Rammus.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_RekSai",
+      "unitName": "雷克塞",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "3c3c7b9b3810247e56d63839d1e6c99dc8a656cfaf1fd9fac760411ddeb4e5a4",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_RekSai.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Rhaast",
+      "unitName": "拉亚斯特",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "157e2c7900740d06a715033ec90dc9f1367608df710566c0ce5daa416547634c",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Rhaast.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Riven",
+      "unitName": "锐雯",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "770716e41689117f9651002b1d2d05c07dc27b05c34743fd2963518078868acc",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Riven.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Samira",
+      "unitName": "莎弥拉",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 532,
+      "rejectedRows": 68,
+      "responseHash": "c8151f1edc64597ec18285c2955724dbefd9bd20483c42346c22478bac8a198e",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Samira.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Shen",
+      "unitName": "慎",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "07b8cc28c55b64a6f0c447ef597e3441490ed26cbfa752bef77fdcff4cfdfb7e",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Shen.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Sona",
+      "unitName": "娑娜",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "f64c5d5da7eee215ec4015fc2be2b16db7b42de36fe771eef82c5a7082b59c89",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Sona.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Summon",
+      "unitName": "羊咩咩 & 咩咩羊",
+      "unitKind": "auxiliary",
+      "officialLinked": true,
+      "status": "empty",
+      "responseRows": 0,
+      "traceableCases": 0,
+      "rejectedRows": 0,
+      "responseHash": "91ee2efa946baeb45c041274346577308225dca381b83528564d4a63d803eab3",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Summon.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_TahmKench",
+      "unitName": "塔姆",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "e13f1386d53d71e99d12b80f0ddd51b652986785059f00222b4ddf8fc353b267",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_TahmKench.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Talon",
+      "unitName": "泰隆",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 284,
+      "traceableCases": 284,
+      "rejectedRows": 0,
+      "responseHash": "6202a874d02f03fc705ee23f119d050ee2d81aea3383dfdd149b12091a32d141",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Talon.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Teemo",
+      "unitName": "提莫",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 486,
+      "traceableCases": 486,
+      "rejectedRows": 0,
+      "responseHash": "b2fcbe86d4b3cc9b97e8c09d9be03613e5c4228e95cb1e82fe26c0db0c627bba",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Teemo.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_TwistedFate",
+      "unitName": "崔斯特",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 578,
+      "traceableCases": 578,
+      "rejectedRows": 0,
+      "responseHash": "b9df71a6916de15ed0b2d277325fdbadecf3294b16357adb2ed6924477f3193c",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_TwistedFate.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Urgot",
+      "unitName": "厄加特",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "7ea874318f5623cd9825be6f38381ee0dbcb9a29ebd1ae192d068bff8aabd3be",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Urgot.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Veigar",
+      "unitName": "维迦",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 552,
+      "traceableCases": 550,
+      "rejectedRows": 2,
+      "responseHash": "d3f92ee583467e9c508dc2c01e8e262205a95faef74ac80be34a8af339fc62d4",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Veigar.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Vex",
+      "unitName": "薇古丝",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "ee7411615301763091bf670f5fd099f8a553e4b13e9ec1b8dbb3b21a8e69933b",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Vex.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Viktor",
+      "unitName": "维克托",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "0acbf4e2992cee73ceea776e77d22146e22df161f792eb81de00a57c7f1dd987",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Viktor.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Xayah",
+      "unitName": "霞",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 599,
+      "rejectedRows": 1,
+      "responseHash": "8e34c2e19cd7752684d0a2efb944a6e95bc7c90580a1f2623848052e7d82bf3f",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Xayah.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Zed",
+      "unitName": "劫",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 595,
+      "traceableCases": 552,
+      "rejectedRows": 43,
+      "responseHash": "c6ffcc0b28f493090f8c8b0512cc9c38ecee097d4d5aedb616246df88a904b9f",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Zed.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    },
+    {
+      "unitApiName": "TFT17_Zoe",
+      "unitName": "佐伊",
+      "unitKind": "playable_candidate",
+      "officialLinked": true,
+      "status": "captured",
+      "responseRows": 600,
+      "traceableCases": 600,
+      "rejectedRows": 0,
+      "responseHash": "e944014b8edc9d64538d496c81452f65794a9bbadf446025233c8c79fae05eb0",
+      "rawResponsePath": ".cache/s17-mechanisms/s17-2026-07-28T03-22-00-298Z/unit-builds/TFT17_Zoe.json",
+      "error": null,
+      "filterAdjustment": {
+        "override_applied": false,
+        "rank_filter": "CHALLENGER,GRANDMASTER,MASTER",
+        "sample_size": 2311664
+      }
+    }
+  ]
+}

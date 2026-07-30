@@ -8,7 +8,15 @@ const SCALE_LABELS = new Map([
   ["scaleAS", "攻击速度"],
   ["scaleArmor", "护甲"],
   ["scaleMR", "魔抗"],
-  ["scaleHealth", "生命值"]
+  ["scaleHealth", "生命值"],
+  ["TFTBaseAD", "攻击力"],
+  ["set14AmpIcon", "[官方运行时增幅值]"]
+]);
+
+const TEMPLATE_LABELS = new Map([
+  ["TFT_Keyword_Precision", "技能暴击"],
+  ["TFT_Keyword_Chill", "冰冷"],
+  ["TFT17_SpaceGroove_TheGroove", "律动状态"]
 ]);
 
 function numberOrNull(value) {
@@ -36,7 +44,9 @@ export function decodeOfficialTftHtml(value) {
     .replace(/<br\s*\/?>(\r?\n)?/gi, "\n")
     .replace(/<li[^>]*>/gi, "\n• ")
     .replace(/<\/li>/gi, "")
-    .replace(/%i:([a-z0-9_]+)%/gi, (_match, token) => SCALE_LABELS.get(token) ?? token)
+    .replace(/\{\{([^}]+)\}\}/g, (_match, token) => TEMPLATE_LABELS.get(token) ?? `[官方关键词：${token}]`)
+    .replace(/@TFTUnitProperty[^@\r\n]*@/gi, "[局内动态值]")
+    .replace(/%i:([a-z0-9_]+)%/gi, (_match, token) => SCALE_LABELS.get(token) ?? `[官方符号：${token}]`)
     .replace(/<[^>]+>/g, "")
     .replace(/&nbsp;/gi, " ")
     .replace(/&amp;/gi, "&")
@@ -49,6 +59,28 @@ export function decodeOfficialTftHtml(value) {
     .replace(/[ \t]+\n/g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+export function inspectOfficialTftTokens(value) {
+  const text = String(value ?? "");
+  const templateTokens = [...text.matchAll(/\{\{([^}]+)\}\}/g)].map((match) => ({
+    token: match[1],
+    type: "template",
+    resolution: TEMPLATE_LABELS.has(match[1]) ? "mapped_label" : "official_value_unavailable"
+  }));
+  const propertyTokens = [...text.matchAll(/@TFTUnitProperty[^@\r\n]*@/gi)].map((match) => ({
+    token: match[0],
+    type: "runtime_property",
+    resolution: "runtime_only"
+  }));
+  const iconTokens = [...text.matchAll(/%i:([a-z0-9_]+)%/gi)].map((match) => ({
+    token: match[1],
+    type: /^scale(?:AD|AP|AS|Armor|MR|Health)$/i.test(match[1]) ? "scaling_reference" : "icon_reference",
+    resolution: SCALE_LABELS.has(match[1])
+      ? match[1] === "set14AmpIcon" ? "official_value_unavailable" : "mapped_label"
+      : "official_value_unavailable"
+  }));
+  return [...templateTokens, ...propertyTokens, ...iconTokens];
 }
 
 function rowsFromPayload(payload) {
@@ -106,6 +138,7 @@ export function buildOfficialTftEntityDetails(payloads, options = {}) {
   for (const row of parseOfficialTftEntityPayload(chessPayload)) {
     const apiName = String(row.hero_EN_name ?? row.apiName ?? row.characterid ?? "").trim();
     if (!apiName) continue;
+    const abilityTokens = inspectOfficialTftTokens(row.skillIntroduce);
     units.set(apiName, {
       apiName,
       chessId: row.chessId ? String(row.chessId) : null,
@@ -130,7 +163,11 @@ export function buildOfficialTftEntityDetails(payloads, options = {}) {
         name: row.skillName ?? null,
         type: row.skillType ?? null,
         description: decodeOfficialTftHtml(row.skillIntroduce),
-        iconUrl: row.skillImage ?? null
+        iconUrl: row.skillImage ?? null,
+        sourceTokens: abilityTokens,
+        unresolvedTokens: abilityTokens.filter((token) => token.resolution !== "mapped_label"),
+        scalingReferences: abilityTokens.filter((token) => token.type === "scaling_reference"),
+        numericFormulaComplete: abilityTokens.every((token) => token.type !== "scaling_reference")
       },
       source: payloadMeta(chessPayload, chessUrl)
     });
