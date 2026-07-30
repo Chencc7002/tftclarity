@@ -215,6 +215,80 @@ test("requesting more from an exhausted result preserves the active task", () =>
   assert.deepEqual(resolution.nextState.activeTask, state.activeTask);
 });
 
+test("result ordinals resolve against the ordered prior result set", () => {
+  const frame = compFrame({ constraints: { limit: 3, reroll: false } });
+  const state = activeState(frame, {
+    resultType: "comp_rankings",
+    toolName: "comps_rankings",
+    shownIds: ["comp-a", "comp-b", "comp-c"],
+    returnedCount: 3,
+    totalCount: 8,
+    exhausted: false,
+    appliedConstraints: frame.constraints
+  });
+  const resolution = reduceConversationState({
+    state,
+    delta: createTurnDelta({
+      dialogueAct: "modify",
+      taskRelation: "modify",
+      constraintOperations: [{
+        operation: "add",
+        field: "excludedItems",
+        value: [entity("暴风大剑", "item", "TFT_Item_BFSword")]
+      }],
+      presentation: {
+        resultReference: { scope: "last_result", ordinal: 2 }
+      },
+      confidence: 1
+    }),
+    domainPolicy: tftConversationPolicy
+  });
+
+  assert.equal(resolution.decision, "execute");
+  assert.deepEqual(resolution.resultReference, {
+    scope: "last_result",
+    ordinal: 2,
+    resultId: "comp-b"
+  });
+  assert.ok(resolution.inheritedFields.includes("lastResult.shownIds"));
+  assert.equal(resolution.resolvedTaskFrame.constraints.comp.resolvedId, "comp-b");
+  assert.equal(
+    resolution.resolvedTaskFrame.constraints.avoidItemComponents[0].resolvedId,
+    "TFT_Item_BFSword"
+  );
+  assert.equal(
+    Object.hasOwn(resolution.resolvedTaskFrame.constraints, "excludedItems"),
+    false
+  );
+});
+
+test("out-of-range result ordinals request clarification instead of guessing", () => {
+  const frame = compFrame();
+  const resolution = reduceConversationState({
+    state: activeState(frame, {
+      resultType: "comp_rankings",
+      toolName: "comps_rankings",
+      shownIds: ["comp-a"],
+      returnedCount: 1,
+      totalCount: 1,
+      exhausted: true,
+      appliedConstraints: frame.constraints
+    }),
+    delta: createTurnDelta({
+      dialogueAct: "continue",
+      taskRelation: "continue",
+      presentation: {
+        resultReference: { scope: "last_result", ordinal: 2 }
+      },
+      confidence: 1
+    }),
+    domainPolicy: tftConversationPolicy
+  });
+
+  assert.equal(resolution.decision, "clarify");
+  assert.equal(resolution.nextState.pendingClarification.reason, "result_reference_out_of_range");
+});
+
 test("pending clarification is filled, switched, or cancelled without guessing", () => {
   const candidate = createTaskFrame({
     action: "recommend",

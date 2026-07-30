@@ -43,9 +43,9 @@ function resultEvidenceValid(result) {
   if (result.type === "clarification" || result.clarification?.blocking) return false;
   if (result.validation?.valid === false) return false;
   if (result.localDecision) return false;
-  if (result.executionTrace?.status && result.executionTrace.status !== "completed") return false;
+  if (["failed", "cancelled", "timed_out"].includes(result.executionTrace?.status)) return false;
   if (result.executionTrace?.evidenceStatus === "insufficient") return false;
-  if (result.agentStatus?.executionStatus && result.agentStatus.executionStatus !== "completed") return false;
+  if (["failed", "cancelled", "timed_out"].includes(result.agentStatus?.executionStatus)) return false;
   if (result.agentStatus?.evidenceStatus === "insufficient") return false;
   return typeof result.type === "string" && result.type.length > 0;
 }
@@ -109,6 +109,7 @@ function taskFrameWithAppliedQuery(frame, query = {}) {
     itemCategories: "itemCategories",
     lockedItems: "lockedItems",
     excludedItems: "excludedItems",
+    avoidItemComponents: "avoidItemComponents",
     comparisonItems: "comparisonItems",
     primaryMetric: "primaryMetric",
     performanceItem: "performanceItem"
@@ -122,6 +123,15 @@ function taskFrameWithAppliedQuery(frame, query = {}) {
     constraints.strategy = query.preferenceConditions.strategy;
   } else if (query.specialMode === true) {
     constraints.strategy = "reroll";
+  }
+  if (
+    typeof query.preferenceConditions?.reroll === "boolean"
+    && (
+      query.preferenceConditions.reroll === false
+      || query.preferenceConditions.strategy == null
+    )
+  ) {
+    constraints.reroll = query.preferenceConditions.reroll;
   }
   return {
     ...clone(frame),

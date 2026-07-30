@@ -403,7 +403,7 @@ test("request lifecycle isolates refreshes, clears, and stale abort completions"
 test("localized view state and historical clarification actions keep stable response context", () => {
   assert.match(appJs, /resultView: \{ type: "empty" \}/);
   assert.match(appJs, /state\.resultView\.type === "loading"/);
-  assert.match(appJs, /activeResponseEl\.innerHTML = progressStepsHtml/);
+  assert.match(appJs, /activeResponseEl\.innerHTML = recommendationProgressHtml/);
   assert.match(appJs, /data-response-id=/);
   assert.match(appJs, /state\.responsesById\.get\(candidateButton\.dataset\.responseId\)/);
   assert.match(appJs, /state\.responsesById\.get\(suggestionButton\.dataset\.responseId\)/);

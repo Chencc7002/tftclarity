@@ -89,6 +89,7 @@ function legacyTaskFrame(query = {}) {
     itemPolicy: "itemPolicy",
     itemCategories: "itemCategories",
     excludedItems: "excludedItems",
+    avoidItemComponents: "avoidItemComponents",
     comparisonItems: "comparisonItems",
     primaryMetric: "primaryMetric"
   };
@@ -101,6 +102,12 @@ function legacyTaskFrame(query = {}) {
   if (preference.reroll === true) {
     constraints.strategy = "reroll";
     constraints.specialMode = true;
+  }
+  if (
+    typeof preference.reroll === "boolean"
+    && (preference.reroll === false || preference.strategy == null)
+  ) {
+    constraints.reroll = preference.reroll;
   }
   return createTaskFrame({
     domain: "tft",

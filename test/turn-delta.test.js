@@ -76,3 +76,56 @@ test("TurnDelta.v1 rejects illegal operations, fields, and domain values", () =>
   operationLeak.constraintOperations[0].arguments = { strategy: "reroll" };
   assert.equal(validateTurnDelta(operationLeak, { domainPolicy: tftConversationPolicy }).valid, false);
 });
+
+test("TurnDelta.v1 represents non-reroll preferences and scoped ordinal references", () => {
+  const delta = createTurnDelta({
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    constraintOperations: [{
+      operation: "set",
+      field: "reroll",
+      value: false
+    }],
+    presentation: {
+      resultReference: { scope: "last_result", ordinal: 2 }
+    },
+    confidence: 0.98
+  });
+
+  assert.equal(validateTurnDelta(delta, { domainPolicy: tftConversationPolicy }).valid, true);
+  assert.deepEqual(delta.presentation.resultReference, {
+    scope: "last_result",
+    ordinal: 2
+  });
+
+  const invalidOrdinal = createTurnDelta({
+    dialogueAct: "continue",
+    taskRelation: "continue",
+    presentation: {
+      resultReference: { scope: "last_result", ordinal: 0 }
+    },
+    confidence: 1
+  });
+  assert.equal(validateTurnDelta(invalidOrdinal, { domainPolicy: tftConversationPolicy }).valid, false);
+});
+
+test("TurnDelta domain validation rejects invalid explicit TaskFrame constraints", () => {
+  const delta = createTurnDelta({
+    dialogueAct: "start_task",
+    taskRelation: "new",
+    explicitTaskFrame: createTaskFrame({
+      action: "rank",
+      goal: "comp_rankings",
+      constraints: {
+        strategy: ["non-vertical", "flexible"]
+      },
+      confidence: 0.9,
+      understandingStatus: "understood_and_supported"
+    }),
+    confidence: 0.9
+  });
+
+  const validation = validateTurnDelta(delta, { domainPolicy: tftConversationPolicy });
+  assert.equal(validation.valid, false);
+  assert.match(validation.errors.join("; "), /constraints\.strategy is invalid/u);
+});

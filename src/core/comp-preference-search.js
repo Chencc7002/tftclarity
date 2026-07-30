@@ -103,12 +103,18 @@ export function parseCompPreferenceConditions(input) {
   const comparisonTop1Metric = !explicitCompTarget && (
     /(?:吃鸡|登顶).{0,4}(?:优先|上限高)|(?:哪个|哪件|谁).{0,8}(?:吃鸡|登顶)/u.test(text)
   );
-  if (!explicitTop4Metric && /(?:稳定上分|稳(?:定)?吃分|前四|苟分|保分)/u.test(text)) goal = "top4";
+  if (
+    !explicitTop4Metric
+    && (
+      /(?:稳定上分|稳(?:定)?吃分|前四|苟分|保分)/u.test(text)
+      || (explicitCompTarget && /(?:稳定|稳健)/u.test(text))
+    )
+  ) goal = "top4";
   else if (!explicitTop1Metric && !comparisonTop1Metric && /(?:吃鸡|登顶|第一|上限高|高上限)/u.test(text)) goal = "top1";
   else if (/(?:均衡|平衡|综合|兼顾|都要)/u.test(text)) goal = "balanced";
 
   let contested = null;
-  if (/(?:不想卷|不要卷|不卷|冷门|少同行|没人抢|避开热门)/u.test(text)) contested = "low";
+  if (/(?:不想卷|不要卷|不卷|没那么卷|不要太卷|别太卷|冷门|少同行|没人抢|避开热门)/u.test(text)) contested = "low";
   else if (/(?:适中热度|热度适中|同行适中)/u.test(text)) contested = "medium";
   else if (/(?:不怕卷|能卷|喜欢卷|接受高同行)|(?:想玩|要玩|偏好).{0,4}(?:热门|高热度|多人玩)/u.test(text)) contested = "high";
 
@@ -247,6 +253,56 @@ function scoreComp(comp, goal, context) {
   };
 }
 
+function array(value) {
+  return Array.isArray(value) ? value : [];
+}
+
+function itemId(value) {
+  if (typeof value === "string") return value;
+  return value?.apiName ?? value?.id ?? null;
+}
+
+function itemDetailFor(itemDetails, apiName) {
+  if (!itemDetails || !apiName) return null;
+  if (typeof itemDetails.get === "function") return itemDetails.get(apiName) ?? null;
+  return itemDetails[apiName] ?? null;
+}
+
+function avoidedComponentDemand(comp, avoidedComponents, itemDetails) {
+  const avoided = new Set(array(avoidedComponents).map(itemId).filter(Boolean));
+  if (!avoided.size) return null;
+  let count = 0;
+  let inspectedItems = 0;
+  let missingRecipes = 0;
+  for (const unit of array(comp?.units)) {
+    for (const item of array(unit?.items)) {
+      const apiName = itemId(item);
+      if (!apiName) continue;
+      inspectedItems += 1;
+      if (avoided.has(apiName)) {
+        count += 1;
+        continue;
+      }
+      const detail = itemDetailFor(itemDetails, apiName);
+      const recipe = array(detail?.recipe).map(itemId).filter(Boolean);
+      if (!recipe.length && detail?.craftable !== false) {
+        missingRecipes += 1;
+        continue;
+      }
+      count += recipe.filter((component) => avoided.has(component)).length;
+    }
+  }
+  const evidenceComplete = inspectedItems > 0 && missingRecipes === 0;
+  return {
+    avoidedComponents: [...avoided],
+    componentCount: count,
+    inspectedItems,
+    missingRecipes,
+    evidenceComplete,
+    penalty: evidenceComplete ? Math.min(0.2, count * 0.03) : 0
+  };
+}
+
 function reasonsFor(comp, conditions) {
   const reasons = [];
   if (conditions.strategy && comp?.strategy !== conditions.strategy) reasons.push("strategy_mismatch");
@@ -262,12 +318,14 @@ function reasonsFor(comp, conditions) {
     if (!comp?.profile || typeof comp.profile.beginnerFriendly !== "boolean") reasons.push("missing_profile");
     else if (comp.profile.beginnerFriendly !== conditions.beginnerFriendly) reasons.push("beginner_mismatch");
   }
-  if (conditions.contested) {
-    const contest = contestEvidence(comp);
-    if (!contest) reasons.push(comp?.profile ? "missing_contest_evidence" : "missing_profile");
-    else if (contest.level !== conditions.contested) reasons.push("contested_mismatch");
-  }
   return [...new Set(reasons)];
+}
+
+function contestPreferencePenalty(contest, preferredLevel) {
+  if (!preferredLevel) return 0;
+  if (!contest) return 0.04;
+  const levels = { low: 0, medium: 1, high: 2 };
+  return Math.abs(levels[contest.level] - levels[preferredLevel]) * 0.08;
 }
 
 function increment(map, key) {
@@ -321,13 +379,31 @@ export function applyCompPreferenceSearch(result, options = {}) {
       increment(excluded, "missing_goal_metrics");
       continue;
     }
+    const itemDemand = avoidedComponentDemand(
+      comp,
+      options.avoidItemComponents ?? result?.query?.avoidItemComponents,
+      options.itemDetails
+    );
+    const contest = conditions.contested ? contestEvidence(comp) : null;
+    const contestPenalty = contestPreferencePenalty(contest, conditions.contested);
+    if (conditions.contested) {
+      ranking.baseScore ??= ranking.score;
+      ranking.score -= contestPenalty;
+      ranking.contestPenalty = contestPenalty;
+    }
+    if (itemDemand) {
+      ranking.baseScore ??= ranking.score;
+      ranking.score -= itemDemand.penalty;
+      ranking.itemDemandPenalty = itemDemand.penalty;
+    }
     scored.push({
       ...comp,
       preferenceMatch: {
         protocolVersion: COMP_PREFERENCE_PROTOCOL_VERSION,
         conditions,
         ranking,
-        contest: conditions.contested ? contestEvidence(comp) : null,
+        itemDemand,
+        contest,
         difficulty: comp?.profile ? difficultyBand(comp.profile.difficulty) : null
       }
     });
@@ -346,7 +422,7 @@ export function applyCompPreferenceSearch(result, options = {}) {
     .slice(0, conditions.returnAll ? lowSampleMatches.length : conditions.count)
     .map((comp) => ({ ...comp, lowSample: true }));
   const warnings = warningSummary(excluded, lowSampleMatches.length, recommendations.length);
-  const profileDependent = Boolean(conditions.difficulty || conditions.contested || conditions.beginnerFriendly !== null);
+  const profileDependent = Boolean(conditions.difficulty || conditions.beginnerFriendly !== null);
   const status = recommendations.length
     ? "ok"
     : lowSampleMatches.length
@@ -388,6 +464,9 @@ export function applyCompPreferenceSearch(result, options = {}) {
       ranking: {
         goal,
         reliabilityPriorSamples: context.priorSamples,
+        avoidItemComponents: array(
+          options.avoidItemComponents ?? result?.query?.avoidItemComponents
+        ).map(itemId).filter(Boolean),
         performedBy: "deterministic_code"
       },
       methodology: "LLM/解析器只输出条件；候选过滤、样本门槛、可靠性收缩、排序、零结果和数量截断均由确定性代码完成。"

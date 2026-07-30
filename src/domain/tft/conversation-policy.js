@@ -63,6 +63,7 @@ function validateConstraintValue(field, value) {
     return Number.isInteger(value) && value >= 1 && value <= (field === "limit" ? 100 : 3);
   }
   if (field === "specialMode" || field === "beginnerFriendly") return typeof value === "boolean";
+  if (field === "reroll") return typeof value === "boolean";
   if (field === "rank" || field === "rankFilter") return Array.isArray(value) && all(value, (entry) => RANKS.has(entry));
   if (field === "starLevel") return Array.isArray(value) && all(value, (entry) => [1, 2, 3, 4].includes(entry));
   if (field === "metrics") return Array.isArray(value) && all(value, (entry) => METRICS.has(entry));
@@ -74,7 +75,13 @@ function validateConstraintValue(field, value) {
     return typeof value === "string" && value.length > 0 && value.length <= 120;
   }
   if (field === "traitFilters") return Array.isArray(value) && all(value, (entry) => entityReference(entry, "trait"));
-  if (["lockedItems", "ownedItems", "excludedItems", "comparisonItems"].includes(field)) {
+  if ([
+    "lockedItems",
+    "ownedItems",
+    "excludedItems",
+    "avoidItemComponents",
+    "comparisonItems"
+  ].includes(field)) {
     return Array.isArray(value) && all(value, (entry) => entityReference(entry, "item"));
   }
   if (field === "comp") return value === null || entityReference(value, "composition");
@@ -94,6 +101,23 @@ function validateOperation(operation) {
     return [`oldValue is invalid for ${operation.field}`];
   }
   return true;
+}
+
+function validateTaskFrame(frame) {
+  const errors = [];
+  for (const [field, value] of Object.entries(frame?.constraints ?? {})) {
+    if (!TURN_DELTA_CONSTRAINT_FIELDS.includes(field)) {
+      errors.push(`constraints.${field} is unsupported`);
+      continue;
+    }
+    if (!validateConstraintValue(field, value)) {
+      errors.push(`constraints.${field} is invalid`);
+    }
+  }
+  if (frame?.constraints?.strategy === "reroll" && frame?.constraints?.reroll === false) {
+    errors.push("constraints.strategy conflicts with constraints.reroll");
+  }
+  return errors;
 }
 
 function validateResolvedTaskFrame(frame) {
@@ -147,6 +171,7 @@ function normalizeTurnDelta(delta) {
     "limit",
     "specialMode",
     "strategy",
+    "reroll",
     "contested",
     "beginnerFriendly",
     "itemPolicy",
@@ -195,7 +220,14 @@ function normalizeTurnDelta(delta) {
 export const tftConversationPolicy = Object.freeze({
   schemaVersion: TFT_CONVERSATION_POLICY_VERSION,
   constraintFields: TURN_DELTA_CONSTRAINT_FIELDS,
+  semanticTurnDeltaPromptRules: Object.freeze([
+    "strategy is a scalar string containing only reroll, fast8, or fast9. Never use an array and never invent values such as no_gambling, non-vertical, stable, or flexible.",
+    "Use reroll false for requests that exclude reroll or 赌狗 compositions. Use reroll true for requests that require them. Do not encode negation as strategy reroll.",
+    "Use contested low for requests that prefer less-contested or 没那么卷 compositions. Use sort robust_first for stability. Use limit and presentation.requestedCount for an explicit result count.",
+    "For a soft component preference such as 最好少用大剑 or 尽量减少大剑需求, put the item entity in constraints.avoidItemComponents. Use excludedItems only for a hard exclusion such as 不要大剑 or 完全不用大剑."
+  ]),
   validateOperation,
+  validateTaskFrame,
   validateConstraintValue,
   normalizeTurnDelta,
   normalizeResolvedTaskFrame,
