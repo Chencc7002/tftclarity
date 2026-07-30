@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "s17_mechanism_dataset_index.v1",
+  "latestSnapshotId": "s17-2026-07-28T03-22-00-298Z",
+  "snapshots": [
+    {
+      "snapshotId": "s17-2026-07-28T03-22-00-298Z",
+      "officialPatch": "16.14",
+      "sourceCapturedAt": "2026-07-28T03:22:00.298Z",
+      "generatedAt": "2026-07-28T03:44:19.342Z",
+      "artifactDirectory": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z",
+      "report": "data/generated/mechanisms/s17/16.14/s17-2026-07-28T03-22-00-298Z/capture-report.v1.json"
+    }
+  ]
+}

@@ -1,0 +1,2 @@
+# Run at 04:15 server-local time. Replace the workspace path before installing.
+15 4 * * * cd /path/to/TFTAgent && /usr/bin/npm run stats:daily >> .cache/current-stats/scheduler.log 2>&1

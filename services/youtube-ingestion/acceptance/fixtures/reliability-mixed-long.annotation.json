@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "youtube_acceptance_case.v1",
+  "id": "reliability-mixed-long",
+  "category": "deterministic_fixture_long_mixed_chatter",
+  "sourceUrl": "https://www.youtube.com/watch?v=testmix0001",
+  "annotationStatus": "complete",
+  "annotations": {
+    "claims": [
+      {
+        "type": "item_priority",
+        "subjects": ["霞", "鬼索的狂暴之刃"],
+        "claimKeywords": ["优先", "鬼索"],
+        "minimumKeywordMatches": 2,
+        "conditions": ["没有其他稳定攻速来源"],
+        "timestampStart": 45,
+        "timestampEnd": 53,
+        "timestampTolerance": 8
+      },
+      {
+        "type": "item_priority",
+        "subjects": ["霞", "最后的轻语"],
+        "claimKeywords": ["护甲", "最后的轻语"],
+        "minimumKeywordMatches": 2,
+        "conditions": ["对面前排护甲很高"],
+        "timestampStart": 62,
+        "timestampEnd": 72,
+        "timestampTolerance": 8
+      },
+      {
+        "type": "item_priority",
+        "subjects": ["霞", "无尽之刃"],
+        "claimKeywords": ["前排不硬", "无尽之刃"],
+        "minimumKeywordMatches": 2,
+        "conditions": ["前排不硬"],
+        "timestampStart": 62,
+        "timestampEnd": 72,
+        "timestampTolerance": 8
+      },
+      {
+        "type": "leveling",
+        "subjects": ["二阶段", "升五", "存钱"],
+        "claimKeywords": ["连胜", "升五"],
+        "minimumKeywordMatches": 2,
+        "conditions": ["能保持连胜"],
+        "timestampStart": 905,
+        "timestampEnd": 913,
+        "timestampTolerance": 8
+      },
+      {
+        "type": "leveling",
+        "subjects": ["三杠二", "升六", "前排两星"],
+        "claimKeywords": ["三杠二", "升六"],
+        "minimumKeywordMatches": 2,
+        "conditions": [],
+        "timestampStart": 930,
+        "timestampEnd": 940,
+        "timestampTolerance": 8
+      },
+      {
+        "type": "reroll_timing",
+        "subjects": ["三杠二", "六级", "搜牌"],
+        "claimKeywords": ["血量低于五十", "六级小搜"],
+        "minimumKeywordMatches": 2,
+        "conditions": ["血量低于五十"],
+        "timestampStart": 930,
+        "timestampEnd": 940,
+        "timestampTolerance": 8
+      },
+      {
+        "type": "leveling",
+        "subjects": ["核心四费主C", "两星主坦", "八级", "九级"],
+        "claimKeywords": ["两星主坦", "升九"],
+        "minimumKeywordMatches": 2,
+        "conditions": ["找到核心四费主C和两星主坦以后"],
+        "timestampStart": 1510,
+        "timestampEnd": 1520,
+        "timestampTolerance": 8
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 0,
+        "timestampEnd": 15,
+        "reason": "channel introduction"
+      },
+      {
+        "timestampStart": 500,
+        "timestampEnd": 530,
+        "reason": "unrelated food and weekend chatter"
+      },
+      {
+        "timestampStart": 1880,
+        "timestampEnd": 1905,
+        "reason": "outro"
+      }
+    ]
+  }
+}

@@ -70,7 +70,7 @@
           </div>
           <section class="conversation" id="result" aria-live="polite">
             <article class="message assistant-message welcome-message">
-              <div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong data-i18n="assistant">tftclarity</strong></div>
+              <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">tftclarity</strong></div>
               <div class="message-body" data-i18n="welcome">直接问我英雄出装、单件装备或阵容排行。你也可以连续追问。</div>
             </article>
             <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="功能分类与快捷查询">
@@ -108,6 +108,17 @@
           </section>
 
           <form class="query-panel composer" id="query-form">
+            <section class="quick-task-form" id="quick-task-form" aria-labelledby="quick-task-form-title" hidden>
+              <header class="quick-task-form-heading">
+                <div>
+                  <span data-i18n="quickTaskFormEyebrow">快捷查询</span>
+                  <strong id="quick-task-form-title"></strong>
+                </div>
+                <button type="button" id="quick-task-form-close" data-i18n-title="closeQuickTaskForm" data-i18n-aria="closeQuickTaskForm" title="取消快捷填写" aria-label="取消快捷填写">×</button>
+              </header>
+              <div class="quick-task-fields" id="quick-task-fields"></div>
+              <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">只填写输入框，发送时会自动组成查询语句。</small>
+            </section>
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>
             <div class="action-row composer-actions">
               <button type="button" id="stop-button" class="compact-action hidden" data-i18n-title="stopTitle" title="停止查询"><span aria-hidden="true">■</span><span data-i18n="stop">停止</span></button>
@@ -120,14 +131,14 @@
 
         <section class="result-pane" id="result-pane" aria-labelledby="result-title">
           <div class="pane-heading result-heading">
-            <div>
+            <div class="result-heading-main">
               <button type="button" id="mobile-result-back" class="mobile-result-back" data-common-result-navigation data-i18n-title="backToChat" data-i18n-aria="backToChat" title="返回对话" aria-label="返回对话">
                 <span aria-hidden="true">←</span>
                 <span class="mobile-result-back-label" data-i18n="backToChat">返回对话</span>
               </button>
               <span class="result-heading-copy">
-                <span class="eyebrow" data-i18n="resultEyebrow">数据结果</span>
-                <h1 id="result-title" data-i18n="resultTitle">当前推荐</h1>
+                <span class="eyebrow" data-i18n="resultEyebrow">查询与证据</span>
+                <h1 id="result-title" data-i18n="resultTitle">查询与证据</h1>
               </span>
             </div>
             <button type="button" id="result-refresh-button" class="subtle-button" data-i18n-title="refreshTitle" title="刷新数据" disabled><span aria-hidden="true">⟳</span><span data-i18n="refresh">刷新</span></button>
@@ -136,7 +147,7 @@
             <section class="result-state result-empty" data-state="empty">
               <div class="state-orbit" aria-hidden="true">✦</div>
               <strong data-i18n="resultEmptyTitle">等待你的查询</strong>
-              <p data-i18n="resultEmptyBody">推荐、单件排行和阵容榜会显示在这里。</p>
+              <p data-i18n="resultEmptyBody">统计结果、知识证据和视频来源会显示在这里。</p>
             </section>
           </div>
         </section>

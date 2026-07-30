@@ -1,0 +1,358 @@
+{
+  "schemaVersion": "youtube_acceptance_annotation.v1",
+  "id": "single-unit-items",
+  "category": "single_unit_item_guide",
+  "sourceUrl": "https://www.youtube.com/watch?v=ag_FVgVScMk",
+  "videoId": "ag_FVgVScMk",
+  "season": "set3-historical",
+  "patch": "10.11",
+  "locale": "en",
+  "output": "ag_FVgVScMk.json",
+  "extractionInput": {
+    "mode": "authenticated_browser_capture",
+    "timedtextJson3": "ag_FVgVScMk.en.json3",
+    "sourceMetadata": "ag_FVgVScMk.metadata.json",
+    "chunkSeconds": 300
+  },
+  "annotationStatus": "provisional",
+  "annotationProvenance": {
+    "reviewer": "Codex transcript-window review",
+    "reviewerType": "codex",
+    "method": "claim-by-claim source transcript window review",
+    "independentHumanReview": false,
+    "seedSource": "model_output",
+    "sourceTranscriptHash": "4490d54dc071997de92f1fa08d1eb54f39a6e8680cf86e802b64dd8fde626131",
+    "videoVersion": "9ef4fb9a06e5b6de0c43",
+    "note": "Model-output-derived review seed; not independent human ground truth. Human verification and sign-off are required."
+  },
+  "annotations": {
+    "claims": [
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "shredder",
+          "Xayah",
+          "Jarvan IV",
+          "trade galaxy",
+          "reroll galaxy"
+        ],
+        "claimKeywords": [
+          "Play shredder composition on trade galaxy or reroll galaxy. Also consider if you get many Xayah and Jarvan IV early, especially a 2-star Jarvan IV before 2-1."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "galaxy is trade or reroll",
+          "early 2-star Jarvan IV",
+          "many Xayah"
+        ],
+        "timestampStart": 62.789,
+        "timestampEnd": 109.86,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Play shredder composition on trade galaxy or reroll galaxy. Also consider if you get many Xayah and Jarvan IV early, especially a 2-star Jarvan IV before 2-1.",
+        "transcriptExcerpt": "[56.58] consideration about when to play this\n[59.28] comp is which galaxy it is the best\n[62.79] galaxies for this composition would be\n[64.56] the trade galaxy which is okay the the\n[66.45] reroll galaxy because it is a hyperbole\n[69.00] composition it's really important having\n[71.70] those freebie rules especially the early\n[73.08] game really helps a lot and I think that\n[75.42] it's basically the best galaxy for this\n[77.97] composition normal galaxy is also pretty\n[80.37] good too I feel that I do really well\n[83.13] for normal galaxies with this\n[84.51] composition because there's not a lot of\n[85.89] external factors really like you know\n[87.87] affecting what's going on in the game\n[90.66] and yeah these are the two of the best\n[93.18] galaxies I wouldn't really play shredder\n[95.91] than any of the other galaxies maybe\n[97.62] star cluster because just all the other\n[100.50] galaxies favorite a lot of other comps\n[102.24] out there and you'll be basically put a\n[103.59] disadvantage from the get-go so I would\n[105.75] only really go this composition for\n[107.37] these two galaxies but don't limit\n[109.86] yourself but these are the best\n[111.87] scenarios as far as items if you're able"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Xayah",
+          "Last Whisper",
+          "Quicksilver Sash",
+          "Deathblade",
+          "Hand of Justice",
+          "Rageblade",
+          "Shiv",
+          "Jarvan IV",
+          "Zz'Rot"
+        ],
+        "claimKeywords": [
+          "Xayah core items: Last Whisper (must-have), QSS, Deathblade. Alternatives if no Deathblade: Hand of Justice or Rageblade; last resort Shiv. Jarvan IV needs Zz'Rot for survivability."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "shredder composition"
+        ],
+        "timestampStart": 160.78,
+        "timestampEnd": 288.1,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Xayah core items: Last Whisper (must-have), QSS, Deathblade. Alternatives if no Deathblade: Hand of Justice or Rageblade; last resort Shiv. Jarvan IV needs Zz'Rot for survivability.",
+        "transcriptExcerpt": "[156.97] two gloves\n[157.54] two swords one bow and one cloak and\n[160.78] that'll make a last whisper which is the\n[162.67] biggest core item for Zaya you cannot\n[164.77] play this build without last whisper as\n[167.98] far as the second Adam quicksilver sash\n[169.27] is pretty staple some people if they\n[173.02] can't go qss they will put a ga but I\n[176.56] would say like nine times out of ten\n[178.36] your Ziya would be three-star so she\n[180.34] won't get like super insta bursted but\n[183.34] if she gets like cc'd all the time she's\n[184.96] basically useless right and your columns\n[188.02] basically destroyed if she's not getting\n[189.67] attack damage out there and because\n[191.26] you'll have four Celestials she'll heal\n[193.27] a decent amount so I would say it's\n[195.25] pretty important for qss as far as the\n[197.53] item goes nine times out of ten you want\n[199.48] to go death blade just the she did get a\n[202.51] little bit nirvan her 80 damage but\n[204.22] death knight basically like it's pretty\n[206.29] Opie dispatch like I would say him a lot\n[208.18] of comps can fit death waiting in there\n[209.62] one way or another and it basically\n[210.97] she'll have like 200 to ten extra ad in\n[213.58] most fights in the late game so it's\n[216.04] really important if you can't get death\n[217.78] blade and of Justices I would say like\n[219.91] the next priority it's between that and\n[222.55] Quincy's rageblade I like Hanna Justin's\n[225.13] better because it is kind of like a\n[226.84] gamble right fifty-fifty if she gets the\n[228.91] extra damage or not but the healing is\n[230.44] actually not bad I think that like four\n[232.90] of all the champions that pretty much\n[234.37] use hand of justice a que like Kayla so\n[238.72] I actually use it this is it the best\n[240.19] cuz she can really utilize both options\n[243.01] and then if he absolutely cannot build\n[245.14] any of those shiv can be made it's not\n[249.07] ideal but because should be out\n[250.42] attacking so much it does take a good\n[252.46] chip but only do this if like let's say\n[254.62] like it's round it's like round five and\n[256.78] you really couldn't get any items but\n[258.85] you can make a shiv just slap that Shiv\n[260.77] on her okay as far as your tree fur goes\n[263.43] ZZ rot is\n[265.63] Radio P because you need J for the b2b\n[268.69] star for this composition to really work\n[270.91] on tapas ayah if you have Z Z right\n[272.62] that's basically extra three K tank like\n[275.41] meat shield like taking damage and\n[278.11] because J for for the most part we'll be\n[280.54] taking a lot of damage this will\n[282.28] basically increase the survivability\n[283.33] because what happens a law is if you\n[285.16] don't have T Z rot it's possible somehow\n[287.20] for your front line to get like\n[288.10] instantly bursted for some reason all\n[290.14] this it's like a GP ol you know his six"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Bramble Vest",
+          "AP comps"
+        ],
+        "claimKeywords": [
+          "Early game Bramble Vest is strong but don't prioritize it because in late game you'll lose more often to AP comps."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "late game",
+          "AP comps prevalent"
+        ],
+        "timestampStart": 322.54,
+        "timestampEnd": 332.05,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Early game Bramble Vest is strong but don't prioritize it because in late game you'll lose more often to AP comps.",
+        "transcriptExcerpt": "[314.86] going these eighty comps but now ap is\n[318.31] like humps are becoming like a little\n[319.99] bit more common I would say so early\n[322.54] game rebel vests is super strong but I\n[324.40] wouldn't say prioritize it that much\n[326.05] because in the late game you'll probably\n[327.82] end up losing more often to AP comes to\n[329.92] eighty comps actually and as first a\n[332.05] third item goes you don't really need\n[334.42] that item but frozen hard it's actually"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Frozen Heart",
+          "Xayah"
+        ],
+        "claimKeywords": [
+          "Frozen Heart on Xayah increases her mana so she shoots her spear more often and faster, and slows enemies around her."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 334.42,
+        "timestampEnd": 349.18,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Frozen Heart on Xayah increases her mana so she shoots her spear more often and faster, and slows enemies around her.",
+        "transcriptExcerpt": "[327.82] end up losing more often to AP comes to\n[329.92] eighty comps actually and as first a\n[332.05] third item goes you don't really need\n[334.42] that item but frozen hard it's actually\n[336.13] really good\n[337.36] it creases his mana so he shoots out his\n[339.22] spear more often or just faster and I\n[341.08] don't again saya really scaled up with\n[342.76] their attack speed and it also slows\n[345.07] down people around him so what happens a\n[347.20] lot is if you look at your positioning\n[349.18] let's say for instance like this comp\n[351.39] really important to block these enemies"
+      },
+      {
+        "type": "positioning",
+        "subjects": [
+          "Xayah",
+          "Jarvan IV"
+        ],
+        "claimKeywords": [
+          "Place Xayah in range of Jarvan IV's ult, usually in second or third row, to ensure immediate auto attacks."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Jarvan IV is on board",
+          "avoid fourth row"
+        ],
+        "timestampStart": 380.11,
+        "timestampEnd": 414.63,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Place Xayah in range of Jarvan IV's ult, usually in second or third row, to ensure immediate auto attacks.",
+        "transcriptExcerpt": "[375.04] basically lock it will increase\n[376.24] therefore your frontline strength by a\n[377.80] lot so pretty important if you can get\n[380.11] that alright so for part 3 we got\n[382.24] positioning so the most important I\n[384.97] would say would be these two you want to\n[387.49] make sure is I as in range of j4\n[388.93] regardless whatever stage of the game it\n[390.55] is and usually that means having having\n[392.92] Zion second or third row you don't want\n[395.20] her in the fourth row because yes you\n[398.88] was his old technically will reach her\n[401.58] but what happened was that sometimes\n[403.17] Schaefer will go in a completely\n[404.01] different direction than SIA and that\n[406.38] basically you want j4 is all on that no\n[409.68] matter what at all times so you can't\n[412.56] please surround the fourth hex but like\n[414.63] more times than not it is an ideal that\n[416.49] better there I'm in fears of like you"
+      },
+      {
+        "type": "positioning",
+        "subjects": [
+          "Fiora",
+          "Blitzcrank",
+          "Xayah",
+          "Quicksilver"
+        ],
+        "claimKeywords": [
+          "Place Fiora to bait Blitzcrank's hook away from Xayah; if Fiora has Quicksilver, she will survive and likely win the fight."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "opponent has Blitzcrank",
+          "Fiora has Quicksilver"
+        ],
+        "timestampStart": 442.8,
+        "timestampEnd": 545.43,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Place Fiora to bait Blitzcrank's hook away from Xayah; if Fiora has Quicksilver, she will survive and likely win the fight.",
+        "transcriptExcerpt": "[436.20] log size targeting and prioritization a\n[438.60] lot fiora so what happens a lot is that\n[442.80] because of the meta right now Blitzcrank\n[445.20] is like in every single round two and\n[448.35] three it like there will always be one\n[449.73] person having some kind of Blitzcrank\n[451.31] because he's just so meta like he can\n[453.87] really because of the meta right now for\n[455.61] early game and mid game is like\n[456.90] frontline carry backline carry or\n[459.33] frontline tanky people and then backline\n[461.34] having these wanted backline carry\n[462.69] Blitzcrank hooks them that destroy is\n[464.97] that that round for them so you want to\n[467.31] make sure you taking consideration for\n[469.38] that so as far as Blitzcrank so let's\n[473.49] say so a good one I like to use would be\n[475.22] versus this okay so let's say or\n[478.53] actually sees this one so this is so\n[480.93] this is a good example right so you\n[483.15] might be like whoa okay so this Fury's\n[486.36] for the blue screen hooks yes because if\n[487.83] this Blitzcrank is on regardless of\n[489.84] wherever he is on the hexes he will\n[491.91] always target this V aura at this angle\n[493.91] what sometimes happens that if some\n[496.08] people like to like do this because\n[498.42] they're like oh you know I don't want to\n[499.86] have like fiora too far back and she\n[502.65] won't do anything right no you want her\n[504.24] there because sometimes people will put\n[505.56] Blitzcrank right here if you put them\n[508.32] right here and fioors over here he will\n[510.15] actually pull Ziya so I mean if you have\n[512.97] like the quickest of recessions I it\n[514.17] won't matter but early game usually you\n[516.48] don't have focus on except for sash so\n[519.30] having her here is really important and\n[520.59] the cool thing about it right is that\n[522.42] you can actually do a last-minute\n[523.98] cuz I would say from like Diamond\n[526.17] onwards people actually are pretty good\n[527.40] at scouting so you want to make sure you\n[529.53] have like that last minute\n[532.14] they won't expect it and then if you\n[533.73] ever get caught hook hooked in she'll\n[536.19] probably survive the initial burden\n[537.21] times a knot and then she leaves get her\n[539.13] old off and that's like crucial seconds\n[540.96] for that teamfight and more than likely\n[543.09] if puts crank hooks fiora's you'll\n[545.43] probably win that fight all right and so"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Kassadin",
+          "Ionic Spark",
+          "Locket of the Iron Solari"
+        ],
+        "claimKeywords": [
+          "Ionic Spark on Kassadin provides survivability and AP for his attack speed steroid; Locket increases frontline strength."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 361.21,
+        "timestampEnd": 387.49,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Ionic Spark on Kassadin provides survivability and AP for his attack speed steroid; Locket increases frontline strength.",
+        "transcriptExcerpt": "[354.55] that are most likely to attack saya or\n[356.70] focus her after j4 is dead ionic spark\n[361.21] he'll be surviving a long time the also\n[363.94] the extra AP is really important for his\n[365.56] attack speed steroid and then the\n[368.41] Lockett iron Solari basically the same\n[370.45] idea what happens is the law is that\n[371.74] your frontline isn't like as tanky but\n[375.04] basically lock it will increase\n[376.24] therefore your frontline strength by a\n[377.80] lot so pretty important if you can get\n[380.11] that alright so for part 3 we got\n[382.24] positioning so the most important I\n[384.97] would say would be these two you want to\n[387.49] make sure is I as in range of j4\n[388.93] regardless whatever stage of the game it"
+      },
+      {
+        "type": "positioning",
+        "subjects": [
+          "Rek'Sai"
+        ],
+        "claimKeywords": [
+          "Position Rek'Sai based on enemy team's frontline/backline composition to optimize his ability targeting."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "enemy team frontline heavy or backline heavy"
+        ],
+        "timestampStart": 554.55,
+        "timestampEnd": 588.87,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Position Rek'Sai based on enemy team's frontline/backline composition to optimize his ability targeting.",
+        "transcriptExcerpt": "[548.76] this fartlek more so late-game\n[550.17] but when you use recon have depend on if\n[554.55] the enemy team is more frontline heavy\n[556.35] or backline heavy it will determine\n[558.36] where he is so an example would be right\n[560.43] here right so some people what they'd\n[562.35] like to do is they'd like to have this\n[564.75] kind of composition which is fine if\n[566.73] their backline is super in the far back\n[568.65] recon will least make his way back there\n[571.65] and he's closer to get there but if\n[574.71] their frontline heavy sometimes he'll go\n[577.50] in this weird like third heck spot which\n[579.57] will only hit like one or two champions\n[581.16] and having them back here we've helped a\n[583.23] lot and plus he won't get like mister\n[584.79] bursted down all right Kassadin being\n[588.87] moved around so if the team is ad heavy"
+      },
+      {
+        "type": "positioning",
+        "subjects": [
+          "Kassadin",
+          "Shen"
+        ],
+        "claimKeywords": [
+          "If enemy team is AD heavy, position Kassadin to have Shen take aggro, so Kassadin survives longer."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "enemy team AD heavy"
+        ],
+        "timestampStart": 588.87,
+        "timestampEnd": 604.199,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "If enemy team is AD heavy, position Kassadin to have Shen take aggro, so Kassadin survives longer.",
+        "transcriptExcerpt": "[583.23] lot and plus he won't get like mister\n[584.79] bursted down all right Kassadin being\n[588.87] moved around so if the team is ad heavy\n[592.17] you will basically want them to aggro\n[594.39] shen more first so you wouldn't want to\n[595.92] put Kassadin up here\n[597.66] you basically want as much hits on Shen\n[600.96] as possible because it'll poke his old\n[604.20] man fat old faster and also like I grow\n[606.03] better so he'll like that dodge will"
+      },
+      {
+        "type": "positioning",
+        "subjects": [
+          "Shen",
+          "Jarvan IV",
+          "Caitlyn",
+          "infiltrators"
+        ],
+        "claimKeywords": [
+          "Against infiltrators, position Shen or Jarvan to tank and Caitlyn to stun them. Trap claw is important to stop infiltrators."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "enemy has infiltrators"
+        ],
+        "timestampStart": 635.61,
+        "timestampEnd": 689.279,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Against infiltrators, position Shen or Jarvan to tank and Caitlyn to stun them. Trap claw is important to stop infiltrators.",
+        "transcriptExcerpt": "[629.19] comes to like 80 heavy teams and he\n[631.59] really like when you fights and so the\n[634.20] last thing for positioning it would be\n[635.61] if it's infiltrators or some kind of\n[637.17] infiltrator that's really gonna wreak\n[638.64] havoc on your back line you will lose if\n[641.40] you don't position accordingly and so a\n[643.59] good counter to that would be late-game\n[645.42] would be to put basically this kind of\n[648.24] formation like if it's like Mecca full\n[650.22] traders on the most immuno common even\n[652.02] during this patch right now you want\n[654.00] them to focus this Shen or Jarvan which\n[655.41] is why I do this\n[657.00] ideally only wanted them at a time so\n[658.92] that's why I did this kind of formation\n[659.91] so the cover you know the bases and then\n[662.40] the infiltrators would come back\n[664.23] you can only switch so much because it's\n[665.94] way easy to switch infiltrators then\n[667.41] you're calm and so the most likely you\n[669.72] can stack over here right and that's why\n[672.15] it's important to have it if you are\n[673.08] right here Caitlin here she'll be three\n[674.79] stars so she can take some damage cast\n[676.92] and right here to disable them hopefully\n[678.47] and the biggest thing on top of\n[682.02] positioning is trap claw trap claw will\n[685.29] stop Isolde's it has exalts very\n[689.28] important in this matter right now those\n[691.65] two pretty much are the biggest killers"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "gloves",
+          "sword",
+          "bow",
+          "vest",
+          "cloak"
+        ],
+        "claimKeywords": [
+          "Prioritize gloves, sword, and bow early game; vest and cloak are nice but less important. Gloves for Last Whisper and Quicksilver Sash, sword for Deathblade, bow for Last Whisper."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "early game transitioning"
+        ],
+        "timestampStart": 711.989,
+        "timestampEnd": 757.829,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Prioritize gloves, sword, and bow early game; vest and cloak are nice but less important. Gloves for Last Whisper and Quicksilver Sash, sword for Deathblade, bow for Last Whisper.",
+        "transcriptExcerpt": "[705.57] havoc on your comp alright and so the\n[708.09] last part of my guide will be\n[709.88] transitioning OH\n[711.99] so for transitioning early game you want\n[714.42] to prioritize gloves sword bow that's\n[719.67] because if you look at it here\n[721.08] all those require these like these are\n[723.39] really important gloves really important\n[726.15] for last whisper and qss sore because\n[729.75] death plate you can get death plate like\n[731.61] that basically you you are in a good\n[733.65] position for first or second if you can\n[735.36] get a full build saya with death blade\n[737.52] and then bow because last whispers could\n[740.70] be super important early aim mid game\n[742.53] but also if you an extra one is easier\n[745.17] on for j4 after that you can get a vest\n[749.43] or cloak not as important vest is nice\n[752.31] because you can put it on Jay for\n[753.45] whatever frontline you want and cloak is\n[755.31] because you know he OSS but or Zephyr\n[757.83] but more likely and not than not you\n[760.29] want leaves one of these three one day"
+      },
+      {
+        "type": "leveling",
+        "subjects": [
+          "升级节奏"
+        ],
+        "claimKeywords": [
+          "Do not level until stage 3-2. Stay at level 4 to have better probability of hitting 1-cost units."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "early game not contested"
+        ],
+        "timestampStart": 771.839,
+        "timestampEnd": 785.9390000000001,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Do not level until stage 3-2. Stay at level 4 to have better probability of hitting 1-cost units.",
+        "transcriptExcerpt": "[764.76] had belt in here because it also does\n[766.53] build into ZZ rot and also those\n[769.40] redemptions that can kind of come in\n[771.84] clutch if you have extra tears so that's\n[774.21] pretty important so you want to make\n[776.37] sure you don't level until stage three -\n[778.85] that's because before stage to be -\n[782.52] you'll be left at level four for the\n[785.94] most part and a little four is your last\n[787.53] chance for a good probability of hitting"
+      },
+      {
+        "type": "reroll_timing",
+        "subjects": [
+          "Jarvan IV",
+          "Ezreal",
+          "Caitlyn",
+          "Shen"
+        ],
+        "claimKeywords": [
+          "Roll down at 3-1. If contested, roll before or match opponents to get higher probabilities for Jarvan, Ezreal, Caitlyn, and Shen."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "playing the comp"
+        ],
+        "timestampStart": 856.62,
+        "timestampEnd": 907.02,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Roll down at 3-1. If contested, roll before or match opponents to get higher probabilities for Jarvan, Ezreal, Caitlyn, and Shen.",
+        "transcriptExcerpt": "[849.54] later against it that little bit more\n[850.86] but yeah that's usually I do so early\n[854.28] game this is you're usually what you\n[856.62] gonna get for SIA for sure Shannon for\n[859.23] sure gently for sure for the chroma\n[861.03] bonus and then J for the that basically\n[864.66] that's steroid that attacks be steroid\n[867.12] and then level five\n[870.89] you will want them at if you are in for\n[873.03] the three play masters but something on\n[874.80] something I want to talk about too is\n[876.27] that sage for if for some reason you\n[878.43] just don't get your G for surfers you\n[880.14] can also put fiora in basically the same\n[886.83] thing not as strong but you know you\n[889.59] basically whatever you can to star first\n[892.35] if you can't for some reason get that\n[894.63] Shen it's okay to have that j4 to it's\n[896.67] it's okay\n[897.24] then for the mid game you will want to\n[899.73] roll down 3-1 like I said after 3-1 econ\n[904.11] and only roll down if you have 7 or more\n[907.02] science you have 7 or more says just\n[909.63] keep rolling down so you get that three"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Ezreal",
+          "Jarvan IV",
+          "Caitlyn",
+          "Shen",
+          "Fiora"
+        ],
+        "claimKeywords": [
+          "Prioritize three-starring Ezreal and Jarvan IV. Three-star Caitlyn is good. Shen at least two-star. Do not three-star Fiora; she is replaced by Irelia later."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "playing the comp"
+        ],
+        "timestampStart": 818.49,
+        "timestampEnd": 867.12,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Prioritize three-starring Ezreal and Jarvan IV. Three-star Caitlyn is good. Shen at least two-star. Do not three-star Fiora; she is replaced by Irelia later.",
+        "transcriptExcerpt": "[813.69] make sure you match them or even do it\n[815.28] before them because your probabilities\n[816.87] opinion says are a lot higher because\n[818.49] they're gonna be grabbing all desires\n[820.22] and as far as prioritization for\n[822.57] champions make sure you want to get\n[824.52] eazy-e's J fours after that Caitlyn\n[828.18] she's pretty good at the restart\n[829.44] I usually three saw her most games after\n[831.57] that we Shen want him at least to star\n[833.58] if you can I'm three star though he will\n[835.14] he'll wreck have a mid game and even\n[837.21] like games two and fiora I usually don't\n[840.18] three-star hurt because the money you\n[841.62] spend so holding your fiora's could be\n[843.06] better spent for his eyes and J fours\n[844.65] and roll re rolling for them and usually\n[848.07] you'll switch out fewer for I really a\n[849.54] later against it that little bit more\n[850.86] but yeah that's usually I do so early\n[854.28] game this is you're usually what you\n[856.62] gonna get for SIA for sure Shannon for\n[859.23] sure gently for sure for the chroma\n[861.03] bonus and then J for the that basically\n[864.66] that's steroid that attacks be steroid\n[867.12] and then level five"
+      },
+      {
+        "type": "positioning",
+        "subjects": [
+          "positioning"
+        ],
+        "claimKeywords": [
+          "Keep moving around a little bit, depends on what you're feeling, but generally this is the best execution for positioning."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1204.77,
+        "timestampEnd": 1220.04,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Keep moving around a little bit, depends on what you're feeling, but generally this is the best execution for positioning.",
+        "transcriptExcerpt": "[1195.92] and yeah and then the last thing would\n[1200.45] be versus infiltrators and so I kind of\n[1204.77] talked about this in position but this\n[1207.14] is kind of like what you want to do keep\n[1208.58] moving around a little bit depends on\n[1210.14] what you're feeling but this is\n[1211.70] generally the best you know best\n[1213.74] execution for it and yeah I hope you\n[1217.49] enjoyed this guide if there's any like\n[1220.04] constructive criticism that you have and\n[1221.45] like I'm totally open to it\n[1222.74] I would love to improve in whatever way"
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 1224.7,
+        "timestampEnd": 1243.13,
+        "reason": "comments request and outro"
+      }
+    ]
+  }
+}

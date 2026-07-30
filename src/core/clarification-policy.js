@@ -173,9 +173,9 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
     const name = unit?.zhName ?? unit?.displayName ?? parsed.unitAlias ?? query.unit;
     return buildClarification(
       "ambiguous_unit_query_type",
-      `你想查询${name}的推荐装备，还是包含${name}的阵容？`,
+      `你想查询${name}的推荐装备、所在阵容，还是技能与棋子资料？`,
       {
-        suggestions: [`${name}推荐装备`, `${name}所在阵容`]
+        suggestions: [`${name}推荐装备`, `${name}所在阵容`, `${name}技能描述（棋子资料）`]
       }
     );
   }

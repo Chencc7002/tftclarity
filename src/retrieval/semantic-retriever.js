@@ -8,6 +8,100 @@ function array(value) {
   return Array.isArray(value) ? value : [];
 }
 
+const CURRENT_STATS_DOCUMENT_TYPES = new Set([
+  "meta_snapshot",
+  "unit_stats",
+  "comp_stats",
+  "item_stats",
+  "trend_snapshot"
+]);
+
+function normalizedRank(value) {
+  const values = Array.isArray(value)
+    ? value
+    : String(value ?? "").split(",");
+  return values.map((entry) => String(entry).trim().toUpperCase())
+    .filter(Boolean)
+    .sort()
+    .join(",");
+}
+
+function latestIso(left, right) {
+  const leftTime = Date.parse(left ?? "");
+  const rightTime = Date.parse(right ?? "");
+  if (!Number.isFinite(leftTime)) return right ?? null;
+  if (!Number.isFinite(rightTime)) return left ?? null;
+  return leftTime >= rightTime ? left : right;
+}
+
+export async function listCurrentStatsScopesFromStore(store, options = {}) {
+  const documents = await store.list({
+    seasonContextId: options.seasonContextId ?? "set17-live",
+    documentTypes: [...CURRENT_STATS_DOCUMENT_TYPES],
+    locale: options.locale,
+    includeGlobalLocale: false
+  });
+  const now = Number(options.now ?? Date.now());
+  const scopes = new Map();
+  for (const document of documents) {
+    const metadata = document.metadata ?? {};
+    const expiresAtTime = Date.parse(metadata.expiresAt ?? "");
+    if (
+      document.source !== "metatft"
+      || metadata.namespace !== "current_stats"
+      || (Number.isFinite(expiresAtTime) && expiresAtTime <= now)
+    ) continue;
+    const scope = {
+      seasonContextId: String(document.seasonContextId ?? "set17-live"),
+      season: String(metadata.season ?? ""),
+      patch: String(document.patch ?? metadata.patch ?? ""),
+      rank: normalizedRank(metadata.rank),
+      timeWindow: String(metadata.timeWindow ?? ""),
+      region: String(metadata.region ?? "").toLowerCase(),
+      locale: String(document.locale ?? metadata.locale ?? ""),
+      generatedAt: metadata.generatedAt ?? document.updatedAt ?? null,
+      expiresAt: metadata.expiresAt ?? null,
+      documentCount: 0,
+      documentTypes: []
+    };
+    const key = [
+      scope.seasonContextId,
+      scope.season,
+      scope.patch,
+      scope.rank,
+      scope.timeWindow,
+      scope.region,
+      scope.locale
+    ].join("\u0000");
+    const existing = scopes.get(key);
+    if (existing) {
+      existing.documentCount += 1;
+      existing.documentTypes = [...new Set([...existing.documentTypes, document.documentType])].sort();
+      existing.generatedAt = latestIso(existing.generatedAt, scope.generatedAt);
+      existing.expiresAt = latestIso(existing.expiresAt, scope.expiresAt);
+    } else {
+      scope.documentCount = 1;
+      scope.documentTypes = [document.documentType];
+      scopes.set(key, scope);
+    }
+  }
+  return [...scopes.values()].sort((left, right) => [
+    left.seasonContextId,
+    left.patch,
+    left.rank,
+    left.timeWindow,
+    left.region,
+    left.locale
+  ].join("|").localeCompare([
+    right.seasonContextId,
+    right.patch,
+    right.rank,
+    right.timeWindow,
+    right.region,
+    right.locale
+  ].join("|")));
+}
+
 function tokens(value) {
   const normalized = String(value ?? "").normalize("NFKC").toLowerCase();
   const words = normalized.match(/[a-z0-9]+|\p{Script=Han}/gu) ?? [];
@@ -56,9 +150,41 @@ function vectorCosine(left, right) {
 function filterDocument(document, options) {
   const types = new Set(array(options.documentTypes ?? options.types));
   if (types.size && !types.has(document.documentType)) return false;
-  if (options.patch && document.patch && document.patch !== options.patch) return false;
+  const currentStats = CURRENT_STATS_DOCUMENT_TYPES.has(document.documentType);
+  const videoGuide = document.documentType === "video_guide";
+  if (videoGuide) {
+    const metadata = document.metadata ?? {};
+    if (
+      document.source !== "youtube"
+      || metadata.namespace !== "video_guides"
+      || !metadata.videoVersion
+      || metadata.isCurrentVersion !== true
+      || !["success", "partial_success"].includes(metadata.ingestionStatus)
+      || !options.patch
+      || String(document.patch ?? metadata.patch ?? "") !== String(options.patch)
+    ) return false;
+  }
+  if (
+    options.patch
+    && (
+      currentStats
+        ? String(document.patch ?? document.metadata?.patch ?? "") !== String(options.patch)
+        : videoGuide
+          ? String(document.patch ?? document.metadata?.patch ?? "") !== String(options.patch)
+        : document.patch && document.patch !== options.patch
+    )
+  ) return false;
   if (options.locale && document.locale && document.locale !== options.locale) return false;
   if (String(document.seasonContextId ?? "set17-live") !== String(options.seasonContextId ?? "set17-live")) return false;
+  if (currentStats) {
+    const metadata = document.metadata ?? {};
+    if (options.rank && String(metadata.rank ?? "") !== String(options.rank)) return false;
+    if (options.timeWindow && String(metadata.timeWindow ?? "") !== String(options.timeWindow)) return false;
+    if (
+      options.region
+      && String(metadata.region ?? "").toLowerCase() !== String(options.region).toLowerCase()
+    ) return false;
+  }
   return true;
 }
 
@@ -258,9 +384,11 @@ export function createPersistentSemanticRetriever({ store, provider, onFallback 
         { onFallback }
       )
     : fallback;
-  return new HybridSemanticRetriever(retriever, {
+  const hybrid = new HybridSemanticRetriever(retriever, {
     lexicalRetriever: provider ? fallback : null
   });
+  hybrid.listCurrentStatsScopes = (options = {}) => listCurrentStatsScopesFromStore(store, options);
+  return hybrid;
 }
 
 export async function retrieveSemanticPlan(plan, retriever, options = {}) {

@@ -1,0 +1,53 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tftclarity.local/schemas/youtube-extraction.v1.json",
+  "title": "YouTube guide extraction",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["knowledge"],
+  "properties": {
+    "knowledge": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "type",
+          "subjects",
+          "claim",
+          "conditions",
+          "timestampStart",
+          "timestampEnd",
+          "patchSpecific",
+          "confidence"
+        ],
+        "properties": {
+          "type": {
+            "enum": [
+              "comp_recommendation",
+              "item_priority",
+              "opener",
+              "transition",
+              "leveling",
+              "reroll_timing",
+              "positioning",
+              "late_game_pivot",
+              "risk",
+              "patch_specific",
+              "mechanism"
+            ]
+          },
+          "subjects": { "type": "array", "minItems": 1, "items": { "type": "string" } },
+          "claim": { "type": "string", "minLength": 1 },
+          "conditions": { "type": "array", "items": { "type": "string" } },
+          "timestampStart": { "type": "number", "minimum": 0 },
+          "timestampEnd": { "type": "number", "minimum": 0 },
+          "patchSpecific": { "type": "boolean" },
+          "confidence": {
+            "enum": ["creator_advice", "strategic_advice", "speculation"]
+          }
+        }
+      }
+    }
+  }
+}

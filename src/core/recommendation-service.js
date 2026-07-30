@@ -582,7 +582,7 @@ function controlledConversationText(resolution, state) {
       entity?.expectedType === "champion"
     ));
     const name = unit?.canonicalName ?? unit?.rawText ?? "这个英雄";
-    return `你想查询${name}的推荐装备，还是包含${name}的阵容？`;
+    return `你想查询${name}的推荐装备、所在阵容，还是技能与棋子资料？`;
   }
   if (resolution.decision === "exhausted") {
     const shown = state.lastResult?.shownIds?.length ?? state.lastResult?.returnedCount ?? 0;
@@ -594,6 +594,19 @@ function controlledConversationText(resolution, state) {
   if (resolution.decision === "unsupported") return "我理解了任务变化，但当前能力不支持执行。";
   if (resolution.decision === "invalid_delta") return "本轮任务变化不符合受控协议，请换一种方式说明要继续、修改还是切换任务。";
   return "我还不能确定本轮是继续当前任务、修改条件还是开始新任务，请补充一个关键信息。";
+}
+
+function controlledConversationSuggestions(resolution) {
+  const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
+    entry?.code === "ambiguous_query_type"
+    || entry?.missingFields?.includes?.("query_type")
+  ));
+  if (!queryTypeAmbiguity) return [];
+  const unit = resolution.resolvedTaskFrame?.subjects?.find((entity) => (
+    entity?.expectedType === "champion"
+  ));
+  const name = unit?.canonicalName ?? unit?.rawText ?? "这个英雄";
+  return [`${name}推荐装备`, `${name}所在阵容`, `${name}技能描述（棋子资料）`];
 }
 
 async function controlledConversationResponse(input, state, interpretation, resolution, options) {
@@ -631,7 +644,8 @@ async function controlledConversationResponse(input, state, interpretation, reso
         needsClarification: true,
         blocking: true,
         reason: resolution.nextState.pendingClarification?.reason ?? resolution.decision,
-        question: controlledConversationText(resolution, state)
+        question: controlledConversationText(resolution, state),
+        suggestions: controlledConversationSuggestions(resolution)
       }
       : null,
     filteredBuilds: [],

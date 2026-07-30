@@ -57,6 +57,10 @@ const state = {
 const shellEl = document.querySelector("#app-shell");
 const form = document.querySelector("#query-form");
 const queryInput = document.querySelector("#query-input");
+const quickTaskForm = document.querySelector("#quick-task-form");
+const quickTaskFormTitle = document.querySelector("#quick-task-form-title");
+const quickTaskFormClose = document.querySelector("#quick-task-form-close");
+const quickTaskFields = document.querySelector("#quick-task-fields");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
 const stopButton = document.querySelector("#stop-button");
@@ -119,6 +123,7 @@ const itemAuditExportCsv = document.querySelector("#item-audit-export-csv");
 let saveTimer = null;
 let itemAuditTimer = null;
 let activeResponseEl = null;
+let activeQuickTask = null;
 
 const conversationPane = new ConversationPane(resultEl);
 const composer = new Composer({ form, input: queryInput });
@@ -510,8 +515,8 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "unit-build",
-    inputTemplateKey: "quickTaskBuildTemplate",
-    selectionKey: "quickTaskBuildSelection",
+    formFields: ["champion"],
+    queryTemplateKey: "quickTaskBuildTemplate",
     titleKey: "quickTaskBuildTitle",
     bodyKey: "quickTaskBuildBody",
     exampleKey: "quickTaskBuildExample",
@@ -520,8 +525,9 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "unit-build-completion",
-    inputTemplateKey: "quickTaskCompletionTemplate",
-    selectionKey: "quickTaskBuildSelection",
+    formFields: ["champion", "item1", "item2Optional"],
+    queryTemplateKey: "quickTaskCompletionTemplate",
+    optionalQueryTemplateKey: "quickTaskCompletionWithSecondTemplate",
     titleKey: "quickTaskCompletionTitle",
     bodyKey: "quickTaskCompletionBody",
     exampleKey: "quickTaskCompletionExample",
@@ -530,8 +536,8 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "item-performance",
-    inputTemplateKey: "quickTaskPerformanceTemplate",
-    selectionKey: "quickTaskItemSelection",
+    formFields: ["item", "champion"],
+    queryTemplateKey: "quickTaskPerformanceTemplate",
     titleKey: "quickTaskPerformanceTitle",
     bodyKey: "quickTaskPerformanceBody",
     exampleKey: "quickTaskPerformanceExample",
@@ -540,8 +546,8 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "item-comparison",
-    inputTemplateKey: "quickTaskComparisonTemplate",
-    selectionKey: "quickTaskBuildSelection",
+    formFields: ["champion", "comparisonItem1", "item2"],
+    queryTemplateKey: "quickTaskComparisonTemplate",
     titleKey: "quickTaskComparisonTitle",
     bodyKey: "quickTaskComparisonBody",
     exampleKey: "quickTaskComparisonExample",
@@ -550,8 +556,8 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "item-carriers",
-    inputTemplateKey: "quickTaskCarriersTemplate",
-    selectionKey: "quickTaskItemSelection",
+    formFields: ["item"],
+    queryTemplateKey: "quickTaskCarriersTemplate",
     titleKey: "quickTaskCarriersTitle",
     bodyKey: "quickTaskCarriersBody",
     exampleKey: "quickTaskCarriersExample",
@@ -560,8 +566,8 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "special-items",
-    inputTemplateKey: "quickTaskSpecialTemplate",
-    selectionKey: "quickTaskBuildSelection",
+    formFields: ["champion", "specialCategory"],
+    queryTemplateKey: "quickTaskSpecialTemplate",
     titleKey: "quickTaskSpecialTitle",
     bodyKey: "quickTaskSpecialBody",
     exampleKey: "quickTaskSpecialExample",
@@ -590,8 +596,8 @@ const QUICK_TASKS = [
   {
     category: "comps",
     id: "hero-comps",
-    inputTemplateKey: "quickTaskHeroCompsTemplate",
-    selectionKey: "quickTaskBuildSelection",
+    formFields: ["champion"],
+    queryTemplateKey: "quickTaskHeroCompsTemplate",
     titleKey: "quickTaskHeroCompsTitle",
     bodyKey: "quickTaskHeroCompsBody",
     exampleKey: "quickTaskHeroCompsExample",
@@ -600,8 +606,8 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "unit-details",
-    inputTemplateKey: "quickTaskUnitDetailsTemplate",
-    selectionKey: "quickTaskBuildSelection",
+    formFields: ["champion"],
+    queryTemplateKey: "quickTaskUnitDetailsTemplate",
     titleKey: "quickTaskUnitDetailsTitle",
     bodyKey: "quickTaskUnitDetailsBody",
     exampleKey: "quickTaskUnitDetailsExample",
@@ -620,8 +626,8 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "item-details",
-    inputTemplateKey: "quickTaskItemDetailsTemplate",
-    selectionKey: "quickTaskItemSelection",
+    formFields: ["item"],
+    queryTemplateKey: "quickTaskItemDetailsTemplate",
     titleKey: "quickTaskItemDetailsTitle",
     bodyKey: "quickTaskItemDetailsBody",
     exampleKey: "quickTaskItemDetailsExample",
@@ -630,8 +636,8 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "trait-details",
-    inputTemplateKey: "quickTaskTraitDetailsTemplate",
-    selectionKey: "quickTaskTraitSelection",
+    formFields: ["trait"],
+    queryTemplateKey: "quickTaskTraitDetailsTemplate",
     titleKey: "quickTaskTraitDetailsTitle",
     bodyKey: "quickTaskTraitDetailsBody",
     exampleKey: "quickTaskTraitDetailsExample",
@@ -673,7 +679,7 @@ function quickTasksForSeason() {
 }
 
 function quickTaskCardHtml(task) {
-  const isInteractive = task.query || task.queryKey || task.view || task.inputTemplateKey;
+  const isInteractive = task.query || task.queryKey || task.view || task.formFields;
   const action = isInteractive
     ? ` data-quick-task="${escapeHtml(task.id)}"`
     : " disabled";
@@ -730,8 +736,70 @@ function quickTasksHtml() {
   `;
 }
 
-function unresolvedQuickTaskPlaceholder(value) {
-  return String(value ?? "").match(/【[^】]+】|\[[^\]]+\]/u)?.[0] ?? null;
+const QUICK_TASK_FIELD_DEFINITIONS = {
+  champion: { labelKey: "quickFieldChampion", placeholderKey: "quickFieldChampionPlaceholder", required: true },
+  item: { labelKey: "quickFieldItem", placeholderKey: "quickFieldItemPlaceholder", required: true },
+  item1: { labelKey: "quickFieldOwnedItem", placeholderKey: "quickFieldOwnedItemPlaceholder", required: true },
+  comparisonItem1: { valueKey: "item1", labelKey: "quickFieldComparedItemOne", placeholderKey: "quickFieldComparedItemOnePlaceholder", required: true },
+  item2: { labelKey: "quickFieldComparedItem", placeholderKey: "quickFieldComparedItemPlaceholder", required: true },
+  item2Optional: { valueKey: "item2", labelKey: "quickFieldOptionalItem", placeholderKey: "quickFieldOptionalItemPlaceholder", required: false },
+  trait: { labelKey: "quickFieldTrait", placeholderKey: "quickFieldTraitPlaceholder", required: true },
+  specialCategory: { labelKey: "quickFieldSpecialCategory", placeholderKey: "quickFieldSpecialCategoryPlaceholder", required: true }
+};
+
+function closeQuickTaskForm({ focus = false } = {}) {
+  activeQuickTask = null;
+  quickTaskForm.hidden = true;
+  quickTaskFields.replaceChildren();
+  form.classList.remove("quick-task-form-active");
+  queryInput.hidden = false;
+  if (focus) queryInput.focus();
+}
+
+function openQuickTaskForm(task) {
+  activeQuickTask = task;
+  queryInput.value = "";
+  queryInput.setCustomValidity("");
+  queryInput.hidden = true;
+  quickTaskFormTitle.textContent = t(task.titleKey);
+  quickTaskFields.innerHTML = task.formFields.map((fieldName) => {
+    const field = QUICK_TASK_FIELD_DEFINITIONS[fieldName];
+    const valueKey = field.valueKey ?? fieldName;
+    return `
+      <label class="quick-task-field">
+        <span data-i18n="${field.labelKey}">${escapeHtml(t(field.labelKey))}${field.required ? `<b aria-hidden="true">*</b>` : ""}</span>
+        <input type="text" name="quick-${escapeHtml(valueKey)}" data-quick-field="${escapeHtml(valueKey)}"
+          data-i18n-placeholder="${field.placeholderKey}" placeholder="${escapeHtml(t(field.placeholderKey))}"
+          autocomplete="off" spellcheck="false"${field.required ? " required" : ""}>
+      </label>
+    `;
+  }).join("");
+  quickTaskForm.hidden = false;
+  form.classList.add("quick-task-form-active");
+  quickTaskFields.querySelector("input")?.focus();
+}
+
+function quickTaskQuery(task) {
+  const values = {};
+  for (const input of quickTaskFields.querySelectorAll("[data-quick-field]")) {
+    values[input.dataset.quickField] = input.value.trim();
+    if (!input.reportValidity()) return null;
+  }
+  const templateKey = task.optionalQueryTemplateKey && values.item2
+    ? task.optionalQueryTemplateKey
+    : task.queryTemplateKey;
+  return t(templateKey, values);
+}
+
+async function submitQuickTaskForm() {
+  if (!activeQuickTask) return false;
+  const task = activeQuickTask;
+  const query = quickTaskQuery(task);
+  if (!query) return true;
+  closeQuickTaskForm();
+  queryInput.value = query;
+  await requestRecommendation(false, query);
+  return true;
 }
 
 function collapseQuickTaskCategories(section) {
@@ -761,7 +829,7 @@ function toggleQuickTaskCategory(button) {
 function welcomeConversationHtml(messageKey = "newConversation") {
   return `
     <article class="message assistant-message welcome-message">
-      <div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong data-i18n="assistant">${escapeHtml(t("assistant"))}</strong></div>
+      <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">${escapeHtml(t("assistant"))}</strong></div>
       <div class="message-body" data-i18n="${messageKey}">${escapeHtml(t(messageKey))}</div>
     </article>
     ${quickTasksHtml()}
@@ -1828,11 +1896,11 @@ function renderEntityCatalog(data) {
     ${resultHeader(title, data.text, t("catalogCount", { value: data.pagination?.total ?? items.length }))}
     <section class="entity-catalog" data-entity-catalog data-entity-type="${entityType}">
       <div class="entity-catalog-controls">
-        <label>
+        <label class="entity-catalog-control entity-catalog-search">
           <span class="sr-only">${escapeHtml(t("catalogSearch"))}</span>
           <input type="search" data-catalog-query placeholder="${escapeHtml(t("catalogSearch"))}" autocomplete="off">
         </label>
-        <label>
+        <label class="entity-catalog-control entity-catalog-filter">
           <span class="sr-only">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</span>
           <select data-catalog-filter>
             <option value="">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</option>
@@ -1864,7 +1932,6 @@ function renderUnitDetails(data) {
             <span>${escapeHtml(t("metricSamples"))} <b>${formatNumber(item.stats?.games ?? 0)}</b></span>
             <span>${escapeHtml(t("metricTop4Rate"))} <b>${formatNumber(item.stats?.top4 ?? 0)}%</b></span>
             <span>${escapeHtml(t("metricAvgPlacement"))} <b>${formatNumber(item.stats?.avg ?? 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
-            <span>${escapeHtml(t("recommendationScore"))} <b>${formatNumber(item.recommendationScore ?? 0, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</b></span>
           </div>
         </article>`).join("")}</div>`
     : `<div class="detail-muted">${escapeHtml(t("noStableItems"))}</div>`;
@@ -2413,6 +2480,7 @@ function generatedConclusionText(conclusion, data = null) {
 }
 
 function chatCoreConclusionHtml(data, responseId, options = {}) {
+  if (data?.assistantResponse?.text) return "";
   const fullFixedText = chatCoreConclusionText(data);
   if (!fullFixedText) return "";
   const fixedText = Object.prototype.hasOwnProperty.call(options, "fixedCoreText") ? options.fixedCoreText : fullFixedText;
@@ -2429,11 +2497,32 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
   </section>`;
 }
 
+function systemInteractionAnswerHtml(data) {
+  const answer = String(data?.systemInteraction?.answer ?? data?.answer?.summary ?? data?.text ?? "");
+  const lines = answer.split(/\r?\n/u);
+  const lead = [];
+  const examples = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("- ")) examples.push(trimmed.slice(2));
+    else lead.push(trimmed);
+  }
+  return `<div class="system-interaction-answer">
+    ${lead.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+    ${examples.length ? `<ul>${examples.map((example) => `<li>${escapeHtml(example)}</li>`).join("")}</ul>` : ""}
+  </div>`;
+}
+
 function assistantResponseHtml(data, responseId = "", options = {}) {
-  if (data?.clarification?.needsClarification) {
+  if (data?.type === "system_interaction") {
+    return systemInteractionAnswerHtml(data);
+  }
+  if (data?.clarification?.needsClarification && !data?.assistantResponse?.text) {
     return `<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
   }
-  const summary = data?.answer?.summary
+  const summary = data?.assistantResponse?.text
+    ?? data?.answer?.summary
     ?? data?.text
     ?? (data?.type === "comp_trends"
       ? t("currentCompTrends")
@@ -2521,6 +2610,7 @@ function activateResponseResult(record) {
 
 function rerenderLocalizedState() {
   applyI18n();
+  if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
   }
@@ -2684,8 +2774,154 @@ function renderRecommendationResult(data) {
     ${conditionPanel(data)}${sourceAndRisk(data)}`);
 }
 
+function safeKnowledgeSourceUrl(value, timestampStart = null) {
+  try {
+    const url = new URL(String(value ?? ""));
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    if (Number.isFinite(Number(timestampStart)) && /(^|\.)youtube\.com$|(^|\.)youtu\.be$/i.test(url.hostname)) {
+      url.searchParams.set("t", `${Math.max(0, Math.floor(Number(timestampStart)))}s`);
+    }
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function knowledgeTimestamp(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const wholeSeconds = Math.floor(seconds);
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const remainder = wholeSeconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function knowledgePublishedDate(value) {
+  const text = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return new Intl.DateTimeFormat(getLocale(), {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "UTC"
+    }).format(new Date(`${text}T00:00:00Z`));
+  }
+  return formatDate(value);
+}
+
+function renderKnowledgeEvidence(data) {
+  const evidence = Array.isArray(data?.knowledgeEvidence) ? data.knowledgeEvidence : [];
+  if (!evidence.length) return "";
+  return `<section class="knowledge-evidence" aria-label="${escapeHtml(t("knowledgeEvidenceTitle"))}">
+    <header class="knowledge-evidence-head">
+      <div><span>${escapeHtml(t("knowledgeEvidenceEyebrow"))}</span><h2>${escapeHtml(t("knowledgeEvidenceTitle"))}</h2></div>
+      <small>${escapeHtml(t("knowledgeEvidenceCount", { count: evidence.length }))}</small>
+    </header>
+    <div class="knowledge-evidence-list">
+      ${evidence.map((record) => {
+        const timestamp = knowledgeTimestamp(record.timestampStart);
+        const sourceUrl = safeKnowledgeSourceUrl(record.sourceUrl, record.timestampStart);
+        const sourceLabel = record.sourceType === "youtube"
+          ? t("videoGuideSource")
+          : record.namespace === "current_stats"
+            ? t("currentStatsSource")
+          : t("knowledgeSource");
+        const title = record.sourceTitle ?? sourceLabel;
+        const aiGenerated = record.aiGenerated === true
+          || record.contentOrigin === "ai_generated_transcript_summary";
+        const aiReviewLabel = record.reviewStatus === "human_reviewed"
+          ? t("aiGeneratedReviewed")
+          : t("aiGeneratedUnreviewed");
+        const metadata = [
+          record.author ? `${t("knowledgeAuthor")}: ${record.author}` : null,
+          record.publishedAt ? `${t("publishedAt")}: ${knowledgePublishedDate(record.publishedAt)}` : null,
+          timestamp ? `${t("timestamp")}: ${timestamp}` : null,
+          record.patch ? `${t("patchLabel")}: ${record.patch}` : null,
+          record.rank ? `${t("rankScope")}: ${record.rank}` : null,
+          record.timeWindow ? `${t("timeWindowLabel")}: ${record.timeWindow}` : null,
+          record.region ? `${t("regionLabel")}: ${record.region}` : null,
+          record.generatedAt ? `${t("generatedAtLabel")}: ${formatDate(record.generatedAt)}` : null
+        ].filter(Boolean);
+        return `<article class="knowledge-card">
+          <div class="knowledge-card-source">
+            <span>${escapeHtml(sourceLabel)}</span>
+            <strong>${escapeHtml(title)}</strong>
+            ${aiGenerated ? `<em class="knowledge-ai-badge">${escapeHtml(aiReviewLabel)}</em>` : ""}
+          </div>
+          ${metadata.length ? `<div class="knowledge-card-meta">${metadata.map((entry) => `<span>${escapeHtml(entry)}</span>`).join("")}</div>` : ""}
+          <p>${escapeHtml(record.claim)}</p>
+          ${aiGenerated ? `<p class="knowledge-ai-disclosure">${escapeHtml(t("aiGeneratedDisclosure"))}</p>` : ""}
+          ${record.conditions?.length ? `<div class="knowledge-card-conditions"><strong>${escapeHtml(t("applicableConditions"))}</strong>${record.conditions.map((condition) => `<span>${escapeHtml(condition)}</span>`).join("")}</div>` : ""}
+          ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(timestamp ? t("openSourceAtTimestamp", { timestamp }) : t("openSourceVideo"))}</a>` : ""}
+        </article>`;
+      }).join("")}
+    </div>
+    <p class="knowledge-authority-note">${escapeHtml(t("knowledgeAuthorityNote"))}</p>
+  </section>`;
+}
+
+function renderCurrentStatsScopeStatus(data) {
+  const status = data?.currentStatsScope;
+  if (status?.status !== "scope_unavailable") return "";
+  const requested = status.requestedScope ?? {};
+  const requestedLabel = [
+    requested.season,
+    requested.patch,
+    requested.rank,
+    requested.timeWindow,
+    requested.region
+  ].filter(Boolean).join(" · ");
+  const available = (status.availableScopes ?? []).slice(0, 4).map((scope) => [
+    scope.season,
+    scope.patch,
+    scope.rank,
+    scope.timeWindow,
+    scope.region
+  ].filter(Boolean).join(" · "));
+  return `<section class="knowledge-evidence current-stats-scope-status" aria-live="polite">
+    <header class="knowledge-evidence-head">
+      <div><span>current_stats</span><h2>${escapeHtml(t("currentStatsScopeUnavailable"))}</h2></div>
+    </header>
+    <p>${escapeHtml(requestedLabel)}</p>
+    ${available.length ? `<div class="knowledge-card-meta"><strong>${escapeHtml(t("currentStatsAvailableScopes"))}</strong>${available.map((scope) => `<span>${escapeHtml(scope)}</span>`).join("")}</div>` : ""}
+  </section>`;
+}
+
+function renderCoachAnswerResult(data) {
+  const response = data?.assistantResponse?.content ?? {};
+  const warnings = Array.isArray(response.warnings) ? response.warnings : [];
+  setResponseHtml(`
+    ${resultHeader(t("coachAnswerTitle"), response.headline ?? data?.answer?.summary ?? data?.text, t("coachAnswerTitle"))}
+    <section class="coach-answer-card">
+      <p>${escapeHtml(data?.assistantResponse?.text ?? data?.text ?? t("noResult"))}</p>
+      ${response.currentRecommendation?.label ? `<div class="coach-current-recommendation"><strong>${escapeHtml(t("currentStatsRecommendation"))}</strong><span>${escapeHtml(response.currentRecommendation.label)}</span></div>` : ""}
+      ${warnings.length ? `<div class="coach-answer-warnings">${warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
+    </section>
+    ${data?.query ? conditionPanel(data) : ""}
+    ${data?.source ? sourceAndRisk(data) : ""}
+  `);
+}
+
+function renderSystemInteractionResult(data) {
+  setResponseHtml(`
+    ${resultHeader("TFTClarity", data?.answer?.summary ?? data?.text, "SYSTEM")}
+    <section class="system-interaction-card">
+      ${systemInteractionAnswerHtml(data)}
+    </section>
+  `);
+}
+
 function renderCurrentResult(data) {
-  if (data.type === "entity_catalog") renderEntityCatalog(data);
+  if (data.type === "system_interaction") renderSystemInteractionResult(data);
+  else if (
+    data.type === "coach_answer"
+    || (data?.clarification?.needsClarification && data?.assistantResponse?.text)
+  ) renderCoachAnswerResult(data);
+  else if (data.type === "entity_catalog") renderEntityCatalog(data);
   else if (data.type === "unit_details") renderUnitDetails(data);
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
@@ -2694,6 +2930,10 @@ function renderCurrentResult(data) {
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else renderRecommendationResult(data);
+  const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
+  if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
+  const knowledgeHtml = renderKnowledgeEvidence(data);
+  if (knowledgeHtml) resultContentEl.insertAdjacentHTML("beforeend", knowledgeHtml);
 }
 
 function renderResult(data) {
@@ -3203,18 +3443,6 @@ async function requestRecommendation(refresh = false, displayInput = null) {
     renderError("enterQuery", "enterQuery");
     return;
   }
-  if (!refresh) {
-    const pendingPlaceholder = unresolvedQuickTaskPlaceholder(queryInput.value);
-    const selectionStart = pendingPlaceholder ? queryInput.value.indexOf(pendingPlaceholder) : -1;
-    if (selectionStart >= 0) {
-      queryInput.setCustomValidity(t("completeQuickTaskFields"));
-      queryInput.focus();
-      queryInput.setSelectionRange(selectionStart, selectionStart + pendingPlaceholder.length);
-      queryInput.reportValidity();
-      return;
-    }
-    queryInput.setCustomValidity("");
-  }
 
   state.currentController?.abort();
   state.currentConclusionController?.abort();
@@ -3405,8 +3633,9 @@ rankControl.addEventListener("change", () => {
   scheduleSavePreferences();
 });
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (await submitQuickTaskForm()) return;
   requestRecommendation(false);
 });
 
@@ -3417,13 +3646,11 @@ queryInput.addEventListener("keydown", (event) => {
   }
 });
 
-queryInput.addEventListener("input", () => {
-  if (!unresolvedQuickTaskPlaceholder(queryInput.value)) queryInput.setCustomValidity("");
-});
-
 stopButton.addEventListener("click", () => {
   state.currentController?.abort();
 });
+
+quickTaskFormClose.addEventListener("click", () => closeQuickTaskForm({ focus: true }));
 
 async function handleResultClick(event) {
   const returnCatalogButton = event.target.closest("[data-return-catalog]");
@@ -3481,16 +3708,8 @@ async function handleResultClick(event) {
       openMobileResult();
       return;
     }
-    if (quickTask?.inputTemplateKey) {
-      const template = t(quickTask.inputTemplateKey);
-      const selection = t(quickTask.selectionKey);
-      const selectionStart = template.indexOf(selection);
-      queryInput.value = template;
-      queryInput.focus();
-      if (selectionStart >= 0) {
-        queryInput.setSelectionRange(selectionStart, selectionStart + selection.length);
-      }
-      queryInput.dispatchEvent(new Event("input", { bubbles: true }));
+    if (quickTask?.formFields) {
+      openQuickTaskForm(quickTask);
       return;
     }
     const quickQuery = quickTask?.queryKey ? t(quickTask.queryKey) : quickTask?.query;
@@ -3710,6 +3929,8 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   rawOutputEl.textContent = "";
+  closeQuickTaskForm();
+  composer.clear();
   resultEl.innerHTML = welcomeConversationHtml();
   renderEmptyResult();
   setMobileView("chat", { replaceHistory: true });

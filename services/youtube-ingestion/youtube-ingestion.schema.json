@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://tftclarity.local/schemas/youtube-ingestion.v2.json",
+  "title": "Durable YouTube ingestion envelope",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schemaVersion",
+    "runId",
+    "status",
+    "source",
+    "extraction",
+    "artifacts",
+    "segments",
+    "quarantine",
+    "documents",
+    "warnings",
+    "generatedAt"
+  ],
+  "properties": {
+    "schemaVersion": { "const": "youtube_ingestion.v2" },
+    "runId": { "type": "string", "minLength": 1 },
+    "status": {
+      "enum": ["processing", "success", "partial_success", "failed"]
+    },
+    "source": {
+      "type": "object",
+      "required": [
+        "type",
+        "videoId",
+        "videoVersion",
+        "transcriptHash",
+        "title",
+        "author",
+        "publishedAt",
+        "sourceUrl",
+        "durationSeconds",
+        "season",
+        "patch",
+        "locale"
+      ],
+      "properties": {
+        "type": { "const": "youtube" },
+        "videoId": { "type": "string", "minLength": 1 },
+        "videoVersion": { "type": "string", "minLength": 1 },
+        "transcriptHash": { "type": "string", "minLength": 1 },
+        "title": { "type": "string", "minLength": 1 },
+        "author": { "type": "string", "minLength": 1 },
+        "publishedAt": { "type": "string", "format": "date" },
+        "sourceUrl": { "type": "string", "format": "uri" },
+        "durationSeconds": { "type": "number", "minimum": 0 },
+        "season": { "type": "string", "minLength": 1 },
+        "patch": { "type": "string", "minLength": 1 },
+        "region": { "type": ["string", "null"] },
+        "locale": { "type": "string", "minLength": 1 }
+      }
+    },
+    "segments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": [
+          "segmentId",
+          "index",
+          "segmentHash",
+          "timestampStart",
+          "timestampEnd",
+          "status",
+          "claimCount",
+          "attempts",
+          "artifactPath"
+        ],
+        "properties": {
+          "status": { "enum": ["success", "empty", "quarantined"] }
+        }
+      }
+    },
+    "quarantine": { "type": "array" },
+    "documents": {
+      "type": "array",
+      "items": { "$ref": "knowledge-document.schema.json" }
+    },
+    "warnings": { "type": "array", "items": { "type": "string" } }
+  }
+}

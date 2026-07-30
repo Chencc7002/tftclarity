@@ -1,0 +1,249 @@
+{
+  "schemaVersion": "youtube_acceptance_annotation.v1",
+  "id": "poor-auto-captions",
+  "category": "poor_subtitle_quality",
+  "sourceUrl": "https://www.youtube.com/watch?v=K0LJ1j1xANc",
+  "videoId": "K0LJ1j1xANc",
+  "season": "set17-live",
+  "patch": "17.7",
+  "locale": "en",
+  "output": "K0LJ1j1xANc.json",
+  "extractionInput": {
+    "mode": "authenticated_browser_capture",
+    "timedtextJson3": "K0LJ1j1xANc.en.json3",
+    "sourceMetadata": "K0LJ1j1xANc.metadata.json",
+    "chunkSeconds": 300
+  },
+  "annotationStatus": "provisional",
+  "annotationProvenance": {
+    "reviewer": "Codex transcript-window review",
+    "reviewerType": "codex",
+    "method": "claim-by-claim source transcript window review",
+    "independentHumanReview": false,
+    "seedSource": "model_output",
+    "sourceTranscriptHash": "d19efd853042a2d97ad4b298a514cc86448e3676dfbccc7d9cbb783952586058",
+    "videoVersion": "0f8ca3507f51f525cf4c",
+    "note": "Model-output-derived review seed; not independent human ground truth. Human verification and sign-off are required."
+  },
+  "annotations": {
+    "claims": [
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Space Groove",
+          "Replicator",
+          "Nami",
+          "Pantheon"
+        ],
+        "claimKeywords": [
+          "Play Space Groove with replicators because Nami is the carry and Pantheon is a brawler."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 109.52,
+        "timestampEnd": 123.92,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Play Space Groove with replicators because Nami is the carry and Pantheon is a brawler.",
+        "transcriptExcerpt": "[99.68] what shall our planner contain? Space\n[104.00] Groove. We need everyone\n[107.42] [snorts] here.\n[109.52] We need to play replicators because our\n[112.40] carry will be the one and only Nami.\n[117.28] >> Oh, okay. That's good.\n[120.40] >> Pantheon is a brower. So, we can\n[123.36] actually\n[123.92] >> I'm going to try."
+      },
+      {
+        "type": "transition",
+        "subjects": [
+          "Var",
+          "Nami"
+        ],
+        "claimKeywords": [
+          "Use Var as a placeholder in the beginning until you get Nami."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "until Nami is obtained"
+        ],
+        "timestampStart": 179.44,
+        "timestampEnd": 191.599,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Use Var as a placeholder in the beginning until you get Nami.",
+        "transcriptExcerpt": "[169.28] >> This I'm in in really good position now.\n[174.16] >> Yeah, no need to rush. Let's go.\n[177.76] Um\n[179.44] I mean, we actually might use Var in the\n[182.64] beginning until we get Nami. M\n[186.64] >> uh but Oh, damn.\n[191.60] I got the stargazer"
+      },
+      {
+        "type": "patch_specific",
+        "subjects": [
+          "Pandora's Bench",
+          "augment"
+        ],
+        "claimKeywords": [
+          "Pandora's Bench is a good augment to pick."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 138.64,
+        "timestampEnd": 144.44,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Pandora's Bench is a good augment to pick.",
+        "transcriptExcerpt": "[135.52] Oh,\n[138.64] yes. I'm taking Pandora's bench.\n[144.64] >> Mhm.\n[145.20] >> That's really good, brother."
+      },
+      {
+        "type": "patch_specific",
+        "subjects": [
+          "Stargazer",
+          "augment"
+        ],
+        "claimKeywords": [
+          "Stargazer augment is insanely good because it gives an emblem every 5 combats for units on pixels."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 191.599,
+        "timestampEnd": 215.76,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Stargazer augment is insanely good because it gives an emblem every 5 combats for units on pixels.",
+        "transcriptExcerpt": "[182.64] beginning until we get Nami. M\n[186.64] >> uh but Oh, damn.\n[191.60] I got the stargazer\n[196.00] which every five combats you will get an\n[199.60] emblem\n[201.12] for the units that stand on the pixels.\n[205.68] >> Oh, that's insanely good.\n[207.52] >> Yeah. So, I can get the strangers\n[209.52] emblems and I can do something else like\n[212.56] get the novas.\n[215.76] >> Now we're playing official, bro.\n[218.48] >> Mhm."
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "stoneplate",
+          "Jax"
+        ],
+        "claimKeywords": [
+          "Stoneplate is one of the best items on Jax."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 495.12,
+        "timestampEnd": 500.08,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Stoneplate is one of the best items on Jax.",
+        "transcriptExcerpt": "[492.56] is\n[495.12] >> the stone plates, bro. Stone plate is so\n[497.76] broken on him.\n[500.08] >> On J.\n[501.20] >> Yes, exactly."
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Nami",
+          "Spear of Shojin",
+          "Blue Buff"
+        ],
+        "claimKeywords": [
+          "Need BF sword to make Spear of Shojin for Nami; cannot make Blue Buff due to lack of tears."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "no tears available"
+        ],
+        "timestampStart": 740.399,
+        "timestampEnd": 757.44,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Need BF sword to make Spear of Shojin for Nami; cannot make Blue Buff due to lack of tears.",
+        "transcriptExcerpt": "[734.16] my decks have 3.6.\n[737.44] Okay, 3.7. The problem is that I need\n[740.40] the BF sword to give Nami um spear of\n[744.80] Shojan because we don't have any tiers.\n[747.68] So there's no way that I would be able\n[749.68] to give her like\n[752.32] uh blue mana buff or blue buff.\n[755.12] >> Okay, without any items doing a lot of\n[757.44] damage, but\n[758.72] >> we lost. That's fine. I can just reforge"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Nami",
+          "Replicator"
+        ],
+        "claimKeywords": [
+          "Activate replicator to allow Nami to cast again."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "has replicator augment or item"
+        ],
+        "timestampStart": 883.6,
+        "timestampEnd": 893.519,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Activate replicator to allow Nami to cast again.",
+        "transcriptExcerpt": "[876.56] >> Yeah, yeah, yeah, I think so.\n[878.88] Let's hope so, bro.\n[880.80] >> I'm on Wednesday.\n[881.92] >> Was actually this time I'm playing a\n[883.60] replicator, too. Like I chose the to\n[886.96] activate replicator to\n[889.28] >> benefit Nami so she can like cast again,\n[892.40] you know.\n[893.52] >> Yeah. Yeah. Yeah. Exactly."
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "坦克"
+        ],
+        "claimKeywords": [
+          "需要优先为坦克分配装备和升级。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 997.04,
+        "timestampEnd": 1004.8,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "需要优先为坦克分配装备和升级。",
+        "transcriptExcerpt": "[988.41] [laughter] It's awesome.\n[990.56] >> I like the sounds of it. [laughter]\n[994.72] That was nice.\n[997.04] >> Okay, now we need to focus a bit on our\n[1001.92] tanks.\n[1004.80] Uh, and get like I don't know"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "先锋"
+        ],
+        "claimKeywords": [
+          "五先锋阵容可能表现很好。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1063.12,
+        "timestampEnd": 1072.24,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "五先锋阵容可能表现很好。",
+        "transcriptExcerpt": "[1058.40] >> Come on game. I know you love me.\n[1061.68] >> Here we go.\n[1063.12] >> I can make another vanguard. Maybe the\n[1065.36] five vanguard is going to work so well\n[1068.08] with it. Let's see. Where is this prank\n[1072.24] can?"
+      },
+      {
+        "type": "reroll_timing",
+        "subjects": [
+          "贾克斯"
+        ],
+        "claimKeywords": [
+          "白银贾克斯并非最佳，但黄金贾克斯会很完美。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "贾克斯达到黄金星级"
+        ],
+        "timestampStart": 1113.52,
+        "timestampEnd": 1122.08,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "白银贾克斯并非最佳，但黄金贾克斯会很完美。",
+        "transcriptExcerpt": "[1112.00] Okay, let's see.\n[1113.52] >> Okay, doesn't matter.\n[1116.32] >> I was going to go for Gwen to have five\n[1119.04] space ghouls, but it's fine. We can do\n[1122.08] that next."
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "娜美"
+        ],
+        "claimKeywords": [
+          "尽快获取娜美。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1142.32,
+        "timestampEnd": 1146.84,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "尽快获取娜美。",
+        "transcriptExcerpt": "[1136.24] gold after now, it's going to be\n[1137.84] perfect. My team My team have a lot of\n[1140.56] damage. I can't I can't\n[1142.32] >> I need my Nami ASAP, bro.\n[1149.12] >> I'm losing hard."
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 4.56,
+        "timestampEnd": 15.9,
+        "reason": "pre-guide banter and laughter"
+      },
+      {
+        "timestampStart": 2349.3,
+        "timestampEnd": 2358.96,
+        "reason": "subscribe call and outro"
+      }
+    ]
+  }
+}

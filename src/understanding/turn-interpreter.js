@@ -340,9 +340,13 @@ export async function interpretTurn({
   if (rawDelta) {
     delta = createTurnDelta(rawDelta);
   } else {
+    const hasConversationContext = Boolean(
+      conversationState?.activeTask?.taskFrame
+      || conversationState?.pendingClarification
+    );
     const explicit = options.explicitTaskFrame
       ? createTaskFrame(options.explicitTaskFrame)
-      : typeof semanticProvider !== "function"
+      : typeof semanticProvider !== "function" || !hasConversationContext
         ? await explicitFrameForFallback(currentMessage, options)
         : null;
     delta = deterministicFallbackDelta(explicit, conversationState);

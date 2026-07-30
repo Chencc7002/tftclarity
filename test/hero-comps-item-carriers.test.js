@@ -129,7 +129,8 @@ test("a bare hero name clarifies equipment versus composition instead of default
   });
   assert.equal(legacy.type, "clarification");
   assert.equal(legacy.clarification.reason, "ambiguous_unit_query_type");
-  assert.match(legacy.clarification.question, /推荐装备.*阵容/u);
+  assert.match(legacy.clarification.question, /推荐装备.*阵容.*技能/u);
+  assert.deepEqual(legacy.clarification.suggestions, ["霞推荐装备", "霞所在阵容", "霞技能描述（棋子资料）"]);
 
   const conversationV2 = await recommendForInput("霞", {
     catalog,
@@ -138,7 +139,9 @@ test("a bare hero name clarifies equipment versus composition instead of default
     useSession: false
   });
   assert.equal(conversationV2.type, "clarification");
-  assert.match(conversationV2.clarification.question, /推荐装备.*阵容/u);
+  assert.match(conversationV2.clarification.question, /推荐装备.*阵容.*技能/u);
+  assert.deepEqual(conversationV2.clarification.suggestions, ["霞推荐装备", "霞所在阵容", "霞技能描述（棋子资料）"]);
+
 });
 
 test("structured parser contract allows one hero for comps and one item for carriers", () => {

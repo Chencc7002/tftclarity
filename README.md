@@ -132,6 +132,8 @@ Copy-Item .env.example .env
 
 完整配置和安全占位符见 [.env.example](.env.example)。公开部署配置见 [.env.production.example](.env.production.example)。
 
+YouTube 攻略手动摄取、知识索引、混合回答与降级规则见 [YouTube 攻略知识与混合回答操作说明](docs/youtube-hybrid-operations.md)。
+
 ## 常用命令
 
 | 命令 | 用途 |
@@ -143,6 +145,15 @@ Copy-Item .env.example .env
 | `npm run smoke:conclusion-llm` | 一次性验证真实 LLM 数据解读 |
 | `npm run smoke:visual` | 运行可选的视觉冒烟测试 |
 | `npm run semantic:index` | 构建持久化语义索引 |
+| `npm run youtube:import -- --url <URL>` | 手动摄取并索引一条 YouTube 攻略 |
+| `npm run smoke:youtube` | 验证视频版本替换、partial_success、幂等入库与严格检索 |
+| `npm run youtube:acceptance` | 对固定审核标注视频集计算六类提取质量指标 |
+| `npm run youtube:acceptance:live` | 重放六个真实捕获视频并执行完整提取质量验收 |
+| `npm run youtube:acceptance:review-packet` | 生成六视频完整字幕人工升级审核包 |
+| `npm run youtube:acceptance:review:export` | 导出带哈希和逐条 decision 的机器审核表 |
+| `npm run youtube:acceptance:review:apply` | 校验并生成独立的已审核 acceptance set |
+| `npm run youtube:acceptance:review:evaluate` | 对已审核集与真实重提取结果执行正式质量门槛 |
+| `npm run test:youtube:python` | 运行 YouTube 摄取器单元测试 |
 | `npm run semantic:audit` | 审核语义索引状态 |
 | `npm run audit:aliases` | 审核实体别名覆盖 |
 | `npm run audit:items` | 审核当前装备可用性 |
@@ -157,6 +168,9 @@ Copy-Item .env.example .env
 - 低样本、旧缓存和无法确定胜出的对比必须显示风险边界
 - LLM 不可用或输出校验失败时，系统继续返回确定性结果
 - MetaTFT 是非官方外部数据源，接口变化或网络失败可能影响实时查询
+- YouTube 攻略摘要由 AI 从视频字幕提取和概括；未完成人工审核时，Schema、
+  HTTP Evidence 和界面都会明确标记“AI 生成 · 未经人工复核”，并保留时间点
+  链接供用户核对原视频
 - `.probe/` 中保存离线捕获样本，用于回归测试、目录审核和数据契约验证
 
 数据解读与检索设计详见：
@@ -172,6 +186,35 @@ Copy-Item .env.example .env
 ```powershell
 npm test
 ```
+
+### MetaTFT current_stats 生成与每日调度
+
+```powershell
+npm run stats:generate
+npm run stats:daily
+npm run stats:schedule:windows
+npm run smoke:current-stats
+npm run smoke:current-stats:http
+```
+
+`stats:generate` 把 `meta_snapshot`、`trend_snapshot`、`unit_stats` 和全量
+`comp_stats` 写入独立的 `current_stats` namespace。`stats:daily` 在文件锁保护下
+执行一次任务，写入 `.cache/current-stats/manifest.json`，失败时自动重试；设置
+`CURRENT_STATS_ALERT_WEBHOOK` 后，最终失败会发送 JSON 告警。`stats:schedule:windows`
+安装每天 04:15 执行的 Windows 计划任务，Node 常驻调度可使用
+`npm run stats:scheduler`，Linux cron 示例见
+[`scripts/current-stats.cron.example`](scripts/current-stats.cron.example)。
+
+两个 smoke 分别验证真实 MetaTFT → SQLite 的幂等、freshness、范围隔离、namespace
+保护，以及完整 HTTP → Router → Hybrid → Evidence 链路。最新验收结果见
+[`docs/current-stats-phase2-automation-trend-http-e2e-report-2026-07-29.md`](docs/current-stats-phase2-automation-trend-http-e2e-report-2026-07-29.md)。
+
+统计文档使用 `semanticProjection` 控制正文和 Embedding：样本数与完整原始指标
+每次写入 metadata/`recordHash`，正文只保留规范化后的语义指标。默认平均名次保留
+2 位小数，前四率、登顶率和出场率保留 1 位百分数，普通排名变化阈值为 2 位。
+关键 Top-N 边界默认不启用，可通过
+`CURRENT_STATS_CRITICAL_RANK_BOUNDARIES=1,3,4,10` 显式配置。成本优化验证见
+[`docs/current-stats-semantic-projection-optimization-report-2026-07-29.md`](docs/current-stats-semantic-projection-optimization-report-2026-07-29.md)。
 
 测试覆盖查询解析、别名解析、阵容趋势、热门阵容、多轮会话、缓存、SQLite、推荐排序、LLM 证据校验、HTTP 接口和前端交互。
 
