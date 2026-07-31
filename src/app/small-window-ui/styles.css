@@ -1409,3 +1409,255 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
   .topbar-starfield::before, .topbar-starfield::after { animation: none; }
   .shell.wallpaper-enabled .topbar-starfield { opacity: .42; }
 }
+
+/* S18 is a fully season-scoped theme. Switching back to Set 17 removes every
+   rule below because applySeasonTheme replaces data-season-theme on the shell. */
+.season-preview-banner {
+  min-width: 0;
+  padding: 8px 10px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+  border: 1px solid color-mix(in srgb, var(--wallpaper-accent) 30%, var(--line));
+  border-radius: 11px;
+  color: var(--ink);
+  background: color-mix(in srgb, var(--wallpaper-accent) 8%, rgba(255,255,255,.88));
+}
+.season-preview-banner[hidden] { display: none; }
+.season-preview-banner > span:last-child { min-width: 0; display: grid; gap: 2px; }
+.season-preview-banner strong { font-size: 11px; }
+.season-preview-banner small { color: var(--muted); font-size: 9px; line-height: 1.45; }
+.season-preview-mark {
+  width: 28px;
+  height: 28px;
+  display: grid;
+  place-items: center;
+  border-radius: 50% 44% 52% 46%;
+  color: #fff;
+  background: linear-gradient(145deg, var(--wallpaper-accent), var(--wallpaper-accent-secondary));
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--wallpaper-accent) 24%, transparent);
+}
+.shell[data-season-preview="true"] .quick-category-card,
+.shell[data-season-preview="true"] .quick-task-card {
+  cursor: not-allowed;
+  opacity: .72;
+  pointer-events: none;
+}
+
+.shell[data-season-theme="set18"] {
+  --app-canvas: #eef5ea;
+  --panel: #fbfdf8;
+  --panel-soft: #f0f6ec;
+  --ink: #24382e;
+  --muted: #66776b;
+  --line: #d7e4d2;
+  --line-strong: #c8d9c2;
+  --star-cyan: #48b8c7;
+  --star-cyan-dark: #278e9d;
+  --star-cyan-soft: #e7f7f6;
+  --star-indigo: #487c58;
+  --star-indigo-soft: #ebf4e9;
+  --star-gold: #d9ad3f;
+  --star-gold-soft: #fff8df;
+  --success: #4e9a65;
+  --warning: #d39e3c;
+  --shadow: 0 18px 48px rgba(35,73,51,.14);
+  --shadow-soft: 0 9px 26px rgba(42,82,57,.1);
+  background:
+    radial-gradient(circle at 17% 23%, rgba(204,229,169,.24) 0 1px, transparent 1.8px),
+    radial-gradient(circle at 78% 74%, rgba(72,184,199,.12) 0 1px, transparent 1.7px),
+    var(--app-canvas);
+  background-size: 43px 43px, 61px 61px, auto;
+}
+.shell[data-season-theme="set18"] .wallpaper-layer {
+  background-color: #b7d9b3;
+  background-image:
+    linear-gradient(180deg, rgba(245,251,239,.09), rgba(225,242,223,.18)),
+    var(--wallpaper-image);
+  filter: saturate(.94) brightness(.94) contrast(.98);
+}
+.shell[data-season-theme="set18"] .topbar {
+  background:
+    radial-gradient(circle at 10% 28%, rgba(235,244,177,.4) 0 1px, transparent 2px),
+    radial-gradient(circle at 74% 68%, rgba(155,229,210,.28) 0 1px, transparent 1.8px),
+    linear-gradient(112deg, #244c32 0%, #326c4e 47%, #2d6870 100%);
+  background-size: 113px 77px, 157px 91px, auto;
+  box-shadow: inset 0 -1px rgba(231,246,208,.2), 0 5px 20px rgba(31,76,50,.24);
+}
+.shell[data-season-theme="set18"] .topbar-starfield {
+  opacity: .66;
+  mix-blend-mode: soft-light;
+}
+.shell[data-season-theme="set18"] .topbar-starfield::before {
+  background-image:
+    radial-gradient(ellipse, rgba(237,245,178,.82) 0 1px, transparent 2.8px),
+    radial-gradient(ellipse, rgba(173,233,203,.62) 0 1.2px, transparent 3px),
+    radial-gradient(circle, rgba(255,233,154,.46) 0 .8px, transparent 2.4px);
+  background-position: 0 7px, 31px 2px, 17px 23px;
+  background-size: 101px 49px, 149px 67px, 127px 55px;
+  filter: drop-shadow(0 0 3px rgba(228,244,180,.44));
+  animation-duration: 28s, 5.2s;
+}
+.shell[data-season-theme="set18"] .topbar-starfield::after {
+  background-image:
+    radial-gradient(ellipse, rgba(244,249,211,.7) 0 .7px, transparent 2.1px),
+    radial-gradient(ellipse, rgba(148,222,203,.5) 0 1px, transparent 2.8px);
+  background-position: 12px 4px, 58px 18px;
+  background-size: 79px 37px, 167px 61px;
+  filter: none;
+  animation-duration: 34s, 4.8s;
+}
+.shell[data-season-theme="set18"] .topbar::after {
+  opacity: .22;
+  background:
+    linear-gradient(156deg, transparent 0 34%, rgba(230,242,178,.2) 34.2% 34.5%, transparent 34.8%),
+    radial-gradient(ellipse at 88% 120%, rgba(118,202,169,.24), transparent 48%);
+}
+.shell[data-season-theme="set18"] .brand-copy small,
+.shell[data-season-theme="set18"] .season-context-control select,
+.shell[data-season-theme="set18"] .wallpaper-select,
+.shell[data-season-theme="set18"] .wallpaper-toggle,
+.shell[data-season-theme="set18"] .language-toggle.segmented,
+.shell[data-season-theme="set18"] .icon-button,
+.shell[data-season-theme="set18"] .status {
+  border-color: rgba(231,244,209,.24);
+  background: rgba(21,67,43,.2);
+}
+.shell[data-season-theme="set18"] .wallpaper-toggle[aria-checked="true"],
+.shell[data-season-theme="set18"] .language-toggle button.active {
+  color: #315f3e;
+  background: rgba(250,253,244,.96);
+  box-shadow: 0 3px 10px rgba(22,60,38,.2);
+}
+.shell[data-season-theme="set18"] .wallpaper-toggle[aria-checked="true"] .wallpaper-state {
+  color: #278e78;
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .conversation-pane {
+  background: rgba(235,245,230,.18);
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .result-pane {
+  background: rgba(227,242,232,.14);
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .settings-panel {
+  background: rgba(241,247,236,.34);
+}
+.shell[data-season-theme="set18"] .conversation,
+.shell[data-season-theme="set18"] .result-scroll,
+.shell[data-season-theme="set18"] .settings-scroll {
+  scrollbar-color: #9fbea2 transparent;
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .pane-heading,
+.shell[data-season-theme="set18"].wallpaper-enabled .query-panel,
+.shell[data-season-theme="set18"].wallpaper-enabled .settings-head,
+.shell[data-season-theme="set18"].wallpaper-enabled .settings-actions {
+  border-color: rgba(110,157,107,.35);
+  background: rgba(248,251,242,.72);
+  -webkit-backdrop-filter: blur(10px) saturate(1.04);
+  backdrop-filter: blur(10px) saturate(1.04);
+  box-shadow: inset 0 1px rgba(255,255,255,.62);
+}
+.shell[data-season-theme="set18"] .eyebrow {
+  color: #487c58;
+}
+.shell[data-season-theme="set18"] .quick-category-card,
+.shell[data-season-theme="set18"] .quick-task-card {
+  border-color: rgba(109,158,106,.34);
+  background: rgba(249,252,244,.84);
+  box-shadow: 0 7px 20px rgba(42,83,55,.09);
+}
+.shell[data-season-theme="set18"] .quick-category-card:hover,
+.shell[data-season-theme="set18"] .quick-category-card[aria-expanded="true"],
+.shell[data-season-theme="set18"] .quick-task-card:hover:not(:disabled) {
+  border-color: rgba(72,139,84,.62);
+  background: rgba(251,253,247,.95);
+  box-shadow: 0 10px 25px rgba(43,88,57,.14);
+}
+.shell[data-season-theme="set18"] .quick-category-icon,
+.shell[data-season-theme="set18"] .quick-task-icon {
+  background: linear-gradient(145deg, #477e4d, #48a99e);
+  box-shadow: 0 5px 15px rgba(48,116,76,.24);
+}
+.shell[data-season-theme="set18"] .quick-category-count,
+.shell[data-season-theme="set18"] .quick-task-example {
+  color: #477757;
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .assistant-message .message-body,
+.shell[data-season-theme="set18"].wallpaper-enabled .user-message .message-body,
+.shell[data-season-theme="set18"].wallpaper-enabled .quick-category-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .quick-task-panel,
+.shell[data-season-theme="set18"].wallpaper-enabled .quick-task-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .patch-note-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .patch-note-source,
+.shell[data-season-theme="set18"].wallpaper-enabled .result-header-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .result-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .item-ranking-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-overview,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-preference-summary,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-card,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-warning,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-footnote,
+.shell[data-season-theme="set18"].wallpaper-enabled .source-risk,
+.shell[data-season-theme="set18"].wallpaper-enabled .clarification-state,
+.shell[data-season-theme="set18"].wallpaper-enabled .empty-state,
+.shell[data-season-theme="set18"].wallpaper-enabled .error-state,
+.shell[data-season-theme="set18"].wallpaper-enabled .advanced-query-settings,
+.shell[data-season-theme="set18"].wallpaper-enabled .settings-section,
+.shell[data-season-theme="set18"].wallpaper-enabled .details {
+  border-color: rgba(111,157,104,.44);
+  background: rgba(250,252,246,.82);
+  -webkit-backdrop-filter: blur(12px) saturate(1.03);
+  backdrop-filter: blur(12px) saturate(1.03);
+  box-shadow: 0 12px 34px rgba(36,75,48,.14), inset 0 1px rgba(255,255,255,.74);
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .user-message .message-body {
+  background: rgba(222,246,239,.86);
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .result-card.best {
+  border-color: rgba(214,169,55,.7);
+  background: linear-gradient(145deg, rgba(252,253,247,.9), rgba(255,247,216,.8));
+  box-shadow: 0 14px 38px rgba(108,91,31,.14), inset 3px 0 rgba(224,184,79,.72);
+}
+.shell[data-season-theme="set18"].wallpaper-enabled .composer textarea,
+.shell[data-season-theme="set18"].wallpaper-enabled .subtle-button,
+.shell[data-season-theme="set18"].wallpaper-enabled .state-actions button,
+.shell[data-season-theme="set18"].wallpaper-enabled .item,
+.shell[data-season-theme="set18"].wallpaper-enabled .stat,
+.shell[data-season-theme="set18"].wallpaper-enabled .feedback-button,
+.shell[data-season-theme="set18"].wallpaper-enabled .condition-chip,
+.shell[data-season-theme="set18"].wallpaper-enabled .candidate-row,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-expanded,
+.shell[data-season-theme="set18"].wallpaper-enabled .comp-stat-line span,
+.shell[data-season-theme="set18"].wallpaper-enabled .field-stack select,
+.shell[data-season-theme="set18"].wallpaper-enabled .segmented,
+.shell[data-season-theme="set18"].wallpaper-enabled .rank-grid label {
+  border-color: rgba(112,156,108,.38);
+  background: rgba(250,252,247,.86);
+}
+.shell[data-season-theme="set18"] .season-preview-banner {
+  border-color: rgba(93,146,89,.42);
+  background: linear-gradient(135deg, rgba(244,250,235,.94), rgba(228,246,235,.9));
+  box-shadow: 0 8px 22px rgba(43,85,54,.1);
+}
+.shell[data-season-theme="set18"] .season-preview-mark {
+  background: linear-gradient(145deg, #527e43, #49a99c);
+}
+.shell[data-season-theme="set18"] .composer textarea:disabled {
+  color: #758578;
+  background: rgba(238,244,233,.72);
+}
+.shell[data-season-theme="set18"] .result-empty strong {
+  color: #263f31;
+  text-shadow: 0 1px 4px rgba(252,255,247,.98);
+}
+.shell[data-season-theme="set18"] .result-empty p {
+  color: #425c4a;
+  text-shadow: 0 1px 4px rgba(252,255,247,.98);
+}
+.shell[data-season-theme="set18"] button:focus-visible,
+.shell[data-season-theme="set18"] select:focus-visible,
+.shell[data-season-theme="set18"] input:focus-visible,
+.shell[data-season-theme="set18"] textarea:focus-visible,
+.shell[data-season-theme="set18"] [tabindex]:focus-visible {
+  outline-color: #48b8c7;
+}

@@ -56,11 +56,17 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.doesNotMatch(appJs, /document\.title\s*=/);
   assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
   assert.match(appJs, /wallpaperController\.setSeason/);
+  assert.match(appJs, /shellEl\.dataset\.seasonTheme = context\.themeId/);
+  assert.match(appJs, /context\.selectable \|\| context\.themePreview/);
+  assert.match(appJs, /!requested\?\.selectable && !requested\?\.themePreview/);
   assert.match(appJs, /option\.disabled = !context\.selectable/);
   assert.match(appJs, /theme\?\.patchNoteVersion/);
   assert.match(wallpaperController, /setSeason\(seasonId, defaultWallpaperId/);
   assert.match(wallpaperController, /localStorage\.setItem\(`\$\{WALLPAPER_ID_STORAGE_KEY\}\.\$\{this\.seasonId\}`/);
   assert.match(wallpaperCatalog, /"set-18-pbe"/);
+  assert.match(wallpaperCatalog, /set18-verdant-realm/);
+  assert.match(styles, /\.shell\[data-season-theme="set18"\]/);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-18/verdant-realm.jpg", import.meta.url)).size > 100_000);
   assert.match(i18n, /seasonComingSoonStatus/);
   assert.match(i18n, /seasonArchivedStatus/);
   assert.match(i18n, /seasonRevivalStatus/);

@@ -5133,7 +5133,7 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/season-contexts/select") {
         const body = await readJsonRequest(req);
-        const selected = runtime.seasonContextService.resolveForQuery(body?.seasonContextId);
+        const selected = runtime.seasonContextService.resolveForSelection(body?.seasonContextId);
         return sendJson(res, 200, {
           ok: true,
           seasonContext: runtime.seasonContextService.publicRecord(selected)

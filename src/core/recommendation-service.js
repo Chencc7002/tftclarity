@@ -238,8 +238,18 @@ async function executePlannedStructuredQuery(plan, operation, handler, context =
     context.onExecution?.(execution);
     if (execution.status !== "completed") {
       const failed = execution.results.find((result) => result.status === "failed");
-      throw Object.assign(new Error(`ExecutionPlan failed at ${failed?.stepId ?? "unknown"}`), {
-        code: failed?.error ?? "execution_plan_failed",
+      const resultPolicyFailed = execution.resultPolicyExecution?.status === "failed";
+      const evidenceFailed = execution.evidenceValidation?.sufficient === false;
+      const failureStage = failed?.stepId
+        ?? (resultPolicyFailed ? "result_policy" : evidenceFailed ? "evidence_validation" : "execution");
+      const failureDetail = failed?.toolResult?.error?.message;
+      throw Object.assign(new Error(
+        `ExecutionPlan failed at ${failureStage}${failureDetail ? `: ${failureDetail}` : ""}`
+      ), {
+        code: failed?.error
+          ?? (resultPolicyFailed
+            ? "execution_result_policy_failed"
+            : evidenceFailed ? "execution_evidence_invalid" : "execution_plan_failed"),
         execution
       });
     }
@@ -272,6 +282,33 @@ async function executePlannedStructuredQuery(plan, operation, handler, context =
   }
   const retriever = new StructuredRetriever({ handlers: { [operation]: handler } });
   return (await retriever.executeQuery(query, context)).value;
+}
+
+function withRetrievalTimestamp(response, observedAt) {
+  if (
+    response?.updatedAt
+    || response?.updated_at
+    || response?.capture?.capturedAt
+    || response?.capture?.captured_at
+  ) return response;
+  if (Array.isArray(response)) {
+    return {
+      data: response,
+      capture: { capturedAt: observedAt }
+    };
+  }
+  if (response && typeof response === "object") {
+    return {
+      ...response,
+      capture: {
+        ...(response.capture && typeof response.capture === "object"
+          ? response.capture
+          : {}),
+        capturedAt: observedAt
+      }
+    };
+  }
+  return response;
 }
 
 function semanticTakeoverDecision(shadowResult, retrievalPlan, options = {}) {
@@ -2952,7 +2989,13 @@ export async function recommendForInput(input, options = {}) {
             comparisonItems: params.comparisonItems,
             minSamples: params.minSamples
           };
-          return options.metaTFTClient?.getUnitBuilds(planMetaTFTUnitBuilds(plannedQuery));
+          const liveResponse = await options.metaTFTClient?.getUnitBuilds(
+            planMetaTFTUnitBuilds(plannedQuery)
+          );
+          return withRetrievalTimestamp(
+            liveResponse,
+            new Date(typeof options.now === "function" ? options.now() : Date.now()).toISOString()
+          );
         },
         {
           intent: validatedQuery.intent,
@@ -3038,11 +3081,13 @@ export async function recommendForInput(input, options = {}) {
     comp: validatedQuery.comp,
     additionalWarnings: [...(compResult.warnings ?? []), ...additionalWarnings]
   });
-  result.sourceUpdatedAt = response.capture?.capturedAt
-    ?? response.capture?.captured_at
-    ?? queryCache.updatedAt
-    ?? options.sourceUpdatedAt
-    ?? null;
+  result.sourceUpdatedAt = queryCache.stale
+    ? queryCache.updatedAt ?? null
+    : response.capture?.capturedAt
+      ?? response.capture?.captured_at
+      ?? queryCache.updatedAt
+      ?? options.sourceUpdatedAt
+      ?? null;
   result.compCandidatePlan = compResult.plan ?? null;
 
   result.cache = {
