@@ -1,4 +1,5 @@
 import { getConceptCapabilityDefinition } from "./concept-capability-registry.js";
+import { ITEM_CARRIER_REQUEST_PATTERN } from "./intent-patterns.js";
 
 export const TFT_SEMANTIC_CAPABILITY_RULES_VERSION = "tft-semantic-capability-rules.v1";
 
@@ -51,6 +52,13 @@ export function deriveTftCapabilityRequirements(input, frame = {}) {
   if (frame.constraints?.externalSupportInterpretation === "non_trait_splash_unit") {
     requirements.add("composition_external_unit_statistics");
   }
+  if (frame.constraints?.externalSupportInterpretation === "emblem_carrier") {
+    requirements.add("item_carrier_statistics");
+  }
+  if (
+    ITEM_CARRIER_REQUEST_PATTERN.test(text)
+    && entities(frame).some((entity) => entity?.expectedType === "item" && entity?.resolvedId)
+  ) requirements.add("item_carrier_statistics");
   for (const entity of entities(frame)) {
     if (entity?.expectedType !== "game_concept" || !entity?.resolvedId) continue;
     const definition = getConceptCapabilityDefinition(entity.resolvedId);

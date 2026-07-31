@@ -474,6 +474,13 @@ export {
 } from "./understanding/context-resolver.js";
 export { parseSemanticTask } from "./understanding/semantic-task-parser.js";
 export {
+  FAST_PATH_POLICY_VERSION,
+  capabilityCoversExpectedOutput,
+  evaluateFastPathEligibility,
+  fastPathDefinition,
+  isPureEntityCatalogRequest
+} from "./routing/fast-path-policy.js";
+export {
   TASK_FRAME_ACTIONS,
   TASK_FRAME_ENTITY_TYPES,
   TASK_FRAME_SCHEMA_VERSION,

@@ -2054,6 +2054,9 @@ async function recommendItemCarriersForInput(
   result.text = result.carriers.length
     ? `${itemName}共找到 ${result.carriers.length} 个正向提升携带者。`
     : `${itemName}在当前样本门槛下没有正向提升携带者。`;
+  result.taskFrame = semanticShadowResult?.semanticResult?.taskFrame ?? null;
+  result.capabilityMatch = semanticShadowResult?.capabilityMatch ?? null;
+  result.executionPlan = semanticShadowResult?.executionPlanning?.plan ?? executionPlan ?? null;
   attachSemanticTakeover(result, semanticRouting, {
     toolStatus: queryCache.stale ? "degraded" : queryCache.hit ? "cache_hit" : "completed",
     conclusionStatus: "not_requested",

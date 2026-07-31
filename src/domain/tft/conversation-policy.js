@@ -78,7 +78,9 @@ function validateConstraintValue(field, value) {
     return Array.isArray(value) && value.length <= 20 && value.every((entry) => typeof entry === "string");
   }
   if (field === "candidateLimit") return Number.isInteger(value) && value >= 1 && value <= 5;
-  if (field === "externalSupportInterpretation") return value === "non_trait_splash_unit";
+  if (field === "externalSupportInterpretation") {
+    return ["non_trait_splash_unit", "emblem_carrier"].includes(value);
+  }
   if (field === "days") return Number.isInteger(value) && value >= 1 && value <= 30;
   if (field === "minSamples") return Number.isInteger(value) && value >= 0 && value <= 1_000_000;
   if (field === "limit" || field === "itemCount") {
