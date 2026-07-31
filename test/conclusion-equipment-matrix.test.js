@@ -47,7 +47,7 @@ function rankingResult(unit, category) {
     query: {
       intent,
       unit: unit.apiName,
-      starLevel: [Number(unit.cost) <= 2 ? 3 : 2],
+      starLevel: [Number(unit.cost) <= 3 ? 3 : 2],
       itemPolicy: category === "artifact"
         ? "include_artifact"
         : category === "radiant"

@@ -44,6 +44,7 @@ const TFT_EXPLICIT_TASK_CONSTRAINT_FIELDS = new Set([
   ...TURN_DELTA_CONSTRAINT_FIELDS,
   "cost",
   "targetEntityType",
+  "selectionScope",
   "relation",
   "current",
   "projection",
@@ -72,6 +73,7 @@ function validateConstraintValue(field, value) {
     return costs.length > 0 && costs.every((entry) => Number.isInteger(entry) && entry >= 1 && entry <= 9);
   }
   if (field === "targetEntityType") return ["champion", "unit", "item", "trait"].includes(value);
+  if (field === "selectionScope") return ["last_result", "current_visible_results"].includes(value);
   if (field === "relation") return value === "member_of_trait";
   if (field === "current") return typeof value === "boolean";
   if (field === "projection") {

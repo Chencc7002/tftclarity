@@ -442,6 +442,29 @@ function applyExternalSupportSemantics(taskFrame, text, conversation = []) {
   });
 }
 
+function applyCandidateGroupBuildSemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  const buildRequest = /(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text);
+  const candidateScope = frame.constraints?.targetEntityType === "champion"
+    && (
+      frame.constraints?.cost !== undefined
+      || frame.constraints?.relation === "member_of_trait"
+      || frame.candidates.filter((entity) => entity?.expectedType === "champion").length > 1
+    );
+  if (!buildRequest || !candidateScope) return frame;
+  const comparison = /(?:谁|誰|哪个|哪個).{0,12}(?:表现|表現|最好|最强|最強)|(?:表现|表現).{0,8}(?:最好|最强|最強)|(?:最好|最强|最強).{0,8}(?:出装|出裝|装备|裝備)/u.test(text);
+  return createTaskFrame({
+    ...frame,
+    action: comparison ? "analyze" : "recommend",
+    goal: comparison
+      ? "compare_entity_build_performance"
+      : "recommend_builds_for_candidate_group",
+    expectedOutput: comparison
+      ? ["comparison", "ranking", "evidence"]
+      : ["recommendations", "results", "evidence"]
+  });
+}
+
 async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   let timeoutId;
   const providerPromise = Promise.resolve().then(() => provider(request));
@@ -622,6 +645,7 @@ export async function parseSemanticTask(input, options = {}) {
     text,
     options.conversation ?? []
   );
+  frame = applyCandidateGroupBuildSemantics(frame, text);
   const clarificationPolicy = applyClarificationPolicy(
     frame,
     contextResolution,

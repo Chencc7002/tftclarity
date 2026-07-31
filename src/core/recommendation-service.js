@@ -67,7 +67,10 @@ import { statusAfterExecution } from "../agent/status-protocol.js";
 import { compareExecutionAndLegacyPlans } from "../agent/shadow-comparison.js";
 import { finalizeExecutionPlanArguments } from "../agent/execution-plan.js";
 import { compileTftToolArguments } from "../domain/tft/execution-arguments.js";
-import { compileTftResultPolicy } from "../domain/tft/result-policy.js";
+import {
+  compileTftResultPolicy,
+  compileTftSemanticResultPolicy
+} from "../domain/tft/result-policy.js";
 import {
   adaptTftExecutionPlanToParsed
 } from "../domain/tft/execution-query-adapter.js";
@@ -156,7 +159,10 @@ function semanticNativeExecutionPlan(shadowResult, options = {}) {
     || !steps.every((step) => SEMANTIC_NATIVE_EXECUTION_TOOLS.has(step.tool))
     || !steps.every((step) => typeof options.agentToolHandlers?.[step.tool] === "function")
   ) return null;
-  return planning.plan;
+  return compileTftSemanticResultPolicy(
+    planning.plan,
+    shadowResult?.semanticResult?.taskFrame
+  );
 }
 
 function semanticNativeSource(value, finalTool) {
@@ -681,11 +687,15 @@ function semanticResultForConversationResolution(resolution, interpretation) {
 function providerInvocationFor(interpretation) {
   const telemetry = interpretation?.telemetry ?? {};
   const fallback = telemetry.providerFallback ?? null;
+  const corrected = fallback?.used === true && [
+    "contextual_task_recovery",
+    "action_only_build_followup_policy"
+  ].includes(fallback?.reason);
   return {
     attempted: telemetry.providerCalled === true,
     succeeded: telemetry.providerSucceeded === true,
     accepted: telemetry.providerSucceeded === true && fallback?.used !== true,
-    corrected: fallback?.used === true && fallback?.reason === "contextual_task_recovery",
+    corrected,
     correctionReason: fallback?.reason ?? null,
     usage: telemetry.providerUsage ?? null,
     validationErrors: telemetry.providerError ? [telemetry.providerError] : []
@@ -703,6 +713,7 @@ async function interpretConversationV2(input, state, options, catalog) {
     catalog,
     version: options.effectivePatch ?? catalog?.version ?? null,
     currentTime: options.currentTime ?? null,
+    seasonContextId: seasonContextIdFor(options),
     entitySemanticRetriever: options.semanticRetriever,
     entityCandidateRetriever: options.entityCandidateRetriever,
     entityCandidateReranker: options.semanticEntityReranker,
@@ -727,6 +738,15 @@ async function interpretConversationV2(input, state, options, catalog) {
 }
 
 function controlledConversationText(resolution, state) {
+  const missingBuildSubject = resolution.resolvedTaskFrame?.goal === "unit_build_rankings"
+    && resolution.resolvedTaskFrame?.ambiguities?.some((entry) => (
+      entry?.code === "missing_subject"
+      || entry?.missingFields?.includes?.("subjects")
+      || entry?.missingFields?.includes?.("subject.champion")
+  ));
+  if (missingBuildSubject) {
+    return "要查哪个英雄的出装？请告诉我英雄名称。";
+  }
   const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
     entry?.code === "ambiguous_query_type"
     || entry?.missingFields?.includes?.("query_type")
@@ -751,6 +771,13 @@ function controlledConversationText(resolution, state) {
 }
 
 function controlledConversationSuggestions(resolution) {
+  const missingBuildSubject = resolution.resolvedTaskFrame?.goal === "unit_build_rankings"
+    && resolution.resolvedTaskFrame?.ambiguities?.some((entry) => (
+      entry?.code === "missing_subject"
+      || entry?.missingFields?.includes?.("subjects")
+      || entry?.missingFields?.includes?.("subject.champion")
+    ));
+  if (missingBuildSubject) return [];
   const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
     entry?.code === "ambiguous_query_type"
     || entry?.missingFields?.includes?.("query_type")
@@ -2546,6 +2573,7 @@ export async function recommendForInput(input, options = {}) {
         executionTrace: execution.trace,
         agentStatus: statusAfterExecution(semanticShadowResult.statusProtocol, execution),
         result: value,
+        resultMode: value?.resultMode ?? null,
         results: value?.results ?? [],
         sourceId: typeof value?.source === "string" ? value.source : null,
         source: semanticNativeSource(value, finalTool),

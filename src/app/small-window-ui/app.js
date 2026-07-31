@@ -2956,6 +2956,10 @@ function renderSystemInteractionResult(data) {
 
 function renderSemanticNativeResult(data) {
   const isBatch = data.type === "unit_builds_batch_results";
+  const isRankedBatch = isBatch && (
+    data.resultMode === "rank_candidate_build_performance"
+    || data.executionPlan?.resultPolicy?.payload?.mode === "rank_candidate_build_performance"
+  );
   const entries = data.results ?? [];
   const cards = entries.map((entry, index) => {
     const apiName = entry.apiName ?? entry.unit;
@@ -2971,7 +2975,7 @@ function renderSemanticNativeResult(data) {
           ${metric(t("samples"), formatNumber(entry.games ?? 0))}
         </div>`
       : "";
-    const isBest = index === 0 && isBatch && entry.available !== false;
+    const isBest = index === 0 && isRankedBatch && entry.available !== false;
     return `<article class="result-card${isBest ? " best" : ""}">
       ${isBest ? `<span class="best-label">${t("best")}</span>` : ""}
       <div class="card-head"><div class="card-title-group">${assetThumb(entry.iconUrl, name, "equipment-unit-icon")}<div><div class="card-title">${escapeHtml(name)}</div>${entry.cost != null ? `<small>${escapeHtml(t("unitCost", { value: entry.cost }))}</small>` : ""}</div></div></div>

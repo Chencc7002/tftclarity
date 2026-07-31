@@ -16,6 +16,88 @@ function reference(rawText, expectedType) {
   return { rawText, expectedType, resolvedId: null, confidence: 0.9 };
 }
 
+test("action-only build follow-up reuses only a current visible unit result group", async () => {
+  let providerCalls = 0;
+  const response = await interpretTurn({
+    currentMessage: "怎么出装？",
+    conversationState: createConversationState({
+      seasonContextId: "set17-live",
+      activeTask: {
+        taskFrame: createTaskFrame({
+          action: "search",
+          concepts: [{
+            rawText: "太空律动",
+            expectedType: "trait",
+            resolvedId: "TFT17_SpaceGroove",
+            confidence: 1
+          }],
+          constraints: { cost: 3, targetEntityType: "champion", relation: "member_of_trait" },
+          goal: "find_relevant_data",
+          capabilityRequirements: ["entity_catalog_filtering"],
+          confidence: 1,
+          understandingStatus: "understood_and_supported"
+        })
+      },
+      lastResult: {
+        resultType: "entity_catalog_results",
+        toolName: "entity_catalog_query",
+        shownIds: ["TFT17_Ornn", "TFT17_Samira"],
+        shownEntities: [
+          { apiName: "TFT17_Ornn", name: "奥恩", entityType: "unit" },
+          { apiName: "TFT17_Samira", name: "莎弥拉", entityType: "unit" }
+        ],
+        entityType: "unit",
+        returnedCount: 2,
+        totalCount: 2,
+        exhausted: true,
+        appliedConstraints: { cost: 3 },
+        sourceFilters: { cost: 3, traits: ["TFT17_SpaceGroove"] },
+        selectionScope: "current_visible_results"
+      }
+    }),
+    seasonContextId: "set17-live",
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => {
+      providerCalls += 1;
+      return createTurnDelta({ dialogueAct: "continue", taskRelation: "continue", confidence: 0.95 });
+    }
+  });
+
+  assert.equal(providerCalls, 1);
+  assert.equal(response.turnDelta.taskRelation, "modify");
+  assert.equal(response.turnDelta.explicitTaskFrame.goal, "recommend_builds_for_candidate_group");
+  assert.deepEqual(
+    response.turnDelta.explicitTaskFrame.candidates.map((entity) => entity.resolvedId),
+    ["TFT17_Ornn", "TFT17_Samira"]
+  );
+  assert.deepEqual(response.turnDelta.explicitTaskFrame.capabilityRequirements, ["unit_build_statistics"]);
+});
+
+test("action-only build wording without a visible unit result group still requires context", async () => {
+  const response = await interpretTurn({
+    currentMessage: "怎么出装？",
+    conversationState: createConversationState({ seasonContextId: "set17-live" }),
+    seasonContextId: "set17-live",
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => createTurnDelta({
+      dialogueAct: "unknown",
+      taskRelation: "unknown",
+      confidence: 0.2,
+      ambiguities: [{ code: "missing_subject", affectsToolSelection: true }]
+    })
+  });
+
+  assert.equal(response.turnDelta.taskRelation, "new");
+  assert.equal(response.turnDelta.explicitTaskFrame?.goal, "unit_build_rankings");
+  assert.equal(
+    response.turnDelta.explicitTaskFrame?.understandingStatus,
+    "understood_but_missing_context"
+  );
+  assert.equal(response.turnDelta.explicitTaskFrame?.candidates.length ?? 0, 0);
+  assert.equal(response.turnDelta.explicitTaskFrame?.ambiguities[0]?.code, "missing_subject");
+  assert.equal(response.telemetry.providerFallback.reason, "action_only_build_followup_policy");
+});
+
 test("Turn Interpreter supplies ordered shown result ids for ordinal references", () => {
   const state = createConversationState({
     lastResult: {

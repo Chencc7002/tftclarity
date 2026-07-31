@@ -4,7 +4,7 @@ import { ToolError } from "./tool-errors.js";
 
 const DESCRIPTIONS = Object.freeze({
   unit_builds: "Use for current structured unit build statistics. Not for arbitrary URLs or model-generated facts. Input contains validated unit query constraints. Returns existing unit-build response data.",
-  unit_builds_batch: "Compare current structured build statistics for at most five catalog-resolved units. The units must come from a prior registered tool step.",
+  unit_builds_batch: "Return current structured build statistics for at most five catalog-resolved units. Units must come from a prior registered tool step or a validated current-conversation catalog result snapshot.",
   unit_comp_candidates: "Use for validated unit composition candidates. Not for global rankings. Input contains a unit and bounded sample scope. Returns existing candidate data.",
   item_carrier_rankings: "Use for current item-to-carrier statistics. Input requires one validated item and returns deterministic positive-uplift carrier aggregates with representative builds. Not for model-generated item advice.",
   comps_rankings: "Use for current composition rankings. Not for historical claims without evidence. Input contains validated ranking scope. Returns existing page-aligned ranking data.",
@@ -71,7 +71,8 @@ const CAPABILITIES = Object.freeze({
       allowNoEntities: true,
       requiredConstraints: ["targetEntityType"],
       features: ["unit_build_statistics"],
-      outputs: ["recommendation", "ranking", "evidence"]
+      goals: ["recommend_builds_for_candidate_group", "recommend_best_option"],
+      outputs: ["recommendation", "recommendations", "results", "ranking", "evidence"]
     }),
     Object.freeze({
       action: "analyze",
