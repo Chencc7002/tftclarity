@@ -58,6 +58,7 @@ const CONTEXTS = [
     status: "coming_soon",
     visible: true,
     selectable: false,
+    themePreview: true,
     isDefault: false,
     catalogNamespace: "set18-pbe",
     source: {
@@ -75,17 +76,18 @@ const CONTEXTS = [
         "en-US": "PBE Preview"
       },
       colors: {
-        primary: "#7f6ac8",
-        secondary: "#d08bba"
+        primary: "#356b43",
+        secondary: "#48b8c7"
       },
       wallpaper: {
         seasonId: "set-18-pbe",
-        directory: null,
-        defaultId: null
+        directory: "/assets/wallpapers/set-18/",
+        defaultId: "set18-verdant-realm"
       },
       particles: {
-        density: 0.72,
-        speed: 0.8
+        density: 0.62,
+        speed: 0.62,
+        tones: ["214,239,160", "121,221,197", "239,211,116"]
       },
       patchNoteVersion: null,
       quickQuestions: {
@@ -240,6 +242,23 @@ export class SeasonContextService {
     });
   }
 
+  resolveForSelection(contextId) {
+    const context = this.resolve(contextId, {
+      requireVisible: true,
+      requireSelectable: false,
+      requireAvailable: false
+    });
+    if (!context.selectable && !context.themePreview) {
+      throw new SeasonContextError("该赛季空间当前不可选择", {
+        code: "season_context_not_selectable",
+        statusCode: 409,
+        contextStatus: context.status,
+        seasonContextId: context.id
+      });
+    }
+    return context;
+  }
+
   publicRecord(context) {
     const availability = this.getAvailability(context);
     return {
@@ -251,6 +270,7 @@ export class SeasonContextService {
       status: context.status,
       visible: context.visible,
       selectable: context.selectable && Boolean(availability.available),
+      themePreview: Boolean(context.themePreview),
       isDefault: context.isDefault,
       themeId: context.themeId,
       theme: context.theme ? clone(context.theme) : null,

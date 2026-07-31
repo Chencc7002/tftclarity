@@ -35,16 +35,29 @@ test("SeasonContext registry exposes only safe public records", () => {
   assert.equal(live.themeId, "set17");
   assert.equal(pbe.status, "coming_soon");
   assert.equal(pbe.selectable, false);
+  assert.equal(pbe.themePreview, true);
   assert.equal(pbe.availability.available, false);
   assert.equal(live.theme.documentTitle, "TFTClarity｜云顶数据智答");
   assert.equal(live.theme.wallpaper.seasonId, "set-17");
   assert.equal(live.theme.patchNoteVersion, "17.8");
-  assert.equal(pbe.theme.wallpaper.defaultId, null);
+  assert.equal(pbe.theme.wallpaper.defaultId, "set18-verdant-realm");
   assert.equal(pbe.theme.patchNoteVersion, null);
   assert.match(pbe.theme.riskNotice["en-US"], /cannot be queried/i);
   assert.equal("source" in live, false);
   assert.equal("catalogNamespace" in live, false);
   assert.doesNotMatch(JSON.stringify(records), /api-hc\.metatft\.com|pbe-comps/);
+});
+
+test("PBE theme previews can be selected without making their data provider queryable", () => {
+  const service = createSeasonContextService();
+  const preview = service.resolveForSelection("set18-pbe");
+
+  assert.equal(preview.id, "set18-pbe");
+  assert.equal(preview.themePreview, true);
+  assert.throws(
+    () => service.resolveForQuery("set18-pbe"),
+    (error) => error?.code === "season_context_coming_soon"
+  );
 });
 
 test("two selectable live seasons resolve independent UI themes during a simulated switch", () => {

@@ -98,6 +98,8 @@ const statusEl = document.querySelector("#status");
 const seasonContextSelect = document.querySelector("#season-context-select");
 const seasonContextSummary = document.querySelector("#season-context-summary");
 const seasonContextNotice = document.querySelector("#season-context-notice");
+const seasonPreviewBanner = document.querySelector("#season-preview-banner");
+const sendButton = form.querySelector(".send-button");
 const aiQuotaEl = document.querySelector("#ai-quota");
 const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
@@ -402,7 +404,7 @@ function renderSeasonContextOptions() {
     const option = document.createElement("option");
     option.value = context.id;
     option.textContent = seasonOptionLabel(context);
-    option.disabled = !context.selectable;
+    option.disabled = !context.selectable && !context.themePreview;
     if (context.notices?.length) option.title = context.notices.join(" ");
     return option;
   }));
@@ -415,10 +417,18 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   const theme = context.theme ?? {};
   const colors = theme.colors ?? {};
   const wallpaper = theme.wallpaper ?? {};
+  const previewOnly = Boolean(context.themePreview && !context.selectable);
   shellEl.dataset.seasonContextId = context.id;
   shellEl.dataset.seasonEnvironment = context.environment;
+  shellEl.dataset.seasonTheme = context.themeId ?? "";
+  shellEl.dataset.seasonPreview = String(previewOnly);
   shellEl.style.setProperty("--season-primary", colors.primary ?? "#6b63df");
   shellEl.style.setProperty("--season-secondary", colors.secondary ?? "#34b9d6");
+  if (seasonPreviewBanner) seasonPreviewBanner.hidden = !previewOnly;
+  queryInput.disabled = previewOnly;
+  sendButton.disabled = previewOnly;
+  if (previewOnly) queryInput.setAttribute("aria-describedby", "season-preview-banner");
+  else queryInput.removeAttribute("aria-describedby");
   if (refreshWallpaper) {
     wallpaperController.setSeason(wallpaper.seasonId, wallpaper.defaultId, {
       primary: colors.primary,
@@ -480,7 +490,7 @@ async function loadSeasonContexts() {
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("seasonLoadFailed"));
     state.seasonContexts = data.seasonContexts ?? [];
     const storedId = localStorage.getItem(SEASON_CONTEXT_STORAGE_KEY);
-    const preferred = state.seasonContexts.find((context) => context.id === storedId && context.selectable)
+    const preferred = state.seasonContexts.find((context) => context.id === storedId && (context.selectable || context.themePreview))
       ?? state.seasonContexts.find((context) => context.id === data.defaultSeasonContextId && context.selectable)
       ?? state.seasonContexts.find((context) => context.selectable);
     renderSeasonContextOptions();
@@ -3655,6 +3665,10 @@ function setRequestRunning(running) {
 }
 
 async function requestRecommendation(refresh = false, displayInput = null) {
+  if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
+    setStatus(t("seasonPreviewQueryDisabled"), "stale");
+    return;
+  }
   const input = refresh ? state.lastInput : queryInput.value.trim();
   if (!input) {
     renderError("enterQuery", "enterQuery");
@@ -4184,7 +4198,7 @@ clearButton.addEventListener("click", () => {
 
 seasonContextSelect.addEventListener("change", () => {
   const requested = state.seasonContexts.find((context) => context.id === seasonContextSelect.value);
-  if (!requested?.selectable || requested.id === state.seasonContextId) {
+  if ((!requested?.selectable && !requested?.themePreview) || requested.id === state.seasonContextId) {
     seasonContextSelect.value = state.seasonContextId ?? "";
     return;
   }

@@ -89,6 +89,68 @@ test("production recommendation path runs semantic shadow without changing the l
   assert.equal(Object.keys(routed).includes("agentRouting"), false);
 });
 
+test("live single-item recommendations attach a retrieval timestamp before evidence validation", async () => {
+  const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({
+    registry: toolRegistry,
+    toolExecutor
+  });
+  const result = await recommendForInput("霞单件装备排行", {
+    catalog: createCatalog(),
+    useSession: false,
+    bypassQueryCache: true,
+    executionPlanSovereignty: true,
+    metaTFTClient: {
+      async getUnitBuilds() {
+        return { data: [] };
+      }
+    },
+    toolRegistry,
+    toolExecutor,
+    executionPlanExecutor,
+    now: () => Date.parse("2026-07-31T02:31:00.000Z")
+  });
+
+  assert.equal(result.type, "unit_item_rankings");
+  assert.ok(result.executionTrace);
+  assert.equal(result.executionTrace.status, "completed");
+  assert.equal(result.executionTrace.evidenceStatus, "sufficient");
+  assert.equal(result.sourceUpdatedAt, "2026-07-31T02:31:00.000Z");
+});
+
+test("ExecutionPlan reports evidence validation instead of an unknown failure stage", async () => {
+  const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({
+    registry: toolRegistry,
+    toolExecutor
+  });
+
+  await assert.rejects(
+    recommendForInput("霞单件装备排行", {
+      catalog: createCatalog(),
+      useSession: false,
+      bypassQueryCache: true,
+      executionPlanSovereignty: true,
+      metaTFTClient: {
+        async getUnitBuilds() {
+          return null;
+        }
+      },
+      toolRegistry,
+      toolExecutor,
+      executionPlanExecutor
+    }),
+    (error) => {
+      assert.equal(error.code, "execution_evidence_invalid");
+      assert.match(error.message, /evidence_validation/u);
+      assert.doesNotMatch(error.message, /unknown/u);
+      return true;
+    }
+  );
+});
+
 test("production path routes 九五 through semantic correction and structured comp statistics", async () => {
   const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
   const toolExecutor = new ToolExecutor({ registry: toolRegistry });

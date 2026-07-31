@@ -43,7 +43,17 @@ export const WALLPAPER_SEASONS = {
   "set-18-pbe": {
     season: 18,
     labelKey: "seasonPbePreview",
-    wallpapers: []
+    wallpapers: [
+      {
+        id: "set18-verdant-realm",
+        labelKey: "wallpaperVerdantRealm",
+        url: "/assets/wallpapers/set-18/verdant-realm.jpg",
+        position: "center center",
+        focusSize: "cover",
+        accent: "#356b43",
+        accentSecondary: "#48b8c7"
+      }
+    ]
   }
 };
 

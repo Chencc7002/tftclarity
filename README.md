@@ -6,6 +6,12 @@ tftclarity 是一个面向《云顶之弈》中文玩家的数据决策助手。
 
 项目既可以作为浏览器中的本地小窗口运行，也可以部署为公开 Web 服务。
 
+## 在线测试站点
+
+- https://tftclarity.cn/
+
+当前网站主要用于个人使用、功能测验和项目演示，功能、数据和服务状态可能随开发调整。它不是 Riot Games 官方产品，也不代表已经提供正式商业服务、长期可用性或稳定性承诺。
+
 ## 为什么使用 tftclarity？
 
 常规数据网站适合浏览完整榜单和手动筛选原始数据；tftclarity 更关注中文玩家的自然表达，以及从“提出问题”到“做出选择”的速度。
@@ -73,6 +79,86 @@ AI 只负责受控解析和数据解读，不能直接改写底层统计结果�
 - JSON 或 SQLite 持久化缓存
 - 可选结构化解析、语义检索和证据约束的 LLM 数据解读
 - 匿名公开访问、使用额度控制和反馈记录
+
+## 当前实现架构
+
+当前代码已经形成从自然语言理解、受控工具执行到证据约束回答的完整链路：
+
+```text
+用户输入
+  ↓
+TurnInterpreter / ConversationState
+  ↓
+TaskFrame / ContextResolver
+  ↓
+CapabilityMatcher
+  ↓
+ExecutionPlan
+  ↓
+ToolRegistry / ExecutionPlanExecutor / ResultPolicy
+  ↓
+结构化数据检索与知识检索
+  ↓
+EvidenceBundle
+  ↓
+HybridAnswerService
+  ↓
+回答校验与确定性降级
+  ↓
+HTTP API / Web 界面 / 本地小窗口
+```
+
+主要模块职责：
+
+- `TurnInterpreter`、`TaskFrame` 和会话状态模块负责理解当前问题，并继承或修改多轮对话条件。
+- `CapabilityMatcher` 和 `ExecutionPlan` 负责选择能力、整理完整参数和约束工具执行范围。
+- `ToolRegistry`、`ExecutionPlanExecutor` 和 `ResultPolicy` 负责执行结构化查询，并控制结果进入后续链路的方式。
+- 结构化检索以 MetaTFT 查询结果为主；`current_stats`、语义索引和攻略知识用于补充趋势、背景与条件性解释。
+- `EvidenceBundle` 统一组织结构化统计、知识证据、来源优先级和风险提示。
+- `HybridAnswerService` 在证据范围内生成解读，并验证证据 ID、统计数字和当前推荐；模型不可用或输出不合格时自动返回确定性结果。
+
+## 当前版本与 SQLite 定位
+
+当前仓库和在线站点仍属于测试版本，现阶段使用 SQLite 验证完整产品和 Agent 链路。SQLite 当前主要承担：
+
+- MetaTFT 查询与页面数据缓存
+- `current_stats` 快照和 namespace 隔离验证
+- 持久化语义文档与向量索引实验
+- 会话、使用额度、反馈及测试数据的本地持久化
+- 数据生成、检索、HTTP 路由、证据组装和回答降级的端到端验收
+
+SQLite 的选择主要服务于单机开发、低成本部署和快速迭代，不代表最终生产数据架构。JSON 或 SQLite 的本地模式仍会保留，用于开发、测试、离线回归和个人部署。
+
+## 后续生产架构规划
+
+在产品功能和目标保持不变的前提下，后续会根据数据规模、并发量和运维需求逐步拆分基础设施。以下为计划演进方向，尚未全部实现：
+
+```text
+Web / 本地客户端
+        ↓
+应用与 API 服务
+  ├─ 自然语言理解与 Agent 编排
+  ├─ 结构化查询与推荐服务
+  ├─ 检索、证据和结论服务
+  └─ 匿名访问、额度与反馈
+        ↓
+数据与基础设施
+  ├─ PostgreSQL：业务数据、聚合统计、用户偏好与反馈
+  ├─ Redis：热查询缓存、会话状态、限流与任务协调
+  ├─ 对象存储：数据快照、离线样本、知识文件与备份
+  └─ Worker / Scheduler：current_stats、索引构建、资料摄取和定时任务
+        ↓
+MetaTFT / Riot / 其他受控外部数据源
+```
+
+计划中的演进原则：
+
+- 保留现有 `TaskFrame → ExecutionPlan → ToolExecutor` 主链，不因存储升级改变产品交互目标。
+- PostgreSQL 作为长期持久化与统计数据的主要承载，SQLite 继续服务本地和测试环境。
+- Redis 只承担适合内存化的缓存、会话、限流和任务协调，不作为权威统计来源。
+- 数据快照、离线捕获样本和大体积知识文件逐步迁移到对象存储。
+- 定时生成、语义索引和资料摄取从 Web 请求链路中拆出，由独立 Worker 执行。
+- 所有架构升级继续保留证据约束、可追踪来源和确定性降级能力。
 
 ## 快速开始
 
@@ -227,5 +313,7 @@ npm run smoke:current-stats:http
 ## 项目声明
 
 tftclarity 是由玩家独立制作的非商业粉丝项目，与 Riot Games 不存在隶属、合作、赞助或认可关系。
+
+在线测试站点仅用于个人使用、功能测验和项目演示，不是 Riot Games 官方产品，也不代表正式商业服务。
 
 MetaTFT 为非官方外部数据来源。Riot Games、Teamfight Tactics 及相关角色、图像、名称和游戏资产归 Riot Games 或其权利人所有。

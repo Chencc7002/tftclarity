@@ -15,6 +15,8 @@ class ParticleField {
     this.lastTime = 0;
     this.density = 1;
     this.speed = 1;
+    this.defaultTones = ["255,222,150", "183,235,255", "218,202,255"];
+    this.tones = [...this.defaultTones];
     this.reducedMotion = globalThis.matchMedia?.("(prefers-reduced-motion: reduce)")?.matches ?? false;
     this.resizeObserver = new ResizeObserver(() => this.resize());
     this.resizeObserver.observe(canvas);
@@ -43,7 +45,7 @@ class ParticleField {
       phase: Math.random() * Math.PI * 2,
       pulse: .9 + Math.random() * 1.4,
       tail: 7 + Math.random() * 15,
-      tone: Math.random()
+      tone: Math.floor(Math.random() * this.tones.length)
     };
   }
 
@@ -62,9 +64,13 @@ class ParticleField {
     }
   }
 
-  setProfile({ density = 1, speed = 1 } = {}) {
+  setProfile({ density = 1, speed = 1, tones = null } = {}) {
     this.density = Math.max(0.25, Number(density) || 1);
     this.speed = Math.max(0.25, Number(speed) || 1);
+    this.tones = Array.isArray(tones) && tones.length
+      ? tones.filter((tone) => /^\d{1,3},\d{1,3},\d{1,3}$/u.test(String(tone)))
+      : [...this.defaultTones];
+    if (!this.tones.length) this.tones = [...this.defaultTones];
     this.resize();
   }
 
@@ -86,9 +92,7 @@ class ParticleField {
         Object.assign(particle, this.createParticle(width, height, true));
       }
       const glow = particle.alpha * (.68 + Math.sin(particle.phase) * .3);
-      const tone = particle.tone > .72
-        ? "255,222,150"
-        : particle.tone > .36 ? "183,235,255" : "218,202,255";
+      const tone = this.tones[particle.tone % this.tones.length] ?? this.defaultTones[0];
       this.context.strokeStyle = `rgba(${tone},${Math.max(0, glow * .38)})`;
       this.context.lineWidth = Math.max(.6, particle.radius * .48);
       this.context.beginPath();
