@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import {
   MemoryCacheStore,
   createCatalog,
+  createTaskFrame,
   createTurnDelta,
   unknownTurnDelta
 } from "../src/index.js";
@@ -287,6 +288,81 @@ test("web conversation expands a deictic trait follow-up into four-cost units an
   assert.equal(secondEvent.llmUsed, true);
   assert.equal(second.payload.executionTrace.status, "completed");
   assert.equal(second.payload.executionTrace.toolCallCount, 2);
+});
+
+test("three-turn catalog conversation reuses displayed units for an action-only build follow-up", async () => {
+  const runtime = createWebRuntime({
+    conversationStateV2Mode: "on",
+    turnDeltaProvider: async () => createTurnDelta({
+      dialogueAct: "continue",
+      taskRelation: "continue",
+      confidence: 0.95
+    })
+  });
+  const conversationId = "catalog-then-action-only-builds";
+  const first = await handleRecommendRequest({
+    input: "木灵族是什么羁绊",
+    conversationId
+  }, runtime);
+  const second = await handleRecommendRequest({
+    input: "该羁绊内有哪些四费棋子",
+    conversationId
+  }, runtime);
+  const third = await handleRecommendRequest({
+    input: "怎么出装？",
+    conversationId
+  }, runtime);
+
+  assert.equal(first.payload.type, "trait_details");
+  assert.equal(second.payload.type, "entity_catalog_results");
+  assert.deepEqual(
+    second.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+  assert.equal(third.statusCode, 200);
+  assert.equal(third.payload.type, "unit_builds_batch_results");
+  assert.deepEqual(third.payload.executionPlan.steps.map((step) => step.tool), ["unit_builds_batch"]);
+  assert.deepEqual(
+    third.payload.executionPlan.steps[0].arguments.entities.map((entry) => entry.apiName),
+    second.payload.results.map((entry) => entry.apiName)
+  );
+  assert.equal(third.payload.resultMode, "per_entity_recommendations");
+  assert.match(third.payload.text, /各自的主流出装/);
+  assert.doesNotMatch(third.payload.text, /表现最好/);
+  assert.equal(third.payload.meta.llmUsed, true);
+  assert.deepEqual(third.payload.meta.llmStages, ["turn_interpreter"]);
+});
+
+test("action-only build wording in a new conversation asks for a champion", async () => {
+  const runtime = createWebRuntime({
+    conversationStateV2Mode: "on",
+    turnDeltaProvider: async () => createTurnDelta({
+      dialogueAct: "start_task",
+      taskRelation: "new",
+      explicitTaskFrame: createTaskFrame({
+        action: "rank",
+        goal: "comp_rankings",
+        confidence: 0.95,
+        understandingStatus: "understood_and_supported"
+      }),
+      confidence: 0.95
+    })
+  });
+  const response = await handleRecommendRequest({
+    input: "怎么出装？",
+    conversationId: "action-only-build-without-context"
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "clarification");
+  assert.equal(response.payload.text, "要查哪个英雄的出装？请告诉我英雄名称。");
+  assert.equal(response.payload.conversation.providerInvocation.attempted, true);
+  assert.equal(response.payload.conversation.providerInvocation.succeeded, true);
+  assert.equal(response.payload.conversation.providerInvocation.corrected, true);
+  assert.equal(
+    response.payload.conversation.providerInvocation.correctionReason,
+    "action_only_build_followup_policy"
+  );
 });
 
 test("batch build lookup returns partial evidence when one unit source fails", async () => {

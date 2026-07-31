@@ -16,18 +16,20 @@ function parsed(unit, starLevel) {
   };
 }
 
-test("one-cost and two-cost units default to three stars", () => {
+test("units costing three or less default to three stars", () => {
   const catalog = createCatalog({
     units: [
       { apiName: "TFT17_OneCost", aliases: [], cost: 1 },
       { apiName: "TFT17_TwoCost", aliases: [], cost: 2 },
-      { apiName: "TFT17_ThreeCost", aliases: [], cost: 3 }
+      { apiName: "TFT17_ThreeCost", aliases: [], cost: 3 },
+      { apiName: "TFT17_FourCost", aliases: [], cost: 4 }
     ]
   });
 
   assert.deepEqual(buildQueryContext(parsed("TFT17_OneCost"), { catalog }).starLevel, [3]);
   assert.deepEqual(buildQueryContext(parsed("TFT17_TwoCost"), { catalog }).starLevel, [3]);
-  assert.deepEqual(buildQueryContext(parsed("TFT17_ThreeCost"), { catalog }).starLevel, [2]);
+  assert.deepEqual(buildQueryContext(parsed("TFT17_ThreeCost"), { catalog }).starLevel, [3]);
+  assert.deepEqual(buildQueryContext(parsed("TFT17_FourCost"), { catalog }).starLevel, [2]);
 });
 
 test("an explicit star level is never replaced by the cost-based default", () => {

@@ -3766,16 +3766,10 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
           });
         }
       });
-      results.sort((left, right) => (
-        Number(right.available) - Number(left.available)
-        || Number(right.top4Rate ?? -1) - Number(left.top4Rate ?? -1)
-        || Number(left.avgPlacement ?? 99) - Number(right.avgPlacement ?? 99)
-        || right.games - left.games
-      ));
       const availableResults = results.filter((entry) => entry.available);
       const unavailableResults = results.filter((entry) => !entry.available);
       const text = availableResults.length
-        ? `${availableResults[0].name}的主流出装在候选中表现最好。${unavailableResults.length ? ` ${unavailableResults.map((entry) => entry.name).join("、")}的统计暂时不可用。` : ""}`
+        ? `已整理${availableResults.map((entry) => entry.name).join("、")}各自的主流出装。${unavailableResults.length ? ` ${unavailableResults.map((entry) => entry.name).join("、")}的统计暂时不可用。` : ""}`
         : "候选棋子的出装统计暂时不可用，请稍后刷新。";
       const stale = sourceStates.some((entry) => entry.cache?.stale === true);
       const cached = stale || sourceStates.some((entry) => entry.cache?.hit === true);

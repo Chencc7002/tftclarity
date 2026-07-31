@@ -40,6 +40,32 @@ test("pending orchestration status does not discard already returned composition
   assert.equal(metadata.returnedCount, 3);
 });
 
+test("entity catalog results persist the visible entity group and source filters", () => {
+  const metadata = conversationResultStateFromResponse({
+    type: "entity_catalog_results",
+    query: { traitFilters: ["TFT17_SpaceGroove"], cost: 3 },
+    result: {
+      entityType: "unit",
+      filters: { cost: 3, traits: ["TFT17_SpaceGroove"] },
+      total: 2
+    },
+    results: [
+      { apiName: "TFT17_Ornn", name: "奥恩" },
+      { apiName: "TFT17_Samira", name: "莎弥拉" }
+    ]
+  });
+
+  assert.deepEqual(metadata.shownIds, ["TFT17_Ornn", "TFT17_Samira"]);
+  assert.deepEqual(metadata.shownEntities, [
+    { apiName: "TFT17_Ornn", name: "奥恩", entityType: "unit" },
+    { apiName: "TFT17_Samira", name: "莎弥拉", entityType: "unit" }
+  ]);
+  assert.deepEqual(metadata.sourceFilters, { cost: 3, traits: ["TFT17_SpaceGroove"] });
+  assert.equal(metadata.selectionScope, "current_visible_results");
+  assert.equal(metadata.returnedCount, 2);
+  assert.equal(metadata.totalCount, 2);
+});
+
 test("ConversationState.v2 normalizes bounded result metadata and validates its schema", () => {
   const shownIds = Array.from({ length: MAX_CONVERSATION_SHOWN_IDS + 20 }, (_, index) => `id-${index}`);
   const state = createConversationState({

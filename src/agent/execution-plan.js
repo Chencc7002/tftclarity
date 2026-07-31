@@ -238,6 +238,22 @@ function allowlistedArguments(tool, frame) {
       )
     };
   }
+  if (tool === "unit_builds_batch") {
+    return {
+      entities: entities
+        .filter((entity) => entity?.expectedType === "champion" && entity?.resolvedId)
+        .slice(0, 5)
+        .map((entity) => ({
+          apiName: entity.resolvedId,
+          name: entity.canonicalName ?? entity.rawText ?? entity.resolvedId
+        })),
+      ...Object.fromEntries(
+        ["days", "patch", "rank", "minSamples"]
+          .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
+          .map((key) => [key, structuredClone(constraints[key])])
+      )
+    };
+  }
   if (["comps_rankings", "comps_trends", "comps_analysis"].includes(tool)) {
     return {
       ...(resolvedIds(entities, "champion")[0]

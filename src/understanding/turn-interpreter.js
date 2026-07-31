@@ -10,6 +10,9 @@ import {
 
 export const TURN_INTERPRETER_VERSION = "turn-interpreter.v1";
 
+const ACTION_ONLY_BUILD_FOLLOWUP = /^(?:分别)?(?:怎么|如何|咋)(?:出装|给装|配装|带装备)[？?]?$/u;
+const SHORT_BUILD_FOLLOWUP = /^(?:出装|装备|给装|配装)(?:呢|怎么弄)?[？?]?$/u;
+
 const TURN_INTERPRETER_SYSTEM_RULES = [
   "You interpret the current user turn as a change relative to the supplied active task.",
   "Return exactly one turn-delta.v1 JSON object and no prose.",
@@ -138,10 +141,84 @@ export function compactConversationStateForInterpreter(state = {}) {
       totalCount: state.lastResult.totalCount,
       exhausted: state.lastResult.exhausted,
       shownIds: array(state.lastResult.shownIds).map(String),
+      shownEntities: clone(state.lastResult.shownEntities),
+      entityType: state.lastResult.entityType,
+      selectionScope: state.lastResult.selectionScope,
+      sourceFilters: clone(state.lastResult.sourceFilters),
       appliedConstraints: clone(state.lastResult.appliedConstraints)
     } : null,
     pendingClarification: clone(state.pendingClarification)
   };
+}
+
+function actionOnlyBuildFollowupDelta(currentMessage, state, options = {}) {
+  const input = String(currentMessage ?? "").trim();
+  if (!ACTION_ONLY_BUILD_FOLLOWUP.test(input) && !SHORT_BUILD_FOLLOWUP.test(input)) return null;
+  if (state?.pendingClarification) return null;
+  const seasonChanged = Boolean(
+    options.seasonContextId
+    && state?.seasonContextId
+    && String(options.seasonContextId) !== String(state.seasonContextId)
+  );
+  const lastResult = state?.lastResult;
+  const shownEntities = array(lastResult?.shownEntities).filter((entity) => (
+    entity?.apiName && ["unit", "champion"].includes(entity?.entityType)
+  ));
+  if (
+    seasonChanged
+    ||
+    lastResult?.resultType !== "entity_catalog_results"
+    || lastResult?.entityType !== "unit"
+    || shownEntities.length === 0
+  ) {
+    const ambiguity = {
+      code: "missing_subject",
+      missingFields: ["subjects"],
+      affectsToolSelection: true
+    };
+    return createTurnDelta({
+      dialogueAct: "start_task",
+      taskRelation: "new",
+      explicitTaskFrame: createTaskFrame({
+        domain: "tft",
+        action: "recommend",
+        goal: "unit_build_rankings",
+        expectedOutput: ["recommendations", "results", "evidence"],
+        ambiguities: [ambiguity],
+        capabilityRequirements: ["unit_build_statistics"],
+        confidence: 1,
+        understandingStatus: "understood_but_missing_context"
+      }),
+      ambiguities: [ambiguity],
+      confidence: 1
+    });
+  }
+  return createTurnDelta({
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    explicitTaskFrame: createTaskFrame({
+      domain: "tft",
+      action: "recommend",
+      candidates: shownEntities.map((entity) => ({
+        rawText: entity.name ?? entity.apiName,
+        expectedType: "champion",
+        resolvedId: entity.apiName,
+        source: "last_result",
+        confidence: 1
+      })),
+      constraints: {
+        targetEntityType: "champion",
+        selectionScope: "last_result"
+      },
+      goal: "recommend_builds_for_candidate_group",
+      expectedOutput: ["recommendations", "results", "evidence"],
+      contextReferences: [{ type: "last_result", fields: ["shownEntities"] }],
+      capabilityRequirements: ["unit_build_statistics"],
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    }),
+    confidence: 1
+  });
 }
 
 export function buildTurnInterpreterMessages({ currentMessage, state } = {}) {
@@ -671,12 +748,24 @@ export async function interpretTurn({
       delta = deterministicFallbackDelta(explicit, conversationState);
     }
   }
+  const actionOnlyBuildDelta = actionOnlyBuildFollowupDelta(
+    currentMessage,
+    conversationState,
+    options
+  );
+  if (actionOnlyBuildDelta) {
+    delta = actionOnlyBuildDelta;
+    providerFallback = {
+      used: true,
+      reason: "action_only_build_followup_policy"
+    };
+  }
   delta = await linkTurnDeltaReferences(delta, options);
   const hasConversationContext = Boolean(
     conversationState?.activeTask?.taskFrame
     || conversationState?.pendingClarification
   );
-  if (!hasConversationContext && weakProviderFirstTurnDelta(delta)) {
+  if (!actionOnlyBuildDelta && !hasConversationContext && weakProviderFirstTurnDelta(delta)) {
     const explicit = await explicitFrameForFallback(currentMessage, options);
     if (
       (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)

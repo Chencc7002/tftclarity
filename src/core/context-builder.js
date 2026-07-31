@@ -1,5 +1,7 @@
 import { DEFAULT_QUERY_OPTIONS, createCatalog } from "../data/static-data.js";
 
+const DEFAULT_THREE_STAR_MAX_UNIT_COST = 3;
+
 function sourceLabel(isUserProvided, preferenceProvided = false) {
   if (isUserProvided) return "current_input";
   return preferenceProvided ? "preference" : "system_default";
@@ -39,7 +41,9 @@ function hasSpecialItemScope(parsedQuery, catalog) {
 
 function defaultStarLevelForUnit(unitApiName, catalog) {
   const cost = Number(catalog.unitByApiName.get(unitApiName)?.cost);
-  return Number.isFinite(cost) && cost >= 1 && cost <= 2 ? [3] : [2];
+  return Number.isFinite(cost) && cost >= 1 && cost <= DEFAULT_THREE_STAR_MAX_UNIT_COST
+    ? [3]
+    : [2];
 }
 
 export function buildQueryContext(parsedQuery, options = {}) {
