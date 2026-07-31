@@ -188,6 +188,8 @@ export {
   buildEntityCatalog,
   normalizeEntityCatalogType
 } from "./core/entity-catalog.js";
+export { queryEntityCatalog } from "./domain/tft/entity-catalog-query.js";
+export { aggregateExternalUnits } from "./domain/tft/external-unit-analysis.js";
 export {
   OFFICIAL_TFT_EQUIPMENT_URL,
   buildOfficialTftItemDetailsCatalog,
@@ -290,6 +292,10 @@ export {
   LIVE_SEMANTIC_TASK_PROMPT_VERSION,
   createChatSemanticTaskProvider
 } from "./llm/chat-semantic-task-provider.js";
+export {
+  LIVE_EXECUTION_PLANNER_PROMPT_VERSION,
+  createChatExecutionPlannerProvider
+} from "./llm/chat-execution-planner-provider.js";
 export {
   buildStructuredParserExpansion,
   shouldUseStructuredParser,
@@ -465,6 +471,7 @@ export {
   CONTEXT_RESOLUTION_VERSION,
   resolveTaskFrameContext
 } from "./understanding/context-resolver.js";
+export { parseSemanticTask } from "./understanding/semantic-task-parser.js";
 export {
   TASK_FRAME_ACTIONS,
   TASK_FRAME_ENTITY_TYPES,
@@ -689,6 +696,7 @@ export {
   statusAfterUnderstanding,
   validateAgentStatus,
   comparePublicBusinessResults,
+  createTftControlledPlannerProvider,
   createStructuredToolDefinitions,
   normalizeRunBudget,
   TASK_PLAN_SCHEMA_VERSION,

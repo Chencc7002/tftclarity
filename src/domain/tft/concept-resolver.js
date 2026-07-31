@@ -44,6 +44,29 @@ export const GAME_CONCEPTS = Object.freeze([
     canonicalName: "前排装",
     aliases: ["前排装", "肉装", "坦装", "防装", "主坦装"],
     description: "主要提供生存、抗性或前排功能的装备集合。"
+  },
+  {
+    id: "concept.unit.external_support",
+    canonicalName: "外援",
+    aliases: ["外援", "单挂", "外挂"],
+    description: "需要结合上下文区分阵容中的非本羁绊单挂棋子、转职携带者或后期高费补强。",
+    possibleInterpretations: [
+      {
+        id: "non_trait_splash_unit",
+        label: "阵容中常见的非本羁绊单挂棋子",
+        capability: "composition_external_unit_statistics"
+      },
+      {
+        id: "emblem_carrier",
+        label: "适合携带目标羁绊转职的棋子",
+        capability: "item_carrier_rankings"
+      },
+      {
+        id: "high_cost_support_unit",
+        label: "用于后期补强的高费单挂棋子",
+        capability: "composition_external_unit_statistics"
+      }
+    ]
   }
 ]);
 

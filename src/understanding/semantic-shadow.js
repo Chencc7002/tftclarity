@@ -91,6 +91,7 @@ export async function runSemanticShadow(input, legacyParsed, options = {}) {
       const executionPlanning = await planExecution(semanticResult.taskFrame, capabilityMatch, {
         registry: toolRegistry,
         planner: options.planner,
+        plannerFallback: options.plannerFallback,
         budget: {
           maxSteps: Math.min(3, Number(options.agentRun?.budget?.maxSteps ?? 3)),
           maxToolCalls: Math.min(3, Number(options.agentRun?.budget?.maxToolCalls ?? 3)),

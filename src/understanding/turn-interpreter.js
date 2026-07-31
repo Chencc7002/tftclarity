@@ -205,6 +205,95 @@ function deterministicFallbackDelta(frame, state) {
   return unknownTurnDelta("provider_unavailable");
 }
 
+function weakProviderFirstTurnDelta(delta) {
+  if (delta?.taskRelation === "unknown" || delta?.dialogueAct === "unknown") return true;
+  const frame = delta?.explicitTaskFrame;
+  if (!frame || Number(delta?.confidence ?? 0) < 0.75) return true;
+  const entities = [...array(frame.subjects), ...array(frame.candidates), ...array(frame.concepts)];
+  if (entities.some((entity) => !entity?.resolvedId && Number(entity?.confidence ?? 0) < 0.8)) {
+    return true;
+  }
+  return array(delta.ambiguities).some((entry) => entry?.affectsToolSelection !== false)
+    || array(frame.ambiguities).some((entry) => entry?.affectsToolSelection !== false);
+}
+
+function emptyContextualContinuation(delta) {
+  return Boolean(
+    delta
+    && ["continue", "modify"].includes(delta.taskRelation)
+    && !delta.explicitTaskFrame
+    && array(delta.entityOperations).length === 0
+    && array(delta.constraintOperations).length === 0
+    && !delta.presentation?.resultReference
+  );
+}
+
+function hasMaterialContextualRecoveryCue(currentMessage) {
+  return /(?:[一二两兩三四五六七八九\d]\s*费|出装|出裝|给装|給裝|配装|配裝|带什么装备|帶什麼裝備|有哪些|有什麼|有什么)/u
+    .test(String(currentMessage ?? ""));
+}
+
+function contextualFallbackConversation(state) {
+  const entries = array(state?.taskHistory)
+    .map((entry) => entry?.taskFrame ? { taskFrame: entry.taskFrame } : null)
+    .filter(Boolean);
+  if (state?.activeTask?.taskFrame) {
+    entries.push({ taskFrame: state.activeTask.taskFrame });
+  }
+  return entries;
+}
+
+function contextualFrameAddsMaterialSemantics(frame, activeFrame) {
+  if (
+    !frame
+    || frame.domain !== "tft"
+    || frame.understandingStatus !== "understood_and_supported"
+  ) return false;
+  const activeConstraints = activeFrame?.constraints ?? {};
+  const addsConstraint = Object.entries(frame.constraints ?? {}).some(([key, value]) => (
+    JSON.stringify(activeConstraints[key]) !== JSON.stringify(value)
+  ));
+  const activeRequirements = new Set(array(activeFrame?.capabilityRequirements));
+  const addsCapability = array(frame.capabilityRequirements).some((requirement) => (
+    !activeRequirements.has(requirement)
+  ));
+  return addsConstraint || addsCapability;
+}
+
+function providerFrameCoversContextualSemantics(providerFrame, contextualFrame) {
+  if (!providerFrame || !contextualFrame) return false;
+  const providerRequirements = new Set(array(providerFrame.capabilityRequirements));
+  if (array(contextualFrame.capabilityRequirements).some((value) => !providerRequirements.has(value))) {
+    return false;
+  }
+  const providerConstraints = providerFrame.constraints ?? {};
+  for (const key of ["cost", "targetEntityType", "relation"]) {
+    const expected = contextualFrame.constraints?.[key];
+    if (expected !== undefined && expected !== null && providerConstraints[key] !== expected) {
+      return false;
+    }
+  }
+  return providerFrame.action === contextualFrame.action
+    && providerFrame.understandingStatus === "understood_and_supported";
+}
+
+function sanitizeContextualFallbackFrame(frame, domainPolicy) {
+  if (!frame || typeof domainPolicy?.validateTaskFrame !== "function") {
+    return frame ? createTaskFrame(frame) : null;
+  }
+  const constraints = {};
+  for (const [key, value] of Object.entries(frame.constraints ?? {})) {
+    const candidate = createTaskFrame({
+      ...frame,
+      constraints: { [key]: value }
+    });
+    if (array(domainPolicy.validateTaskFrame(candidate)).length === 0) {
+      constraints[key] = value;
+    }
+  }
+  return createTaskFrame({ ...frame, constraints });
+}
+
 function rawEntityReference(value, expectedType) {
   if (value && typeof value === "object" && !Array.isArray(value)) {
     return {
@@ -261,6 +350,34 @@ async function linkConstraintReferences(frame, options) {
     constraints[field] = resolved[holderField];
   }
   return createTaskFrame({ ...linked, constraints });
+}
+
+function catalogId(value) {
+  return /^TFT\d+_/u.test(String(value ?? ""));
+}
+
+function taskFrameNeedsEntityLinking(frame) {
+  const entities = [
+    ...array(frame?.subjects),
+    ...array(frame?.candidates),
+    ...array(frame?.concepts)
+  ];
+  if (entities.some((entity) => !entity?.resolvedId)) return true;
+  for (const field of [
+    "lockedItems",
+    "ownedItems",
+    "excludedItems",
+    "avoidItemComponents",
+    "comparisonItems",
+    "traitFilters"
+  ]) {
+    for (const value of array(frame?.constraints?.[field])) {
+      if (typeof value === "string" && !catalogId(value)) return true;
+      if (value && typeof value === "object" && !value.resolvedId) return true;
+    }
+  }
+  const comp = frame?.constraints?.comp;
+  return Boolean(comp && typeof comp === "object" && !comp.resolvedId);
 }
 
 async function linkReferenceValues(values, expectedType, holderField, options) {
@@ -343,20 +460,22 @@ async function linkTurnDeltaReferences(delta, options) {
   return createTurnDelta({
     ...delta,
     explicitTaskFrame: delta.explicitTaskFrame
-      ? await linkConstraintReferences(delta.explicitTaskFrame, options)
+      ? taskFrameNeedsEntityLinking(delta.explicitTaskFrame)
+        ? await linkConstraintReferences(delta.explicitTaskFrame, options)
+        : createTaskFrame(delta.explicitTaskFrame)
       : null,
     entityOperations,
     constraintOperations
   });
 }
 
-async function explicitFrameForFallback(currentMessage, options) {
+async function explicitFrameForFallback(currentMessage, options, conversationState = null) {
   if (options.explicitTaskFrame) return createTaskFrame(options.explicitTaskFrame);
   const parser = options.semanticTaskParser ?? parseSemanticTask;
   try {
     const result = await parser(currentMessage, {
       catalog: options.catalog,
-      conversation: [],
+      conversation: contextualFallbackConversation(conversationState),
       dynamicContext: {
         version: options.version ?? null,
         currentTime: options.currentTime ?? null
@@ -385,7 +504,12 @@ export async function interpretTurn({
   });
   let providerFallback = null;
   let rawDelta = null;
+  let providerCalled = false;
+  let providerSucceeded = false;
+  let providerUsage = null;
+  let providerError = null;
   if (typeof semanticProvider === "function") {
+    providerCalled = true;
     try {
       const response = await semanticProvider({
         messages,
@@ -393,6 +517,8 @@ export async function interpretTurn({
         budget: options.budget,
         domainPolicy
       });
+      providerSucceeded = true;
+      providerUsage = response?.usage ?? null;
       rawDelta = response?.turnDelta ?? response;
       const rawValidation = validateTurnDelta(rawDelta);
       if (!rawValidation.valid) {
@@ -408,9 +534,11 @@ export async function interpretTurn({
         throw new TypeError(`Invalid TurnDelta: ${domainValidation.errors.join("; ")}`);
       }
     } catch (error) {
+      providerError = String(error?.message ?? error ?? "provider_error").slice(0, 500);
       providerFallback = {
         used: true,
-        reason: error?.name === "TypeError" ? "invalid_response" : "provider_error"
+        reason: error?.name === "TypeError" ? "invalid_response" : "provider_error",
+        error: providerError
       };
       rawDelta = null;
     }
@@ -424,19 +552,146 @@ export async function interpretTurn({
       currentMessage,
       conversationState
     );
+    const hasConversationContext = Boolean(
+      conversationState?.activeTask?.taskFrame
+      || conversationState?.pendingClarification
+    );
+    if (!hasConversationContext && weakProviderFirstTurnDelta(delta)) {
+      const explicit = await explicitFrameForFallback(currentMessage, options);
+      if (
+        (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)
+        || clarifiableFirstTurnFrame(explicit)
+      ) {
+        delta = deterministicFallbackDelta(explicit, conversationState);
+        providerFallback = {
+          used: true,
+          reason: "self_contained_task_recovery"
+        };
+      }
+    }
+    if (hasConversationContext && emptyContextualContinuation(delta)) {
+      const contextual = sanitizeContextualFallbackFrame(
+        await explicitFrameForFallback(
+          currentMessage,
+          options,
+          conversationState
+        ),
+        domainPolicy
+      );
+      if (contextualFrameAddsMaterialSemantics(
+        contextual,
+        conversationState?.activeTask?.taskFrame
+      )) {
+        delta = createTurnDelta({
+          ...delta,
+          dialogueAct: "modify",
+          taskRelation: "modify",
+          explicitTaskFrame: contextual,
+          confidence: Math.max(Number(delta.confidence ?? 0), Number(contextual.confidence ?? 0)),
+          ambiguities: contextual.ambiguities
+        });
+        providerFallback = {
+          used: true,
+          reason: "contextual_task_recovery"
+        };
+      }
+    }
+    if (
+      hasConversationContext
+      && hasMaterialContextualRecoveryCue(currentMessage)
+      && providerFallback?.reason !== "contextual_task_recovery"
+    ) {
+      const contextual = sanitizeContextualFallbackFrame(
+        await explicitFrameForFallback(currentMessage, options, conversationState),
+        domainPolicy
+      );
+      if (
+        contextualFrameAddsMaterialSemantics(
+          contextual,
+          conversationState?.activeTask?.taskFrame
+        )
+        && !providerFrameCoversContextualSemantics(delta.explicitTaskFrame, contextual)
+      ) {
+        delta = createTurnDelta({
+          ...delta,
+          dialogueAct: "modify",
+          taskRelation: "modify",
+          explicitTaskFrame: contextual,
+          confidence: Math.max(Number(delta.confidence ?? 0), Number(contextual.confidence ?? 0)),
+          ambiguities: contextual.ambiguities
+        });
+        providerFallback = {
+          used: true,
+          reason: "contextual_task_recovery",
+          trigger: "incomplete_contextual_semantics"
+        };
+      }
+    }
   } else {
     const hasConversationContext = Boolean(
       conversationState?.activeTask?.taskFrame
       || conversationState?.pendingClarification
     );
-    const explicit = options.explicitTaskFrame
+    let explicit = options.explicitTaskFrame
       ? createTaskFrame(options.explicitTaskFrame)
       : typeof semanticProvider !== "function" || !hasConversationContext
         ? await explicitFrameForFallback(currentMessage, options)
         : null;
-    delta = deterministicFallbackDelta(explicit, conversationState);
+    if (
+      hasConversationContext
+      && !explicit
+      && hasMaterialContextualRecoveryCue(currentMessage)
+    ) {
+      explicit = sanitizeContextualFallbackFrame(
+        await explicitFrameForFallback(currentMessage, options, conversationState),
+        domainPolicy
+      );
+    }
+    if (
+      hasConversationContext
+      && contextualFrameAddsMaterialSemantics(
+        explicit,
+        conversationState?.activeTask?.taskFrame
+      )
+    ) {
+      const providerFailureReason = providerFallback?.reason ?? "provider_unavailable";
+      delta = createTurnDelta({
+        dialogueAct: "modify",
+        taskRelation: "modify",
+        explicitTaskFrame: explicit,
+        confidence: Number(explicit.confidence ?? 0.9),
+        ambiguities: explicit.ambiguities
+      });
+      providerFallback = {
+        used: true,
+        reason: "contextual_task_recovery",
+        trigger: providerFailureReason
+      };
+    } else {
+      delta = deterministicFallbackDelta(explicit, conversationState);
+    }
   }
   delta = await linkTurnDeltaReferences(delta, options);
+  const hasConversationContext = Boolean(
+    conversationState?.activeTask?.taskFrame
+    || conversationState?.pendingClarification
+  );
+  if (!hasConversationContext && weakProviderFirstTurnDelta(delta)) {
+    const explicit = await explicitFrameForFallback(currentMessage, options);
+    if (
+      (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)
+      || clarifiableFirstTurnFrame(explicit)
+    ) {
+      delta = await linkTurnDeltaReferences(
+        deterministicFallbackDelta(explicit, conversationState),
+        options
+      );
+      providerFallback = {
+        used: true,
+        reason: "self_contained_task_recovery"
+      };
+    }
+  }
   delta = normalizeContextualTurnDelta(conversationState, delta);
   const validation = validateTurnDelta(delta, { domainPolicy });
   if (!validation.valid) {
@@ -448,6 +703,10 @@ export async function interpretTurn({
     telemetry: {
       provider: typeof semanticProvider === "function" ? "injected" : "deterministic",
       providerFallback,
+      providerCalled,
+      providerSucceeded,
+      providerUsage,
+      providerError,
       stateSummary: compactConversationStateForInterpreter(conversationState)
     },
     messages

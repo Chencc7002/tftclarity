@@ -51,6 +51,7 @@ export {
   resolveResultPath,
   validateResultPolicy
 } from "./result-policy-executor.js";
+export { createTftControlledPlannerProvider } from "./controlled-planner-provider.js";
 export {
   AGENT_STATUS_ENUMS,
   AGENT_STATUS_PROTOCOL_VERSION,

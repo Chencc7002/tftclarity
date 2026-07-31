@@ -40,6 +40,16 @@ const ITEM_CATEGORIES = new Set([
   "support",
   "set_special"
 ]);
+const TFT_EXPLICIT_TASK_CONSTRAINT_FIELDS = new Set([
+  ...TURN_DELTA_CONSTRAINT_FIELDS,
+  "cost",
+  "targetEntityType",
+  "relation",
+  "current",
+  "projection",
+  "candidateLimit",
+  "externalSupportInterpretation"
+]);
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -57,6 +67,18 @@ function entityReference(value, expectedType = null) {
 }
 
 function validateConstraintValue(field, value) {
+  if (field === "cost") {
+    const costs = Array.isArray(value) ? value : [value];
+    return costs.length > 0 && costs.every((entry) => Number.isInteger(entry) && entry >= 1 && entry <= 9);
+  }
+  if (field === "targetEntityType") return ["champion", "unit", "item", "trait"].includes(value);
+  if (field === "relation") return value === "member_of_trait";
+  if (field === "current") return typeof value === "boolean";
+  if (field === "projection") {
+    return Array.isArray(value) && value.length <= 20 && value.every((entry) => typeof entry === "string");
+  }
+  if (field === "candidateLimit") return Number.isInteger(value) && value >= 1 && value <= 5;
+  if (field === "externalSupportInterpretation") return value === "non_trait_splash_unit";
   if (field === "days") return Number.isInteger(value) && value >= 1 && value <= 30;
   if (field === "minSamples") return Number.isInteger(value) && value >= 0 && value <= 1_000_000;
   if (field === "limit" || field === "itemCount") {
@@ -106,7 +128,7 @@ function validateOperation(operation) {
 function validateTaskFrame(frame) {
   const errors = [];
   for (const [field, value] of Object.entries(frame?.constraints ?? {})) {
-    if (!TURN_DELTA_CONSTRAINT_FIELDS.includes(field)) {
+    if (!TFT_EXPLICIT_TASK_CONSTRAINT_FIELDS.has(field)) {
       errors.push(`constraints.${field} is unsupported`);
       continue;
     }

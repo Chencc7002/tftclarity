@@ -8,7 +8,7 @@ function array(value) {
 function ambiguityIsMaterial(ambiguity = {}) {
   return ambiguity.affectsToolSelection === true
     || ambiguity.affectsResult === true
-    || ["missing_context", "missing_context_reference", "conflicting_constraints", "ambiguous_entity"]
+    || ["missing_context", "missing_context_reference", "conflicting_constraints", "ambiguous_entity", "ambiguous_game_concept"]
       .includes(ambiguity.code);
 }
 
@@ -33,6 +33,14 @@ function questionFor(frame, ambiguity) {
   }
   if (ambiguity?.code === "ambiguous_entity") {
     return `我理解你要${frame.goal || "完成查询"}，但对象有多个可能含义。请只确认你指的是哪一个。`;
+  }
+  if (ambiguity?.code === "ambiguous_game_concept") {
+    const labels = array(ambiguity.candidates).map((candidate) => candidate?.label).filter(Boolean);
+    const trait = array(frame.concepts).find((entity) => entity?.expectedType === "trait");
+    const name = trait?.canonicalName ?? trait?.rawText ?? "目标羁绊";
+    if (labels.length >= 2) {
+      return `你说的“${name}外援”是指${labels[0]}，还是${labels[1]}？`;
+    }
   }
   return `我理解你要${frame.goal || "完成查询"}，但还缺少会显著改变结果的一项信息。请只补充该关键信息。`;
 }
