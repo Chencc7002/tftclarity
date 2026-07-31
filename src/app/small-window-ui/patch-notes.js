@@ -1,6 +1,68 @@
-export const CURRENT_PATCH_VERSION = "17.7";
+export const CURRENT_PATCH_VERSION = "17.8";
 
 const PATCH_NOTES = {
+  "17.8": {
+    version: "17.8",
+    publishedAt: "2026-07-28T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "17.8 版本更新",
+        summary: "星神赛季迎来小型平衡调整：幻灵战队强势奖励被收紧，灵能特工装备获得增强，多名英雄的强度与羁绊得到微调。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-17-8/",
+        highlights: [
+          {
+            title: "胖胖龙经典宝藏",
+            body: "S16「英雄棋谭」的胖胖龙宝藏加入经典英雄联盟元素，包括经典野怪、凯尔的审判及黄金之心等怀旧装备，并将在版本上线后不久开放。"
+          },
+          {
+            title: "羁绊与专属装备",
+            body: "幻灵战队的歼灭者、冰爆护甲和雌狮之怨被削弱，5层奖励池同步调整；5神谕者的全队法力回复由 3 降至 2，4灵能特工的四件专属装备全面增强。"
+          },
+          {
+            title: "低费英雄调整",
+            body: "贝蕾亚攻击力由 35 提升至 40，崔斯特技能伤害提高；阿卡丽持续伤害下调，纳尔新增斗士羁绊。"
+          },
+          {
+            title: "中高费英雄调整",
+            body: "厄运小姐与锐雯获得增强，莎弥拉被削弱；黛安娜更快施法但护盾降低，莫甘娜新增神谕者并调整法力与治疗，劫的分身生命值惩罚进一步降低。"
+          },
+          {
+            title: "强化符文增强",
+            body: "「宇宙重启」提供的刷新次数由 8 次提高至 15 次。"
+          }
+        ]
+      },
+      "en-US": {
+        title: "Patch 17.8",
+        summary: "A light Space Gods balance patch that trims Anima Squad's strongest rewards, buffs Psionic items, and adjusts several champions and trait pairings.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-17-8/",
+        highlights: [
+          {
+            title: "Choncc's Classic Treasure",
+            body: "Set 16 Lore & Legends gets a classic League twist with classic PvE monsters, Kayle's tribunal, nostalgic items such as Heart of Gold, and more."
+          },
+          {
+            title: "Traits and special items",
+            body: "Anima Squad's Annihilator, Iceblast Armor, and Lioness' Lament are nerfed and the (5) loot table is adjusted. Conduit (5) ally Mana Regen drops from 3 to 2, while all four Psionic (4) items are buffed."
+          },
+          {
+            title: "Low-cost champions",
+            body: "Briar gains Attack Damage and Twisted Fate gains spell damage. Akali's damage over time is reduced, while Gnar also becomes a Brawler."
+          },
+          {
+            title: "Mid and high-cost champions",
+            body: "Miss Fortune and Riven are buffed, while Samira is nerfed. Diana casts sooner with a smaller shield, Morgana gains Conduit with Mana and healing adjustments, and Zed's clone Health penalty is reduced."
+          },
+          {
+            title: "Augment buff",
+            body: "Cosmic Restart now grants 15 rerolls, up from 8."
+          }
+        ]
+      }
+    }
+  },
   "17.7": {
     version: "17.7",
     publishedAt: "2026-07-14T18:00:00.000Z",

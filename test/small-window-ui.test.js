@@ -103,7 +103,9 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /requestRecommendation\(false, t\(quickTask\.promptKey\)\)/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.7"/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.8"/);
+  assert.match(patchNotes, /publishedAt: "2026-07-28T18:00:00\.000Z"/);
+  assert.match(patchNotes, /teamfight-tactics-patch-17-8/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);

@@ -106,3 +106,16 @@ test("AnswerModeRouter does not reject an unregistered open question", () => {
   assert.equal(route.mode, "rag");
   assert.ok(route.reasonCodes.includes("knowledge_signal"));
 });
+
+test("AnswerModeRouter routes version-change questions to official patch knowledge", () => {
+  const route = routeAnswerMode({
+    input: "17.8 版本更新了什么？",
+    parsed: { intent: "comp_rankings" }
+  });
+  assert.equal(route.mode, "rag");
+  assert.equal(route.patchNotesRequested, true);
+  assert.deepEqual(route.structuredOperations, []);
+  assert.ok(route.retrievalScopes.includes("static_knowledge"));
+  assert.ok(route.reasonCodes.includes("official_patch_knowledge_signal"));
+  assert.equal(route.retrievalScopes.includes("current_stats"), false);
+});

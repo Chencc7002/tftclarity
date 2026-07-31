@@ -116,7 +116,8 @@ export {
 export {
   OFFICIAL_PATCH_EVIDENCE_VERSION,
   associateOfficialPatchChanges,
-  getOfficialPatchEvidence
+  getOfficialPatchEvidence,
+  listOfficialPatchEvidence
 } from "./data/official-patch-evidence.js";
 export { filterBuildRows } from "./core/item-policy-filter.js";
 export {
@@ -571,6 +572,12 @@ export {
   knowledgeDocumentToSemanticDocument,
   validateKnowledgeDocument
 } from "./knowledge/knowledge-document-schema.js";
+export {
+  OFFICIAL_PATCH_KNOWLEDGE_VERSION,
+  buildOfficialPatchKnowledgeDocuments,
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "./knowledge/official-patch-knowledge.js";
 export {
   buildCompStatsDocuments,
   buildMetaSnapshotDocument,

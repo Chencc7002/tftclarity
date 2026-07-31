@@ -40,7 +40,7 @@ const CONTEXTS = [
         density: 1,
         speed: 1
       },
-      patchNoteVersion: "17.7",
+      patchNoteVersion: "17.8",
       quickQuestions: {
         "zh-CN": ["推荐当前版本热门阵容", "当前版本阵容趋势"],
         "en-US": ["Recommend popular comps in the current patch", "Show current comp trends"]

@@ -17,6 +17,7 @@ const CURRENT_STATISTICS_PATTERN = /(?:当前|现在|本版本|这个版本|最�
 const STRUCTURED_CONSTRAINT_PATTERN = /(?:已有|已经有|剩下|补什么|怎么补|比较|对比|哪个好|至少|样本|宗师|王者|大师|钻石|段位|天内|近\d+天|\d+星|三星|二星|阵容里)/u;
 const STRATEGY_PATTERN = /(?:为什么|为何|怎么(?:玩|运营|过渡|转型|站位)|如何(?:玩|运营|过渡|转型|站位)|什么(?:开局|条件|时候)|什么时候|能不能玩|还能玩吗|没有.+怎么办|遇到.+怎么办|优先做|搜牌|升级节奏|站位|运营|过渡|转阵容|替代|针对|难在哪里|实战难|不喜欢赌|不想玩赌|原理|机制)/u;
 const EXPLANATION_SUFFIX_PATTERN = /(?:，|,|并且|以及|同时).*(?:为什么|为何|怎么办|怎么打|怎么运营|什么情况下|遇到|替代|针对)/u;
+const PATCH_NOTE_PATTERN = /(?:更新公告|版本.{0,8}(?:更新|改动|变化|调整|改了什么)|(?:更新|改动|变化).{0,8}(?:公告|版本)|\b\d{1,2}\.\d{1,2}.{0,10}(?:更新|改动|变化|调整|改了什么)|patch\s*(?:notes?|changes?))/iu;
 
 const CURRENT_STATS_CONTEXT_PATTERN = /(?:环境概览|版本环境|当前环境|环境大盘|大盘概览|热门阵容|主流阵容|稳定阵容|哪些阵容|有什么.{0,8}阵容|阵容推荐|宽泛推荐|整体趋势|版本趋势|环境趋势|meta\s*(?:overview|snapshot)?|environment\s+overview|broad\s+recommendation)/iu;
 
@@ -50,6 +51,10 @@ function hasStructuredSignal(input, parsed, options, knowledgeSignal = false) {
 function hasKnowledgeSignal(input, options) {
   if (options.forceKnowledge === true) return true;
   return STRATEGY_PATTERN.test(input) || EXPLANATION_SUFFIX_PATTERN.test(input);
+}
+
+export function isPatchNotesQuestion(input) {
+  return PATCH_NOTE_PATTERN.test(String(input ?? ""));
 }
 
 function structuredOperations(parsed) {
@@ -86,10 +91,13 @@ export class AnswerModeRouter {
     const options = { ...this.options, ...overrides };
     const input = String(value.input ?? value.question ?? "");
     const parsed = value.parsed ?? value;
-    const knowledge = hasKnowledgeSignal(input, options);
-    const structured = hasStructuredSignal(input, parsed, options, knowledge);
-    const structuredReadiness = structuredIntentReadiness(parsed);
+    const patchNotesRequested = isPatchNotesQuestion(input);
+    const knowledge = hasKnowledgeSignal(input, options) || patchNotesRequested;
     const currentStatsContext = shouldRetrieveCurrentStats(input, parsed, options);
+    const structured = patchNotesRequested && !currentStatsContext
+      ? false
+      : hasStructuredSignal(input, parsed, options, knowledge);
+    const structuredReadiness = structuredIntentReadiness(parsed);
     const currentBestRequired = /(?:当前|现在|本版本|这个版本).*(?:最好|最强|排名|排行|表现)|(?:最好|最强).*(?:装备|阵容|英雄)|当前有哪些/u.test(input);
     const mode = structured && (knowledge || currentStatsContext)
       ? "hybrid"
@@ -102,6 +110,7 @@ export class AnswerModeRouter {
       reasonCodes.push("structured_required_entities_missing");
     }
     if (knowledge) reasonCodes.push("knowledge_signal");
+    if (patchNotesRequested) reasonCodes.push("official_patch_knowledge_signal");
     if (currentStatsContext) reasonCodes.push("current_stats_context_signal");
     if (!structured && !knowledge) reasonCodes.push("open_question_fallback");
     if (currentBestRequired) reasonCodes.push("current_statistics_authority_required");
@@ -112,6 +121,7 @@ export class AnswerModeRouter {
       structuredOperations: mode === "rag" ? [] : structuredOperations(parsed),
       structuredReadiness,
       retrievalScopes: retrievalScopes(mode, options, input, parsed),
+      patchNotesRequested,
       currentBestRequired,
       authority: {
         currentStatistics: "metatft",

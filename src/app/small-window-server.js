@@ -28,6 +28,10 @@ import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
 import { queryEntityCatalog } from "../domain/tft/entity-catalog-query.js";
 import { aggregateExternalUnits } from "../domain/tft/external-unit-analysis.js";
+import {
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "../knowledge/official-patch-knowledge.js";
 import { matchTaskCapabilities } from "../understanding/capability-matcher.js";
 import { taskFrameFromIntentEnvelope } from "../understanding/task-frame.js";
 import {
@@ -422,6 +426,12 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
+  if (typeof store.upsert === "function") {
+    await store.upsert(buildOfficialPatchSemanticDocuments({
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      locale: config.locale
+    }));
+  }
   const provider = config.enabled
     ? options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
         fetchImpl: options.embeddingFetch
@@ -3479,10 +3489,16 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const currentStatsDays = Number(
     parsedForIntent.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
   );
+  const patchKnowledgeVersion = answerModeRoute.patchNotesRequested
+    ? extractPatchVersionFromQuestion(input)
+      ?? seasonContext.theme?.patchNoteVersion
+      ?? seasonContext.currentPatch
+      ?? seasonContext.effectivePatch
+    : null;
   const coachKnowledgeOptions = {
     seasonContextId: seasonContext.id,
     season: seasonContext.id,
-    patch: seasonContext.currentPatch ?? seasonContext.effectivePatch,
+    patch: patchKnowledgeVersion ?? seasonContext.currentPatch ?? seasonContext.effectivePatch,
     rank: currentStatsRank,
     timeWindow: `${currentStatsDays}d`,
     region: String(body.region ?? "global").toLowerCase(),
@@ -3519,7 +3535,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         intent: "knowledge_question",
         requestedIntent: parsedForIntent.intent ?? null,
         constraints: {
-          patch: seasonContext.effectivePatch,
+          patch: patchKnowledgeVersion ?? seasonContext.effectivePatch,
           locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
         }
       },
