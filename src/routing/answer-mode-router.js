@@ -93,7 +93,7 @@ export class AnswerModeRouter {
     const currentBestRequired = /(?:当前|现在|本版本|这个版本).*(?:最好|最强|排名|排行|表现)|(?:最好|最强).*(?:装备|阵容|英雄)|当前有哪些/u.test(input);
     const mode = structured && (knowledge || currentStatsContext)
       ? "hybrid"
-      : knowledge || (!structured && options.unknownMode !== "structured")
+      : knowledge || (!structured && (currentStatsContext || options.unknownMode === "rag"))
         ? "rag"
         : "structured";
     const reasonCodes = [];

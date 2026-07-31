@@ -21,7 +21,7 @@ function includesAll(container, required) {
   return array(required).every((value) => values.has(value));
 }
 
-function scoreCapability(frame, definition, capability) {
+function scoreCapability(frame, definition, capability, options = {}) {
   const entityTypes = frameEntityTypes(frame);
   const allowed = array(capability.allowedEntityTypes);
   const required = array(capability.requiredEntityTypes);
@@ -32,7 +32,8 @@ function scoreCapability(frame, definition, capability) {
   if (!array(capability.requiredConstraints).every((key) => frame?.constraints?.[key] !== undefined)) {
     return null;
   }
-  if (!includesAll(capability.features, frame?.capabilityRequirements)) return null;
+  if (options.ignoreFeatureRequirements !== true
+    && !includesAll(capability.features, frame?.capabilityRequirements)) return null;
 
   const goals = array(capability.goals);
   const outputs = array(capability.outputs);
@@ -85,15 +86,45 @@ export function matchTaskCapabilities(taskFrame, registry, options = {}) {
     return unsupported(taskFrame, []);
   }
   const matches = [];
+  const composableMatches = [];
   const considered = [];
   for (const definition of registry.list()) {
     for (const capability of definition.capabilities ?? []) {
       considered.push({ tool: definition.name, action: capability.action });
       const match = scoreCapability(taskFrame, definition, capability);
       if (match) matches.push(match);
+      const composable = scoreCapability(taskFrame, definition, capability, {
+        ignoreFeatureRequirements: true
+      });
+      if (composable) composableMatches.push(composable);
     }
   }
   matches.sort((left, right) => right.score - left.score || left.tool.localeCompare(right.tool));
+  const requiredFeatures = unique(taskFrame?.capabilityRequirements);
+  if (requiredFeatures.length > 1) {
+    const selectedComposite = [];
+    const covered = new Set();
+    for (const feature of requiredFeatures) {
+      const candidate = composableMatches
+        .filter((match) => array(match.capability.features).includes(feature))
+        .sort((left, right) => right.score - left.score || left.tool.localeCompare(right.tool))[0];
+      if (candidate && !selectedComposite.some((entry) => entry.tool === candidate.tool)) {
+        selectedComposite.push(candidate);
+      }
+      if (candidate) array(candidate.capability.features).forEach((value) => covered.add(value));
+    }
+    if (selectedComposite.length > 1 && requiredFeatures.every((feature) => covered.has(feature))) {
+      return {
+        schemaVersion: CAPABILITY_MATCH_VERSION,
+        status: "understood_and_supported",
+        mode: "composite",
+        action: taskFrame.action,
+        goal: taskFrame.goal,
+        selected: selectedComposite,
+        considered
+      };
+    }
+  }
   if (matches.length === 0) return unsupported(taskFrame, considered);
 
   const selected = [matches[0]];

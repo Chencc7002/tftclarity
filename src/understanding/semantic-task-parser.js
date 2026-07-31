@@ -78,6 +78,24 @@ function inferAction(text, domain, examples) {
 
 function constraintsFor(text) {
   const constraints = {};
+  const cost = text.match(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/u)?.[1];
+  if (cost) {
+    const costMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    constraints.cost = costMap[cost] ?? Number(cost);
+    constraints.targetEntityType = "champion";
+    constraints.relation = "member_of_trait";
+    constraints.current = true;
+  }
+  if (/最高费|最高費/u.test(text)) {
+    constraints.targetEntityType = "champion";
+    constraints.relation = "member_of_trait";
+    constraints.sort = "cost_desc";
+    constraints.limit = 1;
+    constraints.current = true;
+  }
+  if (/(?:阵容|陣容).{0,8}(?:非|不属于|不屬於).{0,6}(?:羁绊|羈絆).{0,8}(?:外援|单挂|單掛|外挂)|(?:非|不属于|不屬於)(?:本)?羁绊外援/u.test(text)) {
+    constraints.externalSupportInterpretation = "non_trait_splash_unit";
+  }
   if (/(?:提升|增益)(?:最大|最高)/u.test(text)) constraints.sort = "uplift_first";
   if (/(?:携带|使用|样本)(?:最多|最高)|高频/u.test(text)) constraints.sort = "games_first";
   if (/(?:\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u70ed\u5ea6.{0,4}\u6da8)/u.test(text)) {
@@ -394,6 +412,13 @@ export async function parseSemanticTask(input, options = {}) {
     };
   }
   let action = inferAction(text, domainResult.domain, examples);
+  const inferredConstraints = constraintsFor(text);
+  if (
+    inferredConstraints.targetEntityType === "champion"
+    && inferredConstraints.relation === "member_of_trait"
+  ) {
+    action = "search";
+  }
   const entityMentions = extractEntityMentions(text, { catalog: options.catalog });
   const bareChampionRequest = isBareChampionRequest(text, entityMentions);
   if (
@@ -455,7 +480,7 @@ export async function parseSemanticTask(input, options = {}) {
     subjects,
     candidates,
     concepts,
-    constraints: constraintsFor(text),
+    constraints: inferredConstraints,
     goal: goalFor(action),
     expectedOutput: outputsFor(action),
     contextReferences: [],
@@ -514,6 +539,66 @@ export async function parseSemanticTask(input, options = {}) {
       candidateReranker: options.entityCandidateReranker
     });
     frame = applyUnresolvedEntityPolicy(frame, input);
+  }
+  if (/外援|单挂|單掛|外挂/u.test(text)) {
+    const explicitExternal = frame.constraints.externalSupportInterpretation === "non_trait_splash_unit";
+    const previousFrames = (options.conversation ?? [])
+      .map((entry) => entry?.taskFrame ?? entry?.frame ?? null)
+      .filter(Boolean);
+    const emblemContext = /转谁带|轉誰帶|转职.{0,6}(?:谁|誰).{0,3}带|轉職.{0,6}(?:誰|谁).{0,3}帶/u.test(text)
+      || previousFrames.some((previous) => (
+        previous?.goal === "item_carrier_rankings"
+        || previous?.constraints?.externalSupportInterpretation === "emblem_carrier"
+      ));
+    if (explicitExternal || emblemContext) {
+      const previousCarrierFrame = [...previousFrames].reverse().find((previous) => (
+        previous?.goal === "item_carrier_rankings"
+        || previous?.goal === "rank_emblem_carriers"
+      ));
+      const previousItems = [
+        ...(previousCarrierFrame?.candidates ?? []),
+        ...(previousCarrierFrame?.concepts ?? [])
+      ].filter((entity) => entity?.expectedType === "item" && entity?.resolvedId);
+      frame = createTaskFrame({
+        ...frame,
+        action: "search",
+        goal: explicitExternal ? "find_external_support_units" : "rank_emblem_carriers",
+        constraints: {
+          ...frame.constraints,
+          externalSupportInterpretation: explicitExternal ? "non_trait_splash_unit" : "emblem_carrier"
+        },
+        ...(emblemContext && previousItems.length === 1 ? {
+          candidates: previousItems,
+          concepts: frame.concepts.filter((entity) => entity.expectedType === "patch")
+        } : {}),
+        assumptions: emblemContext && !explicitExternal
+          ? [...frame.assumptions, "按适合携带目标羁绊转职的外援棋子理解"]
+          : frame.assumptions,
+        ambiguities: frame.ambiguities.filter((entry) => entry?.code !== "ambiguous_game_concept"),
+        understandingStatus: "understood_and_supported"
+      });
+    } else {
+      frame = createTaskFrame({
+        ...frame,
+        action: "search",
+        goal: "resolve_external_support_meaning",
+        ambiguities: [
+          ...frame.ambiguities.filter((entry) => entry?.code !== "ambiguous_game_concept"),
+          {
+            code: "ambiguous_game_concept",
+            inputFragment: "外援",
+            affectsResult: true,
+            affectsToolSelection: true,
+            candidates: [
+              { id: "non_trait_splash_unit", label: "阵容中常见的非本羁绊单挂棋子" },
+              { id: "emblem_carrier", label: "适合携带目标羁绊转职的棋子" }
+            ],
+            safeAssumption: null
+          }
+        ],
+        understandingStatus: "ambiguous"
+      });
+    }
   }
   const contextResolution = resolveTaskFrameContext(frame, {
     input,

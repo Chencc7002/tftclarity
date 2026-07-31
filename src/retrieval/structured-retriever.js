@@ -13,6 +13,10 @@ const OPERATION_REGISTRY = Object.freeze({
     source: "metatft",
     params: Object.freeze(["unit", "mention", "days", "patch", "queue", "rank", "minSamples"])
   }),
+  unit_builds_batch: Object.freeze({
+    source: "metatft",
+    params: Object.freeze(["entities", "days", "patch", "queue", "rank", "minSamples", "limit"])
+  }),
   item_carrier_rankings: Object.freeze({
     source: "metatft",
     params: Object.freeze([
@@ -35,6 +39,16 @@ const OPERATION_REGISTRY = Object.freeze({
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   trait_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
+  entity_catalog_query: Object.freeze({
+    source: "official_tft_catalog",
+    params: Object.freeze(["entityType", "filters", "projection", "sort", "limit"])
+  }),
+  composition_member_statistics: Object.freeze({
+    source: "metatft",
+    params: Object.freeze([
+      "trait", "memberMode", "aggregateBy", "days", "patch", "queue", "rank", "minSamples", "limit"
+    ])
+  }),
   semantic_search: Object.freeze({
     source: "semantic_index",
     params: Object.freeze(["query", "documentTypes", "patch", "locale", "topK"])

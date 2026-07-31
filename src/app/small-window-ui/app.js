@@ -2944,6 +2944,40 @@ function renderSystemInteractionResult(data) {
   `);
 }
 
+function renderSemanticNativeResult(data) {
+  const isBatch = data.type === "unit_builds_batch_results";
+  const entries = data.results ?? [];
+  const cards = entries.map((entry, index) => {
+    const apiName = entry.apiName ?? entry.unit;
+    const name = entry.name ?? apiName;
+    const build = (entry.bestBuild ?? []).map((item) => typeof item === "string"
+      ? `<span class="item-pill">${escapeHtml(item)}</span>`
+      : itemPill(item)).join("");
+    const stats = isBatch || data.type === "trait_external_unit_statistics"
+      ? `<div class="stats">
+          ${metric(t("top4"), entry.top4Rate == null ? "-" : `${formatNumber(entry.top4Rate * 100)}%`)}
+          ${metric(t("win"), entry.winRate == null ? "-" : `${formatNumber(entry.winRate * 100)}%`)}
+          ${metric(t("avg"), entry.avgPlacement == null ? "-" : formatNumber(entry.avgPlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+          ${metric(t("samples"), formatNumber(entry.games ?? 0))}
+        </div>`
+      : "";
+    const isBest = index === 0 && isBatch && entry.available !== false;
+    return `<article class="result-card${isBest ? " best" : ""}">
+      ${isBest ? `<span class="best-label">${t("best")}</span>` : ""}
+      <div class="card-head"><div class="card-title-group">${assetThumb(entry.iconUrl, name, "equipment-unit-icon")}<div><div class="card-title">${escapeHtml(name)}</div>${entry.cost != null ? `<small>${escapeHtml(t("unitCost", { value: entry.cost }))}</small>` : ""}</div></div></div>
+      ${build ? `<div class="items">${build}</div>` : ""}
+      ${entry.warning ? `<div class="risk-line">${escapeHtml(entry.warning)}</div>` : ""}
+      ${stats}
+    </article>`;
+  }).join("");
+  setResponseHtml(`
+    ${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
+    ${cards ? `<section class="ranking-section">${cards}</section>` : `<div class="empty-state"><strong>${escapeHtml(data.text ?? t("noResult"))}</strong></div>`}
+    ${data.query ? conditionPanel(data) : ""}
+    ${data.source ? sourceAndRisk(data) : ""}
+  `);
+}
+
 function renderCurrentResult(data) {
   if (data.type === "system_interaction") renderSystemInteractionResult(data);
   else if (
@@ -2958,6 +2992,7 @@ function renderCurrentResult(data) {
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
+  else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
   const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
