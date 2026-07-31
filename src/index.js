@@ -116,7 +116,8 @@ export {
 export {
   OFFICIAL_PATCH_EVIDENCE_VERSION,
   associateOfficialPatchChanges,
-  getOfficialPatchEvidence
+  getOfficialPatchEvidence,
+  listOfficialPatchEvidence
 } from "./data/official-patch-evidence.js";
 export { filterBuildRows } from "./core/item-policy-filter.js";
 export {
@@ -473,6 +474,13 @@ export {
 } from "./understanding/context-resolver.js";
 export { parseSemanticTask } from "./understanding/semantic-task-parser.js";
 export {
+  FAST_PATH_POLICY_VERSION,
+  capabilityCoversExpectedOutput,
+  evaluateFastPathEligibility,
+  fastPathDefinition,
+  isPureEntityCatalogRequest
+} from "./routing/fast-path-policy.js";
+export {
   TASK_FRAME_ACTIONS,
   TASK_FRAME_ENTITY_TYPES,
   TASK_FRAME_SCHEMA_VERSION,
@@ -571,6 +579,12 @@ export {
   knowledgeDocumentToSemanticDocument,
   validateKnowledgeDocument
 } from "./knowledge/knowledge-document-schema.js";
+export {
+  OFFICIAL_PATCH_KNOWLEDGE_VERSION,
+  buildOfficialPatchKnowledgeDocuments,
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "./knowledge/official-patch-knowledge.js";
 export {
   buildCompStatsDocuments,
   buildMetaSnapshotDocument,

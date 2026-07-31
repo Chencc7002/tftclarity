@@ -1,14 +1,15 @@
 module.exports = {
-  version: "17.7",
-  publishedAt: "2026-07-14",
-  title: "17.7 版本更新",
-  summary: "以增强和阵容扩展为主：薇古丝加入观星者，慎获得未来战士，多名弱势英雄与羁绊获得加强。",
+  version: "17.8",
+  publishedAt: "2026-07-28",
+  title: "17.8 版本更新",
+  summary: "星神赛季迎来小型平衡调整：幻灵战队强势奖励被收紧，灵能特工装备获得增强，多名英雄的强度与羁绊得到微调。",
   sourceName: "Riot Games 官方更新公告",
-  sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-17-7/",
+  sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-17-8/",
   highlights: [
-    { title: "五费英雄焕新", body: "格雷福斯升级费用降低；慎新增未来战士；薇古丝新增观星者；劫的分身生命值惩罚降低。" },
-    { title: "羁绊阵容扩展", body: "Anima Squad 最高档位调整，Replicator 与 Rogue 的高档位获得增强。" },
-    { title: "英雄整体增强", body: "伊泽瑞尔、塔隆、柔依、黛安娜、厄加特和易大师获得针对性增强。" },
-    { title: "强化符文调整", body: "Birthday Reunion 小幅削弱，Bonk!、Heart of the Swarm、Stellar Combo 等获得增强。" }
+    { title: "胖胖龙经典宝藏", body: "S16「英雄棋谭」加入经典野怪、凯尔的审判与怀旧装备，并将在版本上线后不久开放。" },
+    { title: "羁绊与专属装备", body: "幻灵战队专属装备及5层奖励被收紧，5神谕者法力回复降低，4灵能特工专属装备全面增强。" },
+    { title: "低费英雄调整", body: "贝蕾亚与崔斯特增强，阿卡丽削弱，纳尔新增斗士羁绊。" },
+    { title: "中高费英雄调整", body: "厄运小姐、锐雯和劫增强；莎弥拉削弱；黛安娜与莫甘娜获得补偿性调整。" },
+    { title: "强化符文增强", body: "「宇宙重启」提供的刷新次数由 8 次提高至 15 次。" }
   ]
 };

@@ -103,6 +103,7 @@ const CAPABILITIES = Object.freeze({
       requiredEntityTypes: ["item"],
       allowedEntityTypes: ["item", "patch"],
       goals: ["recommend_best_option"],
+      features: ["item_carrier_statistics"],
       outputs: ["ranking", "evidence"]
     }),
     Object.freeze({
@@ -110,13 +111,15 @@ const CAPABILITIES = Object.freeze({
       requiredEntityTypes: ["item"],
       allowedEntityTypes: ["item", "patch"],
       goals: ["rank_options"],
+      features: ["item_carrier_statistics"],
       outputs: ["ranking", "evidence"]
     }),
     Object.freeze({
       action: "search",
       requiredEntityTypes: ["item"],
       allowedEntityTypes: ["item", "patch"],
-      goals: ["find_relevant_data"],
+      goals: ["find_relevant_data", "rank_emblem_carriers"],
+      features: ["item_carrier_statistics"],
       outputs: ["results", "ranking", "evidence"]
     })
   ]),

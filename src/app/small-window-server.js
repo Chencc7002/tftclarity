@@ -28,8 +28,16 @@ import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
 import { queryEntityCatalog } from "../domain/tft/entity-catalog-query.js";
 import { aggregateExternalUnits } from "../domain/tft/external-unit-analysis.js";
+import {
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "../knowledge/official-patch-knowledge.js";
 import { matchTaskCapabilities } from "../understanding/capability-matcher.js";
 import { taskFrameFromIntentEnvelope } from "../understanding/task-frame.js";
+import {
+  evaluateFastPathEligibility,
+  isPureEntityCatalogRequest
+} from "../routing/fast-path-policy.js";
 import {
   anonymousScopeKey,
   createAnonymousAccessService
@@ -83,6 +91,7 @@ import {
   isLowSampleBuild,
   itemCatalogAuditToCsv,
   KnowledgeRetriever,
+  parseSemanticTask,
   parseQuery,
   recommendForInput,
   generateEvidenceBackedConclusion,
@@ -422,6 +431,12 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
+  if (typeof store.upsert === "function") {
+    await store.upsert(buildOfficialPatchSemanticDocuments({
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      locale: config.locale
+    }));
+  }
   const provider = config.enabled
     ? options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
         fetchImpl: options.embeddingFetch
@@ -1778,6 +1793,11 @@ function serializeRecommendation(result, catalog, meta = {}) {
       },
       methodology: result.methodology,
       diagnostics: result.diagnostics,
+      taskFrame: result.taskFrame ?? null,
+      capabilityMatch: result.capabilityMatch ?? null,
+      executionPlan: result.executionPlan ?? null,
+      executionTrace: result.executionTrace ?? null,
+      conversation: result.conversation ?? null,
       source: sourcePayload(result, meta),
       cache: result.cache ?? null,
       meta: {
@@ -3409,6 +3429,36 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
   const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  let fastPathTaskPromise = null;
+  const getFastPathTaskFrame = () => {
+    if (!fastPathTaskPromise) {
+      fastPathTaskPromise = conversationStateEntry(
+        requestRuntime,
+        scope,
+        conversationId,
+        seasonContext.id
+      ).then((storedState) => {
+        const state = createConversationState(storedState ?? {});
+        return parseSemanticTask(input, {
+          catalog,
+          provider: null,
+          conversation: [
+            ...(state.taskHistory ?? []),
+            ...(state.activeTask?.taskFrame ? [state.activeTask] : [])
+          ],
+          dynamicContext: {
+            version: seasonContext.effectivePatch ?? catalog?.version ?? null
+          }
+        });
+      }).then((result) => result.taskFrame);
+    }
+    return fastPathTaskPromise;
+  };
+  const fastPathEligible = async (fastPath, options = {}) => evaluateFastPathEligibility({
+    fastPath,
+    taskFrame: await getFastPathTaskFrame(),
+    ...options
+  }).eligible;
   const externalSupportPayload = await tryExternalSupportRequest(input, catalog, requestRuntime, {
     scope,
     conversationId,
@@ -3419,7 +3469,10 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     agentRun: context.agentRun,
     signal: context.signal
   });
-  if (externalSupportPayload) {
+  if (
+    externalSupportPayload
+    && await fastPathEligible("external_support_clarification")
+  ) {
     externalSupportPayload.meta = {
       durationMs: Date.now() - startedAt,
       catalogWarning: warning,
@@ -3429,7 +3482,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     return completeResponse(externalSupportPayload);
   }
   const requestedCatalogType = requestedEntityCatalogType(input);
-  if (requestedCatalogType) {
+  if (
+    requestedCatalogType
+    && await fastPathEligible("entity_catalog", {
+      pureCatalogRequest: isPureEntityCatalogRequest(input, requestedCatalogType)
+    })
+  ) {
     const payload = await serializeEntityCatalog(catalog, requestRuntime, {
       entityType: requestedCatalogType
     });
@@ -3441,11 +3499,17 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     };
     return completeResponse(payload);
   }
-  const entityDetailsPayload = await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
-    preferences,
-    compsData,
-    refresh: Boolean(body.refresh)
-  });
+  const entityDetailsFastPathEligible = (
+    explicitUnitDetailsQuestion(input)
+    || explicitTraitDetailsQuestion(input)
+  ) && await fastPathEligible("entity_details", { canResolveEntity: true });
+  const entityDetailsPayload = entityDetailsFastPathEligible
+    ? await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
+      preferences,
+      compsData,
+      refresh: Boolean(body.refresh)
+    })
+    : null;
   if (entityDetailsPayload) {
     entityDetailsPayload.meta = {
       durationMs: Date.now() - startedAt,
@@ -3462,7 +3526,10 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     });
     return completeResponse(executed);
   }
-  const itemDetailsPayload = await serializeItemDetailsQuery(input, catalog, runtime);
+  const itemDetailsPayload = isItemDetailsQuestion(input)
+    && await fastPathEligible("item_details")
+    ? await serializeItemDetailsQuery(input, catalog, runtime)
+    : null;
   if (itemDetailsPayload) {
     const payload = attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog);
     return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
@@ -3479,10 +3546,16 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const currentStatsDays = Number(
     parsedForIntent.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
   );
+  const patchKnowledgeVersion = answerModeRoute.patchNotesRequested
+    ? extractPatchVersionFromQuestion(input)
+      ?? seasonContext.theme?.patchNoteVersion
+      ?? seasonContext.currentPatch
+      ?? seasonContext.effectivePatch
+    : null;
   const coachKnowledgeOptions = {
     seasonContextId: seasonContext.id,
     season: seasonContext.id,
-    patch: seasonContext.currentPatch ?? seasonContext.effectivePatch,
+    patch: patchKnowledgeVersion ?? seasonContext.currentPatch ?? seasonContext.effectivePatch,
     rank: currentStatsRank,
     timeWindow: `${currentStatsDays}d`,
     region: String(body.region ?? "global").toLowerCase(),
@@ -3497,7 +3570,15 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     }
     return coachKnowledgePromise;
   };
-  if (answerModeRoute.mode === "rag") {
+  if (
+    answerModeRoute.mode === "rag"
+    && await fastPathEligible("rag", {
+      requiredCapabilities: answerModeRoute.currentBestRequired
+        || answerModeRoute.retrievalScopes.includes("current_stats")
+        ? ["current_structured_statistics"]
+        : []
+    })
+  ) {
     reportProgress("understanding.resolved", {
       answerModeRoute,
       intent: parsedForIntent.intent ?? "knowledge_question"
@@ -3519,7 +3600,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         intent: "knowledge_question",
         requestedIntent: parsedForIntent.intent ?? null,
         constraints: {
-          patch: seasonContext.effectivePatch,
+          patch: patchKnowledgeVersion ?? seasonContext.effectivePatch,
           locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
         }
       },
@@ -3546,7 +3627,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const compEntityClarification = requestsSoftCompItemDemand(input, parsedForIntent)
     ? null
     : serializeCompRankingEntityClarification(parsedForIntent, catalog);
-  if (compEntityClarification) {
+  if (
+    compEntityClarification
+    && await fastPathEligible("composition_entity_clarification", {
+      blockingReason: compEntityClarification.clarification?.reason
+    })
+  ) {
     compEntityClarification.meta = {
       durationMs: Date.now() - startedAt,
       catalogWarning: warning,
