@@ -91,6 +91,28 @@ function deduplicateCandidates(values) {
   ));
 }
 
+function collapseTraitTierCandidates(candidates, catalog) {
+  if (!candidates.length) return candidates;
+  const baseIds = new Set(candidates.map((candidate) => (
+    String(candidate?.id ?? "").replace(/_\d+$/, "")
+  )));
+  if (baseIds.size !== 1) return candidates;
+  const baseId = [...baseIds][0];
+  if (new Set(candidates.map((candidate) => String(candidate?.id ?? ""))).size <= 1) {
+    return candidates;
+  }
+  const record = catalog?.traitByApiName?.get?.(baseId);
+  const top = [...candidates].sort((left, right) => (
+    right.confidence - left.confidence || left.canonicalName.localeCompare(right.canonicalName)
+  ))[0];
+  if (!top) return candidates;
+  return [{
+    ...top,
+    id: baseId,
+    canonicalName: record?.zhName ?? record?.displayName ?? top.canonicalName
+  }];
+}
+
 function deterministicCandidates(rawText, expectedType, catalog, version) {
   const records = recordsFor(catalog, expectedType);
   const exact = records.filter((record) => officialNames(record, expectedType).includes(String(rawText)));
@@ -224,6 +246,9 @@ export async function linkEntityMention(entity = {}, options = {}) {
   let candidates = deterministicCandidates(rawText, expectedType, options.catalog, version);
   if (!candidates.length && !exactOnly) {
     candidates = fuzzyCandidates(rawText, expectedType, options.catalog, version, options);
+  }
+  if (expectedType === "trait") {
+    candidates = collapseTraitTierCandidates(candidates, options.catalog);
   }
   if (
     !exactOnly

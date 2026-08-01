@@ -2418,6 +2418,7 @@ export async function recommendForInput(input, options = {}) {
         },
         exampleStore: options.semanticExampleStore,
         provider: options.semanticTaskProvider,
+        providerFailureFallback: true,
         budget: options.semanticParserBudget,
         entitySemanticRetriever: options.semanticRetriever,
         entityCandidateRetriever: options.entityCandidateRetriever,

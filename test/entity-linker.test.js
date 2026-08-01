@@ -6,6 +6,7 @@ import {
   linkTaskFrameEntities
 } from "../src/understanding/entity-linker.js";
 import { extractEntityMentions } from "../src/understanding/entity-mention-extractor.js";
+import { createCatalog } from "../src/index.js";
 import {
   createPhase3EvaluationCatalog
 } from "../eval/datasets/entity-linking-phase3-cases.mjs";
@@ -106,4 +107,44 @@ test("mention extraction is independent of action parsing and linked TaskFrames 
     "TFT_Item_Artifact_TitanicHydra"
   ]);
   assert.equal(linked.concepts[0].resolvedId, "concept.strategy.fast9_nine_five");
+});
+
+test("trait tier candidates sharing one base apiName collapse to the base trait", async () => {
+  const tieredCatalog = createCatalog({
+    units: [],
+    items: [],
+    traits: [
+      { apiName: "TFT17_Astronaut", filterId: "TFT17_Astronaut_1", zhName: "木灵族", displayName: "3木灵族", aliases: ["木灵族"], current: true },
+      { apiName: "TFT17_Astronaut", filterId: "TFT17_Astronaut_2", zhName: "木灵族", displayName: "5木灵族", aliases: ["木灵族"], current: true },
+      { apiName: "TFT17_Astronaut", filterId: "TFT17_Astronaut_3", zhName: "木灵族", displayName: "7木灵族", aliases: ["木灵族"], current: true },
+      { apiName: "TFT17_Astronaut", filterId: "TFT17_Astronaut_4", zhName: "木灵族", displayName: "10木灵族", aliases: ["木灵族"], current: true }
+    ]
+  });
+  const linked = await linkEntityMention({
+    rawText: "木灵族",
+    expectedType: "trait"
+  }, { catalog: tieredCatalog, patch: "17.7" });
+
+  assert.equal(linked.resolvedId, "TFT17_Astronaut");
+  assert.equal(linked.canonicalName, "木灵族");
+  assert.equal(linked.candidates.length, 1);
+  assert.equal(linked.source, "exact");
+});
+
+test("trait candidates across different base apiNames stay ambiguous", async () => {
+  const mixedCatalog = createCatalog({
+    units: [],
+    items: [],
+    traits: [
+      { apiName: "TFT17_Astronaut", filterId: "TFT17_Astronaut_2", zhName: "宇航员", displayName: "5宇航员", aliases: ["木灵族"], current: true },
+      { apiName: "TFT17_StarGazer", filterId: "TFT17_StarGazer_3", zhName: "观星者", displayName: "7观星者", aliases: ["木灵族"], current: true }
+    ]
+  });
+  const linked = await linkEntityMention({
+    rawText: "木灵族",
+    expectedType: "trait"
+  }, { catalog: mixedCatalog, patch: "17.7" });
+
+  assert.equal(linked.resolvedId, null);
+  assert.ok(linked.candidates.length >= 2);
 });
