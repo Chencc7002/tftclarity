@@ -16,6 +16,47 @@ function array(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function baseTraitId(value) {
+  return String(value ?? "").replace(/_\d+$/, "");
+}
+
+function frameTraitIds(taskFrame) {
+  const ids = new Set();
+  for (const entity of [
+    ...(taskFrame?.subjects ?? []),
+    ...(taskFrame?.candidates ?? []),
+    ...(taskFrame?.concepts ?? [])
+  ]) {
+    if (entity?.expectedType === "trait" && entity?.resolvedId) {
+      ids.add(baseTraitId(entity.resolvedId));
+    }
+  }
+  for (const value of taskFrame?.constraints?.traitFilters ?? []) {
+    const id = typeof value === "string" ? value : value?.resolvedId;
+    if (id) ids.add(baseTraitId(id));
+  }
+  return ids;
+}
+
+function executionPlanTraitConsistencyErrors(plan, taskFrame) {
+  if (plan?.route !== "controlled_planner") return [];
+  const frameTraits = frameTraitIds(taskFrame);
+  if (!frameTraits.size) return [];
+  const errors = [];
+  for (const step of plan.steps ?? []) {
+    if (step?.tool !== "entity_catalog_query") continue;
+    const planTraits = array(step?.arguments?.filters?.traits).map(baseTraitId);
+    if (!planTraits.length) {
+      errors.push(`entity_catalog_query omits trait filters required by the task frame`);
+      continue;
+    }
+    if (planTraits.some((traitId) => !frameTraits.has(traitId))) {
+      errors.push(`entity_catalog_query trait filter conflicts with the task frame`);
+    }
+  }
+  return errors;
+}
+
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? structuredClone(value)
@@ -461,6 +502,14 @@ export async function planExecution(taskFrame, capabilityMatch, options = {}) {
     plannerInvocation.durationMs = providerResult?.telemetry?.durationMs ?? null;
     plannerInvocation.usage = providerResult?.telemetry?.usage ?? null;
     validation = validateExecutionPlan(candidate, options);
+    const consistencyErrors = executionPlanTraitConsistencyErrors(candidate, taskFrame);
+    if (consistencyErrors.length) {
+      validation = {
+        ...validation,
+        valid: false,
+        errors: [...validation.errors, ...consistencyErrors]
+      };
+    }
     plannerInvocation.validationErrors = [...validation.errors];
   } catch (error) {
     plannerInvocation.durationMs = error?.plannerTelemetry?.durationMs ?? null;

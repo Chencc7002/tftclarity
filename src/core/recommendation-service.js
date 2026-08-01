@@ -54,7 +54,10 @@ import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { analyzeCompRankingResult, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
-import { parseSemanticTask } from "../understanding/semantic-task-parser.js";
+import {
+  applyDeterministicTftSemantics,
+  parseSemanticTask
+} from "../understanding/semantic-task-parser.js";
 import { runSemanticShadow } from "../understanding/semantic-shadow.js";
 import { createTaskFrame } from "../understanding/task-frame.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
@@ -2448,6 +2451,33 @@ export async function recommendForInput(input, options = {}) {
       options,
       catalog
     );
+    if (
+      conversationMode === "on"
+      && resolution.decision === "execute"
+      && resolution.resolvedTaskFrame
+    ) {
+      resolution.resolvedTaskFrame = await applyDeterministicTftSemantics(
+        resolution.resolvedTaskFrame,
+        input,
+        {
+          catalog,
+          dynamicContext: {
+            version: options.effectivePatch ?? catalog?.version ?? null,
+            currentTime: options.currentTime ?? null
+          },
+          conversation: [
+            ...(conversationState.taskHistory ?? []),
+            ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
+          ],
+          managedConstraintFields: Array.isArray(interpretation.turnDelta?.constraintOperations)
+            ? interpretation.turnDelta.constraintOperations.map((operation) => operation?.field).filter(Boolean)
+            : [],
+          entitySemanticRetriever: options.semanticRetriever,
+          entityCandidateRetriever: options.entityCandidateRetriever,
+          entityCandidateReranker: options.semanticEntityReranker
+        }
+      );
+    }
     conversationV2 = {
       mode: conversationMode,
       previousState: conversationState,

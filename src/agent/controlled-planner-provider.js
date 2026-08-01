@@ -13,6 +13,10 @@ function constraintTraitIds(frame) {
   }).filter(Boolean);
 }
 
+function baseTraitId(value) {
+  return String(value ?? "").replace(/_\d+$/, "");
+}
+
 function evidence(tool) {
   return {
     type: tool.evidenceType,
@@ -33,7 +37,7 @@ export function createTftControlledPlannerProvider() {
     const traitIds = [...new Set([
       ...entities(taskFrame, "trait"),
       ...constraintTraitIds(taskFrame)
-    ])];
+    ].map(baseTraitId))];
     return {
       schemaVersion: "execution-plan.v1",
       route: "controlled_planner",
