@@ -41,10 +41,7 @@ export function deriveTftCapabilityRequirements(input, frame = {}) {
     if (rule.pattern.test(text)) requirements.add(rule.requirement);
   }
   if (frame.action === "find_video") requirements.add("strategy_video_search");
-  if (
-    frame.constraints?.targetEntityType
-    && (frame.constraints?.cost !== undefined || frame.constraints?.relation === "member_of_trait")
-  ) requirements.add("entity_catalog_filtering");
+  if (frame.constraints?.targetEntityType) requirements.add("entity_catalog_filtering");
   if (
     requirements.has("entity_catalog_filtering")
     && /(?:出装|出裝|裝備|装备).{0,8}(?:表现|表現|最好|最强|最強)|(?:主流|最好|最强|最強).{0,8}(?:出装|出裝|裝備|装备)|(?:怎么|怎麼|如何|咋|怎样|怎樣).{0,6}(?:出装|出裝|给装|給裝|配装|配裝|带装备|帶裝備)|(?:装备推荐|裝備推薦|推荐装备|推薦裝備|带什么装备|帶什麼裝備)/u.test(text)

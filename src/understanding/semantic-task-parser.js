@@ -73,15 +73,20 @@ function inferAction(text, domain, examples) {
   if (/(?:当前|當前|挡前|这版|這版).*(?:版本|板本)|(?:版本|板本).*(?:当前|當前|挡前)/u.test(text)) {
     return "search";
   }
+  const collection = collectionRequestType(text);
+  if (collection) return "search";
   return examples[0]?.action ?? "analyze";
 }
 
 function constraintsFor(text) {
   const constraints = {};
-  const cost = text.match(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/u)?.[1];
-  if (cost) {
+  const costMatches = [...text.matchAll(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/gu)];
+  if (costMatches.length) {
     const costMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
-    constraints.cost = costMap[cost] ?? Number(cost);
+    const costs = [...new Set(costMatches.map((match) => costMap[match[1]] ?? Number(match[1])))]
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 9)
+      .sort((left, right) => left - right);
+    constraints.cost = costs.length === 1 ? costs[0] : costs;
     constraints.targetEntityType = "champion";
     constraints.relation = "member_of_trait";
     constraints.current = true;
@@ -219,6 +224,22 @@ function explicitAction(text) {
     if (EXPLICIT_ACTION_CUES[action].test(text)) return action;
   }
   return null;
+}
+
+function collectionRequestType(text) {
+  if (/(是什么|什么是|效果|激活|层级|属性|详情|技能|说明)/u.test(text)) return null;
+  const category = /(?:棋子|英雄|弈子|卡)/u.test(text)
+    ? "champion"
+    : /(?:羁绊|羁絆)/u.test(text)
+      ? "trait"
+      : /(?:装备|裝備)/u.test(text)
+        ? "item"
+        : null;
+  if (!category) return null;
+  if (!/(哪些|什么|有些|有哪些|返回|列出|列一下|给我|看下|看一下|查询|查一下|查下|搜一下|全部|所有|名单|列表)/u.test(text)) {
+    return null;
+  }
+  return category;
 }
 
 const GENERIC_PROVIDER_ENTITY = /^(?:\u795e\u88c5|\u4e09\u4ef6[\u5957\u88c5\u5986]|\u5355\u4ef6\u88c5\u5907|\u6563\u4ef6|\u88c5[\u5907\u88ab]|\u5f53\u524d\u6570\u636e|\u6570\u636e|\u8868[\u73b0\u5148]|\u5403\u5206[\u7387\u5f8b]|\u5e73\u5747\u540d\u6b21|\u4f18\u5148[\u7ea7\u6781]|\u5019\u9009|\u8be6\u60c5|\u8fd9\u5f20\u5361|\u8fd9\u4ef6|\u8fd9\u4fe9|\u53e6\u4e00\u4ef6\u88c5\u5907|\u5979|\u4ed6|\u5b83)$/u;
@@ -465,6 +486,27 @@ function applyCandidateGroupBuildSemantics(taskFrame, text) {
   });
 }
 
+function applyEntityCollectionSemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  const collectionType = collectionRequestType(text);
+  if (!collectionType) return frame;
+  if (/(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text)) return frame;
+  return createTaskFrame({
+    ...frame,
+    action: "search",
+    goal: goalFor("search"),
+    expectedOutput: outputsFor("search"),
+    constraints: {
+      ...frame.constraints,
+      targetEntityType: collectionType,
+      current: true
+    },
+    capabilityRequirements: [
+      ...new Set([...(frame.capabilityRequirements ?? []), "entity_catalog_filtering"])
+    ]
+  });
+}
+
 async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   let timeoutId;
   const providerPromise = Promise.resolve().then(() => provider(request));
@@ -646,6 +688,7 @@ export async function parseSemanticTask(input, options = {}) {
     options.conversation ?? []
   );
   frame = applyCandidateGroupBuildSemantics(frame, text);
+  frame = applyEntityCollectionSemantics(frame, text);
   const clarificationPolicy = applyClarificationPolicy(
     frame,
     contextResolution,

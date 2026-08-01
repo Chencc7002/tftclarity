@@ -23,7 +23,9 @@ export function createWebRuntimeOptions(options = {}) {
       { apiName: "TFT17_Sprout", zhName: "幼芽", cost: 2, aliases: ["幼芽"], current: true },
       { apiName: "TFT17_Disco", zhName: "节拍", cost: 4, aliases: ["节拍"], current: true },
       { apiName: "TFT17_Canopy", zhName: "天冠", cost: 5, aliases: ["天冠"], current: true },
-      { apiName: "TFT17_Nova", zhName: "新星", cost: 5, aliases: ["新星"], current: true }
+      { apiName: "TFT17_Nova", zhName: "新星", cost: 5, aliases: ["新星"], current: true },
+      { apiName: "TFT17_Fiora", zhName: "剑姬", cost: 5, aliases: ["剑姬", "菲奥娜"], current: true },
+      { apiName: "TFT17_MasterYi", zhName: "剑圣", cost: 4, aliases: ["剑圣", "易"], current: true }
     ],
     traits: [
       {
@@ -32,6 +34,14 @@ export function createWebRuntimeOptions(options = {}) {
         zhName: "木灵",
         displayName: "木灵",
         aliases: ["木灵", "木灵族"],
+        current: true
+      },
+      {
+        apiName: "TFT17_Berserker",
+        filterId: "TFT17_Berserker_2",
+        zhName: "狂战士",
+        displayName: "狂战士",
+        aliases: ["狂战士", "berserker"],
         current: true
       },
       {
@@ -77,7 +87,9 @@ export function createWebRuntimeOptions(options = {}) {
         ["TFT17_Sprout", { apiName: "TFT17_Sprout", name: "幼芽", cost: 2, traitNames: ["木灵"] }],
         ["TFT17_Disco", { apiName: "TFT17_Disco", name: "节拍", cost: 4, traitNames: ["太空律动"] }],
         ["TFT17_Canopy", { apiName: "TFT17_Canopy", name: "天冠", cost: 5, traitNames: ["木灵"] }],
-        ["TFT17_Nova", { apiName: "TFT17_Nova", name: "新星", cost: 5, traitNames: ["太空律动"] }]
+        ["TFT17_Nova", { apiName: "TFT17_Nova", name: "新星", cost: 5, traitNames: ["太空律动"] }],
+        ["TFT17_Fiora", { apiName: "TFT17_Fiora", name: "剑姬", cost: 5, traitNames: ["狂战士"] }],
+        ["TFT17_MasterYi", { apiName: "TFT17_MasterYi", name: "剑圣", cost: 4, traitNames: ["狂战士"] }]
       ]),
       traits: new Map([
         ["TFT17_Woodling", {
@@ -85,6 +97,12 @@ export function createWebRuntimeOptions(options = {}) {
           name: "木灵",
           description: "木灵弈子获得成长属性。",
           levels: [{ units: 2, effect: "获得成长属性" }]
+        }],
+        ["TFT17_Berserker", {
+          apiName: "TFT17_Berserker",
+          name: "狂战士",
+          description: "狂战士弈子获得攻击强化。",
+          levels: [{ units: 2, effect: "获得攻击强化" }]
         }],
         ["TFT17_SpaceGroove", {
           apiName: "TFT17_SpaceGroove",
@@ -151,7 +169,7 @@ test("pure all-units request still uses the entity catalog fast path", async () 
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.type, "entity_catalog");
   assert.equal(response.payload.entityType, "unit");
-  assert.equal(response.payload.items.length, 6);
+  assert.equal(response.payload.items.length, 8);
   assert.equal(response.payload.executionPlan, undefined);
 });
 
@@ -264,6 +282,128 @@ test("production runtime factory answers a self-contained trait+cost group build
   );
   assert.ok(response.payload.results.every((entry) => entry.bestBuild.length === 3));
   assert.match(response.payload.text, /各自的主流出装/);
+});
+
+test("action-only build follow-up reuses the group scope in production mode off", async () => {
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off"
+  }), {});
+  const conversationId = "woodling-group-followup-off";
+  const first = await handleRecommendRequest({
+    input: "木灵族中的四费棋子有哪些",
+    conversationId
+  }, runtime);
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.payload.type, "entity_catalog_results");
+  assert.deepEqual(
+    first.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+
+  const second = await handleRecommendRequest({
+    input: "怎么出装？",
+    conversationId
+  }, runtime);
+
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.payload.type, "unit_builds_batch_results");
+  assert.equal(second.payload.resultMode, "per_entity_recommendations");
+  assert.equal(second.payload.clarification, null);
+  assert.equal(second.payload.taskFrame.goal, "recommend_builds_for_candidate_group");
+  assert.equal(second.payload.taskFrame.constraints.cost, 4);
+  assert.equal(second.payload.taskFrame.constraints.targetEntityType, "champion");
+  assert.equal(second.payload.taskFrame.constraints.relation, "member_of_trait");
+  assert.match(second.payload.taskFrame.concepts[0].resolvedId, /^TFT17_Woodling(?:_2)?$/);
+  assert.equal(second.payload.capabilityMatch.mode, "composite");
+  assert.deepEqual(
+    second.payload.executionPlan.steps.map((step) => step.tool),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+  assert.equal(second.payload.executionTrace.status, "completed");
+  assert.equal(second.payload.executionTrace.toolCallCount, 2);
+  assert.deepEqual(
+    second.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+});
+
+test("a multi-cost trait group query keeps every requested cost in the catalog filter", async () => {
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off"
+  }), {});
+  const response = await handleRecommendRequest({
+    input: "狂战士羁绊中的五费和四费怎么出装",
+    conversationId: "berserker-multi-cost-builds"
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "unit_builds_batch_results");
+  assert.equal(response.payload.resultMode, "per_entity_recommendations");
+  assert.equal(response.payload.clarification, null);
+  assert.equal(response.payload.taskFrame.goal, "recommend_builds_for_candidate_group");
+  assert.deepEqual(response.payload.taskFrame.constraints.cost, [4, 5]);
+  assert.equal(response.payload.taskFrame.constraints.targetEntityType, "champion");
+  assert.equal(response.payload.taskFrame.constraints.relation, "member_of_trait");
+  assert.match(response.payload.taskFrame.concepts[0].resolvedId, /^TFT17_Berserker(?:_2)?$/);
+  assert.deepEqual(response.payload.capabilityMatch.selected.map((entry) => entry.tool).sort(), [
+    "entity_catalog_query",
+    "unit_builds_batch"
+  ]);
+  assert.deepEqual(
+    response.payload.executionPlan.steps[0].arguments.filters.cost,
+    [4, 5]
+  );
+  assert.deepEqual(
+    response.payload.executionPlan.steps.map((step) => step.tool),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+  assert.equal(response.payload.executionTrace.status, "completed");
+  assert.equal(response.payload.executionTrace.toolCallCount, 2);
+  assert.deepEqual(
+    response.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Fiora", "TFT17_MasterYi"]
+  );
+  assert.deepEqual(
+    response.payload.results.map((entry) => entry.name).sort(),
+    ["剑圣", "剑姬"]
+  );
+});
+
+test("a pure trait collection request returns the trait members without a cost filter", async () => {
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off"
+  }), {});
+  const inputs = ["返回木灵族羁绊中的棋子", "木灵族中有哪些棋子"];
+  for (const [index, input] of inputs.entries()) {
+    const response = await handleRecommendRequest({
+      input,
+      conversationId: `woodling-list-${index}`
+    }, runtime);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.type, "entity_catalog_results");
+    assert.equal(response.payload.taskFrame.action, "search");
+    assert.equal(response.payload.taskFrame.goal, "find_relevant_data");
+    assert.equal(response.payload.taskFrame.constraints.targetEntityType, "champion");
+    assert.equal(response.payload.taskFrame.constraints.cost, undefined);
+    assert.deepEqual(response.payload.taskFrame.capabilityRequirements, ["entity_catalog_filtering"]);
+    assert.equal(response.payload.capabilityMatch.mode, "single_tool");
+    assert.equal(response.payload.capabilityMatch.selected[0].tool, "entity_catalog_query");
+    assert.deepEqual(
+      response.payload.executionPlan.steps.map((step) => step.tool),
+      ["entity_catalog_query"]
+    );
+    assert.equal(response.payload.executionPlan.steps[0].arguments.filters.cost, undefined);
+    assert.equal(response.payload.executionPlan.steps[0].arguments.filters.traits.length, 1);
+    assert.equal(response.payload.executionTrace.status, "completed");
+    assert.equal(response.payload.executionTrace.toolCallCount, 1);
+    assert.deepEqual(
+      response.payload.results.map((entry) => entry.apiName).sort(),
+      ["TFT17_Bloom", "TFT17_Bramble", "TFT17_Canopy", "TFT17_Sprout"]
+    );
+    assert.doesNotMatch(response.payload.text, /无法查询/);
+  }
 });
 
 test("MetaTFT comp_options invalid JSON is isolated from catalog refresh and planning", async () => {
@@ -393,7 +533,7 @@ test("catalog wording does not truncate a five-cost build comparison", async () 
   );
   assert.deepEqual(
     response.payload.results.map((unit) => unit.apiName).sort(),
-    ["TFT17_Canopy", "TFT17_Nova"]
+    ["TFT17_Canopy", "TFT17_Fiora", "TFT17_Nova"]
   );
   assert.equal(response.payload.taskFrame.constraints.cost, 5);
 });
