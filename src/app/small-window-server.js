@@ -2703,7 +2703,20 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           : traitsFromComps;
       }
       if (compOptions.status !== "fulfilled") {
-        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${compOptions.reason.message}`);
+        const compOptionsReason = compOptions.reason ?? {};
+        entry.compOptionsFailure = {
+          status: "failed",
+          code: String(compOptionsReason.code ?? "metatft_comp_options_unavailable"),
+          endpoint: "tft-comps-api/comp_options",
+          message: String(compOptionsReason.message ?? "unknown_error")
+        };
+        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${entry.compOptionsFailure.message}`);
+      } else {
+        entry.compOptionsFailure = {
+          status: "ok",
+          code: "ok",
+          endpoint: "tft-comps-api/comp_options"
+        };
       }
 
       const remoteUnitsAvailable = hasDynamicCatalogRecords(catalogOverrides.units);

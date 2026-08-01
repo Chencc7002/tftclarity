@@ -8,11 +8,14 @@ import {
   unknownTurnDelta
 } from "../src/index.js";
 import {
+  createSmallWindowRuntimeAsync,
   createSmallWindowRuntime,
-  handleRecommendRequest
+  handleRecommendRequest,
+  loadRuntimeCatalog
 } from "../src/app/small-window-server.js";
+import { CompsContextClient } from "../src/data/metatft-client.js";
 
-function createWebRuntime(options = {}) {
+export function createWebRuntimeOptions(options = {}) {
   const catalog = createCatalog({
     units: [
       { apiName: "TFT17_Bramble", zhName: "荆棘", cost: 4, aliases: ["荆棘"], current: true },
@@ -54,7 +57,7 @@ function createWebRuntime(options = {}) {
       }
     ]
   });
-  return createSmallWindowRuntime({
+  return {
     catalog,
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -132,7 +135,11 @@ function createWebRuntime(options = {}) {
     },
     conversationStateV2Mode: options.conversationStateV2Mode ?? "off",
     turnDeltaProvider: options.turnDeltaProvider ?? null
-  });
+  };
+}
+
+function createWebRuntime(options = {}) {
+  return createSmallWindowRuntime(createWebRuntimeOptions(options));
 }
 
 test("pure all-units request still uses the entity catalog fast path", async () => {
@@ -197,6 +204,177 @@ test("web request executes catalog filtering and batch build comparison as one s
   assert.equal(response.payload.source.provider, "MetaTFT");
   assert.equal(response.payload.source.endpoint, "tft-explorer-api/unit_builds (batch)");
   assert.equal(response.payload.source.cache, "live");
+});
+
+test("production runtime factory answers a self-contained trait+cost group build query in one turn", async () => {
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off"
+  }), {});
+  const response = await handleRecommendRequest({
+    input: "木灵族中的四费棋子怎么出装",
+    conversationId: "woodling-four-cost-builds-single-turn"
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "unit_builds_batch_results");
+  assert.equal(response.payload.resultMode, "per_entity_recommendations");
+  assert.equal(response.payload.clarification, null);
+  assert.equal(response.payload.text.includes("要查哪个英雄"), false);
+  assert.equal(response.payload.text.includes("表现最好"), false);
+
+  const frame = response.payload.taskFrame;
+  assert.equal(frame.action, "recommend");
+  assert.equal(frame.goal, "recommend_builds_for_candidate_group");
+  assert.equal(frame.constraints.cost, 4);
+  assert.equal(frame.constraints.targetEntityType, "champion");
+  assert.equal(frame.constraints.relation, "member_of_trait");
+  assert.deepEqual(frame.capabilityRequirements, [
+    "entity_catalog_filtering",
+    "unit_build_statistics"
+  ]);
+  assert.equal(frame.concepts[0].expectedType, "trait");
+  assert.match(frame.concepts[0].resolvedId, /^TFT17_Woodling(?:_2)?$/);
+
+  assert.equal(response.payload.capabilityMatch.status, "understood_and_supported");
+  assert.equal(response.payload.capabilityMatch.mode, "composite");
+  assert.equal(response.payload.capabilityMatch.goal, "recommend_builds_for_candidate_group");
+  assert.deepEqual(
+    response.payload.capabilityMatch.selected.map((entry) => entry.tool).sort(),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+
+  assert.deepEqual(
+    response.payload.executionPlan.steps.map((step) => step.tool),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+  assert.equal(response.payload.executionPlan.steps[0].arguments.filters.cost, 4);
+  assert.equal(response.payload.executionPlan.steps[0].arguments.filters.traits.length, 1);
+
+  assert.equal(response.payload.executionTrace.status, "completed");
+  assert.equal(response.payload.executionTrace.toolCallCount, 2);
+  assert.deepEqual(
+    response.payload.executionTrace.steps.map((step) => step.tool),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+  assert.ok(response.payload.executionTrace.steps.every((step) => step.status === "completed"));
+
+  assert.deepEqual(
+    response.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+  assert.ok(response.payload.results.every((entry) => entry.bestBuild.length === 3));
+  assert.match(response.payload.text, /各自的主流出装/);
+});
+
+test("MetaTFT comp_options invalid JSON is isolated from catalog refresh and planning", async () => {
+  const invalidJsonFetch = async (url) => {
+    if (String(url).includes("/tft-comps-api/comp_options")) {
+      return {
+        ok: true,
+        status: 200,
+        headers: { get: () => "application/json" },
+        json: async () => {
+          throw new SyntaxError("Unexpected token '<'");
+        }
+      };
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      json: async () => []
+    };
+  };
+  const runtime = await createSmallWindowRuntimeAsync({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: true,
+    catalogMetaTFTClient: {
+      async getItems() {
+        return { data: [] };
+      },
+      async getUnitsUnique() {
+        return { data: [
+          { units_unique: "TFT17_Bloom-4" },
+          { units_unique: "TFT17_Bramble-4" }
+        ] };
+      },
+      async getTraits() {
+        return { data: [{ traits: "TFT17_Woodling_2" }] };
+      }
+    },
+    compsClient: new CompsContextClient({
+      fetchImpl: invalidJsonFetch,
+      timeoutMs: 60,
+      maxRetries: 0
+    }),
+    conversationStateV2Mode: "off"
+  }, {});
+  const entry = await loadRuntimeCatalog(runtime, {
+    seasonContextId: "set17-live",
+    patch: "current",
+    queue: "1100"
+  });
+
+  assert.deepEqual(entry.compsData.compOptions, []);
+  assert.equal(entry.compOptionsFailure.status, "failed");
+  assert.equal(entry.compOptionsFailure.code, "metatft_invalid_json");
+  assert.equal(entry.compOptionsFailure.endpoint, "tft-comps-api/comp_options");
+  assert.match(entry.compOptionsFailure.message, /invalid JSON/);
+  assert.match(entry.warning, /invalid JSON/);
+  assert.ok(entry.catalog.units.some((unit) => unit.apiName === "TFT17_Bloom"));
+});
+
+test("a hanging MetaTFT comp_options refresh is bounded by its endpoint timeout", async () => {
+  const hangingFetch = async (url, options = {}) => {
+    if (String(url).includes("/tft-comps-api/comp_options")) {
+      return new Promise((_, reject) => {
+        options.signal?.addEventListener?.("abort", () => {
+          const error = new Error("The operation was aborted");
+          error.name = "AbortError";
+          reject(error);
+        });
+      });
+    }
+    return {
+      ok: true,
+      status: 200,
+      headers: { get: () => "application/json" },
+      json: async () => []
+    };
+  };
+  const runtime = await createSmallWindowRuntimeAsync({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: true,
+    catalogMetaTFTClient: {
+      async getItems() {
+        return { data: [] };
+      },
+      async getUnitsUnique() {
+        return { data: [] };
+      },
+      async getTraits() {
+        return { data: [] };
+      }
+    },
+    compsClient: new CompsContextClient({
+      fetchImpl: hangingFetch,
+      timeoutMs: 60,
+      maxRetries: 0
+    }),
+    conversationStateV2Mode: "off"
+  }, {});
+  const startedAt = Date.now();
+  const entry = await loadRuntimeCatalog(runtime, {
+    seasonContextId: "set17-live",
+    patch: "current",
+    queue: "1100"
+  });
+  const elapsedMs = Date.now() - startedAt;
+
+  assert.ok(elapsedMs < 2000, `catalog refresh took ${elapsedMs}ms`);
+  assert.equal(entry.compOptionsFailure.status, "failed");
+  assert.equal(entry.compOptionsFailure.code, "metatft_timeout");
+  assert.deepEqual(entry.compsData.compOptions, []);
 });
 
 test("catalog wording does not truncate a five-cost build comparison", async () => {

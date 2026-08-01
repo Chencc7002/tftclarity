@@ -2,6 +2,7 @@ import { buildUrl } from "../core/query-planner.js";
 
 function createRequestError(message, details = {}) {
   const error = new Error(message, details.cause ? { cause: details.cause } : undefined);
+  if (details.code !== undefined) error.code = details.code;
   if (details.status !== undefined) error.status = details.status;
   if (details.retryable !== undefined) error.retryable = details.retryable;
   if (details.retryAfterMs !== undefined) error.retryAfterMs = details.retryAfterMs;
@@ -30,6 +31,7 @@ async function fetchJsonWithTimeout(fetchImpl, url, timeoutMs) {
         `MetaTFT request failed: ${response.status} ${response.statusText}`,
         {
           status,
+          code: "metatft_http_error",
           retryable: status === 429 || status >= 500,
           retryAfterMs: parseRetryAfterMs(response) ?? undefined
         }
@@ -40,7 +42,7 @@ async function fetchJsonWithTimeout(fetchImpl, url, timeoutMs) {
       const body = await response.text();
       throw createRequestError(
         `MetaTFT returned non-JSON response from ${url}: ${contentType}; ${body.slice(0, 120)}`,
-        { retryable: false }
+        { code: "metatft_non_json_response", retryable: false }
       );
     }
     try {
@@ -48,6 +50,7 @@ async function fetchJsonWithTimeout(fetchImpl, url, timeoutMs) {
     } catch (error) {
       throw createRequestError(`MetaTFT returned invalid JSON from ${url}`, {
         cause: error,
+        code: "metatft_invalid_json",
         retryable: false
       });
     }
@@ -55,6 +58,7 @@ async function fetchJsonWithTimeout(fetchImpl, url, timeoutMs) {
     if (error?.name === "AbortError") {
       throw createRequestError(`MetaTFT request timed out after ${timeoutMs}ms: ${url}`, {
         cause: error,
+        code: "metatft_timeout",
         retryable: false
       });
     }
