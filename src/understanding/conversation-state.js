@@ -91,7 +91,10 @@ function legacyTaskFrame(query = {}) {
     excludedItems: "excludedItems",
     avoidItemComponents: "avoidItemComponents",
     comparisonItems: "comparisonItems",
-    primaryMetric: "primaryMetric"
+    primaryMetric: "primaryMetric",
+    cost: "cost",
+    targetEntityType: "targetEntityType",
+    relation: "relation"
   };
   for (const [legacyKey, field] of Object.entries(mappings)) {
     const value = query[legacyKey] ?? query[legacyKey.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`)];

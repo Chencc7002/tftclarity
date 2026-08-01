@@ -13,6 +13,11 @@ export const TURN_INTERPRETER_VERSION = "turn-interpreter.v1";
 const ACTION_ONLY_BUILD_FOLLOWUP = /^(?:分别)?(?:怎么|如何|咋)(?:出装|给装|配装|带装备)[？?]?$/u;
 const SHORT_BUILD_FOLLOWUP = /^(?:出装|装备|给装|配装)(?:呢|怎么弄)?[？?]?$/u;
 
+export function isActionOnlyBuildFollowup(input) {
+  const text = String(input ?? "").trim();
+  return ACTION_ONLY_BUILD_FOLLOWUP.test(text) || SHORT_BUILD_FOLLOWUP.test(text);
+}
+
 const TURN_INTERPRETER_SYSTEM_RULES = [
   "You interpret the current user turn as a change relative to the supplied active task.",
   "Return exactly one turn-delta.v1 JSON object and no prose.",

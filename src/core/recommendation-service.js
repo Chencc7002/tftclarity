@@ -56,6 +56,7 @@ import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
 import { parseSemanticTask } from "../understanding/semantic-task-parser.js";
 import { runSemanticShadow } from "../understanding/semantic-shadow.js";
+import { createTaskFrame } from "../understanding/task-frame.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 import { StructuredRetriever } from "../retrieval/structured-retriever.js";
 import { SUPPORTED_CONCLUSION_INTENTS } from "../llm/conclusion-spec-registry.js";
@@ -81,7 +82,7 @@ import {
   migrateLegacySessionToConversationState
 } from "../understanding/conversation-state.js";
 import { reduceConversationState } from "../understanding/context-reducer.js";
-import { interpretTurn } from "../understanding/turn-interpreter.js";
+import { interpretTurn, isActionOnlyBuildFollowup } from "../understanding/turn-interpreter.js";
 import {
   updateConversationStateFromResult
 } from "../understanding/conversation-result-state.js";
@@ -680,6 +681,82 @@ function semanticResultForConversationResolution(resolution, interpretation) {
       needsClarification: false,
       blocking: false,
       strategy: "conversation_state_v2"
+    }
+  };
+}
+
+function actionOnlyGroupFollowupFrame(input, conversationState) {
+  if (!isActionOnlyBuildFollowup(input)) return null;
+  if (conversationState?.pendingClarification) return null;
+  const active = conversationState?.activeTask?.taskFrame;
+  if (!active) return null;
+  const traitEntities = [
+    ...(active.concepts ?? []),
+    ...(active.subjects ?? [])
+  ].filter((entity) => entity?.expectedType === "trait" && entity?.resolvedId);
+  const cost = active.constraints?.cost;
+  if (cost === undefined && traitEntities.length === 0) return null;
+  return createTaskFrame({
+    domain: "tft",
+    action: "recommend",
+    goal: "recommend_builds_for_candidate_group",
+    concepts: traitEntities,
+    constraints: {
+      ...(cost !== undefined ? { cost } : {}),
+      targetEntityType: "champion",
+      relation: "member_of_trait",
+      current: true,
+      ...(active.constraints?.patch !== undefined ? { patch: active.constraints.patch } : {}),
+      ...(active.constraints?.days !== undefined ? { days: active.constraints.days } : {}),
+      ...(active.constraints?.rank !== undefined ? { rank: active.constraints.rank } : {}),
+      ...(active.constraints?.minSamples !== undefined ? { minSamples: active.constraints.minSamples } : {}),
+      ...(active.constraints?.queue !== undefined ? { queue: active.constraints.queue } : {})
+    },
+    expectedOutput: ["recommendations", "results", "evidence"],
+    capabilityRequirements: ["entity_catalog_filtering", "unit_build_statistics"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported",
+    contextReferences: [{ type: "last_result", fields: ["shownEntities"] }]
+  });
+}
+
+function semanticResultForRecoveredFrame(frame, provider = "action_only_build_followup") {
+  return {
+    taskFrame: frame,
+    telemetry: {
+      schemaVersion: "semantic-parser-telemetry.v1",
+      durationMs: 0,
+      usage: { cachedInputTokens: 0, uncachedInputTokens: 0, outputTokens: 0 },
+      budget: {
+        maxInputTokens: 1200,
+        maxOutputTokens: 300,
+        maxLatencyMs: 1500,
+        maxExamples: 0
+      },
+      exampleIds: [],
+      provider,
+      providerFallback: null,
+      providerCalled: false,
+      providerSucceeded: false
+    },
+    stateBar: {
+      objective: frame.goal,
+      unresolvedAmbiguities: frame.ambiguities,
+      remainingBudget: {}
+    },
+    contextResolution: {
+      schemaVersion: "context-resolution.v1",
+      taskFrame: frame,
+      resolved: true,
+      usedConversation: true,
+      inheritedFields: ["cost", "targetEntityType", "relation"],
+      changedFields: ["goal", "capabilityRequirements"]
+    },
+    clarificationPolicy: {
+      taskFrame: frame,
+      needsClarification: false,
+      blocking: false,
+      strategy: provider
     }
   };
 }
@@ -1727,6 +1804,9 @@ function serializeQueryForSession(query) {
     comparisonMode: query.comparisonMode,
     performanceItem: query.performanceItem ?? null,
     carrierItem: query.carrierItem ?? query.item ?? null,
+    cost: query.cost,
+    targetEntityType: query.targetEntityType,
+    relation: query.relation,
     primaryMetric: query.primaryMetric,
     pendingComparison: Boolean(query.pendingComparison),
     comp: query.comp?.status === "applied" && query.comp?.value?.selection === "explicit"
@@ -2398,6 +2478,9 @@ export async function recommendForInput(input, options = {}) {
       conversationStateV2Context: conversationV2
     };
   }
+  const actionOnlyFrame = conversationMode !== "on" && conversationState
+    ? actionOnlyGroupFollowupFrame(input, conversationState)
+    : null;
   const semanticTaskPromise = options.semanticShadow === false
     ? null
     : conversationMode === "on"
@@ -2405,6 +2488,8 @@ export async function recommendForInput(input, options = {}) {
         conversationV2.resolution,
         conversationV2.interpretation
       ))
+      : actionOnlyFrame
+        ? Promise.resolve(semanticResultForRecoveredFrame(actionOnlyFrame))
       : Promise.resolve().then(() => semanticParser(input, {
         catalog,
         conversation: options.semanticConversation ?? [

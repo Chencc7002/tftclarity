@@ -266,6 +266,50 @@ test("production runtime factory answers a self-contained trait+cost group build
   assert.match(response.payload.text, /各自的主流出装/);
 });
 
+test("action-only build follow-up reuses the group scope in production mode off", async () => {
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off"
+  }), {});
+  const conversationId = "woodling-group-followup-off";
+  const first = await handleRecommendRequest({
+    input: "木灵族中的四费棋子有哪些",
+    conversationId
+  }, runtime);
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.payload.type, "entity_catalog_results");
+  assert.deepEqual(
+    first.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+
+  const second = await handleRecommendRequest({
+    input: "怎么出装？",
+    conversationId
+  }, runtime);
+
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.payload.type, "unit_builds_batch_results");
+  assert.equal(second.payload.resultMode, "per_entity_recommendations");
+  assert.equal(second.payload.clarification, null);
+  assert.equal(second.payload.taskFrame.goal, "recommend_builds_for_candidate_group");
+  assert.equal(second.payload.taskFrame.constraints.cost, 4);
+  assert.equal(second.payload.taskFrame.constraints.targetEntityType, "champion");
+  assert.equal(second.payload.taskFrame.constraints.relation, "member_of_trait");
+  assert.match(second.payload.taskFrame.concepts[0].resolvedId, /^TFT17_Woodling(?:_2)?$/);
+  assert.equal(second.payload.capabilityMatch.mode, "composite");
+  assert.deepEqual(
+    second.payload.executionPlan.steps.map((step) => step.tool),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+  assert.equal(second.payload.executionTrace.status, "completed");
+  assert.equal(second.payload.executionTrace.toolCallCount, 2);
+  assert.deepEqual(
+    second.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+});
+
 test("MetaTFT comp_options invalid JSON is isolated from catalog refresh and planning", async () => {
   const invalidJsonFetch = async (url) => {
     if (String(url).includes("/tft-comps-api/comp_options")) {
