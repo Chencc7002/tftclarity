@@ -370,6 +370,42 @@ test("a multi-cost trait group query keeps every requested cost in the catalog f
   );
 });
 
+test("a pure trait collection request returns the trait members without a cost filter", async () => {
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off"
+  }), {});
+  const inputs = ["返回木灵族羁绊中的棋子", "木灵族中有哪些棋子"];
+  for (const [index, input] of inputs.entries()) {
+    const response = await handleRecommendRequest({
+      input,
+      conversationId: `woodling-list-${index}`
+    }, runtime);
+
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.type, "entity_catalog_results");
+    assert.equal(response.payload.taskFrame.action, "search");
+    assert.equal(response.payload.taskFrame.goal, "find_relevant_data");
+    assert.equal(response.payload.taskFrame.constraints.targetEntityType, "champion");
+    assert.equal(response.payload.taskFrame.constraints.cost, undefined);
+    assert.deepEqual(response.payload.taskFrame.capabilityRequirements, ["entity_catalog_filtering"]);
+    assert.equal(response.payload.capabilityMatch.mode, "single_tool");
+    assert.equal(response.payload.capabilityMatch.selected[0].tool, "entity_catalog_query");
+    assert.deepEqual(
+      response.payload.executionPlan.steps.map((step) => step.tool),
+      ["entity_catalog_query"]
+    );
+    assert.equal(response.payload.executionPlan.steps[0].arguments.filters.cost, undefined);
+    assert.equal(response.payload.executionPlan.steps[0].arguments.filters.traits.length, 1);
+    assert.equal(response.payload.executionTrace.status, "completed");
+    assert.equal(response.payload.executionTrace.toolCallCount, 1);
+    assert.deepEqual(
+      response.payload.results.map((entry) => entry.apiName).sort(),
+      ["TFT17_Bloom", "TFT17_Bramble", "TFT17_Canopy", "TFT17_Sprout"]
+    );
+    assert.doesNotMatch(response.payload.text, /无法查询/);
+  }
+});
+
 test("MetaTFT comp_options invalid JSON is isolated from catalog refresh and planning", async () => {
   const invalidJsonFetch = async (url) => {
     if (String(url).includes("/tft-comps-api/comp_options")) {
