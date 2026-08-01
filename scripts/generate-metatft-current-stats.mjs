@@ -51,7 +51,7 @@ const rankFilter = String(argument(
   .split(",").map((value) => value.trim()).filter(Boolean);
 const scope = {
   season: argument("season", process.env.CURRENT_STATS_SEASON ?? "set17-live"),
-  patch: argument("patch", process.env.CURRENT_STATS_PATCH ?? "17.7"),
+  patch: argument("patch", process.env.CURRENT_STATS_PATCH ?? "17.8"),
   rank: rankFilter,
   days: Number(argument(
     "days",

@@ -57,6 +57,7 @@ export function createWebRuntimeOptions(options = {}) {
       { apiName: "TFT_Item_GuinsoosRageblade", zhName: "鬼索的狂暴之刃", category: "ordinary_completed", current: true, obtainable: true },
       { apiName: "TFT_Item_InfinityEdge", zhName: "无尽之刃", category: "ordinary_completed", current: true, obtainable: true },
       { apiName: "TFT_Item_GiantSlayer", zhName: "巨人杀手", category: "ordinary_completed", current: true, obtainable: true },
+      { apiName: "TFT_Item_Deathblade", zhName: "死亡之刃", category: "ordinary_completed", current: true, obtainable: true },
       {
         apiName: "TFT17_Item_SpaceGrooveEmblemItem",
         zhName: "太空律动纹章",
@@ -463,6 +464,55 @@ test("mode-on frames are enriched with deterministic entities and constraints", 
   assert.equal(listResponse.payload.executionPlan.steps[0].arguments.filters.traits.length, 1);
   assert.equal(listResponse.payload.executionTrace.status, "completed");
   assert.equal(listResponse.payload.executionTrace.toolCallCount, 1);
+});
+
+test("batch build page shows the highest-sample build per champion", async () => {
+  const metaTFTClient = {
+    async getUnitBuilds(plan) {
+      const unit = plan.pathUnit;
+      if (unit === "TFT17_Bramble") {
+        return {
+          data: [
+            {
+              unit_builds: "TFT17_Bramble&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
+              placement_count: [100, 0, 0, 0, 0, 0, 0, 0]
+            },
+            {
+              unit_builds: "TFT17_Bramble&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_Deathblade",
+              placement_count: [200, 150, 100, 50, 0, 0, 0, 0]
+            }
+          ]
+        };
+      }
+      return {
+        data: [{
+          unit_builds: `${unit}&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer`,
+          placement_count: [120, 120, 120, 120, 120, 120, 120, 120]
+        }]
+      };
+    },
+    async getItemCarrierBuilds() {
+      return { data: [] };
+    }
+  };
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "off",
+    metaTFTClient
+  }), {});
+  const response = await handleRecommendRequest({
+    input: "木灵族中的四费棋子怎么出装",
+    conversationId: "highest-sample-builds"
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "unit_builds_batch_results");
+  const bramble = response.payload.results.find((entry) => entry.apiName === "TFT17_Bramble");
+  assert.equal(bramble.available, true);
+  assert.equal(bramble.games, 500);
+  assert.deepEqual(
+    bramble.bestBuild.map((entry) => entry.apiName),
+    ["TFT_Item_GuinsoosRageblade", "TFT_Item_InfinityEdge", "TFT_Item_Deathblade"]
+  );
 });
 
 test("MetaTFT comp_options invalid JSON is isolated from catalog refresh and planning", async () => {

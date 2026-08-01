@@ -15,7 +15,7 @@ function videoEvidenceHit() {
   return {
     id: "youtube:abc123xyz00:item_priority:1",
     documentType: "video_guide",
-    patch: "17.7",
+    patch: "17.8",
     locale: "zh-CN",
     metadata: {
       source: "youtube",
@@ -24,7 +24,7 @@ function videoEvidenceHit() {
       author: "测试频道",
       publishedAt: "2026-07-20",
       season: "set17-live",
-      patch: "17.7",
+      patch: "17.8",
       timestampStart: 120,
       timestampEnd: 145,
       claimType: "creator_advice",

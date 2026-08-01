@@ -18,6 +18,7 @@ import {
   createStructuredToolDefinitions
 } from "../agent/index.js";
 import { createTftControlledPlannerProvider } from "../agent/controlled-planner-provider.js";
+import { createPatchResolver } from "../season/patch-resolver.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import {
   buildEntityCatalog,
@@ -522,6 +523,7 @@ function summarizeSemanticConfig(config = {}, store = null) {
 export function getSmallWindowRuntimeStatus(runtime = {}) {
   const cacheStoreInfo = runtime.cacheStoreInfo ?? summarizeCacheStore({}, runtime.cacheStore);
   const cachePath = cacheStoreInfo.cachePath ?? cacheStoreInfo.path ?? null;
+  const defaultSeason = runtime.seasonContextService?.getDefault?.() ?? {};
   const cache = {
     type: String(cacheStoreInfo.type ?? "unknown"),
     persistent: Boolean(cacheStoreInfo.persistent),
@@ -536,6 +538,16 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       schemaVersion: "conversation-state.v2",
       mode: runtime.conversationStateV2Mode ?? "off",
       turnDeltaProviderConfigured: typeof runtime.turnDeltaProvider === "function"
+    },
+    seasonPatch: {
+      currentPatch: runtime.patchState?.currentPatch
+        ?? defaultSeason.source?.currentPatch
+        ?? null,
+      previousPatch: runtime.patchState?.previousPatch
+        ?? defaultSeason.source?.previousPatch
+        ?? null,
+      source: runtime.patchState?.source ?? "season_context",
+      resolvedAt: runtime.patchState?.resolvedAt ?? null
     },
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
     semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
@@ -1461,6 +1473,13 @@ function rankStableItemRecommendationsBySamples(entries, catalog) {
       || String(a.apiName).localeCompare(String(b.apiName))
     ))
     .slice(0, 3);
+}
+
+function highestSampleBuild(rankedBuilds) {
+  return [...(rankedBuilds ?? [])]
+    .sort((left, right) => (
+      Number(right?.stats?.games ?? 0) - Number(left?.stats?.games ?? 0)
+    ))[0] ?? null;
 }
 
 async function stableUnitItems(apiName, catalog, runtime, context = {}) {
@@ -3729,7 +3748,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
           semanticShadow: false,
           conversationStateV2Mode: "off"
         });
-        const best = recommendation.rankedBuilds?.[0] ?? null;
+        const best = highestSampleBuild(recommendation.rankedBuilds);
         return {
           sourceState: {
             cache: recommendation.cache?.query ?? null,
@@ -5458,6 +5477,11 @@ async function handleSessionClear(runtime, body = {}, scope = null) {
 }
 
 export async function handleRuntimeStatusRequest(runtime) {
+  runtime.patchResolver?.ensureFresh?.()
+    .then((state) => {
+      runtime.patchState = state;
+    })
+    .catch(() => {});
   return {
     ok: true,
     runtime: getSmallWindowRuntimeStatus(runtime)
@@ -6162,11 +6186,50 @@ function listen(server, host, port) {
   });
 }
 
+export async function primeSeasonPatch(runtime, options = {}) {
+  const env = options.env ?? process.env;
+  const configuredPatch = String(
+    options.currentPatch ?? env.TFT_AGENT_CURRENT_PATCH ?? ""
+  ).trim() || null;
+  const configuredPrevious = String(
+    options.previousPatch ?? env.TFT_AGENT_PREVIOUS_PATCH ?? ""
+  ).trim() || null;
+  const resolver = createPatchResolver({
+    fetchImpl: options.fetchImpl ?? globalThis.fetch,
+    url: options.patchNewsUrl,
+    timeoutMs: Number(
+      options.patchResolveTimeoutMs
+      ?? env.TFT_AGENT_PATCH_RESOLVE_TIMEOUT_MS
+      ?? 5000
+    ),
+    configuredPatch,
+    previousPatch: configuredPrevious
+  });
+  runtime.patchResolver = resolver;
+  runtime.patchState = resolver.state();
+  try {
+    const state = await resolver.ensureFresh();
+    runtime.patchState = state;
+    if (state.source === "official_riot_news" && state.currentPatch) {
+      runtime.seasonContextService?.updateProviderPatch?.(
+        DEFAULT_SEASON_CONTEXT_ID,
+        state.currentPatch,
+        state.previousPatch,
+        state.source
+      );
+    }
+  } catch {
+    // Patch resolution is best-effort; configured or season defaults remain authoritative.
+  }
+  return runtime.patchState;
+}
+
 export async function startSmallWindowServer(options = {}) {
   const host = options.host ?? process.env.HOST ?? DEFAULT_HOST;
   const firstPort = Number(options.port ?? process.env.PORT ?? DEFAULT_PORT);
   const attempts = options.port ? 1 : 10;
   const runtime = options.runtime ?? await createSmallWindowRuntimeAsync(options);
+  await primeSeasonPatch(runtime, options);
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const port = firstPort + offset;

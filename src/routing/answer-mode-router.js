@@ -65,8 +65,7 @@ function structuredOperations(parsed) {
 function shouldRetrieveCurrentStats(input, parsed, options) {
   if (options.forceCurrentStats === true) return true;
   if (options.forceCurrentStats === false) return false;
-  const intent = normalizedIntent(parsed?.intent ?? parsed?.query?.intent);
-  return intent === "comp_trends" || CURRENT_STATS_CONTEXT_PATTERN.test(input);
+  return CURRENT_STATS_CONTEXT_PATTERN.test(input);
 }
 
 function retrievalScopes(mode, options, input, parsed) {

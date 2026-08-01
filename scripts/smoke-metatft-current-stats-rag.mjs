@@ -63,7 +63,7 @@ const generatedAt = dayOne.toISOString();
 const expiresAt = new Date(dayOne.getTime() + 48 * 60 * 60 * 1000).toISOString();
 const scope = createCurrentStatsScope({
   season: process.env.CURRENT_STATS_SEASON ?? "set17-live",
-  patch: process.env.CURRENT_STATS_PATCH ?? "17.7",
+  patch: process.env.CURRENT_STATS_PATCH ?? "17.8",
   rank: DEFAULT_QUERY_OPTIONS.rankFilter,
   days: DEFAULT_QUERY_OPTIONS.days,
   region: "global",
