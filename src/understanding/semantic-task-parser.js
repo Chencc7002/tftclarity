@@ -78,10 +78,13 @@ function inferAction(text, domain, examples) {
 
 function constraintsFor(text) {
   const constraints = {};
-  const cost = text.match(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/u)?.[1];
-  if (cost) {
+  const costMatches = [...text.matchAll(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/gu)];
+  if (costMatches.length) {
     const costMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
-    constraints.cost = costMap[cost] ?? Number(cost);
+    const costs = [...new Set(costMatches.map((match) => costMap[match[1]] ?? Number(match[1])))]
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 9)
+      .sort((left, right) => left - right);
+    constraints.cost = costs.length === 1 ? costs[0] : costs;
     constraints.targetEntityType = "champion";
     constraints.relation = "member_of_trait";
     constraints.current = true;

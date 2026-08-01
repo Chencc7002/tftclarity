@@ -198,8 +198,9 @@ function semanticNativeText(value, taskFrame) {
     .find((entity) => entity?.expectedType === "trait");
   const traitName = concept?.canonicalName ?? concept?.rawText ?? "目标羁绊";
   const cost = taskFrame?.constraints?.cost;
+  const costLabel = Array.isArray(cost) ? cost.join("、") : cost;
   return value.results?.length
-    ? `${traitName}${cost ? `${cost}费` : ""}棋子：${value.results.map((entry) => entry.name).join("、")}。`
+    ? `${traitName}${costLabel ? `${costLabel}费` : ""}棋子：${value.results.map((entry) => entry.name).join("、")}。`
     : `${traitName}中没有找到符合条件的当前赛季棋子。`;
 }
 
