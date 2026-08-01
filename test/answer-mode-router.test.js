@@ -48,10 +48,11 @@ test("AnswerModeRouter recalls current_stats only for broad environment context"
   assert.ok(broad.retrievalScopes.includes("current_stats"));
 
   const trend = routeAnswerMode({
-    input: "最近阵容有什么变化",
+    input: "查看当前版本阵容趋势",
     parsed: { intent: "comp_trends" }
   });
-  assert.ok(trend.retrievalScopes.includes("current_stats"));
+  assert.equal(trend.mode, "structured");
+  assert.equal(trend.retrievalScopes.includes("current_stats"), false);
 
   const exactHybrid = routeAnswerMode({
     input: "霞三件装备怎么配，为什么？",
