@@ -491,16 +491,19 @@ function applyEntityCollectionSemantics(taskFrame, text) {
   const collectionType = collectionRequestType(text);
   if (!collectionType) return frame;
   if (/(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text)) return frame;
+  const hasCostMention = /[一二两兩三四五六七八九\d]\s*费(?:卡|棋子|英雄)?/u.test(text);
+  const constraints = {
+    ...frame.constraints,
+    targetEntityType: collectionType,
+    current: true
+  };
+  if (!hasCostMention) delete constraints.cost;
   return createTaskFrame({
     ...frame,
     action: "search",
     goal: goalFor("search"),
     expectedOutput: outputsFor("search"),
-    constraints: {
-      ...frame.constraints,
-      targetEntityType: collectionType,
-      current: true
-    },
+    constraints,
     capabilityRequirements: [
       ...new Set([...(frame.capabilityRequirements ?? []), "entity_catalog_filtering"])
     ]
@@ -524,6 +527,66 @@ async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export async function applyDeterministicTftSemantics(taskFrame, input, options = {}) {
+  const text = normalizeText(input);
+  let frame = createTaskFrame(taskFrame ?? {});
+  if (options.catalog) {
+    const mentions = extractEntityMentions(text, { catalog: options.catalog });
+    const holder = createTaskFrame({
+      action: frame.action,
+      goal: frame.goal,
+      subjects: frame.subjects,
+      candidates: frame.candidates,
+      concepts: [...(frame.concepts ?? []), ...mentions]
+    });
+    const linked = await linkTaskFrameEntities(holder, {
+      catalog: options.catalog,
+      patch: options.dynamicContext?.version ?? options.version ?? "current",
+      semanticRetriever: options.entitySemanticRetriever,
+      candidateRetriever: options.entityCandidateRetriever,
+      candidateReranker: options.entityCandidateReranker
+    });
+    const dedupeEntities = (entities) => {
+      const seen = new Set();
+      const result = [];
+      for (const entity of entities ?? []) {
+        const key = entity?.resolvedId
+          ? `${entity.expectedType}:${entity.resolvedId}`
+          : `${entity.expectedType}:${entity.rawText}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(entity);
+      }
+      return result;
+    };
+    frame = createTaskFrame({
+      ...frame,
+      subjects: dedupeEntities(linked.subjects),
+      candidates: dedupeEntities(linked.candidates),
+      concepts: dedupeEntities(linked.concepts)
+    });
+  }
+  const deterministicConstraints = constraintsFor(text);
+  for (const field of options.managedConstraintFields ?? []) {
+    delete deterministicConstraints[field];
+  }
+  frame = createTaskFrame({
+    ...frame,
+    constraints: {
+      ...frame.constraints,
+      ...deterministicConstraints
+    }
+  });
+  frame = applyExternalSupportSemantics(frame, text, options.conversation ?? []);
+  frame = applyCandidateGroupBuildSemantics(frame, text);
+  frame = applyEntityCollectionSemantics(frame, text);
+  frame = applyUnresolvedEntityPolicy(frame, input);
+  return createTaskFrame({
+    ...frame,
+    capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
+  });
 }
 
 export async function parseSemanticTask(input, options = {}) {

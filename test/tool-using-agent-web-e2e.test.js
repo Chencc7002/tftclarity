@@ -406,6 +406,65 @@ test("a pure trait collection request returns the trait members without a cost f
   }
 });
 
+test("mode-on frames are enriched with deterministic entities and constraints", async () => {
+  const droppingProvider = async () => createTurnDelta({
+    dialogueAct: "start_task",
+    taskRelation: "new",
+    explicitTaskFrame: createTaskFrame({
+      domain: "tft",
+      action: "recommend",
+      goal: "unit_build_rankings",
+      constraints: { cost: 4 },
+      confidence: 0.9,
+      understandingStatus: "understood_and_supported"
+    }),
+    confidence: 0.9
+  });
+  const runtime = await createSmallWindowRuntimeAsync(createWebRuntimeOptions({
+    conversationStateV2Mode: "on",
+    turnDeltaProvider: droppingProvider
+  }), {});
+
+  const buildResponse = await handleRecommendRequest({
+    input: "木灵族中的四费棋子怎么出装",
+    conversationId: "mode-on-enrichment-builds"
+  }, runtime);
+  assert.equal(buildResponse.statusCode, 200);
+  assert.equal(buildResponse.payload.type, "unit_builds_batch_results");
+  assert.equal(buildResponse.payload.taskFrame.goal, "recommend_builds_for_candidate_group");
+  assert.equal(buildResponse.payload.taskFrame.constraints.cost, 4);
+  assert.match(buildResponse.payload.taskFrame.concepts[0].resolvedId, /^TFT17_Woodling(?:_2)?$/);
+  assert.deepEqual(
+    buildResponse.payload.executionPlan.steps.map((step) => step.tool),
+    ["entity_catalog_query", "unit_builds_batch"]
+  );
+  assert.equal(buildResponse.payload.executionTrace.status, "completed");
+  assert.equal(buildResponse.payload.executionTrace.toolCallCount, 2);
+  assert.deepEqual(
+    buildResponse.payload.results.map((entry) => entry.apiName).sort(),
+    ["TFT17_Bloom", "TFT17_Bramble"]
+  );
+
+  const listResponse = await handleRecommendRequest({
+    input: "返回木灵族羁绊中的棋子",
+    conversationId: "mode-on-enrichment-list"
+  }, runtime);
+  assert.equal(listResponse.statusCode, 200);
+  assert.equal(listResponse.payload.type, "entity_catalog_results");
+  assert.equal(listResponse.payload.taskFrame.action, "search");
+  assert.equal(listResponse.payload.taskFrame.goal, "find_relevant_data");
+  assert.equal(listResponse.payload.taskFrame.constraints.targetEntityType, "champion");
+  assert.equal(listResponse.payload.taskFrame.constraints.cost, undefined);
+  assert.match(listResponse.payload.taskFrame.concepts[0].resolvedId, /^TFT17_Woodling(?:_2)?$/);
+  assert.deepEqual(
+    listResponse.payload.executionPlan.steps.map((step) => step.tool),
+    ["entity_catalog_query"]
+  );
+  assert.equal(listResponse.payload.executionPlan.steps[0].arguments.filters.traits.length, 1);
+  assert.equal(listResponse.payload.executionTrace.status, "completed");
+  assert.equal(listResponse.payload.executionTrace.toolCallCount, 1);
+});
+
 test("MetaTFT comp_options invalid JSON is isolated from catalog refresh and planning", async () => {
   const invalidJsonFetch = async (url) => {
     if (String(url).includes("/tft-comps-api/comp_options")) {
