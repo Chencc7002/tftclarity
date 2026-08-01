@@ -1463,6 +1463,13 @@ function rankStableItemRecommendationsBySamples(entries, catalog) {
     .slice(0, 3);
 }
 
+function highestSampleBuild(rankedBuilds) {
+  return [...(rankedBuilds ?? [])]
+    .sort((left, right) => (
+      Number(right?.stats?.games ?? 0) - Number(left?.stats?.games ?? 0)
+    ))[0] ?? null;
+}
+
 async function stableUnitItems(apiName, catalog, runtime, context = {}) {
   const name = unitName(apiName, catalog);
   const result = await runtime.recommendForInputImpl(`${name}普通单件装备排行，样本>=0`, {
@@ -3729,7 +3736,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
           semanticShadow: false,
           conversationStateV2Mode: "off"
         });
-        const best = recommendation.rankedBuilds?.[0] ?? null;
+        const best = highestSampleBuild(recommendation.rankedBuilds);
         return {
           sourceState: {
             cache: recommendation.cache?.query ?? null,
