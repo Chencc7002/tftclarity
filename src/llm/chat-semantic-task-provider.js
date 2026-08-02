@@ -8,7 +8,7 @@ import {
   validateTurnDelta
 } from "../understanding/turn-delta.js";
 
-export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v10";
+export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v12";
 
 const RESPONSE_CONTRACT = [
   "Return exactly one JSON object matching task-frame.v1. Do not use Markdown.",
@@ -121,17 +121,64 @@ function omitNullConstraintValues(value) {
   return normalized;
 }
 
+const ITEM_CATEGORY_ALIASES = Object.freeze({
+  emblems: "emblem",
+  "纹章": "emblem",
+  "转职": "emblem"
+});
+
+function normalizeItemCategory(value) {
+  const normalized = String(value ?? "").trim();
+  return ITEM_CATEGORY_ALIASES[normalized] ?? normalized;
+}
+
+function normalizeDomainConstraintShapes(constraints) {
+  if (!constraints || typeof constraints !== "object" || Array.isArray(constraints)) {
+    return constraints;
+  }
+  const normalized = { ...constraints };
+  if (typeof normalized.itemCategories === "string") {
+    normalized.itemCategories = [normalizeItemCategory(normalized.itemCategories)];
+  } else if (Array.isArray(normalized.itemCategories)) {
+    normalized.itemCategories = normalized.itemCategories.map(normalizeItemCategory);
+  }
+  if (["emblem", "emblems", "纹章", "转职"].includes(normalized.itemPolicy)) {
+    normalized.itemPolicy = "include_special";
+  }
+  return normalized;
+}
+
+function normalizeDomainConstraintOperation(operation) {
+  if (!operation || typeof operation !== "object" || Array.isArray(operation)) return operation;
+  const normalized = { ...operation };
+  for (const key of ["value", "oldValue"]) {
+    if (normalized[key] === undefined) continue;
+    if (normalized.field === "itemCategories") {
+      const values = Array.isArray(normalized[key]) ? normalized[key] : [normalized[key]];
+      normalized[key] = values.map(normalizeItemCategory);
+    }
+    if (
+      normalized.field === "itemPolicy"
+      && ["emblem", "emblems", "纹章", "转职"].includes(normalized[key])
+    ) normalized[key] = "include_special";
+  }
+  return normalized;
+}
+
 function normalizeProviderStructuredValue(value, turnDeltaRequest) {
   if (!value || typeof value !== "object" || Array.isArray(value)) return value;
   if (!turnDeltaRequest) return omitNullConstraintValues(value);
   const normalized = structuredClone(value);
   if (normalized.explicitTaskFrame) {
     normalized.explicitTaskFrame = omitNullConstraintValues(normalized.explicitTaskFrame);
+    normalized.explicitTaskFrame.constraints = normalizeDomainConstraintShapes(
+      normalized.explicitTaskFrame.constraints
+    );
     const allowedOperationFields = new Set(TURN_DELTA_CONSTRAINT_FIELDS);
     normalized.constraintOperations = Array.isArray(normalized.constraintOperations)
       ? normalized.constraintOperations.filter((operation) => (
         allowedOperationFields.has(operation?.field)
-      ))
+      )).map(normalizeDomainConstraintOperation)
       : normalized.constraintOperations;
   }
   return normalized;

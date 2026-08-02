@@ -5,6 +5,7 @@ import { resolveHighConfidenceEntityCandidates } from "./high-confidence-entity-
 import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
 import { isCompAnalysisInput, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
+import { normalizeTftSemanticInput } from "./semantic-input-normalizer.js";
 
 function parseStarLevels(input) {
   const matches = [...normalizeText(input).matchAll(/([123一二三两])星/g)];
@@ -447,6 +448,9 @@ function parseUnknownStargazerEffect(input, entities) {
 
 export function parseQuery(input, options = {}) {
   const catalog = options.catalog ?? createCatalog();
+  const originalInput = String(input ?? "");
+  const semanticNormalization = normalizeTftSemanticInput(originalInput, { catalog });
+  input = semanticNormalization.normalizedInput;
   const compMention = parseCompMention(input);
   const entityInput = typeof compMention === "string" && compMention.includes("|")
     ? String(input ?? "").replace(compMention, " ")
@@ -569,7 +573,7 @@ export function parseQuery(input, options = {}) {
   const bareUnitIntentAmbiguous = isBareSingleUnitInput(input, entities, intentExplicit);
 
   return {
-    rawInput: String(input ?? ""),
+    rawInput: originalInput,
     intent: effectiveIntent,
     unit,
     unitAlias: entities.units[0]?.alias,
@@ -641,7 +645,8 @@ export function parseQuery(input, options = {}) {
         ...(match.matchType ? { matchType: match.matchType } : {}),
         ...(match.source ? { source: match.source } : {}),
         ...(match.inputFragment ? { inputFragment: match.inputFragment } : {})
-      }))
+      })),
+      semanticNormalization
     },
     defaults: DEFAULT_QUERY_OPTIONS
   };
