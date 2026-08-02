@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import {
   normalizeCompAugmentTiers,
   normalizeCompDetailsPositioning
@@ -5643,6 +5644,7 @@ export function createSmallWindowHandler(options = {}) {
   const accessService = options.accessService
     ?? runtime.accessService
     ?? createAnonymousAccessService(runtime, { enabled: false }, {});
+  const opggRouter = createOpggApiRouter();
 
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -5686,6 +5688,10 @@ export function createSmallWindowHandler(options = {}) {
 
       if (isLegacyAdminWriteRoute(req.method, url.pathname) && !hasValidAdminToken(req, runtime)) {
         return sendJson(res, 403, { ok: false, error: "Administrator authorization required" });
+      }
+
+      if (url.pathname.startsWith("/api/opgg/")) {
+        return opggRouter(req, res, url, { scope: visitor.scope });
       }
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {
