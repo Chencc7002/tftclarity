@@ -4,6 +4,12 @@ import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane 
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
 import {
+  cancelOpggRequests,
+  renderOpggTrends,
+  renderOpggPersonal,
+  renderOpggProTeaching
+} from "./opgg-panel.js";
+import {
   formatProcessingDuration,
   formatDecisionAuditPayload,
   renderUnderstandingPanel
@@ -683,6 +689,33 @@ const QUICK_TASKS = [
     bodyKey: "quickTaskUpdatesBody",
     exampleKey: "quickTaskUpdatesExample",
     icon: '<path d="M6 5h12v14H6z"/><path d="M9 9h6M9 12h6M9 15h4"/>'
+  },
+  {
+    category: "news",
+    id: "opgg-pro-trends",
+    view: "opgg-pro-trends",
+    titleKey: "quickTaskOpggTrendsTitle",
+    bodyKey: "quickTaskOpggTrendsBody",
+    exampleKey: "quickTaskOpggTrendsExample",
+    icon: '<path d="M3 17l5-5 4 3 6-7 3 3"/><path d="M3 21h18"/>'
+  },
+  {
+    category: "news",
+    id: "opgg-personal-review",
+    view: "opgg-personal-review",
+    titleKey: "quickTaskOpggPersonalTitle",
+    bodyKey: "quickTaskOpggPersonalBody",
+    exampleKey: "quickTaskOpggPersonalExample",
+    icon: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 20c.8-3.5 3.6-5.5 8-5.5s7.2 2 8 5.5"/>'
+  },
+  {
+    category: "news",
+    id: "opgg-pro-teaching",
+    view: "opgg-pro-teaching",
+    titleKey: "quickTaskOpggTeachingTitle",
+    bodyKey: "quickTaskOpggTeachingBody",
+    exampleKey: "quickTaskOpggTeachingExample",
+    icon: '<path d="M8 4h8v16H8z"/><path d="M5 8h3M16 8h3M11 12h2M11 15h2"/>'
   }
 ];
 
@@ -3878,13 +3911,14 @@ rankControl.addEventListener("change", () => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (await submitQuickTaskForm()) return;
+  if (await routeNaturalLanguageQuickTask(queryInput.value)) return;
   requestRecommendation(false);
 });
 
 queryInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
-    if (!state.requestInFlight) requestRecommendation(false);
+    if (!state.requestInFlight) form.requestSubmit();
   }
 });
 
@@ -3893,6 +3927,108 @@ stopButton.addEventListener("click", () => {
 });
 
 quickTaskFormClose.addEventListener("click", () => closeQuickTaskForm({ focus: true }));
+
+const NATURAL_LANGUAGE_QUICK_TASK_RULES = [
+  {
+    id: "opgg-pro-teaching",
+    patterns: [
+      /\u804c\u4e1a\u9009\u624b.*(?:\u6559\u5b66|\u590d\u76d8|\u6253\u6cd5|\u600e\u4e48\u73a9)|(?:\u5b66\u4e60|\u770b\u770b|\u67e5\u770b).*\u804c\u4e1a\u9009\u624b|\u9ad8\u624b(?:\u6559\u5b66|\u590d\u76d8|\u6253\u6cd5)/iu,
+      /pro\s*(?:player\s*)?(?:teaching|coaching|review)/iu
+    ]
+  },
+  {
+    id: "opgg-pro-trends",
+    patterns: [
+      /\u804c\u4e1a\u9635\u5bb9\u8d8b\u52bf|\u804c\u4e1a\u8d8b\u52bf|(?:\u804c\u4e1a|\u9009\u624b|\u804c\u4e1a\u6c60).*(?:\u9635\u5bb9|\u4e0a\u5206).*(?:\u8d8b\u52bf|\u7edf\u8ba1|\u6570\u636e)/iu,
+      /pro\s*(?:comp|composition)\s*trends?/iu
+    ]
+  },
+  {
+    id: "patch-notes",
+    patterns: [
+      /\u66f4\u65b0\u516c\u544a|\u7248\u672c\u516c\u544a|\u8865\u4e01\u516c\u544a|(?:\u66f4\u65b0|\u7248\u672c|\u8865\u4e01).*(?:\u5185\u5bb9|\u8bf4\u660e|\u6539\u52a8|\u516c\u544a)/iu,
+      /patch\s*notes?|release\s*notes?|what(?:'s| is)?\s*new/iu
+    ]
+  },
+  {
+    id: "opgg-personal-review",
+    patterns: [
+      /(?:\u6211\u8981|\u6211\u60f3|\u5e2e\u6211|\u7ed9\u6211|\u8bf7|\u8fdb\u5165|\u6253\u5f00|\u67e5\u770b|\u5f00\u59cb|\u505a\u4e2a|\u505a\u4e00\u6b21)?(?:\u4e2a\u4eba|\u6211\u7684)?(?:\u6218\u7ee9|\u6218\u5c40|\u5bf9\u5c40|\u6e38\u620f)?\u590d\u76d8|\u590d\u76d8(?:\u4e00\u4e0b|\u6211\u7684\u6218\u7ee9|\u6211\u7684\u5bf9\u5c40)?/iu,
+      /review\s*my\s*(?:matches|games)|match\s*review/iu
+    ]
+  }
+];
+
+function naturalLanguageQuickTaskId(input) {
+  const text = String(input ?? "").trim();
+  if (!text) return null;
+  return NATURAL_LANGUAGE_QUICK_TASK_RULES.find(
+    (rule) => rule.patterns.some((pattern) => pattern.test(text))
+  )?.id ?? null;
+}
+
+async function routeNaturalLanguageQuickTask(input) {
+  const text = String(input ?? "").trim();
+  const taskId = naturalLanguageQuickTaskId(text);
+  if (!taskId) return false;
+  appendUserMessage(text);
+  state.lastInput = text;
+  state.lastDisplayInput = text;
+  queryInput.value = "";
+  await launchQuickTask(taskId);
+  scrollConversation();
+  return true;
+}
+
+async function launchQuickTask(quickTaskTarget) {
+  if (!quickTaskTarget || state.requestInFlight) return;
+  const taskId = typeof quickTaskTarget === "string"
+    ? quickTaskTarget
+    : quickTaskTarget.dataset.quickTask;
+  cancelOpggRequests();
+  // Keep the selected category expanded while its result is open, so
+  // returning to the conversation restores the same quick-entry context.
+  const baseQuickTask = QUICK_TASKS.find((task) => task.id === taskId);
+  const quickTask = quickTasksForSeason().find((task) => task.id === taskId) ?? baseQuickTask;
+  if (!quickTask) return;
+  if (quickTask.view) closeQuickTaskForm();
+  if (quickTask.view === "patch-note") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderPatchNote();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.view === "opgg-pro-trends") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderOpggTrends();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.view === "opgg-personal-review") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderOpggPersonal();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.view === "opgg-pro-teaching") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderOpggProTeaching();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.formFields) {
+    openQuickTaskForm(quickTask);
+    return;
+  }
+  const quickQuery = quickTask.queryKey ? t(quickTask.queryKey) : quickTask.query;
+  if (!quickQuery) return;
+  queryInput.value = quickTask.query ?? quickQuery;
+  await requestRecommendation(false, t(quickTask.promptKey));
+}
 
 async function handleResultClick(event) {
   const returnCatalogButton = event.target.closest("[data-return-catalog]");
@@ -3939,26 +4075,7 @@ async function handleResultClick(event) {
   }
   const quickTaskButton = event.target.closest("button[data-quick-task]");
   if (quickTaskButton) {
-    if (state.requestInFlight) return;
-    collapseQuickTaskCategories(quickTaskButton.closest(".quick-tasks"));
-    const baseQuickTask = QUICK_TASKS.find((task) => task.id === quickTaskButton.dataset.quickTask);
-    const quickTask = quickTasksForSeason().find((task) => task.id === quickTaskButton.dataset.quickTask) ?? baseQuickTask;
-    if (quickTask?.view === "patch-note") {
-      state.currentConclusionController?.abort();
-      state.currentConclusionController = null;
-      renderPatchNote();
-      openMobileResult();
-      return;
-    }
-    if (quickTask?.formFields) {
-      openQuickTaskForm(quickTask);
-      return;
-    }
-    const quickQuery = quickTask?.queryKey ? t(quickTask.queryKey) : quickTask?.query;
-    if (!quickQuery) return;
-    if (quickTask.query) queryInput.value = quickTask.query;
-    else queryInput.value = quickQuery;
-    await requestRecommendation(false, t(quickTask.promptKey));
+    await launchQuickTask(quickTaskButton);
     return;
   }
   const viewResultButton = event.target.closest("[data-view-result]");

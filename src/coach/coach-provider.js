@@ -41,8 +41,9 @@ const COACH_RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["evidenceIds", "text"],
+        required: ["dimension", "evidenceIds", "text"],
         properties: {
+          dimension: { type: "string" },
           evidenceIds: {
             type: "array",
             minItems: 1,
@@ -59,8 +60,9 @@ const COACH_RESPONSE_SCHEMA = {
       items: {
         type: "object",
         additionalProperties: false,
-        required: ["evidenceIds", "text", "conditions"],
+        required: ["dimension", "evidenceIds", "text", "conditions"],
         properties: {
+          dimension: { type: "string" },
           evidenceIds: {
             type: "array",
             minItems: 1,
@@ -98,6 +100,14 @@ function chatEndpoint(value) {
   return /\/chat\/completions$/iu.test(endpoint) ? endpoint : `${endpoint}/chat/completions`;
 }
 
+function thinkingMode(value) {
+  const mode = String(value ?? "").trim().toLowerCase();
+  if (!mode) return null;
+  if (["on", "enabled", "true"].includes(mode)) return "enabled";
+  if (["off", "disabled", "false"].includes(mode)) return "disabled";
+  throw new Error(`Unsupported coach thinking mode: ${value}`);
+}
+
 function responseContent(payload) {
   if (typeof payload?.output_text === "string") return payload.output_text;
   const content = payload?.choices?.[0]?.message?.content ?? payload?.choices?.[0]?.text;
@@ -108,8 +118,22 @@ function responseContent(payload) {
 function strictJson(content) {
   if (content && typeof content === "object") return content;
   const text = String(content ?? "").trim();
-  if (!text.startsWith("{") || !text.endsWith("}")) throw new Error("Coach provider returned non-JSON content");
-  return JSON.parse(text);
+  const fenced = text.match(/```(?:json)?\s*([\s\S]*?)```/iu);
+  const candidate = (fenced?.[1] ?? text).trim();
+  const start = candidate.indexOf("{");
+  const end = candidate.lastIndexOf("}");
+  if (start !== -1 && end > start) {
+    const slice = candidate.slice(start, end + 1);
+    try {
+      return JSON.parse(slice);
+    } catch {
+      // Fall through to the strict check below.
+    }
+  }
+  if (candidate.startsWith("{") && candidate.endsWith("}")) {
+    return JSON.parse(candidate);
+  }
+  throw new Error("Coach provider returned non-JSON content");
 }
 
 export function resolveCoachProviderConfig(options = {}, env = process.env) {
@@ -155,6 +179,11 @@ export function resolveCoachProviderConfig(options = {}, env = process.env) {
       options.maxOutputTokens ?? env.TFT_AGENT_COACH_MAX_OUTPUT_TOKENS,
       DEFAULT_COACH_MAX_OUTPUT_TOKENS
     ),
+    thinkingMode: thinkingMode(
+      options.thinkingMode
+        ?? env.TFT_AGENT_COACH_THINKING
+        ?? env.TFT_AGENT_CONCLUSION_THINKING
+    ),
     allowUnauthenticated: options.allowUnauthenticated === true
   };
 }
@@ -192,6 +221,9 @@ export function createOpenAICompatibleCoachProvider(options = {}) {
           }
         : { type: "json_object" }
     };
+    if (options.thinkingMode) {
+      body.thinking = { type: options.thinkingMode };
+    }
     try {
       const response = await fetchImpl(options.endpoint, {
         method: "POST",
