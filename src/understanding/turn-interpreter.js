@@ -299,6 +299,16 @@ function weakProviderFirstTurnDelta(delta) {
     || array(frame.ambiguities).some((entry) => entry?.affectsToolSelection !== false);
 }
 
+function providerFrameCoversSemanticCorrection(frame, normalization) {
+  if (!array(normalization?.corrections).length) return true;
+  const correctedNames = new Set(array(normalization.corrections).map((entry) => entry?.to));
+  const entities = [...array(frame?.subjects), ...array(frame?.candidates), ...array(frame?.concepts)];
+  return entities.some((entity) => (
+    entity?.expectedType === "item"
+    && correctedNames.has(String(entity?.rawText ?? entity?.canonicalName ?? ""))
+  ));
+}
+
 function emptyContextualContinuation(delta) {
   return Boolean(
     delta
@@ -580,8 +590,12 @@ export async function interpretTurn({
   domainPolicy,
   ...options
 } = {}) {
+  const semanticNormalization = typeof domainPolicy?.normalizeSemanticInput === "function"
+    ? domainPolicy.normalizeSemanticInput(currentMessage, options)
+    : { originalInput: String(currentMessage ?? ""), normalizedInput: String(currentMessage ?? ""), corrections: [] };
+  const semanticMessage = String(semanticNormalization?.normalizedInput ?? currentMessage ?? "");
   const messages = buildTurnInterpreterMessages({
-    currentMessage,
+    currentMessage: semanticMessage,
     state: conversationState
   });
   let providerFallback = null;
@@ -638,8 +652,21 @@ export async function interpretTurn({
       conversationState?.activeTask?.taskFrame
       || conversationState?.pendingClarification
     );
+    if (
+      !hasConversationContext
+      && !providerFrameCoversSemanticCorrection(delta.explicitTaskFrame, semanticNormalization)
+    ) {
+      const explicit = await explicitFrameForFallback(semanticMessage, options);
+      if (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit)) {
+        delta = deterministicFallbackDelta(explicit, conversationState);
+        providerFallback = {
+          used: true,
+          reason: "catalog_backed_input_correction"
+        };
+      }
+    }
     if (!hasConversationContext && weakProviderFirstTurnDelta(delta)) {
-      const explicit = await explicitFrameForFallback(currentMessage, options);
+      const explicit = await explicitFrameForFallback(semanticMessage, options);
       if (
         (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)
         || clarifiableFirstTurnFrame(explicit)
@@ -654,7 +681,7 @@ export async function interpretTurn({
     if (hasConversationContext && emptyContextualContinuation(delta)) {
       const contextual = sanitizeContextualFallbackFrame(
         await explicitFrameForFallback(
-          currentMessage,
+          semanticMessage,
           options,
           conversationState
         ),
@@ -680,11 +707,11 @@ export async function interpretTurn({
     }
     if (
       hasConversationContext
-      && hasMaterialContextualRecoveryCue(currentMessage)
+      && hasMaterialContextualRecoveryCue(semanticMessage)
       && providerFallback?.reason !== "contextual_task_recovery"
     ) {
       const contextual = sanitizeContextualFallbackFrame(
-        await explicitFrameForFallback(currentMessage, options, conversationState),
+        await explicitFrameForFallback(semanticMessage, options, conversationState),
         domainPolicy
       );
       if (
@@ -717,15 +744,15 @@ export async function interpretTurn({
     let explicit = options.explicitTaskFrame
       ? createTaskFrame(options.explicitTaskFrame)
       : typeof semanticProvider !== "function" || !hasConversationContext
-        ? await explicitFrameForFallback(currentMessage, options)
+        ? await explicitFrameForFallback(semanticMessage, options)
         : null;
     if (
       hasConversationContext
       && !explicit
-      && hasMaterialContextualRecoveryCue(currentMessage)
+      && hasMaterialContextualRecoveryCue(semanticMessage)
     ) {
       explicit = sanitizeContextualFallbackFrame(
-        await explicitFrameForFallback(currentMessage, options, conversationState),
+        await explicitFrameForFallback(semanticMessage, options, conversationState),
         domainPolicy
       );
     }
@@ -754,7 +781,7 @@ export async function interpretTurn({
     }
   }
   const actionOnlyBuildDelta = actionOnlyBuildFollowupDelta(
-    currentMessage,
+    semanticMessage,
     conversationState,
     options
   );
@@ -771,7 +798,7 @@ export async function interpretTurn({
     || conversationState?.pendingClarification
   );
   if (!actionOnlyBuildDelta && !hasConversationContext && weakProviderFirstTurnDelta(delta)) {
-    const explicit = await explicitFrameForFallback(currentMessage, options);
+    const explicit = await explicitFrameForFallback(semanticMessage, options);
     if (
       (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)
       || clarifiableFirstTurnFrame(explicit)
@@ -801,6 +828,7 @@ export async function interpretTurn({
       providerSucceeded,
       providerUsage,
       providerError,
+      semanticNormalization,
       stateSummary: compactConversationStateForInterpreter(conversationState)
     },
     messages

@@ -53,7 +53,7 @@ test("chat semantic task provider validates raw TaskFrame and maps provider usag
     budget: { maxOutputTokens: 300 }
   });
 
-  assert.equal(LIVE_SEMANTIC_TASK_PROMPT_VERSION, "live-semantic-task-contract.v10");
+  assert.equal(LIVE_SEMANTIC_TASK_PROMPT_VERSION, "live-semantic-task-contract.v12");
   assert.equal(observedBody.response_format.type, "json_object");
   assert.equal(observedBody.max_tokens, 300);
   assert.deepEqual(result.taskFrame, {
@@ -192,6 +192,62 @@ test("chat semantic task provider applies domain validation to explicit TaskFram
     }),
     /constraints\.strategy is invalid/u
   );
+});
+
+test("chat semantic task provider normalizes common emblem constraint shapes", async () => {
+  const rawDelta = {
+    schemaVersion: "turn-delta.v1",
+    dialogueAct: "start_task",
+    taskRelation: "new",
+    explicitTaskFrame: {
+      ...validFrame,
+      action: "rank",
+      goal: "rank_emblem_carriers",
+      capabilityRequirements: ["item_carrier_statistics"],
+      constraints: {
+        itemPolicy: "emblem",
+        itemCategories: "emblem"
+      }
+    },
+    entityOperations: [],
+    constraintOperations: [],
+    presentation: {
+      requestedCount: null,
+      pageDirection: null,
+      avoidSeen: false,
+      resultReference: null
+    },
+    confidence: 0.9,
+    ambiguities: []
+  };
+  let observedBody;
+  const provider = createChatSemanticTaskProvider({
+    endpoint: "https://llm.example/v1/chat/completions",
+    model: "test-model",
+    maxInvalidRetries: 0,
+    fetchImpl: async (_url, init) => {
+      observedBody = JSON.parse(init.body);
+      return {
+        ok: true,
+        json: async () => ({
+          choices: [{ message: { content: JSON.stringify(rawDelta) } }]
+        })
+      };
+    }
+  });
+
+  const result = await provider({
+    schemaVersion: "turn-delta.v1",
+    domainPolicy: tftConversationPolicy,
+    messages: [],
+    budget: { maxOutputTokens: 300 }
+  });
+
+  assert.equal(result.turnDelta.explicitTaskFrame.constraints.itemPolicy, "include_special");
+  assert.deepEqual(result.turnDelta.explicitTaskFrame.constraints.itemCategories, ["emblem"]);
+  assert.match(observedBody.messages[0].content, /itemCategories is always an array/u);
+  assert.match(observedBody.messages[0].content, /itemPolicy is a scalar string/u);
+  assert.match(observedBody.messages[0].content, /item-carrier ranking/u);
 });
 
 test("chat semantic task provider rejects invalid TurnDelta before normalization", async () => {

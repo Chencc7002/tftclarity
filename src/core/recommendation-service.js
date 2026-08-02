@@ -773,7 +773,8 @@ function providerInvocationFor(interpretation) {
   const fallback = telemetry.providerFallback ?? null;
   const corrected = fallback?.used === true && [
     "contextual_task_recovery",
-    "action_only_build_followup_policy"
+    "action_only_build_followup_policy",
+    "catalog_backed_input_correction"
   ].includes(fallback?.reason);
   return {
     attempted: telemetry.providerCalled === true,
