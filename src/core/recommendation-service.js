@@ -295,7 +295,10 @@ function structuredQueryFor(plan, operation) {
 async function executePlannedStructuredQuery(plan, operation, handler, context = {}) {
   if (context.executionPlan && context.executionPlanExecutor) {
     const execution = await context.executionPlanExecutor.execute(context.executionPlan, {
-      handlers: { [operation]: handler },
+      handlers: {
+        ...(context.handlers ?? {}),
+        [operation]: handler
+      },
       run: context.agentRun,
       signal: context.signal,
       intent: context.intent,
@@ -785,9 +788,12 @@ function providerInvocationFor(interpretation) {
 
 async function interpretConversationV2(input, state, options, catalog) {
   const interpreter = options.turnInterpreter ?? interpretTurn;
+  const interpretationState = options.startNewTask === true
+    ? createConversationState({ seasonContextId: seasonContextIdFor(options) })
+    : state;
   const raw = await interpreter({
     currentMessage: input,
-    conversationState: state,
+    conversationState: interpretationState,
     semanticProvider: options.turnDeltaProvider ?? options.semanticTaskProvider,
     semanticTaskParser: options.semanticTaskParser ?? parseSemanticTask,
     semanticExampleStore: options.semanticExampleStore,
@@ -2138,6 +2144,7 @@ async function recommendItemCarriersForInput(
           toolExecutor: options.toolExecutor,
           executionPlanExecutor: options.executionPlanExecutor,
           executionPlan,
+          handlers: options.agentToolHandlers,
           agentRun: options.agentRun,
           signal: options.abortSignal
         }
@@ -2465,10 +2472,12 @@ export async function recommendForInput(input, options = {}) {
             version: options.effectivePatch ?? catalog?.version ?? null,
             currentTime: options.currentTime ?? null
           },
-          conversation: [
-            ...(conversationState.taskHistory ?? []),
-            ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
-          ],
+          conversation: options.startNewTask === true
+            ? []
+            : [
+                ...(conversationState.taskHistory ?? []),
+                ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
+              ],
           managedConstraintFields: Array.isArray(interpretation.turnDelta?.constraintOperations)
             ? interpretation.turnDelta.constraintOperations.map((operation) => operation?.field).filter(Boolean)
             : [],
@@ -2912,6 +2921,7 @@ export async function recommendForInput(input, options = {}) {
             toolExecutor: options.toolExecutor,
             executionPlanExecutor: options.executionPlanExecutor,
             executionPlan,
+            handlers: options.agentToolHandlers,
             agentRun: options.agentRun,
             signal: options.abortSignal,
             deferResultPolicy: true,
@@ -3383,6 +3393,7 @@ export async function recommendForInput(input, options = {}) {
           toolExecutor: options.toolExecutor,
           executionPlanExecutor: options.executionPlanExecutor,
           executionPlan,
+          handlers: options.agentToolHandlers,
           agentRun: options.agentRun,
           signal: options.abortSignal,
           onExecution: (execution) => {

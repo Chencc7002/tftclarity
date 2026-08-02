@@ -110,9 +110,10 @@ function constraintsFor(text) {
   const historicalPatch = text.match(/\b\d{1,2}\.\d{1,2}\b/u)?.[0];
   if (historicalPatch) constraints.patch = historicalPatch;
   const itemCount = text.match(/([一二两兩三四五六七八九\d])件/u)?.[1];
-  if (itemCount) constraints.itemCount = "一二两兩三四五六七八九".includes(itemCount)
-    ? "一二两兩三四五六七八九".indexOf(itemCount) % 9 + 1
-    : Number(itemCount);
+  if (itemCount) {
+    const itemCountMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    constraints.itemCount = itemCountMap[itemCount] ?? Number(itemCount);
+  }
   const limit = text.match(/(?:前|推荐|推薦|来|來)([一二两兩三四五六七八九十\d]+)(?:套|个|個|名)?/u)?.[1];
   if (limit) {
     const numberMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
@@ -488,6 +489,12 @@ function applyCandidateGroupBuildSemantics(taskFrame, text) {
 
 function applyEntityCollectionSemantics(taskFrame, text) {
   const frame = createTaskFrame(taskFrame);
+  const resolvedCarrierItem = [
+    ...(frame.subjects ?? []),
+    ...(frame.candidates ?? []),
+    ...(frame.concepts ?? [])
+  ].some((entity) => entity?.expectedType === "item" && entity?.resolvedId);
+  if (resolvedCarrierItem && ITEM_CARRIER_REQUEST_PATTERN.test(text)) return frame;
   const collectionType = collectionRequestType(text);
   if (!collectionType) return frame;
   if (/(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text)) return frame;
