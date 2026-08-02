@@ -3475,10 +3475,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         return parseSemanticTask(input, {
           catalog,
           provider: null,
-          conversation: [
-            ...(state.taskHistory ?? []),
-            ...(state.activeTask?.taskFrame ? [state.activeTask] : [])
-          ],
+          conversation: body.startNewTask === true
+            ? []
+            : [
+                ...(state.taskHistory ?? []),
+                ...(state.activeTask?.taskFrame ? [state.activeTask] : [])
+              ],
           dynamicContext: {
             version: seasonContext.effectivePatch ?? catalog?.version ?? null
           }
@@ -3843,6 +3845,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     useStructuredParser: structuredParserMode,
     turnDeltaProvider: requestRuntime.turnDeltaProvider,
     conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
+    startNewTask: body.startNewTask === true,
     turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
     controlledPlanner: requestRuntime.controlledPlanner,
     controlledPlannerFallback: requestRuntime.controlledPlannerFallback,

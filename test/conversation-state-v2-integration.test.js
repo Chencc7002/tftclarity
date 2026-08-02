@@ -640,6 +640,31 @@ test("on mode bypasses legacy session inheritance and merges the request exactly
   assert.equal(result.conversationState.taskHistory.at(-1).taskFrame.subjects[0].resolvedId, "TFT17_Xayah");
 });
 
+test("an explicit quick-task start ignores the active task while preserving it in history", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const observedActiveGoals = [];
+  const turnInterpreter = async ({ conversationState }) => {
+    observedActiveGoals.push(conversationState.activeTask?.taskFrame?.goal ?? null);
+    return observedActiveGoals.length === 1
+      ? newTask(compFrame())
+      : newTask(unitFrame("TFT17_Xayah"));
+  };
+  const options = baseCompOptions(cacheStore, "v2-explicit-quick-task", turnInterpreter);
+
+  const first = await recommendForInput("推荐当前版本热门阵容", options);
+  const second = await recommendForInput("查询霞的当前版本最稳三件装备", {
+    ...options,
+    startNewTask: true,
+    response: unitRows
+  });
+
+  assert.equal(first.type, "comp_rankings");
+  assert.equal(second.type, "unit_build_rankings");
+  assert.deepEqual(observedActiveGoals, [null, null]);
+  assert.equal(second.conversationState.activeTask.taskFrame.goal, "unit_build_rankings");
+  assert.equal(second.conversationState.taskHistory.at(-1).taskFrame.goal, "comp_rankings");
+});
+
 test("shadow mode records all migration comparison dimensions without changing the legacy response", async () => {
   const result = await recommendForInput("霞怎么出装", {
     useSession: false,

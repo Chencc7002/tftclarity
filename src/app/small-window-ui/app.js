@@ -853,7 +853,7 @@ async function submitQuickTaskForm() {
   if (!query) return true;
   closeQuickTaskForm();
   queryInput.value = query;
-  await requestRecommendation(false, query);
+  await requestRecommendation(false, query, { startNewTask: true });
   return true;
 }
 
@@ -3701,7 +3701,7 @@ function setRequestRunning(running) {
   for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
 }
 
-async function requestRecommendation(refresh = false, displayInput = null) {
+async function requestRecommendation(refresh = false, displayInput = null, requestOptions = {}) {
   if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
     return;
@@ -3744,6 +3744,7 @@ async function requestRecommendation(refresh = false, displayInput = null) {
         input,
         conversationId: state.conversationId,
         seasonContextId: state.seasonContextId,
+        startNewTask: requestOptions.startNewTask === true,
         refresh,
         deferConclusion: true,
         preferences: {
@@ -4027,7 +4028,7 @@ async function launchQuickTask(quickTaskTarget) {
   const quickQuery = quickTask.queryKey ? t(quickTask.queryKey) : quickTask.query;
   if (!quickQuery) return;
   queryInput.value = quickTask.query ?? quickQuery;
-  await requestRecommendation(false, t(quickTask.promptKey));
+  await requestRecommendation(false, t(quickTask.promptKey), { startNewTask: true });
 }
 
 async function handleResultClick(event) {

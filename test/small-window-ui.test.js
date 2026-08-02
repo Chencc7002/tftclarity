@@ -97,6 +97,7 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(indexHtml, /id="quick-task-fields"/);
   assert.match(appJs, /function openQuickTaskForm\(task\)/);
   assert.match(appJs, /function submitQuickTaskForm\(\)/);
+  assert.match(appJs, /requestRecommendation\(false, query, \{ startNewTask: true \}\)/);
   assert.doesNotMatch(appJs, /unresolvedQuickTaskPlaceholder/);
   assert.doesNotMatch(i18n, /【英雄名称】|\[champion name\]/);
   assert.match(i18n, /quickTaskCompletionTitle: "条件查询"/);
@@ -118,7 +119,7 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /async function launchQuickTask\(quickTaskTarget\)/);
   assert.match(appJs, /QUICK_TASKS\.find/);
   assert.match(appJs, /queryInput\.value = quickTask\.query/);
-  assert.match(appJs, /requestRecommendation\(false, t\(quickTask\.promptKey\)\)/);
+  assert.match(appJs, /requestRecommendation\(false, t\(quickTask\.promptKey\), \{ startNewTask: true \}\)/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
   assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.8"/);
