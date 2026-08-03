@@ -29,6 +29,7 @@ const state = {
   rankFilter: [],
   lastInput: "",
   lastDisplayInput: "",
+  lastQuickTask: null,
   lastResult: null,
   lastResultId: null,
   lastSuggestions: [],
@@ -266,6 +267,7 @@ function captureCompNavigationSnapshot(compName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
     lastEntityCandidates: state.lastEntityCandidates,
@@ -287,6 +289,7 @@ function captureEntityCatalogNavigationSnapshot(catalogName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
     lastEntityCandidates: state.lastEntityCandidates,
@@ -305,6 +308,7 @@ function restorePreviousCatalogResult() {
   state.resultNavigation.pop();
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
   state.lastSuggestions = snapshot.lastSuggestions;
@@ -329,6 +333,7 @@ function restorePreviousCompResult() {
 
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
   state.lastSuggestions = snapshot.lastSuggestions;
@@ -388,6 +393,19 @@ function localizedThemeValue(value, fallback = "") {
   return value ?? fallback;
 }
 
+function normalizedSeasonSummary(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\bset\s*(?=\d)/g, "s")
+    .replace(/[^a-z0-9.]+/g, "");
+}
+
+function seasonSubtitleForSummary(label, subtitle) {
+  const value = String(subtitle ?? "").trim();
+  if (!value) return "";
+  return normalizedSeasonSummary(label) === normalizedSeasonSummary(value) ? "" : value;
+}
+
 function seasonStatusLabel(context) {
   if (context?.status === "archived") return t("seasonArchivedStatus");
   if (context?.status === "revival" || context?.mode === "revival") return t("seasonRevivalStatus");
@@ -444,8 +462,18 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   }
   const label = seasonContextSummary?.querySelector("[data-season-label]");
   const subtitle = seasonContextSummary?.querySelector("[data-season-subtitle]");
-  if (label) label.textContent = seasonOptionLabel(context).replace(/\s+—\s+.*/, "");
-  if (subtitle) subtitle.textContent = localizedThemeValue(theme.subtitle, context.themeId ?? "");
+  const subtitleSeparator = seasonContextSummary?.querySelector("[data-season-subtitle-separator]");
+  const labelText = seasonOptionLabel(context).replace(/\s+—\s+.*/, "");
+  const subtitleText = seasonSubtitleForSummary(
+    labelText,
+    localizedThemeValue(theme.subtitle, context.themeId ?? "")
+  );
+  if (label) label.textContent = labelText;
+  if (subtitle) {
+    subtitle.textContent = subtitleText;
+    subtitle.hidden = !subtitleText;
+  }
+  if (subtitleSeparator) subtitleSeparator.hidden = !subtitleText;
   const notice = localizedThemeValue(theme.riskNotice, context.notices?.[0] ?? "");
   if (seasonContextNotice) {
     seasonContextNotice.textContent = notice;
@@ -543,6 +571,7 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "unit-build",
+    operation: "unit_build_rankings",
     formFields: ["champion"],
     queryTemplateKey: "quickTaskBuildTemplate",
     titleKey: "quickTaskBuildTitle",
@@ -553,6 +582,7 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "unit-build-completion",
+    operation: "unit_build_completion",
     formFields: ["champion", "item1", "item2Optional"],
     queryTemplateKey: "quickTaskCompletionTemplate",
     optionalQueryTemplateKey: "quickTaskCompletionWithSecondTemplate",
@@ -564,6 +594,7 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "item-performance",
+    operation: "unit_item_rankings",
     formFields: ["item", "champion"],
     queryTemplateKey: "quickTaskPerformanceTemplate",
     titleKey: "quickTaskPerformanceTitle",
@@ -574,6 +605,7 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "item-comparison",
+    operation: "unit_item_comparison",
     formFields: ["champion", "comparisonItem1", "item2"],
     queryTemplateKey: "quickTaskComparisonTemplate",
     titleKey: "quickTaskComparisonTitle",
@@ -584,6 +616,7 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "item-carriers",
+    operation: "item_carrier_rankings",
     formFields: ["item"],
     queryTemplateKey: "quickTaskCarriersTemplate",
     titleKey: "quickTaskCarriersTitle",
@@ -594,6 +627,7 @@ const QUICK_TASKS = [
   {
     category: "equipment",
     id: "special-items",
+    operation: "unit_item_rankings",
     formFields: ["champion", "specialCategory"],
     queryTemplateKey: "quickTaskSpecialTemplate",
     titleKey: "quickTaskSpecialTitle",
@@ -604,6 +638,7 @@ const QUICK_TASKS = [
   {
     category: "comps",
     id: "comp-rankings",
+    operation: "comp_rankings",
     query: "\u63a8\u8350\u5f53\u524d\u7248\u672c\u70ed\u95e8\u9635\u5bb9",
     promptKey: "quickTaskCompsPrompt",
     titleKey: "quickTaskCompsTitle",
@@ -614,6 +649,7 @@ const QUICK_TASKS = [
   {
     category: "comps",
     id: "comp-trends",
+    operation: "comp_trends",
     query: "\u5f53\u524d\u7248\u672c\u9635\u5bb9\u8d8b\u52bf",
     promptKey: "quickTaskTrendsPrompt",
     titleKey: "quickTaskTrendsTitle",
@@ -624,6 +660,7 @@ const QUICK_TASKS = [
   {
     category: "comps",
     id: "hero-comps",
+    operation: "comp_rankings",
     formFields: ["champion"],
     queryTemplateKey: "quickTaskHeroCompsTemplate",
     titleKey: "quickTaskHeroCompsTitle",
@@ -634,6 +671,7 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "unit-details",
+    operation: "unit_details",
     formFields: ["champion"],
     queryTemplateKey: "quickTaskUnitDetailsTemplate",
     titleKey: "quickTaskUnitDetailsTitle",
@@ -644,6 +682,7 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "unit-catalog",
+    operation: "unit_catalog",
     queryKey: "quickTaskUnitCatalogPrompt",
     promptKey: "quickTaskUnitCatalogPrompt",
     titleKey: "quickTaskUnitCatalogTitle",
@@ -654,6 +693,7 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "item-details",
+    operation: "item_details",
     formFields: ["item"],
     queryTemplateKey: "quickTaskItemDetailsTemplate",
     titleKey: "quickTaskItemDetailsTitle",
@@ -664,6 +704,7 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "trait-details",
+    operation: "trait_details",
     formFields: ["trait"],
     queryTemplateKey: "quickTaskTraitDetailsTemplate",
     titleKey: "quickTaskTraitDetailsTitle",
@@ -674,6 +715,7 @@ const QUICK_TASKS = [
   {
     category: "library",
     id: "trait-catalog",
+    operation: "trait_catalog",
     queryKey: "quickTaskTraitCatalogPrompt",
     promptKey: "quickTaskTraitCatalogPrompt",
     titleKey: "quickTaskTraitCatalogTitle",
@@ -843,17 +885,41 @@ function quickTaskQuery(task) {
   const templateKey = task.optionalQueryTemplateKey && values.item2
     ? task.optionalQueryTemplateKey
     : task.queryTemplateKey;
-  return t(templateKey, values);
+  return {
+    query: t(templateKey, values),
+    values
+  };
+}
+
+function structuredQuickTask(task, values = {}) {
+  if (!task?.id || !task?.operation) return null;
+  return {
+    schemaVersion: "quick-task.v1",
+    id: task.id,
+    operation: task.operation,
+    arguments: Object.fromEntries(
+      Object.entries(values)
+        .map(([key, value]) => [key, String(value ?? "").trim()])
+        .filter(([, value]) => value)
+    )
+  };
 }
 
 async function submitQuickTaskForm() {
   if (!activeQuickTask) return false;
   const task = activeQuickTask;
-  const query = quickTaskQuery(task);
-  if (!query) return true;
+  const submission = quickTaskQuery(task);
+  if (!submission) return true;
   closeQuickTaskForm();
-  queryInput.value = query;
-  await requestRecommendation(false, query, { startNewTask: true });
+  queryInput.value = submission.query;
+  await requestRecommendation(
+    false,
+    submission.query,
+    {
+      startNewTask: true,
+      quickTask: structuredQuickTask(task, submission.values)
+    }
+  );
   return true;
 }
 
@@ -1155,7 +1221,7 @@ function compTrendSourceLabel(comp) {
 function compSignature(comp) {
   const units = [...new Set((comp.units ?? [])
     .map((unit) => String(unit.apiName ?? "").trim())
-    .filter((apiName) => /^TFT[\w-]+$/i.test(apiName)))];
+    .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
   const traits = [...new Set((comp.traits ?? [])
     .map((trait) => String(trait.filterId ?? "").trim())
     .filter((filterId) => /^TFT[\w-]+_\d+(?:plus|minus)?$/i.test(filterId)))];
@@ -1201,7 +1267,7 @@ function compDetailDescriptor(comp) {
   if (!compId || !dataClusterId) return null;
   const units = [...new Set((comp?.units ?? [])
     .map((unit) => String(unit?.apiName ?? "").trim())
-    .filter((apiName) => /^TFT[\w-]+$/i.test(apiName)))];
+    .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
   const seasonContextId = String(state.seasonContextId ?? "").trim();
   const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|");
   const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units };
@@ -1558,7 +1624,7 @@ function defaultPopularCompMetric(data) {
 }
 
 function renderPopularMetricSwitch(activeMetric) {
-  const metrics = ["avgPlacement", "top4Rate", "winRate"];
+  const metrics = ["avgPlacement", "top4Rate", "winRate", "popularity"];
   return `<div class="comp-metric-switch" role="group" aria-label="${escapeHtml(t("rankingStandard"))}">
     ${metrics.map((metric) => `<button type="button" data-comp-metric="${metric}" class="${metric === activeMetric ? "active" : ""}" aria-pressed="${metric === activeMetric}">${escapeHtml(compMetricLabel(metric))}</button>`).join("")}
   </div>`;
@@ -1622,7 +1688,7 @@ function renderCompRankings(data) {
   if (isTrendView) {
     sections = [];
   } else if (isPopularView) {
-    const availableMetrics = ["avgPlacement", "top4Rate", "winRate"]
+    const availableMetrics = ["avgPlacement", "top4Rate", "winRate", "popularity"]
       .filter((metric) => data.rankings?.[metric]?.length);
     const defaultMetric = defaultPopularCompMetric(data);
     if (!availableMetrics.includes(state.compRankingMetric)) {
@@ -1741,7 +1807,11 @@ function formatCacheUpdatedAt(value) {
 
 function queryCacheLine(cache = {}) {
   if (!cache?.hit) return t("live");
-  const label = cache.stale ? t("staleCache") : t("localCache");
+  const label = cache.stale
+    ? t("staleCache")
+    : cache.revalidating
+      ? t("cacheRefreshing")
+      : t("localCache");
   const updatedAt = formatCacheUpdatedAt(cache.updatedAt);
   return updatedAt ? `${label} / ${t("updated")} ${updatedAt}` : label;
 }
@@ -2635,7 +2705,8 @@ function recordAssistantResponse(data) {
     target: activeResponseEl,
     data,
     input: state.lastInput,
-    displayInput: state.lastDisplayInput
+    displayInput: state.lastDisplayInput,
+    quickTask: state.lastQuickTask
   };
   const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
@@ -2651,6 +2722,7 @@ function activateResponseResult(record) {
   state.currentConclusionController = null;
   state.lastInput = record.input ?? state.lastInput;
   state.lastDisplayInput = record.displayInput ?? record.input ?? state.lastDisplayInput;
+  state.lastQuickTask = record.quickTask ?? null;
   state.lastResult = record.data;
   state.lastResultId = record.data.queryId ?? null;
   state.lastSuggestions = record.data.clarification?.suggestions ?? [];
@@ -2987,6 +3059,52 @@ function renderSystemInteractionResult(data) {
   `);
 }
 
+function renderMechanismClassification(data) {
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  const cards = entries.map((entry) => {
+    const labels = [];
+    if (entry.isGrowth) labels.push(t("mechanismGrowth"));
+    if (entry.isDevelopment) labels.push(t("mechanismDevelopment"));
+    if (entry.needsReview) labels.push(t("mechanismNeedsReview"));
+    const metadata = [
+      entry.entityType === "trait" ? t("mechanismTrait") : t("mechanismUnit"),
+      entry.trigger ? t("mechanismTrigger", { value: entry.trigger }) : null,
+      entry.progression ? t("mechanismProgression", { value: entry.progression }) : null,
+      entry.isGrowth
+        ? t(entry.definitionMatchedGrowth
+          ? "mechanismDefinitionMatched"
+          : "mechanismDefinitionConflict")
+        : null,
+      Number.isFinite(Number(entry.confidence))
+        ? t("mechanismConfidence", { value: Math.round(Number(entry.confidence) * 100) })
+        : null
+    ].filter(Boolean);
+    const effectText = (entry.effects ?? []).filter(Boolean).join("; ");
+    return `<article class="knowledge-card mechanism-classification-card" data-entity-type="${escapeHtml(entry.entityType)}">
+      <div class="knowledge-card-source">
+        <span>${escapeHtml(labels.join(" / ") || t("mechanismLabel"))}</span>
+        <strong>${escapeHtml(entry.name ?? entry.apiName)}</strong>
+      </div>
+      <p>${escapeHtml(entry.summary || effectText || t("mechanismSummaryUnavailable"))}</p>
+      ${metadata.length ? `<div class="knowledge-card-meta">${metadata.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
+      ${entry.reviewReason ? `<div class="knowledge-card-conditions"><strong>${escapeHtml(t("mechanismReviewReason"))}</strong><span>${escapeHtml(entry.reviewReason)}</span></div>` : ""}
+    </article>`;
+  }).join("");
+  const cacheLabel = data?.classificationMeta?.cache === "hit" ? t("mechanismCacheHit") : t("mechanismCacheScan");
+  const rawModelOutput = data?.modelOutput ? JSON.stringify(data.modelOutput, null, 2) : "";
+  setResponseHtml(`
+    ${resultHeader(t("mechanismTitle"), data?.answer?.summary ?? data?.text, "MECHANISM")}
+    <section class="knowledge-evidence mechanism-classification-results">
+      <header class="knowledge-evidence-head">
+        <div><span>${escapeHtml(cacheLabel)}</span><h2>${escapeHtml(t("mechanismResultCount", { count: entries.length }))}</h2></div>
+      </header>
+      ${cards || `<section class="empty-state"><p>${escapeHtml(data?.text ?? t("mechanismEmpty"))}</p></section>`}
+      ${rawModelOutput ? `<details class="knowledge-card mechanism-model-output"><summary>${escapeHtml(t("mechanismRawOutput"))}</summary><pre>${escapeHtml(rawModelOutput)}</pre></details>` : ""}
+    </section>
+    ${data?.source ? sourceAndRisk(data) : ""}
+  `);
+}
+
 function renderSemanticNativeResult(data) {
   const isBatch = data.type === "unit_builds_batch_results";
   const isRankedBatch = isBatch && (
@@ -3031,6 +3149,7 @@ function renderCurrentResult(data) {
     data.type === "coach_answer"
     || (data?.clarification?.needsClarification && data?.assistantResponse?.text)
   ) renderCoachAnswerResult(data);
+  else if (data.type === "mechanism_classification") renderMechanismClassification(data);
   else if (data.type === "entity_catalog") renderEntityCatalog(data);
   else if (data.type === "unit_details") renderUnitDetails(data);
   else if (data.type === "trait_details") renderTraitDetails(data);
@@ -3702,6 +3821,10 @@ function setRequestRunning(running) {
 }
 
 async function requestRecommendation(refresh = false, displayInput = null, requestOptions = {}) {
+  const normalizedRequestOptions = requestOptions?.schemaVersion === "quick-task.v1"
+    ? { quickTask: requestOptions }
+    : (requestOptions ?? {});
+  const quickTask = normalizedRequestOptions.quickTask ?? null;
   if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
     return;
@@ -3719,6 +3842,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   state.progressIndex = 0;
   state.lastInput = input;
   state.lastDisplayInput = refresh ? state.lastDisplayInput ?? input : displayInput ?? input;
+  state.lastQuickTask = refresh ? state.lastQuickTask : quickTask;
   appendUserMessage(state.lastDisplayInput);
   const recommendationProgress = createRecommendationProgressState();
   activeRecommendationProgress = recommendationProgress;
@@ -3744,9 +3868,10 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
         input,
         conversationId: state.conversationId,
         seasonContextId: state.seasonContextId,
-        startNewTask: requestOptions.startNewTask === true,
+        startNewTask: normalizedRequestOptions.startNewTask === true,
         refresh,
         deferConclusion: true,
+        ...(state.lastQuickTask ? { quickTask: state.lastQuickTask } : {}),
         preferences: {
           minSamples: state.minSamples,
           itemPolicy: state.itemPolicy,
@@ -3773,7 +3898,16 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);
     }
-    setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
+    setStatusKey(
+      data.cache?.query?.stale
+        ? "statusStale"
+        : data.cache?.query?.revalidating
+          ? "statusCacheRefreshing"
+          : data.cache?.query?.hit
+            ? "statusCache"
+            : "statusLive",
+      data.cache?.query?.stale ? "stale" : "ready"
+    );
   } catch (error) {
     if (requestId !== state.requestSerial) return;
     if (error.name === "AbortError") {
@@ -4028,7 +4162,10 @@ async function launchQuickTask(quickTaskTarget) {
   const quickQuery = quickTask.queryKey ? t(quickTask.queryKey) : quickTask.query;
   if (!quickQuery) return;
   queryInput.value = quickTask.query ?? quickQuery;
-  await requestRecommendation(false, t(quickTask.promptKey), { startNewTask: true });
+  await requestRecommendation(false, t(quickTask.promptKey), {
+    startNewTask: true,
+    quickTask: structuredQuickTask(quickTask)
+  });
 }
 
 async function handleResultClick(event) {
@@ -4277,6 +4414,7 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   state.lastInput = "";
   state.lastDisplayInput = "";
+  state.lastQuickTask = null;
   state.lastResult = null;
   state.lastResultId = null;
   state.lastSuggestions = [];

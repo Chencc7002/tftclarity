@@ -199,6 +199,45 @@ test("item carrier aggregation filters leaked rows, deduplicates, groups units, 
   assert.equal(result.diagnostics.groupedUnits, 3);
 });
 
+test("item carrier aggregation rejects legacy Set 18 duplicates and impossible placement distributions", () => {
+  const item = "TFT_Item_GuinsoosRageblade";
+  const currentKayle = "DA_18_Kayle";
+  const legacyKayle = "TFT18_Kayle";
+  const catalog = createCatalog({
+    units: [{ apiName: currentKayle, zhName: "凯尔", aliases: ["凯尔"] }],
+    items: [{
+      apiName: item,
+      zhName: "鬼索的狂暴之刃",
+      aliases: ["羊刀"],
+      category: "ordinary_completed",
+      current: true,
+      obtainable: true
+    }]
+  });
+  const buildResponse = { data: [
+    build(currentKayle, [item, "TFT_Item_BlueBuff", "TFT_Item_JeweledGauntlet"],
+      [100, 90, 80, 70, 60, 50, 40, 30]),
+    build(legacyKayle, [item, "TFT_Item_Deathblade", "TFT_Item_JeweledGauntlet"],
+      [4438, 200, 80, 40, 20, 12, 10, 10])
+  ] };
+  const baselineResponse = { units: {
+    [currentKayle]: { avg: 4.4 },
+    [legacyKayle]: { avg: 1.15 }
+  } };
+
+  const result = aggregateItemCarrierRankings(buildResponse, baselineResponse, {
+    item,
+    minSamples: 100,
+    positiveOnly: false
+  }, { catalog });
+
+  assert.deepEqual(result.carriers.map((entry) => entry.unitApiName), [currentKayle]);
+  assert.ok(result.carriers.every((entry) => entry.stats.avgPlacement >= 1.5));
+  assert.ok(result.diagnostics.rejected.some((entry) => (
+    entry.unitApiName === legacyKayle && entry.reason === "unit_not_in_current_catalog"
+  )));
+});
+
 test("item carrier query planner and tool registry expose the bounded contract", () => {
   const plan = planMetaTFTItemCarrierBuilds({
     item: ITEM,

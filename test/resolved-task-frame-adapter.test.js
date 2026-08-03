@@ -71,3 +71,41 @@ test("resolved ordinal composition targets become focused comp queries", () => {
   assert.equal(parsed.compId, "comp-b");
   assert.deepEqual(parsed.avoidItemComponents, ["TFT_Item_BFSword"]);
 });
+
+test("explicit popular and trend wording overrides generic model ranking defaults", () => {
+  const genericFrame = createTaskFrame({
+    action: "rank",
+    goal: "comp_rankings",
+    constraints: {
+      metrics: ["top4_rate", "win_share"],
+      limit: 5
+    },
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+
+  const popular = resolvedTaskFrameToParsed(genericFrame, {
+    input: "推荐当前版本热门阵容"
+  });
+  assert.equal(popular.intent, "comp_rankings");
+  assert.equal(popular.popularRequested, true);
+  assert.equal(popular.limit, 21);
+
+  const trend = resolvedTaskFrameToParsed(genericFrame, {
+    input: "当前版本阵容趋势"
+  });
+  assert.equal(trend.intent, "comp_trends");
+  assert.equal(trend.trendRequested, true);
+  assert.equal(trend.popularRequested, false);
+
+  const trendWithAnalysisPlan = resolvedTaskFrameToParsed(createTaskFrame({
+    action: "analyze",
+    goal: "comp_trends",
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  }), {
+    input: "当前版本阵容趋势",
+    executionPlan: { steps: [{ tool: "comps_analysis" }] }
+  });
+  assert.equal(trendWithAnalysisPlan.intent, "comp_trends");
+});

@@ -28,7 +28,7 @@
           </span>
           <span class="brand-copy">
             <strong>tftclarity</strong>
-            <small id="season-context-summary"><span data-season-label>Set 17 · 正式服</span> · <span data-season-subtitle>星神</span></small>
+            <small id="season-context-summary"><span data-season-label>Set 17 · 正式服</span><span data-season-subtitle-separator> · </span><span data-season-subtitle>星神</span></small>
           </span>
         </div>
 
@@ -72,7 +72,7 @@
           <section class="conversation" id="result" aria-live="polite">
             <article class="message assistant-message welcome-message">
               <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">tftclarity</strong></div>
-              <div class="message-body" data-i18n="welcome">直接问我英雄出装、单件装备或阵容排行。你也可以连续追问。</div>
+              <div class="message-body" data-i18n="welcome">使用下方快捷查询可跳过语义理解，通常返回更快；你也可以直接用自然语言提问。</div>
             </article>
             <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="功能分类与快捷查询">
               <div class="quick-tasks-heading">
@@ -111,7 +111,7 @@
           <form class="query-panel composer" id="query-form">
             <div class="season-preview-banner" id="season-preview-banner" role="status" hidden>
               <span class="season-preview-mark" aria-hidden="true">✦</span>
-              <span><strong data-i18n="seasonPreviewMode">S18 主题预览</strong><small data-i18n="seasonPreviewQueryDisabled">PBE 数据尚未接入，当前仅预览界面，查询暂不可用。</small></span>
+              <span><strong data-i18n="seasonPreviewMode">S18 PBE 暂不可用</strong><small data-i18n="seasonPreviewQueryDisabled">PBE 数据源当前不可用，已暂停查询以避免回退到其他赛季。</small></span>
             </div>
             <section class="quick-task-form" id="quick-task-form" aria-labelledby="quick-task-form-title" hidden>
               <header class="quick-task-form-heading">
@@ -122,7 +122,7 @@
                 <button type="button" id="quick-task-form-close" data-i18n-title="closeQuickTaskForm" data-i18n-aria="closeQuickTaskForm" title="取消快捷填写" aria-label="取消快捷填写">×</button>
               </header>
               <div class="quick-task-fields" id="quick-task-fields"></div>
-              <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">只填写输入框，发送时会自动组成查询语句。</small>
+              <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">填写条件后将直接执行结构化查询，无需再次理解语义。</small>
             </section>
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>
             <div class="action-row composer-actions">

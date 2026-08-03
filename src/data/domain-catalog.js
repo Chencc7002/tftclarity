@@ -11,6 +11,9 @@ const seedUnitByApiName = new Map(UNITS.map((unit) => [unit.apiName, unit]));
 const seedTraitByFilterId = new Map(TRAITS.map((trait) => [trait.filterId, trait]));
 const seedTraitByApiName = new Map(TRAITS.map((trait) => [trait.apiName, trait]));
 const unitMetadataResolver = createAssetResolver();
+const UNIT_TOKEN_ALIASES = new Map([
+  ["kayle", ["天使"]]
+]);
 
 function compact(values) {
   return [...new Set(values.filter(Boolean))];
@@ -27,8 +30,19 @@ function listFromApiValue(value) {
 
 function apiToken(apiName) {
   return String(apiName ?? "")
+    .replace(/^DA_(?:18_)?/, "")
     .replace(/^TFT\d*_/, "")
     .replace(/_[0-9]+$/, "");
+}
+
+function unitLookupRecord(apiName, lookupByApiName) {
+  const direct = lookupByApiName?.get?.(apiName);
+  if (direct) return direct;
+  for (const lookup of lookupByApiName?.values?.() ?? []) {
+    const assetNames = Array.isArray(lookup?.assetNames) ? lookup.assetNames : [];
+    if (assetNames.includes(apiName)) return lookup;
+  }
+  return null;
 }
 
 function traitApiNameFromFilterId(filterId) {
@@ -67,18 +81,25 @@ function sourceLabel(seed, override, dynamicSource) {
 function unitRecord(apiName, options = {}, dynamicSource = null) {
   const seed = seedUnitByApiName.get(apiName);
   const override = unitAliasOverrideByApiName.get(apiName);
+  const lookup = unitLookupRecord(apiName, options.unitLookupByApiName);
+  const lookupName = String(lookup?.name ?? lookup?.displayName ?? "").trim() || null;
   const token = apiToken(apiName);
   const metadata = unitMetadataResolver.resolveUnit(apiName);
-  const cost = Number(metadata.cost);
+  const cost = Number(lookup?.cost ?? metadata.cost);
   return {
     apiName,
     ...(Number.isFinite(cost) && cost > 0 ? { cost } : {}),
-    zhName: override?.zhName ?? seed?.zhName ?? null,
+    zhName: lookupName ?? override?.zhName ?? seed?.zhName ?? null,
     aliases: compact([
+      lookupName,
       override?.zhName,
       seed?.zhName,
       ...(override?.aliases ?? []),
       ...(seed?.aliases ?? []),
+      ...(UNIT_TOKEN_ALIASES.get(token.toLowerCase()) ?? []),
+      lookup?.apiName,
+      ...(lookup?.assetNames ?? []),
+      lookup?.en_name,
       apiName,
       token
     ]),
@@ -94,15 +115,18 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
   const apiName = traitApiNameFromFilterId(filterId);
   const seed = seedTraitByFilterId.get(filterId) ?? seedTraitByApiName.get(apiName);
   const override = traitAliasOverrideByFilterId.get(filterId) ?? traitAliasOverrideByApiName.get(apiName);
+  const lookup = options.traitLookupByApiName?.get?.(apiName) ?? null;
+  const lookupName = String(lookup?.name ?? lookup?.displayName ?? "").trim() || null;
   const tierOverride = traitTierOverride(filterId, override);
   const token = apiToken(filterId);
   return {
     apiName: override?.apiName ?? seed?.apiName ?? apiName,
     filterId,
-    zhName: tierOverride?.zhName ?? override?.zhName ?? seed?.zhName ?? null,
+    zhName: lookupName ?? tierOverride?.zhName ?? override?.zhName ?? seed?.zhName ?? null,
     displayName: tierOverride?.displayName
       ?? override?.displayName
       ?? seed?.displayName
+      ?? lookupName
       ?? tierOverride?.zhName
       ?? override?.zhName
       ?? seed?.zhName
@@ -110,6 +134,7 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
     aliases: compact([
       tierOverride?.zhName,
       tierOverride?.displayName,
+      lookupName,
       override?.zhName,
       override?.displayName,
       seed?.zhName,
@@ -153,8 +178,8 @@ function collectCompsApiNames(data = {}) {
   }
 
   return {
-    units: [...units].filter((apiName) => /^TFT\d+_/.test(apiName)).sort(),
-    traits: [...traits].filter((apiName) => /^TFT\d+_/.test(apiName)).sort()
+    units: [...units].filter((apiName) => /^(?:TFT\d+_|DA_)/.test(apiName)).sort(),
+    traits: [...traits].filter((apiName) => /^(?:TFT\d+_|DA_)/.test(apiName)).sort()
   };
 }
 
@@ -162,7 +187,7 @@ function collectExplorerUnitApiNames(response = {}) {
   const units = new Set();
   for (const row of normalizeExplorerRows(response, ["units_unique"])) {
     const apiName = unitApiNameFromExplorerValue(row.units_unique ?? row.unit ?? row.units);
-    if (/^TFT\d+_/.test(apiName)) units.add(apiName);
+    if (/^(?:TFT\d+_|DA_)/.test(apiName)) units.add(apiName);
   }
   return [...units].sort();
 }
@@ -171,7 +196,7 @@ function collectExplorerTraitFilterIds(response = {}) {
   const traits = new Set();
   for (const row of normalizeExplorerRows(response, ["traits"])) {
     const filterId = row.traits ?? row.trait ?? row.trait_id;
-    if (/^TFT\d+_/.test(filterId)) traits.add(filterId);
+    if (/^(?:TFT\d+_|DA_)/.test(filterId)) traits.add(filterId);
   }
   return [...traits].sort();
 }
@@ -184,9 +209,11 @@ export function buildUnitCatalogFromCompsData(data = {}, options = {}) {
     byApiName.set(apiName, unitRecord(apiName, options, "metatft_comps"));
   }
 
-  for (const seed of UNITS) {
-    if (!byApiName.has(seed.apiName)) {
-      byApiName.set(seed.apiName, unitRecord(seed.apiName, options));
+  if (options.includeSeeds !== false) {
+    for (const seed of UNITS) {
+      if (!byApiName.has(seed.apiName)) {
+        byApiName.set(seed.apiName, unitRecord(seed.apiName, options));
+      }
     }
   }
 
@@ -201,9 +228,11 @@ export function buildUnitCatalogFromExplorerRows(response = {}, options = {}) {
     byApiName.set(apiName, unitRecord(apiName, options, "metatft_explorer"));
   }
 
-  for (const seed of UNITS) {
-    if (!byApiName.has(seed.apiName)) {
-      byApiName.set(seed.apiName, unitRecord(seed.apiName, options));
+  if (options.includeSeeds !== false) {
+    for (const seed of UNITS) {
+      if (!byApiName.has(seed.apiName)) {
+        byApiName.set(seed.apiName, unitRecord(seed.apiName, options));
+      }
     }
   }
 
@@ -218,9 +247,11 @@ export function buildTraitCatalogFromCompsData(data = {}, options = {}) {
     byFilterId.set(filterId, traitRecord(filterId, options, "metatft_comps"));
   }
 
-  for (const seed of TRAITS) {
-    if (!byFilterId.has(seed.filterId)) {
-      byFilterId.set(seed.filterId, traitRecord(seed.filterId, options));
+  if (options.includeSeeds !== false) {
+    for (const seed of TRAITS) {
+      if (!byFilterId.has(seed.filterId)) {
+        byFilterId.set(seed.filterId, traitRecord(seed.filterId, options));
+      }
     }
   }
 
@@ -235,9 +266,11 @@ export function buildTraitCatalogFromExplorerRows(response = {}, options = {}) {
     byFilterId.set(filterId, traitRecord(filterId, options, "metatft_explorer"));
   }
 
-  for (const seed of TRAITS) {
-    if (!byFilterId.has(seed.filterId)) {
-      byFilterId.set(seed.filterId, traitRecord(seed.filterId, options));
+  if (options.includeSeeds !== false) {
+    for (const seed of TRAITS) {
+      if (!byFilterId.has(seed.filterId)) {
+        byFilterId.set(seed.filterId, traitRecord(seed.filterId, options));
+      }
     }
   }
 
@@ -248,7 +281,15 @@ export function mergeCatalogUnits(baseUnits, generatedUnits) {
   const merged = new Map();
   for (const unit of baseUnits ?? []) merged.set(unit.apiName, unit);
   for (const unit of generatedUnits ?? []) {
-    const existing = merged.get(unit.apiName);
+    let existing = merged.get(unit.apiName);
+    if (/^DA_18_/i.test(unit.apiName)) {
+      for (const [apiName, candidate] of merged) {
+        if (/^TFT18_/i.test(apiName) && apiToken(apiName).toLowerCase() === apiToken(unit.apiName).toLowerCase()) {
+          existing ??= candidate;
+          merged.delete(apiName);
+        }
+      }
+    }
     merged.set(unit.apiName, existing ? {
       ...unit,
       zhName: existing.zhName ?? unit.zhName,

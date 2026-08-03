@@ -134,3 +134,46 @@ test("entity catalog pagination is bounded", () => {
   assert.equal(result.pagination.limit, 200);
   assert.equal(result.pagination.returned, 2);
 });
+
+test("unit catalog collapses duplicate runtime ids onto the official detail-backed unit", () => {
+  const catalog = {
+    units: [
+      { apiName: "DA_18_Diana", zhName: "Diana", cost: 3, current: true, aliases: ["diana"] },
+      { apiName: "TFT18_Diana", zhName: "Diana", cost: 3, current: true, aliases: ["legacy-diana"] },
+      { apiName: "DA_18_Elise", zhName: "Elise", cost: 2, current: true, aliases: ["elise"] },
+      { apiName: "DA_18_EliseSpider", zhName: "Elise", cost: 2, current: true, aliases: ["spider-form"] }
+    ],
+    traits: []
+  };
+  const details = {
+    units: new Map([
+      ["DA_18_Diana", {
+        apiName: "DA_18_Diana",
+        name: "Diana",
+        cost: 3,
+        traitNames: ["Moon"],
+        iconUrl: "https://example.test/diana.jpg"
+      }],
+      ["DA_18_Elise", {
+        apiName: "DA_18_Elise",
+        name: "Elise",
+        cost: 2,
+        traitNames: ["Coven"],
+        iconUrl: "https://example.test/elise.jpg"
+      }]
+    ]),
+    traits: new Map()
+  };
+
+  const all = buildEntityCatalog(catalog, details, { entityType: "unit" });
+  const legacyAlias = buildEntityCatalog(catalog, details, {
+    entityType: "unit",
+    query: "TFT18_Diana"
+  });
+
+  assert.equal(all.pagination.total, 2);
+  assert.deepEqual(all.items.map((entry) => entry.apiName).sort(), ["DA_18_Diana", "DA_18_Elise"]);
+  assert.ok(all.items.every((entry) => entry.hasDetails && entry.iconUrl));
+  assert.equal(legacyAlias.pagination.total, 1);
+  assert.equal(legacyAlias.items[0].apiName, "DA_18_Diana");
+});

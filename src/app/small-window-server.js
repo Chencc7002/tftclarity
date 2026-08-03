@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import {
   normalizeCompAugmentTiers,
@@ -56,6 +57,7 @@ import {
   SQLiteSemanticDocumentStore,
   applyEnabledEntityAliasesFromStore,
   analyzeItemDifferentiation,
+  answerMechanismClassificationQuery,
   buildEntityAliasOverrideDraft,
   buildCompRankings,
   buildItemCatalogAudit,
@@ -75,6 +77,7 @@ import {
   createHybridAnswerService,
   createSeasonContextService,
   createLineupSignature,
+  createMechanismClassificationProviderFromConfig,
   createIntentEnvelope,
   createConversationState,
   createTaskFrame,
@@ -95,12 +98,14 @@ import {
   KnowledgeRetriever,
   parseSemanticTask,
   parseQuery,
+  parseMechanismClassificationQuery,
   recommendForInput,
   generateEvidenceBackedConclusion,
   RetrievalPlanner,
   resolveConclusionProviderConfig,
   resolveCoachProviderConfig,
   resolveEmbeddingProviderConfig,
+  resolveMechanismClassificationConfig,
   retrieveSemanticPlan,
   resolveStructuredParserConfig
 } from "../index.js";
@@ -117,6 +122,24 @@ const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
 export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
 export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
+export const QUICK_TASK_CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const QUICK_TASK_SCHEMA_VERSION = "quick-task.v1";
+const QUICK_TASK_DEFINITIONS = new Map([
+  ["unit-build", { operation: "unit_build_rankings", intent: "unit_build_rankings", required: ["champion"] }],
+  ["unit-build-completion", { operation: "unit_build_completion", intent: "unit_build_completion", required: ["champion", "item1"], optional: ["item2"] }],
+  ["item-performance", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "item"] }],
+  ["item-comparison", { operation: "unit_item_comparison", intent: "unit_item_comparison", required: ["champion", "item1", "item2"] }],
+  ["item-carriers", { operation: "item_carrier_rankings", intent: "item_carrier_rankings", required: ["item"] }],
+  ["special-items", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "specialCategory"] }],
+  ["comp-rankings", { operation: "comp_rankings", intent: "comp_rankings", required: [] }],
+  ["comp-trends", { operation: "comp_trends", intent: "comp_trends", required: [] }],
+  ["hero-comps", { operation: "comp_rankings", intent: "comp_rankings", required: ["champion"] }],
+  ["unit-details", { operation: "unit_details", intent: "unit_details", required: ["champion"], staticView: true }],
+  ["unit-catalog", { operation: "unit_catalog", intent: "unit_catalog", required: [], staticView: true }],
+  ["item-details", { operation: "item_details", intent: "item_details", required: ["item"], staticView: true }],
+  ["trait-details", { operation: "trait_details", intent: "trait_details", required: ["trait"], staticView: true }],
+  ["trait-catalog", { operation: "trait_catalog", intent: "trait_catalog", required: [], staticView: true }]
+]);
 export const DEFAULT_TURN_INTERPRETER_BUDGET = Object.freeze({
   maxInputTokens: 1600,
   maxOutputTokens: 900,
@@ -146,6 +169,239 @@ const CONTENT_TYPES = new Map([
   [".jpeg", "image/jpeg"],
   [".png", "image/png"]
 ]);
+
+function invalidQuickTask(message) {
+  return Object.assign(new TypeError(message), {
+    statusCode: 400,
+    code: "invalid_quick_task"
+  });
+}
+
+function normalizeQuickTask(value) {
+  if (value == null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw invalidQuickTask("quickTask must be an object");
+  }
+  if (value.schemaVersion !== QUICK_TASK_SCHEMA_VERSION) {
+    throw invalidQuickTask(`quickTask.schemaVersion must be ${QUICK_TASK_SCHEMA_VERSION}`);
+  }
+  const id = String(value.id ?? "").trim();
+  const definition = QUICK_TASK_DEFINITIONS.get(id);
+  if (!definition || String(value.operation ?? "").trim() !== definition.operation) {
+    throw invalidQuickTask("quickTask id and operation do not match a supported shortcut");
+  }
+  const rawArguments = value.arguments;
+  if (!rawArguments || typeof rawArguments !== "object" || Array.isArray(rawArguments)) {
+    throw invalidQuickTask("quickTask.arguments must be an object");
+  }
+  const allowed = new Set([...(definition.required ?? []), ...(definition.optional ?? [])]);
+  const args = {};
+  for (const [key, raw] of Object.entries(rawArguments)) {
+    if (!allowed.has(key)) throw invalidQuickTask(`quickTask argument is not supported: ${key}`);
+    const normalized = String(raw ?? "").normalize("NFKC").trim();
+    if (normalized.length > 80) throw invalidQuickTask(`quickTask argument is too long: ${key}`);
+    if (normalized) args[key] = normalized;
+  }
+  for (const key of definition.required ?? []) {
+    if (!args[key]) throw invalidQuickTask(`quickTask argument is required: ${key}`);
+  }
+  return {
+    schemaVersion: QUICK_TASK_SCHEMA_VERSION,
+    id,
+    operation: definition.operation,
+    arguments: args,
+    definition
+  };
+}
+
+function quickTaskExecutionInput(task) {
+  const args = task.arguments;
+  switch (task.id) {
+    case "unit-build": return `查询${args.champion}的当前版本最稳三件装备`;
+    case "unit-build-completion": return args.item2
+      ? `查询${args.champion}已携带${args.item1}和${args.item2}时的推荐出装`
+      : `查询${args.champion}已携带${args.item1}时的推荐出装`;
+    case "item-performance": return `${args.item}在${args.champion}身上表现怎么样`;
+    case "item-comparison": return `比较${args.champion}使用${args.item1}和${args.item2}时的表现`;
+    case "item-carriers": return `${args.item}最适合哪些英雄携带`;
+    case "special-items": return `查询${args.champion}的${args.specialCategory}排行`;
+    case "comp-rankings": return "推荐当前版本热门阵容";
+    case "comp-trends": return "查看当前版本阵容趋势";
+    case "hero-comps": return `查询包含${args.champion}的热门阵容`;
+    case "unit-details": return `查询${args.champion}的技能、费用、属性和羁绊资料`;
+    case "unit-catalog": return "查看全部棋子";
+    case "item-details": return `查询${args.item}的效果和合成方式`;
+    case "trait-details": return `查询${args.trait}的效果和激活层级`;
+    case "trait-catalog": return "查看全部羁绊";
+    default: throw invalidQuickTask("quickTask is unsupported");
+  }
+}
+
+function directParsedForQuickTask(task, input, catalog, preferences) {
+  const parsed = parseQuery(input, { catalog, compQuery: preferences });
+  return {
+    ...parsed,
+    intent: task.definition.intent,
+    ...(task.id === "comp-rankings" || task.id === "hero-comps"
+      ? { popularRequested: true, trendRequested: false }
+      : {}),
+    ...(task.id === "comp-trends"
+      ? { popularRequested: false, trendRequested: true }
+      : {}),
+    parser: {
+      ...(parsed.parser ?? {}),
+      intentExplicit: true,
+      usedLLM: false,
+      quickTask: {
+        schemaVersion: task.schemaVersion,
+        id: task.id,
+        operation: task.operation
+      }
+    }
+  };
+}
+
+function quickTaskCachePolicy(task, seasonContext) {
+  const pbe = /pbe/iu.test(String(seasonContext?.id ?? ""))
+    || /pbe/iu.test(String(seasonContext?.status ?? ""));
+  let refreshAfterMs;
+  if (["unit-details", "item-details", "trait-details", "unit-catalog", "trait-catalog"].includes(task.id)) {
+    refreshAfterMs = pbe ? 6 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
+  } else if (task.id === "comp-trends") {
+    refreshAfterMs = pbe ? 15 * 60 * 1000 : 20 * 60 * 1000;
+  } else {
+    refreshAfterMs = pbe ? 10 * 60 * 1000 : 45 * 60 * 1000;
+  }
+  return {
+    refreshAfterMs,
+    retentionMs: QUICK_TASK_CACHE_RETENTION_MS
+  };
+}
+
+function scheduleQuickTaskRefresh(runtime, key, refresh) {
+  if (!key || typeof refresh !== "function") return false;
+  runtime.quickTaskRefreshes ??= new Map();
+  if (runtime.quickTaskRefreshes.has(key)) return false;
+  const promise = Promise.resolve()
+    .then(refresh)
+    .catch((error) => {
+      runtime.lastQuickTaskRefreshError = {
+        key,
+        code: error?.code ?? null,
+        message: String(error?.message ?? error),
+        at: new Date().toISOString()
+      };
+    })
+    .finally(() => {
+      if (runtime.quickTaskRefreshes.get(key) === promise) {
+        runtime.quickTaskRefreshes.delete(key);
+      }
+    });
+  runtime.quickTaskRefreshes.set(key, promise);
+  return true;
+}
+
+function quickTaskViewCacheKey(task, seasonContext, preferences = {}) {
+  const args = Object.fromEntries(
+    Object.entries(task.arguments)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => [key, normalizeAlias(value)])
+  );
+  return `quick_view:${JSON.stringify({
+    schemaVersion: task.schemaVersion,
+    id: task.id,
+    operation: task.operation,
+    args,
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source?.providerVersion ?? null,
+    effectivePatch: seasonContext.effectivePatch ?? null,
+    rankFilter: [...(preferences.rankFilter ?? [])].map(String).sort(),
+    days: preferences.days ?? null,
+    minSamples: preferences.minSamples ?? null,
+    itemPolicy: preferences.itemPolicy ?? null
+  })}`;
+}
+
+function quickTaskCacheMetadata(key, entry, policy, options = {}) {
+  const updatedAtMs = Date.parse(entry?.updatedAt ?? "");
+  const ageMs = Number.isFinite(updatedAtMs) ? Math.max(0, Date.now() - updatedAtMs) : null;
+  const refreshDue = ageMs !== null && ageMs >= policy.refreshAfterMs;
+  return {
+    key,
+    hit: options.hit === true,
+    stale: options.stale === true,
+    refreshDue,
+    revalidating: options.revalidating === true,
+    updatedAt: entry?.updatedAt ?? null,
+    expiresAt: entry?.expiresAt ?? null,
+    policy: {
+      refreshAfterMs: policy.refreshAfterMs,
+      retainForMs: policy.retentionMs
+    }
+  };
+}
+
+async function cachedQuickTaskView(runtime, options) {
+  const {
+    task,
+    seasonContext,
+    preferences,
+    refresh,
+    load,
+    backgroundRefresh
+  } = options;
+  const policy = quickTaskCachePolicy(task, seasonContext);
+  const key = quickTaskViewCacheKey(task, seasonContext, preferences);
+  const storeOptions = { seasonContextId: seasonContext.id };
+  const cached = await runtime.cacheStore?.getQuery?.(key, storeOptions) ?? null;
+
+  if (cached?.value?.response !== undefined && !refresh) {
+    const metadata = quickTaskCacheMetadata(key, cached, policy, { hit: true });
+    if (metadata.refreshDue) {
+      metadata.revalidating = scheduleQuickTaskRefresh(runtime, key, backgroundRefresh);
+      if (!metadata.revalidating) metadata.revalidating = runtime.quickTaskRefreshes?.has(key) === true;
+    }
+    const payload = structuredClone(cached.value.response);
+    payload.cache = { ...(payload.cache ?? {}), query: metadata };
+    return payload;
+  }
+
+  try {
+    const payload = await load();
+    if (!payload) return payload;
+    const stored = await runtime.cacheStore?.setQuery?.(key, {
+      request: {
+        schemaVersion: task.schemaVersion,
+        id: task.id,
+        operation: task.operation,
+        arguments: task.arguments
+      },
+      response: payload,
+      source: "structured_quick_task",
+      patch: seasonContext.effectivePatch ?? null
+    }, {
+      ...storeOptions,
+      ttlMs: policy.retentionMs
+    });
+    payload.cache = {
+      ...(payload.cache ?? {}),
+      query: quickTaskCacheMetadata(key, stored, policy, { hit: false })
+    };
+    return payload;
+  } catch (error) {
+    if (cached?.value?.response === undefined) throw error;
+    const payload = structuredClone(cached.value.response);
+    payload.cache = {
+      ...(payload.cache ?? {}),
+      query: quickTaskCacheMetadata(key, cached, policy, { hit: true, stale: true })
+    };
+    payload.warnings = [...new Set([
+      ...(payload.warnings ?? []),
+      `实时刷新失败，已使用 ${cached.updatedAt ?? "未知时间"} 的上一次成功数据。`
+    ])];
+    return payload;
+  }
+}
 const VALID_ITEM_POLICIES = new Set([
   "ordinary_only",
   "include_radiant",
@@ -390,6 +646,49 @@ function createSmallWindowCoachRuntime(options = {}, env = process.env) {
   };
 }
 
+function createSmallWindowMechanismClassificationRuntime(options = {}, env = process.env) {
+  if (options.mechanismClassificationProvider) {
+    return {
+      mechanismClassificationProvider: options.mechanismClassificationProvider,
+      mechanismClassificationConfig: {
+        enabled: true,
+        mode: "on",
+        provider: "injected",
+        model: options.mechanismClassificationModel
+          ?? options.mechanismClassificationProvider.model
+          ?? "injected-model",
+        timeoutMs: options.mechanismClassificationTimeoutMs ?? 90000,
+        promptVersion: options.mechanismClassificationProvider.promptVersion
+          ?? "classify-growth-development.v2",
+        ...(options.mechanismClassificationConfig ?? {})
+      }
+    };
+  }
+  const config = resolveMechanismClassificationConfig({
+    ...(options.mechanismClassificationConfig ?? {}),
+    mode: options.mechanismClassificationMode ?? options.mechanismClassificationConfig?.mode,
+    endpoint: options.mechanismClassificationEndpoint
+      ?? options.mechanismClassificationConfig?.endpoint,
+    model: options.mechanismClassificationModel ?? options.mechanismClassificationConfig?.model,
+    apiKey: options.mechanismClassificationApiKey ?? options.mechanismClassificationConfig?.apiKey,
+    timeoutMs: options.mechanismClassificationTimeoutMs
+      ?? options.mechanismClassificationConfig?.timeoutMs,
+    maxOutputTokens: options.mechanismClassificationMaxOutputTokens
+      ?? options.mechanismClassificationConfig?.maxOutputTokens,
+    thinkingMode: options.mechanismClassificationThinkingMode
+      ?? options.mechanismClassificationConfig?.thinkingMode,
+    allowUnauthenticated: options.mechanismClassificationAllowUnauthenticated
+      ?? options.mechanismClassificationConfig?.allowUnauthenticated
+  }, env);
+  return {
+    mechanismClassificationProvider: createMechanismClassificationProviderFromConfig(config, {
+      fetchImpl: options.mechanismClassificationFetch ?? options.llmFetch,
+      promptText: options.mechanismClassificationPromptText
+    }),
+    mechanismClassificationConfig: config
+  };
+}
+
 export function resolveSmallWindowSemanticConfig(options = {}, env = process.env) {
   const config = resolveEmbeddingProviderConfig({
     ...(options.embeddingConfig ?? {}),
@@ -509,6 +808,13 @@ function summarizeConclusionConfig(config = {}) {
   return summary;
 }
 
+function summarizeMechanismClassificationConfig(config = {}, cache = null) {
+  const summary = summarizeConclusionConfig(config);
+  summary.promptVersion = config.promptVersion ?? "classify-growth-development.v2";
+  summary.cachedSeasons = cache instanceof Map ? cache.size : 0;
+  return summary;
+}
+
 function summarizeSemanticConfig(config = {}, store = null) {
   return {
     enabled: Boolean(config.enabled),
@@ -551,6 +857,10 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       resolvedAt: runtime.patchState?.resolvedAt ?? null
     },
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
+    mechanismClassifier: summarizeMechanismClassificationConfig(
+      runtime.mechanismClassificationConfig ?? {},
+      runtime.mechanismClassificationCache
+    ),
     semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
     requests: {
       explorerTimeoutMs: runtime.requestTimeouts?.explorerTimeoutMs ?? null,
@@ -910,6 +1220,21 @@ function unitName(apiName, catalog) {
   return unit?.zhName ?? apiName;
 }
 
+function officialUnitDetailsForApiName(apiName, catalog, entityDetails) {
+  const exact = entityDetails?.units?.get?.(apiName) ?? null;
+  if (exact) return exact;
+  const displayName = String(unitName(apiName, catalog) ?? "").trim().toLocaleLowerCase("zh-CN");
+  if (!displayName || displayName === String(apiName ?? "").trim().toLocaleLowerCase("zh-CN")) return null;
+  const matches = [...(entityDetails?.units?.values?.() ?? [])]
+    .filter((unit) => String(unit?.name ?? "").trim().toLocaleLowerCase("zh-CN") === displayName);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function resolvedUnitIconUrl(apiName, catalog, entityDetails) {
+  return officialUnitDetailsForApiName(apiName, catalog, entityDetails)?.iconUrl
+    ?? ASSET_RESOLVER.resolveUnit(apiName).iconUrl;
+}
+
 function serializeDefaultContextCandidate(candidate, catalog) {
   const traitFilters = candidate?.traitFilters ?? candidate?.traits ?? [];
   const units = candidate?.units ?? [];
@@ -1158,7 +1483,8 @@ function preferenceKey(scope) {
   return scope ? anonymousScopeKey(scope, SMALL_WINDOW_PREFERENCES_KEY) : SMALL_WINDOW_PREFERENCES_KEY;
 }
 
-async function loadOfficialEntityDetails(runtime) {
+async function loadOfficialEntityDetails(runtime, options = {}) {
+  if (options.entityDetails) return options.entityDetails;
   if (runtime.officialEntityDetails) return runtime.officialEntityDetails;
   if (!runtime.officialEntityDetailsPromise) {
     runtime.officialEntityDetailsPromise = runtime.fetchOfficialEntityDetails({
@@ -1438,7 +1764,7 @@ async function serializeEntityCatalog(catalog, runtime, options = {}) {
       code: "invalid_entity_catalog_type"
     });
   }
-  const details = await loadOfficialEntityDetails(runtime);
+  const details = await loadOfficialEntityDetails(runtime, options);
   const view = buildEntityCatalog(catalog, details, {
     ...options,
     entityType,
@@ -1512,7 +1838,7 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
   let entityCatalog = catalog;
   let parsed = parseQuery(input, { catalog: entityCatalog });
   if (!parsed.unit && !(parsed.traitFilters ?? []).length) {
-    details = await loadOfficialEntityDetails(runtime);
+    details = await loadOfficialEntityDetails(runtime, context);
     const officialUnits = buildUnitCatalogFromCompsData({
       compOptions: [{ units_list: [...details.units.keys()].join("&") }]
     });
@@ -1537,7 +1863,7 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
   const wantsTrait = Boolean(!unitApiName && traitApiNames.length === 1 && traitWording);
   if (!wantsUnit && !wantsTrait) return null;
 
-  details ??= await loadOfficialEntityDetails(runtime);
+  details ??= await loadOfficialEntityDetails(runtime, context);
   if (wantsUnit) {
     const official = details.units.get(unitApiName);
     const catalogUnit = entityCatalog.unitByApiName.get(unitApiName);
@@ -1561,7 +1887,7 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
         ...(official ?? { stats: {}, ability: {}, traitNames: [] }),
         apiName: unitApiName,
         name,
-        iconUrl: ASSET_RESOLVER.resolveUnit(unitApiName).iconUrl
+        iconUrl: official?.iconUrl ?? ASSET_RESOLVER.resolveUnit(unitApiName).iconUrl
       },
       recommendedItems: recommendations,
       recommendationWarning,
@@ -1590,14 +1916,18 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
 
 function entityCatalogPreferences(runtime, seasonContext) {
   return {
-    ...DEFAULT_SMALL_WINDOW_PREFERENCES,
     seasonContextId: seasonContext.id,
     providerVersion: seasonContext.source.providerVersion,
     effectivePatch: seasonContext.effectivePatch,
     currentPatch: seasonContext.currentPatch,
     previousPatch: seasonContext.previousPatch,
-    patch: seasonContext.providerPatch ?? "current",
-    queue: seasonContext.source.queue
+    patch: seasonContext.source.explorerPatch ?? seasonContext.providerPatch ?? "current",
+    compPatch: seasonContext.source.compsPatch ?? seasonContext.providerPatch ?? "current",
+    queue: seasonContext.source.queue,
+    tftSet: seasonContext.source.tftSet ?? null,
+    lookupChannel: seasonContext.source.lookupChannel ?? null,
+    lookupLocale: seasonContext.source.lookupLocale ?? "zh_cn",
+    requestTimeoutMs: seasonContext.source.requestDeadlineMs ?? null
   };
 }
 
@@ -1605,8 +1935,8 @@ export async function handleEntityCatalogRequest(runtime, options = {}) {
   const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
   const preferences = entityCatalogPreferences(runtime, seasonContext);
   if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
-  const { catalog, warning, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
-  const payload = await serializeEntityCatalog(catalog, runtime, options);
+  const { catalog, warning, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  const payload = await serializeEntityCatalog(catalog, runtime, { ...options, entityDetails });
   payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
   payload.meta = {
     catalogWarning: warning,
@@ -1614,6 +1944,40 @@ export async function handleEntityCatalogRequest(runtime, options = {}) {
     preferences
   };
   return payload;
+}
+
+function resolveEntityDetailApiName(entityType, requestedApiName, catalog, entityDetails) {
+  if (entityType !== "unit" || entityDetails?.units?.has?.(requestedApiName)) return requestedApiName;
+  const catalogUnit = catalog?.unitByApiName?.get?.(requestedApiName) ?? null;
+  const requestedName = String(
+    catalogUnit?.zhName ?? catalogUnit?.displayName ?? catalogUnit?.name ?? ""
+  ).trim().toLocaleLowerCase("zh-CN");
+  if (!requestedName) return requestedApiName;
+  const matches = [...(entityDetails?.units?.entries?.() ?? [])]
+    .filter(([, unit]) => String(unit?.name ?? "").trim().toLocaleLowerCase("zh-CN") === requestedName);
+  return matches.length === 1
+    ? String(matches[0][1]?.apiName ?? matches[0][0])
+    : requestedApiName;
+}
+
+function catalogForResolvedEntityDetail(entityType, resolvedApiName, catalog) {
+  if (entityType !== "unit") return catalog;
+  const resolved = catalog?.unitByApiName?.get?.(resolvedApiName) ?? null;
+  const resolvedName = String(
+    resolved?.zhName ?? resolved?.displayName ?? resolved?.name ?? ""
+  ).trim().toLocaleLowerCase("zh-CN");
+  if (!resolvedName) return catalog;
+  const units = (catalog?.units ?? []).filter((unit) => (
+    unit.apiName === resolvedApiName
+    || String(unit?.zhName ?? unit?.displayName ?? unit?.name ?? "")
+      .trim().toLocaleLowerCase("zh-CN") !== resolvedName
+  ));
+  if (units.length === (catalog?.units ?? []).length) return catalog;
+  return createCatalog({
+    units,
+    traits: catalog?.traits ?? [],
+    items: catalog?.items ?? []
+  });
 }
 
 export async function handleEntityDetailRequest(runtime, options = {}) {
@@ -1635,19 +1999,22 @@ export async function handleEntityDetailRequest(runtime, options = {}) {
   const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
   const preferences = entityCatalogPreferences(runtime, seasonContext);
   if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
-  const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  const resolvedApiName = resolveEntityDetailApiName(entityType, apiName, catalog, entityDetails);
+  const detailCatalog = catalogForResolvedEntityDetail(entityType, resolvedApiName, catalog);
   const input = entityType === "unit"
-    ? `${apiName} 棋子技能属性详情`
-    : `${apiName} 羁绊效果详情`;
-  const payload = await serializeEntityDetailsQuery(input, catalog, runtime, {
+    ? `${resolvedApiName} 棋子技能属性详情`
+    : `${resolvedApiName} 羁绊效果详情`;
+  const payload = await serializeEntityDetailsQuery(input, detailCatalog, runtime, {
     preferences,
     compsData,
+    entityDetails,
     refresh: Boolean(options.refresh)
   });
   const returnedApiName = entityType === "unit"
     ? payload?.unit?.apiName
     : payload?.trait?.apiName;
-  if (!payload || returnedApiName !== apiName) {
+  if (!payload || returnedApiName !== resolvedApiName) {
     throw Object.assign(new Error("Entity was not found in the current season catalog"), {
       statusCode: 404,
       code: "entity_not_found"
@@ -1661,7 +2028,7 @@ export async function handleEntityDetailRequest(runtime, options = {}) {
     aliasMemory,
     preferences
   };
-  return attachDetailRetrievalMetadata(payload, input, catalog);
+  return attachDetailRetrievalMetadata(payload, input, detailCatalog);
 }
 
 export async function loadSmallWindowPreferences(runtime, scope = null) {
@@ -1755,9 +2122,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
   if (SEMANTIC_NATIVE_RESULT_TYPES.has(result.type)) {
     return serializeSemanticNativeResult(result, catalog, meta);
   }
-  const { itemDetails, ...publicMeta } = meta;
+  const { itemDetails, entityDetails, ...publicMeta } = meta;
   if (["comp_rankings", "comp_trends", "comp_analysis"].includes(result.type)) {
-    return serializeCompRankings(result, publicMeta);
+    return serializeCompRankings(result, publicMeta, catalog, entityDetails);
   }
   const query = result.query ?? {};
   if (result.type === "item_carrier_rankings") {
@@ -1766,7 +2133,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       unit: {
         apiName: carrier.unitApiName,
         name: unitName(carrier.unitApiName, catalog),
-        iconUrl: ASSET_RESOLVER.resolveUnit(carrier.unitApiName).iconUrl
+        iconUrl: resolvedUnitIconUrl(carrier.unitApiName, catalog, entityDetails)
       },
       stats: {
         top4: percent(carrier.stats.top4Rate),
@@ -1846,7 +2213,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       unit: query.unit ? {
         apiName: query.unit,
         name: unitName(query.unit, catalog),
-        iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
+        iconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails)
       } : null,
       answer: {
         summary: itemPerformance?.conclusion ?? (best
@@ -1867,7 +2234,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       query: {
         ...query,
         unitName: unitName(query.unit, catalog),
-        unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
+        unitIconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails),
         traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
         ownedItemNames: (query.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
         performanceItemName: query.performanceItem ? itemName(query.performanceItem, catalog) : null,
@@ -2066,7 +2433,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
     unit: query.unit ? {
       apiName: query.unit,
       name: unitName(query.unit, catalog),
-      iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
+      iconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails)
     } : null,
     cards,
     coreItemSummary,
@@ -2086,7 +2453,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       intent: query.intent,
       unit: query.unit,
       unitName: unitName(query.unit, catalog),
-      unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
+      unitIconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails),
       starLevel: query.starLevel,
       itemCount: query.itemCount,
       traitFilters: displayTraitFilters,
@@ -2139,7 +2506,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
   };
 }
 
-function serializeCompRankings(result, meta = {}) {
+function serializeCompRankings(result, meta = {}, catalog = null, entityDetails = null) {
   const serializeComp = (comp) => ({
       compId: comp.compId,
       name: comp.name,
@@ -2149,7 +2516,7 @@ function serializeCompRankings(result, meta = {}) {
       units: (comp.units ?? []).map((unit) => ({
         apiName: unit.apiName,
         name: unit.name,
-        iconUrl: unit.iconUrl ?? null,
+        iconUrl: unit.iconUrl ?? resolvedUnitIconUrl(unit.apiName, catalog, entityDetails),
         fallbackIconUrl: unit.fallbackIconUrl ?? null,
         assetFallback: Boolean(unit.assetFallback),
         targetStarLevel: Number.isInteger(unit.targetStarLevel) ? unit.targetStarLevel : null,
@@ -2352,6 +2719,9 @@ export function createSmallWindowRuntime(options = {}) {
     officialJobUrl: options.officialJobUrl,
     officialEntityDetailsTimeoutMs: options.officialEntityDetailsTimeoutMs ?? 10000,
     fetchOfficialEntityDetails: options.fetchOfficialEntityDetails ?? fetchOfficialTftEntityDetails,
+    fetchCommunityDragonEntityDetails: options.fetchCommunityDragonEntityDetails ?? fetchCommunityDragonEntityDetails,
+    communityDragonEntityDetailsEnabled: options.communityDragonEntityDetailsEnabled
+      ?? Boolean(options.fetchCommunityDragonEntityDetails || (!options.compsClient && !options.catalogMetaTFTClient)),
     fetchItems: options.fetchItems ?? true,
     compsData: options.compsData ?? null,
     defaultContextOptions: options.defaultContextOptions ?? {},
@@ -2367,6 +2737,11 @@ export function createSmallWindowRuntime(options = {}) {
     conclusionGeneratorConfig,
     coachProvider: options.coachProvider ?? null,
     coachConfig: options.coachConfig ?? { enabled: false, mode: "off", provider: "off" },
+    mechanismClassificationProvider: options.mechanismClassificationProvider ?? null,
+    mechanismClassificationConfig: options.mechanismClassificationConfig
+      ?? { enabled: false, mode: "off", provider: "off" },
+    mechanismClassificationCache: options.mechanismClassificationCache ?? new Map(),
+    mechanismClassificationLoadPromises: options.mechanismClassificationLoadPromises ?? new Map(),
     systemInteractionRouter: options.systemInteractionRouter ?? createSystemInteractionRouter(),
     answerModeRouter: options.answerModeRouter ?? createAnswerModeRouter(),
     conclusionJobs: new Map(),
@@ -2447,6 +2822,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ?? (controlledPlanner?.plannerKind === "llm" ? deterministicControlledPlanner : null);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
   const coachRuntime = createSmallWindowCoachRuntime(options, env);
+  const mechanismClassificationRuntime = createSmallWindowMechanismClassificationRuntime(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
   const runtimeOptions = {
@@ -2460,6 +2836,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     controlledPlannerFallback,
     ...conclusionRuntime,
     ...coachRuntime,
+    ...mechanismClassificationRuntime,
     ...semanticRuntime,
     adminToken: options.adminToken ?? env.TFT_AGENT_ADMIN_TOKEN,
     queryEventRetentionDays: options.queryEventRetentionDays
@@ -2509,12 +2886,20 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
 }
 
 function runtimeCatalogKey(preferences = {}) {
-  return [
+  const parts = [
     preferences.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
     preferences.providerVersion ?? "metatft-live.v1",
     preferences.effectivePatch ?? preferences.patch ?? "current",
     preferences.queue ?? "1100"
-  ].join(":");
+  ];
+  if (preferences.tftSet) {
+    parts.push(
+      preferences.tftSet,
+      preferences.lookupChannel ?? "latest",
+      preferences.lookupLocale ?? "zh_cn"
+    );
+  }
+  return parts.join(":");
 }
 
 function hasDynamicCatalogRecords(records = []) {
@@ -2574,7 +2959,8 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
 
   if (runtime.catalog) return applyAliasMemory(runtime.catalog, {
     warning: null,
-    compsData: runtime.compsData
+    compsData: runtime.compsData,
+    entityDetails: runtime.officialEntityDetails ?? null
   });
 
   const key = runtimeCatalogKey(preferences);
@@ -2588,6 +2974,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       catalog: createCatalog(),
       warning: null,
       compsData: null,
+      entityDetails: null,
       itemCatalogMemory: null,
       domainCatalogMemory: null
     };
@@ -2622,21 +3009,82 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         queue: preferences.queue ?? "1100",
         patch: preferences.patch ?? "current"
       };
+      const includeSeedCatalog = !preferences.tftSet;
+      const isPbeCatalog = String(preferences.queue ?? "").toUpperCase() === "PBE";
+      const catalogRequestTimeoutMs = Number.isFinite(Number(preferences.requestTimeoutMs))
+        ? Math.max(
+          runtime.requestTimeouts.catalogTimeoutMs,
+          Number(preferences.requestTimeoutMs) - 2000
+        )
+        : undefined;
+      const catalogRequestOptions = catalogRequestTimeoutMs
+        ? { timeoutMs: catalogRequestTimeoutMs }
+        : {};
+      const setLookupRemoteRequest = preferences.tftSet && typeof runtime.compsClient.getSetLookup === "function"
+        ? runtime.compsClient.getSetLookup(preferences.tftSet, {
+            channel: preferences.lookupChannel ?? "latest",
+            locale: preferences.lookupLocale ?? "zh_cn",
+            timeoutMs: catalogRequestTimeoutMs
+          })
+        : Promise.resolve(null);
+      const localLookupPath = `.cache/metatft-${preferences.tftSet}-${preferences.lookupChannel ?? "latest"}-${preferences.lookupLocale ?? "zh_cn"}.json`;
+      const setLookupRequest = isPbeCatalog
+        ? setLookupRemoteRequest.catch(async () => JSON.parse(await readFile(localLookupPath, "utf8")))
+        : setLookupRemoteRequest;
+      const communityDragonDetailsRequest = isPbeCatalog
+        && preferences.tftSet
+        && runtime.communityDragonEntityDetailsEnabled
+        ? runtime.fetchCommunityDragonEntityDetails({
+            fetchImpl: runtime.officialEntityDetailsFetch,
+            tftSet: preferences.tftSet,
+            version: preferences.currentPatch ?? "PBE",
+            lookupPromise: setLookupRequest,
+            localCachePaths: {
+              teamplanner: ".cache/communitydragon-pbe-tftchampions-teamplanner.json",
+              traits: ".cache/communitydragon-pbe-tfttraits.json",
+              lookup: localLookupPath
+            },
+            timeoutMs: catalogRequestTimeoutMs
+          })
+        : Promise.resolve(null);
       const requests = [
-        runtime.catalogMetaTFTClient.getItems(explorerParams),
-        runtime.catalogMetaTFTClient.getUnitsUnique(explorerParams),
-        runtime.catalogMetaTFTClient.getTraits(explorerParams),
-        runtime.compsClient.getLatestClusterInfo(compsParams),
-        runtime.compsClient.getCompOptions(compsParams),
-        typeof runtime.compsClient.getCompBuilds === "function"
+        runtime.catalogMetaTFTClient.getItems(explorerParams, catalogRequestOptions),
+        runtime.catalogMetaTFTClient.getUnitsUnique(explorerParams, catalogRequestOptions),
+        runtime.catalogMetaTFTClient.getTraits(explorerParams, catalogRequestOptions),
+        runtime.compsClient.getLatestClusterInfo(compsParams, catalogRequestOptions),
+        isPbeCatalog ? Promise.resolve([]) : runtime.compsClient.getCompOptions(compsParams),
+        !isPbeCatalog && typeof runtime.compsClient.getCompBuilds === "function"
           ? runtime.compsClient.getCompBuilds(compsParams)
-          : Promise.resolve([])
+          : Promise.resolve([]),
+        setLookupRequest,
+        communityDragonDetailsRequest
       ];
-      const [items, unitsUnique, traits, latestClusterInfo, compOptions, compBuilds] = await Promise.allSettled(requests);
+      const [items, unitsUnique, traits, latestClusterInfo, compOptions, compBuilds, setLookup, communityDragonDetails] = await Promise.allSettled(requests);
+      const setLookupPayload = setLookup.status === "fulfilled" ? setLookup.value : null;
+      if (communityDragonDetails.status === "fulfilled") {
+        entry.entityDetails = communityDragonDetails.value;
+      } else if (isPbeCatalog) {
+        warnings.push(`CommunityDragon PBE 棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
+      }
+      const itemLookupByApiName = new Map((setLookupPayload?.items ?? [])
+        .filter((row) => row?.apiName)
+        .map((row) => [row.apiName, row]));
+      const unitLookupByApiName = new Map((setLookupPayload?.units ?? [])
+        .filter((row) => row?.apiName)
+        .map((row) => [row.apiName, row]));
+      const traitLookupByApiName = new Map((setLookupPayload?.traits ?? [])
+        .filter((row) => row?.apiName)
+        .map((row) => [row.apiName, row]));
+
+      if (preferences.tftSet && setLookup.status !== "fulfilled") {
+        warnings.push(`Set lookup 刷新失败，目录将回退为 API 标识：${setLookup.reason.message}`);
+      }
 
       if (items.status === "fulfilled") {
         const generatedItems = buildItemCatalogFromItemsResponse(items.value, {
-          patch
+          patch,
+          itemLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
         if (generatedItems.length > 0) {
           catalogOverrides.items = generatedItems;
@@ -2668,7 +3116,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
             updatedAt: persistedItemCatalog.updatedAt ?? null
           };
           warnings.push(`已使用 ${persistedItemCatalog.updatedAt ?? "未知时间"} 的持久化装备目录`);
-        } else {
+        } else if (includeSeedCatalog) {
           const snapshotItems = buildItemCatalogFromItemsResponse({
             data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
           }, { patch });
@@ -2681,17 +3129,29 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           warnings.push(
             `未找到持久化装备目录，已使用本地官方目录快照（${CURRENT_ITEM_LOCALIZATION.metadata?.sourcePatch ?? "版本未知"}）`
           );
+        } else {
+          catalogOverrides.items = [];
+          entry.itemCatalogMemory = {
+            source: "unavailable",
+            items: 0,
+            updatedAt: null
+          };
+          warnings.push("当前 PBE 装备目录不可用；为避免跨赛季污染，未回退正式服目录");
         }
       }
 
       if (unitsUnique.status === "fulfilled") {
         catalogOverrides.units = buildUnitCatalogFromExplorerRows(unitsUnique.value, {
-          patch
+          patch,
+          unitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
       }
       if (traits.status === "fulfilled") {
         catalogOverrides.traits = buildTraitCatalogFromExplorerRows(traits.value, {
-          patch
+          patch,
+          traitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
       }
       if (unitsUnique.status !== "fulfilled" || traits.status !== "fulfilled") {
@@ -2710,10 +3170,14 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
 
       if (compOptions.status === "fulfilled" || latestClusterInfo.status === "fulfilled") {
         const unitsFromComps = buildUnitCatalogFromCompsData(compsData, {
-          patch
+          patch,
+          unitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
         const traitsFromComps = buildTraitCatalogFromCompsData(compsData, {
-          patch
+          patch,
+          traitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
         catalogOverrides.units = catalogOverrides.units
           ? mergeCatalogUnits(catalogOverrides.units, unitsFromComps)
@@ -2752,7 +3216,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         const refreshedPersistedUnits = mergeCatalogUnits(
           buildUnitCatalogFromExplorerRows({
             data: persistedUnits.map((unit) => ({ units_unique: `${unit.apiName}-1` }))
-          }, { patch }),
+          }, { patch, includeSeeds: includeSeedCatalog }),
           persistedUnits
         );
         catalogOverrides.units = remoteUnitsAvailable
@@ -2767,7 +3231,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         const refreshedPersistedTraits = mergeCatalogTraits(
           buildTraitCatalogFromExplorerRows({
             data: persistedTraits.map((trait) => ({ traits: trait.filterId }))
-          }, { patch }),
+          }, { patch, includeSeeds: includeSeedCatalog }),
           persistedTraits
         );
         catalogOverrides.traits = remoteTraitsAvailable
@@ -2779,8 +3243,10 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         }
       }
 
-      const finalUnits = catalogOverrides.units ?? createCatalog().units;
-      const finalTraits = catalogOverrides.traits ?? createCatalog().traits;
+      const finalUnits = catalogOverrides.units ?? (includeSeedCatalog ? createCatalog().units : []);
+      const finalTraits = catalogOverrides.traits ?? (includeSeedCatalog ? createCatalog().traits : []);
+      catalogOverrides.units = finalUnits;
+      catalogOverrides.traits = finalTraits;
       entry.domainCatalogMemory = {
         unitSource,
         traitSource,
@@ -3296,7 +3762,9 @@ function serializeKnowledgeAnswer({
 
 async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const startedAt = Date.now();
-  const input = String(body?.input ?? "").trim();
+  const displayInput = String(body?.input ?? "").trim();
+  const quickTask = normalizeQuickTask(body?.quickTask);
+  const input = quickTask ? quickTaskExecutionInput(quickTask) : displayInput;
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
   const scope = context.visitor?.scope ?? null;
   const reportProgress = (type, data = {}) => {
@@ -3343,10 +3811,16 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         context.accessService,
         context.visitor,
         reserveLlmUseForRequest
+      ),
+      mechanismClassificationProvider: quotaWrappedCallable(
+        runtime.mechanismClassificationProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
       )
     }
     : runtime;
-  if (!input) {
+  if (!displayInput) {
     return {
       statusCode: 400,
       payload: {
@@ -3371,7 +3845,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       await persistQueryResponse(payload, runtime, {
         scope,
         conversationId,
-        input,
+        input: displayInput,
         startedAt,
         runId: context.agentRun?.runId ?? null
       });
@@ -3414,6 +3888,15 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         metrics: null
       };
       payload.seasonContext = publicSeasonContext;
+      if (quickTask) {
+        payload.quickTask = {
+          schemaVersion: quickTask.schemaVersion,
+          id: quickTask.id,
+          operation: quickTask.operation,
+          arguments: quickTask.arguments,
+          executionMode: "structured"
+        };
+      }
       const llmActivity = llmActivityForPayload(payload, runtime);
       payload.meta ??= {};
       payload.meta.llmUsed = llmActivity.used;
@@ -3429,7 +3912,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       await persistQueryResponse(payload, runtime, {
         scope,
         conversationId,
-        input,
+        input: displayInput,
         startedAt,
         runId: context.agentRun?.runId ?? null
       });
@@ -3450,18 +3933,27 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   });
   const preferences = {
     ...completeSmallWindowPreferences(explicitPreferences),
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    currentPatch: seasonContext.currentPatch,
-    previousPatch: seasonContext.previousPatch,
-    patch: seasonContext.providerPatch ?? "current",
-    queue: seasonContext.source.queue
+    ...entityCatalogPreferences(runtime, seasonContext)
   };
   if (body.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
-  const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
+  const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  const resolveQuickView = async (load, taskIds) => quickTask?.definition.staticView
+    && taskIds.includes(quickTask.id)
+    ? cachedQuickTaskView(runtime, {
+      task: quickTask,
+      seasonContext,
+      preferences,
+      refresh: Boolean(body.refresh),
+      load,
+      backgroundRefresh: () => handleRecommendRequestInternal({
+        ...body,
+        refresh: true,
+        deferConclusion: false
+      }, runtime, {})
+    })
+    : load();
   let fastPathTaskPromise = null;
   const getFastPathTaskFrame = () => {
     if (!fastPathTaskPromise) {
@@ -3494,6 +3986,63 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     taskFrame: await getFastPathTaskFrame(),
     ...options
   }).eligible;
+  const mechanismClassificationQuery = parseMechanismClassificationQuery(input);
+  if (mechanismClassificationQuery) {
+    reportProgress("understanding.resolved", {
+      intent: "mechanism_classification",
+      query: mechanismClassificationQuery
+    });
+    reportProgress("retrieval.started", { source: "current_season_entity_details" });
+    try {
+      const isPbeMechanismSeason = String(preferences.queue ?? "").toUpperCase() === "PBE";
+      const mechanismEntityDetails = entityDetails ?? (isPbeMechanismSeason
+        ? null
+        : await loadOfficialEntityDetails(requestRuntime));
+      const payload = await answerMechanismClassificationQuery({
+        query: mechanismClassificationQuery,
+        entityDetails: mechanismEntityDetails,
+        seasonContext: publicSeasonContext,
+        provider: requestRuntime.mechanismClassificationProvider,
+        cache: runtime.mechanismClassificationCache,
+        loadPromises: runtime.mechanismClassificationLoadPromises,
+        refresh: Boolean(body.refresh)
+      });
+      reportProgress("retrieval.completed", {
+        source: "current_season_entity_details",
+        entityCount: payload.classificationMeta?.entityCount ?? 0,
+        classifiedCount: payload.classificationMeta?.classifiedCount ?? 0,
+        cache: payload.classificationMeta?.cache ?? null
+      });
+      payload.meta = {
+        durationMs: Date.now() - startedAt,
+        catalogWarning: warning,
+        aliasMemory,
+        preferences
+      };
+      return completeResponse(payload);
+    } catch (error) {
+      const payload = {
+        ok: false,
+        type: "mechanism_classification_error",
+        error: error.message,
+        code: error.code ?? "mechanism_classification_failed",
+        seasonContext: publicSeasonContext,
+        configuration: error.code === "mechanism_classifier_unavailable"
+          ? {
+            enabled: Boolean(requestRuntime.mechanismClassificationConfig?.enabled),
+            missing: requestRuntime.mechanismClassificationConfig?.missing ?? []
+          }
+          : undefined
+      };
+      if (context.accessService && context.visitor) {
+        payload.access = context.accessService.publicStatus(context.visitor);
+      }
+      return {
+        statusCode: error.statusCode ?? 502,
+        payload
+      };
+    }
+  }
   const externalSupportPayload = await tryExternalSupportRequest(input, catalog, requestRuntime, {
     scope,
     conversationId,
@@ -3523,9 +4072,10 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       pureCatalogRequest: isPureEntityCatalogRequest(input, requestedCatalogType)
     })
   ) {
-    const payload = await serializeEntityCatalog(catalog, requestRuntime, {
-      entityType: requestedCatalogType
-    });
+    const payload = await resolveQuickView(() => serializeEntityCatalog(catalog, requestRuntime, {
+      entityType: requestedCatalogType,
+      entityDetails
+    }), ["unit-catalog", "trait-catalog"]);
     payload.meta = {
       durationMs: Date.now() - startedAt,
       catalogWarning: warning,
@@ -3534,16 +4084,16 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     };
     return completeResponse(payload);
   }
-  const entityDetailsFastPathEligible = (
-    explicitUnitDetailsQuestion(input)
-    || explicitTraitDetailsQuestion(input)
-  ) && await fastPathEligible("entity_details", { canResolveEntity: true });
+  const entityDetailsFastPathEligible = ["unit-details", "trait-details"].includes(quickTask?.id)
+    || ((explicitUnitDetailsQuestion(input) || explicitTraitDetailsQuestion(input))
+      && await fastPathEligible("entity_details", { canResolveEntity: true }));
   const entityDetailsPayload = entityDetailsFastPathEligible
-    ? await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
+    ? await resolveQuickView(() => serializeEntityDetailsQuery(input, catalog, requestRuntime, {
       preferences,
       compsData,
+      entityDetails,
       refresh: Boolean(body.refresh)
-    })
+    }), ["unit-details", "trait-details"])
     : null;
   if (entityDetailsPayload) {
     entityDetailsPayload.meta = {
@@ -3561,15 +4111,20 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     });
     return completeResponse(executed);
   }
-  const itemDetailsPayload = isItemDetailsQuestion(input)
-    && await fastPathEligible("item_details")
-    ? await serializeItemDetailsQuery(input, catalog, runtime)
+  const itemDetailsPayload = (quickTask?.id === "item-details"
+    || (isItemDetailsQuestion(input) && await fastPathEligible("item_details")))
+    ? await resolveQuickView(
+      () => serializeItemDetailsQuery(input, catalog, runtime),
+      ["item-details"]
+    )
     : null;
   if (itemDetailsPayload) {
     const payload = attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog);
     return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
   }
-  const parsedForIntent = parseQuery(input, { catalog });
+  const parsedForIntent = quickTask
+    ? directParsedForQuickTask(quickTask, input, catalog, preferences)
+    : parseQuery(input, { catalog });
   const shouldLoadCompItemDetails = requestsSoftCompItemDemand(input, parsedForIntent);
   const answerModeRoute = requestRuntime.answerModeRouter.route({
     input,
@@ -3825,7 +4380,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       };
     }
   };
-  const result = await requestRuntime.recommendForInputImpl(input, {
+  const quickCachePolicy = quickTask ? quickTaskCachePolicy(quickTask, seasonContext) : null;
+  const recommendationOptions = {
     catalog,
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
@@ -3839,12 +4395,21 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     preferences,
     explicitPreferences,
     bypassQueryCache: Boolean(body.refresh)
-      || requestRuntime.conversationStateV2Mode === "on",
+      || (!quickTask && requestRuntime.conversationStateV2Mode === "on"),
     bypassDefaultContextCache: Boolean(body.refresh),
     structuredParser: requestRuntime.structuredParser,
-    useStructuredParser: structuredParserMode,
+    useStructuredParser: quickTask ? "never" : structuredParserMode,
+    ...(quickTask ? {
+      directParsed: parsedForIntent,
+      semanticShadow: false,
+      useSession: false,
+      queryTtlMs: quickCachePolicy.retentionMs,
+      queryRefreshAfterMs: quickCachePolicy.refreshAfterMs,
+      queryHardRetentionMs: quickCachePolicy.retentionMs,
+      defaultContextTtlMs: quickCachePolicy.refreshAfterMs
+    } : {}),
     turnDeltaProvider: requestRuntime.turnDeltaProvider,
-    conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
+    conversationStateV2Mode: quickTask ? "off" : requestRuntime.conversationStateV2Mode,
     startNewTask: body.startNewTask === true,
     turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
     controlledPlanner: requestRuntime.controlledPlanner,
@@ -3865,10 +4430,43 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     toolExecutor: requestRuntime.toolExecutor,
     toolRegistry: requestRuntime.toolRegistry,
     executionPlanExecutor: requestRuntime.executionPlanExecutor,
+    metaTFTTimeoutMs: Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
+      ? Math.max(
+        runtime.requestTimeouts.explorerTimeoutMs,
+        Number(seasonContext.source.requestDeadlineMs) - 2000
+      )
+      : undefined,
+    toolTimeoutMs: Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
+      ? Math.max(
+        runtime.requestTimeouts.explorerTimeoutMs,
+        Number(seasonContext.source.requestDeadlineMs) - 2000
+      )
+      : undefined,
     executionPlanSovereignty: true,
     agentRun: context.agentRun,
     abortSignal: context.signal
-  });
+  };
+  const result = await requestRuntime.recommendForInputImpl(input, recommendationOptions);
+  if (quickTask && result.cache?.query) {
+    result.cache.query.policy = {
+      refreshAfterMs: quickCachePolicy.refreshAfterMs,
+      retainForMs: quickCachePolicy.retentionMs
+    };
+    if (result.cache.query.refreshDue) {
+      result.cache.query.revalidating = scheduleQuickTaskRefresh(
+        runtime,
+        result.cache.query.key,
+        async () => requestRuntime.recommendForInputImpl(input, {
+          ...recommendationOptions,
+          bypassQueryCache: true,
+          bypassDefaultContextCache: true,
+          onProgress: undefined,
+          agentRun: null,
+          abortSignal: undefined
+        })
+      ) || runtime.quickTaskRefreshes?.has(result.cache.query.key) === true;
+    }
+  }
   if (result.taskFrame && result.executionTrace?.status === "completed") {
     await persistDetailTaskFrame(result, requestRuntime, {
       scope,
@@ -4069,7 +4667,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     aliasMemory,
     preferences,
     conversationId,
-    itemDetails: conclusionItemDetails
+    itemDetails: conclusionItemDetails,
+    entityDetails
   });
   payload.answer = {
     ...(payload.answer ?? {}),
@@ -4119,10 +4718,35 @@ function classifyAgentHttpResult(value) {
 }
 
 export async function handleRecommendRequest(body, runtime, context = {}) {
+  try {
+    normalizeQuickTask(body?.quickTask);
+  } catch (error) {
+    return {
+      statusCode: error.statusCode ?? 400,
+      payload: {
+        ok: false,
+        error: error.message,
+        code: error.code ?? "invalid_quick_task"
+      }
+    };
+  }
   if (context.agentRun || !runtime.agentRuntime) {
     return handleRecommendRequestInternal(body, runtime, context);
   }
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
+  const seasonRunDeadlineMs = Number(
+    runtime.seasonContextService.get(body?.seasonContextId)?.source?.requestDeadlineMs
+  );
+  const mechanismRunDeadlineMs = parseMechanismClassificationQuery(body?.input)
+    ? Math.min(
+      120000,
+      Number(runtime.mechanismClassificationConfig?.timeoutMs ?? 90000) + 15000
+    )
+    : 0;
+  const requestedRunDeadlineMs = Math.max(
+    Number.isFinite(seasonRunDeadlineMs) ? seasonRunDeadlineMs : 0,
+    Number.isFinite(mechanismRunDeadlineMs) ? mechanismRunDeadlineMs : 0
+  );
   const execution = await runtime.agentRuntime.run({
     conversationId,
     principalId: context.visitor?.scope ?? "anonymous",
@@ -4135,7 +4759,10 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
     });
   }, {
     signal: context.signal,
-    classifyResult: classifyAgentHttpResult
+    classifyResult: classifyAgentHttpResult,
+    ...(requestedRunDeadlineMs > runtime.agentRuntime.budget.deadlineMs
+      ? { budget: { deadlineMs: requestedRunDeadlineMs } }
+      : {})
   });
   if (execution.value?.payload) execution.value.payload.run = execution.publicRun;
   return execution.value;
@@ -4241,8 +4868,8 @@ function normalizeCompDetailUnitApiNames(value) {
   for (const candidate of candidates) {
     const apiName = String(candidate ?? "").trim();
     if (!apiName || seen.has(apiName)) continue;
-    if (!/^TFT[A-Za-z0-9_]+$/u.test(apiName)) {
-      throw Object.assign(new TypeError("units must contain TFT unit API identifiers"), {
+    if (!/^(?:TFT|DA_)[A-Za-z0-9_]+$/u.test(apiName)) {
+      throw Object.assign(new TypeError("units must contain current-set unit API identifiers"), {
         statusCode: 400,
         code: "invalid_comp_detail_unit",
         field: "units"
@@ -4273,14 +4900,19 @@ function metaTftDetailTimestamp(...responses) {
 
 function catalogForCompDetail(runtime, seasonContext) {
   if (runtime.catalog) return runtime.catalog;
-  const key = runtimeCatalogKey({
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    patch: seasonContext.providerPatch,
-    queue: seasonContext.source.queue
-  });
-  return runtime.catalogCache?.get(key)?.catalog ?? createCatalog();
+  const key = runtimeCatalogKey(entityCatalogPreferences(runtime, seasonContext));
+  const cachedCatalog = runtime.catalogCache?.get(key)?.catalog;
+  if (cachedCatalog) return cachedCatalog;
+  return seasonContext?.environment === "pbe"
+    ? createCatalog({ units: [], traits: [], items: [] })
+    : createCatalog();
+}
+
+function entityDetailsForCompDetail(runtime, seasonContext) {
+  const key = runtimeCatalogKey(entityCatalogPreferences(runtime, seasonContext));
+  return runtime.catalogCache?.get?.(key)?.entityDetails
+    ?? runtime.officialEntityDetails
+    ?? null;
 }
 
 function compDetailUnitLabel(apiName, catalog) {
@@ -4348,17 +4980,20 @@ async function loadCachedAugmentLookup(runtime, tftSet, locale = "zh_cn") {
   }
 }
 
-function decorateCompDetailFormation(positioning, catalog, updatedAt) {
+function decorateCompDetailFormation(positioning, catalog, entityDetails, updatedAt) {
   return {
     ...positioning,
     units: positioning.units.map((unit) => {
       const asset = ASSET_RESOLVER.resolveUnit(unit.apiName);
+      const iconUrl = resolvedUnitIconUrl(unit.apiName, catalog, entityDetails);
       return {
         ...unit,
         name: compDetailUnitLabel(unit.apiName, catalog),
-        iconUrl: asset.iconUrl,
-        fallbackIconUrl: asset.fallbackIconUrl ?? null,
-        assetFallback: Boolean(asset.fallback),
+        iconUrl,
+        fallbackIconUrl: asset.iconUrl && asset.iconUrl !== iconUrl
+          ? asset.iconUrl
+          : asset.fallbackIconUrl ?? null,
+        assetFallback: !iconUrl,
         items: []
       };
     }),
@@ -4418,11 +5053,17 @@ function decorateCompDetailAugments(augments, lookupResponse, updatedAt) {
 
 async function createCompDetailPayload(input, runtime, seasonContext) {
   const catalog = catalogForCompDetail(runtime, seasonContext);
+  const entityDetails = entityDetailsForCompDetail(runtime, seasonContext);
+  const queue = seasonContext?.source?.queue;
+  const requestContext = {
+    cluster_id: input.clusterId,
+    ...(queue ? { queue } : {})
+  };
   const detailRequest = typeof runtime.compsClient?.getCompDetails === "function"
-    ? runtime.compsClient.getCompDetails({ comp: input.compId, cluster_id: input.clusterId })
+    ? runtime.compsClient.getCompDetails({ comp: input.compId, ...requestContext })
     : Promise.reject(new Error("MetaTFT comp-details client is unavailable"));
   const augmentRequest = typeof runtime.compsClient?.getCompAugmentTiers === "function"
-    ? runtime.compsClient.getCompAugmentTiers({ cluster_id: input.clusterId })
+    ? runtime.compsClient.getCompAugmentTiers(requestContext)
     : Promise.reject(new Error("MetaTFT comp-augment-tiers client is unavailable"));
   const [detailResult, augmentResult] = await Promise.allSettled([detailRequest, augmentRequest]);
   const detailResponse = detailResult.status === "fulfilled" ? detailResult.value : null;
@@ -4451,7 +5092,7 @@ async function createCompDetailPayload(input, runtime, seasonContext) {
     ...(augmentResult.status === "rejected" ? ["MetaTFT comp augment tiers are temporarily unavailable."] : []),
     ...(lookupWarning ? [lookupWarning] : [])
   ];
-  const formation = decorateCompDetailFormation(positioning, catalog, updatedAt);
+  const formation = decorateCompDetailFormation(positioning, catalog, entityDetails, updatedAt);
   const augmentRecommendations = decorateCompDetailAugments(normalizedAugments, lookupResponse, updatedAt);
 
   return {
@@ -5046,11 +5687,7 @@ async function adminCatalogFor(runtime, seasonContext, refresh = false) {
   }
   const preferences = {
     ...completeSmallWindowPreferences(),
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    patch: seasonContext.effectivePatch,
-    queue: seasonContext.source.queue
+    ...entityCatalogPreferences(runtime, seasonContext)
   };
   if (refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   return (await loadRuntimeCatalog(runtime, preferences)).catalog;
@@ -5500,11 +6137,7 @@ export async function handleItemCatalogAuditRequest(runtime, options = {}) {
   });
   const preferences = {
     ...completeSmallWindowPreferences(await loadSmallWindowPreferences(runtime)),
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    patch: seasonContext.effectivePatch,
-    queue: seasonContext.source.queue
+    ...entityCatalogPreferences(runtime, seasonContext)
   };
   if (options.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));

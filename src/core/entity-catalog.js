@@ -33,6 +33,40 @@ function publicSource(source) {
   };
 }
 
+function unitEntryScore(record) {
+  const entry = record?.entry ?? {};
+  return (entry.hasDetails ? 100 : 0)
+    + (entry.iconUrl ? 20 : 0)
+    + Math.min(10, (entry.traitNames ?? []).length * 2)
+    + (entry.role ? 2 : 0);
+}
+
+function collapseUnitRecords(records) {
+  const grouped = new Map();
+  for (const record of records) {
+    const key = normalizedText(record?.entry?.name) || normalizedText(record?.entry?.apiName);
+    const existing = grouped.get(key);
+    if (!existing) {
+      grouped.set(key, {
+        entry: record.entry,
+        aliases: [...new Set([record.entry.apiName, ...(record.aliases ?? [])])]
+      });
+      continue;
+    }
+    const preferred = unitEntryScore(record) > unitEntryScore(existing) ? record : existing;
+    grouped.set(key, {
+      entry: preferred.entry,
+      aliases: [...new Set([
+        existing.entry.apiName,
+        record.entry.apiName,
+        ...(existing.aliases ?? []),
+        ...(record.aliases ?? [])
+      ])]
+    });
+  }
+  return [...grouped.values()];
+}
+
 function unitEntries(catalog, details, options = {}) {
   const query = normalizedText(options.query);
   const cost = options.cost === undefined || options.cost === null || options.cost === ""
@@ -41,23 +75,49 @@ function unitEntries(catalog, details, options = {}) {
   const role = normalizedText(options.role);
   const trait = normalizedText(options.trait);
 
-  return (catalog?.units ?? [])
-    .filter((unit) => unit?.apiName && unit.current !== false)
-    .map((unit) => {
-      const official = details?.units?.get?.(unit.apiName) ?? null;
+  const catalogUnits = (catalog?.units ?? [])
+    .filter((unit) => unit?.apiName && unit.current !== false);
+  const officialUnits = details?.units instanceof Map
+    ? [...details.units.entries()].filter(([apiName]) => apiName)
+    : [];
+  const sourceUnits = officialUnits.length
+    ? officialUnits.map(([mapApiName, official]) => {
+      const apiName = official?.apiName ?? mapApiName;
+      const officialName = official?.name ?? apiName;
+      const related = catalogUnits.filter((unit) => (
+        unit.apiName === apiName
+        || normalizedText(unit.zhName ?? unit.displayName ?? unit.name) === normalizedText(officialName)
+      ));
+      const catalogUnit = related.find((unit) => unit.apiName === apiName) ?? related[0] ?? null;
+      return {
+        unit: catalogUnit ?? { apiName, aliases: [] },
+        official,
+        apiName,
+        aliases: related.flatMap((unit) => [unit.apiName, ...(unit.aliases ?? [])])
+      };
+    })
+    : catalogUnits.map((unit) => ({
+      unit,
+      official: null,
+      apiName: unit.apiName,
+      aliases: unit.aliases ?? []
+    }));
+
+  return collapseUnitRecords(sourceUnits
+    .map(({ unit, official, apiName, aliases }) => {
       const entry = {
         entityType: "unit",
-        apiName: unit.apiName,
-        name: unit.zhName ?? official?.name ?? unit.apiName,
+        apiName,
+        name: official?.name ?? unit.zhName ?? apiName,
         cost: official?.cost ?? unit.cost ?? null,
         role: official?.role ?? null,
         traitNames: [...new Set(official?.traitNames ?? [])],
-        iconUrl: options.assetResolver?.resolveUnit?.(unit.apiName)?.iconUrl ?? null,
+        iconUrl: official?.iconUrl ?? options.assetResolver?.resolveUnit?.(apiName)?.iconUrl ?? null,
         hasDetails: Boolean(official),
         source: publicSource(official?.source)
       };
-      return { entry, aliases: unit.aliases ?? [] };
-    })
+      return { entry, aliases: [...new Set([...(aliases ?? []), ...(unit.aliases ?? [])])] };
+    }))
     .filter(({ entry, aliases }) => {
       if (Number.isFinite(cost) && Number(entry.cost) !== cost) return false;
       if (role && !normalizedText(entry.role).includes(role)) return false;

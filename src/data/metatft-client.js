@@ -1,4 +1,5 @@
 import { buildUrl } from "../core/query-planner.js";
+import { get as httpsGet } from "node:https";
 
 function createRequestError(message, details = {}) {
   const error = new Error(message, details.cause ? { cause: details.cause } : undefined);
@@ -24,7 +25,15 @@ async function fetchJsonWithTimeout(fetchImpl, url, timeoutMs) {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetchImpl(url, { signal: controller.signal });
+    let response;
+    try {
+      response = await fetchImpl(url, { signal: controller.signal });
+    } catch (error) {
+      if (fetchImpl === globalThis.fetch && error?.name === "TypeError") {
+        return await fetchJsonWithNativeHttps(url, timeoutMs);
+      }
+      throw error;
+    }
     if (!response.ok) {
       const status = Number(response.status);
       throw createRequestError(
@@ -66,6 +75,53 @@ async function fetchJsonWithTimeout(fetchImpl, url, timeoutMs) {
   } finally {
     clearTimeout(timeout);
   }
+}
+
+function fetchJsonWithNativeHttps(url, timeoutMs) {
+  return new Promise((resolve, reject) => {
+    const request = httpsGet(url, {
+      headers: {
+        accept: "application/json",
+        "user-agent": "TFTClarity/1.0"
+      }
+    }, (response) => {
+      const status = Number(response.statusCode ?? 0);
+      const contentType = String(response.headers["content-type"] ?? "");
+      const chunks = [];
+      response.on("data", (chunk) => chunks.push(chunk));
+      response.on("end", () => {
+        const body = Buffer.concat(chunks).toString("utf8");
+        if (status < 200 || status >= 300) {
+          reject(createRequestError(`MetaTFT request failed: ${status}`, {
+            status,
+            retryable: status === 429 || status >= 500
+          }));
+          return;
+        }
+        if (!contentType.includes("application/json")) {
+          reject(createRequestError(
+            `MetaTFT returned non-JSON response from ${url}: ${contentType}; ${body.slice(0, 120)}`,
+            { retryable: false }
+          ));
+          return;
+        }
+        try {
+          resolve(JSON.parse(body));
+        } catch (error) {
+          reject(createRequestError(`MetaTFT returned invalid JSON from ${url}`, {
+            cause: error,
+            retryable: false
+          }));
+        }
+      });
+    });
+    request.setTimeout(timeoutMs, () => {
+      request.destroy(createRequestError(`MetaTFT request timed out after ${timeoutMs}ms: ${url}`, {
+        retryable: false
+      }));
+    });
+    request.on("error", reject);
+  });
 }
 
 function normalizeRetryCount(value, fallback = 1) {
@@ -137,43 +193,49 @@ export class MetaTFTClient {
     assignRetryOptions(this, options);
   }
 
-  async getUnitBuilds(plan) {
+  async getUnitBuilds(plan, options = {}) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = buildUrl(this.baseUrl, plan);
-    return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
+    return fetchJsonWithRetry(this.fetchImpl, url, {
+      ...requestOptions(this),
+      timeoutMs: options.timeoutMs ?? this.timeoutMs
+    });
   }
 
-  async getCompCandidates(plan) {
+  async getCompCandidates(plan, options = {}) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = buildUrl(this.baseUrl, plan);
-    return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
+    return fetchJsonWithRetry(this.fetchImpl, url, {
+      ...requestOptions(this),
+      timeoutMs: options.timeoutMs ?? this.timeoutMs
+    });
   }
 
-  async getItemCarrierBuilds(plan) {
-    return this.getUnitBuilds(plan);
+  async getItemCarrierBuilds(plan, options = {}) {
+    return this.getUnitBuilds(plan, options);
   }
 
-  async getItems(params = {}) {
-    return this.#get("/tft-explorer-api/items", params);
+  async getItems(params = {}, options = {}) {
+    return this.#get("/tft-explorer-api/items", params, options.timeoutMs);
   }
 
   async getTotal(params = {}) {
     return this.#get("/tft-explorer-api/total", params);
   }
 
-  async getUnitsUnique(params = {}) {
-    return this.#get("/tft-explorer-api/units_unique", params);
+  async getUnitsUnique(params = {}, options = {}) {
+    return this.#get("/tft-explorer-api/units_unique", params, options.timeoutMs);
   }
 
-  async getTraits(params = {}) {
-    return this.#get("/tft-explorer-api/traits", params);
+  async getTraits(params = {}, options = {}) {
+    return this.#get("/tft-explorer-api/traits", params, options.timeoutMs);
   }
 
   async getExactUnitsTraits2(params = {}) {
     return this.#get("/tft-explorer-api/exact_units_traits2", params);
   }
 
-  async #get(path, params) {
+  async #get(path, params, timeoutMs = this.timeoutMs) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = new URL(path, this.baseUrl);
     for (const [key, value] of Object.entries(params)) {
@@ -183,7 +245,10 @@ export class MetaTFTClient {
         url.searchParams.set(key, String(value));
       }
     }
-    return fetchJsonWithRetry(this.fetchImpl, url, requestOptions(this));
+    return fetchJsonWithRetry(this.fetchImpl, url, {
+      ...requestOptions(this),
+      timeoutMs
+    });
   }
 }
 
@@ -196,8 +261,8 @@ export class CompsContextClient {
     assignRetryOptions(this, options);
   }
 
-  async getLatestClusterInfo(params = {}) {
-    return this.#get("/tft-comps-api/latest_cluster_info", params);
+  async getLatestClusterInfo(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/latest_cluster_info", params, options.timeoutMs);
   }
 
   async getCompOptions(params = {}) {
@@ -230,6 +295,28 @@ export class CompsContextClient {
     return fetchJsonWithRetry(this.fetchImpl, url, {
       ...requestOptions(this),
       timeoutMs: this.rankingsTimeoutMs
+    });
+  }
+
+  async getSetLookup(tftSet, options = {}) {
+    if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
+    const setName = String(tftSet ?? "").trim();
+    const channel = String(options.channel ?? "latest").trim().toLowerCase();
+    const locale = String(options.locale ?? "zh_cn").trim().toLowerCase();
+    if (!/^TFTSet\d+(?:[A-Za-z0-9_-]+)?$/u.test(setName)) {
+      throw new TypeError("MetaTFT set lookup requires a valid TFT set name");
+    }
+    if (!/^[a-z0-9_-]+$/u.test(channel)) {
+      throw new TypeError("MetaTFT set lookup requires a valid channel");
+    }
+    if (!/^[a-z]{2}_[a-z]{2}$/u.test(locale)) {
+      throw new TypeError("MetaTFT set lookup requires a valid locale");
+    }
+    const fileName = `${setName}_${channel}_${locale}.json`;
+    const url = new URL(`/lookups/${encodeURIComponent(fileName)}`, "https://data.metatft.com");
+    return fetchJsonWithRetry(this.fetchImpl, url, {
+      ...requestOptions(this),
+      timeoutMs: options.timeoutMs ?? this.rankingsTimeoutMs
     });
   }
 
