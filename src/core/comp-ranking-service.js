@@ -3,6 +3,7 @@ import {
   normalizeCompsStatsResponse
 } from "../data/comp-response-adapter.js";
 import { inspectOfficialCompTrendGate } from "./official-comp-trend-gate.js";
+import { isPlausiblePlacementStats } from "./stats-calculator.js";
 
 const SPECIAL_NAME_PATTERN = /(?:^|_)Augment_|UniqueCarry|HeroAugment/i;
 export const METATFT_DEFAULT_MIN_PLAYRATE = 0.01;
@@ -141,6 +142,10 @@ export function buildCompRankings(response = {}, options = {}) {
             ? "hidden_situational"
             : "below_metatft_playrate"
       });
+      continue;
+    }
+    if (!isPlausiblePlacementStats(row.stats)) {
+      rejected.push({ clusterId: row.clusterId, reason: "implausible_placement_distribution" });
       continue;
     }
 

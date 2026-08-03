@@ -1,5 +1,5 @@
 import { normalizeUnitBuildRows } from "../data/metatft-response-adapter.js";
-import { calculatePlacementStats } from "./stats-calculator.js";
+import { calculatePlacementStats, isPlausiblePlacementStats } from "./stats-calculator.js";
 
 export const ITEM_CARRIER_MAX_LIMIT = 8;
 export const ITEM_CARRIER_DEFAULT_BUILD_LIMIT = 2;
@@ -47,13 +47,41 @@ function buildKey(build) {
   return `${build.unitApiName}&${[...build.items].sort().join("|")}`;
 }
 
-function normalizeTargetBuilds(response, itemApiName) {
+function withoutStarSuffix(apiName) {
+  return String(apiName ?? "").replace(/-\d+$/u, "");
+}
+
+function currentCatalogUnit(apiName, catalog) {
+  const normalized = withoutStarSuffix(apiName);
+  if (!catalog?.unitByApiName) return normalized;
+  return catalog.unitByApiName.has(normalized) ? normalized : null;
+}
+
+function normalizeTargetBuilds(response, itemApiName, catalog, rejected) {
   const rows = normalizeUnitBuildRows(response);
   const builds = new Map();
   const seenRows = new Set();
   for (const row of rows) {
     const build = parseBuild(row);
     if (!build || !build.items.includes(itemApiName)) continue;
+    const canonicalUnit = currentCatalogUnit(build.unitApiName, catalog);
+    if (!canonicalUnit) {
+      rejected.push({
+        unitApiName: withoutStarSuffix(build.unitApiName),
+        reason: "unit_not_in_current_catalog"
+      });
+      continue;
+    }
+    build.unitApiName = canonicalUnit;
+    const buildStats = calculatePlacementStats(build.placementCount);
+    if (!isPlausiblePlacementStats(buildStats)) {
+      rejected.push({
+        unitApiName: build.unitApiName,
+        reason: "implausible_placement_distribution",
+        games: buildStats.games
+      });
+      continue;
+    }
     const key = buildKey(build);
     const fingerprint = `${key}:${build.placementCount.join(",")}`;
     if (seenRows.has(fingerprint)) continue;
@@ -71,7 +99,7 @@ function normalizeTargetBuilds(response, itemApiName) {
   return [...builds.values()];
 }
 
-function unitBaselines(response = {}) {
+function unitBaselines(response = {}, catalog) {
   const source = response?.units
     ?? response?.data?.units
     ?? response?.results?.units
@@ -80,14 +108,14 @@ function unitBaselines(response = {}) {
   const baselines = new Map();
   if (Array.isArray(source)) {
     for (const row of source) {
-      const apiName = String(row?.unit ?? row?.unitApiName ?? row?.apiName ?? "");
+      const apiName = currentCatalogUnit(row?.unit ?? row?.unitApiName ?? row?.apiName, catalog);
       const avg = finiteNumber(row?.avg ?? row?.avgPlacement);
       if (apiName && avg !== null) baselines.set(apiName, avg);
     }
     return baselines;
   }
   for (const [key, row] of Object.entries(source ?? {})) {
-    const apiName = String(row?.unit ?? row?.unitApiName ?? row?.apiName ?? key);
+    const apiName = currentCatalogUnit(row?.unit ?? row?.unitApiName ?? row?.apiName ?? key, catalog);
     const avg = finiteNumber(row?.avg ?? row?.avgPlacement);
     if (apiName && avg !== null) baselines.set(apiName, avg);
   }
@@ -112,12 +140,13 @@ function compareCarriers(left, right, sort) {
     || left.unitApiName.localeCompare(right.unitApiName);
 }
 
-export function aggregateItemCarrierRankings(buildResponse, baselineResponse, query = {}) {
+export function aggregateItemCarrierRankings(buildResponse, baselineResponse, query = {}, options = {}) {
   const itemApiName = String(query.item ?? "").trim();
   if (!itemApiName) throw new TypeError("aggregateItemCarrierRankings requires query.item");
 
-  const targetBuilds = normalizeTargetBuilds(buildResponse, itemApiName);
-  const baselines = unitBaselines(baselineResponse);
+  const rejected = [];
+  const targetBuilds = normalizeTargetBuilds(buildResponse, itemApiName, options.catalog, rejected);
+  const baselines = unitBaselines(baselineResponse, options.catalog);
   const groups = new Map();
   for (const build of targetBuilds) {
     const group = groups.get(build.unitApiName) ?? {
@@ -142,11 +171,18 @@ export function aggregateItemCarrierRankings(buildResponse, baselineResponse, qu
     ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
     ITEM_CARRIER_MAX_BUILD_LIMIT
   );
-  const rejected = [];
   const carriers = [];
 
   for (const group of groups.values()) {
     const stats = calculatePlacementStats(group.placementCount);
+    if (!isPlausiblePlacementStats(stats)) {
+      rejected.push({
+        unitApiName: group.unitApiName,
+        reason: "implausible_placement_distribution",
+        games: stats.games
+      });
+      continue;
+    }
     const baselineAvgPlacement = baselines.get(group.unitApiName);
     if (!Number.isFinite(baselineAvgPlacement)) {
       rejected.push({ unitApiName: group.unitApiName, reason: "missing_unit_baseline", games: stats.games });

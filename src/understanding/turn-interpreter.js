@@ -187,8 +187,68 @@ function clarifiableFirstTurnFrame(frame) {
   );
 }
 
+function isExplicitSelfContainedTask(currentMessage) {
+  const input = String(currentMessage ?? "").trim();
+  if (!input) return false;
+  if (/(?:这个|那个|上一个|刚才|继续|接着|再来|再看|改成|换成|第[一二三四五六七八九十\d]+|它)/u.test(input)) {
+    return false;
+  }
+  return /(?:热门阵容|阵容趋势|阵容排行|三件装备|出装|装备排行|英雄属性|棋子属性|技能(?:详情|介绍)?|羁绊(?:详情|效果)?)/u.test(input);
+}
+
+function deterministicExplicitTaskFrame(currentMessage) {
+  const input = String(currentMessage ?? "").trim();
+  const patch = /(?:当前版本|当前patch|current\s*patch)/iu.test(input) ? "current" : undefined;
+  if (/(?:阵容|版本|当前).{0,8}(?:趋势|上升|下降)|(?:趋势|上升|下降).{0,8}阵容/u.test(input)) {
+    return createTaskFrame({
+      action: "analyze",
+      goal: "comp_trends",
+      constraints: patch ? { patch } : {},
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    });
+  }
+  if (/(?:热门阵容|阵容热门|最热门)/u.test(input)
+    && !/(?:这个|那个|上一个|刚才|继续|接着|再来|再看|改成|换成)/u.test(input)) {
+    return createTaskFrame({
+      action: "rank",
+      goal: "comp_rankings",
+      constraints: {
+        ...(patch ? { patch } : {}),
+        metrics: ["popularity"],
+        limit: 21
+      },
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    });
+  }
+  const unitBuildMatch = input.match(
+    /^(?:查询|查看|推荐|告诉我)?\s*([\p{L}\p{N}·.'_-]{1,32}?)(?:的)?(?:当前版本)?(?:最稳|最好|推荐)?(?:的)?(?:三件|3件)?(?:装备|出装)/u
+  );
+  const unitMention = String(unitBuildMatch?.[1] ?? "").trim();
+  if (unitMention) {
+    return createTaskFrame({
+      action: "recommend",
+      goal: "unit_build_rankings",
+      subjects: [{
+        rawText: unitMention,
+        expectedType: "champion",
+        resolvedId: null,
+        confidence: 1
+      }],
+      constraints: {
+        ...(patch ? { patch } : {}),
+        itemCount: 3
+      },
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    });
+  }
+  return null;
+}
+
 function deterministicFallbackDelta(frame, state) {
-  if (state?.activeTask?.taskFrame || state?.pendingClarification) {
+  if (state?.activeTask?.taskFrame) {
     return unknownTurnDelta("provider_required_for_contextual_turn");
   }
   if (!materialFrame(frame) && !clarifiableFirstTurnFrame(frame)) {
@@ -379,9 +439,19 @@ export async function interpretTurn({
   domainPolicy,
   ...options
 } = {}) {
+  const explicitSelfContainedTask = isExplicitSelfContainedTask(currentMessage);
+  const deterministicExplicitFrame = deterministicExplicitTaskFrame(currentMessage);
+  const interpreterState = explicitSelfContainedTask
+    ? {
+      ...conversationState,
+      activeTask: null,
+      lastResult: null,
+      pendingClarification: null
+    }
+    : conversationState;
   const messages = buildTurnInterpreterMessages({
     currentMessage,
-    state: conversationState
+    state: interpreterState
   });
   let providerFallback = null;
   let rawDelta = null;
@@ -418,29 +488,69 @@ export async function interpretTurn({
     providerFallback = { used: true, reason: "provider_unavailable" };
   }
   let delta;
-  if (rawDelta) {
+  if (deterministicExplicitFrame) {
+    delta = createTurnDelta({
+      dialogueAct: "start_task",
+      taskRelation: "new",
+      explicitTaskFrame: deterministicExplicitFrame,
+      confidence: 1
+    });
+  } else if (rawDelta) {
     delta = enforceExplicitOrdinalReference(
       createTurnDelta(rawDelta),
       currentMessage,
-      conversationState
+      interpreterState
     );
+    if (explicitSelfContainedTask
+      && !["new", "switch"].includes(delta.taskRelation)) {
+      const explicit = await explicitFrameForFallback(currentMessage, options);
+      if (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit)) {
+        delta = createTurnDelta({
+          dialogueAct: "start_task",
+          taskRelation: "new",
+          explicitTaskFrame: explicit,
+          confidence: explicit.confidence
+        });
+      }
+    }
   } else {
-    const hasConversationContext = Boolean(
-      conversationState?.activeTask?.taskFrame
-      || conversationState?.pendingClarification
-    );
+    const hasActiveTask = Boolean(interpreterState?.activeTask?.taskFrame);
+    const explicitNewTask = explicitSelfContainedTask;
     const explicit = options.explicitTaskFrame
       ? createTaskFrame(options.explicitTaskFrame)
-      : typeof semanticProvider !== "function" || !hasConversationContext
+      : typeof semanticProvider !== "function" || !hasActiveTask || explicitNewTask
         ? await explicitFrameForFallback(currentMessage, options)
         : null;
-    delta = deterministicFallbackDelta(explicit, conversationState);
+    delta = explicitNewTask && (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit))
+      ? createTurnDelta({
+        dialogueAct: "start_task",
+        taskRelation: "new",
+        explicitTaskFrame: explicit,
+        confidence: explicit.confidence
+      })
+      : deterministicFallbackDelta(explicit, interpreterState);
   }
   delta = await linkTurnDeltaReferences(delta, options);
-  delta = normalizeContextualTurnDelta(conversationState, delta);
-  const validation = validateTurnDelta(delta, { domainPolicy });
+  delta = normalizeContextualTurnDelta(interpreterState, delta);
+  let validation = validateTurnDelta(delta, { domainPolicy });
   if (!validation.valid) {
-    delta = unknownTurnDelta("invalid_interpreter_output");
+    const hasActiveTask = Boolean(interpreterState?.activeTask?.taskFrame);
+    if (!hasActiveTask) {
+      const explicit = await explicitFrameForFallback(currentMessage, options);
+      let fallbackDelta = deterministicFallbackDelta(explicit, interpreterState);
+      fallbackDelta = await linkTurnDeltaReferences(fallbackDelta, options);
+      fallbackDelta = normalizeContextualTurnDelta(interpreterState, fallbackDelta);
+      const fallbackValidation = validateTurnDelta(fallbackDelta, { domainPolicy });
+      if (fallbackValidation.valid && fallbackDelta.taskRelation !== "unknown") {
+        delta = fallbackDelta;
+        validation = fallbackValidation;
+        providerFallback = { used: true, reason: "invalid_response" };
+      } else {
+        delta = unknownTurnDelta("invalid_interpreter_output");
+      }
+    } else {
+      delta = unknownTurnDelta("invalid_interpreter_output");
+    }
   }
   return {
     schemaVersion: TURN_INTERPRETER_VERSION,

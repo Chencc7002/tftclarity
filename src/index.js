@@ -81,6 +81,18 @@ export {
   resolveMechanismExtractionConfig
 } from "./knowledge/mechanism-extraction-provider.js";
 export {
+  MECHANISM_CLASSIFICATION_SCHEMA_VERSION,
+  answerMechanismClassificationQuery,
+  buildMechanismClassificationEvidence,
+  normalizeMechanismClassifications,
+  parseMechanismClassificationQuery
+} from "./knowledge/mechanism-classification.js";
+export {
+  createMechanismClassificationProvider,
+  createMechanismClassificationProviderFromConfig,
+  resolveMechanismClassificationConfig
+} from "./knowledge/mechanism-classification-provider.js";
+export {
   buildFactorSchemaEnvelope,
   collectFactorObservations,
   validateNormalizedFactorSchema

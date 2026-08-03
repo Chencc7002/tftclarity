@@ -111,9 +111,21 @@ function normalizeLookupToken(value) {
 
 function apiToken(apiName) {
   return String(apiName ?? "")
+    .replace(/^DA_(?:18_)?/, "")
+    .replace(/^Component_/, "")
+    .replace(/^Item_/, "")
     .replace(/^TFT\d*_Item_/, "")
     .replace(/^TFT_Item_/, "")
     .replace(/^TFT\d*_/, "");
+}
+
+function canonicalItemApiName(apiName) {
+  const value = String(apiName ?? "");
+  if (!value.startsWith("DA_")) return value;
+  const token = apiToken(value).replace(/_Radiant$/i, "Radiant");
+  if (/Radiant$/i.test(token)) return `TFT5_Item_${token}`;
+  if (value.startsWith("DA_Artifact_")) return `TFT_Item_Artifact_${token}`;
+  return `TFT_Item_${token}`;
 }
 
 function humanizeToken(token) {
@@ -369,23 +381,29 @@ export function classifyItemApiName(apiName, options = {}) {
     return "removed_or_legacy";
   }
   if (COMPONENT_ITEM_API_NAMES.has(itemName)) return "component";
+  if (/^DA_Component_/i.test(itemName)) return "component";
   if (CONSUMABLE_ITEM_PATTERNS.some((pattern) => pattern.test(itemName))) return "consumable";
-  if (/_Radiant$/i.test(itemName) || /^TFT5_Item_/.test(itemName)) return "radiant";
-  if (itemName.includes("EmblemItem")) return "emblem";
-  if (ARTIFACT_PATTERNS.some((pattern) => pattern.test(itemName))) return "artifact";
-  if (SUPPORT_OR_TACTICIAN_PATTERNS.some((pattern) => pattern.test(itemName))) return "support";
+  if (/^DA_(?:Blast|Health|Mana)Potion18/i.test(itemName)) return "consumable";
+  if (/_?Radiant$/i.test(itemName) || /^TFT5_Item_/.test(itemName)) return "radiant";
+  if (itemName.includes("EmblemItem") || /^DA_18_Emblem/i.test(itemName)) return "emblem";
+  if (ARTIFACT_PATTERNS.some((pattern) => pattern.test(itemName)) || /^DA_(?:Artifact_|Item_Artifact_)/i.test(itemName)) return "artifact";
+  if (SUPPORT_OR_TACTICIAN_PATTERNS.some((pattern) => pattern.test(itemName)) || /^DA_Tacticians/i.test(itemName)) return "support";
   if (SET_SPECIAL_PATTERNS.some((pattern) => pattern.test(itemName))) return "set_special";
   if (itemName.startsWith("TFT_Item_")) return "ordinary_completed";
+  if (itemName.startsWith("DA_")) return "ordinary_completed";
   return "unknown";
 }
 
 function itemFromApiName(apiName, options = {}, dynamicSource = null) {
-  const seed = seedByApiName.get(apiName);
-  const override = itemAliasOverrideByApiName.get(apiName);
+  const canonicalApiName = canonicalItemApiName(apiName);
+  const seed = seedByApiName.get(apiName) ?? seedByApiName.get(canonicalApiName);
+  const override = itemAliasOverrideByApiName.get(apiName) ?? itemAliasOverrideByApiName.get(canonicalApiName);
+  const lookup = options.itemLookupByApiName?.get?.(apiName) ?? null;
+  const lookupName = String(lookup?.name ?? lookup?.displayName ?? lookup?.ingame_name ?? "").trim() || null;
   const availabilityOverride = resolveItemAvailabilityOverride(apiName, options);
+  const inferredCategory = classifyItemApiName(apiName, options);
   const category = availabilityOverride?.category
-    ?? seed?.category
-    ?? classifyItemApiName(apiName, options);
+    ?? (String(apiName).startsWith("DA_") ? inferredCategory : seed?.category ?? inferredCategory);
   const current = availabilityOverride?.current
     ?? seed?.current
     ?? (category !== "removed_or_legacy");
@@ -399,8 +417,9 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
 
   return applyOfficialItemLocalization({
     apiName,
-    zhName: override?.zhName ?? seed?.zhName ?? derived?.zhName ?? null,
+    zhName: lookupName ?? override?.zhName ?? seed?.zhName ?? derived?.zhName ?? null,
     shortName: override?.shortName ?? seed?.shortName ?? derived?.shortName ?? token,
+    displayName: lookupName ?? null,
     preferredDisplayName: override?.preferredDisplayName ?? seed?.preferredDisplayName ?? null,
     supersededBy: seed?.supersededBy ?? null,
     aliases: compact([
@@ -413,7 +432,9 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
       ...(override?.aliases ?? []),
       ...(seed?.aliases ?? []),
       ...(derived?.aliases ?? []),
+      lookupName,
       apiName,
+      canonicalApiName,
       token
     ]),
     category,
@@ -424,6 +445,7 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
       seed ? "seed" : null,
       override ? "alias_override" : null,
       derived ? "derived_alias" : null,
+      lookup ? "metatft_set_lookup" : null,
       dynamicSource
     ]).join("+"),
     aliasSource: override?.source ?? derived?.source ?? null,
@@ -449,18 +471,20 @@ export function buildItemCatalogFromItemsResponse(response, options = {}) {
     });
   }
 
-  for (const seed of ITEMS) {
-    if (!itemsByApiName.has(seed.apiName)) {
-      const unobserved = itemFromApiName(seed.apiName, options);
-      itemsByApiName.set(seed.apiName, {
-        ...unobserved,
-        category: "removed_or_legacy",
-        current: false,
-        obtainable: false,
-        availabilityOverride: false,
-        availabilityReason: "Not observed in the current MetaTFT /items snapshot.",
-        availabilitySource: "metatft_items_snapshot_absence"
-      });
+  if (options.includeSeeds !== false) {
+    for (const seed of ITEMS) {
+      if (!itemsByApiName.has(seed.apiName)) {
+        const unobserved = itemFromApiName(seed.apiName, options);
+        itemsByApiName.set(seed.apiName, {
+          ...unobserved,
+          category: "removed_or_legacy",
+          current: false,
+          obtainable: false,
+          availabilityOverride: false,
+          availabilityReason: "Not observed in the current MetaTFT /items snapshot.",
+          availabilitySource: "metatft_items_snapshot_absence"
+        });
+      }
     }
   }
 

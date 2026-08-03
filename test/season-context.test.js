@@ -6,6 +6,7 @@ import {
   MemorySemanticDocumentStore,
   SQLiteCacheStore,
   SQLiteSemanticDocumentStore,
+  createAssetResolver,
   createCatalog,
   createSeasonContextService,
   makeCompCandidateCacheKey,
@@ -13,7 +14,8 @@ import {
 } from "../src/index.js";
 import {
   createSmallWindowRuntime,
-  handleRecommendRequest
+  handleRecommendRequest,
+  loadRuntimeCatalog
 } from "../src/app/small-window-server.js";
 
 async function nodeSQLite() {
@@ -33,31 +35,84 @@ test("SeasonContext registry exposes only safe public records", () => {
   assert.equal(service.defaultContextId, "set17-live");
   assert.equal(live.selectable, true);
   assert.equal(live.themeId, "set17");
-  assert.equal(pbe.status, "coming_soon");
-  assert.equal(pbe.selectable, false);
-  assert.equal(pbe.themePreview, true);
-  assert.equal(pbe.availability.available, false);
+  assert.equal(pbe.status, "pbe");
+  assert.equal(pbe.selectable, true);
+  assert.equal(pbe.themePreview, false);
+  assert.equal(pbe.availability.available, true);
   assert.equal(live.theme.documentTitle, "TFTClarity｜云顶数据智答");
   assert.equal(live.theme.wallpaper.seasonId, "set-17");
   assert.equal(live.theme.patchNoteVersion, "17.7");
   assert.equal(pbe.theme.wallpaper.defaultId, "set18-verdant-realm");
   assert.equal(pbe.theme.patchNoteVersion, null);
-  assert.match(pbe.theme.riskNotice["en-US"], /cannot be queried/i);
+  assert.match(pbe.theme.riskNotice["en-US"], /data is available/i);
   assert.equal("source" in live, false);
   assert.equal("catalogNamespace" in live, false);
   assert.doesNotMatch(JSON.stringify(records), /api-hc\.metatft\.com|pbe-comps/);
 });
 
-test("PBE theme previews can be selected without making their data provider queryable", () => {
+test("Set 18 PBE can be selected and queried through its isolated provider context", () => {
   const service = createSeasonContextService();
-  const preview = service.resolveForSelection("set18-pbe");
+  const selected = service.resolveForSelection("set18-pbe");
+  const queryable = service.resolveForQuery("set18-pbe");
 
-  assert.equal(preview.id, "set18-pbe");
-  assert.equal(preview.themePreview, true);
-  assert.throws(
-    () => service.resolveForQuery("set18-pbe"),
-    (error) => error?.code === "season_context_coming_soon"
-  );
+  assert.equal(selected.id, "set18-pbe");
+  assert.equal(queryable.id, "set18-pbe");
+  assert.equal(queryable.source.queue, "PBE");
+  assert.equal(queryable.source.tftSet, "TFTSet18");
+  assert.equal(queryable.source.lookupChannel, "pbe");
+  assert.equal(queryable.availability.available, true);
+});
+
+test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17 seeds", async () => {
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    catalogMetaTFTClient: {
+      async getItems() {
+        return { data: [{ items: "DA_JeweledGauntlet" }] };
+      },
+      async getUnitsUnique() {
+        return { data: [{ units_unique: "TFT18_Ahri-1" }] };
+      },
+      async getTraits() {
+        return { data: [{ traits: "DA_Riftbeast18_3" }] };
+      }
+    },
+    compsClient: {
+      async getLatestClusterInfo() { return {}; },
+      async getCompOptions() { return {}; },
+      async getCompBuilds() { return {}; },
+      async getSetLookup() {
+        return {
+          items: [{ apiName: "DA_JeweledGauntlet", name: "珠光护手" }],
+          units: [{ apiName: "TFT18_Ahri", name: "阿狸", cost: 2 }],
+          traits: [{ apiName: "DA_Riftbeast18", name: "裂隙野兽" }]
+        };
+      }
+    }
+  });
+
+  const entry = await loadRuntimeCatalog(runtime, {
+    seasonContextId: "set18-pbe",
+    providerVersion: "metatft-pbe.v1",
+    effectivePatch: "current",
+    patch: "current",
+    queue: "PBE",
+    tftSet: "TFTSet18",
+    lookupChannel: "pbe",
+    lookupLocale: "zh_cn"
+  });
+  const resolver = createAssetResolver();
+
+  assert.equal(entry.catalog.unitByApiName.get("TFT18_Ahri").zhName, "阿狸");
+  assert.equal(entry.catalog.unitByApiName.get("TFT18_Ahri").cost, 2);
+  assert.equal(entry.catalog.unitByApiName.has("TFT17_Xayah"), false);
+  assert.equal(entry.catalog.traitByFilterId.get("DA_Riftbeast18_3").zhName, "裂隙野兽");
+  assert.equal(entry.catalog.traitByFilterId.has("TFT17_Stargazer_1"), false);
+  assert.equal(entry.catalog.itemByApiName.get("DA_JeweledGauntlet").category, "ordinary_completed");
+  assert.equal(entry.catalog.itemByApiName.get("DA_JeweledGauntlet").zhName, "珠光护手");
+  assert.match(resolver.resolveUnit("TFT18_Ahri").iconUrl, /champions\/tft18_ahri\.png$/);
+  assert.match(resolver.resolveItem("DA_JeweledGauntlet").iconUrl, /items\/da_jeweledgauntlet\.png$/);
+  assert.match(resolver.resolveTrait("DA_Riftbeast18_3").iconUrl, /traits\/da_riftbeast18\.png$/);
 });
 
 test("two selectable live seasons resolve independent UI themes during a simulated switch", () => {
@@ -96,15 +151,27 @@ test("two selectable live seasons resolve independent UI themes during a simulat
   assert.equal(after.selectable, true);
 });
 
-test("invalid and PBE SeasonContexts are rejected before any provider request", async () => {
+test("PBE requests reach the recommendation path while invalid SeasonContexts are rejected", async () => {
   let recommendationCalls = 0;
+  let receivedPreferences = null;
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
     fetchItems: false,
     cacheStore: new MemoryCacheStore(),
-    recommendForInputImpl: async () => {
+    recommendForInputImpl: async (_input, options) => {
       recommendationCalls += 1;
-      throw new Error("provider must not be called");
+      receivedPreferences = options.preferences;
+      return {
+        type: "conversation_exhausted",
+        parsed: null,
+        query: null,
+        validation: { valid: true, errors: [], warnings: [] },
+        clarification: null,
+        filteredBuilds: [],
+        rankedBuilds: [],
+        results: [],
+        text: "PBE ready"
+      };
     }
   });
 
@@ -117,12 +184,13 @@ test("invalid and PBE SeasonContexts are rejected before any provider request", 
     seasonContextId: "https://attacker.invalid/provider"
   }, runtime);
 
-  assert.equal(pbe.statusCode, 409);
-  assert.equal(pbe.payload.code, "season_context_coming_soon");
-  assert.equal(pbe.payload.seasonContextId, "set18-pbe");
+  assert.equal(pbe.statusCode, 200);
+  assert.equal(pbe.payload.seasonContext.id, "set18-pbe");
+  assert.equal(receivedPreferences.queue, "PBE");
+  assert.equal(receivedPreferences.tftSet, "TFTSet18");
   assert.equal(invalid.statusCode, 404);
   assert.equal(invalid.payload.code, "season_context_not_found");
-  assert.equal(recommendationCalls, 0);
+  assert.equal(recommendationCalls, 1);
 });
 
 test("cache fingerprints include SeasonContext, provider version, patch and queue", () => {

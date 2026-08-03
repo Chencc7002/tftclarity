@@ -83,7 +83,16 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
   const compConstraint = constraints.comp?.expectedType === "composition"
     ? constraints.comp
     : null;
-  const intent = intentFor(frame, options.executionPlan);
+  const normalizedInput = normalizeAlias(options.input);
+  const explicitTrendRequest = /(?:阵容|版本|当前).{0,8}(?:趋势|上升|下降)|(?:趋势|上升|下降).{0,8}阵容/u.test(normalizedInput);
+  const explicitPopularRequest = /(?:热门阵容|阵容热门|最热门|热度|选择率)/u.test(normalizedInput);
+  const routedIntent = intentFor(frame, options.executionPlan);
+  // Deterministic wording must win over a model/default plan here. Otherwise a
+  // clearly requested trend page is silently degraded to the generic rankings
+  // contract, which also makes an old cached result look like a fresh answer.
+  const intent = explicitTrendRequest && ["comp_rankings", "comp_trends", "comp_analysis"].includes(routedIntent)
+    ? "comp_trends"
+    : routedIntent;
   const carrierItem = intent === "item_carrier_rankings"
     ? resolvedValue(itemCandidates[0])
     : null;
@@ -92,9 +101,14 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
     ?? constraints.limit
     ?? 3;
   const requestMore = ["request_more", "next_page"].includes(options.dialogueAct);
+  const explicitCount = /(?:前\s*)?\d+\s*(?:套|个|名)?|(?:几|若干)(?:套|个)/u.test(normalizedInput);
   const limit = requestMore
     ? Math.min(100, array(options.lastResult?.shownIds).length + requestedCount)
-    : constraints.limit;
+    : explicitPopularRequest
+      && !explicitCount
+      && !array(constraints.metrics).includes("popularity")
+      ? 21
+      : constraints.limit;
   const comparisonItems = constraintEntityValues(
     constraints.comparisonItems ?? (frame.action === "compare" ? itemCandidates : [])
   );
@@ -112,11 +126,8 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
     || avoidItemComponents.length > 0
   );
   const popularRequested = intent === "comp_rankings"
-    && array(constraints.metrics).includes("popularity")
-    && (
-      constraints.limit == null
-      || Number(constraints.limit) >= 21
-    );
+    && (explicitPopularRequest || array(constraints.metrics).includes("popularity"))
+    && (limit == null || Number(limit) >= 21);
   const parsed = {
     rawInput: String(options.input ?? ""),
     intent,
@@ -155,6 +166,9 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
     ...(intent === "comp_rankings" ? {
       popularRequested,
       trendRequested: false
+    } : intent === "comp_trends" ? {
+      popularRequested: false,
+      trendRequested: true
     } : {}),
     parser: {
       intentExplicit: true,
@@ -177,7 +191,7 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
         taskRelation: options.taskRelation,
         dialogueAct: options.dialogueAct,
         avoidSeen: options.presentation?.avoidSeen === true,
-        normalizedInput: normalizeAlias(options.input)
+        normalizedInput
       }
     }
   };

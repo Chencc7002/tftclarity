@@ -22,6 +22,13 @@ function metaTFTUnitIconUrl(apiName) {
   return `https://cdn.metatft.com/file/metatft/champions/${slug}.png`;
 }
 
+function metaTFTDataIconUrl(entityType, apiName) {
+  const slug = String(apiName ?? "").trim().toLowerCase();
+  if (!/^[a-z0-9_]+$/u.test(slug)) return null;
+  const directory = entityType === "item" ? "items" : entityType === "trait" ? "traits" : null;
+  return directory ? `https://cdn.metatft.com/file/metatft/${directory}/${slug}.png` : null;
+}
+
 export function normalizeAssetUrl(value) {
   if (!value) return null;
   try {
@@ -49,6 +56,8 @@ export function createAssetResolver(options = {}) {
     const manifestIconUrl = normalizeAssetUrl(record?.iconUrl);
     const metaTFTIconUrl = entityType === "unit"
       ? normalizeAssetUrl(metaTFTUnitIconUrl(lookup))
+      : (entityType === "item" || entityType === "trait") && !manifestIconUrl
+        ? normalizeAssetUrl(metaTFTDataIconUrl(entityType, lookup))
       : null;
     const iconUrl = metaTFTIconUrl ?? manifestIconUrl;
     return {

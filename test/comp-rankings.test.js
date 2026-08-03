@@ -87,6 +87,21 @@ test("page stats adapter accepts MetaTFT's current space-delimited placement pay
   assert.equal(row.stats.pickRate, 0.01);
 });
 
+test("rankings reject impossible legacy placement distributions", () => {
+  const response = structuredClone(fixture);
+  const legacy = response.compsStats.results.find((row) => row.cluster === "409019");
+  legacy.places = [950, 20, 10, 10, 3, 3, 2, 2, 1000];
+
+  const result = buildCompRankings(response, {
+    query: query({ minSamples: 1 }),
+    catalog: createCatalog()
+  });
+
+  assert.ok(!result.candidates.some((comp) => comp.source.clusterId === "409019"));
+  assert.ok(result.diagnostics.rejected.some((row) => row.clusterId === "409019"
+    && row.reason === "implausible_placement_distribution"));
+});
+
 test("comp trends expose all measured rise and fall values even when the legacy top-three gate is incomplete", () => {
   const response = structuredClone(fixture);
   for (const row of Object.values(response.compsData.results.data.cluster_details)) delete row.trends;

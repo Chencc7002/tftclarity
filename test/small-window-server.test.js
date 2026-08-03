@@ -6,6 +6,8 @@ import {
   SESSION_LAST_QUERY_KEY,
   SQLiteCacheStore,
   createCatalog,
+  makeQueryCacheKey,
+  parseQuery,
   recommendForInput
 } from "../src/index.js";
 import {
@@ -31,6 +33,7 @@ import {
   normalizeSmallWindowPreferences,
   normalizeSmallWindowCacheStoreType,
   prewarmSmallWindowCatalog,
+  QUICK_TASK_CACHE_RETENTION_MS,
   resolveSmallWindowAgentRunBudget,
   resolveSmallWindowCacheOptions,
   resolveSmallWindowRequestTimeouts,
@@ -362,6 +365,15 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
+    officialEntityDetails: {
+      units: new Map([["TFT17_Xayah", {
+        apiName: "TFT17_Xayah",
+        name: "霞",
+        iconUrl: "https://raw.communitydragon.org/pbe/xayah.jpg"
+      }]]),
+      traits: new Map(),
+      meta: { version: "fixture" }
+    },
     metaTFTClient: {},
     compsClient: {},
     recommendForInputImpl: (input, options) => recommendForInput(input, {
@@ -394,7 +406,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   });
   assert.deepEqual(payload.cards[0].items.map((item) => item.name), ["羊刀", "无尽", "巨杀"]);
   assert.equal(payload.query.unitName, "霞");
-  assert.match(payload.query.unitIconUrl, /^https:\/\/cdn\.metatft\.com\/file\/metatft\/champions\//);
+  assert.equal(payload.query.unitIconUrl, "https://raw.communitydragon.org/pbe/xayah.jpg");
   assert.ok(payload.cards[0].items.every((item) => item.iconUrl?.startsWith("https://ddragon.leagueoflegends.com/")));
   assert.equal(payload.query.minSamples, 100);
   assert.equal(payload.meta.rankedBuilds, 2);
@@ -745,6 +757,45 @@ test("entity detail endpoint contract opens a catalog entry by stable id", async
   assert.equal(payload.unit.apiName, "TFT17_MasterYi");
   assert.equal(payload.unit.ability.name, "灵能打击");
   assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "unit_details");
+});
+
+test("S18 entity detail redirects a duplicate MetaTFT id to the official CommunityDragon unit", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [
+        { apiName: "DA_18_Diana", zhName: "Diana", aliases: ["Diana"] },
+        { apiName: "TFT18_Diana", zhName: "Diana", aliases: ["Diana"] }
+      ],
+      traits: [],
+      items: []
+    }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialEntityDetails: {
+      units: new Map([["DA_18_Diana", {
+        apiName: "DA_18_Diana",
+        name: "Diana",
+        cost: 3,
+        traitNames: ["Moon"],
+        stats: { health: 900 },
+        ability: { name: "Moonfall", description: "Deals magic damage." },
+        iconUrl: "https://raw.communitydragon.org/pbe/diana.jpg"
+      }]]),
+      traits: new Map(),
+      meta: { version: "18.1", season: "TFTSet18" }
+    },
+    recommendForInputImpl: async () => ({ itemRankings: [] })
+  });
+
+  const payload = await handleEntityDetailRequest(runtime, {
+    entityType: "unit",
+    apiName: "TFT18_Diana",
+    seasonContextId: "set18-pbe"
+  });
+
+  assert.equal(payload.type, "unit_details");
+  assert.equal(payload.unit.apiName, "DA_18_Diana");
+  assert.equal(payload.unit.iconUrl, "https://raw.communitydragon.org/pbe/diana.jpg");
 });
 
 test("entity catalog and detail HTTP routes are publicly readable", async () => {
@@ -2066,6 +2117,7 @@ test("comp details preserve observed positioning, expose compatible augments, an
       async getCompDetails(params) {
         calls.details += 1;
         assert.equal(params.cluster_id, "409");
+        assert.equal(params.queue, "1100");
         assert.ok(["409000", "409001"].includes(params.comp));
         return {
           updated: 1_700_000_000_000,
@@ -2083,7 +2135,7 @@ test("comp details preserve observed positioning, expose compatible augments, an
       },
       async getCompAugmentTiers(params) {
         calls.tiers += 1;
-        assert.deepEqual(params, { cluster_id: "409" });
+        assert.deepEqual(params, { cluster_id: "409", queue: "1100" });
         return {
           updated: 1_700_000_000_000,
           tft_set: "TFTSet17",
@@ -2188,7 +2240,7 @@ test("comp-detail HTTP route accepts a rendered card's MetaTFT identifiers", asy
     metaTFTClient: {},
     compsClient: {
       async getCompDetails(params) {
-        assert.deepEqual(params, { comp: "409000", cluster_id: "409" });
+        assert.deepEqual(params, { comp: "409000", cluster_id: "409", queue: "1100" });
         return {
           tft_set: "TFTSet17",
           results: {
@@ -2781,6 +2833,196 @@ test("refresh requests bypass query and default-context cache reads", async () =
 
   assert.equal(capturedOptions.bypassQueryCache, true);
   assert.equal(capturedOptions.bypassDefaultContextCache, true);
+});
+
+test("structured quick tasks bypass semantic interpretation and use the shared result renderer contract", async () => {
+  let capturedInput = null;
+  let capturedOptions = null;
+  let providerCalls = 0;
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    conversationStateV2Mode: "on",
+    turnDeltaProvider: async () => {
+      providerCalls += 1;
+      throw new Error("structured quick task must not call the turn provider");
+    },
+    recommendForInputImpl: (input, options) => {
+      capturedInput = input;
+      capturedOptions = options;
+      return recommendForInput(input, {
+        ...options,
+        response: fixtureRows
+      });
+    }
+  });
+
+  const response = await handleRecommendRequest({
+    input: "快捷查询：霞的装备",
+    seasonContextId: "set17-live",
+    quickTask: {
+      schemaVersion: "quick-task.v1",
+      id: "unit-build",
+      operation: "unit_build_rankings",
+      arguments: { champion: "霞" }
+    }
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "unit_build_rankings");
+  assert.equal(response.payload.unit.apiName, "TFT17_Xayah");
+  assert.equal(response.payload.quickTask.executionMode, "structured");
+  assert.equal(capturedInput, "查询霞的当前版本最稳三件装备");
+  assert.equal(capturedOptions.conversationStateV2Mode, "off");
+  assert.equal(capturedOptions.useStructuredParser, "never");
+  assert.equal(capturedOptions.semanticShadow, false);
+  assert.equal(capturedOptions.useSession, false);
+  assert.equal(capturedOptions.bypassQueryCache, false);
+  assert.equal(capturedOptions.queryTtlMs, QUICK_TASK_CACHE_RETENTION_MS);
+  assert.equal(capturedOptions.queryRefreshAfterMs, 45 * 60 * 1000);
+  assert.equal(providerCalls, 0);
+});
+
+test("structured quick task validation rejects mismatched operations", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {}
+  });
+
+  const response = await handleRecommendRequest({
+    input: "快捷查询",
+    quickTask: {
+      schemaVersion: "quick-task.v1",
+      id: "unit-build",
+      operation: "comp_rankings",
+      arguments: { champion: "霞" }
+    }
+  }, runtime);
+
+  assert.equal(response.statusCode, 400);
+  assert.equal(response.payload.code, "invalid_quick_task");
+});
+
+test("PBE unit details use the static-data TTL, return retained cache immediately, and start one background refresh", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [{ apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸"] }],
+      traits: [],
+      items: []
+    }),
+    cacheStore,
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    officialEntityDetails: {
+      units: new Map([["DA_18_Ahri", {
+        apiName: "DA_18_Ahri",
+        name: "阿狸",
+        traitNames: [],
+        stats: {},
+        ability: { name: "灵魄法球", description: "造成魔法伤害。" }
+      }]]),
+      traits: new Map(),
+      meta: { version: "18.1", season: "TFTSet18" }
+    }
+  });
+  const body = {
+    input: "查询阿狸的技能、费用、属性和羁绊资料",
+    seasonContextId: "set18-pbe",
+    quickTask: {
+      schemaVersion: "quick-task.v1",
+      id: "unit-details",
+      operation: "unit_details",
+      arguments: { champion: "阿狸" }
+    }
+  };
+
+  const first = await handleRecommendRequest(body, runtime);
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.payload.type, "unit_details");
+  assert.equal(first.payload.unit.apiName, "DA_18_Ahri");
+  assert.match(first.payload.unit.ability.name, /法球/);
+  assert.equal(first.payload.cache.query.hit, false);
+  assert.equal(first.payload.cache.query.policy.refreshAfterMs, 6 * 60 * 60 * 1000);
+  assert.equal(first.payload.cache.query.policy.retainForMs, QUICK_TASK_CACHE_RETENTION_MS);
+
+  for (const entry of cacheStore.queryCache.values()) {
+    entry.updatedAt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+  }
+  const second = await handleRecommendRequest(body, runtime);
+
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.payload.type, "unit_details");
+  assert.equal(second.payload.cache.query.hit, true);
+  assert.equal(second.payload.cache.query.refreshDue, true);
+  assert.equal(second.payload.cache.query.revalidating, true);
+});
+
+test("statistical quick-query cache exposes refresh-due data but rejects fallback older than 24 hours", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const catalog = createCatalog();
+  const input = "查询霞的当前版本最稳三件装备";
+  const directParsed = {
+    ...parseQuery(input, { catalog }),
+    intent: "unit_build_rankings"
+  };
+  const common = {
+    catalog,
+    cacheStore,
+    compsData: { compOptions: [], compBuilds: [] },
+    preferences: { minSamples: 100, itemPolicy: "ordinary_only" },
+    directParsed,
+    semanticShadow: false,
+    useSession: false,
+    conversationStateV2Mode: "off",
+    seasonContextId: "set17-live",
+    queryTtlMs: QUICK_TASK_CACHE_RETENTION_MS,
+    queryHardRetentionMs: QUICK_TASK_CACHE_RETENTION_MS,
+    queryRefreshAfterMs: 45 * 60 * 1000
+  };
+  const seeded = await recommendForInput(input, {
+    ...common,
+    response: fixtureRows
+  });
+  const key = makeQueryCacheKey(seeded.query);
+  cacheStore.setQuery(key, {
+    response: fixtureRows,
+    source: "metatft",
+    patch: seeded.query.patch
+  }, {
+    seasonContextId: "set17-live",
+    ttlMs: QUICK_TASK_CACHE_RETENTION_MS
+  });
+  const stored = [...cacheStore.queryCache.values()].find((entry) => entry.value?.response === fixtureRows)
+    ?? [...cacheStore.queryCache.values()].at(-1);
+  stored.updatedAt = new Date(Date.now() - 46 * 60 * 1000).toISOString();
+
+  const cached = await recommendForInput(input, {
+    ...common,
+    metaTFTClient: {},
+    compsClient: {}
+  });
+  assert.equal(cached.cache.query.hit, true);
+  assert.equal(cached.cache.query.refreshDue, true);
+  assert.equal(cached.cache.query.stale, false);
+
+  stored.updatedAt = new Date(Date.now() - 25 * 60 * 60 * 1000).toISOString();
+  stored.expiresAt = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  await assert.rejects(
+    recommendForInput(input, {
+      ...common,
+      metaTFTClient: {},
+      compsClient: {}
+    }),
+    /getUnitBuilds|unit build/i
+  );
 });
 
 test("ConversationState v2 on mode never reuses a context-free query result cache", async () => {

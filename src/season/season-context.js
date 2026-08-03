@@ -51,29 +51,37 @@ const CONTEXTS = [
   },
   {
     id: "set18-pbe",
-    label: "Set 18 · PBE 预览",
+    label: "Set 18 · PBE · 18.1",
     season: 18,
     environment: "pbe",
     mode: "standard",
-    status: "coming_soon",
+    status: "pbe",
     visible: true,
-    selectable: false,
-    themePreview: true,
+    selectable: true,
+    themePreview: false,
     isDefault: false,
     catalogNamespace: "set18-pbe",
     source: {
       provider: "metatft-pbe",
-      providerVersion: "metatft-pbe.unverified.v1",
+      providerVersion: "metatft-pbe.v1",
       pageUrl: "https://www.metatft.com/pbe-comps",
+      explorerUrl: "https://www.metatft.com/explorer?set=TFTSet18",
       queue: "PBE",
-      patchPolicy: "latest"
+      patchPolicy: "latest",
+      currentPatch: "18.1",
+      explorerPatch: "current",
+      compsPatch: "18.1",
+      tftSet: "TFTSet18",
+      lookupChannel: "pbe",
+      lookupLocale: "zh_cn",
+      requestDeadlineMs: 20000
     },
     themeId: "set18",
     theme: {
       documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
-        "zh-CN": "PBE 预览",
-        "en-US": "PBE Preview"
+        "zh-CN": "S18 PBE · 18.1",
+        "en-US": "Set 18 PBE · 18.1"
       },
       colors: {
         primary: "#356b43",
@@ -91,15 +99,15 @@ const CONTEXTS = [
       },
       patchNoteVersion: null,
       quickQuestions: {
-        "zh-CN": [],
-        "en-US": []
+        "zh-CN": ["当前有什么稳定阵容？", "当前版本阵容趋势", "阿狸最好的三件装备是什么"],
+        "en-US": ["What comps are stable right now?", "Show current comp trends", "What are Ahri's best three items?"]
       },
       riskNotice: {
-        "zh-CN": "PBE 数据准备中，当前不可查询。",
-        "en-US": "PBE data is being prepared and cannot be queried yet."
+        "zh-CN": "S18 PBE 数据已开放；测试服内容和统计会频繁变化，结果仅供当前版本参考。",
+        "en-US": "Set 18 PBE data is available. Test-realm content and statistics can change frequently."
       }
     },
-    notices: ["PBE 数据准备中，当前不可查询。"]
+    notices: ["S18 PBE 数据已开放；测试服内容和统计会频繁变化。"]
   }
 ];
 
@@ -147,14 +155,13 @@ export class SeasonContextService {
         }
       },
       "metatft-pbe": {
-        available: false,
-        status: "coming_soon",
-        reason: "PBE provider interface has not been verified",
+        available: true,
+        status: "available",
         health: {
-          status: "not_verified",
+          status: "ready",
           lastCheckedAt: null,
           lastSuccessfulSyncAt: null,
-          catalogStatus: "not_synced"
+          catalogStatus: "runtime_managed"
         }
       },
       ...(options.providerAvailability ?? {})
@@ -272,6 +279,7 @@ export class SeasonContextService {
       selectable: context.selectable && Boolean(availability.available),
       themePreview: Boolean(context.themePreview),
       isDefault: context.isDefault,
+      currentPatch: context.source?.currentPatch ?? null,
       themeId: context.themeId,
       theme: context.theme ? clone(context.theme) : null,
       notices: [...(context.notices ?? [])],

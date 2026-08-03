@@ -232,6 +232,7 @@ async function executePlannedStructuredQuery(plan, operation, handler, context =
       handlers: { [operation]: handler },
       run: context.agentRun,
       signal: context.signal,
+      timeoutMs: context.timeoutMs,
       intent: context.intent,
       deferResultPolicy: context.deferResultPolicy === true
     });
@@ -272,6 +273,7 @@ async function executePlannedStructuredQuery(plan, operation, handler, context =
         handler,
         run: context.agentRun,
         signal: context.signal,
+        timeoutMs: context.timeoutMs,
         maxRetriesPerTool: context.maxRetriesPerTool,
         intent: context.intent
       });
@@ -544,6 +546,38 @@ function storeOptionsFor(options = {}, extra = {}) {
   };
 }
 
+function cacheRefreshDue(entry, refreshAfterMs, now = Date.now()) {
+  const ttl = Number(refreshAfterMs);
+  if (!entry || !Number.isFinite(ttl) || ttl <= 0) return false;
+  const updatedAt = Date.parse(entry.updatedAt ?? "");
+  return Number.isFinite(updatedAt) && now - updatedAt >= ttl;
+}
+
+function cacheEntryWithinRetention(entry, options = {}) {
+  const retentionMs = Number(options.queryHardRetentionMs);
+  if (!Number.isFinite(retentionMs) || retentionMs <= 0) return true;
+  const updatedAt = Date.parse(entry?.updatedAt ?? "");
+  const now = typeof options.now === "function" ? Number(options.now()) : Date.now();
+  return Number.isFinite(updatedAt) && now - updatedAt <= retentionMs;
+}
+
+function cachedQueryState(key, entry, options = {}) {
+  const revalidating = cacheRefreshDue(
+    entry,
+    options.queryRefreshAfterMs,
+    typeof options.now === "function" ? Number(options.now()) : Date.now()
+  );
+  return {
+    key,
+    hit: true,
+    stale: false,
+    revalidating,
+    refreshDue: revalidating,
+    updatedAt: entry.updatedAt,
+    expiresAt: entry.expiresAt
+  };
+}
+
 export function conversationStateV2ModeFor(options = {}) {
   const value = String(
     options.conversationStateV2Mode
@@ -756,6 +790,9 @@ function inheritCompRankingFromSession(parsed, sessionValue, options = {}) {
   const explicitFreshCompRequest = isCompIntent(parsed?.intent)
     && !parsed?.preferenceRequested
     && !continuationWording;
+  if (explicitFreshCompRequest) {
+    return { parsed, inherited: false, inheritedKeys: [] };
+  }
   const inheritedKeys = [];
   for (const key of ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit", "specialMode"]) {
     const current = next[key];
@@ -1715,14 +1752,17 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
           };
           const explorerPlan = planMetaTFTCompCandidates(plannedQuery);
           return typeof options.metaTFTClient.getCompCandidates === "function"
-            ? options.metaTFTClient.getCompCandidates(explorerPlan)
+            ? options.metaTFTClient.getCompCandidates(explorerPlan, {
+              timeoutMs: options.metaTFTTimeoutMs
+            })
             : options.metaTFTClient.getExactUnitsTraits2(explorerPlan.params);
         },
         {
           intent: query.intent,
           toolExecutor: options.toolExecutor,
           agentRun: options.agentRun,
-          signal: options.abortSignal
+          signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs
         }
       );
       const stored = await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, {
@@ -1735,7 +1775,7 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
       cache.expiresAt = stored?.expiresAt ?? null;
     } catch (error) {
       const stale = await getStoreEntry(cacheStore, "getDefaultContext", cacheKey, storeOptionsFor(options, { allowExpired: true }));
-      if (stale?.value?.response !== undefined) {
+      if (stale?.value?.response !== undefined && cacheEntryWithinRetention(stale, options)) {
         response = stale.value.response;
         cache = {
           key: cacheKey,
@@ -1876,13 +1916,7 @@ async function recommendItemCarriersForInput(
     const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
     if (cached?.value?.response !== undefined) {
       packet = cached.value.response;
-      queryCache = {
-        key: queryCacheKey,
-        hit: true,
-        stale: false,
-        updatedAt: cached.updatedAt,
-        expiresAt: cached.expiresAt
-      };
+      queryCache = cachedQueryState(queryCacheKey, cached, options);
     }
   }
 
@@ -1921,7 +1955,9 @@ async function recommendItemCarriersForInput(
               : {})
           };
           const [buildResponse, baselineResponse] = await Promise.all([
-            options.metaTFTClient.getItemCarrierBuilds(planMetaTFTItemCarrierBuilds(plannedQuery)),
+            options.metaTFTClient.getItemCarrierBuilds(planMetaTFTItemCarrierBuilds(plannedQuery), {
+              timeoutMs: options.metaTFTTimeoutMs
+            }),
             options.compsClient.getUnitItemsProcessed(baselineParams)
           ]);
           return {
@@ -1940,7 +1976,8 @@ async function recommendItemCarriersForInput(
           executionPlanExecutor: options.executionPlanExecutor,
           executionPlan,
           agentRun: options.agentRun,
-          signal: options.abortSignal
+          signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs
         }
       );
       const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
@@ -1958,7 +1995,7 @@ async function recommendItemCarriersForInput(
         queryCacheKey,
         storeOptionsFor(options, { allowExpired: true })
       );
-      if (stale?.value?.response === undefined) throw error;
+      if (stale?.value?.response === undefined || !cacheEntryWithinRetention(stale, options)) throw error;
       packet = stale.value.response;
       queryCache = {
         key: queryCacheKey,
@@ -1975,7 +2012,7 @@ async function recommendItemCarriersForInput(
   const baselineResponse = packet?.baselineResponse ?? options.itemCarrierBaselineResponse;
   if (!baselineResponse) throw new Error("item carrier rankings require unit baseline data");
 
-  const result = aggregateItemCarrierRankings(buildResponse, baselineResponse, query);
+  const result = aggregateItemCarrierRankings(buildResponse, baselineResponse, query, { catalog });
   result.parsed = parsed;
   result.validation = validation;
   result.rankedBuilds = [];
@@ -2232,7 +2269,10 @@ export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
   const semanticParser = options.semanticTaskParser ?? parseSemanticTask;
-  const conversationMode = conversationStateV2ModeFor(options);
+  const directParsed = options.directParsed && typeof options.directParsed === "object"
+    ? structuredClone(options.directParsed)
+    : null;
+  const conversationMode = directParsed ? "off" : conversationStateV2ModeFor(options);
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options), storeOptionsFor(options));
@@ -2279,7 +2319,7 @@ export async function recommendForInput(input, options = {}) {
       conversationStateV2Context: conversationV2
     };
   }
-  const semanticTaskPromise = options.semanticShadow === false
+  const semanticTaskPromise = directParsed || options.semanticShadow === false
     ? null
     : conversationMode === "on"
       ? Promise.resolve(semanticResultForConversationResolution(
@@ -2302,8 +2342,8 @@ export async function recommendForInput(input, options = {}) {
         entityCandidateReranker: options.semanticEntityReranker
       }));
   semanticTaskPromise?.catch(() => {});
-  let deterministicParsed = parseQueryDeterministically(input, options, catalog);
-  if (conversationMode !== "on") {
+  let deterministicParsed = directParsed ?? parseQueryDeterministically(input, options, catalog);
+  if (!directParsed && conversationMode !== "on") {
     deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
     deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
   }
@@ -2338,7 +2378,8 @@ export async function recommendForInput(input, options = {}) {
       && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
       ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
       : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
-  let parsedInput = conversationMode === "on"
+  let parsedInput = directParsed
+    ?? (conversationMode === "on"
     ? resolvedTaskFrameToParsed(conversationV2.resolution.resolvedTaskFrame, {
       input,
       executionPlan: semanticShadowResult?.executionPlanning?.plan,
@@ -2357,7 +2398,7 @@ export async function recommendForInput(input, options = {}) {
       },
       catalog,
       initialUnitSessionMerge.parsed
-    );
+    ));
   const compSessionMerge = conversationMode === "on"
     ? { parsed: parsedInput, inherited: false, inheritedKeys: [] }
     : initialCompSessionMerge.inherited
@@ -2410,7 +2451,7 @@ export async function recommendForInput(input, options = {}) {
       preferences: options.preferences,
       // v3 accepts MetaTFT's reproducible page calculation and distinguishes it
       // from both a raw legacy field and local 72-hour history.
-      dataVersion: options.compDataVersion ?? "comp-trend-gate-v3"
+      dataVersion: options.compDataVersion ?? "comp-trend-gate-v4"
     });
     query.sort = parsedInput.sort;
     query.sessionContext = parsedInput.sessionContext ?? null;
@@ -2469,12 +2510,7 @@ export async function recommendForInput(input, options = {}) {
       const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
       if (cached?.value?.response !== undefined) {
         response = cached.value.response;
-        queryCache = {
-          key: queryCacheKey,
-          hit: true,
-          updatedAt: cached.updatedAt,
-          expiresAt: cached.expiresAt
-        };
+        queryCache = cachedQueryState(queryCacheKey, cached, options);
       }
     }
 
@@ -2533,6 +2569,7 @@ export async function recommendForInput(input, options = {}) {
             executionPlan,
             agentRun: options.agentRun,
             signal: options.abortSignal,
+            timeoutMs: options.toolTimeoutMs,
             deferResultPolicy: true,
             onExecution: (execution) => {
               executionPlanRun = execution;
@@ -2583,7 +2620,7 @@ export async function recommendForInput(input, options = {}) {
         }
       } catch (error) {
         const stale = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options, { allowExpired: true }));
-        if (stale?.value?.response === undefined) throw error;
+        if (stale?.value?.response === undefined || !cacheEntryWithinRetention(stale, options)) throw error;
         response = stale.value.response;
         queryCache = {
           key: queryCacheKey,
@@ -2955,12 +2992,7 @@ export async function recommendForInput(input, options = {}) {
     const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
     if (cached?.value?.response !== undefined) {
       response = cached.value.response;
-      queryCache = {
-        key: queryCacheKey,
-        hit: true,
-        updatedAt: cached.updatedAt,
-        expiresAt: cached.expiresAt
-      };
+      queryCache = cachedQueryState(queryCacheKey, cached, options);
     }
   }
 
@@ -2990,7 +3022,8 @@ export async function recommendForInput(input, options = {}) {
             minSamples: params.minSamples
           };
           const liveResponse = await options.metaTFTClient?.getUnitBuilds(
-            planMetaTFTUnitBuilds(plannedQuery)
+            planMetaTFTUnitBuilds(plannedQuery),
+            { timeoutMs: options.metaTFTTimeoutMs }
           );
           return withRetrievalTimestamp(
             liveResponse,
@@ -3004,6 +3037,7 @@ export async function recommendForInput(input, options = {}) {
           executionPlan,
           agentRun: options.agentRun,
           signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs,
           onExecution: (execution) => {
             executionPlanRun = execution;
           }
@@ -3031,7 +3065,7 @@ export async function recommendForInput(input, options = {}) {
       const stale = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options, {
         allowExpired: true
       }));
-      if (stale?.value?.response === undefined) throw error;
+      if (stale?.value?.response === undefined || !cacheEntryWithinRetention(stale, options)) throw error;
 
       response = stale.value.response;
       queryCache = {

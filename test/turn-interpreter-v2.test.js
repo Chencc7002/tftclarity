@@ -291,6 +291,108 @@ test("Turn Interpreter permits deterministic task parsing for a context-free fir
   assert.equal(response.telemetry.providerFallback.reason, "provider_error");
 });
 
+test("Turn Interpreter treats a self-contained task as new when only a stale clarification is pending", async () => {
+  let fallbackParserCalls = 0;
+  const response = await interpretTurn({
+    currentMessage: "查询凯尔最稳三件装备",
+    conversationState: createConversationState({
+      pendingClarification: {
+        reason: "turn_relation_uncertain",
+        attempts: 1,
+        question: "请补充关键信息"
+      }
+    }),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => {
+      throw new Error("provider unavailable");
+    },
+    semanticTaskParser: async () => {
+      fallbackParserCalls += 1;
+      return {
+        taskFrame: createTaskFrame({
+          action: "recommend",
+          goal: "unit_build_rankings",
+          subjects: [{
+            rawText: "凯尔",
+            expectedType: "champion",
+            resolvedId: "DA_18_Kayle",
+            confidence: 1
+          }],
+          confidence: 1,
+          understandingStatus: "understood_and_supported"
+        })
+      };
+    }
+  });
+
+  assert.equal(fallbackParserCalls, 0);
+  assert.equal(response.turnDelta.taskRelation, "new");
+  assert.equal(response.turnDelta.explicitTaskFrame.subjects[0].rawText, "凯尔");
+});
+
+test("Turn Interpreter replaces an active task for an explicit self-contained query", async () => {
+  let parserCalls = 0;
+  const response = await interpretTurn({
+    currentMessage: "当前版本阵容趋势",
+    conversationState: createConversationState({
+      activeTask: {
+        taskId: "old-unit-task",
+        taskFrame: createTaskFrame({
+          action: "rank",
+          goal: "unit_build_rankings",
+          subjects: [reference("凯尔", "champion")],
+          confidence: 1,
+          understandingStatus: "understood_and_supported"
+        })
+      }
+    }),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "continue",
+        taskRelation: "continue",
+        confidence: 0.8
+      })
+    }),
+    semanticTaskParser: async () => {
+      parserCalls += 1;
+      return {
+        taskFrame: createTaskFrame({
+          action: "analyze",
+          goal: "comp_trends",
+          confidence: 1,
+          understandingStatus: "understood_and_supported"
+        })
+      };
+    }
+  });
+
+  assert.equal(parserCalls, 0);
+  assert.equal(response.turnDelta.taskRelation, "new");
+  assert.equal(response.turnDelta.explicitTaskFrame.goal, "comp_trends");
+});
+
+test("explicit champion build wording starts the same deterministic task across seasons", async () => {
+  const response = await interpretTurn({
+    currentMessage: "查询阿狸当前版本最稳三件装备",
+    conversationState: createConversationState(),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "unknown",
+        taskRelation: "unknown",
+        confidence: 0
+      })
+    }),
+    entityLinking: false
+  });
+
+  assert.equal(response.turnDelta.taskRelation, "new");
+  assert.equal(response.turnDelta.explicitTaskFrame.goal, "unit_build_rankings");
+  assert.equal(response.turnDelta.explicitTaskFrame.subjects[0].rawText, "阿狸");
+  assert.equal(response.turnDelta.explicitTaskFrame.constraints.itemCount, 3);
+});
+
 test("Turn Interpreter does not guess a contextual relation after provider failure", async () => {
   const activeFrame = createTaskFrame({
     action: "recommend",

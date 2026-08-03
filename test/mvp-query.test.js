@@ -3792,6 +3792,7 @@ test("MetaTFT comps client uses structured detail, augment, and localized lookup
   await client.getCompDetails({ comp: "409000", cluster_id: "409" });
   await client.getCompAugmentTiers({ cluster_id: "409" });
   await client.getAugmentLookup("TFTSet17", "zh_cn");
+  await client.getSetLookup("TFTSet18", { channel: "pbe", locale: "zh_cn" });
 
   assert.equal(requestedUrls[0].origin, "https://api-hc.metatft.com");
   assert.equal(requestedUrls[0].pathname, "/tft-comps-api/comp_details");
@@ -3800,7 +3801,9 @@ test("MetaTFT comps client uses structured detail, augment, and localized lookup
   assert.equal(requestedUrls[1].pathname, "/tft-comps-api/comp_augment_tiers");
   assert.equal(requestedUrls[1].searchParams.get("cluster_id"), "409");
   assert.equal(requestedUrls[2].href, "https://data.metatft.com/lookups/TFTSet17_latest_zh_cn.json");
+  assert.equal(requestedUrls[3].href, "https://data.metatft.com/lookups/TFTSet18_pbe_zh_cn.json");
   await assert.rejects(() => client.getAugmentLookup("invalid set", "zh_cn"), /valid TFT set name/);
+  await assert.rejects(() => client.getSetLookup("invalid set"), /valid TFT set name/);
 });
 
 test("MetaTFT clients retry one transient server failure and preserve attempt counts", async () => {

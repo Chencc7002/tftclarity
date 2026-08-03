@@ -1,0 +1,162 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  buildCommunityDragonEntityDetails,
+  fetchCommunityDragonEntityDetails
+} from "../src/data/communitydragon-entity-details.js";
+import { buildUnitCatalogFromExplorerRows, mergeCatalogUnits } from "../src/data/domain-catalog.js";
+import { createCatalog } from "../src/data/static-data.js";
+import { buildCompRankingQuery, planQuery } from "../src/index.js";
+import { calculatePlacementStats } from "../src/core/stats-calculator.js";
+import { makeQueryCacheKey } from "../src/data/cache-store.js";
+
+test("Set 18 Explorer keeps DA unit ids and maps MetaTFT lookup aliases onto the canonical unit", () => {
+  const unitLookupByApiName = new Map([["TFT18_Kayle", {
+    apiName: "TFT18_Kayle",
+    assetNames: ["DA_18_Kayle"],
+    name: "凯尔",
+    en_name: "Kayle",
+    cost: 2
+  }]]);
+  const units = buildUnitCatalogFromExplorerRows({
+    data: [{ units_unique: "DA_18_Kayle-1", placement_count: [9, 27, 57, 104, 154, 237, 289, 271] }]
+  }, { includeSeeds: false, unitLookupByApiName });
+
+  assert.deepEqual(units.map((unit) => unit.apiName), ["DA_18_Kayle"]);
+  assert.equal(units[0].zhName, "凯尔");
+  assert.equal(units[0].cost, 2);
+  assert.equal(units[0].aliases.includes("TFT18_Kayle"), true);
+  assert.equal(units[0].aliases.includes("天使"), true);
+
+  const catalog = createCatalog({ units, traits: [], items: [] });
+  assert.equal(planQuery("查询天使最稳三件装备", { catalog }).query.unit, "DA_18_Kayle");
+  assert.equal(planQuery("查询凯尔最稳三件装备", { catalog }).query.unit, "DA_18_Kayle");
+});
+
+test("Set 18 catalog merge removes a persisted TFT18 alias when the DA unit arrives", () => {
+  const merged = mergeCatalogUnits([
+    { apiName: "TFT18_Kayle", zhName: "凯尔", aliases: ["凯尔"] }
+  ], [
+    { apiName: "DA_18_Kayle", zhName: "凯尔", aliases: ["Kayle"] }
+  ]);
+  assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_18_Kayle"]);
+  assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
+});
+
+test("Kayle placement distribution produces ordinary eight-place stats instead of the bad TFT18 sample", () => {
+  const stats = calculatePlacementStats([9, 27, 57, 104, 154, 237, 289, 271]);
+  assert.equal(stats.games, 1148);
+  assert.ok(stats.avgPlacement > 4 && stats.avgPlacement < 7);
+  assert.ok(stats.avgPlacement > 2);
+  assert.ok(stats.top4Rate > 0.1 && stats.top4Rate < 0.25);
+});
+
+test("CommunityDragon PBE details expose Set 18 unit stats, ability, and trait tiers", () => {
+  const details = buildCommunityDragonEntityDetails({
+    teamplanner: {
+      TFTSet18: [{
+        character_id: "DA_18_Kayle",
+        tier: 2,
+        display_name: "凯尔",
+        traits: [
+          { name: "日光射线", id: "DA_18_Solar" },
+          { name: "迅捷射手", id: "DA_18_Rapidfire" }
+        ]
+      }]
+    },
+    traits: [{
+      display_name: "迅捷射手",
+      trait_id: "DA_18_Rapidfire",
+      set: "TFTSet18",
+      tooltip_text: "你的队伍获得@TeamAS*100@%攻击速度。<br><row>(@MinUnits@)每次攻击+@ASPerAttack*100@%</row>",
+      innate_trait_sets: [{ constants: [{ name: "TeamAS", value: 0.1 }] }],
+      conditional_trait_sets: [{
+        min_units: 2,
+        max_units: 2,
+        constants: [{ name: "ASPerAttack", value: 0.03 }]
+      }]
+    }],
+    lookup: {
+      units: [{
+        apiName: "TFT18_Kayle",
+        assetNames: ["DA_18_Kayle"],
+        stats: { hp: 550, mana: 0, initialMana: 0, damage: 10, armor: 30, magicResist: 30, attackSpeed: 0.75, range: 4, critChance: 0.25 },
+        ability: { name: "太阳裁决", desc: "造成<TFTAttribute attributeID=\"MagicDamage\"/>魔法伤害。" },
+        attributeValues: { MagicDamage: [56, 84, 98, 112] }
+      }]
+    }
+  }, { tftSet: "TFTSet18", version: "18.1" });
+
+  const kayle = details.units.get("DA_18_Kayle");
+  assert.equal(kayle.stats.health, 550);
+  assert.equal(kayle.stats.critChance, 25);
+  assert.equal(kayle.ability.name, "太阳裁决");
+  assert.match(kayle.ability.description, /56\/84\/98\/112/);
+  assert.deepEqual(kayle.traitNames, ["日光射线", "迅捷射手"]);
+  assert.equal(details.traits.get("DA_18_Rapidfire").levels[0].units, 2);
+  assert.match(details.traits.get("DA_18_Rapidfire").levels[0].effect, /3%/);
+});
+
+test("CommunityDragon PBE details fall back to local raw snapshots when the network is unavailable", async () => {
+  const payloads = {
+    planner: { TFTSet18: [{
+      character_id: "DA_18_Ahri",
+      display_name: "阿狸",
+      tier: 4,
+      traits: [{ name: "灵魂莲华" }, { name: "法师" }]
+    }] },
+    traits: [],
+    lookup: { units: [{
+      apiName: "TFT18_Ahri",
+      assetNames: ["DA_18_Ahri"],
+      stats: { hp: 850, mana: 100, initialMana: 20, armor: 40, magicResist: 40, attackSpeed: 0.8 },
+      ability: {
+        name: "灵魄炸弹",
+        desc: "造成<TFTAttribute attributeID=\"Damage\"/>魔法伤害",
+        attributeValues: { Damage: [485, 735, 3500] }
+      }
+    }] }
+  };
+  const details = await fetchCommunityDragonEntityDetails({
+    fetchImpl: async () => { throw new Error("offline"); },
+    tftSet: "TFTSet18",
+    localCachePaths: { teamplanner: "planner", traits: "traits", lookup: "lookup" },
+    readJsonFile: async (path) => payloads[path]
+  });
+  const ahri = details.units.get("DA_18_Ahri");
+  assert.equal(ahri.cost, 4);
+  assert.equal(ahri.stats.health, 850);
+  assert.equal(ahri.ability.name, "灵魄炸弹");
+  assert.match(ahri.ability.description, /485\/735\/3500/u);
+  assert.deepEqual(ahri.traitNames, ["灵魂莲华", "法师"]);
+});
+
+test("composition cache keys isolate popular, trend, and preference result contracts", () => {
+  const base = { seasonContextId: "set18-pbe", providerVersion: "metatft-pbe.v1", effectivePatch: "18.1", patch: "18.1", queue: "PBE", intent: "comp_rankings" };
+  const popular = makeQueryCacheKey({ ...base, metrics: ["popularity"], popularRequested: true });
+  const metricOnly = makeQueryCacheKey({ ...base, metrics: ["popularity"], popularRequested: false });
+  const preference = makeQueryCacheKey({ ...base, metrics: ["avg_placement"], preferenceRequested: true, preferenceConditions: { goal: "balanced", count: 3 } });
+  assert.notEqual(popular, metricOnly);
+  assert.notEqual(popular, preference);
+});
+
+test("Set 18 composition queries use patch 18.1 while Explorer remains on current", () => {
+  const query = buildCompRankingQuery({
+    intent: "comp_rankings",
+    patch: "current",
+    popularRequested: true
+  }, {
+    preferences: {
+      seasonContextId: "set18-pbe",
+      currentPatch: "18.1",
+      patch: "current",
+      compPatch: "18.1",
+      queue: "PBE"
+    }
+  });
+
+  assert.equal(query.patch, "18.1");
+  assert.equal(query.effectivePatch, "18.1");
+  assert.equal(query.popularRequested, true);
+});

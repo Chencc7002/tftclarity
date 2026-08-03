@@ -47,6 +47,8 @@ test("desktop UI exposes the responsive AppShell structure", () => {
 test("season switching is server-validated, conversation-isolated, and theme-driven", () => {
   assert.match(indexHtml, /id="season-context-select"/);
   assert.match(indexHtml, /id="season-context-summary"/);
+  assert.match(indexHtml, /data-season-subtitle-separator/);
+  assert.match(appJs, /seasonSubtitleForSummary/);
   assert.match(styles, /\.season-context-control/);
   assert.match(appJs, /fetch\("\/api\/season-contexts"\)/);
   assert.match(appJs, /fetch\("\/api\/season-contexts\/select"/);
@@ -106,7 +108,11 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /button\[data-quick-task\]/);
   assert.match(appJs, /QUICK_TASKS\.find/);
   assert.match(appJs, /queryInput\.value = quickTask\.query/);
-  assert.match(appJs, /requestRecommendation\(false, t\(quickTask\.promptKey\)\)/);
+  assert.match(appJs, /structuredQuickTask\(quickTask\)/);
+  assert.match(appJs, /schemaVersion: "quick-task\.v1"/);
+  assert.match(appJs, /operation: "unit_build_rankings"/);
+  assert.match(appJs, /quickTask: state\.lastQuickTask/);
+  assert.match(i18n, /快捷查询可跳过语义理解，通常返回更快/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
   assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.7"/);
@@ -487,6 +493,7 @@ test("small-window exposes current-set entity catalogs with direct detail naviga
 
 test("comp cards lazy-load verified formation and augment details", () => {
   assert.match(appJs, /function compDetailDescriptor\(comp\)/);
+  assert.ok(appJs.includes('.filter((apiName) => /^(?:TFT|DA_)[\\w-]+$/i.test(apiName))'));
   assert.match(appJs, /comp: descriptor\.compId/);
   assert.match(appJs, /clusterId: descriptor\.dataClusterId/);
   assert.match(appJs, /units: descriptor\.units\.join\(","\)/);
