@@ -92,6 +92,31 @@ function unitResultMetadata(result) {
   return { shownIds, returnedCount: shownIds.length, totalCount };
 }
 
+function entityCatalogResultMetadata(result) {
+  const results = array(result.results);
+  const entityType = result.result?.entityType ?? result.entityType ?? null;
+  const shownEntities = results
+    .filter((entry) => entry?.apiName)
+    .map((entry) => ({
+      apiName: String(entry.apiName),
+      name: String(entry.name ?? entry.zhName ?? entry.displayName ?? entry.apiName),
+      entityType: String(entityType ?? "unit")
+    }));
+  return {
+    shownIds: uniqueIds(shownEntities.map((entry) => entry.apiName)),
+    shownEntities,
+    entityType,
+    returnedCount: shownEntities.length,
+    totalCount: Number.isInteger(result.result?.total)
+      ? result.result.total
+      : Number.isInteger(result.total)
+        ? result.total
+        : shownEntities.length,
+    sourceFilters: clone(result.result?.filters ?? result.filters ?? result.query ?? {}),
+    selectionScope: "current_visible_results"
+  };
+}
+
 function taskFrameWithAppliedQuery(frame, query = {}) {
   const constraints = clone(frame?.constraints ?? {});
   const mappings = {
@@ -154,9 +179,11 @@ function appliedConstraintsFromQuery(query, fallback = {}) {
 
 export function conversationResultStateFromResponse(result, options = {}) {
   if (!resultEvidenceValid(result)) return null;
-  const metadata = String(result.type).startsWith("comp_")
-    ? compResultMetadata(result)
-    : unitResultMetadata(result);
+  const metadata = result.type === "entity_catalog_results"
+    ? entityCatalogResultMetadata(result)
+    : String(result.type).startsWith("comp_")
+      ? compResultMetadata(result)
+      : unitResultMetadata(result);
   const totalCount = Number.isInteger(metadata.totalCount) ? metadata.totalCount : null;
   return {
     schemaVersion: CONVERSATION_RESULT_STATE_VERSION,
@@ -176,6 +203,10 @@ export function conversationResultStateFromResponse(result, options = {}) {
       result.query,
       options.appliedConstraints ?? {}
     ),
+    shownEntities: clone(metadata.shownEntities ?? []),
+    entityType: metadata.entityType ?? null,
+    sourceFilters: clone(metadata.sourceFilters ?? {}),
+    selectionScope: metadata.selectionScope ?? null,
     updatedAt: options.updatedAt ?? null
   };
 }

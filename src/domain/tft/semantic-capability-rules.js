@@ -1,4 +1,5 @@
 import { getConceptCapabilityDefinition } from "./concept-capability-registry.js";
+import { ITEM_CARRIER_REQUEST_PATTERN } from "./intent-patterns.js";
 
 export const TFT_SEMANTIC_CAPABILITY_RULES_VERSION = "tft-semantic-capability-rules.v1";
 
@@ -40,6 +41,29 @@ export function deriveTftCapabilityRequirements(input, frame = {}) {
     if (rule.pattern.test(text)) requirements.add(rule.requirement);
   }
   if (frame.action === "find_video") requirements.add("strategy_video_search");
+  const hasConcreteLastResultCandidates = frame.constraints?.selectionScope === "last_result"
+    && (frame.candidates ?? []).some((entity) => (
+      entity?.expectedType === "champion" && entity?.resolvedId
+    ));
+  if (
+    frame.constraints?.targetEntityType
+    && (frame.constraints?.cost !== undefined || frame.constraints?.relation === "member_of_trait")
+    && !hasConcreteLastResultCandidates
+  ) requirements.add("entity_catalog_filtering");
+  if (
+    requirements.has("entity_catalog_filtering")
+    && /(?:出装|出裝|裝備|装备).{0,8}(?:表现|表現|最好|最强|最強)|(?:主流|最好|最强|最強).{0,8}(?:出装|出裝|裝備|装备)|(?:怎么|怎麼|如何|咋|怎样|怎樣).{0,6}(?:出装|出裝|给装|給裝|配装|配裝|带装备|帶裝備)|(?:装备推荐|裝備推薦|推荐装备|推薦裝備|带什么装备|帶什麼裝備)/u.test(text)
+  ) requirements.add("unit_build_statistics");
+  if (frame.constraints?.externalSupportInterpretation === "non_trait_splash_unit") {
+    requirements.add("composition_external_unit_statistics");
+  }
+  if (frame.constraints?.externalSupportInterpretation === "emblem_carrier") {
+    requirements.add("item_carrier_statistics");
+  }
+  if (
+    ITEM_CARRIER_REQUEST_PATTERN.test(text)
+    && entities(frame).some((entity) => entity?.expectedType === "item" && entity?.resolvedId)
+  ) requirements.add("item_carrier_statistics");
   for (const entity of entities(frame)) {
     if (entity?.expectedType !== "game_concept" || !entity?.resolvedId) continue;
     const definition = getConceptCapabilityDefinition(entity.resolvedId);

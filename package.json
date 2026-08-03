@@ -64,6 +64,12 @@
     "audit:aliases": "node scripts/audit-alias-coverage.mjs",
     "audit:items": "node scripts/audit-item-availability.mjs",
     "audit:item-patch": "node scripts/audit-item-patch.mjs",
+    "opgg:collect": "node scripts/opgg-collect.mjs",
+    "opgg:collect:watch": "node scripts/opgg-collect.mjs --watch-interval-min 60",
+    "opgg:trends": "node scripts/opgg-trends.mjs",
+    "opgg:review": "node scripts/opgg-review.mjs",
+    "opgg:teaching": "node scripts/opgg-teaching.mjs",
+    "opgg:stats": "node scripts/opgg-collect.mjs --stats",
     "maintain:comp-profiles": "node scripts/apply-comp-profile-maintenance.mjs --write",
     "refresh:assets": "node scripts/refresh-asset-manifest.mjs",
     "audit:assets": "node scripts/refresh-asset-manifest.mjs --check",
@@ -77,6 +83,7 @@
     "better-sqlite3": "^11.10.0"
   },
   "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2"
   }
 }

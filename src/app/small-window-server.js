@@ -5,6 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
+import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import {
   normalizeCompAugmentTiers,
   normalizeCompDetailsPositioning
@@ -18,6 +19,8 @@ import {
   createAgentStatus,
   createStructuredToolDefinitions
 } from "../agent/index.js";
+import { createTftControlledPlannerProvider } from "../agent/controlled-planner-provider.js";
+import { createPatchResolver } from "../season/patch-resolver.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import {
   buildEntityCatalog,
@@ -26,8 +29,18 @@ import {
 import { normalizeAlias } from "../core/normalizer.js";
 import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
+import { queryEntityCatalog } from "../domain/tft/entity-catalog-query.js";
+import { aggregateExternalUnits } from "../domain/tft/external-unit-analysis.js";
+import {
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "../knowledge/official-patch-knowledge.js";
 import { matchTaskCapabilities } from "../understanding/capability-matcher.js";
 import { taskFrameFromIntentEnvelope } from "../understanding/task-frame.js";
+import {
+  evaluateFastPathEligibility,
+  isPureEntityCatalogRequest
+} from "../routing/fast-path-policy.js";
 import {
   anonymousScopeKey,
   createAnonymousAccessService
@@ -66,8 +79,11 @@ import {
   createLineupSignature,
   createMechanismClassificationProviderFromConfig,
   createIntentEnvelope,
+  createConversationState,
+  createTaskFrame,
   createPersistentSemanticRetriever,
   createAssetResolver,
+  createChatExecutionPlannerProvider,
   createChatSemanticTaskProvider,
   createStructuredParserFromConfig,
   fetchOfficialTftEntityDetails,
@@ -80,6 +96,7 @@ import {
   isLowSampleBuild,
   itemCatalogAuditToCsv,
   KnowledgeRetriever,
+  parseSemanticTask,
   parseQuery,
   parseMechanismClassificationQuery,
   recommendForInput,
@@ -715,6 +732,12 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
+  if (typeof store.upsert === "function") {
+    await store.upsert(buildOfficialPatchSemanticDocuments({
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      locale: config.locale
+    }));
+  }
   const provider = config.enabled
     ? options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
         fetchImpl: options.embeddingFetch
@@ -807,6 +830,7 @@ function summarizeSemanticConfig(config = {}, store = null) {
 export function getSmallWindowRuntimeStatus(runtime = {}) {
   const cacheStoreInfo = runtime.cacheStoreInfo ?? summarizeCacheStore({}, runtime.cacheStore);
   const cachePath = cacheStoreInfo.cachePath ?? cacheStoreInfo.path ?? null;
+  const defaultSeason = runtime.seasonContextService?.getDefault?.() ?? {};
   const cache = {
     type: String(cacheStoreInfo.type ?? "unknown"),
     persistent: Boolean(cacheStoreInfo.persistent),
@@ -821,6 +845,16 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       schemaVersion: "conversation-state.v2",
       mode: runtime.conversationStateV2Mode ?? "off",
       turnDeltaProviderConfigured: typeof runtime.turnDeltaProvider === "function"
+    },
+    seasonPatch: {
+      currentPatch: runtime.patchState?.currentPatch
+        ?? defaultSeason.source?.currentPatch
+        ?? null,
+      previousPatch: runtime.patchState?.previousPatch
+        ?? defaultSeason.source?.previousPatch
+        ?? null,
+      source: runtime.patchState?.source ?? "season_context",
+      resolvedAt: runtime.patchState?.resolvedAt ?? null
     },
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
     mechanismClassifier: summarizeMechanismClassificationConfig(
@@ -1525,6 +1559,203 @@ function entityCatalogText(entityType, count) {
     : `当前赛季共找到 ${count} 个羁绊，点击羁绊可以查看效果和激活档位。`;
 }
 
+function requestSessionKey(scope, conversationId) {
+  const localKey = conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`;
+  return scope ? anonymousScopeKey(scope, localKey) : localKey;
+}
+
+async function conversationStateEntry(runtime, scope, conversationId, seasonContextId) {
+  const entry = await runtime.cacheStore?.getSessionState?.(
+    requestSessionKey(scope, conversationId),
+    { seasonContextId }
+  );
+  return entry?.value ?? entry ?? null;
+}
+
+async function persistDetailTaskFrame(payload, runtime, options = {}) {
+  if (!payload?.taskFrame || !runtime.cacheStore?.setSessionState) return;
+  const current = createConversationState(
+    await conversationStateEntry(runtime, options.scope, options.conversationId, options.seasonContextId) ?? {}
+  );
+  const updatedAt = new Date().toISOString();
+  const next = createConversationState({
+    ...current,
+    activeTask: {
+      taskFrame: payload.taskFrame,
+      legacyIntent: payload.type,
+      updatedAt
+    },
+    pendingClarification: null,
+    updatedAt,
+    query: payload.query ?? null
+  });
+  await runtime.cacheStore.setSessionState(
+    requestSessionKey(options.scope, options.conversationId),
+    next,
+    { seasonContextId: options.seasonContextId }
+  );
+}
+
+async function queryCompositionMemberStatistics(toolInput, catalog, runtime, options = {}) {
+  const traitId = baseTraitApiName(toolInput.trait);
+  const traitRecord = catalog.traitByApiName.get(traitId);
+  const name = traitRecord?.zhName ?? traitRecord?.displayName ?? traitId;
+  const compsData = options.compsData ?? await runtime.compsClient.getCompsData({
+    queue: options.preferences?.queue
+  });
+  const compsStats = await runtime.compsClient.getCompsStats({
+    queue: options.preferences?.queue,
+    patch: options.preferences?.patch,
+    days: toolInput.days ?? options.preferences?.days
+  });
+  const rankings = buildCompRankings({ compsData, compsStats }, {
+    catalog,
+    query: {
+      intent: "comp_rankings",
+      patch: options.preferences?.patch ?? "current",
+      minSamples: 0,
+      limit: 100,
+      popularRequested: true
+    }
+  });
+  const details = await loadOfficialEntityDetails(runtime);
+  const traitNames = new Set([name, traitRecord?.displayName, ...(traitRecord?.aliases ?? [])].filter(Boolean));
+  const traitMembers = [...(details.units ?? new Map()).values()]
+    .filter((unit) => (unit.traitNames ?? []).some((traitNameValue) => traitNames.has(traitNameValue)))
+    .map((unit) => unit.apiName);
+  const results = aggregateExternalUnits(rankings.candidates, {
+    trait: traitId,
+    traitMembers,
+    minSamples: toolInput.minSamples,
+    limit: toolInput.limit
+  });
+  return {
+    type: "trait_external_unit_statistics",
+    source: "metatft",
+    updatedAt: rankings.source?.updatedAt ?? new Date().toISOString(),
+    trait: traitId,
+    results,
+    text: results.length
+      ? `${name}阵容常见的非羁绊外援：${results.map((entry) => entry.name).join("、")}。`
+      : `${name}在当前样本门槛下没有可验证的非羁绊外援。`
+  };
+}
+
+async function tryExternalSupportRequest(input, catalog, runtime, options = {}) {
+  if (!/外援|单挂|單掛|外挂/u.test(input)) return null;
+  const explicitNonTrait = /(?:阵容|陣容).{0,10}(?:非|不属于|不屬於).{0,8}(?:羁绊|羈絆)|(?:非|不属于|不屬於)(?:本)?羁绊外援/u.test(input);
+  if (!explicitNonTrait) {
+    const state = await conversationStateEntry(
+      runtime,
+      options.scope,
+      options.conversationId,
+      options.seasonContextId
+    );
+    const previousTool = state?.lastResult?.toolName
+      ?? state?.activeTask?.legacyIntent
+      ?? state?.query?.intent;
+    if (previousTool === "item_carrier_rankings") return null;
+    const parsed = parseQuery(input, { catalog });
+    const traitId = baseTraitApiName(parsed.traitFilters?.[0]);
+    const trait = catalog.traitByApiName.get(traitId);
+    const name = trait?.zhName ?? trait?.displayName ?? "目标羁绊";
+    const question = `你说的“${name}外援”是指阵容中常见的非${name}单挂棋子，还是适合携带${name}转职的棋子？`;
+    return {
+      ok: true,
+      type: "clarification",
+      text: question,
+      query: { intent: "unknown", traitFilters: traitId ? [traitId] : [], warnings: [] },
+      clarification: {
+        blocking: true,
+        needsClarification: true,
+        reason: "ambiguous_game_concept",
+        question,
+        suggestions: [`${name}阵容里的非羁绊单挂`, `${name}转职适合谁带`]
+      },
+      taskFrame: createTaskFrame({
+        domain: "tft",
+        action: "search",
+        concepts: [
+          ...(traitId ? [{ rawText: name, expectedType: "trait", resolvedId: traitId, confidence: 1 }] : []),
+          { rawText: "外援", expectedType: "game_concept", resolvedId: "concept.unit.external_support", confidence: 1 }
+        ],
+        goal: "resolve_external_support_meaning",
+        ambiguities: [{
+          code: "ambiguous_game_concept",
+          inputFragment: "外援",
+          affectsResult: true,
+          affectsToolSelection: true,
+          candidates: [
+            { id: "non_trait_splash_unit", label: "阵容中常见的非本羁绊单挂棋子" },
+            { id: "emblem_carrier", label: "适合携带目标羁绊转职的棋子" }
+          ]
+        }],
+        confidence: 0.9,
+        understandingStatus: "ambiguous"
+      })
+    };
+  }
+  if (options.clarificationOnly) return null;
+
+  const parsed = parseQuery(input, { catalog });
+  const traitId = baseTraitApiName(parsed.traitFilters?.[0]);
+  if (!traitId) return null;
+  const traitRecord = catalog.traitByApiName.get(traitId);
+  const name = traitRecord?.zhName ?? traitRecord?.displayName ?? traitId;
+  const taskFrame = createTaskFrame({
+    domain: "tft",
+    action: "search",
+    concepts: [
+      { rawText: name, expectedType: "trait", resolvedId: traitId, confidence: 1 },
+      { rawText: "外援", expectedType: "game_concept", resolvedId: "concept.unit.external_support", confidence: 1 }
+    ],
+    constraints: {
+      externalSupportInterpretation: "non_trait_splash_unit",
+      days: options.preferences?.days ?? 2,
+      rank: options.preferences?.rankFilter,
+      minSamples: 300,
+      limit: 10
+    },
+    goal: "find_external_support_units",
+    expectedOutput: ["results", "ranking", "evidence"],
+    capabilityRequirements: ["composition_external_unit_statistics"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const capabilityMatch = matchTaskCapabilities(taskFrame, runtime.toolRegistry);
+  const executionPlanning = compileExecutionPlan(taskFrame, capabilityMatch, { registry: runtime.toolRegistry });
+  if (!executionPlanning.plan) return null;
+  const execution = await runtime.executionPlanExecutor.execute(executionPlanning.plan, {
+    handlers: {
+      composition_member_statistics: (toolInput) => queryCompositionMemberStatistics(
+        toolInput,
+        catalog,
+        runtime,
+        options
+      )
+    },
+    run: options.agentRun,
+    signal: options.signal,
+    intent: "composition_member_statistics"
+  });
+  if (execution.status !== "completed") throw Object.assign(new Error("external unit statistics failed"), { execution });
+  const result = execution.result;
+  const text = result.results.length
+    ? `${name}阵容常见的非羁绊外援：${result.results.map((entry) => entry.name).join("、")}。`
+    : `${name}在当前样本门槛下没有可验证的非羁绊外援。`;
+  return {
+    ok: true,
+    ...result,
+    text,
+    answer: { summary: text, methodology: "按包含目标羁绊的真实阵容聚合，并排除目标羁绊原生成员。" },
+    query: { intent: "composition_member_statistics", trait: traitId, warnings: [] },
+    taskFrame,
+    capabilityMatch,
+    executionPlan: executionPlanning.plan,
+    executionTrace: execution.trace
+  };
+}
+
 async function serializeEntityCatalog(catalog, runtime, options = {}) {
   const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
   if (!entityType) {
@@ -1569,6 +1800,13 @@ function rankStableItemRecommendationsBySamples(entries, catalog) {
       || String(a.apiName).localeCompare(String(b.apiName))
     ))
     .slice(0, 3);
+}
+
+function highestSampleBuild(rankedBuilds) {
+  return [...(rankedBuilds ?? [])]
+    .sort((left, right) => (
+      Number(right?.stats?.games ?? 0) - Number(left?.stats?.games ?? 0)
+    ))[0] ?? null;
 }
 
 async function stableUnitItems(apiName, catalog, runtime, context = {}) {
@@ -1817,7 +2055,73 @@ export async function resetSmallWindowPreferences(runtime, scope = null) {
   return completeSmallWindowPreferences();
 }
 
+const SEMANTIC_NATIVE_RESULT_TYPES = new Set([
+  "entity_catalog_results",
+  "unit_builds_batch_results",
+  "trait_external_unit_statistics"
+]);
+
+function serializeSemanticNativeResult(result, catalog, meta = {}) {
+  const { itemDetails: _itemDetails, ...publicMeta } = meta;
+  const query = result.query ?? {};
+  const source = result.source && typeof result.source === "object"
+    ? result.source
+    : {
+      provider: result.sourceId === "official_tft_catalog" ? "Official TFT Catalog" : "MetaTFT",
+      endpoint: result.sourceId ?? "registered_tool",
+      updatedAt: result.sourceUpdatedAt ?? null,
+      cache: "live"
+    };
+  const results = (result.results ?? []).map((entry) => {
+    if (result.type === "entity_catalog_results") {
+      return {
+        ...entry,
+        iconUrl: entry.iconUrl ?? (result.result?.entityType === "unit"
+          ? ASSET_RESOLVER.resolveUnit(entry.apiName).iconUrl
+          : null)
+      };
+    }
+    if (result.type === "unit_builds_batch_results") {
+      return {
+        ...entry,
+        iconUrl: entry.iconUrl ?? ASSET_RESOLVER.resolveUnit(entry.apiName).iconUrl,
+        bestBuild: (entry.bestBuild ?? []).map((apiName) => ({
+          apiName,
+          name: itemName(apiName, catalog),
+          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
+        }))
+      };
+    }
+    return entry;
+  });
+  return {
+    ...result,
+    ok: true,
+    answer: {
+      summary: result.answer?.summary ?? result.text,
+      warnings: query.warnings ?? [],
+      methodology: result.answer?.methodology ?? null
+    },
+    results,
+    query: {
+      ...query,
+      traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog))
+    },
+    source: {
+      ...source,
+      risks: [...new Set([...(source.risks ?? []), ...(query.warnings ?? [])])]
+    },
+    meta: {
+      returnedResults: results.length,
+      ...publicMeta
+    }
+  };
+}
+
 function serializeRecommendation(result, catalog, meta = {}) {
+  if (SEMANTIC_NATIVE_RESULT_TYPES.has(result.type)) {
+    return serializeSemanticNativeResult(result, catalog, meta);
+  }
   const { itemDetails, entityDetails, ...publicMeta } = meta;
   if (["comp_rankings", "comp_trends", "comp_analysis"].includes(result.type)) {
     return serializeCompRankings(result, publicMeta, catalog, entityDetails);
@@ -1876,6 +2180,11 @@ function serializeRecommendation(result, catalog, meta = {}) {
       },
       methodology: result.methodology,
       diagnostics: result.diagnostics,
+      taskFrame: result.taskFrame ?? null,
+      capabilityMatch: result.capabilityMatch ?? null,
+      executionPlan: result.executionPlan ?? null,
+      executionTrace: result.executionTrace ?? null,
+      conversation: result.conversation ?? null,
       source: sourcePayload(result, meta),
       cache: result.cache ?? null,
       meta: {
@@ -2420,6 +2729,8 @@ export function createSmallWindowRuntime(options = {}) {
     useStructuredParser: options.useStructuredParser ?? "auto",
     structuredParserConfig: options.structuredParserConfig ?? null,
     turnDeltaProvider: options.turnDeltaProvider ?? options.semanticTaskProvider ?? null,
+    controlledPlanner: options.controlledPlanner ?? createTftControlledPlannerProvider(),
+    controlledPlannerFallback: options.controlledPlannerFallback ?? null,
     conversationStateV2Mode: options.conversationStateV2Mode ?? "off",
     turnInterpreterBudget: options.turnInterpreterBudget ?? DEFAULT_TURN_INTERPRETER_BUDGET,
     conclusionProvider: options.conclusionProvider ?? null,
@@ -2491,6 +2802,24 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
           ?? options.llmRequestLog
       })
       : null);
+  const deterministicControlledPlanner = options.controlledPlannerFallback
+    ?? createTftControlledPlannerProvider();
+  const llmControlledPlanner = structuredParserRuntime.structuredParserConfig?.enabled
+    ? createChatExecutionPlannerProvider({
+      ...structuredParserRuntime.structuredParserConfig,
+      thinkingMode: options.plannerThinkingMode ?? "disabled",
+      maxTokens: options.plannerMaxTokens ?? 900,
+      fetchImpl: options.structuredParserFetch ?? options.llmFetch,
+      onRequestLog: options.plannerRequestLog
+        ?? options.structuredParserRequestLog
+        ?? options.llmRequestLog
+    })
+    : null;
+  const controlledPlanner = options.controlledPlanner
+    ?? llmControlledPlanner
+    ?? deterministicControlledPlanner;
+  const controlledPlannerFallback = options.controlledPlannerFallback
+    ?? (controlledPlanner?.plannerKind === "llm" ? deterministicControlledPlanner : null);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
   const coachRuntime = createSmallWindowCoachRuntime(options, env);
   const mechanismClassificationRuntime = createSmallWindowMechanismClassificationRuntime(options, env);
@@ -2503,6 +2832,8 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ...structuredParserRuntime,
     conversationStateV2Mode,
     turnDeltaProvider,
+    controlledPlanner,
+    controlledPlannerFallback,
     ...conclusionRuntime,
     ...coachRuntime,
     ...mechanismClassificationRuntime,
@@ -2856,7 +3187,20 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           : traitsFromComps;
       }
       if (compOptions.status !== "fulfilled") {
-        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${compOptions.reason.message}`);
+        const compOptionsReason = compOptions.reason ?? {};
+        entry.compOptionsFailure = {
+          status: "failed",
+          code: String(compOptionsReason.code ?? "metatft_comp_options_unavailable"),
+          endpoint: "tft-comps-api/comp_options",
+          message: String(compOptionsReason.message ?? "unknown_error")
+        };
+        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${entry.compOptionsFailure.message}`);
+      } else {
+        entry.compOptionsFailure = {
+          status: "ok",
+          code: "ok",
+          endpoint: "tft-comps-api/comp_options"
+        };
       }
 
       const remoteUnitsAvailable = hasDynamicCatalogRecords(catalogOverrides.units);
@@ -3123,10 +3467,58 @@ export async function streamConclusionResponse(req, res, runtime, jobId, scope =
   res.end();
 }
 
+function llmActivityForPayload(payload, runtime) {
+  const interpretation = payload?.conversation?.providerInvocation ?? null;
+  const planner = payload?.plannerInvocation ?? null;
+  const conclusion = payload?.answer?.generatedConclusion ?? null;
+  const assistant = payload?.assistantResponse ?? null;
+  const stages = [];
+  if (interpretation?.attempted === true) stages.push("turn_interpreter");
+  if (planner?.attempted === true && planner?.llm === true) stages.push("planner");
+  if (conclusion?.status === "generated") stages.push("conclusion");
+  if (assistant?.status === "generated" || assistant?.model) stages.push("coach_answer");
+  const calls = [
+    ...(interpretation?.attempted === true ? [{
+      stage: "turn_interpreter",
+      model: runtime.structuredParserConfig?.model ?? null,
+      succeeded: interpretation.succeeded === true,
+      accepted: interpretation.accepted === true,
+      corrected: interpretation.corrected === true,
+      correctionReason: interpretation.correctionReason ?? null,
+      usage: interpretation.usage ?? null,
+      validationErrors: interpretation.validationErrors ?? []
+    }] : []),
+    ...(planner?.attempted === true && planner?.llm === true ? [{
+      stage: "planner",
+      model: planner.model ?? runtime.structuredParserConfig?.model ?? null,
+      succeeded: planner.succeeded === true,
+      accepted: planner.accepted === true,
+      corrected: planner.corrected === true,
+      correctionReason: planner.correctionReason ?? null,
+      durationMs: planner.durationMs ?? null,
+      usage: planner.usage ?? null,
+      validationErrors: planner.validationErrors ?? []
+    }] : [])
+  ];
+  return {
+    used: stages.length > 0,
+    model: conclusion?.model
+      ?? assistant?.model
+      ?? planner?.model
+      ?? runtime.structuredParserConfig?.model
+      ?? null,
+    stages,
+    calls,
+    turnInterpreter: interpretation,
+    planner
+  };
+}
+
 async function persistQueryResponse(payload, runtime, details = {}) {
   const queryId = randomUUID();
   const visitorScope = String(details.scope ?? "local");
   const conclusion = payload.answer?.generatedConclusion ?? null;
+  const llmActivity = llmActivityForPayload(payload, runtime);
   const responseSnapshot = structuredClone(payload);
   delete responseSnapshot.access;
   if (responseSnapshot.answer?.generatedConclusion?.status === "pending") {
@@ -3150,8 +3542,8 @@ async function persistQueryResponse(payload, runtime, details = {}) {
     patch: payload.query?.patch ?? payload.source?.patch ?? null,
     cacheHit: Boolean(payload.cache?.query?.hit),
     cacheStale: Boolean(payload.cache?.query?.stale),
-    llmUsed: conclusion?.status === "generated",
-    llmModel: conclusion?.model ?? null,
+    llmUsed: llmActivity.used,
+    llmModel: llmActivity.model,
     durationMs: Date.now() - details.startedAt
   });
   if (conclusion?.status === "pending" && conclusion.jobId) {
@@ -3505,6 +3897,18 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
           executionMode: "structured"
         };
       }
+      const llmActivity = llmActivityForPayload(payload, runtime);
+      payload.meta ??= {};
+      payload.meta.llmUsed = llmActivity.used;
+      payload.meta.llmModel = llmActivity.model;
+      payload.meta.llmStages = llmActivity.stages;
+      payload.meta.llmCalls = llmActivity.calls;
+      if (llmActivity.turnInterpreter) {
+        payload.meta.turnInterpreter = llmActivity.turnInterpreter;
+      }
+      if (llmActivity.planner) {
+        payload.meta.planner = llmActivity.planner;
+      }
       await persistQueryResponse(payload, runtime, {
         scope,
         conversationId,
@@ -3550,6 +3954,38 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       }, runtime, {})
     })
     : load();
+  let fastPathTaskPromise = null;
+  const getFastPathTaskFrame = () => {
+    if (!fastPathTaskPromise) {
+      fastPathTaskPromise = conversationStateEntry(
+        requestRuntime,
+        scope,
+        conversationId,
+        seasonContext.id
+      ).then((storedState) => {
+        const state = createConversationState(storedState ?? {});
+        return parseSemanticTask(input, {
+          catalog,
+          provider: null,
+          conversation: body.startNewTask === true
+            ? []
+            : [
+                ...(state.taskHistory ?? []),
+                ...(state.activeTask?.taskFrame ? [state.activeTask] : [])
+              ],
+          dynamicContext: {
+            version: seasonContext.effectivePatch ?? catalog?.version ?? null
+          }
+        });
+      }).then((result) => result.taskFrame);
+    }
+    return fastPathTaskPromise;
+  };
+  const fastPathEligible = async (fastPath, options = {}) => evaluateFastPathEligibility({
+    fastPath,
+    taskFrame: await getFastPathTaskFrame(),
+    ...options
+  }).eligible;
   const mechanismClassificationQuery = parseMechanismClassificationQuery(input);
   if (mechanismClassificationQuery) {
     reportProgress("understanding.resolved", {
@@ -3607,8 +4043,35 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       };
     }
   }
+  const externalSupportPayload = await tryExternalSupportRequest(input, catalog, requestRuntime, {
+    scope,
+    conversationId,
+    seasonContextId: seasonContext.id,
+    preferences,
+    compsData,
+    clarificationOnly: true,
+    agentRun: context.agentRun,
+    signal: context.signal
+  });
+  if (
+    externalSupportPayload
+    && await fastPathEligible("external_support_clarification")
+  ) {
+    externalSupportPayload.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return completeResponse(externalSupportPayload);
+  }
   const requestedCatalogType = requestedEntityCatalogType(input);
-  if (requestedCatalogType) {
+  if (
+    requestedCatalogType
+    && await fastPathEligible("entity_catalog", {
+      pureCatalogRequest: isPureEntityCatalogRequest(input, requestedCatalogType)
+    })
+  ) {
     const payload = await resolveQuickView(() => serializeEntityCatalog(catalog, requestRuntime, {
       entityType: requestedCatalogType,
       entityDetails
@@ -3621,17 +4084,17 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     };
     return completeResponse(payload);
   }
-  const entityDetailsPayload = await resolveQuickView(() => serializeEntityDetailsQuery(
-    input,
-    catalog,
-    requestRuntime,
-    {
+  const entityDetailsFastPathEligible = ["unit-details", "trait-details"].includes(quickTask?.id)
+    || ((explicitUnitDetailsQuestion(input) || explicitTraitDetailsQuestion(input))
+      && await fastPathEligible("entity_details", { canResolveEntity: true }));
+  const entityDetailsPayload = entityDetailsFastPathEligible
+    ? await resolveQuickView(() => serializeEntityDetailsQuery(input, catalog, requestRuntime, {
       preferences,
       compsData,
       entityDetails,
       refresh: Boolean(body.refresh)
-    }
-  ), ["unit-details", "trait-details"]);
+    }), ["unit-details", "trait-details"])
+    : null;
   if (entityDetailsPayload) {
     entityDetailsPayload.meta = {
       durationMs: Date.now() - startedAt,
@@ -3640,12 +4103,21 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       preferences
     };
     const payload = attachDetailRetrievalMetadata(entityDetailsPayload, input, catalog);
-    return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
+    const executed = await executeRegisteredDetailPayload(payload, requestRuntime, context);
+    await persistDetailTaskFrame(executed, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id
+    });
+    return completeResponse(executed);
   }
-  const itemDetailsPayload = await resolveQuickView(
-    () => serializeItemDetailsQuery(input, catalog, runtime),
-    ["item-details"]
-  );
+  const itemDetailsPayload = (quickTask?.id === "item-details"
+    || (isItemDetailsQuestion(input) && await fastPathEligible("item_details")))
+    ? await resolveQuickView(
+      () => serializeItemDetailsQuery(input, catalog, runtime),
+      ["item-details"]
+    )
+    : null;
   if (itemDetailsPayload) {
     const payload = attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog);
     return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
@@ -3664,10 +4136,16 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const currentStatsDays = Number(
     parsedForIntent.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
   );
+  const patchKnowledgeVersion = answerModeRoute.patchNotesRequested
+    ? extractPatchVersionFromQuestion(input)
+      ?? seasonContext.theme?.patchNoteVersion
+      ?? seasonContext.currentPatch
+      ?? seasonContext.effectivePatch
+    : null;
   const coachKnowledgeOptions = {
     seasonContextId: seasonContext.id,
     season: seasonContext.id,
-    patch: seasonContext.currentPatch ?? seasonContext.effectivePatch,
+    patch: patchKnowledgeVersion ?? seasonContext.currentPatch ?? seasonContext.effectivePatch,
     rank: currentStatsRank,
     timeWindow: `${currentStatsDays}d`,
     region: String(body.region ?? "global").toLowerCase(),
@@ -3682,7 +4160,15 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     }
     return coachKnowledgePromise;
   };
-  if (answerModeRoute.mode === "rag") {
+  if (
+    answerModeRoute.mode === "rag"
+    && await fastPathEligible("rag", {
+      requiredCapabilities: answerModeRoute.currentBestRequired
+        || answerModeRoute.retrievalScopes.includes("current_stats")
+        ? ["current_structured_statistics"]
+        : []
+    })
+  ) {
     reportProgress("understanding.resolved", {
       answerModeRoute,
       intent: parsedForIntent.intent ?? "knowledge_question"
@@ -3704,7 +4190,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         intent: "knowledge_question",
         requestedIntent: parsedForIntent.intent ?? null,
         constraints: {
-          patch: seasonContext.effectivePatch,
+          patch: patchKnowledgeVersion ?? seasonContext.effectivePatch,
           locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
         }
       },
@@ -3731,7 +4217,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const compEntityClarification = requestsSoftCompItemDemand(input, parsedForIntent)
     ? null
     : serializeCompRankingEntityClarification(parsedForIntent, catalog);
-  if (compEntityClarification) {
+  if (
+    compEntityClarification
+    && await fastPathEligible("composition_entity_clarification", {
+      blockingReason: compEntityClarification.clarification?.reason
+    })
+  ) {
     compEntityClarification.meta = {
       durationMs: Date.now() - startedAt,
       catalogWarning: warning,
@@ -3748,6 +4239,147 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const previousSessionEntry = requestRuntime.conclusionGeneratorConfig?.enabled && preferences.conclusionMode !== "off"
     ? await runtime.cacheStore?.getSessionState?.(sessionKey, { seasonContextId: seasonContext.id })
     : null;
+  const agentToolHandlers = {
+    entity_catalog_query: async (toolInput) => {
+      const details = await loadOfficialEntityDetails(requestRuntime);
+      return queryEntityCatalog({
+        catalog,
+        details,
+        input: toolInput,
+        updatedAt: details?.meta?.updatedAt
+      });
+    },
+    composition_member_statistics: (toolInput) => queryCompositionMemberStatistics(
+      toolInput,
+      catalog,
+      requestRuntime,
+      { preferences, compsData }
+    ),
+    unit_builds_batch: async (toolInput) => {
+      const entities = (toolInput.entities ?? []).slice(0, 5);
+      const results = [];
+      const sourceStates = [];
+      const sourceClient = runtime.metaTFTClient;
+      const batchClient = sourceClient instanceof MetaTFTClient
+        && Number(sourceClient.timeoutMs) < 5000
+        ? new MetaTFTClient({
+          baseUrl: sourceClient.baseUrl,
+          fetchImpl: sourceClient.fetchImpl,
+          timeoutMs: 5000,
+          maxRetries: sourceClient.maxRetries,
+          retryDelayMs: sourceClient.retryDelayMs,
+          maxRetryDelayMs: sourceClient.maxRetryDelayMs,
+          sleepImpl: sourceClient.sleepImpl
+        })
+        : sourceClient;
+      const loadBuild = async (entity) => {
+        const apiName = String(entity.apiName ?? "");
+        const name = entity.name ?? unitName(apiName, catalog);
+        if (!apiName) return null;
+        const parsedUnitQuery = {
+          intent: "unit_best_3_items",
+          unit: apiName,
+          unitAlias: apiName,
+          traitFilters: [],
+          ownedItems: [],
+          lockedItems: [],
+          excludedItems: [],
+          comparisonItems: [],
+          parser: { intentExplicit: true }
+        };
+        const batchPreferences = {
+          ...preferences,
+          ...(toolInput.days !== undefined ? { days: toolInput.days } : {}),
+          ...(toolInput.patch !== undefined ? { patch: toolInput.patch } : {}),
+          ...(toolInput.rank !== undefined ? { rankFilter: toolInput.rank } : {}),
+          ...(toolInput.minSamples !== undefined ? { minSamples: toolInput.minSamples } : {})
+        };
+        const recommendation = await requestRuntime.recommendForInputImpl(`${name}带哪三件装备最好`, {
+          catalog,
+          metaTFTClient: batchClient,
+          compsClient: runtime.compsClient,
+          compsData,
+          cacheStore: runtime.cacheStore,
+          preferences: batchPreferences,
+          resolvedParsedInput: parsedUnitQuery,
+          useSession: false,
+          semanticShadow: false,
+          conversationStateV2Mode: "off"
+        });
+        const best = highestSampleBuild(recommendation.rankedBuilds);
+        return {
+          sourceState: {
+            cache: recommendation.cache?.query ?? null,
+            updatedAt: recommendation.cache?.query?.updatedAt
+              ?? recommendation.sourceUpdatedAt
+              ?? recommendation.source?.updatedAt
+              ?? null,
+            warnings: recommendation.query?.warnings ?? []
+          },
+          result: {
+            apiName,
+            name,
+            bestBuild: best?.items ?? [],
+            stats: best?.stats ?? null,
+            games: Number(best?.stats?.games ?? 0),
+            top4Rate: best?.stats?.top4Rate ?? null,
+            winRate: best?.stats?.winRate ?? null,
+            avgPlacement: best?.stats?.avgPlacement ?? null,
+            available: Boolean(best)
+          }
+        };
+      };
+      const settled = await Promise.allSettled(entities.map(loadBuild));
+      settled.forEach((entry, index) => {
+        const entity = entities[index] ?? {};
+        const apiName = String(entity.apiName ?? "");
+        const name = entity.name ?? unitName(apiName, catalog);
+        if (entry.status === "fulfilled" && entry.value) {
+          sourceStates.push(entry.value.sourceState);
+          results.push(entry.value.result);
+          return;
+        }
+        const warning = `${name}的出装统计暂时不可用：${entry.reason?.message ?? String(entry.reason ?? "unknown error")}`;
+        sourceStates.push({ cache: null, updatedAt: null, warnings: [warning] });
+        if (apiName) {
+          results.push({
+            apiName,
+            name,
+            bestBuild: [],
+            stats: null,
+            games: 0,
+            top4Rate: null,
+            winRate: null,
+            avgPlacement: null,
+            available: false,
+            warning
+          });
+        }
+      });
+      const availableResults = results.filter((entry) => entry.available);
+      const unavailableResults = results.filter((entry) => !entry.available);
+      const text = availableResults.length
+        ? `已整理${availableResults.map((entry) => entry.name).join("、")}各自的主流出装。${unavailableResults.length ? ` ${unavailableResults.map((entry) => entry.name).join("、")}的统计暂时不可用。` : ""}`
+        : "候选棋子的出装统计暂时不可用，请稍后刷新。";
+      const stale = sourceStates.some((entry) => entry.cache?.stale === true);
+      const cached = stale || sourceStates.some((entry) => entry.cache?.hit === true);
+      const updatedAt = sourceStates.map((entry) => entry.updatedAt).filter(Boolean).sort().at(-1)
+        ?? new Date().toISOString();
+      return {
+        type: "unit_builds_batch_results",
+        source: {
+          provider: "MetaTFT",
+          endpoint: "tft-explorer-api/unit_builds (batch)",
+          updatedAt,
+          cache: stale ? "stale" : cached ? "cache" : "live",
+          risks: [...new Set(sourceStates.flatMap((entry) => entry.warnings))]
+        },
+        updatedAt,
+        results,
+        text
+      };
+    }
+  };
   const quickCachePolicy = quickTask ? quickTaskCachePolicy(quickTask, seasonContext) : null;
   const recommendationOptions = {
     catalog,
@@ -3778,7 +4410,11 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     } : {}),
     turnDeltaProvider: requestRuntime.turnDeltaProvider,
     conversationStateV2Mode: quickTask ? "off" : requestRuntime.conversationStateV2Mode,
+    startNewTask: body.startNewTask === true,
     turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
+    controlledPlanner: requestRuntime.controlledPlanner,
+    controlledPlannerFallback: requestRuntime.controlledPlannerFallback,
+    agentToolHandlers,
     onProgress(event) {
       reportProgress(event?.type ?? "unknown", {
         ...(event?.data ?? {}),
@@ -3830,6 +4466,13 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         })
       ) || runtime.quickTaskRefreshes?.has(result.cache.query.key) === true;
     }
+  }
+  if (result.taskFrame && result.executionTrace?.status === "completed") {
+    await persistDetailTaskFrame(result, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id
+    });
   }
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
   if (warnings && result.query && typeof result.query === "object") {
@@ -5475,6 +6118,11 @@ async function handleSessionClear(runtime, body = {}, scope = null) {
 }
 
 export async function handleRuntimeStatusRequest(runtime) {
+  runtime.patchResolver?.ensureFresh?.()
+    .then((state) => {
+      runtime.patchState = state;
+    })
+    .catch(() => {});
   return {
     ok: true,
     runtime: getSmallWindowRuntimeStatus(runtime)
@@ -5632,6 +6280,7 @@ export function createSmallWindowHandler(options = {}) {
   const accessService = options.accessService
     ?? runtime.accessService
     ?? createAnonymousAccessService(runtime, { enabled: false }, {});
+  const opggRouter = createOpggApiRouter();
 
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -5675,6 +6324,10 @@ export function createSmallWindowHandler(options = {}) {
 
       if (isLegacyAdminWriteRoute(req.method, url.pathname) && !hasValidAdminToken(req, runtime)) {
         return sendJson(res, 403, { ok: false, error: "Administrator authorization required" });
+      }
+
+      if (url.pathname.startsWith("/api/opgg/")) {
+        return opggRouter(req, res, url, { scope: visitor.scope });
       }
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {
@@ -6175,11 +6828,50 @@ function listen(server, host, port) {
   });
 }
 
+export async function primeSeasonPatch(runtime, options = {}) {
+  const env = options.env ?? process.env;
+  const configuredPatch = String(
+    options.currentPatch ?? env.TFT_AGENT_CURRENT_PATCH ?? ""
+  ).trim() || null;
+  const configuredPrevious = String(
+    options.previousPatch ?? env.TFT_AGENT_PREVIOUS_PATCH ?? ""
+  ).trim() || null;
+  const resolver = createPatchResolver({
+    fetchImpl: options.fetchImpl ?? globalThis.fetch,
+    url: options.patchNewsUrl,
+    timeoutMs: Number(
+      options.patchResolveTimeoutMs
+      ?? env.TFT_AGENT_PATCH_RESOLVE_TIMEOUT_MS
+      ?? 5000
+    ),
+    configuredPatch,
+    previousPatch: configuredPrevious
+  });
+  runtime.patchResolver = resolver;
+  runtime.patchState = resolver.state();
+  try {
+    const state = await resolver.ensureFresh();
+    runtime.patchState = state;
+    if (state.source === "official_riot_news" && state.currentPatch) {
+      runtime.seasonContextService?.updateProviderPatch?.(
+        DEFAULT_SEASON_CONTEXT_ID,
+        state.currentPatch,
+        state.previousPatch,
+        state.source
+      );
+    }
+  } catch {
+    // Patch resolution is best-effort; configured or season defaults remain authoritative.
+  }
+  return runtime.patchState;
+}
+
 export async function startSmallWindowServer(options = {}) {
   const host = options.host ?? process.env.HOST ?? DEFAULT_HOST;
   const firstPort = Number(options.port ?? process.env.PORT ?? DEFAULT_PORT);
   const attempts = options.port ? 1 : 10;
   const runtime = options.runtime ?? await createSmallWindowRuntimeAsync(options);
+  await primeSeasonPatch(runtime, options);
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const port = firstPort + offset;

@@ -1,0 +1,94 @@
+{
+  "_note": "Seed manifest only: imported into the default pool once on first collection. Afterwards the SQLite DB is the source of truth; users manage their own pools/players via the CLI (--pool-create, --roster-add, --roster-remove, --roster-delete). Editing this file will NOT resurrect deleted players. PUUIDs are never stored here.",
+  "region": "na",
+  "players": [
+    {
+      "id": "acad-dishsoap-na3",
+      "displayName": "ACAD Dishsoap",
+      "gameName": "ACAD Dishsoap",
+      "tagLine": "NA3",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "acad-wasian-na2",
+      "displayName": "ACAD wasian",
+      "gameName": "ACAD wasian",
+      "tagLine": "NA2",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "vit-k3soju-000",
+      "displayName": "VIT k3soju",
+      "gameName": "VIT k3soju",
+      "tagLine": "000",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "fw-aq1h-6406",
+      "displayName": "FW AQ1H",
+      "gameName": "FW AQ1H",
+      "tagLine": "6406",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "ironbog-999",
+      "displayName": "IronBog",
+      "gameName": "IronBog",
+      "tagLine": "999",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "fnc-darth-nub-na2",
+      "displayName": "FNC Darth Nub",
+      "gameName": "FNC Darth Nub",
+      "tagLine": "NA2",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "vit-setsuko-na2",
+      "displayName": "VIT setsuko",
+      "gameName": "VIT setsuko",
+      "tagLine": "NA2",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "deis1k-na1",
+      "displayName": "Deis1k",
+      "gameName": "Deis1k",
+      "tagLine": "NA1",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "broseph-lab",
+      "displayName": "Broseph",
+      "gameName": "Broseph",
+      "tagLine": "LAB",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "roc-jazlatte-latte",
+      "displayName": "ROC JazLatte",
+      "gameName": "ROC JazLatte",
+      "tagLine": "latte",
+      "region": "na",
+      "active": true
+    },
+    {
+      "id": "j-or-c-na1",
+      "displayName": "J or C",
+      "gameName": "J or C",
+      "tagLine": "NA1",
+      "region": "na",
+      "active": true
+    }
+  ]
+}

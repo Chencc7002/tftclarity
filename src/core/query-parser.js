@@ -5,6 +5,7 @@ import { resolveHighConfidenceEntityCandidates } from "./high-confidence-entity-
 import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
 import { isCompAnalysisInput, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
+import { normalizeTftSemanticInput } from "./semantic-input-normalizer.js";
 
 function parseStarLevels(input) {
   const matches = [...normalizeText(input).matchAll(/([123一二三两])星/g)];
@@ -222,6 +223,12 @@ function inferIntent(input, details = {}) {
   if ((details.ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized)) {
     return "unit_build_completion";
   }
+  if ((details.itemCategories?.length ?? 0) > 0 && /(?:三件套|包含|要有|带一件|来一件|来个)/.test(normalized)) {
+    return "unit_build_rankings";
+  }
+  if (/(?:三件套|三件装|三件裝|bestitems?)/iu.test(normalized)) {
+    return "unit_build_rankings";
+  }
   if (/(?:装备|出装|神装|怎么带|带什么|给什么|合成|配方)/.test(normalized)) {
     return "unit_build_rankings";
   }
@@ -238,7 +245,7 @@ function inferIntent(input, details = {}) {
     return "comp_rankings";
   }
   if (isCompRankingInput(input)) return "comp_rankings";
-  return "unit_build_rankings";
+  return "unknown";
 }
 
 function hasExplicitIntent(
@@ -253,6 +260,7 @@ function hasExplicitIntent(
   return Boolean(performanceItem || itemCarrierRequested)
     || comparison?.requested
     || ((itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized))
+    || /(?:三件套|三件装|三件裝|bestitems?)/iu.test(normalized)
     || /(单件|单装备|哪个装备|哪件装备|三件套|出装|一套|换一套|阵容|能不能带|可不可以带)/.test(normalized)
     || ((ownedItems?.length ?? 0) > 0 && /(已有|已经有|携带|带着|前提|剩下|另外|补齐|怎么补)/.test(normalized));
 }
@@ -440,6 +448,9 @@ function parseUnknownStargazerEffect(input, entities) {
 
 export function parseQuery(input, options = {}) {
   const catalog = options.catalog ?? createCatalog();
+  const originalInput = String(input ?? "");
+  const semanticNormalization = normalizeTftSemanticInput(originalInput, { catalog });
+  input = semanticNormalization.normalizedInput;
   const compMention = parseCompMention(input);
   const entityInput = typeof compMention === "string" && compMention.includes("|")
     ? String(input ?? "").replace(compMention, " ")
@@ -536,16 +547,19 @@ export function parseQuery(input, options = {}) {
       performanceItem,
       itemCarrierRequested
     });
-  const compQuery = ["comp_rankings", "comp_trends", "comp_analysis"].includes(intent)
-    ? parseCompRankingQuery(input, { ...(options.compQuery ?? {}), intent })
+  const effectiveIntent = intent === "unknown" && allItems.length > 0
+    ? "unit_build_rankings"
+    : intent;
+  const compQuery = ["comp_rankings", "comp_trends", "comp_analysis"].includes(effectiveIntent)
+    ? parseCompRankingQuery(input, { ...(options.compQuery ?? {}), intent: effectiveIntent })
     : null;
-  const analysis = intent === "comp_analysis"
+  const analysis = effectiveIntent === "comp_analysis"
     ? parseCompAnalysisRequest(input, {
       units: entities.units.map((entry) => entry.target),
       traits: entities.traits.map((entry) => entry.target)
     })
     : null;
-  const effectiveUnresolvedEntityHints = ["comp_rankings", "comp_trends", "comp_analysis"].includes(intent)
+  const effectiveUnresolvedEntityHints = ["comp_rankings", "comp_trends", "comp_analysis"].includes(effectiveIntent)
     ? unresolvedEntityHints.filter((hint) => !/^(?:阵容|体系)$/u.test(normalizeAlias(hint.inputFragment)))
     : unresolvedEntityHints;
   const intentExplicit = hasExplicitIntent(
@@ -559,8 +573,8 @@ export function parseQuery(input, options = {}) {
   const bareUnitIntentAmbiguous = isBareSingleUnitInput(input, entities, intentExplicit);
 
   return {
-    rawInput: String(input ?? ""),
-    intent,
+    rawInput: originalInput,
+    intent: effectiveIntent,
     unit,
     unitAlias: entities.units[0]?.alias,
     starLevel: starLevel.length > 0 ? starLevel : undefined,
@@ -631,7 +645,8 @@ export function parseQuery(input, options = {}) {
         ...(match.matchType ? { matchType: match.matchType } : {}),
         ...(match.source ? { source: match.source } : {}),
         ...(match.inputFragment ? { inputFragment: match.inputFragment } : {})
-      }))
+      })),
+      semanticNormalization
     },
     defaults: DEFAULT_QUERY_OPTIONS
   };

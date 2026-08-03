@@ -54,8 +54,12 @@ import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { analyzeCompRankingResult, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
-import { parseSemanticTask } from "../understanding/semantic-task-parser.js";
+import {
+  applyDeterministicTftSemantics,
+  parseSemanticTask
+} from "../understanding/semantic-task-parser.js";
 import { runSemanticShadow } from "../understanding/semantic-shadow.js";
+import { createTaskFrame } from "../understanding/task-frame.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 import { StructuredRetriever } from "../retrieval/structured-retriever.js";
 import { SUPPORTED_CONCLUSION_INTENTS } from "../llm/conclusion-spec-registry.js";
@@ -67,7 +71,10 @@ import { statusAfterExecution } from "../agent/status-protocol.js";
 import { compareExecutionAndLegacyPlans } from "../agent/shadow-comparison.js";
 import { finalizeExecutionPlanArguments } from "../agent/execution-plan.js";
 import { compileTftToolArguments } from "../domain/tft/execution-arguments.js";
-import { compileTftResultPolicy } from "../domain/tft/result-policy.js";
+import {
+  compileTftResultPolicy,
+  compileTftSemanticResultPolicy
+} from "../domain/tft/result-policy.js";
 import {
   adaptTftExecutionPlanToParsed
 } from "../domain/tft/execution-query-adapter.js";
@@ -78,7 +85,7 @@ import {
   migrateLegacySessionToConversationState
 } from "../understanding/conversation-state.js";
 import { reduceConversationState } from "../understanding/context-reducer.js";
-import { interpretTurn } from "../understanding/turn-interpreter.js";
+import { interpretTurn, isActionOnlyBuildFollowup } from "../understanding/turn-interpreter.js";
 import {
   updateConversationStateFromResult
 } from "../understanding/conversation-result-state.js";
@@ -89,6 +96,11 @@ export const SESSION_LAST_QUERY_KEY = "last_query";
 const RETRIEVAL_PLANNER = new RetrievalPlanner();
 const SEMANTIC_INTENTS = new Set(SUPPORTED_CONCLUSION_INTENTS);
 const CONVERSATION_STATE_V2_MODES = new Set(["off", "shadow", "on"]);
+const SEMANTIC_NATIVE_EXECUTION_TOOLS = new Set([
+  "entity_catalog_query",
+  "unit_builds_batch",
+  "composition_member_statistics"
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -138,7 +150,61 @@ function unavailableItemDecision(query, catalog) {
 
 function responseTypeForQuery(query, clarification = null) {
   if (clarification?.needsClarification) return "clarification";
-  return query?.intent ?? "unit_build_rankings";
+  return query?.intent ?? "unknown";
+}
+
+function semanticNativeExecutionPlan(shadowResult, options = {}) {
+  const planning = shadowResult?.executionPlanning;
+  const steps = planning?.plan?.steps ?? [];
+  if (
+    planning?.validation?.valid !== true
+    || !options.executionPlanExecutor
+    || steps.length === 0
+    || !steps.every((step) => SEMANTIC_NATIVE_EXECUTION_TOOLS.has(step.tool))
+    || !steps.every((step) => typeof options.agentToolHandlers?.[step.tool] === "function")
+  ) return null;
+  return compileTftSemanticResultPolicy(
+    planning.plan,
+    shadowResult?.semanticResult?.taskFrame
+  );
+}
+
+function semanticNativeSource(value, finalTool) {
+  if (value?.source && typeof value.source === "object" && !Array.isArray(value.source)) {
+    return {
+      ...value.source,
+      updatedAt: value.source.updatedAt ?? value.updatedAt ?? null
+    };
+  }
+  if (finalTool === "entity_catalog_query") {
+    return {
+      provider: "Official TFT Catalog",
+      endpoint: "official_tft_catalog/entity_catalog_query",
+      updatedAt: value?.updatedAt ?? null,
+      cache: "live"
+    };
+  }
+  return {
+    provider: "MetaTFT",
+    endpoint: finalTool === "unit_builds_batch"
+      ? "tft-explorer-api/unit_builds (batch)"
+      : "tft-comps-api/composition_member_statistics",
+    updatedAt: value?.updatedAt ?? null,
+    cache: "live"
+  };
+}
+
+function semanticNativeText(value, taskFrame) {
+  if (value?.text) return value.text;
+  if (value?.type !== "entity_catalog_results") return "已根据受控工具计划完成查询。";
+  const concept = [...(taskFrame?.concepts ?? []), ...(taskFrame?.subjects ?? [])]
+    .find((entity) => entity?.expectedType === "trait");
+  const traitName = concept?.canonicalName ?? concept?.rawText ?? "目标羁绊";
+  const cost = taskFrame?.constraints?.cost;
+  const costLabel = Array.isArray(cost) ? cost.join("、") : cost;
+  return value.results?.length
+    ? `${traitName}${costLabel ? `${costLabel}费` : ""}棋子：${value.results.map((entry) => entry.name).join("、")}。`
+    : `${traitName}中没有找到符合条件的当前赛季棋子。`;
 }
 
 function isCompIntent(intent) {
@@ -229,7 +295,10 @@ function structuredQueryFor(plan, operation) {
 async function executePlannedStructuredQuery(plan, operation, handler, context = {}) {
   if (context.executionPlan && context.executionPlanExecutor) {
     const execution = await context.executionPlanExecutor.execute(context.executionPlan, {
-      handlers: { [operation]: handler },
+      handlers: {
+        ...(context.handlers ?? {}),
+        [operation]: handler
+      },
       run: context.agentRun,
       signal: context.signal,
       timeoutMs: context.timeoutMs,
@@ -385,8 +454,21 @@ function applyControlledSemanticCorrection(parsed, shadowResult, options = {}) {
   if (
     options.semanticTakeover === false
     || shadowResult?.status !== "completed"
-    || !shadowResult.executionPlanning?.plan?.conceptMapping
+    || !shadowResult.executionPlanning?.validation?.valid
   ) return parsed;
+  if (parsed?.intent === "unknown" && shadowResult.executionPlanning?.plan?.steps?.length === 1) {
+    const semanticTool = shadowResult.executionPlanning.plan.steps[0].tool;
+    if (!["item_carrier_rankings", "entity_catalog_query", "composition_member_statistics"].includes(semanticTool)) {
+      return parsed;
+    }
+    return adaptTftExecutionPlanToParsed(
+      parsed,
+      shadowResult.executionPlanning.plan,
+      shadowResult.semanticResult?.taskFrame,
+      "semantic_correction"
+    );
+  }
+  if (!shadowResult.executionPlanning?.plan?.conceptMapping) return parsed;
   const executionTools = (shadowResult.executionPlanning.plan.steps ?? []).map((step) => step.tool);
   const decision = createTakeoverDecision({
     taskFrame: shadowResult.semanticResult?.taskFrame,
@@ -616,7 +698,11 @@ function semanticResultForConversationResolution(resolution, interpretation) {
       },
       exampleIds: [],
       provider: interpretation?.telemetry?.provider ?? "conversation_state_v2",
-      providerFallback: interpretation?.telemetry?.providerFallback ?? null
+      providerFallback: interpretation?.telemetry?.providerFallback ?? null,
+      providerCalled: interpretation?.telemetry?.providerCalled === true,
+      providerSucceeded: interpretation?.telemetry?.providerSucceeded === true,
+      providerUsage: interpretation?.telemetry?.providerUsage ?? null,
+      providerError: interpretation?.telemetry?.providerError ?? null
     },
     stateBar: {
       objective: frame.goal,
@@ -640,17 +726,116 @@ function semanticResultForConversationResolution(resolution, interpretation) {
   };
 }
 
+function actionOnlyGroupFollowupFrame(input, conversationState) {
+  if (!isActionOnlyBuildFollowup(input)) return null;
+  if (conversationState?.pendingClarification) return null;
+  const active = conversationState?.activeTask?.taskFrame;
+  if (!active) return null;
+  const traitEntities = [
+    ...(active.concepts ?? []),
+    ...(active.subjects ?? [])
+  ].filter((entity) => entity?.expectedType === "trait" && entity?.resolvedId);
+  const cost = active.constraints?.cost;
+  if (cost === undefined && traitEntities.length === 0) return null;
+  return createTaskFrame({
+    domain: "tft",
+    action: "recommend",
+    goal: "recommend_builds_for_candidate_group",
+    concepts: traitEntities,
+    constraints: {
+      ...(cost !== undefined ? { cost } : {}),
+      targetEntityType: "champion",
+      relation: "member_of_trait",
+      current: true,
+      ...(active.constraints?.patch !== undefined ? { patch: active.constraints.patch } : {}),
+      ...(active.constraints?.days !== undefined ? { days: active.constraints.days } : {}),
+      ...(active.constraints?.rank !== undefined ? { rank: active.constraints.rank } : {}),
+      ...(active.constraints?.minSamples !== undefined ? { minSamples: active.constraints.minSamples } : {}),
+      ...(active.constraints?.queue !== undefined ? { queue: active.constraints.queue } : {})
+    },
+    expectedOutput: ["recommendations", "results", "evidence"],
+    capabilityRequirements: ["entity_catalog_filtering", "unit_build_statistics"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported",
+    contextReferences: [{ type: "last_result", fields: ["shownEntities"] }]
+  });
+}
+
+function semanticResultForRecoveredFrame(frame, provider = "action_only_build_followup") {
+  return {
+    taskFrame: frame,
+    telemetry: {
+      schemaVersion: "semantic-parser-telemetry.v1",
+      durationMs: 0,
+      usage: { cachedInputTokens: 0, uncachedInputTokens: 0, outputTokens: 0 },
+      budget: {
+        maxInputTokens: 1200,
+        maxOutputTokens: 300,
+        maxLatencyMs: 1500,
+        maxExamples: 0
+      },
+      exampleIds: [],
+      provider,
+      providerFallback: null,
+      providerCalled: false,
+      providerSucceeded: false
+    },
+    stateBar: {
+      objective: frame.goal,
+      unresolvedAmbiguities: frame.ambiguities,
+      remainingBudget: {}
+    },
+    contextResolution: {
+      schemaVersion: "context-resolution.v1",
+      taskFrame: frame,
+      resolved: true,
+      usedConversation: true,
+      inheritedFields: ["cost", "targetEntityType", "relation"],
+      changedFields: ["goal", "capabilityRequirements"]
+    },
+    clarificationPolicy: {
+      taskFrame: frame,
+      needsClarification: false,
+      blocking: false,
+      strategy: provider
+    }
+  };
+}
+
+function providerInvocationFor(interpretation) {
+  const telemetry = interpretation?.telemetry ?? {};
+  const fallback = telemetry.providerFallback ?? null;
+  const corrected = fallback?.used === true && [
+    "contextual_task_recovery",
+    "action_only_build_followup_policy",
+    "catalog_backed_input_correction"
+  ].includes(fallback?.reason);
+  return {
+    attempted: telemetry.providerCalled === true,
+    succeeded: telemetry.providerSucceeded === true,
+    accepted: telemetry.providerSucceeded === true && fallback?.used !== true,
+    corrected,
+    correctionReason: fallback?.reason ?? null,
+    usage: telemetry.providerUsage ?? null,
+    validationErrors: telemetry.providerError ? [telemetry.providerError] : []
+  };
+}
+
 async function interpretConversationV2(input, state, options, catalog) {
   const interpreter = options.turnInterpreter ?? interpretTurn;
+  const interpretationState = options.startNewTask === true
+    ? createConversationState({ seasonContextId: seasonContextIdFor(options) })
+    : state;
   const raw = await interpreter({
     currentMessage: input,
-    conversationState: state,
+    conversationState: interpretationState,
     semanticProvider: options.turnDeltaProvider ?? options.semanticTaskProvider,
     semanticTaskParser: options.semanticTaskParser ?? parseSemanticTask,
     semanticExampleStore: options.semanticExampleStore,
     catalog,
     version: options.effectivePatch ?? catalog?.version ?? null,
     currentTime: options.currentTime ?? null,
+    seasonContextId: seasonContextIdFor(options),
     entitySemanticRetriever: options.semanticRetriever,
     entityCandidateRetriever: options.entityCandidateRetriever,
     entityCandidateReranker: options.semanticEntityReranker,
@@ -675,6 +860,15 @@ async function interpretConversationV2(input, state, options, catalog) {
 }
 
 function controlledConversationText(resolution, state) {
+  const missingBuildSubject = resolution.resolvedTaskFrame?.goal === "unit_build_rankings"
+    && resolution.resolvedTaskFrame?.ambiguities?.some((entry) => (
+      entry?.code === "missing_subject"
+      || entry?.missingFields?.includes?.("subjects")
+      || entry?.missingFields?.includes?.("subject.champion")
+  ));
+  if (missingBuildSubject) {
+    return "要查哪个英雄的出装？请告诉我英雄名称。";
+  }
   const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
     entry?.code === "ambiguous_query_type"
     || entry?.missingFields?.includes?.("query_type")
@@ -699,6 +893,13 @@ function controlledConversationText(resolution, state) {
 }
 
 function controlledConversationSuggestions(resolution) {
+  const missingBuildSubject = resolution.resolvedTaskFrame?.goal === "unit_build_rankings"
+    && resolution.resolvedTaskFrame?.ambiguities?.some((entry) => (
+      entry?.code === "missing_subject"
+      || entry?.missingFields?.includes?.("subjects")
+      || entry?.missingFields?.includes?.("subject.champion")
+    ));
+  if (missingBuildSubject) return [];
   const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
     entry?.code === "ambiguous_query_type"
     || entry?.missingFields?.includes?.("query_type")
@@ -758,7 +959,9 @@ async function controlledConversationResponse(input, state, interpretation, reso
       mode: "on",
       stateVersion: state.schemaVersion,
       delta: interpretation.turnDelta,
-      resolution
+      resolution,
+      providerFallback: interpretation.telemetry?.providerFallback ?? null,
+      providerInvocation: providerInvocationFor(interpretation)
     },
     rawInput: input
   };
@@ -1649,6 +1852,9 @@ function serializeQueryForSession(query) {
     comparisonMode: query.comparisonMode,
     performanceItem: query.performanceItem ?? null,
     carrierItem: query.carrierItem ?? query.item ?? null,
+    cost: query.cost,
+    targetEntityType: query.targetEntityType,
+    relation: query.relation,
     primaryMetric: query.primaryMetric,
     pendingComparison: Boolean(query.pendingComparison),
     comp: query.comp?.status === "applied" && query.comp?.value?.selection === "explicit"
@@ -1975,6 +2181,7 @@ async function recommendItemCarriersForInput(
           toolExecutor: options.toolExecutor,
           executionPlanExecutor: options.executionPlanExecutor,
           executionPlan,
+          handlers: options.agentToolHandlers,
           agentRun: options.agentRun,
           signal: options.abortSignal,
           timeoutMs: options.toolTimeoutMs
@@ -2040,6 +2247,9 @@ async function recommendItemCarriersForInput(
   result.text = result.carriers.length
     ? `${itemName}共找到 ${result.carriers.length} 个正向提升携带者。`
     : `${itemName}在当前样本门槛下没有正向提升携带者。`;
+  result.taskFrame = semanticShadowResult?.semanticResult?.taskFrame ?? null;
+  result.capabilityMatch = semanticShadowResult?.capabilityMatch ?? null;
+  result.executionPlan = semanticShadowResult?.executionPlanning?.plan ?? executionPlan ?? null;
   attachSemanticTakeover(result, semanticRouting, {
     toolStatus: queryCache.stale ? "degraded" : queryCache.hit ? "cache_hit" : "completed",
     conclusionStatus: "not_requested",
@@ -2067,7 +2277,8 @@ async function writeLastQuerySession(result, options) {
       stateVersion: conversation.previousState.schemaVersion,
       delta: conversation.interpretation.turnDelta,
       resolution: conversation.resolution,
-      providerFallback: conversation.interpretation.telemetry?.providerFallback ?? null
+      providerFallback: conversation.interpretation.telemetry?.providerFallback ?? null,
+      providerInvocation: providerInvocationFor(conversation.interpretation)
     };
     if (
       result.type === "clarification"
@@ -2288,6 +2499,35 @@ export async function recommendForInput(input, options = {}) {
       options,
       catalog
     );
+    if (
+      conversationMode === "on"
+      && resolution.decision === "execute"
+      && resolution.resolvedTaskFrame
+    ) {
+      resolution.resolvedTaskFrame = await applyDeterministicTftSemantics(
+        resolution.resolvedTaskFrame,
+        input,
+        {
+          catalog,
+          dynamicContext: {
+            version: options.effectivePatch ?? catalog?.version ?? null,
+            currentTime: options.currentTime ?? null
+          },
+          conversation: options.startNewTask === true
+            ? []
+            : [
+                ...(conversationState.taskHistory ?? []),
+                ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
+              ],
+          managedConstraintFields: Array.isArray(interpretation.turnDelta?.constraintOperations)
+            ? interpretation.turnDelta.constraintOperations.map((operation) => operation?.field).filter(Boolean)
+            : [],
+          entitySemanticRetriever: options.semanticRetriever,
+          entityCandidateRetriever: options.entityCandidateRetriever,
+          entityCandidateReranker: options.semanticEntityReranker
+        }
+      );
+    }
     conversationV2 = {
       mode: conversationMode,
       previousState: conversationState,
@@ -2319,6 +2559,9 @@ export async function recommendForInput(input, options = {}) {
       conversationStateV2Context: conversationV2
     };
   }
+  const actionOnlyFrame = conversationMode !== "on" && conversationState
+    ? actionOnlyGroupFollowupFrame(input, conversationState)
+    : null;
   const semanticTaskPromise = directParsed || options.semanticShadow === false
     ? null
     : conversationMode === "on"
@@ -2326,9 +2569,14 @@ export async function recommendForInput(input, options = {}) {
         conversationV2.resolution,
         conversationV2.interpretation
       ))
+      : actionOnlyFrame
+        ? Promise.resolve(semanticResultForRecoveredFrame(actionOnlyFrame))
       : Promise.resolve().then(() => semanticParser(input, {
         catalog,
-        conversation: options.semanticConversation ?? [],
+        conversation: options.semanticConversation ?? [
+          ...(conversationState.taskHistory ?? []),
+          ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
+        ],
         dynamicContext: {
           version: options.effectivePatch ?? catalog?.version ?? null,
           currentTime: options.currentTime ?? null,
@@ -2336,14 +2584,22 @@ export async function recommendForInput(input, options = {}) {
         },
         exampleStore: options.semanticExampleStore,
         provider: options.semanticTaskProvider,
+        providerFailureFallback: true,
         budget: options.semanticParserBudget,
         entitySemanticRetriever: options.semanticRetriever,
         entityCandidateRetriever: options.entityCandidateRetriever,
         entityCandidateReranker: options.semanticEntityReranker
       }));
   semanticTaskPromise?.catch(() => {});
-  let deterministicParsed = directParsed ?? parseQueryDeterministically(input, options, catalog);
-  if (!directParsed && conversationMode !== "on") {
+  const hasResolvedParsedInput = Boolean(
+    options.resolvedParsedInput
+    && typeof options.resolvedParsedInput === "object"
+    && !Array.isArray(options.resolvedParsedInput)
+  );
+  let deterministicParsed = directParsed ?? (hasResolvedParsedInput
+    ? structuredClone(options.resolvedParsedInput)
+    : parseQueryDeterministically(input, options, catalog));
+  if (!directParsed && conversationMode !== "on" && !hasResolvedParsedInput) {
     deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
     deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
   }
@@ -2352,6 +2608,10 @@ export async function recommendForInput(input, options = {}) {
     semanticShadowResult = await runSemanticShadow(input, deterministicParsed, {
       parser: () => semanticTaskPromise,
       agentRun: options.agentRun,
+      toolRegistry: options.toolRegistry,
+      planner: options.controlledPlanner,
+      plannerFallback: options.controlledPlannerFallback,
+      compositeTools: options.compositeTools,
       legacyTaskPlanCompatibility: options.executionPlanSovereignty !== true
     });
   }
@@ -2364,6 +2624,10 @@ export async function recommendForInput(input, options = {}) {
         conversationV2.resolution,
         conversationV2.interpretation
       ),
+      toolRegistry: options.toolRegistry,
+      planner: options.controlledPlanner,
+      plannerFallback: options.controlledPlannerFallback,
+      compositeTools: options.compositeTools,
       legacyTaskPlanCompatibility: false
     });
   }
@@ -2435,6 +2699,133 @@ export async function recommendForInput(input, options = {}) {
   emitRecommendationProgress(options, "retrieval.started", {
     source: isCompIntent(parsedInput.intent) ? "metatft_compositions" : "metatft_structured"
   });
+
+  const semanticNativePlan = semanticNativeExecutionPlan(semanticShadowResult, options);
+  if (semanticNativePlan) {
+    const finalTool = semanticNativePlan.steps.at(-1).tool;
+    const execution = await options.executionPlanExecutor.execute(
+      semanticNativePlan,
+      {
+        handlers: options.agentToolHandlers ?? {},
+        run: options.agentRun,
+        signal: options.abortSignal,
+        intent: finalTool
+      }
+    );
+    if (execution.status === "completed") {
+      const value = execution.result;
+      const taskFrame = semanticShadowResult.semanticResult?.taskFrame ?? null;
+      const text = semanticNativeText(value, taskFrame);
+      const semanticTraitFilters = [...new Set([
+        ...(parsedInput.traitFilters ?? []),
+        ...[...(taskFrame?.concepts ?? []), ...(taskFrame?.subjects ?? []), ...(taskFrame?.candidates ?? [])]
+          .filter((entity) => entity?.expectedType === "trait" && entity?.resolvedId)
+          .map((entity) => entity.resolvedId)
+      ])];
+      const result = {
+        type: value?.type ?? "tool_using_agent_result",
+        parsed: parsedInput,
+        query: {
+          ...parsedInput,
+          intent: finalTool,
+          traitFilters: semanticTraitFilters,
+          ...(taskFrame?.constraints?.cost !== undefined ? { cost: taskFrame.constraints.cost } : {}),
+          warnings: parsedInput.warnings ?? []
+        },
+        validation: { valid: true, errors: [], warnings: [] },
+        clarification: null,
+        taskFrame,
+        capabilityMatch: semanticShadowResult.capabilityMatch,
+        executionPlan: semanticNativePlan,
+        plannerInvocation: semanticShadowResult.executionPlanning?.plannerInvocation ?? null,
+        executionTrace: execution.trace,
+        agentStatus: statusAfterExecution(semanticShadowResult.statusProtocol, execution),
+        result: value,
+        resultMode: value?.resultMode ?? null,
+        results: value?.results ?? [],
+        sourceId: typeof value?.source === "string" ? value.source : null,
+        source: semanticNativeSource(value, finalTool),
+        sourceUpdatedAt: value?.updatedAt ?? null,
+        text,
+        answer: {
+          summary: text,
+          methodology: semanticNativePlan.steps.length > 1
+            ? "先按官方当前赛季实体目录筛选候选，再用相同统计口径批量比较候选的主流出装。"
+            : "由已注册的只读结构化工具按当前赛季条件查询。"
+        }
+      };
+      await writeLastQuerySession(result, options);
+      return result;
+    }
+    const failedExecutionStep = execution.results?.find((entry) => entry.status === "failed");
+    const executionFailure = failedExecutionStep?.toolResult?.error?.message
+      ?? failedExecutionStep?.error
+      ?? execution.evidenceValidation?.errors?.[0]
+      ?? execution.resultPolicyExecution?.error
+      ?? "unknown_execution_failure";
+    throw Object.assign(new Error(`Semantic execution plan failed: ${executionFailure}`), {
+      code: "semantic_execution_plan_failed",
+      execution
+    });
+  }
+
+  const unknownEntityCandidates = parsedInput.intent === "unknown"
+    ? buildClarificationEntityCandidates(input, parsedInput, { unit: parsedInput.unit }, catalog, options)
+    : [];
+  const legacyClarificationSignal = Boolean(
+    parsedInput.parser?.entityAmbiguities?.length
+    || parsedInput.parser?.unresolvedEntityHints?.length
+    || parsedInput.parser?.structuredParser?.needsClarification
+    || parsedInput.parser?.bareUnitIntentAmbiguous
+    || parsedInput.parser?.genericEmblemRequested
+    || parsedInput.parser?.unknownStargazerEffectRequested
+    || parsedInput.parser?.genericSpecialComparisonRequested
+    || parsedInput.parser?.multipleItemRelationAmbiguous
+    || parsedInput.parser?.comparisonReplacementAmbiguous
+    || parsedInput.parser?.constraintConflicts?.length
+    || (
+      !parsedInput.unit
+      && !parsedInput.parser?.intentExplicit
+      && (parsedInput.ownedItems ?? []).length === 0
+      && (parsedInput.excludedItems ?? []).length === 0
+      && (parsedInput.traitFilters ?? []).length === 0
+      && [parsedInput.rankFilter, parsedInput.days, parsedInput.patch, parsedInput.minSamples, parsedInput.sort]
+        .some((value) => value !== undefined)
+    )
+    || unknownEntityCandidates.length
+  );
+  if (
+    parsedInput.intent === "unknown"
+    && !legacyClarificationSignal
+    && !initialSessionEntry?.value
+  ) {
+    const semantic = semanticShadowResult?.semanticResult;
+    const policy = semantic?.clarificationPolicy;
+    const needsClarification = policy?.needsClarification === true;
+    const text = needsClarification
+      ? policy.question
+      : semantic?.taskFrame?.understandingStatus === "understood_but_unsupported"
+        ? "我理解了这个 TFT 问题，但当前没有可提供可靠证据的已注册工具。"
+        : "我还不能可靠确定这个问题要调用哪类 TFT 工具，请补充你要查询的对象或目标。";
+    return {
+      type: needsClarification ? "clarification" : "unsupported",
+      parsed: parsedInput,
+      query: { ...parsedInput, warnings: [] },
+      validation: { valid: !needsClarification, errors: [], warnings: [] },
+      clarification: needsClarification ? {
+        blocking: true,
+        needsClarification: true,
+        reason: policy.missingInformation?.[0] ?? "semantic_clarification",
+        question: policy.question,
+        suggestions: policy.candidates?.map?.((candidate) => candidate.label).filter(Boolean) ?? []
+      } : null,
+      taskFrame: semantic?.taskFrame ?? null,
+      capabilityMatch: semanticShadowResult?.capabilityMatch ?? null,
+      executionPlan: semanticShadowResult?.executionPlanning?.plan ?? null,
+      executionTrace: null,
+      text
+    };
+  }
 
   if (parsedInput.intent === "item_carrier_rankings") {
     return recommendItemCarriersForInput(
@@ -2567,6 +2958,7 @@ export async function recommendForInput(input, options = {}) {
             toolExecutor: options.toolExecutor,
             executionPlanExecutor: options.executionPlanExecutor,
             executionPlan,
+            handlers: options.agentToolHandlers,
             agentRun: options.agentRun,
             signal: options.abortSignal,
             timeoutMs: options.toolTimeoutMs,
@@ -3035,6 +3427,7 @@ export async function recommendForInput(input, options = {}) {
           toolExecutor: options.toolExecutor,
           executionPlanExecutor: options.executionPlanExecutor,
           executionPlan,
+          handlers: options.agentToolHandlers,
           agentRun: options.agentRun,
           signal: options.abortSignal,
           timeoutMs: options.toolTimeoutMs,

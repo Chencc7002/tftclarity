@@ -8,7 +8,7 @@ import {
   validateTurnDelta
 } from "../understanding/turn-delta.js";
 
-export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v10";
+export const LIVE_SEMANTIC_TASK_PROMPT_VERSION = "live-semantic-task-contract.v12";
 
 const RESPONSE_CONTRACT = [
   "Return exactly one JSON object matching task-frame.v1. Do not use Markdown.",
@@ -64,6 +64,10 @@ const TURN_DELTA_RESPONSE_CONTRACT = [
   "rank is an array containing only IRON, BRONZE, SILVER, GOLD, PLATINUM, EMERALD, DIAMOND, MASTER, GRANDMASTER, CHALLENGER. MASTER and above is [MASTER, GRANDMASTER, CHALLENGER].",
   "Constraint values must use only values authorized by the supplied domain policy. Never invent substitute labels or encode scalar constraints as arrays.",
   "Any entity or constraint operation changes the taskRelation to modify. continue is only for turns that leave task semantics unchanged.",
+  "A contextual turn that inherits an entity but adds a new requested result, action, filter, cost, or tool requirement is not a pure continuation. For example, 这个羁绊有哪些四费棋子，怎么出装 must be modify with a non-null explicitTaskFrame containing the current-turn search/build semantics; never return an empty continue delta for it.",
+  'For a trait-member build recommendation without explicit comparison wording, use action recommend, goal recommend_builds_for_candidate_group, constraints {"cost":4,"targetEntityType":"champion","relation":"member_of_trait"}, expectedOutput ["recommendations","results","evidence"], and capabilityRequirements ["entity_catalog_filtering","unit_build_statistics"]. Inherit the trait from conversation context and never reuse goal trait_details.',
+  'Only when the user explicitly asks which candidate performs best, use goal compare_entity_build_performance and expectedOutput ["comparison","ranking","evidence"].',
+  "Inside TaskFrame constraints, omit every unknown optional field instead of returning it as null.",
   "To remove an entire scalar constraint such as strategy, use clear with only operation and field. Do not use an empty array.",
   "For replace operations include both oldValue and value.",
   "presentation contains requestedCount (null or integer 1..100), pageDirection (null, next, previous, same), avoidSeen (boolean), and resultReference (null or an object with scope and ordinal).",
@@ -104,6 +108,80 @@ function parseJsonContent(content) {
     }
     throw new Error("semantic task provider response did not contain valid JSON");
   }
+}
+
+function omitNullConstraintValues(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  const normalized = structuredClone(value);
+  if (normalized.constraints && typeof normalized.constraints === "object") {
+    normalized.constraints = Object.fromEntries(
+      Object.entries(normalized.constraints).filter(([, entry]) => entry !== null)
+    );
+  }
+  return normalized;
+}
+
+const ITEM_CATEGORY_ALIASES = Object.freeze({
+  emblems: "emblem",
+  "纹章": "emblem",
+  "转职": "emblem"
+});
+
+function normalizeItemCategory(value) {
+  const normalized = String(value ?? "").trim();
+  return ITEM_CATEGORY_ALIASES[normalized] ?? normalized;
+}
+
+function normalizeDomainConstraintShapes(constraints) {
+  if (!constraints || typeof constraints !== "object" || Array.isArray(constraints)) {
+    return constraints;
+  }
+  const normalized = { ...constraints };
+  if (typeof normalized.itemCategories === "string") {
+    normalized.itemCategories = [normalizeItemCategory(normalized.itemCategories)];
+  } else if (Array.isArray(normalized.itemCategories)) {
+    normalized.itemCategories = normalized.itemCategories.map(normalizeItemCategory);
+  }
+  if (["emblem", "emblems", "纹章", "转职"].includes(normalized.itemPolicy)) {
+    normalized.itemPolicy = "include_special";
+  }
+  return normalized;
+}
+
+function normalizeDomainConstraintOperation(operation) {
+  if (!operation || typeof operation !== "object" || Array.isArray(operation)) return operation;
+  const normalized = { ...operation };
+  for (const key of ["value", "oldValue"]) {
+    if (normalized[key] === undefined) continue;
+    if (normalized.field === "itemCategories") {
+      const values = Array.isArray(normalized[key]) ? normalized[key] : [normalized[key]];
+      normalized[key] = values.map(normalizeItemCategory);
+    }
+    if (
+      normalized.field === "itemPolicy"
+      && ["emblem", "emblems", "纹章", "转职"].includes(normalized[key])
+    ) normalized[key] = "include_special";
+  }
+  return normalized;
+}
+
+function normalizeProviderStructuredValue(value, turnDeltaRequest) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return value;
+  if (!turnDeltaRequest) return omitNullConstraintValues(value);
+  const normalized = structuredClone(value);
+  if (normalized.explicitTaskFrame) {
+    normalized.explicitTaskFrame = omitNullConstraintValues(normalized.explicitTaskFrame);
+    normalized.explicitTaskFrame.constraints = normalizeDomainConstraintShapes(
+      normalized.explicitTaskFrame.constraints
+    );
+    const allowedOperationFields = new Set(TURN_DELTA_CONSTRAINT_FIELDS);
+    normalized.constraintOperations = Array.isArray(normalized.constraintOperations)
+      ? normalized.constraintOperations.filter((operation) => (
+        allowedOperationFields.has(operation?.field)
+      )).map(normalizeDomainConstraintOperation)
+      : normalized.constraintOperations;
+  }
+  return normalized;
 }
 
 function normalizedUsage(payload = {}) {
@@ -212,7 +290,10 @@ export function createChatSemanticTaskProvider(options = {}) {
         };
         rawProviderContent = contentFromPayload(payload);
         try {
-          const rawStructuredValue = parseJsonContent(rawProviderContent);
+          const rawStructuredValue = normalizeProviderStructuredValue(
+            parseJsonContent(rawProviderContent),
+            turnDeltaRequest
+          );
           if (turnDeltaRequest) {
             const validation = validateTurnDelta(rawStructuredValue, {
               domainPolicy: request.domainPolicy

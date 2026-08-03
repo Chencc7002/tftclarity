@@ -19,8 +19,8 @@ const LEGACY_ACTIONS = Object.freeze({
   comp_analysis: "analyze"
 });
 
-const DEICTIC_REFERENCE = /(?:\u90a3(?:\u5979|\u4ed6|\u5b83|\u4ef6|\u5957|\u4e2a|\u8fd9\u4fe9)|\u8fd9(?:\u5f20\u5361|\u4ef6|\u4fe9|\u5957|\u4e2a\u73a9\u6cd5)|\u5b83|\u5979|\u4ed6|\u521a\u624d|\u4e0a\u4e00\u4e2a|\u53e6\u4e00\u4e2a|\u7ee7\u7eed|\u518d\u6765|\u6309\u521a\u624d)/u;
-const DEICTIC_ENTITY = /^(?:那(?:她|他|它|件|套|个)|这(?:张卡|件|俩|套|个玩法)|它|她|他|另一个|另一件装备|这俩)$/u;
+const DEICTIC_REFERENCE = /(?:\u90a3(?:\u5979|\u4ed6|\u5b83|\u4ef6|\u5957|\u4e2a|\u8fd9\u4fe9)|\u8fd9(?:\u5f20\u5361|\u4ef6|\u4fe9|\u5957|\u4e2a\u73a9\u6cd5)|该羁绊|这个羁绊|这个族|里面|其中|\u5b83|\u5979|\u4ed6|\u521a\u624d|\u4e0a\u4e00\u4e2a|\u53e6\u4e00\u4e2a|\u7ee7\u7eed|\u518d\u6765|\u6309\u521a\u624d)/u;
+const DEICTIC_ENTITY = /^(?:那(?:她|他|它|件|套|个)|这(?:张卡|件|俩|套|个玩法)|该羁绊|这个羁绊|这个族|里面|其中|它|她|他|另一个|另一件装备|这俩)$/u;
 
 const PLURAL_REFERENCE = /这(?:两|2)个|這(?:兩|2)個|这俩|這倆|那(?:两|2)个|那(?:兩|2)個|它们|它們/u;
 const COMPOSITION_REFERENCE = /(?:这|這|那|刚才|剛才|之前).{0,4}(?:套|阵容|陣容)/u;
@@ -179,6 +179,29 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
       ));
     }
     const previous = prior.frame;
+    if (references.deictic && concepts.every((entity) => entity.expectedType !== "trait")) {
+      const previousTraits = uniqueEntities([
+        ...previous.concepts,
+        ...previous.subjects,
+        ...previous.candidates
+      ].filter((entity) => entity?.expectedType === "trait" && entity?.resolvedId));
+      if (previousTraits.length === 1) {
+        concepts = uniqueEntities([...concepts, ...previousTraits]);
+        inheritedFields.push("concepts");
+      } else if (previousTraits.length > 1) {
+        ambiguities = [
+          ...ambiguities,
+          {
+            code: "ambiguous_entity",
+            inputFragment: "该羁绊",
+            affectsResult: true,
+            affectsToolSelection: false,
+            candidates: previousTraits
+          }
+        ];
+        understandingStatus = "ambiguous";
+      }
+    }
     const previousCandidatePool = uniqueEntities([
       ...previous.candidates,
       ...previous.concepts.filter((entity) => (

@@ -1,5 +1,6 @@
 import { TURN_DELTA_CONSTRAINT_FIELDS } from "../../understanding/turn-delta.js";
 import { createTaskFrame } from "../../understanding/task-frame.js";
+import { normalizeTftSemanticInput } from "../../core/semantic-input-normalizer.js";
 
 export const TFT_CONVERSATION_POLICY_VERSION = "tft-conversation-policy.v1";
 
@@ -40,6 +41,17 @@ const ITEM_CATEGORIES = new Set([
   "support",
   "set_special"
 ]);
+const TFT_EXPLICIT_TASK_CONSTRAINT_FIELDS = new Set([
+  ...TURN_DELTA_CONSTRAINT_FIELDS,
+  "cost",
+  "targetEntityType",
+  "selectionScope",
+  "relation",
+  "current",
+  "projection",
+  "candidateLimit",
+  "externalSupportInterpretation"
+]);
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -57,6 +69,21 @@ function entityReference(value, expectedType = null) {
 }
 
 function validateConstraintValue(field, value) {
+  if (field === "cost") {
+    const costs = Array.isArray(value) ? value : [value];
+    return costs.length > 0 && costs.every((entry) => Number.isInteger(entry) && entry >= 1 && entry <= 9);
+  }
+  if (field === "targetEntityType") return ["champion", "unit", "item", "trait"].includes(value);
+  if (field === "selectionScope") return ["last_result", "current_visible_results"].includes(value);
+  if (field === "relation") return value === "member_of_trait";
+  if (field === "current") return typeof value === "boolean";
+  if (field === "projection") {
+    return Array.isArray(value) && value.length <= 20 && value.every((entry) => typeof entry === "string");
+  }
+  if (field === "candidateLimit") return Number.isInteger(value) && value >= 1 && value <= 5;
+  if (field === "externalSupportInterpretation") {
+    return ["non_trait_splash_unit", "emblem_carrier"].includes(value);
+  }
   if (field === "days") return Number.isInteger(value) && value >= 1 && value <= 30;
   if (field === "minSamples") return Number.isInteger(value) && value >= 0 && value <= 1_000_000;
   if (field === "limit" || field === "itemCount") {
@@ -106,7 +133,7 @@ function validateOperation(operation) {
 function validateTaskFrame(frame) {
   const errors = [];
   for (const [field, value] of Object.entries(frame?.constraints ?? {})) {
-    if (!TURN_DELTA_CONSTRAINT_FIELDS.includes(field)) {
+    if (!TFT_EXPLICIT_TASK_CONSTRAINT_FIELDS.has(field)) {
       errors.push(`constraints.${field} is unsupported`);
       continue;
     }
@@ -217,10 +244,17 @@ function normalizeTurnDelta(delta) {
   };
 }
 
+function normalizeSemanticInput(input, options = {}) {
+  return normalizeTftSemanticInput(input, options);
+}
+
 export const tftConversationPolicy = Object.freeze({
   schemaVersion: TFT_CONVERSATION_POLICY_VERSION,
   constraintFields: TURN_DELTA_CONSTRAINT_FIELDS,
   semanticTurnDeltaPromptRules: Object.freeze([
+    "itemPolicy is a scalar string containing only ordinary_only, include_special, include_artifact, include_radiant, or all_current. For an emblem use include_special, never emblem.",
+    "itemCategories is always an array containing only ordinary, radiant, artifact, emblem, support, or set_special. For an emblem use [\"emblem\"], never the scalar \"emblem\".",
+    "A request asking which champions should carry one named item or emblem is an item-carrier ranking: use action rank, goal rank_emblem_carriers, put the named equipment in candidates with expectedType item, and require item_carrier_statistics. Never classify it as comp_rankings.",
     "strategy is a scalar string containing only reroll, fast8, or fast9. Never use an array and never invent values such as no_gambling, non-vertical, stable, or flexible.",
     "Use reroll false for requests that exclude reroll or 赌狗 compositions. Use reroll true for requests that require them. Do not encode negation as strategy reroll.",
     "Use contested low for requests that prefer less-contested or 没那么卷 compositions. Use sort robust_first for stability. Use limit and presentation.requestedCount for an explicit result count.",
@@ -230,6 +264,7 @@ export const tftConversationPolicy = Object.freeze({
   validateTaskFrame,
   validateConstraintValue,
   normalizeTurnDelta,
+  normalizeSemanticInput,
   normalizeResolvedTaskFrame,
   validateResolvedTaskFrame
 });

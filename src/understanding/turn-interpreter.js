@@ -10,6 +10,14 @@ import {
 
 export const TURN_INTERPRETER_VERSION = "turn-interpreter.v1";
 
+const ACTION_ONLY_BUILD_FOLLOWUP = /^(?:分别)?(?:怎么|如何|咋)(?:出装|给装|配装|带装备)[？?]?$/u;
+const SHORT_BUILD_FOLLOWUP = /^(?:出装|装备|给装|配装)(?:呢|怎么弄)?[？?]?$/u;
+
+export function isActionOnlyBuildFollowup(input) {
+  const text = String(input ?? "").trim();
+  return ACTION_ONLY_BUILD_FOLLOWUP.test(text) || SHORT_BUILD_FOLLOWUP.test(text);
+}
+
 const TURN_INTERPRETER_SYSTEM_RULES = [
   "You interpret the current user turn as a change relative to the supplied active task.",
   "Return exactly one turn-delta.v1 JSON object and no prose.",
@@ -138,10 +146,84 @@ export function compactConversationStateForInterpreter(state = {}) {
       totalCount: state.lastResult.totalCount,
       exhausted: state.lastResult.exhausted,
       shownIds: array(state.lastResult.shownIds).map(String),
+      shownEntities: clone(state.lastResult.shownEntities),
+      entityType: state.lastResult.entityType,
+      selectionScope: state.lastResult.selectionScope,
+      sourceFilters: clone(state.lastResult.sourceFilters),
       appliedConstraints: clone(state.lastResult.appliedConstraints)
     } : null,
     pendingClarification: clone(state.pendingClarification)
   };
+}
+
+function actionOnlyBuildFollowupDelta(currentMessage, state, options = {}) {
+  const input = String(currentMessage ?? "").trim();
+  if (!ACTION_ONLY_BUILD_FOLLOWUP.test(input) && !SHORT_BUILD_FOLLOWUP.test(input)) return null;
+  if (state?.pendingClarification) return null;
+  const seasonChanged = Boolean(
+    options.seasonContextId
+    && state?.seasonContextId
+    && String(options.seasonContextId) !== String(state.seasonContextId)
+  );
+  const lastResult = state?.lastResult;
+  const shownEntities = array(lastResult?.shownEntities).filter((entity) => (
+    entity?.apiName && ["unit", "champion"].includes(entity?.entityType)
+  ));
+  if (
+    seasonChanged
+    ||
+    lastResult?.resultType !== "entity_catalog_results"
+    || lastResult?.entityType !== "unit"
+    || shownEntities.length === 0
+  ) {
+    const ambiguity = {
+      code: "missing_subject",
+      missingFields: ["subjects"],
+      affectsToolSelection: true
+    };
+    return createTurnDelta({
+      dialogueAct: "start_task",
+      taskRelation: "new",
+      explicitTaskFrame: createTaskFrame({
+        domain: "tft",
+        action: "recommend",
+        goal: "unit_build_rankings",
+        expectedOutput: ["recommendations", "results", "evidence"],
+        ambiguities: [ambiguity],
+        capabilityRequirements: ["unit_build_statistics"],
+        confidence: 1,
+        understandingStatus: "understood_but_missing_context"
+      }),
+      ambiguities: [ambiguity],
+      confidence: 1
+    });
+  }
+  return createTurnDelta({
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    explicitTaskFrame: createTaskFrame({
+      domain: "tft",
+      action: "recommend",
+      candidates: shownEntities.map((entity) => ({
+        rawText: entity.name ?? entity.apiName,
+        expectedType: "champion",
+        resolvedId: entity.apiName,
+        source: "last_result",
+        confidence: 1
+      })),
+      constraints: {
+        targetEntityType: "champion",
+        selectionScope: "last_result"
+      },
+      goal: "recommend_builds_for_candidate_group",
+      expectedOutput: ["recommendations", "results", "evidence"],
+      contextReferences: [{ type: "last_result", fields: ["shownEntities"] }],
+      capabilityRequirements: ["unit_build_statistics"],
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    }),
+    confidence: 1
+  });
 }
 
 export function buildTurnInterpreterMessages({ currentMessage, state } = {}) {
@@ -190,7 +272,8 @@ function clarifiableFirstTurnFrame(frame) {
 function isExplicitSelfContainedTask(currentMessage) {
   const input = String(currentMessage ?? "").trim();
   if (!input) return false;
-  if (/(?:这个|那个|上一个|刚才|继续|接着|再来|再看|改成|换成|第[一二三四五六七八九十\d]+|它)/u.test(input)) {
+  if (/^(?:怎么|如何|咋|怎样)(?:出装|配装|给装备)/u.test(input)) return false;
+  if (/(?:这个|那个|这些|那些|上述|上一个|刚才|继续|接着|再来|再看|改成|换成|第[一二三四五六七八九十\d]+|它们?|他们)/u.test(input)) {
     return false;
   }
   return /(?:热门阵容|阵容趋势|阵容排行|三件装备|出装|装备排行|英雄属性|棋子属性|技能(?:详情|介绍)?|羁绊(?:详情|效果)?)/u.test(input);
@@ -226,7 +309,7 @@ function deterministicExplicitTaskFrame(currentMessage) {
     /^(?:查询|查看|推荐|告诉我)?\s*([\p{L}\p{N}·.'_-]{1,32}?)(?:的)?(?:当前版本)?(?:最稳|最好|推荐)?(?:的)?(?:三件|3件)?(?:装备|出装)/u
   );
   const unitMention = String(unitBuildMatch?.[1] ?? "").trim();
-  if (unitMention) {
+  if (unitMention && !/(?:谁|哪些|其中|棋子|[一二三四五六七八九十\d]+费|表现|比较|对比)/u.test(input)) {
     return createTaskFrame({
       action: "recommend",
       goal: "unit_build_rankings",
@@ -263,6 +346,105 @@ function deterministicFallbackDelta(frame, state) {
     });
   }
   return unknownTurnDelta("provider_unavailable");
+}
+
+function weakProviderFirstTurnDelta(delta) {
+  if (delta?.taskRelation === "unknown" || delta?.dialogueAct === "unknown") return true;
+  const frame = delta?.explicitTaskFrame;
+  if (!frame || Number(delta?.confidence ?? 0) < 0.75) return true;
+  const entities = [...array(frame.subjects), ...array(frame.candidates), ...array(frame.concepts)];
+  if (entities.some((entity) => !entity?.resolvedId && Number(entity?.confidence ?? 0) < 0.8)) {
+    return true;
+  }
+  return array(delta.ambiguities).some((entry) => entry?.affectsToolSelection !== false)
+    || array(frame.ambiguities).some((entry) => entry?.affectsToolSelection !== false);
+}
+
+function providerFrameCoversSemanticCorrection(frame, normalization) {
+  if (!array(normalization?.corrections).length) return true;
+  const correctedNames = new Set(array(normalization.corrections).map((entry) => entry?.to));
+  const entities = [...array(frame?.subjects), ...array(frame?.candidates), ...array(frame?.concepts)];
+  return entities.some((entity) => (
+    entity?.expectedType === "item"
+    && correctedNames.has(String(entity?.rawText ?? entity?.canonicalName ?? ""))
+  ));
+}
+
+function emptyContextualContinuation(delta) {
+  return Boolean(
+    delta
+    && ["continue", "modify"].includes(delta.taskRelation)
+    && !delta.explicitTaskFrame
+    && array(delta.entityOperations).length === 0
+    && array(delta.constraintOperations).length === 0
+    && !delta.presentation?.resultReference
+  );
+}
+
+function hasMaterialContextualRecoveryCue(currentMessage) {
+  return /(?:[一二两兩三四五六七八九\d]\s*费|出装|出裝|给装|給裝|配装|配裝|带什么装备|帶什麼裝備|有哪些|有什麼|有什么)/u
+    .test(String(currentMessage ?? ""));
+}
+
+function contextualFallbackConversation(state) {
+  const entries = array(state?.taskHistory)
+    .map((entry) => entry?.taskFrame ? { taskFrame: entry.taskFrame } : null)
+    .filter(Boolean);
+  if (state?.activeTask?.taskFrame) {
+    entries.push({ taskFrame: state.activeTask.taskFrame });
+  }
+  return entries;
+}
+
+function contextualFrameAddsMaterialSemantics(frame, activeFrame) {
+  if (
+    !frame
+    || frame.domain !== "tft"
+    || frame.understandingStatus !== "understood_and_supported"
+  ) return false;
+  const activeConstraints = activeFrame?.constraints ?? {};
+  const addsConstraint = Object.entries(frame.constraints ?? {}).some(([key, value]) => (
+    JSON.stringify(activeConstraints[key]) !== JSON.stringify(value)
+  ));
+  const activeRequirements = new Set(array(activeFrame?.capabilityRequirements));
+  const addsCapability = array(frame.capabilityRequirements).some((requirement) => (
+    !activeRequirements.has(requirement)
+  ));
+  return addsConstraint || addsCapability;
+}
+
+function providerFrameCoversContextualSemantics(providerFrame, contextualFrame) {
+  if (!providerFrame || !contextualFrame) return false;
+  const providerRequirements = new Set(array(providerFrame.capabilityRequirements));
+  if (array(contextualFrame.capabilityRequirements).some((value) => !providerRequirements.has(value))) {
+    return false;
+  }
+  const providerConstraints = providerFrame.constraints ?? {};
+  for (const key of ["cost", "targetEntityType", "relation"]) {
+    const expected = contextualFrame.constraints?.[key];
+    if (expected !== undefined && expected !== null && providerConstraints[key] !== expected) {
+      return false;
+    }
+  }
+  return providerFrame.action === contextualFrame.action
+    && providerFrame.understandingStatus === "understood_and_supported";
+}
+
+function sanitizeContextualFallbackFrame(frame, domainPolicy) {
+  if (!frame || typeof domainPolicy?.validateTaskFrame !== "function") {
+    return frame ? createTaskFrame(frame) : null;
+  }
+  const constraints = {};
+  for (const [key, value] of Object.entries(frame.constraints ?? {})) {
+    const candidate = createTaskFrame({
+      ...frame,
+      constraints: { [key]: value }
+    });
+    if (array(domainPolicy.validateTaskFrame(candidate)).length === 0) {
+      constraints[key] = value;
+    }
+  }
+  return createTaskFrame({ ...frame, constraints });
 }
 
 function rawEntityReference(value, expectedType) {
@@ -321,6 +503,34 @@ async function linkConstraintReferences(frame, options) {
     constraints[field] = resolved[holderField];
   }
   return createTaskFrame({ ...linked, constraints });
+}
+
+function catalogId(value) {
+  return /^TFT\d+_/u.test(String(value ?? ""));
+}
+
+function taskFrameNeedsEntityLinking(frame) {
+  const entities = [
+    ...array(frame?.subjects),
+    ...array(frame?.candidates),
+    ...array(frame?.concepts)
+  ];
+  if (entities.some((entity) => !entity?.resolvedId)) return true;
+  for (const field of [
+    "lockedItems",
+    "ownedItems",
+    "excludedItems",
+    "avoidItemComponents",
+    "comparisonItems",
+    "traitFilters"
+  ]) {
+    for (const value of array(frame?.constraints?.[field])) {
+      if (typeof value === "string" && !catalogId(value)) return true;
+      if (value && typeof value === "object" && !value.resolvedId) return true;
+    }
+  }
+  const comp = frame?.constraints?.comp;
+  return Boolean(comp && typeof comp === "object" && !comp.resolvedId);
 }
 
 async function linkReferenceValues(values, expectedType, holderField, options) {
@@ -403,20 +613,22 @@ async function linkTurnDeltaReferences(delta, options) {
   return createTurnDelta({
     ...delta,
     explicitTaskFrame: delta.explicitTaskFrame
-      ? await linkConstraintReferences(delta.explicitTaskFrame, options)
+      ? taskFrameNeedsEntityLinking(delta.explicitTaskFrame)
+        ? await linkConstraintReferences(delta.explicitTaskFrame, options)
+        : createTaskFrame(delta.explicitTaskFrame)
       : null,
     entityOperations,
     constraintOperations
   });
 }
 
-async function explicitFrameForFallback(currentMessage, options) {
+async function explicitFrameForFallback(currentMessage, options, conversationState = null) {
   if (options.explicitTaskFrame) return createTaskFrame(options.explicitTaskFrame);
   const parser = options.semanticTaskParser ?? parseSemanticTask;
   try {
     const result = await parser(currentMessage, {
       catalog: options.catalog,
-      conversation: [],
+      conversation: contextualFallbackConversation(conversationState),
       dynamicContext: {
         version: options.version ?? null,
         currentTime: options.currentTime ?? null
@@ -439,8 +651,12 @@ export async function interpretTurn({
   domainPolicy,
   ...options
 } = {}) {
-  const explicitSelfContainedTask = isExplicitSelfContainedTask(currentMessage);
-  const deterministicExplicitFrame = deterministicExplicitTaskFrame(currentMessage);
+  const semanticNormalization = typeof domainPolicy?.normalizeSemanticInput === "function"
+    ? domainPolicy.normalizeSemanticInput(currentMessage, options)
+    : { originalInput: String(currentMessage ?? ""), normalizedInput: String(currentMessage ?? ""), corrections: [] };
+  const semanticMessage = String(semanticNormalization?.normalizedInput ?? currentMessage ?? "");
+  const explicitSelfContainedTask = isExplicitSelfContainedTask(semanticMessage);
+  const deterministicExplicitFrame = deterministicExplicitTaskFrame(semanticMessage);
   const interpreterState = explicitSelfContainedTask
     ? {
       ...conversationState,
@@ -450,12 +666,17 @@ export async function interpretTurn({
     }
     : conversationState;
   const messages = buildTurnInterpreterMessages({
-    currentMessage,
+    currentMessage: semanticMessage,
     state: interpreterState
   });
   let providerFallback = null;
   let rawDelta = null;
+  let providerCalled = false;
+  let providerSucceeded = false;
+  let providerUsage = null;
+  let providerError = null;
   if (typeof semanticProvider === "function") {
+    providerCalled = true;
     try {
       const response = await semanticProvider({
         messages,
@@ -463,6 +684,8 @@ export async function interpretTurn({
         budget: options.budget,
         domainPolicy
       });
+      providerSucceeded = true;
+      providerUsage = response?.usage ?? null;
       rawDelta = response?.turnDelta ?? response;
       const rawValidation = validateTurnDelta(rawDelta);
       if (!rawValidation.valid) {
@@ -478,9 +701,11 @@ export async function interpretTurn({
         throw new TypeError(`Invalid TurnDelta: ${domainValidation.errors.join("; ")}`);
       }
     } catch (error) {
+      providerError = String(error?.message ?? error ?? "provider_error").slice(0, 500);
       providerFallback = {
         used: true,
-        reason: error?.name === "TypeError" ? "invalid_response" : "provider_error"
+        reason: error?.name === "TypeError" ? "invalid_response" : "provider_error",
+        error: providerError
       };
       rawDelta = null;
     }
@@ -503,7 +728,7 @@ export async function interpretTurn({
     );
     if (explicitSelfContainedTask
       && !["new", "switch"].includes(delta.taskRelation)) {
-      const explicit = await explicitFrameForFallback(currentMessage, options);
+      const explicit = await explicitFrameForFallback(semanticMessage, options);
       if (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit)) {
         delta = createTurnDelta({
           dialogueAct: "start_task",
@@ -511,32 +736,190 @@ export async function interpretTurn({
           explicitTaskFrame: explicit,
           confidence: explicit.confidence
         });
+        providerFallback = {
+          used: true,
+          reason: "self_contained_task_recovery"
+        };
+      }
+    }
+    const hasConversationContext = Boolean(
+      interpreterState?.activeTask?.taskFrame
+      || interpreterState?.pendingClarification
+    );
+    if (
+      !hasConversationContext
+      && !providerFrameCoversSemanticCorrection(delta.explicitTaskFrame, semanticNormalization)
+    ) {
+      const explicit = await explicitFrameForFallback(semanticMessage, options);
+      if (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit)) {
+        delta = deterministicFallbackDelta(explicit, interpreterState);
+        providerFallback = {
+          used: true,
+          reason: "catalog_backed_input_correction"
+        };
+      }
+    }
+    if (!hasConversationContext && weakProviderFirstTurnDelta(delta)) {
+      const explicit = await explicitFrameForFallback(semanticMessage, options);
+      if (
+        (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)
+        || clarifiableFirstTurnFrame(explicit)
+      ) {
+        delta = deterministicFallbackDelta(explicit, interpreterState);
+        providerFallback = {
+          used: true,
+          reason: "self_contained_task_recovery"
+        };
+      }
+    }
+    if (hasConversationContext && emptyContextualContinuation(delta)) {
+      const contextual = sanitizeContextualFallbackFrame(
+        await explicitFrameForFallback(
+          semanticMessage,
+          options,
+          interpreterState
+        ),
+        domainPolicy
+      );
+      if (contextualFrameAddsMaterialSemantics(
+        contextual,
+        interpreterState?.activeTask?.taskFrame
+      )) {
+        delta = createTurnDelta({
+          ...delta,
+          dialogueAct: "modify",
+          taskRelation: "modify",
+          explicitTaskFrame: contextual,
+          confidence: Math.max(Number(delta.confidence ?? 0), Number(contextual.confidence ?? 0)),
+          ambiguities: contextual.ambiguities
+        });
+        providerFallback = {
+          used: true,
+          reason: "contextual_task_recovery"
+        };
+      }
+    }
+    if (
+      hasConversationContext
+      && hasMaterialContextualRecoveryCue(semanticMessage)
+      && providerFallback?.reason !== "contextual_task_recovery"
+    ) {
+      const contextual = sanitizeContextualFallbackFrame(
+        await explicitFrameForFallback(semanticMessage, options, interpreterState),
+        domainPolicy
+      );
+      if (
+        contextualFrameAddsMaterialSemantics(
+          contextual,
+          interpreterState?.activeTask?.taskFrame
+        )
+        && !providerFrameCoversContextualSemantics(delta.explicitTaskFrame, contextual)
+      ) {
+        delta = createTurnDelta({
+          ...delta,
+          dialogueAct: "modify",
+          taskRelation: "modify",
+          explicitTaskFrame: contextual,
+          confidence: Math.max(Number(delta.confidence ?? 0), Number(contextual.confidence ?? 0)),
+          ambiguities: contextual.ambiguities
+        });
+        providerFallback = {
+          used: true,
+          reason: "contextual_task_recovery",
+          trigger: "incomplete_contextual_semantics"
+        };
       }
     }
   } else {
-    const hasActiveTask = Boolean(interpreterState?.activeTask?.taskFrame);
-    const explicitNewTask = explicitSelfContainedTask;
-    const explicit = options.explicitTaskFrame
+    const hasConversationContext = Boolean(
+      interpreterState?.activeTask?.taskFrame
+      || interpreterState?.pendingClarification
+    );
+    let explicit = options.explicitTaskFrame
       ? createTaskFrame(options.explicitTaskFrame)
-      : typeof semanticProvider !== "function" || !hasActiveTask || explicitNewTask
-        ? await explicitFrameForFallback(currentMessage, options)
+      : typeof semanticProvider !== "function" || !hasConversationContext
+        ? await explicitFrameForFallback(semanticMessage, options)
         : null;
-    delta = explicitNewTask && (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit))
-      ? createTurnDelta({
-        dialogueAct: "start_task",
-        taskRelation: "new",
+    if (
+      hasConversationContext
+      && !explicit
+      && hasMaterialContextualRecoveryCue(semanticMessage)
+    ) {
+      explicit = sanitizeContextualFallbackFrame(
+        await explicitFrameForFallback(semanticMessage, options, interpreterState),
+        domainPolicy
+      );
+    }
+    if (
+      hasConversationContext
+      && contextualFrameAddsMaterialSemantics(
+        explicit,
+        interpreterState?.activeTask?.taskFrame
+      )
+    ) {
+      const providerFailureReason = providerFallback?.reason ?? "provider_unavailable";
+      delta = createTurnDelta({
+        dialogueAct: "modify",
+        taskRelation: "modify",
         explicitTaskFrame: explicit,
-        confidence: explicit.confidence
-      })
-      : deterministicFallbackDelta(explicit, interpreterState);
+        confidence: Number(explicit.confidence ?? 0.9),
+        ambiguities: explicit.ambiguities
+      });
+      providerFallback = {
+        used: true,
+        reason: "contextual_task_recovery",
+        trigger: providerFailureReason
+      };
+    } else {
+      delta = explicitSelfContainedTask && (materialFrame(explicit) || clarifiableFirstTurnFrame(explicit))
+        ? createTurnDelta({
+          dialogueAct: "start_task",
+          taskRelation: "new",
+          explicitTaskFrame: explicit,
+          confidence: explicit.confidence
+        })
+        : deterministicFallbackDelta(explicit, interpreterState);
+    }
+  }
+  const actionOnlyBuildDelta = actionOnlyBuildFollowupDelta(
+    semanticMessage,
+    interpreterState,
+    options
+  );
+  if (actionOnlyBuildDelta) {
+    delta = actionOnlyBuildDelta;
+    providerFallback = {
+      used: true,
+      reason: "action_only_build_followup_policy"
+    };
   }
   delta = await linkTurnDeltaReferences(delta, options);
+  const hasConversationContext = Boolean(
+    interpreterState?.activeTask?.taskFrame
+    || interpreterState?.pendingClarification
+  );
+  if (!actionOnlyBuildDelta && !hasConversationContext && weakProviderFirstTurnDelta(delta)) {
+    const explicit = await explicitFrameForFallback(semanticMessage, options);
+    if (
+      (materialFrame(explicit) && Number(explicit.confidence ?? 0) >= 0.85)
+      || clarifiableFirstTurnFrame(explicit)
+    ) {
+      delta = await linkTurnDeltaReferences(
+        deterministicFallbackDelta(explicit, interpreterState),
+        options
+      );
+      providerFallback = {
+        used: true,
+        reason: "self_contained_task_recovery"
+      };
+    }
+  }
   delta = normalizeContextualTurnDelta(interpreterState, delta);
   let validation = validateTurnDelta(delta, { domainPolicy });
   if (!validation.valid) {
     const hasActiveTask = Boolean(interpreterState?.activeTask?.taskFrame);
     if (!hasActiveTask) {
-      const explicit = await explicitFrameForFallback(currentMessage, options);
+      const explicit = await explicitFrameForFallback(semanticMessage, options);
       let fallbackDelta = deterministicFallbackDelta(explicit, interpreterState);
       fallbackDelta = await linkTurnDeltaReferences(fallbackDelta, options);
       fallbackDelta = normalizeContextualTurnDelta(interpreterState, fallbackDelta);
@@ -558,6 +941,11 @@ export async function interpretTurn({
     telemetry: {
       provider: typeof semanticProvider === "function" ? "injected" : "deterministic",
       providerFallback,
+      providerCalled,
+      providerSucceeded,
+      providerUsage,
+      providerError,
+      semanticNormalization,
       stateSummary: compactConversationStateForInterpreter(conversationState)
     },
     messages

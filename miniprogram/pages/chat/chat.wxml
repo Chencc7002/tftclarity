@@ -29,7 +29,7 @@
           <view class="quick-icon">◇</view><view><text class="quick-title">英雄出装</text><text class="quick-copy">指定英雄查三件套</text></view>
         </button>
         <button class="quick-card" data-task="patch" bindtap="onQuickTask">
-          <view class="quick-icon">▤</view><view><text class="quick-title">更新公告</text><text class="quick-copy">17.7 版本改动</text></view>
+          <view class="quick-icon">▤</view><view><text class="quick-title">更新公告</text><text class="quick-copy">17.8 版本改动</text></view>
         </button>
       </view>
 

@@ -48,10 +48,11 @@ test("AnswerModeRouter recalls current_stats only for broad environment context"
   assert.ok(broad.retrievalScopes.includes("current_stats"));
 
   const trend = routeAnswerMode({
-    input: "最近阵容有什么变化",
+    input: "查看当前版本阵容趋势",
     parsed: { intent: "comp_trends" }
   });
-  assert.ok(trend.retrievalScopes.includes("current_stats"));
+  assert.equal(trend.mode, "structured");
+  assert.equal(trend.retrievalScopes.includes("current_stats"), false);
 
   const exactHybrid = routeAnswerMode({
     input: "霞三件装备怎么配，为什么？",
@@ -105,4 +106,17 @@ test("AnswerModeRouter does not reject an unregistered open question", () => {
   });
   assert.equal(route.mode, "rag");
   assert.ok(route.reasonCodes.includes("knowledge_signal"));
+});
+
+test("AnswerModeRouter routes version-change questions to official patch knowledge", () => {
+  const route = routeAnswerMode({
+    input: "17.8 版本更新了什么？",
+    parsed: { intent: "comp_rankings" }
+  });
+  assert.equal(route.mode, "rag");
+  assert.equal(route.patchNotesRequested, true);
+  assert.deepEqual(route.structuredOperations, []);
+  assert.ok(route.retrievalScopes.includes("static_knowledge"));
+  assert.ok(route.reasonCodes.includes("official_patch_knowledge_signal"));
+  assert.equal(route.retrievalScopes.includes("current_stats"), false);
 });

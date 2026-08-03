@@ -58,9 +58,9 @@ function inferAction(text, domain, examples) {
     return "unknown";
   }
   if (ACTION_PATTERNS.find_video.test(text)) return "find_video";
+  if (ITEM_CARRIER_REQUEST_PATTERN.test(text)) return "rank";
   const explicit = explicitAction(text);
   if (explicit) return explicit;
-  if (ITEM_CARRIER_REQUEST_PATTERN.test(text)) return "rank";
   if (ACTION_PATTERNS.explain.test(text)) return "explain";
   if (/(?:往上冲|往上沖|上升|起飞|起飛|趋势|趨勢|变热门|變熱門)/iu.test(text)) return "analyze";
   if (ACTION_PATTERNS.analyze.test(text)) {
@@ -73,11 +73,34 @@ function inferAction(text, domain, examples) {
   if (/(?:当前|當前|挡前|这版|這版).*(?:版本|板本)|(?:版本|板本).*(?:当前|當前|挡前)/u.test(text)) {
     return "search";
   }
+  const collection = collectionRequestType(text);
+  if (collection) return "search";
   return examples[0]?.action ?? "analyze";
 }
 
 function constraintsFor(text) {
   const constraints = {};
+  const costMatches = [...text.matchAll(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/gu)];
+  if (costMatches.length) {
+    const costMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    const costs = [...new Set(costMatches.map((match) => costMap[match[1]] ?? Number(match[1])))]
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 9)
+      .sort((left, right) => left - right);
+    constraints.cost = costs.length === 1 ? costs[0] : costs;
+    constraints.targetEntityType = "champion";
+    constraints.relation = "member_of_trait";
+    constraints.current = true;
+  }
+  if (/最高费|最高費/u.test(text)) {
+    constraints.targetEntityType = "champion";
+    constraints.relation = "member_of_trait";
+    constraints.sort = "cost_desc";
+    constraints.limit = 1;
+    constraints.current = true;
+  }
+  if (/(?:阵容|陣容).{0,8}(?:非|不属于|不屬於).{0,6}(?:羁绊|羈絆).{0,8}(?:外援|单挂|單掛|外挂)|(?:非|不属于|不屬於)(?:本)?羁绊外援/u.test(text)) {
+    constraints.externalSupportInterpretation = "non_trait_splash_unit";
+  }
   if (/(?:提升|增益)(?:最大|最高)/u.test(text)) constraints.sort = "uplift_first";
   if (/(?:携带|使用|样本)(?:最多|最高)|高频/u.test(text)) constraints.sort = "games_first";
   if (/(?:\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u70ed\u5ea6.{0,4}\u6da8)/u.test(text)) {
@@ -87,9 +110,10 @@ function constraintsFor(text) {
   const historicalPatch = text.match(/\b\d{1,2}\.\d{1,2}\b/u)?.[0];
   if (historicalPatch) constraints.patch = historicalPatch;
   const itemCount = text.match(/([一二两兩三四五六七八九\d])件/u)?.[1];
-  if (itemCount) constraints.itemCount = "一二两兩三四五六七八九".includes(itemCount)
-    ? "一二两兩三四五六七八九".indexOf(itemCount) % 9 + 1
-    : Number(itemCount);
+  if (itemCount) {
+    const itemCountMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    constraints.itemCount = itemCountMap[itemCount] ?? Number(itemCount);
+  }
   const limit = text.match(/(?:前|推荐|推薦|来|來)([一二两兩三四五六七八九十\d]+)(?:套|个|個|名)?/u)?.[1];
   if (limit) {
     const numberMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
@@ -201,6 +225,22 @@ function explicitAction(text) {
     if (EXPLICIT_ACTION_CUES[action].test(text)) return action;
   }
   return null;
+}
+
+function collectionRequestType(text) {
+  if (/(是什么|什么是|效果|激活|层级|属性|详情|技能|说明)/u.test(text)) return null;
+  const category = /(?:棋子|英雄|弈子|卡)/u.test(text)
+    ? "champion"
+    : /(?:羁绊|羁絆)/u.test(text)
+      ? "trait"
+      : /(?:装备|裝備)/u.test(text)
+        ? "item"
+        : null;
+  if (!category) return null;
+  if (!/(哪些|什么|有些|有哪些|返回|列出|列一下|给我|看下|看一下|查询|查一下|查下|搜一下|全部|所有|名单|列表)/u.test(text)) {
+    return null;
+  }
+  return category;
 }
 
 const GENERIC_PROVIDER_ENTITY = /^(?:\u795e\u88c5|\u4e09\u4ef6[\u5957\u88c5\u5986]|\u5355\u4ef6\u88c5\u5907|\u6563\u4ef6|\u88c5[\u5907\u88ab]|\u5f53\u524d\u6570\u636e|\u6570\u636e|\u8868[\u73b0\u5148]|\u5403\u5206[\u7387\u5f8b]|\u5e73\u5747\u540d\u6b21|\u4f18\u5148[\u7ea7\u6781]|\u5019\u9009|\u8be6\u60c5|\u8fd9\u5f20\u5361|\u8fd9\u4ef6|\u8fd9\u4fe9|\u53e6\u4e00\u4ef6\u88c5\u5907|\u5979|\u4ed6|\u5b83)$/u;
@@ -352,6 +392,131 @@ function applyUnresolvedEntityPolicy(taskFrame, input) {
   });
 }
 
+function applyExternalSupportSemantics(taskFrame, text, conversation = []) {
+  let frame = createTaskFrame(taskFrame);
+  if (!/外援|单挂|單掛|外挂/u.test(text)) return frame;
+
+  const explicitExternal = frame.constraints.externalSupportInterpretation === "non_trait_splash_unit";
+  const previousFrames = conversation
+    .map((entry) => entry?.taskFrame ?? entry?.frame ?? null)
+    .filter(Boolean);
+  const isEmblemCarrierFrame = (previous) => {
+    if (
+      previous?.goal === "item_carrier_rankings"
+      || previous?.goal === "rank_emblem_carriers"
+      || previous?.constraints?.externalSupportInterpretation === "emblem_carrier"
+    ) return true;
+    const items = [
+      ...(previous?.candidates ?? []),
+      ...(previous?.concepts ?? [])
+    ].filter((entity) => entity?.expectedType === "item");
+    return previous?.action === "rank"
+      && items.length === 1
+      && /emblem|纹章|轉|转/iu.test(`${items[0].resolvedId ?? ""} ${items[0].rawText ?? ""}`);
+  };
+  const emblemContext = /转谁带|轉誰帶|转职.{0,6}(?:谁|誰).{0,3}带|轉職.{0,6}(?:誰|谁).{0,3}帶/u.test(text)
+    || previousFrames.some(isEmblemCarrierFrame);
+  if (explicitExternal || emblemContext) {
+    const previousCarrierFrame = [...previousFrames].reverse().find(isEmblemCarrierFrame);
+    const previousItems = [
+      ...(previousCarrierFrame?.candidates ?? []),
+      ...(previousCarrierFrame?.concepts ?? [])
+    ].filter((entity) => entity?.expectedType === "item" && entity?.resolvedId);
+    return createTaskFrame({
+      ...frame,
+      action: "search",
+      goal: explicitExternal ? "find_external_support_units" : "rank_emblem_carriers",
+      expectedOutput: ["results", "ranking", "evidence"],
+      constraints: {
+        ...frame.constraints,
+        externalSupportInterpretation: explicitExternal ? "non_trait_splash_unit" : "emblem_carrier"
+      },
+      ...(emblemContext && previousItems.length === 1 ? {
+        candidates: previousItems,
+        concepts: frame.concepts.filter((entity) => entity.expectedType === "patch")
+      } : {}),
+      assumptions: emblemContext && !explicitExternal
+        ? [...new Set([...frame.assumptions, "按适合携带目标羁绊转职的外援棋子理解"])]
+        : frame.assumptions,
+      ambiguities: frame.ambiguities.filter((entry) => entry?.code !== "ambiguous_game_concept"),
+      understandingStatus: "understood_and_supported"
+    });
+  }
+  return createTaskFrame({
+    ...frame,
+    action: "search",
+    goal: "resolve_external_support_meaning",
+    ambiguities: [
+      ...frame.ambiguities.filter((entry) => entry?.code !== "ambiguous_game_concept"),
+      {
+        code: "ambiguous_game_concept",
+        inputFragment: "外援",
+        affectsResult: true,
+        affectsToolSelection: true,
+        candidates: [
+          { id: "non_trait_splash_unit", label: "阵容中常见的非本羁绊单挂棋子" },
+          { id: "emblem_carrier", label: "适合携带目标羁绊转职的棋子" }
+        ],
+        safeAssumption: null
+      }
+    ],
+    understandingStatus: "ambiguous"
+  });
+}
+
+function applyCandidateGroupBuildSemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  const buildRequest = /(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text);
+  const candidateScope = frame.constraints?.targetEntityType === "champion"
+    && (
+      frame.constraints?.cost !== undefined
+      || frame.constraints?.relation === "member_of_trait"
+      || frame.candidates.filter((entity) => entity?.expectedType === "champion").length > 1
+    );
+  if (!buildRequest || !candidateScope) return frame;
+  const comparison = /(?:谁|誰|哪个|哪個).{0,12}(?:表现|表現|最好|最强|最強)|(?:表现|表現).{0,8}(?:最好|最强|最強)|(?:最好|最强|最強).{0,8}(?:出装|出裝|装备|裝備)/u.test(text);
+  return createTaskFrame({
+    ...frame,
+    action: comparison ? "analyze" : "recommend",
+    goal: comparison
+      ? "compare_entity_build_performance"
+      : "recommend_builds_for_candidate_group",
+    expectedOutput: comparison
+      ? ["comparison", "ranking", "evidence"]
+      : ["recommendations", "results", "evidence"]
+  });
+}
+
+function applyEntityCollectionSemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  const resolvedCarrierItem = [
+    ...(frame.subjects ?? []),
+    ...(frame.candidates ?? []),
+    ...(frame.concepts ?? [])
+  ].some((entity) => entity?.expectedType === "item" && entity?.resolvedId);
+  if (resolvedCarrierItem && ITEM_CARRIER_REQUEST_PATTERN.test(text)) return frame;
+  const collectionType = collectionRequestType(text);
+  if (!collectionType) return frame;
+  if (/(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text)) return frame;
+  const hasCostMention = /[一二两兩三四五六七八九\d]\s*费(?:卡|棋子|英雄)?/u.test(text);
+  const constraints = {
+    ...frame.constraints,
+    targetEntityType: collectionType,
+    current: true
+  };
+  if (!hasCostMention) delete constraints.cost;
+  return createTaskFrame({
+    ...frame,
+    action: "search",
+    goal: goalFor("search"),
+    expectedOutput: outputsFor("search"),
+    constraints,
+    capabilityRequirements: [
+      ...new Set([...(frame.capabilityRequirements ?? []), "entity_catalog_filtering"])
+    ]
+  });
+}
+
 async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   let timeoutId;
   const providerPromise = Promise.resolve().then(() => provider(request));
@@ -369,6 +534,66 @@ async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export async function applyDeterministicTftSemantics(taskFrame, input, options = {}) {
+  const text = normalizeText(input);
+  let frame = createTaskFrame(taskFrame ?? {});
+  if (options.catalog) {
+    const mentions = extractEntityMentions(text, { catalog: options.catalog });
+    const holder = createTaskFrame({
+      action: frame.action,
+      goal: frame.goal,
+      subjects: frame.subjects,
+      candidates: frame.candidates,
+      concepts: [...(frame.concepts ?? []), ...mentions]
+    });
+    const linked = await linkTaskFrameEntities(holder, {
+      catalog: options.catalog,
+      patch: options.dynamicContext?.version ?? options.version ?? "current",
+      semanticRetriever: options.entitySemanticRetriever,
+      candidateRetriever: options.entityCandidateRetriever,
+      candidateReranker: options.entityCandidateReranker
+    });
+    const dedupeEntities = (entities) => {
+      const seen = new Set();
+      const result = [];
+      for (const entity of entities ?? []) {
+        const key = entity?.resolvedId
+          ? `${entity.expectedType}:${entity.resolvedId}`
+          : `${entity.expectedType}:${entity.rawText}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(entity);
+      }
+      return result;
+    };
+    frame = createTaskFrame({
+      ...frame,
+      subjects: dedupeEntities(linked.subjects),
+      candidates: dedupeEntities(linked.candidates),
+      concepts: dedupeEntities(linked.concepts)
+    });
+  }
+  const deterministicConstraints = constraintsFor(text);
+  for (const field of options.managedConstraintFields ?? []) {
+    delete deterministicConstraints[field];
+  }
+  frame = createTaskFrame({
+    ...frame,
+    constraints: {
+      ...frame.constraints,
+      ...deterministicConstraints
+    }
+  });
+  frame = applyExternalSupportSemantics(frame, text, options.conversation ?? []);
+  frame = applyCandidateGroupBuildSemantics(frame, text);
+  frame = applyEntityCollectionSemantics(frame, text);
+  frame = applyUnresolvedEntityPolicy(frame, input);
+  return createTaskFrame({
+    ...frame,
+    capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
+  });
 }
 
 export async function parseSemanticTask(input, options = {}) {
@@ -394,6 +619,13 @@ export async function parseSemanticTask(input, options = {}) {
     };
   }
   let action = inferAction(text, domainResult.domain, examples);
+  const inferredConstraints = constraintsFor(text);
+  if (
+    inferredConstraints.targetEntityType === "champion"
+    && inferredConstraints.relation === "member_of_trait"
+  ) {
+    action = "search";
+  }
   const entityMentions = extractEntityMentions(text, { catalog: options.catalog });
   const bareChampionRequest = isBareChampionRequest(text, entityMentions);
   if (
@@ -455,7 +687,7 @@ export async function parseSemanticTask(input, options = {}) {
     subjects,
     candidates,
     concepts,
-    constraints: constraintsFor(text),
+    constraints: inferredConstraints,
     goal: goalFor(action),
     expectedOutput: outputsFor(action),
     contextReferences: [],
@@ -520,8 +752,15 @@ export async function parseSemanticTask(input, options = {}) {
     conversation: options.conversation,
     defaults: options.contextDefaults
   });
-  const clarificationPolicy = applyClarificationPolicy(
+  frame = applyExternalSupportSemantics(
     contextResolution.taskFrame,
+    text,
+    options.conversation ?? []
+  );
+  frame = applyCandidateGroupBuildSemantics(frame, text);
+  frame = applyEntityCollectionSemantics(frame, text);
+  const clarificationPolicy = applyClarificationPolicy(
+    frame,
     contextResolution,
     options.clarificationPolicy
   );

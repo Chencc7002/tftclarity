@@ -16,6 +16,7 @@ const wallpaperCatalog = ui("wallpaper-catalog.js");
 const privacyHtml = ui("privacy.html");
 const termsHtml = ui("terms.html");
 const legalCss = ui("legal.css");
+const opggPanel = ui("opgg-panel.js");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
@@ -98,6 +99,7 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(indexHtml, /id="quick-task-fields"/);
   assert.match(appJs, /function openQuickTaskForm\(task\)/);
   assert.match(appJs, /function submitQuickTaskForm\(\)/);
+  assert.match(appJs, /startNewTask: true/);
   assert.doesNotMatch(appJs, /unresolvedQuickTaskPlaceholder/);
   assert.doesNotMatch(i18n, /【英雄名称】|\[champion name\]/);
   assert.match(i18n, /quickTaskCompletionTitle: "条件查询"/);
@@ -106,6 +108,17 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /quickTasksHtml/);
   assert.match(appJs, /button\[data-quick-category\]/);
   assert.match(appJs, /button\[data-quick-task\]/);
+  assert.doesNotMatch(appJs, /collapseQuickTaskCategories\(quickTaskButton\.closest\("\.quick-tasks"\)\)/);
+  assert.doesNotMatch(indexHtml, /class="composer-feature-shortcuts"/);
+  assert.match(appJs, /const NATURAL_LANGUAGE_QUICK_TASK_RULES/);
+  assert.match(appJs, /function naturalLanguageQuickTaskId\(input\)/);
+  assert.match(appJs, /async function routeNaturalLanguageQuickTask\(input\)/);
+  assert.match(appJs, /routeNaturalLanguageQuickTask\(queryInput\.value\)/);
+  assert.match(appJs, /id: "opgg-personal-review"[\s\S]*\\u6211\\u8981/);
+  assert.match(appJs, /id: "opgg-pro-trends"[\s\S]*\\u804c\\u4e1a\\u9635\\u5bb9\\u8d8b\\u52bf/);
+  assert.match(appJs, /id: "opgg-pro-teaching"[\s\S]*\\u804c\\u4e1a\\u9009\\u624b/);
+  assert.match(appJs, /id: "patch-notes"[\s\S]*\\u66f4\\u65b0\\u516c\\u544a/);
+  assert.match(appJs, /async function launchQuickTask\(quickTaskTarget\)/);
   assert.match(appJs, /QUICK_TASKS\.find/);
   assert.match(appJs, /queryInput\.value = quickTask\.query/);
   assert.match(appJs, /structuredQuickTask\(quickTask\)/);
@@ -113,9 +126,12 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /operation: "unit_build_rankings"/);
   assert.match(appJs, /quickTask: state\.lastQuickTask/);
   assert.match(i18n, /快捷查询可跳过语义理解，通常返回更快/);
+  assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.7"/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.8"/);
+  assert.match(patchNotes, /publishedAt: "2026-07-28T18:00:00\.000Z"/);
+  assert.match(patchNotes, /teamfight-tactics-patch-17-8/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
@@ -131,6 +147,23 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("OP.GG review views use the result pane and preserve navigation context", () => {
+  assert.match(opggPanel, /const resultEl = el\("result-content"\)/u);
+  assert.doesNotMatch(opggPanel, /const resultEl = el\("result"\)/u);
+  assert.match(opggPanel, /backLink\("返回选手", "player", \{ player: state\.playerId \}\)/u);
+  assert.match(opggPanel, /unit\.displayName \?\? unit\.characterId/u);
+  assert.match(opggPanel, /unit\.cost \?\? "\?"/u);
+  assert.match(opggPanel, /itemDisplayNames/u);
+  assert.doesNotMatch(opggPanel, /<option value="kr">/u);
+  assert.doesNotMatch(opggPanel, /OP\.GG 风格评论/u);
+  assert.match(opggPanel, /AI 正在分析对局风格/u);
+  assert.match(opggPanel, /AI 智能复盘/u);
+  assert.match(opggPanel, /unitBoardHtml/u);
+  assert.match(opggPanel, /observedEighthRate/u);
+  assert.match(opggPanel, /pool: PERSONAL_POOL/u);
+  assert.match(opggPanel, /cancel-teaching/u);
 });
 
 test("assistant messages use the Tangyuan penguin brand mark", () => {

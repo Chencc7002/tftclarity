@@ -91,7 +91,10 @@ function legacyTaskFrame(query = {}) {
     excludedItems: "excludedItems",
     avoidItemComponents: "avoidItemComponents",
     comparisonItems: "comparisonItems",
-    primaryMetric: "primaryMetric"
+    primaryMetric: "primaryMetric",
+    cost: "cost",
+    targetEntityType: "targetEntityType",
+    relation: "relation"
   };
   for (const [legacyKey, field] of Object.entries(mappings)) {
     const value = query[legacyKey] ?? query[legacyKey.replace(/[A-Z]/g, (match) => `_${match.toLowerCase()}`)];
@@ -137,6 +140,17 @@ function normalizeLastResult(value) {
       && !Array.isArray(value.appliedConstraints)
       ? clone(value.appliedConstraints)
       : {},
+    shownEntities: array(value.shownEntities).map((entity) => ({
+      apiName: String(entity?.apiName ?? "").trim(),
+      name: String(entity?.name ?? entity?.apiName ?? "").trim(),
+      entityType: String(entity?.entityType ?? "unit").trim()
+    })).filter((entity) => entity.apiName).slice(-MAX_CONVERSATION_SHOWN_IDS),
+    entityType: value.entityType == null ? null : String(value.entityType),
+    sourceFilters: value.sourceFilters && typeof value.sourceFilters === "object"
+      && !Array.isArray(value.sourceFilters)
+      ? clone(value.sourceFilters)
+      : {},
+    selectionScope: value.selectionScope == null ? null : String(value.selectionScope),
     updatedAt: nullableTimestamp(value.updatedAt)
   };
 }
@@ -205,6 +219,34 @@ function validateLastResult(value, path, errors) {
   if (typeof value.exhausted !== "boolean") errors.push(`${path}.exhausted must be boolean`);
   if (!value.appliedConstraints || typeof value.appliedConstraints !== "object" || Array.isArray(value.appliedConstraints)) {
     errors.push(`${path}.appliedConstraints must be an object`);
+  }
+  if (!Array.isArray(value.shownEntities)) errors.push(`${path}.shownEntities must be an array`);
+  if (array(value.shownEntities).length > MAX_CONVERSATION_SHOWN_IDS) {
+    errors.push(`${path}.shownEntities exceeds ${MAX_CONVERSATION_SHOWN_IDS}`);
+  }
+  array(value.shownEntities).forEach((entity, index) => {
+    if (!entity || typeof entity !== "object" || Array.isArray(entity)) {
+      errors.push(`${path}.shownEntities[${index}] must be an object`);
+      return;
+    }
+    if (typeof entity.apiName !== "string" || !entity.apiName) {
+      errors.push(`${path}.shownEntities[${index}].apiName is required`);
+    }
+    if (typeof entity.name !== "string" || !entity.name) {
+      errors.push(`${path}.shownEntities[${index}].name is required`);
+    }
+    if (typeof entity.entityType !== "string" || !entity.entityType) {
+      errors.push(`${path}.shownEntities[${index}].entityType is required`);
+    }
+  });
+  if (value.entityType !== null && typeof value.entityType !== "string") {
+    errors.push(`${path}.entityType must be a string or null`);
+  }
+  if (!value.sourceFilters || typeof value.sourceFilters !== "object" || Array.isArray(value.sourceFilters)) {
+    errors.push(`${path}.sourceFilters must be an object`);
+  }
+  if (value.selectionScope !== null && typeof value.selectionScope !== "string") {
+    errors.push(`${path}.selectionScope must be a string or null`);
   }
   if (value.updatedAt !== null && typeof value.updatedAt !== "string") {
     errors.push(`${path}.updatedAt must be a string or null`);

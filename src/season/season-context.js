@@ -17,8 +17,8 @@ const CONTEXTS = [
       providerVersion: "metatft-live.v1",
       queue: "1100",
       patchPolicy: "latest",
-      currentPatch: "17.7",
-      previousPatch: "17.6"
+      currentPatch: "17.8",
+      previousPatch: "17.7"
     },
     themeId: "set17",
     theme: {
@@ -40,7 +40,7 @@ const CONTEXTS = [
         density: 1,
         speed: 1
       },
-      patchNoteVersion: "17.7",
+      patchNoteVersion: "17.8",
       quickQuestions: {
         "zh-CN": ["推荐当前版本热门阵容", "当前版本阵容趋势"],
         "en-US": ["Recommend popular comps in the current patch", "Show current comp trends"]
@@ -173,6 +173,25 @@ export class SeasonContextService {
 
   listVisible() {
     return [...this.contexts.values()].filter((context) => context.visible).map(clone);
+  }
+
+  updateProviderPatch(contextId, currentPatch, previousPatch = null, source = "runtime_resolved") {
+    const id = normalizeSeasonContextId(contextId, this.defaultContextId);
+    const existing = this.contexts.get(id);
+    if (!existing || existing.source?.patchPolicy !== "latest") return null;
+    if (!currentPatch) return this.get(id);
+    const updated = clone(existing);
+    updated.source = {
+      ...updated.source,
+      currentPatch: String(currentPatch),
+      ...(previousPatch ? { previousPatch: String(previousPatch) } : {})
+    };
+    updated.patchResolution = {
+      source: String(source),
+      resolvedAt: new Date().toISOString()
+    };
+    this.contexts.set(id, deepFreeze(updated));
+    return this.get(id);
   }
 
   get(contextId) {

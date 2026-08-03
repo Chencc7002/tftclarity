@@ -44,6 +44,7 @@ export function adaptTftExecutionPlanToParsed(parsed, plan, taskFrame, route) {
     ? steps[0].arguments?.[strategyArgument]
     : undefined;
   const limit = taskFrame?.constraints?.limit;
+  const toolArguments = steps[0].arguments ?? {};
   const preferenceConditions = {
     ...(parsed.preferenceConditions ?? {}),
     ...(strategy !== undefined ? { strategy } : {}),
@@ -52,6 +53,11 @@ export function adaptTftExecutionPlanToParsed(parsed, plan, taskFrame, route) {
   return {
     ...parsed,
     intent,
+    ...(intent === "item_carrier_rankings" && toolArguments.item
+      ? { carrierItem: toolArguments.item }
+      : {}),
+    ...(toolArguments.unit ? { unit: toolArguments.unit } : {}),
+    ...(Array.isArray(toolArguments.traitFilters) ? { traitFilters: toolArguments.traitFilters } : {}),
     preferenceRequested: policyDriven || Boolean(parsed.preferenceRequested),
     preferenceConditions: policyDriven
       ? preferenceConditions

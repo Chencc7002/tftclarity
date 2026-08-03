@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 
 import {
   compactConversationStateForInterpreter,
+  createCatalog,
   createConversationState,
   createTaskFrame,
   createTurnDelta,
@@ -14,6 +15,88 @@ import { createPhase3EvaluationCatalog } from "../eval/datasets/entity-linking-p
 function reference(rawText, expectedType) {
   return { rawText, expectedType, resolvedId: null, confidence: 0.9 };
 }
+
+test("action-only build follow-up reuses only a current visible unit result group", async () => {
+  let providerCalls = 0;
+  const response = await interpretTurn({
+    currentMessage: "怎么出装？",
+    conversationState: createConversationState({
+      seasonContextId: "set17-live",
+      activeTask: {
+        taskFrame: createTaskFrame({
+          action: "search",
+          concepts: [{
+            rawText: "太空律动",
+            expectedType: "trait",
+            resolvedId: "TFT17_SpaceGroove",
+            confidence: 1
+          }],
+          constraints: { cost: 3, targetEntityType: "champion", relation: "member_of_trait" },
+          goal: "find_relevant_data",
+          capabilityRequirements: ["entity_catalog_filtering"],
+          confidence: 1,
+          understandingStatus: "understood_and_supported"
+        })
+      },
+      lastResult: {
+        resultType: "entity_catalog_results",
+        toolName: "entity_catalog_query",
+        shownIds: ["TFT17_Ornn", "TFT17_Samira"],
+        shownEntities: [
+          { apiName: "TFT17_Ornn", name: "奥恩", entityType: "unit" },
+          { apiName: "TFT17_Samira", name: "莎弥拉", entityType: "unit" }
+        ],
+        entityType: "unit",
+        returnedCount: 2,
+        totalCount: 2,
+        exhausted: true,
+        appliedConstraints: { cost: 3 },
+        sourceFilters: { cost: 3, traits: ["TFT17_SpaceGroove"] },
+        selectionScope: "current_visible_results"
+      }
+    }),
+    seasonContextId: "set17-live",
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => {
+      providerCalls += 1;
+      return createTurnDelta({ dialogueAct: "continue", taskRelation: "continue", confidence: 0.95 });
+    }
+  });
+
+  assert.equal(providerCalls, 1);
+  assert.equal(response.turnDelta.taskRelation, "modify");
+  assert.equal(response.turnDelta.explicitTaskFrame.goal, "recommend_builds_for_candidate_group");
+  assert.deepEqual(
+    response.turnDelta.explicitTaskFrame.candidates.map((entity) => entity.resolvedId),
+    ["TFT17_Ornn", "TFT17_Samira"]
+  );
+  assert.deepEqual(response.turnDelta.explicitTaskFrame.capabilityRequirements, ["unit_build_statistics"]);
+});
+
+test("action-only build wording without a visible unit result group still requires context", async () => {
+  const response = await interpretTurn({
+    currentMessage: "怎么出装？",
+    conversationState: createConversationState({ seasonContextId: "set17-live" }),
+    seasonContextId: "set17-live",
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => createTurnDelta({
+      dialogueAct: "unknown",
+      taskRelation: "unknown",
+      confidence: 0.2,
+      ambiguities: [{ code: "missing_subject", affectsToolSelection: true }]
+    })
+  });
+
+  assert.equal(response.turnDelta.taskRelation, "new");
+  assert.equal(response.turnDelta.explicitTaskFrame?.goal, "unit_build_rankings");
+  assert.equal(
+    response.turnDelta.explicitTaskFrame?.understandingStatus,
+    "understood_but_missing_context"
+  );
+  assert.equal(response.turnDelta.explicitTaskFrame?.candidates.length ?? 0, 0);
+  assert.equal(response.turnDelta.explicitTaskFrame?.ambiguities[0]?.code, "missing_subject");
+  assert.equal(response.telemetry.providerFallback.reason, "action_only_build_followup_policy");
+});
 
 test("Turn Interpreter supplies ordered shown result ids for ordinal references", () => {
   const state = createConversationState({
@@ -289,6 +372,266 @@ test("Turn Interpreter permits deterministic task parsing for a context-free fir
   assert.equal(response.turnDelta.dialogueAct, "start_task");
   assert.equal(response.turnDelta.explicitTaskFrame.goal, "recommend_best_option");
   assert.equal(response.telemetry.providerFallback.reason, "provider_error");
+});
+
+test("Turn Interpreter recovers a self-contained first task when the provider returns unknown", async () => {
+  const response = await interpretTurn({
+    currentMessage: "观星者四费卡中谁的主流出装表现最好？",
+    conversationState: createConversationState(),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => createTurnDelta({
+      dialogueAct: "unknown",
+      taskRelation: "unknown",
+      confidence: 0,
+      ambiguities: [{ code: "provider_uncertain", affectsToolSelection: true }]
+    }),
+    semanticTaskParser: async () => ({
+      taskFrame: createTaskFrame({
+        domain: "tft",
+        action: "search",
+        concepts: [reference("观星者", "trait")],
+        constraints: { cost: 4, targetEntityType: "champion" },
+        goal: "compare_filtered_unit_builds",
+        capabilityRequirements: ["entity_catalog_filtering", "unit_build_statistics"],
+        confidence: 0.98,
+        understandingStatus: "understood_and_supported"
+      })
+    })
+  });
+
+  assert.equal(response.turnDelta.taskRelation, "new");
+  assert.equal(response.turnDelta.dialogueAct, "start_task");
+  assert.equal(response.turnDelta.explicitTaskFrame.goal, "compare_filtered_unit_builds");
+  assert.equal(response.telemetry.providerFallback.reason, "self_contained_task_recovery");
+});
+
+test("Turn Interpreter replaces a weak unresolved first-turn frame with strong deterministic semantics", async () => {
+  const response = await interpretTurn({
+    currentMessage: "观星者四费卡中谁的主流出装表现最好？",
+    conversationState: createConversationState(),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => createTurnDelta({
+      dialogueAct: "start_task",
+      taskRelation: "new",
+      explicitTaskFrame: createTaskFrame({
+        domain: "tft",
+        action: "compare",
+        subjects: [{
+          rawText: "观星者四费卡",
+          expectedType: "champion",
+          resolvedId: null,
+          confidence: 0.4
+        }],
+        goal: "compare_items",
+        confidence: 0.5,
+        understandingStatus: "understood_and_supported"
+      }),
+      confidence: 0.9
+    }),
+    semanticTaskParser: async () => ({
+      taskFrame: createTaskFrame({
+        domain: "tft",
+        action: "search",
+        concepts: [reference("观星者", "trait")],
+        constraints: { cost: 4, targetEntityType: "champion" },
+        goal: "compare_filtered_unit_builds",
+        capabilityRequirements: ["entity_catalog_filtering", "unit_build_statistics"],
+        confidence: 0.98,
+        understandingStatus: "understood_and_supported"
+      })
+    })
+  });
+
+  assert.equal(response.turnDelta.explicitTaskFrame.goal, "compare_filtered_unit_builds");
+  assert.equal(response.turnDelta.explicitTaskFrame.constraints.cost, 4);
+  assert.equal(response.telemetry.providerFallback.reason, "self_contained_task_recovery");
+});
+
+test("Turn Interpreter recovers material contextual semantics from an empty provider continuation", async () => {
+  const trait = {
+    rawText: "木灵族",
+    expectedType: "trait",
+    resolvedId: "TFT17_Woodling",
+    canonicalName: "木灵族",
+    confidence: 1
+  };
+  const activeFrame = createTaskFrame({
+    action: "explain",
+    concepts: [trait],
+    constraints: { traitFilters: ["TFT17_Woodling"] },
+    goal: "trait_details",
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  let fallbackConversation = null;
+  const response = await interpretTurn({
+    currentMessage: "这个羁绊有哪些四费棋子，怎么出装",
+    conversationState: createConversationState({
+      activeTask: {
+        taskFrame: activeFrame,
+        legacyIntent: "trait_details"
+      }
+    }),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => createTurnDelta({
+      dialogueAct: "continue",
+      taskRelation: "continue",
+      confidence: 0.95
+    }),
+    semanticTaskParser: async (_input, options) => {
+      fallbackConversation = options.conversation;
+      return {
+        taskFrame: createTaskFrame({
+          action: "search",
+          concepts: [trait],
+          constraints: {
+            traitFilters: ["TFT17_Woodling"],
+            cost: 4,
+            targetEntityType: "champion",
+            relation: "member_of_trait",
+            current: true
+          },
+          goal: "find_relevant_data",
+          capabilityRequirements: [
+            "entity_catalog_filtering",
+            "unit_build_statistics"
+          ],
+          confidence: 0.94,
+          understandingStatus: "understood_and_supported"
+        })
+      };
+    }
+  });
+
+  assert.equal(fallbackConversation.length, 1);
+  assert.equal(fallbackConversation[0].taskFrame.goal, "trait_details");
+  assert.equal(response.turnDelta.taskRelation, "modify");
+  assert.equal(response.turnDelta.dialogueAct, "modify");
+  assert.equal(response.turnDelta.explicitTaskFrame.constraints.cost, 4);
+  assert.deepEqual(response.turnDelta.explicitTaskFrame.capabilityRequirements, [
+    "entity_catalog_filtering",
+    "unit_build_statistics"
+  ]);
+  assert.equal(response.telemetry.providerFallback.reason, "contextual_task_recovery");
+});
+
+test("Turn Interpreter corrects a valid but materially incomplete contextual frame", async () => {
+  const trait = {
+    rawText: "木灵族",
+    expectedType: "trait",
+    resolvedId: "TFT17_Woodling",
+    confidence: 1
+  };
+  const activeFrame = createTaskFrame({
+    action: "explain",
+    concepts: [trait],
+    constraints: { traitFilters: ["TFT17_Woodling"] },
+    goal: "trait_details",
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const recoveredFrame = createTaskFrame({
+    action: "search",
+    concepts: [trait],
+    constraints: {
+      traitFilters: ["TFT17_Woodling"],
+      cost: 4,
+      targetEntityType: "champion",
+      relation: "member_of_trait"
+    },
+    goal: "compare_entity_build_performance",
+    capabilityRequirements: ["entity_catalog_filtering", "unit_build_statistics"],
+    confidence: 0.95,
+    understandingStatus: "understood_and_supported"
+  });
+  const response = await interpretTurn({
+    currentMessage: "这个羁绊有哪些四费棋子，怎么出装",
+    conversationState: createConversationState({
+      activeTask: { taskFrame: activeFrame, legacyIntent: "trait_details" }
+    }),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "modify",
+        taskRelation: "modify",
+        explicitTaskFrame: createTaskFrame({
+          action: "search",
+          concepts: [{ ...trait, resolvedId: null }],
+          goal: "trait_details",
+          expectedOutput: ["four_cost_champions", "item_builds"],
+          confidence: 0.9,
+          understandingStatus: "understood_and_supported"
+        }),
+        confidence: 0.9
+      }),
+      usage: { uncachedInputTokens: 20, outputTokens: 30 }
+    }),
+    semanticTaskParser: async () => ({ taskFrame: recoveredFrame })
+  });
+
+  assert.equal(response.telemetry.providerSucceeded, true);
+  assert.equal(response.telemetry.providerFallback.reason, "contextual_task_recovery");
+  assert.equal(response.telemetry.providerFallback.trigger, "incomplete_contextual_semantics");
+  assert.equal(response.turnDelta.explicitTaskFrame.constraints.cost, 4);
+  assert.deepEqual(response.turnDelta.explicitTaskFrame.capabilityRequirements, [
+    "entity_catalog_filtering",
+    "unit_build_statistics"
+  ]);
+});
+
+test("contextual recovery preserves a resolved base trait when the catalog has multiple breakpoints", async () => {
+  const catalog = createCatalog({
+    units: [],
+    items: [],
+    traits: [1, 2, 3, 4].map((tier) => ({
+      apiName: "TFT17_Astronaut",
+      filterId: `TFT17_Astronaut_${tier}`,
+      zhName: `${[3, 5, 7, 10][tier - 1]}木灵族`,
+      displayName: `${[3, 5, 7, 10][tier - 1]}木灵族`,
+      aliases: ["木灵族", "木灵"],
+      current: true
+    }))
+  });
+  const activeFrame = createTaskFrame({
+    action: "explain",
+    concepts: [{
+      rawText: "木灵族",
+      expectedType: "trait",
+      resolvedId: "TFT17_Astronaut",
+      canonicalName: "木灵族",
+      confidence: 1
+    }],
+    constraints: { traitFilters: ["TFT17_Astronaut"] },
+    goal: "trait_details",
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const response = await interpretTurn({
+    currentMessage: "这个羁绊有哪些四费棋子，怎么出装",
+    conversationState: createConversationState({
+      activeTask: { taskFrame: activeFrame, legacyIntent: "trait_details" }
+    }),
+    catalog,
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "continue",
+        taskRelation: "continue",
+        confidence: 0.95
+      }),
+      usage: { cachedInputTokens: 5, uncachedInputTokens: 10, outputTokens: 20 }
+    })
+  });
+
+  assert.equal(response.turnDelta.explicitTaskFrame.concepts[0].resolvedId, "TFT17_Astronaut");
+  assert.deepEqual(response.turnDelta.explicitTaskFrame.constraints.traitFilters, ["TFT17_Astronaut"]);
+  assert.equal(response.telemetry.providerCalled, true);
+  assert.equal(response.telemetry.providerSucceeded, true);
+  assert.deepEqual(response.telemetry.providerUsage, {
+    cachedInputTokens: 5,
+    uncachedInputTokens: 10,
+    outputTokens: 20
+  });
 });
 
 test("Turn Interpreter treats a self-contained task as new when only a stale clarification is pending", async () => {

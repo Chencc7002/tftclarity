@@ -16,6 +16,47 @@ function array(value) {
   return Array.isArray(value) ? value : [];
 }
 
+function baseTraitId(value) {
+  return String(value ?? "").replace(/_\d+$/, "");
+}
+
+function frameTraitIds(taskFrame) {
+  const ids = new Set();
+  for (const entity of [
+    ...(taskFrame?.subjects ?? []),
+    ...(taskFrame?.candidates ?? []),
+    ...(taskFrame?.concepts ?? [])
+  ]) {
+    if (entity?.expectedType === "trait" && entity?.resolvedId) {
+      ids.add(baseTraitId(entity.resolvedId));
+    }
+  }
+  for (const value of taskFrame?.constraints?.traitFilters ?? []) {
+    const id = typeof value === "string" ? value : value?.resolvedId;
+    if (id) ids.add(baseTraitId(id));
+  }
+  return ids;
+}
+
+function executionPlanTraitConsistencyErrors(plan, taskFrame) {
+  if (plan?.route !== "controlled_planner") return [];
+  const frameTraits = frameTraitIds(taskFrame);
+  if (!frameTraits.size) return [];
+  const errors = [];
+  for (const step of plan.steps ?? []) {
+    if (step?.tool !== "entity_catalog_query") continue;
+    const planTraits = array(step?.arguments?.filters?.traits).map(baseTraitId);
+    if (!planTraits.length) {
+      errors.push(`entity_catalog_query omits trait filters required by the task frame`);
+      continue;
+    }
+    if (planTraits.some((traitId) => !frameTraits.has(traitId))) {
+      errors.push(`entity_catalog_query trait filter conflicts with the task frame`);
+    }
+  }
+  return errors;
+}
+
 function object(value) {
   return value && typeof value === "object" && !Array.isArray(value)
     ? structuredClone(value)
@@ -238,6 +279,22 @@ function allowlistedArguments(tool, frame) {
       )
     };
   }
+  if (tool === "unit_builds_batch") {
+    return {
+      entities: entities
+        .filter((entity) => entity?.expectedType === "champion" && entity?.resolvedId)
+        .slice(0, 5)
+        .map((entity) => ({
+          apiName: entity.resolvedId,
+          name: entity.canonicalName ?? entity.rawText ?? entity.resolvedId
+        })),
+      ...Object.fromEntries(
+        ["days", "patch", "rank", "minSamples"]
+          .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
+          .map((key) => [key, structuredClone(constraints[key])])
+      )
+    };
+  }
   if (["comps_rankings", "comps_trends", "comps_analysis"].includes(tool)) {
     return {
       ...(resolvedIds(entities, "champion")[0]
@@ -263,6 +320,37 @@ function allowlistedArguments(tool, frame) {
   if (["unit_details", "item_details", "trait_details"].includes(tool)) {
     const type = tool === "unit_details" ? "champion" : tool.replace("_details", "");
     return { apiName: resolvedIds(entities, type)[0] };
+  }
+  if (tool === "entity_catalog_query") {
+    const target = constraints.targetEntityType === "item"
+      ? "item"
+      : constraints.targetEntityType === "trait"
+        ? "trait"
+        : "unit";
+    const traits = resolvedIds(entities, "trait");
+    return {
+      entityType: target,
+      filters: {
+        ...(constraints.cost !== undefined ? { cost: constraints.cost } : {}),
+        ...(traits.length ? { traits } : {}),
+        current: constraints.current ?? true
+      },
+      ...(constraints.projection ? { projection: structuredClone(constraints.projection) } : {}),
+      ...(constraints.sort ? { sort: constraints.sort } : {}),
+      ...(constraints.limit ? { limit: constraints.limit } : {})
+    };
+  }
+  if (tool === "composition_member_statistics") {
+    return {
+      trait: resolvedIds(entities, "trait")[0],
+      memberMode: "non_trait_members",
+      aggregateBy: "unit",
+      ...Object.fromEntries(
+        ["days", "patch", "queue", "rank", "minSamples", "limit"]
+          .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
+          .map((key) => [key, structuredClone(constraints[key])])
+      )
+    };
   }
   if (tool === "unit_comp_candidates") {
     return {
@@ -372,25 +460,88 @@ export async function planExecution(taskFrame, capabilityMatch, options = {}) {
       }
     };
   }
-  const candidate = await options.planner({
+  const plannerRequest = {
     taskFrame: structuredClone(taskFrame),
     toolCatalog: capabilityMatch.selected.map(({ tool, capability }) => ({
       name: tool,
+      description: options.registry.get(tool).description,
       capability: structuredClone(capability),
-      inputSchema: structuredClone(options.registry.get(tool).inputSchema)
+      inputSchema: structuredClone(options.registry.get(tool).inputSchema),
+      source: options.registry.get(tool).source,
+      evidenceType: options.registry.get(tool).evidenceType
     })),
     constraints: {
       schemaVersion: EXECUTION_PLAN_SCHEMA_VERSION,
       route: "controlled_planner",
       maxSteps: MAX_EXECUTION_STEPS,
-      registeredToolsOnly: true
+      maxToolCalls: MAX_EXECUTION_STEPS,
+      registeredToolsOnly: true,
+      readOnlyOnly: true,
+      allowModelGeneratedStatistics: false
     }
-  });
-  const validation = validateExecutionPlan(candidate, options);
+  };
+  const llmPlanner = options.planner.plannerKind === "llm";
+  const plannerInvocation = {
+    attempted: true,
+    llm: llmPlanner,
+    model: options.planner.model ?? null,
+    succeeded: false,
+    accepted: false,
+    corrected: false,
+    correctionReason: null,
+    durationMs: null,
+    usage: null,
+    validationErrors: []
+  };
+  let candidate;
+  let validation;
+  try {
+    const providerResult = await options.planner(plannerRequest);
+    candidate = providerResult?.executionPlan ?? providerResult;
+    plannerInvocation.succeeded = true;
+    plannerInvocation.durationMs = providerResult?.telemetry?.durationMs ?? null;
+    plannerInvocation.usage = providerResult?.telemetry?.usage ?? null;
+    validation = validateExecutionPlan(candidate, options);
+    const consistencyErrors = executionPlanTraitConsistencyErrors(candidate, taskFrame);
+    if (consistencyErrors.length) {
+      validation = {
+        ...validation,
+        valid: false,
+        errors: [...validation.errors, ...consistencyErrors]
+      };
+    }
+    plannerInvocation.validationErrors = [...validation.errors];
+  } catch (error) {
+    plannerInvocation.durationMs = error?.plannerTelemetry?.durationMs ?? null;
+    plannerInvocation.usage = error?.plannerTelemetry?.usage ?? null;
+    plannerInvocation.validationErrors = [String(error?.message ?? error ?? "planner_failed")];
+    validation = {
+      schemaVersion: EXECUTION_PLAN_VALIDATION_VERSION,
+      valid: false,
+      errors: [...plannerInvocation.validationErrors],
+      value: null
+    };
+  }
+  if (!validation.valid && typeof options.plannerFallback === "function") {
+    const fallbackCandidate = await options.plannerFallback(plannerRequest);
+    const fallbackValidation = validateExecutionPlan(
+      fallbackCandidate?.executionPlan ?? fallbackCandidate,
+      options
+    );
+    if (fallbackValidation.valid) {
+      validation = fallbackValidation;
+      plannerInvocation.corrected = true;
+      plannerInvocation.correctionReason = plannerInvocation.succeeded
+        ? "invalid_execution_plan"
+        : "planner_provider_error";
+    }
+  }
+  plannerInvocation.accepted = validation.valid && !plannerInvocation.corrected;
   return {
     status: validation.valid ? "understood_and_supported" : "understood_but_unsupported",
     plan: validation.value,
     plannerInvoked: true,
+    plannerInvocation,
     validation
   };
 }

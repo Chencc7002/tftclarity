@@ -19,6 +19,8 @@ const COPY = Object.freeze({
     noUncertainty: "未发现会影响当前查询的明确不确定项",
     mode: "回答模式",
     authority: "权威来源",
+    llmCalls: "LLM 调用记录",
+    llmPrefix: "LLM 调用",
     previousTask: "上一轮的当前任务",
     previousResult: "上一轮结果",
     sourceTurn: "第 {value} 轮",
@@ -60,6 +62,8 @@ const COPY = Object.freeze({
     noUncertainty: "No explicit uncertainty affecting this query was found",
     mode: "Answer mode",
     authority: "Authoritative sources",
+    llmCalls: "LLM call log",
+    llmPrefix: "LLM calls",
     previousTask: "the active task from the previous turn",
     previousResult: "the previous result",
     sourceTurn: "turn {value}",
@@ -166,6 +170,8 @@ const VALUE_LABELS = Object.freeze({
 });
 
 const TOOLS = Object.freeze({
+  entity_catalog_query: ["按当前赛季实体目录筛选棋子", "Filter champions in the current-season entity catalog"],
+  unit_builds_batch: ["批量查询候选棋子的 MetaTFT 出装数据", "Batch-query MetaTFT builds for candidate champions"],
   unit_builds: ["查询 MetaTFT 英雄出装数据", "Query MetaTFT champion build data"],
   unit_comp_candidates: ["查询包含指定英雄的阵容", "Query compositions containing the champion"],
   item_carrier_rankings: ["查询 MetaTFT 装备携带者数据", "Query MetaTFT item-carrier data"],
@@ -176,6 +182,13 @@ const TOOLS = Object.freeze({
   item_details: ["查询装备资料", "Query item details"],
   trait_details: ["查询羁绊资料", "Query trait details"],
   semantic_search: ["检索机制与攻略知识", "Retrieve strategy and mechanic knowledge"]
+});
+
+const LLM_STAGES = Object.freeze({
+  turn_interpreter: ["语义理解", "semantic understanding"],
+  planner: ["工具规划", "tool planning"],
+  conclusion: ["结论生成", "conclusion generation"],
+  coach_answer: ["回答生成", "answer generation"]
 });
 
 const SCOPES = Object.freeze({
@@ -579,6 +592,19 @@ export function buildUnderstandingSummary(data, options = {}) {
     ));
   }
 
+  const llmCalls = array(data?.meta?.llmCalls).map((call) => {
+    const stage = localized(LLM_STAGES, call?.stage, locale, humanizeCode(call?.stage));
+    const model = String(call?.model ?? "").trim();
+    const status = call?.accepted === true
+      ? (localeIndex(locale) === 0 ? "成功" : "accepted")
+      : call?.corrected === true
+        ? (localeIndex(locale) === 0 ? "已受控纠正" : "controlled correction")
+        : call?.succeeded === true
+          ? (localeIndex(locale) === 0 ? "已返回" : "returned")
+          : (localeIndex(locale) === 0 ? "失败" : "failed");
+    return `${stage}${model ? `（${model}）` : ""}：${status}`;
+  });
+
   return {
     schemaVersion: "understanding-summary.v1",
     what,
@@ -586,6 +612,7 @@ export function buildUnderstandingSummary(data, options = {}) {
     changes: unique(changes),
     preserved: inheritedActiveTask && changes.length > 0,
     queries: unique(queries),
+    llmCalls: unique(llmCalls),
     uncertainties: unique(uncertainties),
     answerMode,
     authorities: authorityLabels(data, locale),
@@ -675,6 +702,9 @@ function renderChatUnderstandingTrace(data, summary, options, copy, locale) {
   if (summary && planReady && summary.authorities.length) {
     paragraphs.push(sentence(copy.authorityPrefix, summary.authorities, locale));
   }
+  if (summary && completed && summary.llmCalls.length) {
+    paragraphs.push(sentence(copy.llmPrefix, summary.llmCalls, locale));
+  }
   if (!completed && phase === "retrieval.started") paragraphs.push(copy.retrievalStarted);
   if (!completed && ["retrieval.completed", "answer.started"].includes(phase)) {
     paragraphs.push(copy.retrievalCompleted);
@@ -730,6 +760,7 @@ export function renderUnderstandingPanel(data, options = {}) {
       <section>
         <h2>${escapeHtml(copy.queries)}</h2>
         ${orderedList(summary.queries, copy.noQueries)}
+        ${summary.llmCalls.length ? `<div class="understanding-authority"><strong>${escapeHtml(copy.llmCalls)}</strong>${bulletList(summary.llmCalls)}</div>` : ""}
         ${summary.authorities.length ? `<div class="understanding-authority"><strong>${escapeHtml(copy.authority)}</strong>${bulletList(summary.authorities)}</div>` : ""}
       </section>
       <section>

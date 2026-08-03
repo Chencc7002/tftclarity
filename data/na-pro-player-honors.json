@@ -1,0 +1,138 @@
+{
+  "_note": "Honors are display-only metadata, independent from the collection roster. They never affect aggregation weights. Source: Liquipedia TFT Wiki (2026-08-01), Chinese localization from docs/tft-pro-player-achievements-cn.md.",
+  "updatedAt": "2026-08-01",
+  "honors": [
+    {
+      "playerId": "acad-dishsoap-na3",
+      "displayName": "Dishsoap",
+      "riotId": { "gameName": "ACAD Dishsoap", "tagLine": "NA3", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "两届 TFT 世界冠军",
+      "achievementDetailZh": "2024 画中灵弈士之冠（Inkborn Fables Tactician's Crown）冠军；2025 Into the Arcane 弈士之冠冠军",
+      "introZh": "2024、2025 两度夺得弈士之冠全球总冠军，名单中世界赛履历最突出的选手之一。",
+      "tags": ["world_champion"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "acad-wasian-na2",
+      "displayName": "wasianiverson",
+      "riotId": { "gameName": "ACAD wasian", "tagLine": "NA2", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "2025 TFT 世界赛季军",
+      "achievementDetailZh": "2025 Cyber City Tactician's Crown 世界总决赛季军；Lore & Legends 赛季首位包揽三站 TPC 杯赛冠军",
+      "introZh": "赛博之城弈士之冠季军，首位单赛季包揽三站 TPC 冠军的选手。",
+      "tags": ["world_top4"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "vit-k3soju-000",
+      "displayName": "k3soju",
+      "riotId": { "gameName": "VIT k3soju", "tagLine": "000", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "2024 电竞世界杯四强",
+      "achievementDetailZh": "2024 电竞世界杯 TFT 团队项目 3–4 名；2026 Space Gods Tactician's Crown 全球总决赛第 6 名",
+      "introZh": "电竞世界杯 TFT 团队项目四强，2026 弈士之冠全球第 6。",
+      "tags": ["ewc_top4"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "fw-aq1h-6406",
+      "displayName": "AQ1H",
+      "riotId": { "gameName": "FW AQ1H", "tagLine": "6406", "region": "na" },
+      "competitiveRegion": "APAC",
+      "achievementZh": "2025 TFT 世界亚军",
+      "achievementDetailZh": "2025 Cyber City Tactician's Crown 世界总决赛季亚军",
+      "introZh": "赛博之城弈士之冠全球总决赛亚军，具备世界赛争冠履历的顶级选手。",
+      "tags": ["world_runner_up"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "ironbog-999",
+      "displayName": "Iron Bog",
+      "riotId": { "gameName": "IronBog", "tagLine": "999", "region": "na" },
+      "competitiveRegion": "APAC",
+      "achievementZh": "两届 APAC Golden Spatula 冠军",
+      "achievementDetailZh": "2024 Magic n' Mayhem、2025 Into the Arcane 连续两届亚太区 Golden Spatula 冠军；2025 电竞世界杯 5–8 名",
+      "introZh": "连续两个赛季夺得亚太区冠军，并进入 2025 电竞世界杯八强。",
+      "tags": ["regional_champion"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "fnc-darth-nub-na2",
+      "displayName": "Darth Nub",
+      "riotId": { "gameName": "FNC Darth Nub", "tagLine": "NA2", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "2026 TFT 世界冠军",
+      "achievementDetailZh": "2026 Lore & Legends Tactician's Crown 全球总冠军",
+      "introZh": "Lore & Legends 弈士之冠全球总冠军，当前名单中最新世界冠军。",
+      "tags": ["world_champion"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "vit-setsuko-na2",
+      "displayName": "setsuko",
+      "riotId": { "gameName": "VIT setsuko", "tagLine": "NA2", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "2024 电竞世界杯四强",
+      "achievementDetailZh": "2024 电竞世界杯 TFT 团队项目 3–4 名；多次参加弈士之冠等全球顶级赛事",
+      "introZh": "随 Team Vitality 进入电竞世界杯 TFT 团队项目四强。",
+      "tags": ["ewc_top4"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "deis1k-na1",
+      "displayName": "Deis1k",
+      "riotId": { "gameName": "Deis1k", "tagLine": "NA1", "region": "na" },
+      "competitiveRegion": "EMEA",
+      "achievementZh": "2026 TFT 世界第 6",
+      "achievementDetailZh": "2026 Lore & Legends Tactician's Crown 全球总决赛第 6 名；多次晋级 TFT 全球总决赛",
+      "introZh": "Lore & Legends 弈士之冠全球总决赛第 6 名。",
+      "tags": ["world_finalist"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "broseph-lab",
+      "displayName": "Broseph",
+      "riotId": { "gameName": "Broseph", "tagLine": "LAB", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "2026 美洲区域总决赛季军",
+      "achievementDetailZh": "2026 Lore & Legends: AMER Regional Finals 美洲区域总决赛季军，晋级同赛季全球总决赛",
+      "introZh": "获得 Lore & Legends 美洲区域总决赛季军并晋级世界赛。",
+      "tags": ["regional_podium"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "roc-jazlatte-latte",
+      "displayName": "JazLatte（绝世拿铁）",
+      "riotId": { "gameName": "ROC JazLatte", "tagLine": "latte", "region": "na" },
+      "competitiveRegion": "APAC",
+      "achievementZh": "2023 东南亚区域杯冠军",
+      "achievementDetailZh": "2023 Monsters Attack: SEA Regional Cup #2 冠军；多次参加 TFT 全球总决赛",
+      "introZh": "东南亚区域杯第二站冠军，多次参加 TFT 全球总决赛。",
+      "tags": ["regional_champion"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    },
+    {
+      "playerId": "j-or-c-na1",
+      "displayName": "J or C",
+      "riotId": { "gameName": "J or C", "tagLine": "NA1", "region": "na" },
+      "competitiveRegion": "AMER",
+      "achievementZh": "2021 TFT Open Championship 冠军",
+      "achievementDetailZh": "2021 TFT Open Championship 2: Bilibili Finals 冠军",
+      "introZh": "夺得第二届 TFT Open Championship 哔哩哔哩总决赛冠军。",
+      "tags": ["regional_champion"],
+      "achievementSource": "liquipedia",
+      "achievementVerifiedAt": "2026-08-01"
+    }
+  ]
+}

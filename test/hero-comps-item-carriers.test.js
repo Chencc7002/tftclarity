@@ -8,7 +8,9 @@ import {
   compileExecutionPlan,
   createCatalog,
   createIntentEnvelope,
+  createTaskFrame,
   createStructuredToolDefinitions,
+  ExecutionPlanExecutor,
   generateEvidenceBackedConclusion,
   makeQueryCacheKey,
   matchTaskCapabilities,
@@ -16,7 +18,9 @@ import {
   parseQuery,
   planMetaTFTItemCarrierBuilds,
   recommendForInput,
+  resolvedTaskFrameToParsed,
   taskFrameFromIntentEnvelope,
+  ToolExecutor,
   ToolRegistry,
   validateStructuredParserOutput
 } from "../src/index.js";
@@ -312,6 +316,179 @@ test("semantic task routing selects the correct tool for both new natural-langua
     matchTaskCapabilities(compTask.taskFrame, registry).selected[0].tool,
     "comps_rankings"
   );
+});
+
+test("semantic item-carrier requests stay single-tool and adapt to the carrier intent without a plan", async () => {
+  const input = "\u9ece\u660e\u6838\u5fc3\u6700\u9002\u5408\u54ea\u4e9b\u82f1\u96c4\u643a\u5e26";
+  const task = await parseSemanticTask(input, { catalog: carrierCatalog() });
+  const registry = new ToolRegistry(createStructuredToolDefinitions());
+  const match = matchTaskCapabilities(task.taskFrame, registry);
+
+  assert.deepEqual(task.taskFrame.capabilityRequirements, ["item_carrier_statistics"]);
+  assert.equal(match.mode, "single_tool");
+  assert.equal(match.selected[0].tool, "item_carrier_rankings");
+
+  const parsed = resolvedTaskFrameToParsed(task.taskFrame, { input });
+  assert.equal(parsed.intent, "item_carrier_rankings");
+  assert.equal(parsed.carrierItem, ITEM);
+});
+
+test("current emblem shorthand resolves to item-carrier rankings", async () => {
+  const emblemCatalog = createCatalog({
+    items: [
+      {
+        apiName: "TFT17_Item_SpaceGrooveEmblemItem",
+        zhName: "太空律动纹章",
+        shortName: "太空律动转",
+        aliases: ["太空律动转", "太空律动转职"],
+        category: "emblem",
+        current: true,
+        obtainable: true
+      },
+      {
+        apiName: "TFT17_Item_DarkStarEmblemItem",
+        zhName: "暗星纹章",
+        shortName: "暗星转",
+        aliases: ["暗星转", "暗星转职"],
+        category: "emblem",
+        current: true,
+        obtainable: true
+      }
+    ]
+  });
+
+  for (const [name, apiName] of [
+    ["太空律动转", "TFT17_Item_SpaceGrooveEmblemItem"],
+    ["暗星转", "TFT17_Item_DarkStarEmblemItem"]
+  ]) {
+    const input = `${name}最适合哪些英雄携带`;
+    const task = await parseSemanticTask(input, { catalog: emblemCatalog });
+    const parsed = resolvedTaskFrameToParsed(task.taskFrame, { input });
+    assert.equal(parsed.intent, "item_carrier_rankings", name);
+    assert.equal(parsed.carrierItem, apiName, name);
+  }
+});
+
+test("semantic parser maps Chinese three-item wording to the valid item count", async () => {
+  const catalog = createCatalog({
+    units: [{ apiName: "TFT17_Xayah", zhName: "\u971e", aliases: ["\u971e"] }]
+  });
+  const task = await parseSemanticTask(
+    "\u67e5\u8be2\u971e\u7684\u5f53\u524d\u7248\u672c\u6700\u7a33\u4e09\u4ef6\u88c5\u5907",
+    { catalog }
+  );
+
+  assert.equal(task.taskFrame.constraints.itemCount, 3);
+});
+
+test("multi-step item-carrier execution receives handlers for prerequisite tools", async () => {
+  const catalog = carrierCatalog();
+  const registry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({ registry, toolExecutor });
+  const input = "\u9ece\u660e\u6838\u5fc3\u6700\u9002\u5408\u54ea\u4e9b\u82f1\u96c4\u643a\u5e26";
+  let catalogCalls = 0;
+  const controlledPlanner = async ({ toolCatalog }) => {
+    const byName = new Map(toolCatalog.map((tool) => [tool.name, tool]));
+    const catalogTool = byName.get("entity_catalog_query");
+    const carrierTool = byName.get("item_carrier_rankings");
+    return {
+      schemaVersion: "execution-plan.v1",
+      route: "controlled_planner",
+      steps: [
+        {
+          id: "step1",
+          tool: "entity_catalog_query",
+          arguments: { entityType: "unit", filters: { current: true }, limit: 5 },
+          dependsOn: [],
+          argumentBindings: [],
+          onFailure: "stop",
+          evidenceContract: {
+            type: catalogTool.evidenceType,
+            source: catalogTool.source,
+            requiredFields: ["source", "updatedAt", "results"]
+          }
+        },
+        {
+          id: "step2",
+          tool: "item_carrier_rankings",
+          arguments: { item: ITEM },
+          dependsOn: ["step1"],
+          argumentBindings: [],
+          onFailure: "stop",
+          evidenceContract: {
+            type: carrierTool.evidenceType,
+            source: carrierTool.source,
+            requiredFields: ["source", "updatedAt", "buildResponse", "baselineResponse"]
+          }
+        }
+      ],
+      resultPolicy: { type: "identity" },
+      finalEvidenceContract: {
+        type: carrierTool.evidenceType,
+        source: carrierTool.source,
+        required: true,
+        requiredFields: ["source", "updatedAt", "buildResponse", "baselineResponse"],
+        allowModelGeneratedStatistics: false
+      }
+    };
+  };
+  controlledPlanner.plannerKind = "llm";
+  controlledPlanner.model = "fixture";
+  const semanticTaskParser = async (message, options) => {
+    const semantic = await parseSemanticTask(message, options);
+    semantic.taskFrame = createTaskFrame({
+      ...semantic.taskFrame,
+      action: "search",
+      goal: "find_relevant_data",
+      constraints: {
+        ...semantic.taskFrame.constraints,
+        targetEntityType: "champion",
+        current: true
+      },
+      capabilityRequirements: ["entity_catalog_filtering", "item_carrier_statistics"]
+    });
+    return semantic;
+  };
+  const responses = itemCarrierResponses();
+
+  const result = await recommendForInput(input, {
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    useSession: false,
+    bypassQueryCache: true,
+    semanticTaskParser,
+    controlledPlanner,
+    executionPlanSovereignty: true,
+    toolRegistry: registry,
+    toolExecutor,
+    executionPlanExecutor,
+    agentToolHandlers: {
+      entity_catalog_query: async () => {
+        catalogCalls += 1;
+        return {
+          type: "entity_catalog_results",
+          source: "official_tft_catalog",
+          updatedAt: "2026-08-02T00:00:00.000Z",
+          results: [{ apiName: NAMI, name: "Nami" }]
+        };
+      }
+    },
+    metaTFTClient: {
+      async getItemCarrierBuilds() {
+        return responses.buildResponse;
+      }
+    },
+    compsClient: {
+      async getUnitItemsProcessed() {
+        return responses.baselineResponse;
+      }
+    }
+  });
+
+  assert.equal(catalogCalls, 1);
+  assert.equal(result.type, "item_carrier_rankings");
+  assert.deepEqual(result.carriers.map((entry) => entry.unitApiName), [NAMI, LULU]);
 });
 
 test("recommendation service returns deterministic item carrier results without conclusion content", async () => {

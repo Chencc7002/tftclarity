@@ -279,7 +279,10 @@ export function createTakeoverDecision(input = {}) {
   }
   if (semanticDifference.kind === "new_capability") {
     const difference = input.shadowDifference ?? {};
-    if (difference.actionChanged || difference.domainChanged || difference.clarificationChanged) {
+    if (
+      input.executionPlanSovereignty !== true
+      && (difference.actionChanged || difference.domainChanged || difference.clarificationChanged)
+    ) {
       return fallback(classifiedInput, "shadow_difference", "parsing");
     }
     if (

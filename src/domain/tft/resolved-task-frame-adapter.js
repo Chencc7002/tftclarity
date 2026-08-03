@@ -58,6 +58,10 @@ function intentFor(frame, executionPlan) {
     ...array(frame.candidates),
     ...array(frame.concepts)
   ].map((entity) => entity.expectedType));
+  const requirements = new Set(array(frame.capabilityRequirements));
+  if (types.has("item") && requirements.has("item_carrier_statistics")) {
+    return "item_carrier_rankings";
+  }
   if (types.has("champion")) {
     if (frame.action === "compare") return "unit_item_comparison";
     if (frame.action === "rank") return "unit_item_rankings";

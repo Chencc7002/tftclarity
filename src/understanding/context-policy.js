@@ -4,7 +4,7 @@ export const CONTEXT_COMPRESSION_VERSION = "context-compression.v1";
 
 export const SEMANTIC_PARSER_BUDGET = Object.freeze({
   maxInputTokens: 1200,
-  maxOutputTokens: 300,
+  maxOutputTokens: 900,
   maxLatencyMs: 1500,
   maxExamples: 4
 });
