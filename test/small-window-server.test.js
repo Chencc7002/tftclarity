@@ -3007,6 +3007,222 @@ test("PBE catalog resolves 巨九 from the current set lookup when /items is emp
   );
 });
 
+test("PBE Artifact carrier quick task uses the PBE item detail source without a baseline request", async () => {
+  const hydra = "DA_Artifact_TitanicHydra";
+  const unit = "DA_18_ElderDragon";
+  const catalog = createCatalog({
+    units: [{ apiName: unit, zhName: "Elder Dragon", aliases: ["Elder Dragon"], current: true }],
+    traits: [],
+    items: buildItemCatalogFromItemsResponse({ data: [{ items: hydra }] }, { includeSeeds: false })
+  });
+  let capturedPlan = null;
+  let baselineCalls = 0;
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {
+      async getItemCarrierBuilds(plan) {
+        capturedPlan = plan;
+        return {
+          updated: 1785832084329,
+          units: [{ unit, places: [281, 172, 119, 102, 81, 73, 43, 21] }],
+          units_overall: [{ unit, places: [21734, 18284, 14796, 13108, 11517, 9878, 7968, 4609] }]
+        };
+      }
+    },
+    compsClient: {
+      async getUnitItemsProcessed() {
+        baselineCalls += 1;
+        throw new Error("PBE item detail already contains unit baselines");
+      }
+    },
+    conversationStateV2Mode: "on"
+  });
+
+  const response = await handleRecommendRequest({
+    input: "PBE Titanic Hydra carriers",
+    seasonContextId: "set18-pbe",
+    quickTask: {
+      schemaVersion: "quick-task.v1",
+      id: "item-carriers",
+      operation: "item_carrier_rankings",
+      arguments: { item: "巨九" }
+    }
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "item_carrier_rankings");
+  assert.equal(response.payload.query.item, hydra);
+  assert.equal(response.payload.query.patch, "18.1");
+  assert.equal(response.payload.source.endpoint, "tft-stat-api/item_detail");
+  assert.equal(capturedPlan.path, "/tft-stat-api/item_detail");
+  assert.equal(capturedPlan.params.patch, "18.1");
+  assert.equal(baselineCalls, 0);
+  assert.ok(response.payload.carriers.length > 0);
+});
+
+test("all PBE equipment shortcuts resolve form entities directly and use patch 18.1", async () => {
+  const unit = "DA_18_Ahri";
+  const itemA = "DA_Item_TestA";
+  const itemB = "DA_Item_TestB";
+  const artifact = "DA_Artifact_TitanicHydra";
+  const catalog = createCatalog({
+    units: [{ apiName: unit, zhName: "Ahri", aliases: ["Ahri"], current: true }],
+    traits: [],
+    items: [
+      { apiName: itemA, zhName: "Test A", aliases: ["Test A"], category: "ordinary_completed", current: true, obtainable: true },
+      { apiName: itemB, zhName: "Test B", aliases: ["Test B"], category: "ordinary_completed", current: true, obtainable: true },
+      { apiName: artifact, zhName: "Titanic Hydra", aliases: ["Titanic Hydra", "巨九"], category: "artifact", current: true, obtainable: true }
+    ]
+  });
+  const plans = [];
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {
+      async getUnitBuilds(plan) {
+        plans.push(plan);
+        return {
+          unit,
+          builds: [
+            { buildNames: `${itemA}|${itemB}|${artifact}`, places: [120, 100, 80, 60, 40, 30, 20, 10] },
+            { buildNames: `${itemA}|${artifact}|${itemB}`, places: [80, 70, 60, 50, 40, 30, 20, 10] },
+            { buildNames: `${itemB}|${artifact}|${itemA}`, places: [50, 45, 40, 35, 30, 25, 20, 15] }
+          ]
+        };
+      }
+    },
+    compsClient: {},
+    conversationStateV2Mode: "on"
+  });
+  const tasks = [
+    ["unit-build", "unit_build_rankings", { champion: "Ahri" }],
+    ["unit-build-completion", "unit_build_completion", { champion: "Ahri", item1: "Test A" }],
+    ["item-performance", "unit_item_rankings", { champion: "Ahri", item: "Test A" }],
+    ["item-comparison", "unit_item_comparison", { champion: "Ahri", item1: "Test A", item2: "Test B" }],
+    ["special-items", "unit_item_rankings", { champion: "Ahri", specialCategory: "神器" }]
+  ];
+
+  for (const [id, operation, args] of tasks) {
+    const response = await handleRecommendRequest({
+      input: `PBE quick ${id}`,
+      seasonContextId: "set18-pbe",
+      conversationId: `pbe-quick-${id}`,
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id,
+        operation,
+        arguments: args
+      }
+    }, runtime);
+    assert.equal(response.statusCode, 200, id);
+    assert.notEqual(response.payload.type, "clarification", id);
+    assert.equal(response.payload.query.unit, unit, id);
+    assert.equal(response.payload.query.patch, "18.1", id);
+  }
+
+  assert.ok(plans.length >= tasks.length);
+  for (const plan of plans) {
+    assert.equal(plan.path, "/tft-stat-api/unit_detail_items");
+    assert.equal(plan.params.queue, "PBE");
+    assert.equal(plan.params.patch, "18.1");
+  }
+});
+
+test("all PBE comp and library shortcuts keep the selected season context", async () => {
+  const unit = "DA_18_Ahri";
+  const item = "DA_Artifact_TitanicHydra";
+  const trait = "DA_18_Forest";
+  const traitFilter = `${trait}_2`;
+  const catalog = createCatalog({
+    units: [{ apiName: unit, zhName: "Ahri", aliases: ["Ahri"], current: true }],
+    traits: [{ apiName: trait, filterId: traitFilter, zhName: "Forest", aliases: ["Forest"], current: true }],
+    items: [{ apiName: item, zhName: "Titanic Hydra", aliases: ["Titanic Hydra", "巨九"], category: "artifact", current: true, obtainable: true }]
+  });
+  const compStatsCalls = [];
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {
+      async getUnitBuilds() {
+        return {
+          unit,
+          builds: [{ buildNames: item, places: [30, 25, 20, 15, 10, 8, 6, 4] }]
+        };
+      }
+    },
+    compsClient: {
+      async getCompsData() {
+        return compPageFixture.compsData;
+      },
+      async getCompsStats(params) {
+        compStatsCalls.push(params);
+        return compPageFixture.compsStats;
+      }
+    },
+    officialEntityDetails: {
+      units: new Map([[unit, {
+        apiName: unit,
+        name: "Ahri",
+        cost: 4,
+        traitNames: ["Forest"],
+        stats: { health: 900 },
+        ability: { name: "Fox Fire", description: "Deals magic damage." }
+      }]]),
+      traits: new Map([[trait, {
+        apiName: trait,
+        name: "Forest",
+        description: "Forest trait",
+        levels: [{ units: 2, effect: "Bonus" }]
+      }]]),
+      meta: { version: "18.1", season: "TFTSet18" }
+    },
+    officialItemDetails: new Map([[item, {
+      apiName: item,
+      name: "Titanic Hydra",
+      effect: "Deals splash damage.",
+      recipe: []
+    }]]),
+    conversationStateV2Mode: "on"
+  });
+  const tasks = [
+    ["comp-rankings", "comp_rankings", {}, "comp_rankings"],
+    ["comp-trends", "comp_trends", {}, "comp_trends"],
+    ["hero-comps", "comp_rankings", { champion: "Ahri" }, "comp_rankings"],
+    ["unit-details", "unit_details", { champion: "Ahri" }, "unit_details"],
+    ["unit-catalog", "unit_catalog", {}, "entity_catalog"],
+    ["item-details", "item_details", { item: "Titanic Hydra" }, "item_details"],
+    ["trait-details", "trait_details", { trait: "Forest" }, "trait_details"],
+    ["trait-catalog", "trait_catalog", {}, "entity_catalog"]
+  ];
+
+  for (const [id, operation, args, expectedType] of tasks) {
+    const response = await handleRecommendRequest({
+      input: `PBE quick ${id}`,
+      seasonContextId: "set18-pbe",
+      conversationId: `pbe-quick-${id}`,
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id,
+        operation,
+        arguments: args
+      }
+    }, runtime);
+    assert.equal(response.statusCode, 200, id);
+    assert.equal(response.payload.type, expectedType, id);
+    assert.equal(response.payload.seasonContext.id, "set18-pbe", id);
+  }
+
+  assert.equal(compStatsCalls.length, 3);
+  for (const params of compStatsCalls) {
+    assert.equal(params.queue, "PBE");
+    assert.equal(params.patch, "18.1");
+  }
+});
+
 test("structured quick task validation rejects mismatched operations", async () => {
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
