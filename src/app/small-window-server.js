@@ -249,20 +249,84 @@ function resolveQuickTaskEntity(task, argumentName, entityType, catalog) {
   return [...new Set(matches)].length === 1 ? matches[0] : null;
 }
 
+function resolvedQuickTaskEntities(task, catalog) {
+  const unit = resolveQuickTaskEntity(task, "champion", "unit", catalog);
+  const item = resolveQuickTaskEntity(task, "item", "item", catalog);
+  const item1 = resolveQuickTaskEntity(task, "item1", "item", catalog);
+  const item2 = resolveQuickTaskEntity(task, "item2", "item", catalog);
+  const trait = resolveQuickTaskEntity(task, "trait", "trait", catalog);
+  const suppliedEntityArguments = [
+    ...(task.definition.required ?? []),
+    ...(task.definition.optional ?? [])
+  ].filter((key) => (
+    ["champion", "item", "item1", "item2", "trait"].includes(key)
+      && Boolean(task.arguments?.[key])
+  ));
+  const byArgument = { champion: unit, item, item1, item2, trait };
+  return {
+    unit,
+    item,
+    item1,
+    item2,
+    trait,
+    complete: suppliedEntityArguments.every((key) => Boolean(byArgument[key]))
+  };
+}
+
 function directParsedForQuickTask(task, input, catalog, preferences) {
   const parsed = parseQuery(input, { catalog, compQuery: preferences });
-  const carrierItem = task.id === "item-carriers"
-    ? resolveQuickTaskEntity(task, "item", "item", catalog)
-    : null;
-  return {
-    ...parsed,
-    intent: task.definition.intent,
-    ...(task.id === "item-carriers" ? {
-      carrierItem: carrierItem ?? parsed.carrierItem ?? null,
+  const resolved = resolvedQuickTaskEntities(task, catalog);
+  const resolvedItems = [resolved.item1, resolved.item2].filter(Boolean);
+  const compTask = ["comp-rankings", "comp-trends", "hero-comps"].includes(task.id);
+  const equipmentTask = [
+    "unit-build",
+    "unit-build-completion",
+    "item-performance",
+    "item-comparison",
+    "item-carriers",
+    "special-items"
+  ].includes(task.id);
+  const complete = resolved.complete
+    && (task.id !== "special-items" || (parsed.itemCategories ?? []).length > 0);
+  const entityProjection = {
+    ...(resolved.unit ? { unit: resolved.unit } : {}),
+    ...(task.id === "item-performance" ? {
+      performanceItem: resolved.item ?? parsed.performanceItem ?? null,
       lockedItems: [],
       ownedItems: [],
       comparisonItems: []
     } : {}),
+    ...(task.id === "unit-build-completion" ? {
+      lockedItems: resolvedItems,
+      ownedItems: resolvedItems,
+      comparisonItems: []
+    } : {}),
+    ...(task.id === "item-comparison" ? {
+      lockedItems: [],
+      ownedItems: [],
+      comparisonItems: resolvedItems,
+      comparisonMode: "exclusive_presence"
+    } : {}),
+    ...(task.id === "item-carriers" ? {
+      carrierItem: resolved.item ?? parsed.carrierItem ?? null,
+      lockedItems: [],
+      ownedItems: [],
+      comparisonItems: []
+    } : {}),
+    ...(resolved.trait ? { traitFilters: [resolved.trait] } : {})
+  };
+  return {
+    ...parsed,
+    intent: task.definition.intent,
+    ...(equipmentTask ? {
+      patch: preferences.unitBuildPatch ?? preferences.patch,
+      queue: preferences.queue
+    } : {}),
+    ...(compTask ? {
+      patch: preferences.compPatch ?? preferences.patch,
+      queue: preferences.queue
+    } : {}),
+    ...entityProjection,
     ...(task.id === "comp-rankings" || task.id === "hero-comps"
       ? { popularRequested: true, trendRequested: false }
       : {}),
@@ -273,6 +337,12 @@ function directParsedForQuickTask(task, input, catalog, preferences) {
       ...(parsed.parser ?? {}),
       intentExplicit: true,
       usedLLM: false,
+      ...(complete ? {
+        bareUnitIntentAmbiguous: false,
+        constraintConflicts: [],
+        entityAmbiguities: [],
+        unresolvedEntityHints: []
+      } : {}),
       quickTask: {
         schemaVersion: task.schemaVersion,
         id: task.id,
@@ -1096,10 +1166,12 @@ async function loadOfficialItemDetails(runtime) {
   return runtime.officialItemDetailsPromise;
 }
 
-async function serializeItemDetailsQuery(input, catalog, runtime) {
+async function serializeItemDetailsQuery(input, catalog, runtime, options = {}) {
   const parsed = parseQuery(input, { catalog });
   if (!isItemDetailsQuestion(input) || parsed.unit) return null;
-  const itemApiNames = parsed.ownedItems ?? [];
+  const itemApiNames = options.resolvedItem
+    ? [options.resolvedItem]
+    : parsed.ownedItems ?? [];
   if (itemApiNames.length === 0 && !isUnknownItemDetailsQuestion(input)) return null;
   if (itemApiNames.length !== 1) {
     const hint = itemDetailsNameHint(input);
@@ -1399,14 +1471,20 @@ function sourcePayload(result, meta = {}) {
   const cache = result.cache?.query ?? {};
   const compCandidates = result.cache?.compCandidates ?? {};
   return {
-    provider: "MetaTFT",
+    provider: result.source?.provider ?? "MetaTFT",
     endpoint: result.type === "unit_item_comparison"
-      ? result.source?.endpoint ?? "tft-explorer-api/unit_builds"
-      : result.plan?.path ?? (["comp_rankings", "comp_trends"].includes(result.type)
-        ? "/tft-explorer-api/exact_units_traits2"
-        : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
-    patch: result.query?.patch ?? null,
-    updatedAt: cache.updatedAt ?? result.sourceUpdatedAt ?? meta.sourceUpdatedAt ?? null,
+      ? result.source?.endpoint ?? result.plan?.path ?? "tft-explorer-api/unit_builds"
+      : result.plan?.path
+        ?? result.source?.endpoint
+        ?? (["comp_rankings", "comp_trends"].includes(result.type)
+          ? "/tft-explorer-api/exact_units_traits2"
+          : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
+    patch: result.source?.patch ?? result.query?.patch ?? null,
+    updatedAt: cache.updatedAt
+      ?? result.source?.updatedAt
+      ?? result.sourceUpdatedAt
+      ?? meta.sourceUpdatedAt
+      ?? null,
     cache: cache.stale ? "stale" : cache.hit ? "cache" : "live",
     stale: Boolean(cache.stale),
     cacheDetail: result.cache?.query ?? null,
@@ -1878,8 +1956,10 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
     parsed = parseQuery(input, { catalog: entityCatalog });
   }
 
-  const unitApiName = parsed.unit ?? null;
-  const traitApiNames = [...new Set((parsed.traitFilters ?? []).map(baseTraitApiName))];
+  const unitApiName = context.resolvedUnit ?? parsed.unit ?? null;
+  const traitApiNames = context.resolvedTrait
+    ? [baseTraitApiName(context.resolvedTrait)]
+    : [...new Set((parsed.traitFilters ?? []).map(baseTraitApiName))];
   const wantsUnit = Boolean(unitApiName && unitWording);
   const wantsTrait = Boolean(!unitApiName && traitApiNames.length === 1 && traitWording);
   if (!wantsUnit && !wantsTrait) return null;
@@ -4110,7 +4190,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     };
     return completeResponse(externalSupportPayload);
   }
-  const requestedCatalogType = requestedEntityCatalogType(input);
+  const quickTaskEntities = quickTask ? resolvedQuickTaskEntities(quickTask, catalog) : null;
+  const requestedCatalogType = quickTask?.id === "unit-catalog"
+    ? "unit"
+    : quickTask?.id === "trait-catalog"
+      ? "trait"
+      : requestedEntityCatalogType(input);
   if (
     requestedCatalogType
     && await fastPathEligible("entity_catalog", {
@@ -4137,6 +4222,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       preferences,
       compsData,
       entityDetails,
+      resolvedUnit: quickTaskEntities?.unit ?? null,
+      resolvedTrait: quickTaskEntities?.trait ?? null,
       refresh: Boolean(body.refresh)
     }), ["unit-details", "trait-details"])
     : null;
@@ -4159,7 +4246,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const itemDetailsPayload = (quickTask?.id === "item-details"
     || (isItemDetailsQuestion(input) && await fastPathEligible("item_details")))
     ? await resolveQuickView(
-      () => serializeItemDetailsQuery(input, catalog, runtime),
+      () => serializeItemDetailsQuery(input, catalog, runtime, {
+        resolvedItem: quickTaskEntities?.item ?? null
+      }),
       ["item-details"]
     )
     : null;

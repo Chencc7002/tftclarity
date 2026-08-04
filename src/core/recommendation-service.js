@@ -244,6 +244,7 @@ function itemCarrierQuery(parsed, options = {}) {
     effectivePatch: String(
       preferences.currentPatch
       ?? preferences.effectivePatch
+      ?? preferences.unitBuildPatch
       ?? parsed.patch
       ?? preferences.patch
       ?? "current"
@@ -251,7 +252,7 @@ function itemCarrierQuery(parsed, options = {}) {
     intent: "item_carrier_rankings",
     item: parsed.carrierItem,
     days: Number(parsed.days ?? preferences.days ?? 3),
-    patch: String(parsed.patch ?? preferences.patch ?? "current"),
+    patch: String(parsed.patch ?? preferences.unitBuildPatch ?? preferences.patch ?? "current"),
     queue: String(parsed.queue ?? preferences.queue ?? "1100"),
     rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
     minSamples: Math.max(0, Number(parsed.minSamples ?? options.itemCarrierMinSamples ?? 100)),
@@ -2148,7 +2149,8 @@ async function recommendItemCarriersForInput(
           if (typeof options.metaTFTClient?.getItemCarrierBuilds !== "function") {
             throw new Error("item carrier rankings require getItemCarrierBuilds()");
           }
-          if (typeof options.compsClient?.getUnitItemsProcessed !== "function") {
+          const pbeItemDetail = String(plannedQuery.queue).toUpperCase() === "PBE";
+          if (!pbeItemDetail && typeof options.compsClient?.getUnitItemsProcessed !== "function") {
             throw new Error("item carrier rankings require getUnitItemsProcessed()");
           }
           const baselineParams = {
@@ -2160,12 +2162,13 @@ async function recommendItemCarriersForInput(
               ? { rank: [...plannedQuery.rankFilter].sort().join(",") }
               : {})
           };
-          const [buildResponse, baselineResponse] = await Promise.all([
-            options.metaTFTClient.getItemCarrierBuilds(planMetaTFTItemCarrierBuilds(plannedQuery), {
-              timeoutMs: options.metaTFTTimeoutMs
-            }),
-            options.compsClient.getUnitItemsProcessed(baselineParams)
-          ]);
+          const buildResponse = await options.metaTFTClient.getItemCarrierBuilds(
+            planMetaTFTItemCarrierBuilds(plannedQuery),
+            { timeoutMs: options.metaTFTTimeoutMs }
+          );
+          const baselineResponse = pbeItemDetail
+            ? buildResponse
+            : await options.compsClient.getUnitItemsProcessed(baselineParams);
           return {
             source: "metatft",
             updatedAt: baselineResponse?.updated
@@ -2226,7 +2229,9 @@ async function recommendItemCarriersForInput(
   result.warnings = warnings;
   result.source = {
     provider: "MetaTFT",
-    endpoint: "tft-explorer-api/unit_builds + tft-comps-api/unit_items_processed",
+    endpoint: String(query.queue).toUpperCase() === "PBE"
+      ? "tft-stat-api/item_detail"
+      : "tft-explorer-api/unit_builds + tft-comps-api/unit_items_processed",
     patch: query.patch,
     updatedAt: packet?.updatedAt ?? queryCache.updatedAt ?? null,
     cache: queryCache.stale ? "stale" : queryCache.hit ? "hit" : "miss"

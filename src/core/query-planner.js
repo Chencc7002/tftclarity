@@ -74,6 +74,22 @@ export function planMetaTFTCompCandidates(query) {
 export function planMetaTFTItemCarrierBuilds(query) {
   const item = String(query.item ?? "").trim();
   if (!item) throw new TypeError("planMetaTFTItemCarrierBuilds requires item");
+  if (String(query.queue ?? DEFAULT_QUERY_OPTIONS.queue).toUpperCase() === "PBE") {
+    const [patch, buildPatch = ""] = String(query.patch ?? DEFAULT_QUERY_OPTIONS.patch).split("_", 2);
+    return {
+      endpoint: "item_detail",
+      method: "GET",
+      path: "/tft-stat-api/item_detail",
+      params: {
+        queue: "PBE",
+        patch,
+        b_patch: buildPatch,
+        days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+        permit_filter_adjustment: "true",
+        itemName: item
+      }
+    };
+  }
   return {
     endpoint: "unit_builds",
     method: "GET",

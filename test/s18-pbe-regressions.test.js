@@ -10,9 +10,10 @@ import { buildUnitCatalogFromExplorerRows, mergeCatalogUnits } from "../src/data
 import { createCatalog } from "../src/data/static-data.js";
 import { buildCompRankingQuery, planQuery, recommendForInput } from "../src/index.js";
 import { calculatePlacementStats } from "../src/core/stats-calculator.js";
+import { aggregateItemCarrierRankings } from "../src/core/item-carrier-ranking.js";
 import { makeQueryCacheKey } from "../src/data/cache-store.js";
 import { buildQueryContext } from "../src/core/context-builder.js";
-import { planMetaTFTUnitBuilds } from "../src/core/query-planner.js";
+import { planMetaTFTItemCarrierBuilds, planMetaTFTUnitBuilds } from "../src/core/query-planner.js";
 import { normalizeUnitBuildRows } from "../src/data/metatft-response-adapter.js";
 
 test("Set 18 PBE unit builds use the working patch aggregate stats endpoint", () => {
@@ -67,6 +68,61 @@ test("Set 18 PBE unit detail builds adapt to Explorer-compatible rows", () => {
     "DA_18_Morgana&DA_18_EmblemVanguard|DA_Morellonomicon|DA_VoidStaff"
   );
   assert.deepEqual(rows[0].placement_count, [20, 18, 16, 14, 10, 8, 6, 4]);
+});
+
+test("Set 18 PBE item carriers use the aggregate item detail endpoint", () => {
+  const plan = planMetaTFTItemCarrierBuilds({
+    item: "DA_Artifact_TitanicHydra",
+    queue: "PBE",
+    patch: "18.1",
+    days: 3,
+    rankFilter: ["CHALLENGER"]
+  });
+
+  assert.equal(plan.path, "/tft-stat-api/item_detail");
+  assert.deepEqual(plan.params, {
+    queue: "PBE",
+    patch: "18.1",
+    b_patch: "",
+    days: "3",
+    permit_filter_adjustment: "true",
+    itemName: "DA_Artifact_TitanicHydra"
+  });
+});
+
+test("Set 18 PBE item detail rows produce carrier uplift rankings", () => {
+  const item = "DA_Artifact_TitanicHydra";
+  const catalog = createCatalog({
+    units: [
+      { apiName: "DA_18_ElderDragon", zhName: "Elder Dragon", current: true },
+      { apiName: "DA_18_Rengar", zhName: "Rengar", current: true }
+    ],
+    traits: [],
+    items: buildItemCatalogFromItemsResponse({ data: [{ items: item }] }, { includeSeeds: false })
+  });
+  const response = {
+    units: [
+      { unit: "DA_18_ElderDragon", places: [281, 172, 119, 102, 81, 73, 43, 21] },
+      { unit: "DA_18_Rengar", places: [126, 79, 65, 43, 45, 28, 33, 19] }
+    ],
+    units_overall: [
+      { unit: "DA_18_ElderDragon", places: [21734, 18284, 14796, 13108, 11517, 9878, 7968, 4609] },
+      { unit: "DA_18_Rengar", places: [6450, 5895, 4862, 4386, 4049, 3963, 4073, 4266] }
+    ]
+  };
+
+  const result = aggregateItemCarrierRankings(response, response, {
+    item,
+    minSamples: 100,
+    positiveOnly: true,
+    limit: 8,
+    buildLimit: 2
+  }, { catalog });
+
+  assert.equal(result.type, "item_carrier_rankings");
+  assert.equal(result.diagnostics.inputRows, 2);
+  assert.ok(result.carriers.length > 0);
+  assert.equal(result.carriers[0].builds[0].items[0], item);
 });
 
 test("Set 17 unit builds keep using the Explorer endpoint", () => {

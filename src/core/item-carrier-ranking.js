@@ -58,7 +58,11 @@ function currentCatalogUnit(apiName, catalog) {
 }
 
 function normalizeTargetBuilds(response, itemApiName, catalog, rejected) {
-  const rows = normalizeUnitBuildRows(response);
+  const pbeItemRows = asArray(response?.units).map((row) => ({
+    unit_builds: `${row?.unit ?? ""}&${itemApiName}`,
+    placement_count: row?.places
+  }));
+  const rows = pbeItemRows.length ? pbeItemRows : normalizeUnitBuildRows(response);
   const builds = new Map();
   const seenRows = new Set();
   for (const row of rows) {
@@ -100,6 +104,17 @@ function normalizeTargetBuilds(response, itemApiName, catalog, rejected) {
 }
 
 function unitBaselines(response = {}, catalog) {
+  if (Array.isArray(response?.units_overall)) {
+    const baselines = new Map();
+    for (const row of response.units_overall) {
+      const apiName = currentCatalogUnit(row?.unit, catalog);
+      const counts = placementCount(row?.places);
+      if (!apiName || !counts) continue;
+      const stats = calculatePlacementStats(counts);
+      if (isPlausiblePlacementStats(stats)) baselines.set(apiName, stats.avgPlacement);
+    }
+    return baselines;
+  }
   const source = response?.units
     ?? response?.data?.units
     ?? response?.results?.units
@@ -233,7 +248,7 @@ export function aggregateItemCarrierRankings(buildResponse, baselineResponse, qu
       defaultSort: query.sort === "uplift_first" ? "uplift_first" : "games_first"
     },
     diagnostics: {
-      inputRows: normalizeUnitBuildRows(buildResponse).length,
+      inputRows: asArray(buildResponse?.units).length || normalizeUnitBuildRows(buildResponse).length,
       targetBuilds: targetBuilds.length,
       groupedUnits: groups.size,
       returnedUnits: Math.min(carriers.length, limit),
