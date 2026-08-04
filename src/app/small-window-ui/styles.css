@@ -213,8 +213,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 }
 .season-context-control select option { color: var(--ink); background: #fff; }
 .season-context-control select:disabled { cursor: not-allowed; opacity: .72; }
-.season-context-notice { position: absolute; top: calc(100% + 7px); right: 0; z-index: 20; width: max-content; max-width: min(320px, 80vw); padding: 7px 10px; border: 1px solid rgba(255,255,255,.52); border-radius: 9px; color: #4d3a63; background: rgba(255,250,255,.96); box-shadow: 0 8px 22px rgba(24,31,66,.18); font-size: 10px; }
+.season-context-notice { position: absolute; top: calc(100% + 7px); right: 0; z-index: 20; width: max-content; max-width: min(320px, 80vw); padding: 7px 7px 7px 10px; display: grid; grid-template-columns: minmax(0, 1fr) 24px; align-items: start; gap: 7px; border: 1px solid rgba(255,255,255,.52); border-radius: 9px; color: #4d3a63; background: rgba(255,250,255,.96); box-shadow: 0 8px 22px rgba(24,31,66,.18); font-size: 10px; line-height: 1.5; }
 .season-context-notice[hidden] { display: none; }
+.season-context-notice-close { width: 24px; height: 24px; padding: 0; display: inline-grid; place-items: center; border: 0; border-radius: 7px; color: #6b587b; background: transparent; font-size: 17px; line-height: 1; }
+.season-context-notice-close:hover { color: #3f2b51; background: rgba(91,70,111,.1); }
 
 .wallpaper-control { min-width: 0; display: flex; align-items: center; gap: 5px; }
 .wallpaper-toggle {
@@ -604,6 +606,22 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .knowledge-card-conditions span { padding: 3px 7px; border: 1px solid #acd9c4; border-radius: 999px; color: #277a54; background: #edfaf4; font-size: 9px; }
 .knowledge-card > a { justify-self: start; min-height: 28px; padding: 0 9px; display: inline-flex; align-items: center; border: 1px solid #b9dff0; border-radius: 8px; color: var(--star-cyan-dark); background: var(--star-cyan-soft); font-size: 9px; font-weight: 700; text-decoration: none; }
 .knowledge-card > a:hover { border-color: var(--star-cyan); }
+.mechanism-classification-card { padding: 0; overflow: hidden; }
+.mechanism-card-summary { padding: 12px; display: grid; gap: 9px; cursor: pointer; list-style: none; }
+.mechanism-card-summary::-webkit-details-marker { display: none; }
+.mechanism-card-summary::after { content: "＋"; position: absolute; right: 12px; top: 12px; color: var(--star-cyan-dark); font-weight: 800; }
+.mechanism-classification-card[open] .mechanism-card-summary::after { content: "−"; }
+.mechanism-classification-card { position: relative; }
+.mechanism-card-description { font-size: 11px; line-height: 1.62; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mechanism-expand-hint { color: var(--star-cyan-dark); font-size: 9px; font-weight: 700; }
+.mechanism-original-text { padding: 12px; display: grid; gap: 10px; border-top: 1px solid var(--line); background: color-mix(in srgb, var(--star-cyan-soft) 45%, white); }
+.mechanism-original-text h3, .mechanism-original-text p { margin: 0; }
+.mechanism-original-text section { display: grid; gap: 5px; }
+.mechanism-original-text section > strong { color: var(--muted); font-size: 9px; }
+.mechanism-original-text p, .mechanism-original-text li { font-size: 10px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.mechanism-original-text ul { margin: 0; padding-left: 18px; display: grid; gap: 7px; }
+.mechanism-original-text li strong { margin-right: 6px; color: var(--star-cyan-dark); }
+.mechanism-incomplete-warning { padding: 9px 10px; border: 1px solid #efd39d; border-radius: 10px; color: #8a5b16; background: #fff7e7; font-size: 10px; line-height: 1.55; }
 .knowledge-authority-note { margin: 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
 .risk-line { padding: 8px 9px; border-radius: 8px; color: #9a5c18; background: #fff6e8; }
 

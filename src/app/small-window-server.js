@@ -680,7 +680,7 @@ function createSmallWindowMechanismClassificationRuntime(options = {}, env = pro
           ?? "injected-model",
         timeoutMs: options.mechanismClassificationTimeoutMs ?? 90000,
         promptVersion: options.mechanismClassificationProvider.promptVersion
-          ?? "classify-growth-development.v2",
+          ?? "classify-growth-development.v4",
         ...(options.mechanismClassificationConfig ?? {})
       }
     };
@@ -831,7 +831,7 @@ function summarizeConclusionConfig(config = {}) {
 
 function summarizeMechanismClassificationConfig(config = {}, cache = null) {
   const summary = summarizeConclusionConfig(config);
-  summary.promptVersion = config.promptVersion ?? "classify-growth-development.v2";
+  summary.promptVersion = config.promptVersion ?? "classify-growth-development.v4";
   summary.cachedSeasons = cache instanceof Map ? cache.size : 0;
   return summary;
 }

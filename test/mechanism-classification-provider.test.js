@@ -18,6 +18,7 @@ test("mechanism classification config prefers dedicated variables and falls back
   assert.equal(dedicated.endpoint, "https://classification.example/v1/chat/completions");
   assert.equal(dedicated.model, "classification-model");
   assert.equal(dedicated.apiKey, "classification-key");
+  assert.equal(dedicated.promptVersion, "classify-growth-development.v4");
 
   const shared = resolveMechanismClassificationConfig({}, {
     OPENAI_BASE_URL: "https://shared.example/v1",
@@ -57,5 +58,7 @@ test("mechanism classification provider sends current evidence and parses strict
   assert.deepEqual(request.thinking, { type: "disabled" });
   const input = JSON.parse(request.messages[1].content);
   assert.equal(input.seasonContext.id, "set18");
+  assert.equal(input.expectedEntityCount, 1);
+  assert.equal(input.completenessAttempt, 1);
   assert.equal(input.entities[0].apiName, "Trait");
 });

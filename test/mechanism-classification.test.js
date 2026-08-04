@@ -102,16 +102,18 @@ test("growth keeps the model verdict and separately flags definition conflicts",
   assert.equal(entries[0].needsReview, true);
   assert.equal(entries[1].isGrowth, true);
   assert.equal(entries[1].definitionMatchedGrowth, true);
+  assert.equal(entries[1].originalDescription, entityDetails.traits.get("TFT_ShadowSoul").description);
+  assert.deepEqual(entries[1].originalLevels, entityDetails.traits.get("TFT_ShadowSoul").levels);
 });
 
 test("classification scans each entity type once and reuses its season cache", async () => {
   let calls = 0;
-  const provider = Object.assign(async () => {
+  const provider = Object.assign(async ({ evidence }) => {
     calls += 1;
     return {
       value: {
-        entries: [
-          {
+        entries: evidence.map((entity) => {
+          if (entity.apiName === "TFT_TestFarmer") return {
             entityType: "unit",
             apiName: "TFT_TestFarmer",
             name: "采金者",
@@ -122,8 +124,8 @@ test("classification scans each entity type once and reuses its season cache", a
             trigger: "胜利后",
             summary: "胜利后获得金币。",
             confidence: 0.98
-          },
-          {
+          };
+          if (entity.apiName === "TFT_ShadowSoul") return {
             entityType: "trait",
             apiName: "TFT_ShadowSoul",
             name: "暗影岛",
@@ -135,8 +137,19 @@ test("classification scans each entity type once and reuses its season cache", a
             progression: "累计灵魂",
             summary: "跨回合累计灵魂并提高战力。",
             confidence: 0.99
-          }
-        ]
+          };
+          return {
+            entityType: entity.entityType,
+            apiName: entity.apiName,
+            name: entity.name,
+            isGrowth: false,
+            isDevelopment: false,
+            growthScope: "in_combat",
+            persistence: "resets_after_combat",
+            summary: "仅在当前战斗生效。",
+            confidence: 0.95
+          };
+        })
       }
     };
   }, { model: "fixture-model", promptVersion: "fixture.v1" });
@@ -166,7 +179,7 @@ test("classification scans each entity type once and reuses its season cache", a
   assert.equal(growth.entries[0].name, "暗影岛");
   assert.equal(growth.classificationMeta.cache, "miss");
   assert.equal(growthCached.classificationMeta.cache, "hit");
-  assert.equal(growth.modelOutput.groups.trait.entries.length, 2);
+  assert.equal(growth.modelOutput.groups.trait.entries.length, 1);
 });
 
 test("small-window question route returns mechanism classification results", async () => {
@@ -209,4 +222,139 @@ test("small-window question route returns mechanism classification results", asy
   assert.equal(payload.entries[0].name, "暗影岛");
   assert.equal(payload.entries[0].isGrowth, true);
   assert.equal(payload.run.status, "completed");
+});
+
+test("classification batches a full trait catalog and still returns a late growth trait", async () => {
+  const rivalApiName = "DA_18_Rival";
+  const traits = new Map(Array.from({ length: 25 }, (_, index) => {
+    const apiName = index === 22 ? rivalApiName : `DA_18_Trait_${index}`;
+    return [apiName, {
+      apiName,
+      name: index === 22 ? "\u5bbf\u654c" : `Trait ${index}`,
+      description: index === 22
+        ? "Kha'Zix permanently evolves after takedowns."
+        : "Combat stats only.",
+      levels: []
+    }];
+  }));
+  let calls = 0;
+  const provider = Object.assign(async ({ evidence }) => {
+    calls += 1;
+    assert.ok(evidence.length <= 12);
+    return {
+      value: {
+        entries: evidence.map((entity) => ({
+          entityType: "trait",
+          apiName: entity.apiName,
+          name: entity.name,
+          isGrowth: entity.apiName === rivalApiName,
+          isDevelopment: entity.apiName === rivalApiName,
+          growthScope: entity.apiName === rivalApiName ? "cross_round" : "none",
+          persistence: entity.apiName === rivalApiName ? "permanent" : "none",
+          summary: entity.apiName === rivalApiName ? "Permanent evolution and repeated gold income." : "Combat only.",
+          confidence: 0.95
+        }))
+      }
+    };
+  }, { model: "fixture-model", promptVersion: "fixture.v3" });
+
+  const result = await answerMechanismClassificationQuery({
+    input: "\u54ea\u4e9b\u7f81\u7eca\u53ef\u6210\u957f\uff1f",
+    entityDetails: { units: new Map(), traits, meta: { provider: "fixture" } },
+    seasonContext: { id: "set18-pbe" },
+    provider
+  });
+
+  assert.equal(calls, 3);
+  assert.equal(result.entries.length, 1);
+  assert.equal(result.entries[0].apiName, rivalApiName);
+  assert.equal(result.classificationMeta.batchCount, 3);
+  assert.equal(result.classificationMeta.complete, true);
+  assert.equal(result.modelOutput.groups.trait.entries.length, 25);
+});
+
+test("classification retries only omitted entities instead of silently dropping them", async () => {
+  const traitDetails = new Map([
+    ["DA_18_Coven", {
+      apiName: "DA_18_Coven",
+      name: "\u9b54\u5973",
+      description: "Collect Coven Essence from takedowns and losses, then exchange it for rewards.",
+      levels: []
+    }],
+    ["DA_18_Rival", {
+      apiName: "DA_18_Rival",
+      name: "\u5bbf\u654c",
+      description: "Permanently evolves and grants gold after repeated takedowns.",
+      levels: []
+    }]
+  ]);
+  const calls = [];
+  const provider = Object.assign(async ({ evidence, completenessAttempt }) => {
+    calls.push({ apiNames: evidence.map((entity) => entity.apiName), completenessAttempt });
+    const returned = completenessAttempt === 1 ? evidence.slice(0, 1) : evidence;
+    return {
+      value: {
+        entries: returned.map((entity) => ({
+          entityType: "trait",
+          apiName: entity.apiName,
+          name: entity.name,
+          isGrowth: entity.apiName === "DA_18_Rival",
+          isDevelopment: true,
+          growthScope: entity.apiName === "DA_18_Rival" ? "cross_round" : "none",
+          persistence: entity.apiName === "DA_18_Rival" ? "permanent" : "permanent",
+          summary: "Resource or permanent progression.",
+          confidence: 0.9
+        }))
+      }
+    };
+  }, { model: "fixture-model", promptVersion: "fixture.v3" });
+
+  const result = await answerMechanismClassificationQuery({
+    input: "\u54ea\u4e9b\u7f81\u7eca\u53ef\u53d1\u80b2\uff1f",
+    entityDetails: { units: new Map(), traits: traitDetails, meta: { provider: "fixture" } },
+    seasonContext: { id: "set18-pbe" },
+    provider
+  });
+
+  assert.equal(calls.length, 2);
+  assert.deepEqual(calls[0].apiNames, ["DA_18_Coven", "DA_18_Rival"]);
+  assert.deepEqual(calls[1].apiNames, ["DA_18_Rival"]);
+  assert.equal(result.entries.length, 2);
+  assert.equal(result.classificationMeta.completenessRetryCount, 1);
+  assert.equal(result.classificationMeta.complete, true);
+  assert.equal(result.modelOutput.groups.trait.entries.length, 2);
+});
+
+test("an incomplete model response is disclosed and never made sticky in cache", async () => {
+  let calls = 0;
+  const provider = Object.assign(async () => {
+    calls += 1;
+    return { value: { entries: [] } };
+  }, { model: "fixture-model", promptVersion: "fixture.v3" });
+  const cache = new Map();
+  const common = {
+    input: "\u54ea\u4e9b\u7f81\u7eca\u53ef\u53d1\u80b2\uff1f",
+    entityDetails: {
+      units: new Map(),
+      traits: new Map([["DA_18_Coven", {
+        apiName: "DA_18_Coven",
+        name: "\u9b54\u5973",
+        description: "Collect Essence and exchange it for rewards.",
+        levels: []
+      }]])
+    },
+    seasonContext: { id: "set18-pbe" },
+    provider,
+    cache,
+    loadPromises: new Map()
+  };
+
+  const first = await answerMechanismClassificationQuery(common);
+  const second = await answerMechanismClassificationQuery(common);
+
+  assert.equal(calls, 6);
+  assert.equal(first.classificationMeta.complete, false);
+  assert.equal(first.classificationMeta.incompleteEntities[0].name, "\u9b54\u5973");
+  assert.equal(second.classificationMeta.cache, "miss");
+  assert.equal(cache.size, 0);
 });

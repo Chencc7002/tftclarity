@@ -67,7 +67,7 @@ export function resolveMechanismClassificationConfig(options = {}, env = process
         ?? env.TFT_AGENT_MECHANISM_CLASSIFICATION_THINKING_MODE
         ?? "disabled"
     ).trim() || null,
-    promptVersion: "classify-growth-development.v2"
+    promptVersion: "classify-growth-development.v4"
   };
 }
 
@@ -117,7 +117,7 @@ export function createMechanismClassificationProvider(options = {}) {
     return promptPromise;
   };
 
-  const provider = async ({ evidence, seasonContext = null } = {}) => {
+  const provider = async ({ evidence, seasonContext = null, completenessAttempt = 1 } = {}) => {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), positiveNumber(options.timeoutMs, 90000));
     try {
@@ -136,6 +136,8 @@ export function createMechanismClassificationProvider(options = {}) {
               content: JSON.stringify({
                 schemaVersion: "mechanism-classification-input.v1",
                 seasonContext,
+                completenessAttempt,
+                expectedEntityCount: evidence?.length ?? 0,
                 entities: evidence
               })
             }
@@ -180,7 +182,7 @@ export function createMechanismClassificationProvider(options = {}) {
     }
   };
   provider.model = options.model;
-  provider.promptVersion = "classify-growth-development.v2";
+  provider.promptVersion = "classify-growth-development.v4";
   return provider;
 }
 

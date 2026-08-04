@@ -73,6 +73,10 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.match(i18n, /seasonComingSoonStatus/);
   assert.match(i18n, /seasonArchivedStatus/);
   assert.match(i18n, /seasonRevivalStatus/);
+  assert.match(indexHtml, /id="season-context-notice-close"/);
+  assert.match(appJs, /sessionStorage\.setItem\(`\$\{SEASON_NOTICE_DISMISSED_STORAGE_KEY\}\.\$\{seasonContextId\}`/);
+  assert.match(appJs, /seasonContextNoticeClose\?\.addEventListener\("click"/);
+  assert.match(i18n, /closeSeasonNotice/);
 });
 
 test("welcome view exposes categorized, localized, actionable quick tasks", () => {
@@ -356,6 +360,16 @@ test("small-window renders unit and trait encyclopedia result types", () => {
   assert.match(styles, /\.stable-item-grid/);
   assert.match(styles, /\.trait-level-list/);
   assert.match(i18n, /recommendationMethod/);
+});
+
+test("mechanism cards expand to source text and disclose unresolved model omissions", () => {
+  assert.match(appJs, /<details class="knowledge-card mechanism-classification-card"/u);
+  assert.match(appJs, /entry\.originalDescription/u);
+  assert.match(appJs, /entry\.originalLevels/u);
+  assert.match(appJs, /classificationMeta\?\.incompleteEntities/u);
+  assert.match(appJs, /mechanismIncomplete/u);
+  assert.match(styles, /\.mechanism-original-text/u);
+  assert.match(styles, /\.mechanism-incomplete-warning/u);
 });
 
 test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware", () => {
