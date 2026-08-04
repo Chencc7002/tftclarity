@@ -5,11 +5,114 @@ import {
   buildCommunityDragonEntityDetails,
   fetchCommunityDragonEntityDetails
 } from "../src/data/communitydragon-entity-details.js";
+import { buildItemCatalogFromItemsResponse } from "../src/data/item-catalog.js";
 import { buildUnitCatalogFromExplorerRows, mergeCatalogUnits } from "../src/data/domain-catalog.js";
 import { createCatalog } from "../src/data/static-data.js";
-import { buildCompRankingQuery, planQuery } from "../src/index.js";
+import { buildCompRankingQuery, planQuery, recommendForInput } from "../src/index.js";
 import { calculatePlacementStats } from "../src/core/stats-calculator.js";
 import { makeQueryCacheKey } from "../src/data/cache-store.js";
+
+test("Set 18 DA Artifact ids inherit canonical manual aliases", () => {
+  const items = buildItemCatalogFromItemsResponse({
+    data: [{ items: "DA_Artifact_TitanicHydra" }]
+  }, { includeSeeds: false });
+  const hydra = items.find((item) => item.apiName === "DA_Artifact_TitanicHydra");
+
+  assert.ok(hydra);
+  assert.equal(hydra.category, "artifact");
+  assert.equal(hydra.aliases.includes("巨九"), true);
+  assert.equal(hydra.aliases.includes("巨型九头蛇"), true);
+  assert.equal(hydra.aliases.includes("TFT_Item_Artifact_Artifact_TitanicHydra"), false);
+});
+
+test("chat routing resolves 巨九 to the Set 18 DA Artifact item", async () => {
+  const items = buildItemCatalogFromItemsResponse({
+    data: [{ items: "DA_Artifact_TitanicHydra" }]
+  }, { includeSeeds: false });
+  const catalog = createCatalog({
+    units: [
+      { apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸", "Ahri"], current: true },
+      { apiName: "DA_18_Kayle", zhName: "凯尔", aliases: ["凯尔", "Kayle"], current: true }
+    ],
+    traits: [],
+    items
+  });
+  const result = await recommendForInput("巨九适合给谁", {
+    catalog,
+    itemCarrierResponse: {
+      source: "fixture",
+      updatedAt: "2026-08-04T00:00:00.000Z",
+      buildResponse: {
+        data: [
+          {
+            unit_builds: "DA_18_Ahri&DA_Artifact_TitanicHydra|TFT_Item_JeweledGauntlet|TFT_Item_SpearOfShojin",
+            placement_count: [100, 80, 60, 40, 20, 10, 10, 0]
+          },
+          {
+            unit_builds: "DA_18_Kayle&DA_Artifact_TitanicHydra|TFT_Item_GuinsoosRageblade|TFT_Item_JeweledGauntlet",
+            placement_count: [20, 30, 50, 80, 70, 40, 20, 10]
+          }
+        ]
+      },
+      baselineResponse: {
+        units: {
+          DA_18_Ahri: { avg: 4.2 },
+          DA_18_Kayle: { avg: 4.6 }
+        }
+      }
+    },
+    conversationStateV2Mode: "on",
+    semanticShadow: false,
+    useSession: false
+  });
+
+  assert.equal(result.type, "item_carrier_rankings");
+  assert.equal(result.query.item, "DA_Artifact_TitanicHydra");
+  assert.ok(result.carriers.length > 0);
+});
+
+test("chat routing keeps the champion in explicit Artifact rankings", async () => {
+  const items = buildItemCatalogFromItemsResponse({
+    data: [
+      { items: "DA_Artifact_TitanicHydra" },
+      { items: "DA_Artifact_Fishbones" },
+      { items: "TFT4_Item_OrnnInfinityForce" },
+      { items: "TFT_Item_JeweledGauntlet" },
+      { items: "TFT_Item_SpearOfShojin" }
+    ]
+  }, { includeSeeds: false });
+  const catalog = createCatalog({
+    units: [{ apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸", "Ahri"], current: true }],
+    traits: [],
+    items
+  });
+  const result = await recommendForInput("阿狸神器排行", {
+    catalog,
+    response: [
+      {
+        unit_builds: "DA_18_Ahri&DA_Artifact_TitanicHydra|TFT_Item_JeweledGauntlet|TFT_Item_SpearOfShojin",
+        placement_count: [30, 20, 15, 10, 5, 3, 1, 1]
+      },
+      {
+        unit_builds: "DA_18_Ahri&DA_Artifact_Fishbones|TFT_Item_JeweledGauntlet|TFT_Item_SpearOfShojin",
+        placement_count: [10, 15, 20, 20, 10, 5, 3, 2]
+      },
+      {
+        unit_builds: "DA_18_Ahri&TFT4_Item_OrnnInfinityForce|TFT_Item_JeweledGauntlet|TFT_Item_SpearOfShojin",
+        placement_count: [5, 10, 15, 20, 20, 10, 5, 5]
+      }
+    ],
+    conversationStateV2Mode: "on",
+    semanticShadow: false,
+    useSession: false
+  });
+
+  assert.equal(result.type, "unit_item_rankings");
+  assert.equal(result.query.unit, "DA_18_Ahri");
+  assert.equal(result.query.itemPolicy, "include_artifact");
+  assert.deepEqual(result.query.itemCategories, ["artifact"]);
+  assert.equal(result.itemRankings[0]?.apiName, "DA_Artifact_TitanicHydra");
+});
 
 test("Set 18 Explorer keeps DA unit ids and maps MetaTFT lookup aliases onto the canonical unit", () => {
   const unitLookupByApiName = new Map([["TFT18_Kayle", {

@@ -16,6 +16,50 @@ function reference(rawText, expectedType) {
   return { rawText, expectedType, resolvedId: null, confidence: 0.9 };
 }
 
+test("explicit champion Artifact rankings override a malformed provider frame", async () => {
+  let providerCalls = 0;
+  const catalog = createCatalog({
+    units: [{
+      apiName: "DA_18_Ahri",
+      zhName: "阿狸",
+      aliases: ["阿狸", "Ahri"],
+      current: true
+    }]
+  });
+  const response = await interpretTurn({
+    currentMessage: "阿狸神器排行",
+    conversationState: createConversationState({ seasonContextId: "set18-pbe" }),
+    seasonContextId: "set18-pbe",
+    catalog,
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => {
+      providerCalls += 1;
+      return createTurnDelta({
+      dialogueAct: "start_task",
+      taskRelation: "new",
+      explicitTaskFrame: createTaskFrame({
+        action: "rank",
+        goal: "rank_emblem_carriers",
+        candidates: [reference("阿狸", "champion")],
+        constraints: { comparisonItems: [reference("神器", "item")] },
+        confidence: 0.9,
+        understandingStatus: "understood_and_supported"
+      }),
+      confidence: 0.9
+      });
+    }
+  });
+
+  const frame = response.turnDelta.explicitTaskFrame;
+  assert.equal(frame.goal, "unit_item_rankings");
+  assert.equal(frame.subjects[0].resolvedId, "DA_18_Ahri");
+  assert.equal(frame.constraints.itemPolicy, "include_artifact");
+  assert.deepEqual(frame.constraints.itemCategories, ["artifact"]);
+  assert.deepEqual(frame.constraints.comparisonItems ?? [], []);
+  assert.equal(providerCalls, 0);
+  assert.equal(response.telemetry.providerCalled, false);
+});
+
 test("action-only build follow-up reuses only a current visible unit result group", async () => {
   let providerCalls = 0;
   const response = await interpretTurn({

@@ -10,6 +10,23 @@ import {
 
 export const TURN_INTERPRETER_VERSION = "turn-interpreter.v1";
 
+const UNIT_ITEM_CATEGORY_RANKING_PATTERN = /^(?:\u67e5\u8be2|\u67e5\u770b|\u5e2e\u6211\u67e5|\u5e2e\u6211\u770b|\u7ed9\u6211\u770b|\u770b)?\s*([\p{L}\p{N}\u00b7.'_-]{1,32}?)(?:\u7684)?(\u5965\u6069\u795e\u5668|\u795e\u5668|\u5149\u660e\u88c5\u5907|\u5149\u660e|\u7eb9\u7ae0|\u8f6c\u804c)(?:\u88c5\u5907)?(?:\u6392\u884c|\u6392\u540d|\u699c\u5355|\u5f3a\u5ea6\u699c|\u54ea\u4e2a\u597d|\u54ea\u4e9b\u597d|\u63a8\u8350)?[\s\uff1f?\u3002\uff01!]*$/u;
+
+function explicitUnitItemCategoryRanking(input) {
+  const match = String(input ?? "").trim().match(UNIT_ITEM_CATEGORY_RANKING_PATTERN);
+  if (!match) return null;
+  const unitMention = String(match[1] ?? "").trim();
+  const categoryMention = String(match[2] ?? "").trim();
+  if (!unitMention || !categoryMention) return null;
+  if (categoryMention === "\u795e\u5668" || categoryMention === "\u5965\u6069\u795e\u5668") {
+    return { unitMention, goal: "unit_item_rankings", itemPolicy: "include_artifact", itemCategory: "artifact" };
+  }
+  if (categoryMention.startsWith("\u5149\u660e")) {
+    return { unitMention, goal: "unit_item_rankings", itemPolicy: "include_radiant", itemCategory: "radiant" };
+  }
+  return { unitMention, goal: "unit_emblem_rankings", itemPolicy: "include_special", itemCategory: "emblem" };
+}
+
 const ACTION_ONLY_BUILD_FOLLOWUP = /^(?:分别)?(?:怎么|如何|咋)(?:出装|给装|配装|带装备)[？?]?$/u;
 const SHORT_BUILD_FOLLOWUP = /^(?:出装|装备|给装|配装)(?:呢|怎么弄)?[？?]?$/u;
 
@@ -282,6 +299,28 @@ function isExplicitSelfContainedTask(currentMessage) {
 function deterministicExplicitTaskFrame(currentMessage) {
   const input = String(currentMessage ?? "").trim();
   const patch = /(?:当前版本|当前patch|current\s*patch)/iu.test(input) ? "current" : undefined;
+  const categoryRanking = explicitUnitItemCategoryRanking(input);
+  if (categoryRanking) {
+    return createTaskFrame({
+      action: "rank",
+      goal: categoryRanking.goal,
+      subjects: [{
+        rawText: categoryRanking.unitMention,
+        expectedType: "champion",
+        resolvedId: null,
+        confidence: 1
+      }],
+      constraints: {
+        ...(patch ? { patch } : {}),
+        itemPolicy: categoryRanking.itemPolicy,
+        itemCategories: [categoryRanking.itemCategory]
+      },
+      expectedOutput: ["ranking", "results", "evidence"],
+      capabilityRequirements: ["unit_build_statistics"],
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    });
+  }
   if (/(?:阵容|版本|当前).{0,8}(?:趋势|上升|下降)|(?:趋势|上升|下降).{0,8}阵容/u.test(input)) {
     return createTaskFrame({
       action: "analyze",
@@ -657,6 +696,11 @@ export async function interpretTurn({
   const semanticMessage = String(semanticNormalization?.normalizedInput ?? currentMessage ?? "");
   const explicitSelfContainedTask = isExplicitSelfContainedTask(semanticMessage);
   const deterministicExplicitFrame = deterministicExplicitTaskFrame(semanticMessage);
+  const deterministicCategoryRanking = Boolean(
+    deterministicExplicitFrame
+    && ["unit_item_rankings", "unit_emblem_rankings"].includes(deterministicExplicitFrame.goal)
+    && array(deterministicExplicitFrame.constraints?.itemCategories).length === 1
+  );
   const interpreterState = explicitSelfContainedTask
     ? {
       ...conversationState,
@@ -675,7 +719,7 @@ export async function interpretTurn({
   let providerSucceeded = false;
   let providerUsage = null;
   let providerError = null;
-  if (typeof semanticProvider === "function") {
+  if (!deterministicCategoryRanking && typeof semanticProvider === "function") {
     providerCalled = true;
     try {
       const response = await semanticProvider({
@@ -709,7 +753,7 @@ export async function interpretTurn({
       };
       rawDelta = null;
     }
-  } else {
+  } else if (!deterministicCategoryRanking) {
     providerFallback = { used: true, reason: "provider_unavailable" };
   }
   let delta;

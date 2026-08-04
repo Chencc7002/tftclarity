@@ -122,9 +122,11 @@ function apiToken(apiName) {
 function canonicalItemApiName(apiName) {
   const value = String(apiName ?? "");
   if (!value.startsWith("DA_")) return value;
+  if (value.startsWith("DA_Artifact_")) {
+    return `TFT_Item_Artifact_${value.slice("DA_Artifact_".length)}`;
+  }
   const token = apiToken(value).replace(/_Radiant$/i, "Radiant");
   if (/Radiant$/i.test(token)) return `TFT5_Item_${token}`;
-  if (value.startsWith("DA_Artifact_")) return `TFT_Item_Artifact_${token}`;
   return `TFT_Item_${token}`;
 }
 

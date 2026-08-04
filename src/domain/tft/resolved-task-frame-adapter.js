@@ -45,6 +45,10 @@ function constraintEntityValues(values) {
   )).filter(Boolean);
 }
 
+function genericItemCategory(value) {
+  return /^(?:(?:\u5965\u6069)?\u795e\u5668|\u5149\u660e(?:\u88c5\u5907)?|\u7eb9\u7ae0|\u8f6c\u804c)$/u.test(String(value ?? "").trim());
+}
+
 function intentFor(frame, executionPlan) {
   // The registered execution plan is the runtime's concrete routing decision.
   // It must take precedence over a legacy goal retained for conversation
@@ -115,7 +119,7 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
       : constraints.limit;
   const comparisonItems = constraintEntityValues(
     constraints.comparisonItems ?? (frame.action === "compare" ? itemCandidates : [])
-  );
+  ).filter((value) => !genericItemCategory(value));
   const lockedItems = constraintEntityValues(constraints.lockedItems ?? constraints.ownedItems);
   const excludedItems = constraintEntityValues(constraints.excludedItems);
   const avoidItemComponents = constraintEntityValues(constraints.avoidItemComponents);

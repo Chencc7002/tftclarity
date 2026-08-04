@@ -80,6 +80,20 @@ function inferAction(text, domain, examples) {
 
 function constraintsFor(text) {
   const constraints = {};
+  const itemCategories = [];
+  if (/(?:\u5965\u6069)?\u795e\u5668/u.test(text)) itemCategories.push("artifact");
+  if (/\u5149\u660e(?:\u88c5\u5907)?/u.test(text)) itemCategories.push("radiant");
+  if (/\u7eb9\u7ae0|\u8f6c\u804c/u.test(text)) itemCategories.push("emblem");
+  if (itemCategories.length > 0) {
+    constraints.itemCategories = [...new Set(itemCategories)];
+    constraints.itemPolicy = constraints.itemCategories.length > 1
+      ? "include_special"
+      : constraints.itemCategories[0] === "artifact"
+        ? "include_artifact"
+        : constraints.itemCategories[0] === "radiant"
+          ? "include_radiant"
+          : "include_special";
+  }
   const costMatches = [...text.matchAll(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/gu)];
   if (costMatches.length) {
     const costMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
@@ -183,6 +197,18 @@ function isBareChampionRequest(text, entityMentions) {
   return Boolean(alias) && normalizeAlias(text).replace(alias, "") === "";
 }
 
+function isBareArtifactRequest(text, entityMentions, catalog) {
+  const items = entityMentions.filter((entity) => entity.expectedType === "item");
+  if (items.length !== 1 || entityMentions.length !== 1) return false;
+  const alias = normalizeAlias(items[0].rawText);
+  if (!alias || normalizeAlias(text).replace(alias, "") !== "") return false;
+  return (catalog?.items ?? []).some((item) => (
+    item.category === "artifact"
+    && [item.zhName, item.shortName, ...(item.aliases ?? [])]
+      .some((value) => normalizeAlias(value) === alias)
+  ));
+}
+
 function candidateRole(entity, action, allEntities) {
   if (action !== "compare") return entity.expectedType === "champion" ? "subjects" : "concepts";
   const championCount = allEntities.filter((value) => value.expectedType === "champion").length;
@@ -277,11 +303,12 @@ function mergeEntities(deterministic, provider, text) {
 
 function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
   const actionCue = explicitAction(text);
+  const deterministicCarrier = deterministicFrame.goal === "item_carrier_rankings";
   const deterministicDomain = deterministicFrame.domain === "out_of_domain";
   const providerOutOfDomain = providerFrame.domain === "out_of_domain";
   const action = deterministicDomain || providerOutOfDomain
     ? deterministicDomain ? deterministicFrame.action : "unknown"
-    : actionCue && deterministicFrame.action !== "unknown"
+    : (actionCue || deterministicCarrier) && deterministicFrame.action !== "unknown"
     ? deterministicFrame.action
     : providerFrame.action;
   const actionChanged = action !== providerFrame.action;
@@ -323,7 +350,10 @@ function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
   if (/(?:\u8d8b\u52bf|\u8d8b\u5f0f|\u5728\u6da8|\u5f80\u4e0a\u8d70)/u.test(text)) {
     constraints.trend = constraints.trend ?? "up";
   }
-  const useCanonicalSemantics = Boolean(actionCue) || deterministicDomain || providerOutOfDomain;
+  const useCanonicalSemantics = Boolean(actionCue)
+    || deterministicCarrier
+    || deterministicDomain
+    || providerOutOfDomain;
   return createTaskFrame({
     ...providerFrame,
     domain: deterministicDomain ? deterministicFrame.domain : providerFrame.domain,
@@ -333,9 +363,11 @@ function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
     concepts: mergeEntities(deterministicFrame.concepts, providerFrame.concepts, text),
     constraints,
     ambiguities,
-    goal: useCanonicalSemantics || actionChanged ? goalFor(action) : providerFrame.goal,
+    goal: deterministicCarrier
+      ? deterministicFrame.goal
+      : useCanonicalSemantics || actionChanged ? goalFor(action) : providerFrame.goal,
     expectedOutput: useCanonicalSemantics || actionChanged
-      ? outputsFor(action)
+      ? deterministicCarrier ? deterministicFrame.expectedOutput : outputsFor(action)
       : providerFrame.expectedOutput,
     understandingStatus
   });
@@ -628,11 +660,14 @@ export async function parseSemanticTask(input, options = {}) {
   }
   const entityMentions = extractEntityMentions(text, { catalog: options.catalog });
   const bareChampionRequest = isBareChampionRequest(text, entityMentions);
+  const bareArtifactRequest = !(options.conversation ?? []).length
+    && isBareArtifactRequest(text, entityMentions, options.catalog);
   if (
     domainResult.domain === "out_of_domain"
     && (
       entityMentions.some((entity) => entity.expectedType === "game_concept")
       || bareChampionRequest
+      || bareArtifactRequest
       || (
         ITEM_CARRIER_REQUEST_PATTERN.test(text)
         && entityMentions.some((entity) => entity.expectedType === "item")
@@ -647,6 +682,7 @@ export async function parseSemanticTask(input, options = {}) {
     action = inferAction(text, domainResult.domain, examples);
   }
   if (bareChampionRequest) action = "unknown";
+  if (bareArtifactRequest) action = "rank";
   const status = bareChampionRequest
     ? "understood_but_missing_context"
     : understandingStatus(text, domainResult.domain, action, entityMentions, options);
@@ -688,7 +724,7 @@ export async function parseSemanticTask(input, options = {}) {
     candidates,
     concepts,
     constraints: inferredConstraints,
-    goal: goalFor(action),
+    goal: bareArtifactRequest ? "item_carrier_rankings" : goalFor(action),
     expectedOutput: outputsFor(action),
     contextReferences: [],
     ambiguities,

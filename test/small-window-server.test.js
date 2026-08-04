@@ -5,6 +5,7 @@ import {
   MemoryCacheStore,
   SESSION_LAST_QUERY_KEY,
   SQLiteCacheStore,
+  buildItemCatalogFromItemsResponse,
   createCatalog,
   makeQueryCacheKey,
   parseQuery,
@@ -2884,6 +2885,126 @@ test("structured quick tasks bypass semantic interpretation and use the shared r
   assert.equal(capturedOptions.queryTtlMs, QUICK_TASK_CACHE_RETENTION_MS);
   assert.equal(capturedOptions.queryRefreshAfterMs, 45 * 60 * 1000);
   assert.equal(providerCalls, 0);
+});
+
+test("Set 17 Artifact carrier quick task resolves 巨九 through the real structured shortcut", async () => {
+  const hydra = "TFT_Item_Artifact_TitanicHydra";
+  const catalog = createCatalog({
+    units: [{ apiName: "TFT17_Xayah", zhName: "霞", aliases: ["霞", "逆羽", "xayah"] }],
+    traits: [],
+    items: buildItemCatalogFromItemsResponse({
+      data: [{ items: hydra }]
+    }, { includeSeeds: false })
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    conversationStateV2Mode: "on",
+    recommendForInputImpl: (input, options) => recommendForInput(input, {
+      ...options,
+      itemCarrierResponse: {
+        source: "fixture",
+        updatedAt: "2026-08-04T00:00:00.000Z",
+        buildResponse: {
+          data: [{
+            unit_builds: `TFT17_Xayah&${hydra}|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer`,
+            placement_count: [100, 80, 60, 40, 20, 10, 10, 0]
+          }]
+        },
+        baselineResponse: { units: { TFT17_Xayah: { avg: 4.4 } } }
+      }
+    })
+  });
+
+  const response = await handleRecommendRequest({
+    input: "巨九最适合哪些英雄携带",
+    seasonContextId: "set17-live",
+    quickTask: {
+      schemaVersion: "quick-task.v1",
+      id: "item-carriers",
+      operation: "item_carrier_rankings",
+      arguments: { item: "巨九" }
+    }
+  }, runtime);
+
+  assert.equal(response.statusCode, 200);
+  assert.equal(response.payload.type, "item_carrier_rankings");
+  assert.equal(response.payload.query.item, hydra);
+  assert.equal(response.payload.item.apiName, hydra);
+  assert.ok(response.payload.carriers.length > 0);
+  assert.equal(response.payload.quickTask.executionMode, "structured");
+
+  const bare = parseQuery("巨九", { catalog });
+  assert.equal(
+    bare.parser.entityMatches.find((entry) => entry.entityType === "item")?.apiName,
+    hydra
+  );
+  const bareChatResponse = await handleRecommendRequest({
+    input: "巨九",
+    seasonContextId: "set17-live",
+    conversationId: "s17-hydra-bare-chat"
+  }, runtime);
+  assert.equal(bareChatResponse.statusCode, 200);
+  assert.equal(bareChatResponse.payload.type, "item_carrier_rankings");
+  assert.equal(bareChatResponse.payload.query.item, hydra);
+
+  const chatResponse = await handleRecommendRequest({
+    input: "巨九适合给谁",
+    seasonContextId: "set17-live",
+    conversationId: "s17-hydra-chat"
+  }, runtime);
+  assert.equal(chatResponse.statusCode, 200);
+  assert.equal(chatResponse.payload.type, "item_carrier_rankings");
+  assert.equal(chatResponse.payload.query.item, hydra);
+});
+
+test("PBE catalog resolves 巨九 from the current set lookup when /items is empty", async () => {
+  const hydra = "DA_Artifact_TitanicHydra";
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: true,
+    metaTFTClient: {
+      async getItems() {
+        return { data: [] };
+      },
+      async getUnitsUnique() {
+        return { data: [] };
+      },
+      async getTraits() {
+        return { data: [] };
+      }
+    },
+    compsClient: {
+      async getLatestClusterInfo() {
+        return [];
+      },
+      async getSetLookup() {
+        return {
+          items: [{ apiName: hydra, name: "巨型九头蛇" }],
+          units: [{ apiName: "DA_18_Ahri", name: "阿狸" }],
+          traits: []
+        };
+      }
+    }
+  });
+
+  const entry = await loadRuntimeCatalog(runtime, {
+    seasonContextId: "set18-pbe",
+    queue: "PBE",
+    tftSet: "TFTSet18",
+    patch: "PBE"
+  });
+  const parsed = parseQuery("巨九", { catalog: entry.catalog });
+
+  assert.equal(entry.itemCatalogMemory.source, "set_lookup");
+  assert.equal(entry.catalog.itemByApiName.get(hydra)?.zhName, "巨型九头蛇");
+  assert.equal(
+    parsed.parser.entityMatches.find((entity) => entity.entityType === "item")?.apiName,
+    hydra
+  );
 });
 
 test("structured quick task validation rejects mismatched operations", async () => {
