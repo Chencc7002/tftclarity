@@ -435,9 +435,11 @@ test("all existing real interactions and endpoints remain wired", () => {
   assert.match(appJs, /data-condition-key/);
 });
 
-test("request lifecycle isolates refreshes, clears, and stale abort completions", () => {
-  assert.match(appJs, /const input = refresh \? state\.lastInput : queryInput\.value\.trim\(\)/);
-  assert.match(appJs, /if \(!refresh\) composer\.clear\(\)/);
+test("request lifecycle isolates refreshes, retries, clears, and stale abort completions", () => {
+  assert.match(appJs, /const reuseLastInput = refresh \|\| normalizedRequestOptions\.reuseLastInput === true/);
+  assert.match(appJs, /const input = reuseLastInput \? state\.lastInput : queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /if \(!reuseLastInput\) composer\.clear\(\)/);
+  assert.match(appJs, /requestRecommendation\(false, null, \{ reuseLastInput: true \}\)/);
   assert.match(appJs, /const requestId = \+\+state\.requestSerial/);
   assert.match(appJs, /if \(requestId !== state\.requestSerial\) return/);
   assert.match(appJs, /state\.requestSerial \+= 1/);

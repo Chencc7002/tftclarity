@@ -90,6 +90,7 @@ import {
   fetchOfficialTftItemDetails,
   filterItemCatalogAudit,
   hasUnsupportedCompRankingEntities,
+  mergeCatalogItems,
   mergeCatalogTraits,
   mergeCatalogUnits,
   normalizeCompProfileRecord,
@@ -237,11 +238,31 @@ function quickTaskExecutionInput(task) {
   }
 }
 
+function resolveQuickTaskEntity(task, argumentName, entityType, catalog) {
+  const mention = task.arguments?.[argumentName];
+  if (!mention) return null;
+  const parsed = parseQuery(mention, { catalog });
+  const matches = (parsed.parser?.entityMatches ?? [])
+    .filter((entry) => entry.entityType === entityType)
+    .map((entry) => entry.apiName)
+    .filter(Boolean);
+  return [...new Set(matches)].length === 1 ? matches[0] : null;
+}
+
 function directParsedForQuickTask(task, input, catalog, preferences) {
   const parsed = parseQuery(input, { catalog, compQuery: preferences });
+  const carrierItem = task.id === "item-carriers"
+    ? resolveQuickTaskEntity(task, "item", "item", catalog)
+    : null;
   return {
     ...parsed,
     intent: task.definition.intent,
+    ...(task.id === "item-carriers" ? {
+      carrierItem: carrierItem ?? parsed.carrierItem ?? null,
+      lockedItems: [],
+      ownedItems: [],
+      comparisonItems: []
+    } : {}),
     ...(task.id === "comp-rankings" || task.id === "hero-comps"
       ? { popularRequested: true, trendRequested: false }
       : {}),
@@ -3075,6 +3096,15 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const traitLookupByApiName = new Map((setLookupPayload?.traits ?? [])
         .filter((row) => row?.apiName)
         .map((row) => [row.apiName, row]));
+      const pbeSetLookupItems = isPbeCatalog && itemLookupByApiName.size > 0
+        ? buildItemCatalogFromItemsResponse({
+            data: [...itemLookupByApiName.keys()].map((apiName) => ({ items: apiName }))
+          }, {
+            patch,
+            itemLookupByApiName,
+            includeSeeds: false
+          })
+        : [];
 
       if (preferences.tftSet && setLookup.status !== "fulfilled") {
         warnings.push(`Set lookup 刷新失败，目录将回退为 API 标识：${setLookup.reason.message}`);
@@ -3087,14 +3117,15 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           includeSeeds: includeSeedCatalog
         });
         if (generatedItems.length > 0) {
-          catalogOverrides.items = generatedItems;
+          const resolvedItems = mergeCatalogItems(generatedItems, pbeSetLookupItems, { patch });
+          catalogOverrides.items = resolvedItems;
           entry.itemCatalogMemory = {
-            source: "remote",
-            items: generatedItems.length,
+            source: pbeSetLookupItems.length > 0 ? "remote+set_lookup" : "remote",
+            items: resolvedItems.length,
             updatedAt: new Date().toISOString()
           };
           try {
-            const saved = await runtime.cacheStore?.setItemCatalog?.(patch, generatedItems, storeOptions);
+            const saved = await runtime.cacheStore?.setItemCatalog?.(patch, resolvedItems, storeOptions);
             if (saved?.updatedAt) entry.itemCatalogMemory.updatedAt = saved.updatedAt;
           } catch (error) {
             warnings.push(`装备目录已刷新，但持久化失败：${error.message}`);
@@ -3109,13 +3140,21 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       if (!catalogOverrides.items) {
         const cachedItems = persistedItemCatalog?.value?.items;
         if (Array.isArray(cachedItems) && cachedItems.length > 0) {
-          catalogOverrides.items = cachedItems;
+          catalogOverrides.items = mergeCatalogItems(cachedItems, pbeSetLookupItems, { patch });
           entry.itemCatalogMemory = {
-            source: "persistent",
-            items: cachedItems.length,
+            source: pbeSetLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
+            items: catalogOverrides.items.length,
             updatedAt: persistedItemCatalog.updatedAt ?? null
           };
           warnings.push(`已使用 ${persistedItemCatalog.updatedAt ?? "未知时间"} 的持久化装备目录`);
+        } else if (pbeSetLookupItems.length > 0) {
+          catalogOverrides.items = pbeSetLookupItems;
+          entry.itemCatalogMemory = {
+            source: "set_lookup",
+            items: pbeSetLookupItems.length,
+            updatedAt: new Date().toISOString()
+          };
+          warnings.push("MetaTFT /items 未返回 PBE 数据，已使用当前 PBE set lookup 装备目录");
         } else if (includeSeedCatalog) {
           const snapshotItems = buildItemCatalogFromItemsResponse({
             data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
@@ -4125,6 +4164,14 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const parsedForIntent = quickTask
     ? directParsedForQuickTask(quickTask, input, catalog, preferences)
     : parseQuery(input, { catalog });
+  const extendedUnitBuildTimeoutMs = parsedForIntent.unit
+    && ["unit_item_rankings", "unit_emblem_rankings"].includes(parsedForIntent.intent)
+    && (parsedForIntent.itemCategories ?? []).length === 1
+    ? Math.max(
+      runtime.requestTimeouts.explorerTimeoutMs,
+      runtime.requestTimeouts.compRankingsTimeoutMs
+    )
+    : null;
   const shouldLoadCompItemDetails = requestsSoftCompItemDemand(input, parsedForIntent);
   const answerModeRoute = requestRuntime.answerModeRouter.route({
     input,
@@ -4430,18 +4477,18 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     toolExecutor: requestRuntime.toolExecutor,
     toolRegistry: requestRuntime.toolRegistry,
     executionPlanExecutor: requestRuntime.executionPlanExecutor,
-    metaTFTTimeoutMs: Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
+    metaTFTTimeoutMs: extendedUnitBuildTimeoutMs ?? (Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
       ? Math.max(
         runtime.requestTimeouts.explorerTimeoutMs,
         Number(seasonContext.source.requestDeadlineMs) - 2000
       )
-      : undefined,
-    toolTimeoutMs: Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
+      : undefined),
+    toolTimeoutMs: extendedUnitBuildTimeoutMs ?? (Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
       ? Math.max(
         runtime.requestTimeouts.explorerTimeoutMs,
         Number(seasonContext.source.requestDeadlineMs) - 2000
       )
-      : undefined,
+      : undefined),
     executionPlanSovereignty: true,
     agentRun: context.agentRun,
     abortSignal: context.signal

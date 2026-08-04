@@ -3825,11 +3825,12 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     ? { quickTask: requestOptions }
     : (requestOptions ?? {});
   const quickTask = normalizedRequestOptions.quickTask ?? null;
+  const reuseLastInput = refresh || normalizedRequestOptions.reuseLastInput === true;
   if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
     return;
   }
-  const input = refresh ? state.lastInput : queryInput.value.trim();
+  const input = reuseLastInput ? state.lastInput : queryInput.value.trim();
   if (!input) {
     renderError("enterQuery", "enterQuery");
     return;
@@ -3841,15 +3842,15 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   const requestId = ++state.requestSerial;
   state.progressIndex = 0;
   state.lastInput = input;
-  state.lastDisplayInput = refresh ? state.lastDisplayInput ?? input : displayInput ?? input;
-  state.lastQuickTask = refresh ? state.lastQuickTask : quickTask;
+  state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? input;
+  state.lastQuickTask = reuseLastInput ? state.lastQuickTask : quickTask;
   appendUserMessage(state.lastDisplayInput);
   const recommendationProgress = createRecommendationProgressState();
   activeRecommendationProgress = recommendationProgress;
   activeResponseEl = appendAssistantMessage(recommendationProgress);
   const assistantTarget = activeResponseEl;
   startRecommendationProgressClock(assistantTarget, recommendationProgress);
-  if (!refresh) composer.clear();
+  if (!reuseLastInput) composer.clear();
   scrollConversation();
   setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
   const controller = new AbortController();
@@ -4224,7 +4225,9 @@ async function handleResultClick(event) {
     return;
   }
   if (event.target.closest("[data-retry-result]")) {
-    if (state.lastInput && !state.requestInFlight) requestRecommendation(false);
+    if (state.lastInput && !state.requestInFlight) {
+      requestRecommendation(false, null, { reuseLastInput: true });
+    }
     return;
   }
   if (event.target.closest("[data-refresh-result]")) {

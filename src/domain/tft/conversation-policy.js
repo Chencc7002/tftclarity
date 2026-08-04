@@ -68,6 +68,15 @@ function entityReference(value, expectedType = null) {
   return !expectedType || value.expectedType === expectedType;
 }
 
+function genericItemCategoryReference(value) {
+  const text = typeof value === "string"
+    ? value
+    : value && typeof value === "object" && !value.resolvedId
+      ? value.rawText
+      : "";
+  return /^(?:(?:\u5965\u6069)?\u795e\u5668|\u5149\u660e(?:\u88c5\u5907)?|\u7eb9\u7ae0|\u8f6c\u804c)$/u.test(String(text ?? "").trim());
+}
+
 function validateConstraintValue(field, value) {
   if (field === "cost") {
     const costs = Array.isArray(value) ? value : [value];
@@ -143,6 +152,17 @@ function validateTaskFrame(frame) {
   }
   if (frame?.constraints?.strategy === "reroll" && frame?.constraints?.reroll === false) {
     errors.push("constraints.strategy conflicts with constraints.reroll");
+  }
+  if (array(frame?.constraints?.comparisonItems).some(genericItemCategoryReference)) {
+    errors.push("constraints.comparisonItems must contain named items, not an item category");
+  }
+  const supported = frame?.understandingStatus === "understood_and_supported";
+  if (
+    supported
+    && ["unit_item_rankings", "unit_emblem_rankings"].includes(frame?.goal)
+    && !array(frame?.subjects).some((entity) => entity?.expectedType === "champion")
+  ) {
+    errors.push(`${frame.goal} requires a champion subject`);
   }
   return errors;
 }
@@ -254,6 +274,7 @@ export const tftConversationPolicy = Object.freeze({
   semanticTurnDeltaPromptRules: Object.freeze([
     "itemPolicy is a scalar string containing only ordinary_only, include_special, include_artifact, include_radiant, or all_current. For an emblem use include_special, never emblem.",
     "itemCategories is always an array containing only ordinary, radiant, artifact, emblem, support, or set_special. For an emblem use [\"emblem\"], never the scalar \"emblem\".",
+    "Generic category words such as \u795e\u5668, \u5149\u660e\u88c5\u5907, \u7eb9\u7ae0, and \u8f6c\u804c are category scopes, never named item entities and never comparisonItems. For a champion category ranking, put the champion in subjects and set itemPolicy plus itemCategories.",
     "A request asking which champions should carry one named item or emblem is an item-carrier ranking: use action rank, goal rank_emblem_carriers, put the named equipment in candidates with expectedType item, and require item_carrier_statistics. Never classify it as comp_rankings.",
     "strategy is a scalar string containing only reroll, fast8, or fast9. Never use an array and never invent values such as no_gambling, non-vertical, stable, or flexible.",
     "Use reroll false for requests that exclude reroll or 赌狗 compositions. Use reroll true for requests that require them. Do not encode negation as strategy reroll.",

@@ -61,7 +61,7 @@ export function deriveTftCapabilityRequirements(input, frame = {}) {
     requirements.add("item_carrier_statistics");
   }
   if (
-    ITEM_CARRIER_REQUEST_PATTERN.test(text)
+    (ITEM_CARRIER_REQUEST_PATTERN.test(text) || frame.goal === "item_carrier_rankings")
     && entities(frame).some((entity) => entity?.expectedType === "item" && entity?.resolvedId)
   ) requirements.add("item_carrier_statistics");
   for (const entity of entities(frame)) {
