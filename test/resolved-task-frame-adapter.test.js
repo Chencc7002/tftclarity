@@ -109,3 +109,43 @@ test("explicit popular and trend wording overrides generic model ranking default
   });
   assert.equal(trendWithAnalysisPlan.intent, "comp_trends");
 });
+
+test("explicit single-item ranking wording overrides the shared unit-builds plan", () => {
+  const genericUnitRankingFrame = createTaskFrame({
+    action: "rank",
+    goal: "unit_build_rankings",
+    subjects: [{
+      rawText: "霞",
+      expectedType: "champion",
+      resolvedId: "TFT17_Xayah",
+      confidence: 1
+    }],
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const executionPlan = { steps: [{ tool: "unit_builds" }] };
+
+  for (const input of [
+    "霞单装备排行",
+    "霞的单件装备排名",
+    "霞核心装备优先级",
+    "霞哪个单件装备表现最好",
+    "霞神器排行",
+    "霞的光明装备哪个最好"
+  ]) {
+    const parsed = resolvedTaskFrameToParsed(genericUnitRankingFrame, {
+      input,
+      executionPlan
+    });
+    assert.equal(parsed.intent, "unit_item_rankings", input);
+    assert.equal(parsed.unit, "TFT17_Xayah", input);
+  }
+
+  for (const input of ["霞三件装备排行", "霞出装排行"]) {
+    const parsed = resolvedTaskFrameToParsed(genericUnitRankingFrame, {
+      input,
+      executionPlan
+    });
+    assert.equal(parsed.intent, "unit_build_rankings", input);
+  }
+});
