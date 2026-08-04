@@ -2467,7 +2467,9 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
     decision: comparison?.decision ?? null,
     source: {
       provider: "MetaTFT",
-      endpoint: "tft-explorer-api/unit_builds",
+      endpoint: plan?.path === "/tft-stat-api/unit_detail_items"
+        ? "tft-stat-api/unit_detail_items"
+        : "tft-explorer-api/unit_builds",
       patch: validatedQuery.patch ?? null,
       updatedAt: null,
       cache: "provided"
@@ -3528,7 +3530,9 @@ export async function recommendForInput(input, options = {}) {
   };
   result.source = {
     provider: "MetaTFT",
-    endpoint: "tft-explorer-api/unit_builds",
+    endpoint: result.plan?.path === "/tft-stat-api/unit_detail_items"
+      ? "tft-stat-api/unit_detail_items"
+      : "tft-explorer-api/unit_builds",
     patch: result.query?.patch ?? null,
     updatedAt: queryCache.updatedAt ?? null,
     cache: queryCache.stale ? "stale" : queryCache.hit ? "cache" : "live",

@@ -11,6 +11,79 @@ import { createCatalog } from "../src/data/static-data.js";
 import { buildCompRankingQuery, planQuery, recommendForInput } from "../src/index.js";
 import { calculatePlacementStats } from "../src/core/stats-calculator.js";
 import { makeQueryCacheKey } from "../src/data/cache-store.js";
+import { buildQueryContext } from "../src/core/context-builder.js";
+import { planMetaTFTUnitBuilds } from "../src/core/query-planner.js";
+import { normalizeUnitBuildRows } from "../src/data/metatft-response-adapter.js";
+
+test("Set 18 PBE unit builds use the working patch aggregate stats endpoint", () => {
+  const query = buildQueryContext({
+    intent: "unit_best_3_items",
+    unit: "DA_18_Morgana"
+  }, {
+    catalog: createCatalog({
+      units: [{ apiName: "DA_18_Morgana", zhName: "Morgana", cost: 4, current: true }],
+      traits: [],
+      items: []
+    }),
+    preferences: {
+      seasonContextId: "set18-pbe",
+      providerVersion: "metatft-pbe.v1",
+      effectivePatch: "18.1",
+      currentPatch: "18.1",
+      patch: "current",
+      unitBuildPatch: "18.1",
+      queue: "PBE"
+    }
+  });
+  const plan = planMetaTFTUnitBuilds(query);
+
+  assert.equal(query.patch, "18.1");
+  assert.equal(plan.path, "/tft-stat-api/unit_detail_items");
+  assert.deepEqual(plan.params, {
+    queue: "PBE",
+    patch: "18.1",
+    b_patch: "",
+    days: "3",
+    permit_filter_adjustment: "true",
+    unit: "DA_18_Morgana",
+    num_items: "3"
+  });
+});
+
+test("Set 18 PBE unit detail builds adapt to Explorer-compatible rows", () => {
+  const rows = normalizeUnitBuildRows({
+    unit: "DA_18_Morgana",
+    builds: [{
+      buildNames: "DA_18_EmblemVanguard|DA_Morellonomicon|DA_VoidStaff",
+      places: [20, 18, 16, 14, 10, 8, 6, 4],
+      total: 96
+    }],
+    build_games: [{ patch: "18.1", b_patch_version: "", count: 30702 }]
+  });
+
+  assert.equal(rows.length, 1);
+  assert.equal(
+    rows[0].unit_builds,
+    "DA_18_Morgana&DA_18_EmblemVanguard|DA_Morellonomicon|DA_VoidStaff"
+  );
+  assert.deepEqual(rows[0].placement_count, [20, 18, 16, 14, 10, 8, 6, 4]);
+});
+
+test("Set 17 unit builds keep using the Explorer endpoint", () => {
+  const plan = planMetaTFTUnitBuilds({
+    unit: "TFT17_Xayah",
+    starLevel: [2],
+    itemCount: 3,
+    queue: "1100",
+    patch: "current",
+    days: 3,
+    rankFilter: ["PLATINUM"]
+  });
+
+  assert.equal(plan.path, "/tft-explorer-api/unit_builds/TFT17_Xayah");
+  assert.equal(plan.params.patch, "current");
+  assert.equal(plan.params.queue, "1100");
+});
 
 test("Set 18 DA Artifact ids inherit canonical manual aliases", () => {
   const items = buildItemCatalogFromItemsResponse({

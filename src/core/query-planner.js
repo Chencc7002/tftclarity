@@ -8,6 +8,25 @@ export function createUnitTierNumItemsParam(unitApiName, starLevels, itemCount) 
 }
 
 export function planMetaTFTUnitBuilds(query) {
+  if (String(query.queue ?? DEFAULT_QUERY_OPTIONS.queue).toUpperCase() === "PBE") {
+    const [patch, buildPatch = ""] = String(query.patch ?? DEFAULT_QUERY_OPTIONS.patch).split("_", 2);
+    return {
+      endpoint: "unit_builds",
+      method: "GET",
+      pathUnit: query.unit,
+      path: "/tft-stat-api/unit_detail_items",
+      params: {
+        queue: "PBE",
+        patch,
+        b_patch: buildPatch,
+        days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+        permit_filter_adjustment: "true",
+        unit: query.unit,
+        num_items: String(query.itemCount ?? DEFAULT_QUERY_OPTIONS.itemCount ?? 3)
+      }
+    };
+  }
+
   const params = {
     formatnoarray: "true",
     compact: "true",

@@ -37,6 +37,26 @@ export function normalizeExplorerRows(response, keys = []) {
 }
 
 export function normalizeUnitBuildRows(response) {
+  const statPayload = response?.data && !Array.isArray(response.data)
+    ? response.data
+    : response;
+  if (statPayload && Object.hasOwn(statPayload, "builds")) {
+    const unit = String(statPayload.unit ?? "").replace(/-\d+$/u, "");
+    return asArray(statPayload.builds).flatMap((row) => {
+      const buildNames = String(row?.buildNames ?? row?.build_names ?? "")
+        .split("|")
+        .map((item) => item.trim().replace(/-\d+$/u, ""))
+        .filter(Boolean);
+      const placementCount = row?.places ?? row?.placement_count ?? row?.placementCount;
+      if (!unit || buildNames.length === 0 || !Array.isArray(placementCount)) return [];
+      return [{
+        ...row,
+        unit_builds: `${unit}&${buildNames.join("|")}`,
+        placement_count: placementCount,
+        source_endpoint: "tft-stat-api/unit_detail_items"
+      }];
+    });
+  }
   return normalizeExplorerRows(response, ["unit_builds", "unit_build"]);
 }
 

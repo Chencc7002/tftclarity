@@ -1939,10 +1939,16 @@ function entityCatalogPreferences(runtime, seasonContext) {
   return {
     seasonContextId: seasonContext.id,
     providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
+    effectivePatch: seasonContext.environment === "pbe"
+      ? seasonContext.currentPatch ?? seasonContext.effectivePatch
+      : seasonContext.effectivePatch,
     currentPatch: seasonContext.currentPatch,
     previousPatch: seasonContext.previousPatch,
     patch: seasonContext.source.explorerPatch ?? seasonContext.providerPatch ?? "current",
+    unitBuildPatch: seasonContext.source.unitBuildPatch
+      ?? seasonContext.source.explorerPatch
+      ?? seasonContext.providerPatch
+      ?? "current",
     compPatch: seasonContext.source.compsPatch ?? seasonContext.providerPatch ?? "current",
     queue: seasonContext.source.queue,
     tftSet: seasonContext.source.tftSet ?? null,
