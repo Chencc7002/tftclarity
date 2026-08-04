@@ -70,6 +70,7 @@ const CONTEXTS = [
       patchPolicy: "latest",
       currentPatch: "18.1",
       explorerPatch: "current",
+      unitBuildPatch: "18.1",
       compsPatch: "18.1",
       tftSet: "TFTSet18",
       lookupChannel: "pbe",

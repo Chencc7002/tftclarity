@@ -83,7 +83,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     : performanceCategory ? [performanceCategory] : [];
   const rankFilter = parsedQuery.rankFilter ?? preferences.rankFilter;
   const days = parsedQuery.days ?? preferences.days;
-  const patch = parsedQuery.patch ?? preferences.patch;
+  const patch = parsedQuery.patch ?? preferences.unitBuildPatch ?? preferences.patch;
   const queue = parsedQuery.queue ?? preferences.queue;
   const specialItemScope = hasSpecialItemScope(parsedQuery, catalog);
   const comparisonPreferenceOverridesSpecialDefault = parsedQuery.intent === "unit_item_comparison"
