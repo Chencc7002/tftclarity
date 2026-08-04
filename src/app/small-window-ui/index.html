@@ -38,7 +38,10 @@
             <select id="season-context-select" data-i18n-aria="seasonSwitchLabel" aria-label="选择赛季" disabled>
               <option value="set17-live">Set 17 · 正式服</option>
             </select>
-            <span id="season-context-notice" class="season-context-notice" role="status" hidden></span>
+            <span id="season-context-notice" class="season-context-notice" role="status" hidden>
+              <span data-season-context-notice-text></span>
+              <button type="button" id="season-context-notice-close" class="season-context-notice-close" data-i18n-title="closeSeasonNotice" data-i18n-aria="closeSeasonNotice" title="关闭赛季提示" aria-label="关闭赛季提示">×</button>
+            </span>
           </div>
           <div class="wallpaper-control" id="wallpaper-control">
             <button type="button" id="wallpaper-toggle" class="wallpaper-toggle" role="switch" aria-checked="true" title="关闭赛季壁纸" aria-label="关闭赛季壁纸">

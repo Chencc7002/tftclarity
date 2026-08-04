@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 
 export const MECHANISM_CLASSIFICATION_SCHEMA_VERSION = "mechanism-classification.v1";
+export const MECHANISM_CLASSIFICATION_BATCH_SIZE = 12;
+const MECHANISM_CLASSIFICATION_MAX_ATTEMPTS = 3;
 
 function cleanText(value, maxLength = 1600) {
   return String(value ?? "")
@@ -92,6 +94,86 @@ function stringList(value, maxItems = 6) {
   return values.map((item) => cleanText(item, 300)).filter(Boolean).slice(0, maxItems);
 }
 
+function rawClassificationEntries(value) {
+  return Array.isArray(value) ? value : value?.entries ?? value?.classifications ?? [];
+}
+
+function classificationSource(raw, evidence) {
+  const entityType = raw?.entityType === "trait" ? "trait" : raw?.entityType === "unit" ? "unit" : null;
+  if (!entityType) return null;
+  const apiName = String(raw?.apiName ?? "").trim().toLowerCase();
+  const name = String(raw?.name ?? "").trim().toLowerCase();
+  return evidence.find((entity) => (
+    entity.entityType === entityType
+    && ((apiName && String(entity.apiName).toLowerCase() === apiName)
+      || (name && String(entity.name).toLowerCase() === name))
+  )) ?? null;
+}
+
+function missingClassificationEvidence(value, evidence) {
+  const covered = new Set(
+    rawClassificationEntries(value)
+      .map((raw) => classificationSource(raw, evidence))
+      .filter(Boolean)
+      .map((entity) => `${entity.entityType}:${entity.apiName}`)
+  );
+  return evidence.filter((entity) => !covered.has(`${entity.entityType}:${entity.apiName}`));
+}
+
+function mergeModelOutputs(values) {
+  const valid = values.filter((value) => value && typeof value === "object");
+  const first = valid[0] ?? {};
+  const entries = [];
+  const seen = new Set();
+  for (const value of valid) {
+    for (const entry of rawClassificationEntries(value)) {
+      const identity = `${entry?.entityType ?? ""}:${entry?.apiName ?? ""}:${entry?.name ?? ""}`.toLowerCase();
+      if (seen.has(identity)) continue;
+      seen.add(identity);
+      entries.push(entry);
+    }
+  }
+  return { ...first, entries };
+}
+
+function batched(values, size = MECHANISM_CLASSIFICATION_BATCH_SIZE) {
+  const batches = [];
+  for (let index = 0; index < values.length; index += size) {
+    batches.push(values.slice(index, index + size));
+  }
+  return batches;
+}
+
+async function classifyEvidenceCompletely(options, evidence) {
+  const outputs = [];
+  const usages = [];
+  const providerRequestIds = [];
+  let pending = evidence;
+  let attempts = 0;
+  while (pending.length && attempts < MECHANISM_CLASSIFICATION_MAX_ATTEMPTS) {
+    attempts += 1;
+    const providerResult = await options.provider({
+      evidence: pending,
+      seasonContext: options.seasonContext,
+      completenessAttempt: attempts
+    });
+    outputs.push(providerResult?.value ?? providerResult);
+    if (providerResult?.usage) usages.push(providerResult.usage);
+    if (providerResult?.providerRequestId) providerRequestIds.push(providerResult.providerRequestId);
+    pending = missingClassificationEvidence(mergeModelOutputs(outputs), evidence);
+  }
+  return {
+    value: mergeModelOutputs(outputs),
+    usage: usages.length <= 1 ? usages[0] ?? null : { requests: usages },
+    providerRequestId: providerRequestIds.length <= 1
+      ? providerRequestIds[0] ?? null
+      : providerRequestIds,
+    attempts,
+    retryCount: Math.max(0, attempts - 1),
+    incompleteEvidence: pending
+  };
+}
+
 function normalizedScope(value) {
   const text = String(value ?? "").trim().toLowerCase();
   if (["cross_round", "cross-round", "permanent", "跨回合"].includes(text)) return "cross_round";
@@ -156,6 +238,14 @@ export function normalizeMechanismClassifications(value, evidence = []) {
       effects: stringList(raw?.effects),
       summary: cleanText(raw?.summary, 500),
       evidence: stringList(raw?.evidence, 4),
+      originalAbilityName: source.entityType === "unit" ? cleanText(source.abilityName, 160) || null : null,
+      originalDescription: cleanText(source.description, 2200) || null,
+      originalLevels: source.entityType === "trait"
+        ? rows(source.levels).map((level) => ({
+          units: Number.isFinite(Number(level?.units)) ? Number(level.units) : null,
+          effect: cleanText(level?.effect, 1000)
+        })).filter((level) => level.units !== null || level.effect)
+        : [],
       confidence: confidenceValue(raw?.confidence),
       needsReview,
       reviewReason: cleanText(
@@ -205,10 +295,16 @@ export async function answerMechanismClassificationQuery(options = {}) {
     });
   }
   const allEvidence = buildMechanismClassificationEvidence(options.entityDetails);
-  const evidenceGroups = query.entityTypes.map((entityType) => ({
-    entityType,
-    evidence: allEvidence.filter((entity) => entity.entityType === entityType)
-  })).filter((group) => group.evidence.length);
+  const evidenceGroups = query.entityTypes.flatMap((entityType) => {
+    const evidence = allEvidence.filter((entity) => entity.entityType === entityType);
+    const batches = batched(evidence);
+    return batches.map((batchEvidence, batchIndex) => ({
+      entityType,
+      batchIndex,
+      batchCount: batches.length,
+      evidence: batchEvidence
+    }));
+  });
   if (!evidenceGroups.length) {
     throw Object.assign(new Error("当前赛季没有可供分类的棋子或羁绊详情"), {
       code: "mechanism_entity_details_unavailable",
@@ -228,10 +324,7 @@ export async function answerMechanismClassificationQuery(options = {}) {
     let loadPromise = loadPromises.get(cacheKey);
     if (!loadPromise) {
       loadPromise = (async () => {
-        const providerResult = await options.provider({
-          evidence: group.evidence,
-          seasonContext: options.seasonContext
-        });
+        const providerResult = await classifyEvidenceCompletely(options, group.evidence);
         const loaded = {
           entries: normalizeMechanismClassifications(
             providerResult?.value ?? providerResult,
@@ -240,10 +333,16 @@ export async function answerMechanismClassificationQuery(options = {}) {
           modelOutput: providerResult?.value ?? providerResult,
           usage: providerResult?.usage ?? null,
           providerRequestId: providerResult?.providerRequestId ?? null,
+          retryCount: providerResult.retryCount,
+          incompleteEntities: providerResult.incompleteEvidence.map((entity) => ({
+            entityType: entity.entityType,
+            apiName: entity.apiName,
+            name: entity.name
+          })),
           createdAt: new Date().toISOString(),
           entityCount: group.evidence.length
         };
-        cache.set(cacheKey, loaded);
+        if (!loaded.incompleteEntities.length) cache.set(cacheKey, loaded);
         return loaded;
       })();
       loadPromises.set(cacheKey, loadPromise);
@@ -254,6 +353,8 @@ export async function answerMechanismClassificationQuery(options = {}) {
       return {
         ...await loadPromise,
         entityType: group.entityType,
+        batchIndex: group.batchIndex,
+        batchCount: group.batchCount,
         fingerprint,
         cacheStatus
       };
@@ -276,8 +377,23 @@ export async function answerMechanismClassificationQuery(options = {}) {
   const cacheStatus = cacheStatuses.length === 1 ? cacheStatuses[0] : "mixed";
   const modelOutput = {
     schemaVersion: "mechanism-classification-model-output.v1",
-    groups: Object.fromEntries(classifications.map((group) => [group.entityType, group.modelOutput]))
+    groups: Object.fromEntries(query.entityTypes.map((entityType) => [
+      entityType,
+      mergeModelOutputs(
+        classifications
+          .filter((group) => group.entityType === entityType)
+          .map((group) => group.modelOutput)
+      )
+    ]))
   };
+  const metadataByEntityType = (field) => Object.fromEntries(query.entityTypes.map((entityType) => {
+    const values = classifications
+      .filter((group) => group.entityType === entityType)
+      .map((group) => group[field])
+      .filter((value) => value !== null && value !== undefined);
+    return [entityType, values.length <= 1 ? values[0] ?? null : values];
+  }));
+  const incompleteEntities = classifications.flatMap((group) => group.incompleteEntities ?? []);
   return {
     ok: true,
     type: "mechanism_classification",
@@ -300,10 +416,13 @@ export async function answerMechanismClassificationQuery(options = {}) {
       model: options.provider.model ?? null,
       promptVersion: options.provider.promptVersion ?? null,
       createdAt: classifications.map((group) => group.createdAt).sort().at(-1),
-      usage: Object.fromEntries(classifications.map((group) => [group.entityType, group.usage])),
-      providerRequestId: Object.fromEntries(
-        classifications.map((group) => [group.entityType, group.providerRequestId])
-      )
+      batchSize: MECHANISM_CLASSIFICATION_BATCH_SIZE,
+      batchCount: classifications.length,
+      completenessRetryCount: classifications.reduce((sum, group) => sum + Number(group.retryCount ?? 0), 0),
+      complete: incompleteEntities.length === 0,
+      incompleteEntities,
+      usage: metadataByEntityType("usage"),
+      providerRequestId: metadataByEntityType("providerRequestId")
     }
   };
 }

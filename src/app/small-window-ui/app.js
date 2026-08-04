@@ -18,6 +18,7 @@ import { WallpaperController } from "./wallpaper-controller.js";
 
 const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
 const SEASON_CONTEXT_STORAGE_KEY = "tftagent.seasonContextId";
+const SEASON_NOTICE_DISMISSED_STORAGE_KEY = "tftagent.dismissedSeasonNotice";
 
 const state = {
   minSamples: 100,
@@ -105,6 +106,8 @@ const statusEl = document.querySelector("#status");
 const seasonContextSelect = document.querySelector("#season-context-select");
 const seasonContextSummary = document.querySelector("#season-context-summary");
 const seasonContextNotice = document.querySelector("#season-context-notice");
+const seasonContextNoticeText = document.querySelector("[data-season-context-notice-text]");
+const seasonContextNoticeClose = document.querySelector("#season-context-notice-close");
 const seasonPreviewBanner = document.querySelector("#season-preview-banner");
 const sendButton = form.querySelector(".send-button");
 const aiQuotaEl = document.querySelector("#ai-quota");
@@ -436,6 +439,24 @@ function renderSeasonContextOptions() {
   seasonContextSelect.disabled = state.seasonContexts.length === 0;
 }
 
+function seasonNoticeDismissed(seasonContextId) {
+  try {
+    return sessionStorage.getItem(`${SEASON_NOTICE_DISMISSED_STORAGE_KEY}.${seasonContextId}`) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function dismissSeasonNotice(seasonContextId = state.seasonContextId) {
+  if (!seasonContextId) return;
+  try {
+    sessionStorage.setItem(`${SEASON_NOTICE_DISMISSED_STORAGE_KEY}.${seasonContextId}`, "true");
+  } catch {
+    // A storage failure should not prevent the current notice from closing.
+  }
+  if (seasonContextNotice) seasonContextNotice.hidden = true;
+}
+
 function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   if (!context) return;
   const theme = context.theme ?? {};
@@ -476,8 +497,8 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   if (subtitleSeparator) subtitleSeparator.hidden = !subtitleText;
   const notice = localizedThemeValue(theme.riskNotice, context.notices?.[0] ?? "");
   if (seasonContextNotice) {
-    seasonContextNotice.textContent = notice;
-    seasonContextNotice.hidden = !notice;
+    if (seasonContextNoticeText) seasonContextNoticeText.textContent = notice;
+    seasonContextNotice.hidden = !notice || seasonNoticeDismissed(context.id);
   }
   renderSeasonContextOptions();
 }
@@ -3061,6 +3082,9 @@ function renderSystemInteractionResult(data) {
 
 function renderMechanismClassification(data) {
   const entries = Array.isArray(data?.entries) ? data.entries : [];
+  const incompleteEntities = Array.isArray(data?.classificationMeta?.incompleteEntities)
+    ? data.classificationMeta.incompleteEntities
+    : [];
   const cards = entries.map((entry) => {
     const labels = [];
     if (entry.isGrowth) labels.push(t("mechanismGrowth"));
@@ -3080,15 +3104,28 @@ function renderMechanismClassification(data) {
         : null
     ].filter(Boolean);
     const effectText = (entry.effects ?? []).filter(Boolean).join("; ");
-    return `<article class="knowledge-card mechanism-classification-card" data-entity-type="${escapeHtml(entry.entityType)}">
-      <div class="knowledge-card-source">
-        <span>${escapeHtml(labels.join(" / ") || t("mechanismLabel"))}</span>
-        <strong>${escapeHtml(entry.name ?? entry.apiName)}</strong>
-      </div>
-      <p>${escapeHtml(entry.summary || effectText || t("mechanismSummaryUnavailable"))}</p>
-      ${metadata.length ? `<div class="knowledge-card-meta">${metadata.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</div>` : ""}
-      ${entry.reviewReason ? `<div class="knowledge-card-conditions"><strong>${escapeHtml(t("mechanismReviewReason"))}</strong><span>${escapeHtml(entry.reviewReason)}</span></div>` : ""}
-    </article>`;
+    const originalLevels = (entry.originalLevels ?? []).map((level) => `<li>
+      ${level.units == null ? "" : `<strong>${escapeHtml(t("mechanismTier", { value: level.units }))}</strong>`}
+      <span>${escapeHtml(level.effect ?? "")}</span>
+    </li>`).join("");
+    const hasOriginal = Boolean(entry.originalDescription || entry.originalAbilityName || originalLevels);
+    return `<details class="knowledge-card mechanism-classification-card" data-entity-type="${escapeHtml(entry.entityType)}">
+      <summary class="mechanism-card-summary">
+        <span class="knowledge-card-source">
+          <span>${escapeHtml(labels.join(" / ") || t("mechanismLabel"))}</span>
+          <strong>${escapeHtml(entry.name ?? entry.apiName)}</strong>
+        </span>
+        <span class="mechanism-card-description">${escapeHtml(entry.summary || effectText || t("mechanismSummaryUnavailable"))}</span>
+        ${metadata.length ? `<span class="knowledge-card-meta">${metadata.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</span>` : ""}
+        ${entry.reviewReason ? `<span class="knowledge-card-conditions"><strong>${escapeHtml(t("mechanismReviewReason"))}</strong><span>${escapeHtml(entry.reviewReason)}</span></span>` : ""}
+        ${hasOriginal ? `<span class="mechanism-expand-hint">${escapeHtml(t("mechanismExpandOriginal"))}</span>` : ""}
+      </summary>
+      ${hasOriginal ? `<div class="mechanism-original-text">
+        ${entry.originalAbilityName ? `<h3>${escapeHtml(entry.originalAbilityName)}</h3>` : ""}
+        ${entry.originalDescription ? `<section><strong>${escapeHtml(t("mechanismOriginalDescription"))}</strong><p>${escapeHtml(entry.originalDescription)}</p></section>` : ""}
+        ${originalLevels ? `<section><strong>${escapeHtml(t("mechanismOriginalLevels"))}</strong><ul>${originalLevels}</ul></section>` : ""}
+      </div>` : ""}
+    </details>`;
   }).join("");
   const cacheLabel = data?.classificationMeta?.cache === "hit" ? t("mechanismCacheHit") : t("mechanismCacheScan");
   const rawModelOutput = data?.modelOutput ? JSON.stringify(data.modelOutput, null, 2) : "";
@@ -3098,6 +3135,9 @@ function renderMechanismClassification(data) {
       <header class="knowledge-evidence-head">
         <div><span>${escapeHtml(cacheLabel)}</span><h2>${escapeHtml(t("mechanismResultCount", { count: entries.length }))}</h2></div>
       </header>
+      ${incompleteEntities.length ? `<div class="mechanism-incomplete-warning" role="alert">${escapeHtml(t("mechanismIncomplete", {
+        names: incompleteEntities.map((entity) => entity.name || entity.apiName).join("、")
+      }))}</div>` : ""}
       ${cards || `<section class="empty-state"><p>${escapeHtml(data?.text ?? t("mechanismEmpty"))}</p></section>`}
       ${rawModelOutput ? `<details class="knowledge-card mechanism-model-output"><summary>${escapeHtml(t("mechanismRawOutput"))}</summary><pre>${escapeHtml(rawModelOutput)}</pre></details>` : ""}
     </section>
@@ -4466,6 +4506,10 @@ seasonContextSelect.addEventListener("change", () => {
     return;
   }
   void selectSeasonContext(requested.id);
+});
+
+seasonContextNoticeClose?.addEventListener("click", () => {
+  dismissSeasonNotice();
 });
 
 openItemAuditButton.addEventListener("click", async () => {
