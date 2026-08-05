@@ -6,7 +6,11 @@ import {
   fetchCommunityDragonEntityDetails
 } from "../src/data/communitydragon-entity-details.js";
 import { buildItemCatalogFromItemsResponse } from "../src/data/item-catalog.js";
-import { buildUnitCatalogFromExplorerRows, mergeCatalogUnits } from "../src/data/domain-catalog.js";
+import {
+  buildTraitCatalogFromExplorerRows,
+  buildUnitCatalogFromExplorerRows,
+  mergeCatalogUnits
+} from "../src/data/domain-catalog.js";
 import { createCatalog } from "../src/data/static-data.js";
 import { buildCompRankingQuery, planQuery, recommendForInput } from "../src/index.js";
 import { calculatePlacementStats } from "../src/core/stats-calculator.js";
@@ -154,6 +158,76 @@ test("Set 18 DA Artifact ids inherit canonical manual aliases", () => {
   assert.equal(hydra.aliases.includes("TFT_Item_Artifact_Artifact_TitanicHydra"), false);
 });
 
+test("Set 18 PBE traits prefer the latest CommunityDragon Chinese names and retain provider aliases", () => {
+  const cases = [
+    ["DA_18_Hunter_2", "DA_18_Hunter", "猎手", "猎人"],
+    ["DA_18_Vanguard_2", "DA_18_Vanguard", "前卫", "重装战士"],
+    ["DA_Riftbeast18_3", "DA_Riftbeast18", "峡谷怪物", "峡谷野怪"],
+    ["DA_Emerald18_1", "DA_Emerald18", "翡翠化身", "宝石骑士"],
+    ["DA_18_Caustic_1", "DA_18_Caustic", "苛性", "帝王斑蝶"],
+    ["DA_18_Eclipse_1", "DA_18_Eclipse", "蚀", "日月双蚀"],
+    ["DA_18_Sprykin_3", "DA_18_Sprykin", "迅灵", "约德尔人…"]
+  ];
+  const traitLookupByApiName = new Map(cases.map(([, apiName, staleName]) => [
+    apiName,
+    { apiName, name: staleName }
+  ]));
+  const traits = buildTraitCatalogFromExplorerRows({
+    data: cases.map(([filterId]) => ({ traits: filterId }))
+  }, { includeSeeds: false, traitLookupByApiName });
+
+  for (const [filterId, , staleName, latestName] of cases) {
+    const trait = traits.find((entry) => entry.filterId === filterId);
+    assert.equal(trait?.zhName, latestName);
+    assert.equal(trait?.displayName, latestName);
+    assert.equal(trait?.aliases.includes(staleName), true);
+  }
+
+  const catalog = createCatalog({
+    units: [{ apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸"], current: true }],
+    traits,
+    items: []
+  });
+  for (const input of ["峡谷野怪阿狸三件套", "峡谷怪物阿狸三件套", "裂隙野兽阿狸三件套"]) {
+    assert.deepEqual(planQuery(input, { catalog }).query.traitFilters, ["DA_Riftbeast18_3"]);
+  }
+});
+
+test("Set 18 PBE emblems prefer the latest Chinese names and retain old query aliases", () => {
+  const cases = [
+    ["DA_18_EmblemHunter", "猎手纹章", "猎人纹章"],
+    ["DA_18_EmblemSprykin", "迅灵纹章", "约德尔人…纹章"],
+    ["DA_18_EmblemVanguard", "前卫纹章", "重装战士纹章"]
+  ];
+  const itemLookupByApiName = new Map(cases.map(([apiName, staleName]) => [
+    apiName,
+    { apiName, name: staleName }
+  ]));
+  const items = buildItemCatalogFromItemsResponse({
+    data: cases.map(([apiName]) => ({ items: apiName }))
+  }, { includeSeeds: false, itemLookupByApiName });
+
+  for (const [apiName, staleName, latestName] of cases) {
+    const item = items.find((entry) => entry.apiName === apiName);
+    assert.equal(item?.zhName, latestName);
+    assert.equal(item?.preferredDisplayName, latestName);
+    assert.equal(item?.aliases.includes(staleName), true);
+  }
+
+
+  const catalog = createCatalog({
+    units: [{ apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸"], current: true }],
+    traits: [],
+    items
+  });
+  assert.deepEqual(planQuery("阿狸已有猎人纹章怎么出装", { catalog }).query.ownedItems, [
+    "DA_18_EmblemHunter"
+  ]);
+  assert.deepEqual(planQuery("阿狸已有猎手纹章怎么出装", { catalog }).query.ownedItems, [
+    "DA_18_EmblemHunter"
+  ]);
+});
+
 test("chat routing resolves 巨九 to the Set 18 DA Artifact item", async () => {
   const items = buildItemCatalogFromItemsResponse({
     data: [{ items: "DA_Artifact_TitanicHydra" }]
@@ -274,6 +348,129 @@ test("Set 18 catalog merge removes a persisted TFT18 alias when the DA unit arri
   ]);
   assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_18_Kayle"]);
   assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
+});
+
+test("catalog merge still lets a refreshed record replace the same provider id", () => {
+  const merged = mergeCatalogUnits([
+    { apiName: "DA_18_Kayle", zhName: "凯尔", aliases: ["凯尔"], source: "persistent" }
+  ], [
+    { apiName: "DA_18_Kayle", zhName: "Kayle", aliases: ["Kayle"], source: "remote" }
+  ]);
+  assert.equal(merged[0].source, "remote");
+  assert.equal(merged[0].zhName, "凯尔");
+  assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
+});
+
+test("Set 18 adaptive units collapse official and provider ids onto the populated AD identity", () => {
+  const unitLookupByApiName = new Map([["TFT18_MasterYi", {
+    apiName: "TFT18_MasterYi",
+    assetNames: ["DA_18_MasterYi_AD", "DA_18_MasterYi_AP"],
+    name: "易",
+    en_name: "Master Yi",
+    cost: 4
+  }]]);
+  const units = buildUnitCatalogFromExplorerRows({
+    data: [
+      { units_unique: "TFT18_MasterYi-1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
+      { units_unique: "DA_18_MasterYi_AD-1", placement_count: [20, 18, 16, 14, 12, 10, 8, 6] }
+    ]
+  }, { includeSeeds: false, unitLookupByApiName });
+
+  assert.deepEqual(units.map((unit) => unit.apiName), ["DA_18_MasterYi_AD"]);
+  assert.equal(units[0].canonicalApiName, "TFT18_MasterYi");
+  assert.equal(units[0].providerSampleCount, 104);
+  assert.equal(units[0].zhName, "易");
+  assert.equal(units[0].aliases.includes("TFT18_MasterYi"), true);
+
+  const catalog = createCatalog({ units, traits: [], items: [] });
+  const planned = planQuery("查询易的当前版本最稳三件装备", { catalog });
+  assert.equal(planned.query.unit, "DA_18_MasterYi_AD");
+  assert.equal(planned.parsed.parser.entityAmbiguities.length, 0);
+});
+
+test("Set 18 identity collapse uses provider samples when the base id is the populated form", () => {
+  const unitLookupByApiName = new Map([["TFT18_Lux_Base", {
+    apiName: "TFT18_Lux_Base",
+    assetNames: ["DA_18_Lux_Coven", "DA_18_Lux_Elderwood"],
+    name: "拉克丝",
+    cost: 5
+  }]]);
+  const units = buildUnitCatalogFromExplorerRows({
+    data: [
+      { units_unique: "TFT18_Lux_Base-1", placement_count: [20, 18, 16, 14, 12, 10, 8, 6] },
+      { units_unique: "DA_18_Lux_Coven-1", placement_count: [1, 1, 1, 0, 0, 0, 0, 0] }
+    ]
+  }, { includeSeeds: false, unitLookupByApiName });
+
+  assert.deepEqual(units.map((unit) => unit.apiName), ["TFT18_Lux_Base"]);
+  assert.equal(units[0].providerSampleCount, 104);
+});
+
+test("Set 18 ordinary provider aliases such as Alune and Brambleback collapse without ambiguity", () => {
+  const unitLookupByApiName = new Map([
+    ["TFT18_Alune", {
+      apiName: "TFT18_Alune",
+      assetNames: ["DA_18_Alune"],
+      name: "\u62c9\u9732\u6069",
+      cost: 3
+    }],
+    ["TFT18_Brambleback", {
+      apiName: "TFT18_Brambleback",
+      assetNames: ["DA_Brambleback18"],
+      name: "\u7ea2\u8272",
+      cost: 4
+    }]
+  ]);
+  const units = buildUnitCatalogFromExplorerRows({
+    data: [
+      { units_unique: "TFT18_Alune-1", placement_count: [20, 20, 20, 20, 20, 20, 20, 20] },
+      { units_unique: "DA_18_Alune-1", placement_count: [100, 100, 100, 100, 100, 100, 100, 100] },
+      { units_unique: "TFT18_Brambleback-1", placement_count: [10, 10, 10, 10, 10, 10, 10, 10] },
+      { units_unique: "DA_Brambleback18-1", placement_count: [90, 90, 90, 90, 90, 90, 90, 90] }
+    ]
+  }, { includeSeeds: false, unitLookupByApiName });
+
+  assert.deepEqual(units.map((unit) => unit.apiName), ["DA_18_Alune", "DA_Brambleback18"]);
+  const catalog = createCatalog({ units, traits: [], items: [] });
+  const alune = planQuery("\u67e5\u8be2\u62c9\u9732\u6069\u7684\u5f53\u524d\u7248\u672c\u6700\u7a33\u4e09\u4ef6\u88c5\u5907", { catalog });
+  const brambleback = planQuery("\u67e5\u8be2\u7ea2\u8272\u7684\u5f53\u524d\u7248\u672c\u6700\u7a33\u4e09\u4ef6\u88c5\u5907", { catalog });
+  assert.equal(alune.query.unit, "DA_18_Alune");
+  assert.equal(alune.parsed.parser.entityAmbiguities.length, 0);
+  assert.equal(brambleback.query.unit, "DA_Brambleback18");
+  assert.equal(brambleback.parsed.parser.entityAmbiguities.length, 0);
+});
+
+test("Set 18 transformed Elise form collapses onto the populated shop unit", () => {
+  const unitLookupByApiName = new Map([
+    ["TFT18_Elise", {
+      apiName: "TFT18_Elise",
+      assetNames: ["DA_18_Elise"],
+      name: "\u4f0a\u8389\u4e1d",
+      cost: 2,
+      shopUnit: true
+    }],
+    ["TFT18_EliseSpider", {
+      apiName: "TFT18_EliseSpider",
+      assetNames: ["DA_18_EliseSpider"],
+      name: "\u4f0a\u8389\u4e1d",
+      cost: 2,
+      shopUnit: false
+    }]
+  ]);
+  const units = buildUnitCatalogFromExplorerRows({
+    data: [
+      { units_unique: "DA_18_Elise-1", placement_count: [100, 100, 100, 100, 100, 100, 100, 100] },
+      { units_unique: "DA_18_EliseSpider-1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
+      { units_unique: "TFT18_Elise-1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }
+    ]
+  }, { includeSeeds: false, unitLookupByApiName });
+
+  assert.deepEqual(units.map((unit) => unit.apiName), ["DA_18_Elise"]);
+  const planned = planQuery("\u67e5\u8be2\u4f0a\u8389\u4e1d\u7684\u5f53\u524d\u7248\u672c\u6700\u7a33\u4e09\u4ef6\u88c5\u5907", {
+    catalog: createCatalog({ units, traits: [], items: [] })
+  });
+  assert.equal(planned.query.unit, "DA_18_Elise");
+  assert.equal(planned.parsed.parser.entityAmbiguities.length, 0);
 });
 
 test("Kayle placement distribution produces ordinary eight-place stats instead of the bad TFT18 sample", () => {

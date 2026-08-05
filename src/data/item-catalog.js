@@ -416,12 +416,18 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
   const derived = override?.suppressDerivedAliases
     ? null
     : deriveItemAlias(apiName, category);
+  const preferredOverrideName = override?.preferZhName ? override.zhName : null;
 
   return applyOfficialItemLocalization({
     apiName,
-    zhName: lookupName ?? override?.zhName ?? seed?.zhName ?? derived?.zhName ?? null,
+    zhName: preferredOverrideName
+      ?? lookupName
+      ?? override?.zhName
+      ?? seed?.zhName
+      ?? derived?.zhName
+      ?? null,
     shortName: override?.shortName ?? seed?.shortName ?? derived?.shortName ?? token,
-    displayName: lookupName ?? null,
+    displayName: preferredOverrideName ?? lookupName ?? null,
     preferredDisplayName: override?.preferredDisplayName ?? seed?.preferredDisplayName ?? null,
     supersededBy: seed?.supersededBy ?? null,
     aliases: compact([

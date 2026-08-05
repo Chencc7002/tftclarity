@@ -6,6 +6,7 @@ import {
   traitAliasOverrideByFilterId,
   unitAliasOverrideByApiName
 } from "./domain-alias-overrides.js";
+import { canonicalUnitIdentity, preferEquivalentUnit } from "./unit-identity.js";
 
 const seedUnitByApiName = new Map(UNITS.map((unit) => [unit.apiName, unit]));
 const seedTraitByFilterId = new Map(TRAITS.map((trait) => [trait.filterId, trait]));
@@ -86,8 +87,11 @@ function unitRecord(apiName, options = {}, dynamicSource = null) {
   const token = apiToken(apiName);
   const metadata = unitMetadataResolver.resolveUnit(apiName);
   const cost = Number(lookup?.cost ?? metadata.cost);
+  const providerSampleCount = Number(options.providerSampleCount);
   return {
     apiName,
+    canonicalApiName: lookup?.apiName ?? apiName,
+    ...(Number.isFinite(providerSampleCount) && providerSampleCount > 0 ? { providerSampleCount } : {}),
     ...(Number.isFinite(cost) && cost > 0 ? { cost } : {}),
     zhName: lookupName ?? override?.zhName ?? seed?.zhName ?? null,
     aliases: compact([
@@ -111,6 +115,32 @@ function unitRecord(apiName, options = {}, dynamicSource = null) {
   };
 }
 
+function collapseEquivalentUnits(units) {
+  const byIdentity = new Map();
+  for (const unit of units ?? []) {
+    const identity = canonicalUnitIdentity(unit);
+    const existing = byIdentity.get(identity);
+    if (!existing) {
+      byIdentity.set(identity, unit);
+      continue;
+    }
+    const preferred = existing.apiName === unit.apiName
+      ? unit
+      : preferEquivalentUnit(existing, unit);
+    const fallback = preferred === existing ? unit : existing;
+    byIdentity.set(identity, {
+      ...preferred,
+      canonicalApiName: preferred.canonicalApiName ?? fallback.canonicalApiName,
+      zhName: existing.zhName ?? unit.zhName,
+      aliases: compact([
+        ...(preferred.aliases ?? []),
+        ...(fallback.aliases ?? [])
+      ])
+    });
+  }
+  return [...byIdentity.values()].sort((a, b) => a.apiName.localeCompare(b.apiName));
+}
+
 function traitRecord(filterId, options = {}, dynamicSource = null) {
   const apiName = traitApiNameFromFilterId(filterId);
   const seed = seedTraitByFilterId.get(filterId) ?? seedTraitByApiName.get(apiName);
@@ -118,11 +148,17 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
   const lookup = options.traitLookupByApiName?.get?.(apiName) ?? null;
   const lookupName = String(lookup?.name ?? lookup?.displayName ?? "").trim() || null;
   const tierOverride = traitTierOverride(filterId, override);
+  const preferredOverrideName = override?.preferZhName ? override.zhName : null;
   const token = apiToken(filterId);
   return {
     apiName: override?.apiName ?? seed?.apiName ?? apiName,
     filterId,
-    zhName: lookupName ?? tierOverride?.zhName ?? override?.zhName ?? seed?.zhName ?? null,
+    zhName: preferredOverrideName
+      ?? lookupName
+      ?? tierOverride?.zhName
+      ?? override?.zhName
+      ?? seed?.zhName
+      ?? null,
     displayName: tierOverride?.displayName
       ?? override?.displayName
       ?? seed?.displayName
@@ -184,12 +220,19 @@ function collectCompsApiNames(data = {}) {
 }
 
 function collectExplorerUnitApiNames(response = {}) {
-  const units = new Set();
+  const units = new Map();
   for (const row of normalizeExplorerRows(response, ["units_unique"])) {
     const apiName = unitApiNameFromExplorerValue(row.units_unique ?? row.unit ?? row.units);
-    if (/^(?:TFT\d+_|DA_)/.test(apiName)) units.add(apiName);
+    if (!/^(?:TFT\d+_|DA_)/.test(apiName)) continue;
+    const placements = row.placement_count ?? row.places;
+    const sampleCount = Array.isArray(placements)
+      ? placements.reduce((sum, count) => sum + (Number(count) || 0), 0)
+      : Number(row.count ?? row.games ?? row.total ?? 0) || 0;
+    units.set(apiName, Math.max(units.get(apiName) ?? 0, sampleCount));
   }
-  return [...units].sort();
+  return [...units.entries()]
+    .map(([apiName, providerSampleCount]) => ({ apiName, providerSampleCount }))
+    .sort((left, right) => left.apiName.localeCompare(right.apiName));
 }
 
 function collectExplorerTraitFilterIds(response = {}) {
@@ -217,15 +260,18 @@ export function buildUnitCatalogFromCompsData(data = {}, options = {}) {
     }
   }
 
-  return [...byApiName.values()].sort((a, b) => a.apiName.localeCompare(b.apiName));
+  return collapseEquivalentUnits([...byApiName.values()]);
 }
 
 export function buildUnitCatalogFromExplorerRows(response = {}, options = {}) {
   const units = collectExplorerUnitApiNames(response);
   const byApiName = new Map();
 
-  for (const apiName of units) {
-    byApiName.set(apiName, unitRecord(apiName, options, "metatft_explorer"));
+  for (const { apiName, providerSampleCount } of units) {
+    byApiName.set(apiName, unitRecord(apiName, {
+      ...options,
+      providerSampleCount
+    }, "metatft_explorer"));
   }
 
   if (options.includeSeeds !== false) {
@@ -236,7 +282,7 @@ export function buildUnitCatalogFromExplorerRows(response = {}, options = {}) {
     }
   }
 
-  return [...byApiName.values()].sort((a, b) => a.apiName.localeCompare(b.apiName));
+  return collapseEquivalentUnits([...byApiName.values()]);
 }
 
 export function buildTraitCatalogFromCompsData(data = {}, options = {}) {
@@ -278,25 +324,7 @@ export function buildTraitCatalogFromExplorerRows(response = {}, options = {}) {
 }
 
 export function mergeCatalogUnits(baseUnits, generatedUnits) {
-  const merged = new Map();
-  for (const unit of baseUnits ?? []) merged.set(unit.apiName, unit);
-  for (const unit of generatedUnits ?? []) {
-    let existing = merged.get(unit.apiName);
-    if (/^DA_18_/i.test(unit.apiName)) {
-      for (const [apiName, candidate] of merged) {
-        if (/^TFT18_/i.test(apiName) && apiToken(apiName).toLowerCase() === apiToken(unit.apiName).toLowerCase()) {
-          existing ??= candidate;
-          merged.delete(apiName);
-        }
-      }
-    }
-    merged.set(unit.apiName, existing ? {
-      ...unit,
-      zhName: existing.zhName ?? unit.zhName,
-      aliases: compact([...(existing.aliases ?? []), ...(unit.aliases ?? [])])
-    } : unit);
-  }
-  return [...merged.values()].sort((a, b) => a.apiName.localeCompare(b.apiName));
+  return collapseEquivalentUnits([...(baseUnits ?? []), ...(generatedUnits ?? [])]);
 }
 
 export function mergeCatalogTraits(baseTraits, generatedTraits) {

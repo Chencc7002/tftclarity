@@ -1,5 +1,38 @@
 export const ITEM_ALIAS_OVERRIDES = [
   {
+    apiName: "DA_18_EmblemHunter",
+    zhName: "猎人纹章",
+    shortName: "猎人纹章",
+    preferredDisplayName: "猎人纹章",
+    aliases: ["猎手纹章"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_18_EmblemSprykin",
+    zhName: "约德尔人…纹章",
+    shortName: "约德尔人…纹章",
+    preferredDisplayName: "约德尔人…纹章",
+    aliases: ["约德尔人纹章", "小精灵纹章", "迅灵纹章"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_18_EmblemVanguard",
+    zhName: "重装战士纹章",
+    shortName: "重装战士纹章",
+    preferredDisplayName: "重装战士纹章",
+    aliases: ["前卫纹章"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn",
+    season: "TFT18"
+  },
+  {
     apiName: "TFT17_Item_HPTankEmblemItem",
     shortName: "斗士转",
     aliases: ["斗转", "斗士转", "斗士转职", "斗士纹章"],

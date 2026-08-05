@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import {
@@ -5150,10 +5151,12 @@ function decorateCompDetailAugments(augments, lookupResponse, updatedAt) {
   const lookup = augmentLookupRecords(lookupResponse);
   const eligibleEntries = augments.augments.map((augment) => {
     const record = lookup.get(augment.apiName);
+    const nameOverride = augmentAliasOverrideByApiName.get(augment.apiName);
     const rarity = normalizeCompDetailAugmentRarity(record?.rarity);
     return {
       apiName: augment.apiName,
-      name: String(record?.name ?? augment.apiName),
+      name: String(nameOverride?.zhName ?? record?.name ?? augment.apiName),
+      aliases: nameOverride?.aliases ?? [],
       iconUrl: metaTftAugmentIconUrl(record?.texture),
       tier: augment.tier,
       rarity,

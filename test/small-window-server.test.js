@@ -2292,6 +2292,53 @@ test("comp-detail HTTP route accepts a rendered card's MetaTFT identifiers", asy
   }
 });
 
+test("Set 18 comp details prefer the latest CommunityDragon augment names", async () => {
+  const apiName = "DA_18_RiftbeastTraitAugment";
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({ units: [], traits: [], items: [] }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {
+      async getCompDetails() {
+        return {
+          tft_set: "TFTSet18",
+          results: {
+            positioning: { units: { DA_18_Ahri: { positions: [{ cell: "cell_1", count: 1 }] } } }
+          }
+        };
+      },
+      async getCompAugmentTiers() {
+        return {
+          tft_set: "TFTSet18",
+          results: { 180100: { augments: [{ id: apiName, tier: "S" }] } }
+        };
+      },
+      async getAugmentLookup() {
+        return {
+          augments: [{
+            apiName,
+            name: "欧米茄之兽",
+            rarity: "Gold",
+            texture: "DA_18_RiftbeastTraitAugment"
+          }]
+        };
+      }
+    }
+  });
+
+  const result = await handleCompDetailRequest({
+    compId: "180100",
+    clusterId: "1801",
+    units: "DA_18_Ahri",
+    seasonContextId: "set18-pbe"
+  }, runtime);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.augmentRecommendations.entries[0]?.name, "欧米茄之怪");
+  assert.deepEqual(result.augmentRecommendations.entries[0]?.aliases, ["欧米茄之兽"]);
+});
+
 test("comp detail keeps compatible augments when positioning data is temporarily unavailable", async () => {
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog({ units: [], traits: [], items: [] }),
