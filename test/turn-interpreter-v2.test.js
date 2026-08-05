@@ -63,7 +63,7 @@ test("explicit champion Artifact rankings override a malformed provider frame", 
 test("action-only build follow-up reuses only a current visible unit result group", async () => {
   let providerCalls = 0;
   const response = await interpretTurn({
-    currentMessage: "怎么出装？",
+    currentMessage: "分别怎么出装？",
     conversationState: createConversationState({
       seasonContextId: "set17-live",
       activeTask: {

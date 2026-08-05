@@ -508,6 +508,7 @@ test("controlled conversation results tolerate catalog warnings without a query 
 });
 
 test("handleRecommendRequest returns official item encyclopedia details before recommendation logic", async () => {
+  const cacheStore = new MemoryCacheStore();
   const catalog = createCatalog({
     items: [{
       apiName: "TFT_Item_UnstableConcoction",
@@ -522,8 +523,9 @@ test("handleRecommendRequest returns official item encyclopedia details before r
   });
   const runtime = createSmallWindowRuntime({
     catalog,
-    cacheStore: new MemoryCacheStore(),
+    cacheStore,
     fetchItems: false,
+    conversationStateV2Mode: "on",
     officialItemDetails: new Map([["TFT_Item_UnstableConcoction", {
       apiName: "TFT_Item_UnstableConcoction",
       name: "正义之手",
@@ -538,7 +540,11 @@ test("handleRecommendRequest returns official item encyclopedia details before r
     }
   });
 
-  const { statusCode, payload } = await handleRecommendRequest({ input: "合剂是什么装备？" }, runtime);
+  const conversationId = "item-details-context";
+  const { statusCode, payload } = await handleRecommendRequest({
+    conversationId,
+    input: "合剂是什么装备？"
+  }, runtime);
 
   assert.equal(statusCode, 200);
   assert.equal(payload.type, "item_details");
@@ -551,6 +557,11 @@ test("handleRecommendRequest returns official item encyclopedia details before r
   assert.equal(payload.retrievalPlan.promptKey, null);
   assert.equal(payload.run.status, "completed");
   assert.equal(payload.run.toolCallCount, 1);
+  const context = cacheStore.getSessionState(`last_query:${conversationId}`, {
+    seasonContextId: "set17-live"
+  }).value;
+  assert.equal(context.activeTask.taskFrame.goal, "item_details");
+  assert.deepEqual(context.query.lockedItems, ["TFT_Item_UnstableConcoction"]);
 });
 
 test("handleRecommendRequest returns unit stats, ability, and three stable item recommendations", async () => {
@@ -665,6 +676,7 @@ test("handleRecommendRequest returns official trait effects and tiers", async ()
 });
 
 test("entity catalog returns current units and groups trait tiers", async () => {
+  const cacheStore = new MemoryCacheStore();
   const catalog = createCatalog({
     units: [
       { apiName: "TFT17_Xayah", zhName: "霞", cost: 4, aliases: ["霞"] },
@@ -678,8 +690,9 @@ test("entity catalog returns current units and groups trait tiers", async () => 
   });
   const runtime = createSmallWindowRuntime({
     catalog,
-    cacheStore: new MemoryCacheStore(),
+    cacheStore,
     fetchItems: false,
+    conversationStateV2Mode: "on",
     officialEntityDetails: {
       units: new Map([
         ["TFT17_Xayah", {
@@ -706,12 +719,19 @@ test("entity catalog returns current units and groups trait tiers", async () => 
       }]]),
       meta: { version: "16.14", season: "2026.S17" }
     },
-    recommendForInputImpl: async () => ({ itemRankings: [] })
+    recommendForInputImpl: (input, options) => recommendForInput(input, {
+      ...options,
+      response: fixtureRows
+    })
   });
 
   const units = await handleEntityCatalogRequest(runtime, { entityType: "unit" });
   const traits = await handleEntityCatalogRequest(runtime, { entityType: "trait" });
-  const naturalLanguage = await handleRecommendRequest({ input: "返回全部的棋子" }, runtime);
+  const conversationId = "unit-catalog-context";
+  const naturalLanguage = await handleRecommendRequest({
+    conversationId,
+    input: "返回全部的棋子"
+  }, runtime);
 
   assert.equal(units.type, "entity_catalog");
   assert.equal(units.entityType, "unit");
@@ -722,6 +742,27 @@ test("entity catalog returns current units and groups trait tiers", async () => 
   assert.equal(naturalLanguage.statusCode, 200);
   assert.equal(naturalLanguage.payload.type, "entity_catalog");
   assert.equal(naturalLanguage.payload.entityType, "unit");
+  const context = cacheStore.getSessionState(`last_query:${conversationId}`, {
+    seasonContextId: "set17-live"
+  }).value;
+  assert.equal(context.activeTask.taskFrame.goal, "entity_catalog");
+  assert.equal(context.lastResult.resultType, "entity_catalog_results");
+  assert.deepEqual(context.lastResult.shownIds.sort(), ["TFT17_MasterYi", "TFT17_Xayah"].sort());
+  assert.deepEqual(
+    context.lastResult.shownEntities.map((entry) => entry.entityType),
+    ["unit", "unit"]
+  );
+  const followUp = await handleRecommendRequest({
+    conversationId,
+    input: "分别怎么出装"
+  }, runtime);
+  assert.equal(followUp.statusCode, 200);
+  assert.equal(
+    followUp.payload.type,
+    "unit_builds_batch_results",
+    JSON.stringify(followUp.payload)
+  );
+  assert.equal(followUp.payload.clarification, null);
 });
 
 test("entity detail endpoint contract opens a catalog entry by stable id", async () => {
@@ -2937,10 +2978,73 @@ test("structured quick tasks bypass semantic interpretation and use the shared r
   assert.equal(capturedOptions.useStructuredParser, "never");
   assert.equal(capturedOptions.semanticShadow, false);
   assert.equal(capturedOptions.useSession, false);
+  assert.equal(capturedOptions.persistSession, true);
   assert.equal(capturedOptions.bypassQueryCache, false);
   assert.equal(capturedOptions.queryTtlMs, QUICK_TASK_CACHE_RETENTION_MS);
   assert.equal(capturedOptions.queryRefreshAfterMs, 45 * 60 * 1000);
   assert.equal(providerCalls, 0);
+});
+
+test("a structured quick task becomes the active context for a natural-language modification", async () => {
+  const cacheStore = new MemoryCacheStore();
+  let providerMessages = null;
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore,
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    conversationStateV2Mode: "on",
+    turnDeltaProvider: async ({ messages }) => {
+      providerMessages = messages;
+      return {
+        schemaVersion: "turn-delta.v1",
+        dialogueAct: "modify",
+        taskRelation: "modify",
+        explicitTaskFrame: null,
+        entityOperations: [],
+        constraintOperations: [{ operation: "set", field: "starLevel", value: [2] }],
+        presentation: {
+          requestedCount: null,
+          pageDirection: null,
+          avoidSeen: false,
+          resultReference: null
+        },
+        confidence: 1,
+        ambiguities: []
+      };
+    },
+    recommendForInputImpl: (input, options) => recommendForInput(input, {
+      ...options,
+      response: fixtureRows
+    })
+  });
+  const conversationId = "quick-task-follow-up";
+
+  const first = await handleRecommendRequest({
+    conversationId,
+    input: "查询霞的当前版本最稳三件装备",
+    seasonContextId: "set17-live",
+    quickTask: {
+      schemaVersion: "quick-task.v1",
+      id: "unit-build",
+      operation: "unit_build_rankings",
+      arguments: { champion: "霞" }
+    }
+  }, runtime);
+  const second = await handleRecommendRequest({
+    conversationId,
+    input: "修改条件为2星",
+    seasonContextId: "set17-live"
+  }, runtime);
+
+  assert.equal(first.statusCode, 200);
+  assert.equal(first.payload.type, "unit_build_rankings");
+  assert.equal(second.statusCode, 200);
+  assert.equal(second.payload.type, "unit_build_rankings");
+  assert.equal(second.payload.query.unit, "TFT17_Xayah");
+  assert.deepEqual(second.payload.query.starLevel, [2]);
+  assert.match(providerMessages[1].content, /TFT17_Xayah/u);
 });
 
 test("Set 17 Artifact carrier quick task resolves 巨九 through the real structured shortcut", async () => {

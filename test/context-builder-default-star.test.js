@@ -53,3 +53,47 @@ test("the live unit catalog carries patch-scoped costs used by default-star deci
   assert.deepEqual(buildQueryContext(parsed("TFT17_Veigar"), { catalog }).starLevel, [3]);
   assert.deepEqual(buildQueryContext(parsed("TFT17_Xayah"), { catalog }).starLevel, [2]);
 });
+
+test("locked special items widen an inherited ordinary item policy", () => {
+  const artifact = "TFT_Item_TestArtifact";
+  const radiant = "TFT_Item_TestRadiant";
+  const catalog = createCatalog({
+    units: [{ apiName: "TFT17_Xayah", aliases: [], cost: 4 }],
+    items: [
+      {
+        apiName: artifact,
+        zhName: "测试神器",
+        aliases: [],
+        category: "artifact",
+        current: true,
+        obtainable: true
+      },
+      {
+        apiName: radiant,
+        zhName: "测试光明装",
+        aliases: [],
+        category: "radiant",
+        current: true,
+        obtainable: true
+      }
+    ]
+  });
+  const queryFor = (lockedItems, itemPolicy = "ordinary_only") => buildQueryContext({
+    ...parsed("TFT17_Xayah"),
+    lockedItems,
+    ownedItems: lockedItems,
+    itemPolicy
+  }, { catalog });
+
+  const artifactQuery = queryFor([artifact]);
+  const radiantQuery = queryFor([radiant]);
+  const mixedQuery = queryFor([artifact, radiant]);
+
+  assert.equal(artifactQuery.itemPolicy, "include_artifact");
+  assert.equal(radiantQuery.itemPolicy, "include_radiant");
+  assert.equal(mixedQuery.itemPolicy, "include_special");
+  assert.equal(
+    artifactQuery.assumptions.find((entry) => entry.key === "item_policy").source,
+    "current_input"
+  );
+});

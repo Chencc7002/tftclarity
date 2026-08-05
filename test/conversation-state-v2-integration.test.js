@@ -294,6 +294,81 @@ test("required direct two-turn examples preserve the active task and apply only 
   }
 });
 
+test("changing carried equipment widens an inherited ordinary policy for Artifacts and Radiant items", async () => {
+  const baseCatalog = createCatalog();
+  const ordinary = "TFT_Item_GuinsoosRageblade";
+  const infinityEdge = "TFT_Item_InfinityEdge";
+  const artifact = "TFT_Item_TestConversationArtifact";
+  const radiant = "TFT_Item_TestConversationRadiant";
+  const catalog = createCatalog({
+    units: baseCatalog.units,
+    items: [
+      ...baseCatalog.items,
+      {
+        apiName: artifact,
+        zhName: "测试神器",
+        aliases: ["测试神器"],
+        category: "artifact",
+        current: true,
+        obtainable: true
+      },
+      {
+        apiName: radiant,
+        zhName: "测试光明装",
+        aliases: ["测试光明装"],
+        category: "radiant",
+        current: true,
+        obtainable: true
+      }
+    ]
+  });
+  const response = [
+    [ordinary, infinityEdge, "TFT_Item_GiantSlayer"],
+    [artifact, ordinary, infinityEdge],
+    [radiant, ordinary, infinityEdge]
+  ].map((items, index) => ({
+    unit_builds: `TFT17_Xayah&${items.join("|")}`,
+    placement_count: [40 - index, 30, 20, 10, 5, 4, 3, 2]
+  }));
+  const cases = [
+    { item: artifact, input: "修改已携带测试神器", policy: "include_artifact", label: /含神器装备/u },
+    { item: radiant, input: "修改已携带测试光明装", policy: "include_radiant", label: /含光明装备/u }
+  ];
+
+  for (const testCase of cases) {
+    const cacheStore = new MemoryCacheStore();
+    const options = {
+      cacheStore,
+      sessionKey: `v2-locked-policy-${testCase.policy}`,
+      catalog,
+      response,
+      preferences: { minSamples: 1, itemPolicy: "ordinary_only" },
+      conversationStateV2Mode: "on",
+      semanticShadow: false,
+      turnInterpreter: queuedInterpreter([
+        newTask(unitFrame("TFT17_Xayah", { itemPolicy: "ordinary_only" })),
+        modify([{
+          operation: "set",
+          field: "lockedItems",
+          value: [entity(testCase.input.replace("修改已携带", ""), "item", testCase.item)]
+        }])
+      ])
+    };
+
+    await recommendForInput("霞带什么装备", options);
+    const changed = await recommendForInput(testCase.input, options);
+
+    assert.deepEqual(changed.query.lockedItems, [testCase.item]);
+    assert.equal(changed.query.itemPolicy, testCase.policy);
+    assert.equal(changed.query.validation.valid, true);
+    assert.match(changed.text, testCase.label);
+    assert.equal(
+      changed.query.assumptions.find((entry) => entry.key === "item_policy").value,
+      testCase.policy
+    );
+  }
+});
+
 test("composition constraints can be added, removed, and replaced without changing the task", async () => {
   const cacheStore = new MemoryCacheStore();
   const turnInterpreter = queuedInterpreter([

@@ -74,6 +74,7 @@ import {
   createCompsPageSnapshot,
   createConclusionProviderFromConfig,
   createCompEnrichmentService,
+  conversationResultStateFromResponse,
   createEmbeddingProviderFromConfig,
   createHybridAnswerService,
   createSeasonContextService,
@@ -1673,27 +1674,68 @@ async function conversationStateEntry(runtime, scope, conversationId, seasonCont
 }
 
 async function persistDetailTaskFrame(payload, runtime, options = {}) {
-  if (!payload?.taskFrame || !runtime.cacheStore?.setSessionState) return;
+  const taskFrame = options.taskFrame ?? payload?.taskFrame;
+  if (!taskFrame || !runtime.cacheStore?.setSessionState) return;
   const current = createConversationState(
     await conversationStateEntry(runtime, options.scope, options.conversationId, options.seasonContextId) ?? {}
   );
   const updatedAt = new Date().toISOString();
+  const lastResult = options.result
+    ? conversationResultStateFromResponse(options.result, { updatedAt })
+    : null;
   const next = createConversationState({
     ...current,
     activeTask: {
-      taskFrame: payload.taskFrame,
-      legacyIntent: payload.type,
+      taskFrame,
+      legacyIntent: options.result?.type ?? payload.type,
       updatedAt
     },
+    ...(lastResult ? { lastResult, lastResultIds: lastResult.shownIds } : {}),
     pendingClarification: null,
     updatedAt,
-    query: payload.query ?? null
+    query: options.query ?? payload.query ?? null
   });
   await runtime.cacheStore.setSessionState(
     requestSessionKey(options.scope, options.conversationId),
     next,
     { seasonContextId: options.seasonContextId }
   );
+}
+
+function entityCatalogConversationContext(payload) {
+  const entityType = payload?.entityType;
+  const query = {
+    intent: "entity_catalog",
+    entityType,
+    filters: payload?.filters ?? {}
+  };
+  return {
+    taskFrame: createTaskFrame({
+      domain: "tft",
+      action: "search",
+      goal: "entity_catalog",
+      constraints: {
+        targetEntityType: entityType === "trait" ? "trait" : "champion",
+        selectionScope: "current_visible_results"
+      },
+      expectedOutput: ["results", "entities"],
+      capabilityRequirements: ["entity_catalog_filtering"],
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    }),
+    query,
+    result: {
+      type: "entity_catalog_results",
+      entityType,
+      results: (payload?.items ?? []).map((entry) => ({
+        apiName: entry.apiName,
+        name: entry.name ?? entry.zhName ?? entry.displayName ?? entry.apiName
+      })),
+      total: payload?.pagination?.total ?? payload?.items?.length ?? 0,
+      filters: payload?.filters ?? {},
+      query
+    }
+  };
 }
 
 async function queryCompositionMemberStatistics(toolInput, catalog, runtime, options = {}) {
@@ -4213,6 +4255,13 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       aliasMemory,
       preferences
     };
+    const conversationContext = entityCatalogConversationContext(payload);
+    await persistDetailTaskFrame(payload, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id,
+      ...conversationContext
+    });
     return completeResponse(payload);
   }
   const entityDetailsFastPathEligible = ["unit-details", "trait-details"].includes(quickTask?.id)
@@ -4255,7 +4304,17 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     : null;
   if (itemDetailsPayload) {
     const payload = attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog);
-    return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
+    const executed = await executeRegisteredDetailPayload(payload, requestRuntime, context);
+    await persistDetailTaskFrame(executed, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id,
+      query: {
+        intent: "item_details",
+        lockedItems: executed.item?.apiName ? [executed.item.apiName] : []
+      }
+    });
+    return completeResponse(executed);
   }
   const parsedForIntent = quickTask
     ? directParsedForQuickTask(quickTask, input, catalog, preferences)
@@ -4546,6 +4605,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       directParsed: parsedForIntent,
       semanticShadow: false,
       useSession: false,
+      persistSession: true,
       queryTtlMs: quickCachePolicy.retentionMs,
       queryRefreshAfterMs: quickCachePolicy.refreshAfterMs,
       queryHardRetentionMs: quickCachePolicy.retentionMs,
