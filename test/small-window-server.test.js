@@ -935,6 +935,7 @@ test("handleRecommendRequest returns the conversational item-ranking schema", as
     fetchItems: false,
     metaTFTClient: {},
     compsClient: {},
+    conversationStateV2Mode: "on",
     recommendForInputImpl: (input, options) => recommendForInput(input, {
       ...options,
       response: itemRows
@@ -957,6 +958,14 @@ test("handleRecommendRequest returns the conversational item-ranking schema", as
   assert.equal(payload.source.endpoint, "/tft-explorer-api/unit_builds/TFT17_Xayah");
   assert.equal(kraken.name, "海妖之怒");
   assert.equal(kraken.copyCounts.some((copy) => copy.copyCount === 2), true);
+
+  const { payload: exactWordingPayload } = await handleRecommendRequest({
+    conversationId: "exact-single-item-ranking-s17",
+    input: "霞单装备排行",
+    preferences: { minSamples: 10 }
+  }, runtime);
+  assert.equal(exactWordingPayload.type, "unit_item_rankings");
+  assert.equal(exactWordingPayload.query.unit, "TFT17_Xayah");
 
   const { payload: emptySpecialPayload } = await handleRecommendRequest({
     conversationId: "empty-special-category",
@@ -2283,6 +2292,53 @@ test("comp-detail HTTP route accepts a rendered card's MetaTFT identifiers", asy
   }
 });
 
+test("Set 18 comp details prefer the latest CommunityDragon augment names", async () => {
+  const apiName = "DA_18_RiftbeastTraitAugment";
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({ units: [], traits: [], items: [] }),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {
+      async getCompDetails() {
+        return {
+          tft_set: "TFTSet18",
+          results: {
+            positioning: { units: { DA_18_Ahri: { positions: [{ cell: "cell_1", count: 1 }] } } }
+          }
+        };
+      },
+      async getCompAugmentTiers() {
+        return {
+          tft_set: "TFTSet18",
+          results: { 180100: { augments: [{ id: apiName, tier: "S" }] } }
+        };
+      },
+      async getAugmentLookup() {
+        return {
+          augments: [{
+            apiName,
+            name: "欧米茄之兽",
+            rarity: "Gold",
+            texture: "DA_18_RiftbeastTraitAugment"
+          }]
+        };
+      }
+    }
+  });
+
+  const result = await handleCompDetailRequest({
+    compId: "180100",
+    clusterId: "1801",
+    units: "DA_18_Ahri",
+    seasonContextId: "set18-pbe"
+  }, runtime);
+
+  assert.equal(result.ok, true);
+  assert.equal(result.augmentRecommendations.entries[0]?.name, "欧米茄之怪");
+  assert.deepEqual(result.augmentRecommendations.entries[0]?.aliases, ["欧米茄之兽"]);
+});
+
 test("comp detail keeps compatible augments when positioning data is temporarily unavailable", async () => {
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog({ units: [], traits: [], items: [] }),
@@ -3122,6 +3178,17 @@ test("all PBE equipment shortcuts resolve form entities directly and use patch 1
     assert.equal(response.payload.query.unit, unit, id);
     assert.equal(response.payload.query.patch, "18.1", id);
   }
+
+  const naturalLanguageResponse = await handleRecommendRequest({
+    input: "Ahri单装备排行",
+    seasonContextId: "set18-pbe",
+    conversationId: "pbe-natural-single-item-ranking",
+    preferences: { minSamples: 1 }
+  }, runtime);
+  assert.equal(naturalLanguageResponse.statusCode, 200);
+  assert.equal(naturalLanguageResponse.payload.type, "unit_item_rankings");
+  assert.equal(naturalLanguageResponse.payload.query.unit, unit);
+  assert.equal(naturalLanguageResponse.payload.query.patch, "18.1");
 
   assert.ok(plans.length >= tasks.length);
   for (const plan of plans) {

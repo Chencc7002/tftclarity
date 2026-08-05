@@ -148,3 +148,22 @@ test("trait candidates across different base apiNames stay ambiguous", async () 
   assert.equal(linked.resolvedId, null);
   assert.ok(linked.candidates.length >= 2);
 });
+
+test("Set 18 official and adaptive provider ids link as one champion", async () => {
+  const adaptiveCatalog = createCatalog({
+    units: [
+      { apiName: "DA_18_MasterYi_AD", canonicalApiName: "TFT18_MasterYi", zhName: "易", aliases: ["易", "Master Yi"], current: true },
+      { apiName: "TFT18_MasterYi", canonicalApiName: "TFT18_MasterYi", zhName: "易", aliases: ["易", "Master Yi"], current: true }
+    ],
+    items: [],
+    traits: []
+  });
+  const linked = await linkEntityMention({
+    rawText: "易",
+    expectedType: "champion"
+  }, { catalog: adaptiveCatalog, patch: "18.1" });
+
+  assert.equal(linked.resolvedId, "DA_18_MasterYi_AD");
+  assert.equal(linked.canonicalName, "易");
+  assert.equal(linked.candidates.length, 1);
+});

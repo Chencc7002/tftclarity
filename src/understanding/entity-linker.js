@@ -1,5 +1,6 @@
 import { normalizeAlias } from "../core/normalizer.js";
 import { pinyinAliasesForRecord } from "../data/pinyin-aliases.js";
+import { canonicalUnitIdentity, preferEquivalentUnit } from "../data/unit-identity.js";
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
 import { resolveGameConcept } from "./concept-resolver.js";
 
@@ -68,8 +69,16 @@ function aliases(record, expectedType) {
 }
 
 function candidate(record, expectedType, value = {}) {
+  const canonicalApiName = expectedType === "champion"
+    ? record.canonicalApiName
+      ?? array(record.aliases).find((alias) => /^TFT18_/i.test(String(alias ?? "")))
+    : null;
   return {
     id: String(recordId(record, expectedType)),
+    ...(canonicalApiName ? { canonicalApiName: String(canonicalApiName) } : {}),
+    ...(Number(record.providerSampleCount) > 0
+      ? { providerSampleCount: Number(record.providerSampleCount) }
+      : {}),
     canonicalName: String(canonicalName(record, expectedType)),
     type: expectedType,
     version: String(value.version ?? record.patch ?? "current"),
@@ -83,8 +92,13 @@ function deduplicateCandidates(values) {
   const byId = new Map();
   for (const value of values) {
     if (!value?.id) continue;
-    const existing = byId.get(value.id);
-    if (!existing || value.confidence > existing.confidence) byId.set(value.id, value);
+    const identity = value.type === "champion" ? canonicalUnitIdentity(value) : value.id;
+    const existing = byId.get(identity);
+    if (!existing || value.confidence > existing.confidence) {
+      byId.set(identity, value);
+    } else if (value.confidence === existing.confidence && value.type === "champion") {
+      byId.set(identity, preferEquivalentUnit(existing, value));
+    }
   }
   return [...byId.values()].sort((left, right) => (
     right.confidence - left.confidence || left.canonicalName.localeCompare(right.canonicalName)

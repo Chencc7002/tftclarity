@@ -1,4 +1,5 @@
 import { createCatalog } from "../data/static-data.js";
+import { canonicalUnitIdentity, preferEquivalentUnit } from "../data/unit-identity.js";
 import { normalizeAlias } from "./normalizer.js";
 
 function buildAliasCandidates(records, entityType, getTarget) {
@@ -57,6 +58,9 @@ function ambiguityCandidate(match) {
 }
 
 function ambiguityTargetKey(candidate) {
+  if (candidate.entityType === "unit") {
+    return canonicalUnitIdentity(candidate.record ?? candidate.target);
+  }
   if (candidate.entityType === "trait") {
     return `trait:${candidate.record.apiName ?? candidate.target}`;
   }
@@ -117,9 +121,10 @@ function findMatches(input, candidates) {
     const candidatesByTarget = new Map();
     for (const candidate of sameSpan) {
       const targetKey = ambiguityTargetKey(candidate);
-      if (!candidatesByTarget.has(targetKey)) {
-        candidatesByTarget.set(targetKey, ambiguityCandidate(candidate));
-      }
+      const existing = candidatesByTarget.get(targetKey);
+      candidatesByTarget.set(targetKey, candidate.entityType === "unit"
+        ? preferEquivalentUnit(existing, candidate)
+        : existing ?? candidate);
     }
 
     if (candidatesByTarget.size > 1) {
@@ -130,7 +135,7 @@ function findMatches(input, candidates) {
         inputFragment: match.normalizedAlias,
         start: match.start,
         end: match.end,
-        candidates: [...candidatesByTarget.values()]
+        candidates: [...candidatesByTarget.values()].map(ambiguityCandidate)
           .sort((left, right) => left.label.localeCompare(right.label))
       });
       continue;
@@ -139,7 +144,7 @@ function findMatches(input, candidates) {
     for (let index = match.start; index < match.end; index += 1) {
       occupied.add(index);
     }
-    accepted.push(sameSpan[0] ?? match);
+    accepted.push([...candidatesByTarget.values()][0] ?? match);
   }
 
   return {

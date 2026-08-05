@@ -94,13 +94,29 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
   const normalizedInput = normalizeAlias(options.input);
   const explicitTrendRequest = /(?:阵容|版本|当前).{0,8}(?:趋势|上升|下降)|(?:趋势|上升|下降).{0,8}阵容/u.test(normalizedInput);
   const explicitPopularRequest = /(?:热门阵容|阵容热门|最热门|热度|选择率)/u.test(normalizedInput);
+  const explicitSingleItemRankingRequest = Boolean(unit) && (
+    /(?:单件(?:装备)?|单装备|核心装备|核心装).{0,10}(?:排行|排名|榜|优先级|表现|最好|最强|怎么排|哪个好|哪个强)/u.test(normalizedInput)
+    || /(?:排行|排名|榜|优先级|表现|最好|最强|怎么排|哪个好|哪个强).{0,10}(?:单件(?:装备)?|单装备|核心装备|核心装)/u.test(normalizedInput)
+  );
+  const explicitSpecialItemRankingRequest = Boolean(unit)
+    && !/(?:三件|3件|三件套)/u.test(normalizedInput)
+    && (
+      /(?:神器|光明装备|光明装|纹章|转职).{0,10}(?:排行|排名|榜|优先级|表现|最好|最强|哪个好|哪个强)/u.test(normalizedInput)
+      || /(?:排行|排名|榜|优先级|表现|最好|最强|哪个好|哪个强).{0,10}(?:神器|光明装备|光明装|纹章|转职)/u.test(normalizedInput)
+    );
+  const explicitUnitItemRankingRequest = explicitSingleItemRankingRequest
+    || explicitSpecialItemRankingRequest;
   const routedIntent = intentFor(frame, options.executionPlan);
   // Deterministic wording must win over a model/default plan here. Otherwise a
-  // clearly requested trend page is silently degraded to the generic rankings
-  // contract, which also makes an old cached result look like a fresh answer.
-  const intent = explicitTrendRequest && ["comp_rankings", "comp_trends", "comp_analysis"].includes(routedIntent)
-    ? "comp_trends"
-    : routedIntent;
+  // clearly requested result type is silently degraded to a generic plan. In
+  // particular, unit_builds serves both three-item builds and single-item
+  // statistics, so the tool name alone cannot distinguish those contracts.
+  const intent = explicitUnitItemRankingRequest
+    && ["unit_best_3_items", "unit_build_rankings", "unit_item_rankings"].includes(routedIntent)
+    ? "unit_item_rankings"
+    : explicitTrendRequest && ["comp_rankings", "comp_trends", "comp_analysis"].includes(routedIntent)
+      ? "comp_trends"
+      : routedIntent;
   const carrierItem = intent === "item_carrier_rankings"
     ? resolvedValue(itemCandidates[0])
     : null;

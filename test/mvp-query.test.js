@@ -1517,6 +1517,22 @@ test("deterministic alias collisions require explicit entity clarification", () 
   assert.equal(longerAlias.parsed.parser.entityAmbiguities.length, 0);
 });
 
+test("Set 18 official and adaptive ids from an old catalog are not treated as different champions", () => {
+  const catalog = createCatalog({
+    units: [
+      { apiName: "DA_18_MasterYi_AD", zhName: "易", aliases: ["易", "Master Yi"], current: true },
+      { apiName: "TFT18_MasterYi", zhName: "易", aliases: ["易", "Master Yi"], current: true }
+    ],
+    traits: [],
+    items: []
+  });
+  const planned = planQuery("查询易的当前版本最稳三件装备", { catalog });
+
+  assert.equal(planned.validation.valid, true);
+  assert.equal(planned.query.unit, "DA_18_MasterYi_AD");
+  assert.equal(planned.parsed.parser.entityAmbiguities.length, 0);
+});
+
 test("alias collisions are not overwritten by session inheritance or automatic LLM parsing", async () => {
   const base = createCatalog();
   const catalog = createCatalog({
