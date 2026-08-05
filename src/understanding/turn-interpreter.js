@@ -289,6 +289,7 @@ function clarifiableFirstTurnFrame(frame) {
 function isExplicitSelfContainedTask(currentMessage) {
   const input = String(currentMessage ?? "").trim();
   if (!input) return false;
+  if (isActionOnlyBuildFollowup(input)) return false;
   if (/^(?:怎么|如何|咋|怎样)(?:出装|配装|给装备)/u.test(input)) return false;
   if (/(?:这个|那个|这些|那些|上述|上一个|刚才|继续|接着|再来|再看|改成|换成|第[一二三四五六七八九十\d]+|它们?|他们)/u.test(input)) {
     return false;

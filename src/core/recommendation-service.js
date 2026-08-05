@@ -2274,7 +2274,11 @@ function serializeResultIds(rankedBuilds = []) {
 }
 
 async function writeLastQuerySession(result, options) {
-  if (options.useSession === false) return null;
+  // Structured quick tasks deliberately skip reading session state so an old
+  // task cannot leak into their deterministic input. They still need to write
+  // their successful result, otherwise the next natural-language turn has no
+  // active task to modify.
+  if (options.useSession === false && options.persistSession !== true) return null;
   const conversation = options.conversationStateV2Context;
   if (conversation?.mode === "on") {
     result.conversation = {
