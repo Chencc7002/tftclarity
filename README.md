@@ -2,7 +2,7 @@
 
 > 听得懂中文俗称，帮你快速得到结论，也说清楚结论从哪里来。
 
-[在线体验](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [架构与可信度](#架构与可信度) · [部署指南](docs/deploy-tencent-cloud-v1.md)
+[在线体验：https://tftclarity.cn/](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [架构与可信度](#架构与可信度) · [部署指南](docs/deploy-tencent-cloud-v1.md)
 
 ![tftclarity 产品首页](docs/images/tftclarity-overview.png)
 
