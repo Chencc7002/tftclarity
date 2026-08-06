@@ -280,17 +280,30 @@ test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware
   assert.match(appJs, /WallpaperController/);
   assert.match(wallpaperCatalog, /"set-17"/);
   assert.match(wallpaperCatalog, /cosmic-court\.jpg/);
-  assert.match(wallpaperCatalog, /stargazer-convergence\.png/);
-  assert.match(wallpaperCatalog, /yasuo\.png/);
+  assert.match(wallpaperCatalog, /stargazer-convergence\.[a-f0-9]{12}\.webp/);
+  assert.match(wallpaperCatalog, /yasuo\.[a-f0-9]{12}\.webp/);
   assert.match(wallpaperCatalog, /soraka\.jpg/);
+  assert.match(wallpaperCatalog, /thumbUrl/);
   assert.match(wallpaperCatalog, /focusSize: "cover"/);
   assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/cosmic-court.jpg", import.meta.url)).size > 100_000);
   assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/stargazer-convergence.png", import.meta.url)).size > 100_000);
   assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/yasuo.png", import.meta.url)).size > 100_000);
   assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/soraka.jpg", import.meta.url)).size > 100_000);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/stargazer-convergence.d9a32361f3ae.webp", import.meta.url)).size < 500_000);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-17/yasuo.ae30569d178b.webp", import.meta.url)).size < 300_000);
+  for (const thumbnail of [
+    "cosmic-court.thumb.f8bac1dea835.webp",
+    "stargazer-convergence.thumb.d7b5ce4d3531.webp",
+    "yasuo.thumb.15fb81e7d07a.webp",
+    "soraka.thumb.f4d7362f79f0.webp"
+  ]) {
+    assert.ok(statSync(new URL(`../src/app/small-window-ui/assets/wallpapers/set-17/${thumbnail}`, import.meta.url)).size < 100_000);
+  }
   assert.match(wallpaperController, /tftagent\.wallpaperEnabled/);
   assert.match(wallpaperController, /tftagent\.wallpaperId/);
   assert.match(wallpaperController, /populateMobileOptions/);
+  assert.match(wallpaperController, /loadMobileThumbnails/);
+  assert.match(wallpaperController, /dataset\.wallpaperThumb/);
   assert.match(wallpaperController, /setMobileMenuOpen/);
   assert.match(wallpaperController, /data-wallpaper-id/);
   assert.match(wallpaperController, /mobileToggle\.setAttribute\("aria-checked"/);

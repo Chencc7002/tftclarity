@@ -22,10 +22,15 @@ import {
   DEFAULT_SEASON_CONTEXT_ID,
   DEFAULT_QUERY_OPTIONS,
   JsonFileCacheStore,
+  ConclusionJobCoordinator,
+  ConclusionWorker,
+  MetaTftLiveProvider,
   MetaTFTClient,
   SESSION_LAST_QUERY_KEY,
   SQLiteCacheStore,
   SQLiteSemanticDocumentStore,
+  createProviderRouter,
+  createStorageRuntime,
   applyEnabledEntityAliasesFromStore,
   buildEntityAliasOverrideDraft,
   buildCompRankings,
@@ -62,6 +67,7 @@ import {
   resolveConclusionProviderConfig,
   resolveEmbeddingProviderConfig,
   retrieveSemanticPlan,
+  serializeConclusionPayload,
   resolveStructuredParserConfig
 } from "../index.js";
 
@@ -94,7 +100,8 @@ const CONTENT_TYPES = new Map([
   [".svg", "image/svg+xml; charset=utf-8"],
   [".jpg", "image/jpeg"],
   [".jpeg", "image/jpeg"],
-  [".png", "image/png"]
+  [".png", "image/png"],
+  [".webp", "image/webp"]
 ]);
 const VALID_ITEM_POLICIES = new Set([
   "ordinary_only",
@@ -401,6 +408,12 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
   if (cachePath) cache.cachePath = String(cachePath);
 
   return {
+    processRole: runtime.processRole ?? "all",
+    storage: runtime.storageRuntime ? {
+      persistent: runtime.storageRuntime.config.persistentStore,
+      ephemeral: runtime.storageRuntime.config.ephemeralStore,
+      memoryFallbackAllowed: runtime.storageRuntime.config.allowMemoryFallback
+    } : null,
     cache,
     structuredParser: summarizeStructuredParserConfig(runtime.structuredParserConfig ?? {}),
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
@@ -1053,6 +1066,7 @@ async function stableUnitItems(apiName, catalog, runtime, context = {}) {
     catalog,
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
+    statsProvider: runtime.statsProvider,
     compsData: context.compsData,
     cacheStore: runtime.cacheStore,
     preferences: { ...(context.preferences ?? {}), minSamples: 0, itemPolicy: "ordinary_only" },
@@ -1602,6 +1616,12 @@ export function createSmallWindowRuntime(options = {}) {
     rankingsTimeoutMs: compsOptions.rankingsTimeoutMs ?? requestTimeouts.compRankingsTimeoutMs
   });
   const cacheStore = options.cacheStore ?? createSmallWindowCacheStore(options);
+  const statsProvider = options.statsProvider ?? new MetaTftLiveProvider({
+    explorerClient: metaTFTClient,
+    compsClient,
+    version: options.providerVersion ?? "metatft-live.v1"
+  });
+  const providerRouter = options.providerRouter ?? createProviderRouter({ metatft: statsProvider }, options.providerConfig ?? {}, options.env ?? process.env);
   const cacheStoreInfo = summarizeCacheStore(options, cacheStore);
   const conclusionGeneratorConfig = options.conclusionGeneratorConfig ?? (options.conclusionProvider
     ? {
@@ -1638,6 +1658,8 @@ export function createSmallWindowRuntime(options = {}) {
     metaTFTClient,
     catalogMetaTFTClient,
     compsClient,
+    statsProvider,
+    providerRouter,
     cacheStore,
     cacheStoreInfo,
     requestTimeouts: {
@@ -1675,7 +1697,11 @@ export function createSmallWindowRuntime(options = {}) {
     structuredParserConfig: options.structuredParserConfig ?? null,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
-    conclusionJobs: new Map(),
+    conclusionJobs: options.conclusionJobCoordinator ? null : new Map(),
+    conclusionJobCoordinator: options.conclusionJobCoordinator ?? null,
+    conclusionWorker: options.conclusionWorker ?? null,
+    storageRuntime: options.storageRuntime ?? null,
+    processRole: options.processRole ?? options.storageRuntime?.config?.processRole ?? "all",
     conclusionJobTtlMs: Math.max(1000, Number(options.conclusionJobTtlMs ?? DEFAULT_CONCLUSION_JOB_TTL_MS)),
     conclusionJobLimit: Math.max(8, Number(options.conclusionJobLimit ?? DEFAULT_CONCLUSION_JOB_LIMIT)),
     conclusionStreamIntervalMs: Math.max(0, Number(options.conclusionStreamIntervalMs ?? DEFAULT_CONCLUSION_STREAM_INTERVAL_MS)),
@@ -1717,12 +1743,51 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
+  const storageRequested = Boolean(options.storageRuntime
+    || options.persistentStore
+    || options.ephemeralStore
+    || env.TFT_AGENT_PERSISTENT_STORE
+    || env.TFT_AGENT_EPHEMERAL_STORE);
+  const storageRuntime = options.storageRuntime ?? (storageRequested
+    ? await createStorageRuntime(options, env)
+    : null);
+  const conclusionJobCoordinator = options.conclusionJobCoordinator ?? (storageRuntime?.ephemeral?.createConclusionJob
+    ? new ConclusionJobCoordinator({
+      store: storageRuntime.ephemeral,
+      ttlMs: storageRuntime.config.conclusionJobTtlMs,
+      model: conclusionRuntime.conclusionGeneratorConfig?.model
+    })
+    : null);
+  const conclusionWorker = options.conclusionWorker ?? (conclusionJobCoordinator && ["all", "worker"].includes(storageRuntime.config.processRole)
+    ? new ConclusionWorker({
+      store: storageRuntime.ephemeral,
+      persistentStore: storageRuntime.persistent,
+      provider: conclusionRuntime.conclusionProvider,
+      providerConfig: conclusionRuntime.conclusionGeneratorConfig,
+      attempts: storageRuntime.config.conclusionJobAttempts,
+      backoffMs: storageRuntime.config.conclusionJobBackoffMs,
+      concurrency: storageRuntime.config.workerConcurrency,
+      env
+    })
+    : null);
   const runtimeOptions = {
     ...options,
     ...requestTimeouts,
     ...structuredParserRuntime,
     ...conclusionRuntime,
     ...semanticRuntime,
+    ...(storageRuntime ? {
+      storageRuntime,
+      cacheStore: storageRuntime.store,
+      cacheStoreInfo: {
+        type: `${storageRuntime.config.persistentStore}+${storageRuntime.config.ephemeralStore}`,
+        persistent: storageRuntime.config.persistentStore !== "memory"
+      },
+      conclusionJobCoordinator,
+      conclusionWorker,
+      processRole: storageRuntime.config.processRole,
+      conclusionJobTtlMs: storageRuntime.config.conclusionJobTtlMs
+    } : {}),
     adminToken: options.adminToken ?? env.TFT_AGENT_ADMIN_TOKEN,
     queryEventRetentionDays: options.queryEventRetentionDays
       ?? env.TFT_AGENT_QUERY_EVENT_RETENTION_DAYS
@@ -1731,10 +1796,11 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
   const finalizeRuntime = (runtime) => {
     runtime.accessService = options.accessService
       ?? createAnonymousAccessService(runtime, options.publicAccess ?? {}, env);
+    runtime.conclusionWorker?.start?.();
     return runtime;
   };
 
-  if (options.cacheStore) return finalizeRuntime(createSmallWindowRuntime(runtimeOptions));
+  if (runtimeOptions.cacheStore) return finalizeRuntime(createSmallWindowRuntime(runtimeOptions));
 
   const { type, cachePath } = resolveSmallWindowCacheOptions(options, env);
   if (type !== "sqlite") {
@@ -2091,7 +2157,7 @@ export async function prewarmSmallWindowCatalog(runtime) {
 function quotaWrappedCallable(callable, accessService, visitor, reserveForRequest = null) {
   if (!callable || !accessService?.config?.enabled) return callable;
   const wrapped = async (...args) => {
-    (reserveForRequest ?? (() => accessService.reserveLlmUse(visitor)))();
+    await (reserveForRequest ?? (() => accessService.reserveLlmUse(visitor)))();
     return callable(...args);
   };
   Object.assign(wrapped, callable);
@@ -2132,6 +2198,12 @@ function conclusionFallback(error, model = null) {
 }
 
 function createConclusionJob(runtime, options, scope = null) {
+  if (runtime.conclusionJobCoordinator) {
+    return runtime.conclusionJobCoordinator.create(
+      serializeConclusionPayload(options),
+      conclusionJobScope(scope)
+    );
+  }
   const jobs = pruneConclusionJobs(runtime, Date.now(), true);
   const id = randomUUID();
   const job = {
@@ -2178,6 +2250,9 @@ function conclusionJobTokenMatches(job, token) {
 }
 
 function getOwnedConclusionJob(runtime, jobId, scope = null, token = null) {
+  if (runtime.conclusionJobCoordinator) {
+    return runtime.conclusionJobCoordinator.getOwned(jobId, conclusionJobScope(scope), token);
+  }
   const jobs = pruneConclusionJobs(runtime);
   const job = jobs.get(String(jobId ?? ""));
   if (!job || (job.scope !== conclusionJobScope(scope) && !conclusionJobTokenMatches(job, token))) return null;
@@ -2211,22 +2286,29 @@ function conclusionStreamText(conclusion) {
 }
 
 export function handleConclusionStatusRequest(runtime, jobId, scope = null, token = null) {
-  const job = getOwnedConclusionJob(runtime, jobId, scope, token);
+  if (runtime.conclusionJobCoordinator) {
+    return Promise.resolve(getOwnedConclusionJob(runtime, jobId, scope, token)).then((job) => conclusionStatusPayload(job));
+  }
+  return conclusionStatusPayload(getOwnedConclusionJob(runtime, jobId, scope, token));
+}
+
+function conclusionStatusPayload(job) {
   if (!job) return { statusCode: 404, payload: { ok: false, error: "结论任务不存在或已过期" } };
-  job.start();
+  job.start?.();
+  const status = ["complete", "fallback", "failed"].includes(job.status) ? "complete" : job.status;
   return {
     statusCode: 200,
     payload: {
       ok: true,
       jobId: job.id,
-      status: job.status,
-      ...(job.status === "complete" ? { conclusion: job.conclusion } : {})
+      status,
+      ...(status === "complete" ? { conclusion: job.conclusion ?? job.result ?? job.error } : {})
     }
   };
 }
 
 export async function streamConclusionResponse(req, res, runtime, jobId, scope = null, token = null) {
-  const job = getOwnedConclusionJob(runtime, jobId, scope, token);
+  let job = await getOwnedConclusionJob(runtime, jobId, scope, token);
   if (!job) {
     beginNdjson(res, 404);
     writeNdjson(res, { type: "error", error: "结论任务不存在或已过期" });
@@ -2236,7 +2318,18 @@ export async function streamConclusionResponse(req, res, runtime, jobId, scope =
 
   beginNdjson(res);
   writeNdjson(res, { type: "start", jobId: job.id, status: job.status });
-  const conclusion = await job.start();
+  let conclusion;
+  if (runtime.conclusionJobCoordinator) {
+    while (job && ["queued", "running", "retrying"].includes(job.status) && !res.destroyed && !res.writableEnded) {
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, 100));
+      job = await getOwnedConclusionJob(runtime, jobId, scope, token);
+    }
+    conclusion = job?.result
+      ?? job?.error
+      ?? conclusionFallback({ code: job?.errorCode ?? "conclusion_job_failed" }, job?.model);
+  } else {
+    conclusion = await job.start();
+  }
   if (res.destroyed || res.writableEnded) return;
 
   const text = conclusion?.status === "generated" ? conclusionStreamText(conclusion) : "";
@@ -2282,8 +2375,12 @@ async function persistQueryResponse(payload, runtime, details = {}) {
     durationMs: Date.now() - details.startedAt
   });
   if (conclusion?.status === "pending" && conclusion.jobId) {
-    const job = runtime.conclusionJobs?.get(conclusion.jobId);
-    if (job) job.queryId = queryId;
+    if (runtime.conclusionJobCoordinator) {
+      await runtime.conclusionJobCoordinator.attachQuery(conclusion.jobId, queryId);
+    } else {
+      const job = runtime.conclusionJobs?.get(conclusion.jobId);
+      if (job) job.queryId = queryId;
+    }
   }
 
   const retentionDays = Number(runtime.queryEventRetentionDays ?? 30);
@@ -2302,9 +2399,9 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
   const scope = context.visitor?.scope ?? null;
   let llmUseReserved = false;
-  const reserveLlmUseForRequest = () => {
+  const reserveLlmUseForRequest = async () => {
     if (llmUseReserved) return;
-    context.accessService.reserveLlmUse(context.visitor);
+    await context.accessService.reserveLlmUse(context.visitor);
     llmUseReserved = true;
   };
   const requestRuntime = context.accessService?.config?.enabled
@@ -2361,7 +2458,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       runId: context.agentRun?.runId ?? null
     });
     if (context.accessService && context.visitor) {
-      payload.access = context.accessService.publicStatus(context.visitor);
+      payload.access = await context.accessService.publicStatus(context.visitor);
     }
     return { statusCode: 200, payload };
   };
@@ -2428,6 +2525,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     catalog,
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
+    statsProvider: runtime.statsProvider,
+    seasonContext,
     compEnrichmentService: runtime.compEnrichmentService,
     compsData,
     cacheStore: runtime.cacheStore,
@@ -2513,7 +2612,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     && requestRuntime.conclusionProvider;
   const generatedConclusion = canDeferConclusion
     ? pendingConclusion(
-      createConclusionJob(runtime, conclusionOptions, scope),
+      await createConclusionJob(runtime, conclusionOptions, scope),
       requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
     )
     : context.agentRun
@@ -3734,16 +3833,37 @@ export function createSmallWindowHandler(options = {}) {
         });
       }
 
+      if (req.method === "GET" && url.pathname === "/api/ready") {
+        try {
+          const storage = runtime.storageRuntime
+            ? await runtime.storageRuntime.store.healthCheck()
+            : { ok: true, mode: "legacy" };
+          return sendJson(res, storage.ok ? 200 : 503, { ok: Boolean(storage.ok), storage });
+        } catch (error) {
+          return sendJson(res, 503, { ok: false, error: "storage_not_ready", detail: error.message });
+        }
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/dependencies") {
+        return sendJson(res, 200, {
+          ok: true,
+          providers: {
+            stats: runtime.statsProvider?.getAvailability?.() ?? { available: false },
+            conclusion: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {})
+          }
+        });
+      }
+
       enforceSameOrigin(req);
       const visitor = accessService.identify(req, res);
       if (url.pathname.startsWith("/api/") && url.pathname !== "/api/access") {
-        accessService.enforceRequestRate(visitor);
+        await accessService.enforceRequestRate(visitor);
       }
 
       if (req.method === "GET" && url.pathname === "/api/access") {
         return sendJson(res, 200, {
           ok: true,
-          access: accessService.publicStatus(visitor)
+          access: await accessService.publicStatus(visitor)
         });
       }
 
@@ -3770,7 +3890,7 @@ export function createSmallWindowHandler(options = {}) {
       if (req.method === "GET" && url.pathname === "/api/runtime") {
         const payload = await handleRuntimeStatusRequest(runtime);
         payload.runtime.publicMode = accessService.config.enabled;
-        payload.access = accessService.publicStatus(visitor);
+        payload.access = await accessService.publicStatus(visitor);
         return sendJson(res, 200, payload);
       }
 
@@ -3822,7 +3942,7 @@ export function createSmallWindowHandler(options = {}) {
       }
 
       if (req.method === "GET" && url.pathname === "/api/conclusion/status") {
-        const { statusCode, payload } = handleConclusionStatusRequest(
+        const { statusCode, payload } = await handleConclusionStatusRequest(
           runtime,
           url.searchParams.get("jobId"),
           visitor.scope,
@@ -3870,7 +3990,7 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/feedback") {
         const body = await readJsonRequest(req);
-        accessService.enforceFeedbackRate(visitor);
+        await accessService.enforceFeedbackRate(visitor);
         return sendJson(res, 200, await handleFeedbackRequest(body, runtime, {
           visitor,
           accessService
@@ -4091,10 +4211,14 @@ export function createSmallWindowHandler(options = {}) {
 
       const file = await readFile(staticPath);
       const type = CONTENT_TYPES.get(extname(staticPath)) ?? "application/octet-stream";
-      res.writeHead(200, {
+      const headers = {
         "content-type": type,
         "content-length": file.length
-      });
+      };
+      if (url.pathname.startsWith("/assets/wallpapers/")) {
+        headers["cache-control"] = "public, max-age=31536000, immutable";
+      }
+      res.writeHead(200, headers);
       return res.end(file);
     } catch (error) {
       if (error.code === "ENOENT") {
@@ -4215,6 +4339,9 @@ export async function startSmallWindowServer(options = {}) {
   const firstPort = Number(options.port ?? process.env.PORT ?? DEFAULT_PORT);
   const attempts = options.port ? 1 : 10;
   const runtime = options.runtime ?? await createSmallWindowRuntimeAsync(options);
+  if (runtime.processRole === "worker") {
+    throw Object.assign(new Error("TFT_AGENT_PROCESS_ROLE=worker does not start an HTTP server"), { code: "worker_role_only" });
+  }
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const port = firstPort + offset;

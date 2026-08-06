@@ -1,0 +1,15 @@
+import { randomUUID } from "node:crypto";
+import { planMetaTFTUnitBuilds } from "../core/query-planner.js";
+import { buildCompRankings } from "../core/comp-ranking-service.js";
+import { createCompsPageSnapshot } from "../data/comp-response-adapter.js";
+import { buildItemCatalogFromItemsResponse } from "../data/item-catalog.js";
+import { normalizeUnitBuildRows } from "../data/metatft-response-adapter.js";
+import { StatsProvider } from "./stats-provider.js";
+
+export class MetaTftLiveProvider extends StatsProvider {
+  constructor(options={}){super({id:"metatft",version:options.version??"metatft-live.v1"});if(!options.explorerClient||!options.compsClient)throw new Error("MetaTftLiveProvider requires explorerClient and compsClient");this.explorerClient=options.explorerClient;this.compsClient=options.compsClient;}
+  async getCatalog(context,query={}){const fetchedAt=new Date().toISOString();const response=await this.explorerClient.getItems({queue:query.queue??context.source?.queue??"1100",patch:query.patch??"current"});const data=buildItemCatalogFromItemsResponse(response,{patch:query.patch??"current"});return this.envelope(data,context,{fetchedAt,effectivePatch:query.patch??"current",queue:query.queue});}
+  async getUnitBuilds(context,query={}){const fetchedAt=new Date().toISOString();const plannedQuery={...query,starLevel:query.starLevel??[2],itemCount:query.itemCount??3};const response=await this.explorerClient.getUnitBuilds(planMetaTFTUnitBuilds(plannedQuery));const rows=normalizeUnitBuildRows(response).map(row=>{const signature=String(row.unit_builds??row.unit_build??"");const [unitApiName,itemPart=""]=signature.split("&");const placementCounts=[...(row.placement_count??row.placementCount??[])];return{unitBuildId:signature||randomUUID(),unitApiName:unitApiName||query.unit||null,itemApiNames:itemPart.split("|").filter(Boolean),placementCounts,games:Number(placementCounts.reduce((sum,n)=>sum+Number(n||0),0)),starLevel:row.star_level??row.starLevel??null,traitFilters:row.traits??row.trait_filters??[]};});return this.envelope(rows,context,{fetchedAt,effectivePatch:query.patch??"current",queue:query.queue});}
+  async getCompRankings(context,query={}){const fetchedAt=new Date().toISOString();const queue=query.queue??context.source?.queue??"1100";const compsData=await this.compsClient.getCompsData({queue});const clusterId=compsData?.results?.data?.cluster_id??compsData?.cluster_id;const compsStats=await this.compsClient.getCompsStats({queue,patch:query.patch,days:query.days,permit_filter_adjustment:"true",...(clusterId?{cluster_id:clusterId}:{})});const data=buildCompRankings(createCompsPageSnapshot(compsData,compsStats),{query,catalog:query.catalog,warnings:[]});return this.envelope(data,context,{fetchedAt,effectivePatch:query.patch??"current",queue});}
+  async getPatchStatus(context,query={}){const fetchedAt=new Date().toISOString();const data=await this.compsClient.getLatestClusterInfo({queue:query.queue??context.source?.queue??"1100"});return this.envelope({available:true,clusters:data},context,{fetchedAt,effectivePatch:query.patch??context.source?.currentPatch??"current",queue:query.queue});}
+}

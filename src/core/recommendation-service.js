@@ -382,7 +382,9 @@ function seasonContextIdFor(options = {}) {
 function storeOptionsFor(options = {}, extra = {}) {
   return {
     ...extra,
-    seasonContextId: seasonContextIdFor(options)
+    seasonContextId: seasonContextIdFor(options),
+    providerVersion: options.providerVersion ?? options.preferences?.providerVersion ?? "metatft-live.v1",
+    effectivePatch: options.effectivePatch ?? options.preferences?.effectivePatch ?? options.preferences?.patch ?? "current"
   };
 }
 
@@ -1590,10 +1592,16 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
     overlap: comparison?.overlap ?? null,
     decision: comparison?.decision ?? null,
     source: {
-      provider: "MetaTFT",
+      provider: responseOrRows?.provenance?.provider ?? "metatft",
+      providerVersion: responseOrRows?.provenance?.providerVersion ?? options.providerVersion ?? "metatft-live.v1",
+      seasonContextId: responseOrRows?.provenance?.seasonContextId ?? options.seasonContextId ?? "set17-live",
       endpoint: "tft-explorer-api/unit_builds",
-      patch: validatedQuery.patch ?? null,
-      updatedAt: null,
+      patch: responseOrRows?.provenance?.effectivePatch ?? validatedQuery.patch ?? null,
+      effectivePatch: responseOrRows?.provenance?.effectivePatch ?? validatedQuery.patch ?? null,
+      region: responseOrRows?.provenance?.region ?? null,
+      queue: responseOrRows?.provenance?.queue ?? validatedQuery.queue ?? null,
+      updatedAt: responseOrRows?.provenance?.fetchedAt ?? null,
+      fetchedAt: responseOrRows?.provenance?.fetchedAt ?? null,
       cache: "provided"
     },
     text
@@ -1740,6 +1748,17 @@ export async function recommendForInput(input, options = {}) {
             if (params.queue === "1100" && params.rank?.length > 0) {
               statsParams.rank = [...params.rank].sort().join(",");
             }
+            if (options.statsProvider?.getCompRankings) {
+              return {
+                response: await options.statsProvider.getCompRankings(options.seasonContext ?? {
+                  id: query.seasonContextId,
+                  source: { queue: query.queue, providerVersion: query.providerVersion }
+                }, { ...query, catalog }),
+                dataParams,
+                statsParams,
+                dataClusterId: null
+              };
+            }
             const client = options.compsClient;
             if (typeof client?.getCompsData !== "function" || typeof client?.getCompsStats !== "function") {
               throw new Error("comp rankings require a comps client with getCompsData() and getCompsStats()");
@@ -1837,11 +1856,17 @@ export async function recommendForInput(input, options = {}) {
     }
 
     if (!response) throw new Error("comp rankings require comps_data/comps_stats responses or a MetaTFT comps client");
-    const result = buildCompRankings(response, {
-      query,
-      catalog,
-      warnings
-    });
+    const result = response?.provenance && response?.data?.type
+      ? {
+        ...response.data,
+        provenance: response.provenance,
+        source: { ...(response.data.source ?? {}), ...response.provenance }
+      }
+      : buildCompRankings(response, {
+        query,
+        catalog,
+        warnings
+      });
     const enriched = options.compEnrichmentService
       ? await options.compEnrichmentService.enrichRankingResult(result, {
         seasonContextId: query.seasonContextId,
@@ -2127,6 +2152,12 @@ export async function recommendForInput(input, options = {}) {
             comparisonItems: params.comparisonItems,
             minSamples: params.minSamples
           };
+          if (options.statsProvider?.getUnitBuilds) {
+            return options.statsProvider.getUnitBuilds(options.seasonContext ?? {
+              id: validatedQuery.seasonContextId,
+              source: { queue: validatedQuery.queue, providerVersion: validatedQuery.providerVersion }
+            }, plannedQuery);
+          }
           return options.metaTFTClient?.getUnitBuilds(planMetaTFTUnitBuilds(plannedQuery));
         },
         {
@@ -2202,10 +2233,16 @@ export async function recommendForInput(input, options = {}) {
     query: queryCache
   };
   result.source = {
-    provider: "MetaTFT",
+    provider: response?.provenance?.provider ?? "metatft",
+    providerVersion: response?.provenance?.providerVersion ?? options.providerVersion ?? "metatft-live.v1",
+    seasonContextId: response?.provenance?.seasonContextId ?? seasonContextIdFor(options),
     endpoint: "tft-explorer-api/unit_builds",
-    patch: result.query?.patch ?? null,
-    updatedAt: queryCache.updatedAt ?? null,
+    patch: response?.provenance?.effectivePatch ?? result.query?.patch ?? null,
+    effectivePatch: response?.provenance?.effectivePatch ?? result.query?.patch ?? null,
+    region: response?.provenance?.region ?? null,
+    queue: response?.provenance?.queue ?? result.query?.queue ?? null,
+    updatedAt: response?.provenance?.fetchedAt ?? queryCache.updatedAt ?? null,
+    fetchedAt: response?.provenance?.fetchedAt ?? null,
     cache: queryCache.stale ? "stale" : queryCache.hit ? "cache" : "live",
     cacheDetail: queryCache
   };

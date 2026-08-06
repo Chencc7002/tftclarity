@@ -2,46 +2,96 @@ services:
   app:
     build: .
     restart: unless-stopped
-    env_file:
-      - .env.production
+    env_file: [.env.production]
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
       PORT: 17317
-      TFT_AGENT_CACHE_STORE: sqlite
-      TFT_AGENT_CACHE_PATH: /app/.cache/tft-agent.sqlite
-      TFT_AGENT_PUBLIC_MODE: "true"
-      TFT_AGENT_SECURE_COOKIES: "true"
-      TFT_AGENT_TRUST_PROXY: "true"
-    volumes:
-      - tft_data:/app/.cache
-    expose:
-      - "17317"
+      TFT_AGENT_PROCESS_ROLE: web
+      TFT_AGENT_PERSISTENT_STORE: postgres
+      TFT_AGENT_EPHEMERAL_STORE: redis
+      TFT_AGENT_STORAGE_ALLOW_MEMORY_FALLBACK: "false"
+      TFT_AGENT_SEMANTIC_INDEX_PATH: /app/.cache/semantic-index.sqlite
+    volumes: [tft_semantic:/app/.cache]
+    expose: ["17317"]
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
     healthcheck:
-      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17317/api/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17317/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
       timeout: 5s
       retries: 3
       start_period: 30s
 
+  worker:
+    build: .
+    restart: unless-stopped
+    command: ["npm", "run", "worker"]
+    env_file: [.env.production]
+    environment:
+      NODE_ENV: production
+      TFT_AGENT_PROCESS_ROLE: worker
+      TFT_AGENT_PERSISTENT_STORE: postgres
+      TFT_AGENT_EPHEMERAL_STORE: redis
+      TFT_AGENT_STORAGE_ALLOW_MEMORY_FALLBACK: "false"
+    depends_on:
+      migrate: { condition: service_completed_successfully }
+      redis: { condition: service_healthy }
+
+  migrate:
+    build: .
+    restart: "no"
+    command: ["npm", "run", "db:migrate"]
+    env_file: [.env.production]
+    environment:
+      NODE_ENV: production
+      TFT_AGENT_PERSISTENT_STORE: postgres
+      TFT_AGENT_EPHEMERAL_STORE: redis
+      TFT_AGENT_STORAGE_ALLOW_MEMORY_FALLBACK: "false"
+    depends_on:
+      postgres: { condition: service_healthy }
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    env_file: [.env.production]
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-create-app-role.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7.4-alpine
+    restart: unless-stopped
+    env_file: [.env.production]
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
-    env_file:
-      - .env.production
-    ports:
-      - "80:80"
-      - "443:443"
-      - "443:443/udp"
+    env_file: [.env.production]
+    ports: ["80:80", "443:443", "443:443/udp"]
     volumes:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      app:
-        condition: service_healthy
+      app: { condition: service_healthy }
 
 volumes:
-  tft_data:
+  postgres_data:
+  redis_data:
+  tft_semantic:
   caddy_data:
   caddy_config:

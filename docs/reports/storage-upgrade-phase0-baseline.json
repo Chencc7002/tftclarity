@@ -1,0 +1,39 @@
+{
+  "schemaVersion": "storage_phase0_baseline.v1",
+  "generatedAt": "2026-08-05T09:30:00.000Z",
+  "source": ".cache/small-window-cache.json",
+  "sourceType": "json",
+  "sqliteSourcePresent": false,
+  "semanticIndexInScope": false,
+  "ttlMs": {
+    "session": 1800000,
+    "query": 300000,
+    "defaultContext": 21600000
+  },
+  "records": {
+    "queryCache": 333,
+    "defaultContextCache": 9,
+    "sessionState": 194,
+    "userPreferences": 2,
+    "itemCatalogs": 2,
+    "domainCatalogs": 2,
+    "compTrendHistories": 11,
+    "compProfiles": 0,
+    "compProfileBindings": 0,
+    "entityAliases": 0,
+    "queryEvents": 613,
+    "feedbackEvents": 22,
+    "adminAuditEvents": 0
+  },
+  "testBaseline": {
+    "total": 625,
+    "passed": 611,
+    "failed": 0,
+    "skipped": 14
+  },
+  "notes": [
+    "当前工作区没有 .cache/tft-agent.sqlite 或 .cache/small-window-cache.sqlite，不能伪造 SQLite 备份。",
+    "迁移工具和备份命令已实现；生产切换时必须对实际 SQLite 文件执行。",
+    "语义索引 .cache/semantic-index.sqlite 明确排除在首轮迁移之外。"
+  ]
+}

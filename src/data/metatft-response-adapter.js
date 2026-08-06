@@ -37,6 +37,15 @@ export function normalizeExplorerRows(response, keys = []) {
 }
 
 export function normalizeUnitBuildRows(response) {
+  if (response?.provenance && Array.isArray(response.data)) {
+    return response.data.map((row) => ({
+      unit_builds: `${row.unitApiName ?? ""}&${(row.itemApiNames ?? []).join("|")}`,
+      placement_count: row.placementCounts ?? [],
+      star_level: row.starLevel ?? null,
+      traits: row.traitFilters ?? [],
+      normalized_provider_model: true
+    }));
+  }
   return normalizeExplorerRows(response, ["unit_builds", "unit_build"]);
 }
 

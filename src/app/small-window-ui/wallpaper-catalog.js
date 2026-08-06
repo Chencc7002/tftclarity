@@ -6,7 +6,8 @@ export const WALLPAPER_SEASONS = {
       {
         id: "set17-cosmic-court",
         labelKey: "wallpaperCosmicCourt",
-        url: "/assets/wallpapers/set-17/cosmic-court.jpg",
+        url: "/assets/wallpapers/set-17/cosmic-court.jpg?v=0b9164aad646",
+        thumbUrl: "/assets/wallpapers/set-17/cosmic-court.thumb.f8bac1dea835.webp",
         position: "center center",
         accent: "#c84f91",
         accentSecondary: "#8a62dc"
@@ -14,7 +15,8 @@ export const WALLPAPER_SEASONS = {
       {
         id: "set17-stargazer-convergence",
         labelKey: "wallpaperStargazerConvergence",
-        url: "/assets/wallpapers/set-17/stargazer-convergence.png",
+        url: "/assets/wallpapers/set-17/stargazer-convergence.d9a32361f3ae.webp",
+        thumbUrl: "/assets/wallpapers/set-17/stargazer-convergence.thumb.d7b5ce4d3531.webp",
         position: "center center",
         focusSize: "cover",
         accent: "#6b63df",
@@ -23,7 +25,8 @@ export const WALLPAPER_SEASONS = {
       {
         id: "set17-yasuo",
         labelKey: "wallpaperYasuo",
-        url: "/assets/wallpapers/set-17/yasuo.png",
+        url: "/assets/wallpapers/set-17/yasuo.ae30569d178b.webp",
+        thumbUrl: "/assets/wallpapers/set-17/yasuo.thumb.15fb81e7d07a.webp",
         position: "62% center",
         focusSize: "cover",
         accent: "#177de1",
@@ -32,7 +35,8 @@ export const WALLPAPER_SEASONS = {
       {
         id: "set17-soraka",
         labelKey: "wallpaperSoraka",
-        url: "/assets/wallpapers/set-17/soraka.jpg",
+        url: "/assets/wallpapers/set-17/soraka.jpg?v=18ea4b9a8f9b",
+        thumbUrl: "/assets/wallpapers/set-17/soraka.thumb.f4d7362f79f0.webp",
         position: "38% center",
         focusSize: "cover",
         accent: "#35a875",
