@@ -1,0 +1,4 @@
+import { CapabilityProviderRouter } from "./stats-provider.js";
+
+export function resolveProviderConfig(options={},env=process.env){const primary=String(options.primary??env.TFT_AGENT_STATS_PRIMARY_PROVIDER??"metatft").toLowerCase();const shadow=String(options.shadow??env.TFT_AGENT_STATS_SHADOW_PROVIDER??"off").toLowerCase();const fallback=String(options.fallback??env.TFT_AGENT_PROVIDER_FALLBACK??"off").toLowerCase()==="on";return{primary,shadow,fallback,capabilities:{catalog:options.catalogProvider??primary,comp_rankings:options.compRankingsProvider??primary,unit_builds:options.unitBuildsProvider??primary,patch_status:options.patchStatusProvider??primary}};}
+export function createProviderRouter(providers,options={},env=process.env){const config=resolveProviderConfig(options,env);return new CapabilityProviderRouter({providers,capabilities:config.capabilities,fallback:config.fallback});}

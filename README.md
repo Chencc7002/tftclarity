@@ -120,9 +120,9 @@ SQLite 当前服务于单机开发、低成本部署和完整链路验证，并�
 ### 环境要求
 
 - Windows、macOS 或 Linux
-- Node.js 18 或更高版本
-- 推荐 Node.js 22.5+ 或 24：可直接使用 `node:sqlite`，也能运行 OP.GG 增量采集
-- Node.js 18 如需 SQLite，必须成功安装可选依赖 `better-sqlite3`
+- Node.js 20 或更高版本（安全版 MCP 依赖的最低要求）
+- 推荐 Node.js 22.5+ 或 24：可直接使用 `node:sqlite`，也能运行 OP.GG 增量采集；生产 Docker 镜像固定为 Node 24
+- Node.js 20–21 如需 SQLite，必须成功安装可选依赖 `better-sqlite3`
 
 ### 安装与启动
 

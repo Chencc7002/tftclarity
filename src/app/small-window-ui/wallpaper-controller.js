@@ -204,7 +204,7 @@ export class WallpaperController {
       button.type = "button";
       button.className = "wallpaper-mobile-option";
       button.dataset.wallpaperId = wallpaper.id;
-      button.style.setProperty("--wallpaper-thumb", `url("${wallpaper.url}")`);
+      button.dataset.wallpaperThumb = wallpaper.thumbUrl ?? wallpaper.url;
       button.setAttribute("aria-pressed", "false");
 
       const preview = document.createElement("span");
@@ -224,10 +224,19 @@ export class WallpaperController {
 
   setMobileMenuOpen(open) {
     const next = Boolean(open);
+    if (next) this.loadMobileThumbnails();
     this.mobileMenu.hidden = !next;
     this.mobileButton.setAttribute("aria-expanded", String(next));
     this.control.classList.toggle("mobile-menu-open", next);
     if (next) this.mobileClose.focus({ preventScroll: true });
+  }
+
+  loadMobileThumbnails() {
+    for (const option of this.mobileOptions.querySelectorAll("[data-wallpaper-thumb]")) {
+      if (option.dataset.wallpaperThumbLoaded === "true") continue;
+      option.style.setProperty("--wallpaper-thumb", `url("${option.dataset.wallpaperThumb}")`);
+      option.dataset.wallpaperThumbLoaded = "true";
+    }
   }
 
   refreshMobileOptions() {

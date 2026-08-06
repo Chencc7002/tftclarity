@@ -24,6 +24,10 @@ function normalizedFailure(error, fallbackCode = "tool_failed") {
 function evidenceUpdatedAt(value) {
   return value?.updatedAt
     ?? value?.updated_at
+    ?? value?.provenance?.fetchedAt
+    ?? value?.provenance?.fetched_at
+    ?? value?.provenance?.updatedAt
+    ?? value?.provenance?.updated_at
     ?? value?.capture?.capturedAt
     ?? value?.capture?.captured_at
     ?? value?.source?.updatedAt

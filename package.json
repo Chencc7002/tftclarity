@@ -6,6 +6,15 @@
   "description": "TFT in-game data retrieval agent core for MetaTFT item build queries.",
   "scripts": {
     "start": "node src/app/small-window-server.js",
+    "worker": "node src/worker.js",
+    "db:migrate": "node scripts/db-migrate.mjs",
+    "db:status": "node scripts/db-status.mjs",
+    "storage:baseline": "node scripts/storage-baseline.mjs",
+    "migrate:sqlite-to-postgres": "node scripts/migrate-sqlite-to-postgres.mjs",
+    "verify:storage-migration": "node scripts/verify-storage-migration.mjs",
+    "smoke:postgres": "node scripts/smoke-postgres.mjs",
+    "smoke:redis": "node scripts/smoke-redis.mjs",
+    "smoke:multi-instance": "node scripts/smoke-multi-instance.mjs",
     "window": "powershell -ExecutionPolicy Bypass -File scripts/start-small-window.ps1",
     "window:server": "powershell -ExecutionPolicy Bypass -File scripts/start-small-window.ps1 -NoBrowser",
     "test": "node --test",
@@ -77,13 +86,15 @@
     "discover:s17": "node scripts/discover-s17-mechanism-factors.mjs"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=20"
   },
   "optionalDependencies": {
     "better-sqlite3": "^11.10.0"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
-    "dotenv": "^17.4.2"
+    "dotenv": "^17.4.2",
+    "pg": "8.16.3",
+    "redis": "5.8.2"
   }
 }

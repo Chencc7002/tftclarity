@@ -260,6 +260,19 @@ export {
   SQLiteCacheStore
 } from "./data/sqlite-cache-store.js";
 export { MetaTFTClient, CompsContextClient } from "./data/metatft-client.js";
+export { AsyncStoreAdapter, asAsyncStore } from "./storage/async-store-adapter.js";
+export { CompositeStore } from "./storage/composite-store.js";
+export { resolveStorageConfig } from "./storage/config.js";
+export { createStorageRuntime } from "./storage/runtime.js";
+export { RedisStore, createRedisClient } from "./storage/redis-store.js";
+export { createPostgresPool, withTransaction } from "./storage/postgres/client.js";
+export { PostgresStore } from "./storage/postgres/postgres-store.js";
+export { loadMigrations, migrationStatus, runMigrations } from "./storage/postgres/migration-runner.js";
+export { ALL_EPHEMERAL_METHODS, ALL_PERSISTENT_METHODS, EPHEMERAL_STORE_METHODS, PERSISTENT_REPOSITORY_METHODS, assertStoreContract, createEphemeralViews, createRepositoryViews } from "./storage/contracts.js";
+export { StatsProvider, StatsProviderError, CapabilityProviderRouter, STATS_PROVIDER_CAPABILITIES } from "./providers/stats-provider.js";
+export { MetaTftLiveProvider } from "./providers/metatft-live-provider.js";
+export { createProviderRouter, resolveProviderConfig } from "./providers/provider-config.js";
+export { ConclusionJobCoordinator, ConclusionWorker, serializeConclusionPayload } from "./jobs/conclusion-jobs.js";
 export {
   COMP_PROFILE_DEFAULTS,
   COMP_PROFILE_FIELDS,

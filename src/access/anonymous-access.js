@@ -132,6 +132,7 @@ export class AnonymousAccessService {
   constructor(options = {}) {
     this.config = resolveAnonymousAccessConfig(options, options.env ?? process.env);
     this.database = options.database ?? null;
+    this.rateLimitStore = options.rateLimitStore ?? null;
     this.now = options.now ?? (() => Date.now());
     this.usage = new Map();
     this.minuteWindows = new Map();
@@ -187,6 +188,12 @@ export class AnonymousAccessService {
   enforceRequestRate(visitor) {
     if (!this.config.enabled || this.config.requestsPerMinute === 0) return;
     const minute = Math.floor(this.now() / 60_000);
+    if (this.rateLimitStore?.incrementRateLimit) {
+      return this.rateLimitStore.incrementRateLimit(`request:${visitor.ipHash}:${minute}`, this.config.requestsPerMinute, 60_000)
+        .then((result) => {
+          if (!result.allowed) throw Object.assign(new Error("请求过于频繁，请稍后再试"), { statusCode: 429, code: "rate_limited" });
+        });
+    }
     const key = `${visitor.ipHash}:${minute}`;
     const next = (this.minuteWindows.get(key) ?? 0) + 1;
     this.minuteWindows.set(key, next);
@@ -207,6 +214,12 @@ export class AnonymousAccessService {
       [`visitor:${visitor.visitorHash}:${minute}`, this.config.feedbackVisitorPerMinute],
       [`ip:${visitor.ipHash}:${minute}`, this.config.feedbackIpPerMinute]
     ];
+    if (this.rateLimitStore?.incrementRateLimit) {
+      return Promise.all(subjects.filter(([, currentLimit]) => currentLimit !== 0).map(async ([key, currentLimit]) => {
+        const result = await this.rateLimitStore.incrementRateLimit(`feedback:${key}`, currentLimit, 60_000);
+        if (!result.allowed) throw Object.assign(new Error("反馈提交过于频繁，请稍后再试"), { statusCode: 429, code: "feedback_rate_limited" });
+      })).then(() => undefined);
+    }
     for (const [key, limit] of subjects) {
       if (limit === 0) continue;
       const next = (this.feedbackMinuteWindows.get(key) ?? 0) + 1;
@@ -248,6 +261,15 @@ export class AnonymousAccessService {
       return { enabled: false, limit: null, used: 0, remaining: null, resetsAt: resetAt(this.now()) };
     }
     const date = dateKey(this.now());
+    if (this.rateLimitStore?.getQuotaCount) {
+      return this.rateLimitStore.getQuotaCount("visitor", visitor.visitorHash, date).then((used) => ({
+        enabled: true,
+        limit: this.config.visitorDailyLimit,
+        used,
+        remaining: Math.max(0, this.config.visitorDailyLimit - used),
+        resetsAt: resetAt(this.now())
+      }));
+    }
     const used = this.count("visitor", visitor.visitorHash, date);
     return {
       enabled: true,
@@ -306,16 +328,29 @@ export class AnonymousAccessService {
 
   reserveLlmUse(visitor) {
     if (!this.config.enabled) return this.quota(visitor);
+    if (this.rateLimitStore?.reserveQuota) {
+      const nowMs = this.now();
+      const date = dateKey(nowMs);
+      const ttlMs = Math.max(1, Date.parse(resetAt(nowMs)) - nowMs);
+      return this.rateLimitStore.reserveQuota([
+        { type: "visitor", hash: visitor.visitorHash, date, limit: this.config.visitorDailyLimit },
+        { type: "ip", hash: visitor.ipHash, date, limit: this.config.ipDailyLimit },
+        { type: "global", hash: "all", date, limit: this.config.globalDailyLimit }
+      ], ttlMs).then((reserved) => {
+        if (!reserved) throw quotaError();
+        return this.quota(visitor);
+      });
+    }
     if (this.database) this.reserveSqlite(visitor);
     else this.reserveMemory(visitor);
     return this.quota(visitor);
   }
 
   publicStatus(visitor) {
-    return {
-      anonymous: true,
-      quota: this.quota(visitor)
-    };
+    const quota = this.quota(visitor);
+    return quota instanceof Promise
+      ? quota.then((resolved) => ({ anonymous: true, quota: resolved }))
+      : { anonymous: true, quota };
   }
 }
 
@@ -323,7 +358,8 @@ export function createAnonymousAccessService(runtime, options = {}, env = proces
   return new AnonymousAccessService({
     ...options,
     env,
-    database: options.database ?? runtime?.cacheStore?.database ?? null
+    database: options.database ?? null,
+    rateLimitStore: options.rateLimitStore ?? runtime?.storageRuntime?.ephemeral ?? null
   });
 }
 
