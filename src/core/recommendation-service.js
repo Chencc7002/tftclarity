@@ -18,7 +18,11 @@ import { buildQueryContext } from "./context-builder.js";
 import { evaluateClarification } from "./clarification-policy.js";
 import { filterBuildRows } from "./item-policy-filter.js";
 import { parseQuery } from "./query-parser.js";
-import { planMetaTFTCompCandidates, planMetaTFTUnitBuilds } from "./query-planner.js";
+import {
+  planMetaTFTCompCandidates,
+  planMetaTFTItemCarrierBuilds,
+  planMetaTFTUnitBuilds
+} from "./query-planner.js";
 import {
   COMP_FILTER_SEMANTICS_VERSION,
   createAppliedCompConstraint,
@@ -30,6 +34,11 @@ import { validateQueryContext } from "./query-validator.js";
 import { rankBuilds } from "./ranker.js";
 import { compareItemOptions, comparisonRankedBuilds } from "./item-comparison.js";
 import { aggregateUnitItemRankings } from "./item-ranking.js";
+import {
+  ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
+  ITEM_CARRIER_MAX_LIMIT,
+  aggregateItemCarrierRankings
+} from "./item-carrier-ranking.js";
 import { formatRecommendation } from "./response-formatter.js";
 import { normalizeAlias } from "./normalizer.js";
 import {
@@ -45,8 +54,12 @@ import { enrichCompResponseWithTrendHistory } from "./comp-trend-history.js";
 import { analyzeCompRankingResult, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { decorateCompAssets } from "../data/asset-resolver.js";
 import { createIntentEnvelope } from "../retrieval/contracts.js";
-import { parseSemanticTask } from "../understanding/semantic-task-parser.js";
+import {
+  applyDeterministicTftSemantics,
+  parseSemanticTask
+} from "../understanding/semantic-task-parser.js";
 import { runSemanticShadow } from "../understanding/semantic-shadow.js";
+import { createTaskFrame } from "../understanding/task-frame.js";
 import { RetrievalPlanner } from "../retrieval/retrieval-planner.js";
 import { StructuredRetriever } from "../retrieval/structured-retriever.js";
 import { SUPPORTED_CONCLUSION_INTENTS } from "../llm/conclusion-spec-registry.js";
@@ -54,10 +67,40 @@ import {
   createTakeoverDecision,
   finalizeTakeoverTrace
 } from "../agent/takeover-controller.js";
+import { statusAfterExecution } from "../agent/status-protocol.js";
+import { compareExecutionAndLegacyPlans } from "../agent/shadow-comparison.js";
+import { finalizeExecutionPlanArguments } from "../agent/execution-plan.js";
+import { compileTftToolArguments } from "../domain/tft/execution-arguments.js";
+import {
+  compileTftResultPolicy,
+  compileTftSemanticResultPolicy
+} from "../domain/tft/result-policy.js";
+import {
+  adaptTftExecutionPlanToParsed
+} from "../domain/tft/execution-query-adapter.js";
+import { tftConversationPolicy } from "../domain/tft/conversation-policy.js";
+import { resolvedTaskFrameToParsed } from "../domain/tft/resolved-task-frame-adapter.js";
+import {
+  createConversationState,
+  migrateLegacySessionToConversationState
+} from "../understanding/conversation-state.js";
+import { reduceConversationState } from "../understanding/context-reducer.js";
+import { interpretTurn, isActionOnlyBuildFollowup } from "../understanding/turn-interpreter.js";
+import {
+  updateConversationStateFromResult
+} from "../understanding/conversation-result-state.js";
+import { applyConversationResultPresentation } from "../understanding/conversation-presentation.js";
+import { compareConversationStateV2Shadow } from "../understanding/conversation-shadow.js";
 
 export const SESSION_LAST_QUERY_KEY = "last_query";
 const RETRIEVAL_PLANNER = new RetrievalPlanner();
 const SEMANTIC_INTENTS = new Set(SUPPORTED_CONCLUSION_INTENTS);
+const CONVERSATION_STATE_V2_MODES = new Set(["off", "shadow", "on"]);
+const SEMANTIC_NATIVE_EXECUTION_TOOLS = new Set([
+  "entity_catalog_query",
+  "unit_builds_batch",
+  "composition_member_statistics"
+]);
 
 function asArray(value) {
   return Array.isArray(value) ? value : [];
@@ -79,6 +122,7 @@ function referencedItemApiNames(query) {
     ...(query?.ownedItems ?? []),
     ...(query?.comparisonItems ?? []),
     ...(query?.performanceItem ? [query.performanceItem] : []),
+    ...(query?.carrierItem ? [query.carrierItem] : []),
     ...(query?.comparison?.itemApiNames ?? []),
     ...(query?.parser?.comparison?.itemApiNames ?? [])
   ]);
@@ -106,11 +150,118 @@ function unavailableItemDecision(query, catalog) {
 
 function responseTypeForQuery(query, clarification = null) {
   if (clarification?.needsClarification) return "clarification";
-  return query?.intent ?? "unit_build_rankings";
+  return query?.intent ?? "unknown";
+}
+
+function semanticNativeExecutionPlan(shadowResult, options = {}) {
+  const planning = shadowResult?.executionPlanning;
+  const steps = planning?.plan?.steps ?? [];
+  if (
+    planning?.validation?.valid !== true
+    || !options.executionPlanExecutor
+    || steps.length === 0
+    || !steps.every((step) => SEMANTIC_NATIVE_EXECUTION_TOOLS.has(step.tool))
+    || !steps.every((step) => typeof options.agentToolHandlers?.[step.tool] === "function")
+  ) return null;
+  return compileTftSemanticResultPolicy(
+    planning.plan,
+    shadowResult?.semanticResult?.taskFrame
+  );
+}
+
+function semanticNativeSource(value, finalTool) {
+  if (value?.source && typeof value.source === "object" && !Array.isArray(value.source)) {
+    return {
+      ...value.source,
+      updatedAt: value.source.updatedAt ?? value.updatedAt ?? null
+    };
+  }
+  if (finalTool === "entity_catalog_query") {
+    return {
+      provider: "Official TFT Catalog",
+      endpoint: "official_tft_catalog/entity_catalog_query",
+      updatedAt: value?.updatedAt ?? null,
+      cache: "live"
+    };
+  }
+  return {
+    provider: "MetaTFT",
+    endpoint: finalTool === "unit_builds_batch"
+      ? "tft-explorer-api/unit_builds (batch)"
+      : "tft-comps-api/composition_member_statistics",
+    updatedAt: value?.updatedAt ?? null,
+    cache: "live"
+  };
+}
+
+function semanticNativeText(value, taskFrame) {
+  if (value?.text) return value.text;
+  if (value?.type !== "entity_catalog_results") return "已根据受控工具计划完成查询。";
+  const concept = [...(taskFrame?.concepts ?? []), ...(taskFrame?.subjects ?? [])]
+    .find((entity) => entity?.expectedType === "trait");
+  const traitName = concept?.canonicalName ?? concept?.rawText ?? "目标羁绊";
+  const cost = taskFrame?.constraints?.cost;
+  const costLabel = Array.isArray(cost) ? cost.join("、") : cost;
+  return value.results?.length
+    ? `${traitName}${costLabel ? `${costLabel}费` : ""}棋子：${value.results.map((entry) => entry.name).join("、")}。`
+    : `${traitName}中没有找到符合条件的当前赛季棋子。`;
 }
 
 function isCompIntent(intent) {
   return intent === "comp_rankings" || intent === "comp_trends" || intent === "comp_analysis";
+}
+
+function focusCompRankingResult(result, compId) {
+  if (!compId) return result;
+  const matches = (values) => asArray(values).filter((entry) => (
+    String(entry?.compId ?? entry?.source?.clusterId ?? "") === String(compId)
+  ));
+  return {
+    ...result,
+    candidates: matches(result?.candidates),
+    rankings: Object.fromEntries(
+      Object.entries(result?.rankings ?? {}).map(([key, values]) => [key, matches(values)])
+    ),
+    references: matches(result?.references),
+    rising: matches(result?.rising),
+    falling: matches(result?.falling),
+    improving: matches(result?.improving)
+  };
+}
+
+function itemCarrierLimit(value) {
+  const number = Number(value);
+  return Number.isInteger(number) && number > 0
+    ? Math.min(ITEM_CARRIER_MAX_LIMIT, number)
+    : ITEM_CARRIER_MAX_LIMIT;
+}
+
+function itemCarrierQuery(parsed, options = {}) {
+  const preferences = { ...DEFAULT_QUERY_OPTIONS, ...(options.preferences ?? {}) };
+  return {
+    seasonContextId: String(preferences.seasonContextId ?? "set17-live"),
+    providerVersion: preferences.providerVersion ?? null,
+    effectivePatch: String(
+      preferences.currentPatch
+      ?? preferences.effectivePatch
+      ?? preferences.unitBuildPatch
+      ?? parsed.patch
+      ?? preferences.patch
+      ?? "current"
+    ),
+    intent: "item_carrier_rankings",
+    item: parsed.carrierItem,
+    days: Number(parsed.days ?? preferences.days ?? 3),
+    patch: String(parsed.patch ?? preferences.unitBuildPatch ?? preferences.patch ?? "current"),
+    queue: String(parsed.queue ?? preferences.queue ?? "1100"),
+    rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
+    minSamples: Math.max(0, Number(parsed.minSamples ?? options.itemCarrierMinSamples ?? 100)),
+    limit: itemCarrierLimit(parsed.limit ?? options.itemCarrierLimit),
+    buildLimit: ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
+    positiveOnly: true,
+    sort: parsed.sort === "uplift_first" ? "uplift_first" : "games_first",
+    dataVersion: "item-carrier-unit-delta-v1"
+  };
 }
 
 function createRetrievalAudit(result, input, catalog, planner = RETRIEVAL_PLANNER) {
@@ -143,21 +294,93 @@ function structuredQueryFor(plan, operation) {
 }
 
 async function executePlannedStructuredQuery(plan, operation, handler, context = {}) {
+  if (context.executionPlan && context.executionPlanExecutor) {
+    const execution = await context.executionPlanExecutor.execute(context.executionPlan, {
+      handlers: {
+        ...(context.handlers ?? {}),
+        [operation]: handler
+      },
+      run: context.agentRun,
+      signal: context.signal,
+      timeoutMs: context.timeoutMs,
+      intent: context.intent,
+      deferResultPolicy: context.deferResultPolicy === true
+    });
+    context.onExecution?.(execution);
+    if (execution.status !== "completed") {
+      const failed = execution.results.find((result) => result.status === "failed");
+      const resultPolicyFailed = execution.resultPolicyExecution?.status === "failed";
+      const evidenceFailed = execution.evidenceValidation?.sufficient === false;
+      const failureStage = failed?.stepId
+        ?? (resultPolicyFailed ? "result_policy" : evidenceFailed ? "evidence_validation" : "execution");
+      const failureDetail = failed?.toolResult?.error?.message;
+      throw Object.assign(new Error(
+        `ExecutionPlan failed at ${failureStage}${failureDetail ? `: ${failureDetail}` : ""}`
+      ), {
+        code: failed?.error
+          ?? (resultPolicyFailed
+            ? "execution_result_policy_failed"
+            : evidenceFailed ? "execution_evidence_invalid" : "execution_plan_failed"),
+        execution
+      });
+    }
+    const result = execution.results.find((entry) => (
+      entry.tool === operation && entry.status === "completed"
+    ));
+    if (!result) {
+      throw Object.assign(new Error(`ExecutionPlan did not execute required tool: ${operation}`), {
+        code: "execution_plan_tool_missing",
+        execution
+      });
+    }
+    return result.toolResult.value;
+  }
   const query = structuredQueryFor(plan, operation);
   if (!query) throw new Error(`RetrievalPlan does not allow structured operation: ${operation}`);
   if (context.toolExecutor) {
-    const result = await context.toolExecutor.execute(operation, query.params ?? {}, {
-      source: query.source,
-      handler,
-      run: context.agentRun,
-      signal: context.signal,
-      maxRetriesPerTool: context.maxRetriesPerTool,
-      intent: context.intent
-    });
+    const executeLegacy = () => context.toolExecutor.execute(operation, query.params ?? {}, {
+        source: query.source,
+        handler,
+        run: context.agentRun,
+        signal: context.signal,
+        timeoutMs: context.timeoutMs,
+        maxRetriesPerTool: context.maxRetriesPerTool,
+        intent: context.intent
+      });
+    const result = context.agentRun?.stage
+      ? await context.agentRun.stage("retrieving", executeLegacy)
+      : await executeLegacy();
     return result.value;
   }
   const retriever = new StructuredRetriever({ handlers: { [operation]: handler } });
   return (await retriever.executeQuery(query, context)).value;
+}
+
+function withRetrievalTimestamp(response, observedAt) {
+  if (
+    response?.updatedAt
+    || response?.updated_at
+    || response?.capture?.capturedAt
+    || response?.capture?.captured_at
+  ) return response;
+  if (Array.isArray(response)) {
+    return {
+      data: response,
+      capture: { capturedAt: observedAt }
+    };
+  }
+  if (response && typeof response === "object") {
+    return {
+      ...response,
+      capture: {
+        ...(response.capture && typeof response.capture === "object"
+          ? response.capture
+          : {}),
+        capturedAt: observedAt
+      }
+    };
+  }
+  return response;
 }
 
 function semanticTakeoverDecision(shadowResult, retrievalPlan, options = {}) {
@@ -174,8 +397,18 @@ function semanticTakeoverDecision(shadowResult, retrievalPlan, options = {}) {
       ?? options.sessionKey
       ?? options.conversationId
       ?? "default",
-    policy: options.semanticTakeoverPolicy
+    policy: options.semanticTakeoverPolicy,
+    executionPlanSovereignty: options.executionPlanSovereignty === true
   });
+  decision.executionPlan = shadowResult.executionPlanning?.plan ?? null;
+  decision.shadowComparison = compareExecutionAndLegacyPlans(
+    shadowResult.executionPlanning?.plan,
+    retrievalPlan,
+    {
+      selectedPath: decision.route === "legacy_fallback" ? "legacy" : "execution_plan",
+      fallbackReason: decision.route === "legacy_fallback" ? decision.reason : null
+    }
+  );
   try {
     options.agentRun?.emit?.({
       type: "semantic_takeover_decided",
@@ -189,7 +422,8 @@ function semanticTakeoverDecision(shadowResult, retrievalPlan, options = {}) {
         executionPath: decision.executionPath,
         semanticDifference: decision.semanticDifference,
         plannedTools: decision.plannedTools,
-        legacyTools: decision.legacyTools
+        legacyTools: decision.legacyTools,
+        shadowComparison: decision.shadowComparison
       }
     });
   } catch {
@@ -198,24 +432,44 @@ function semanticTakeoverDecision(shadowResult, retrievalPlan, options = {}) {
   return decision;
 }
 
-function isMappedConceptResidue(hint, mapping) {
-  const fragment = normalizeAlias(hint?.inputFragment);
-  const mention = normalizeAlias(mapping?.mention);
-  if (!fragment || !mention) return false;
-  const genericSuffixes = ["阵容", "体系"];
-  const residue = genericSuffixes.reduce(
-    (value, suffix) => value.endsWith(suffix) ? value.slice(0, -suffix.length) : value,
-    fragment
+function activeExecutionPlan(shadowResult, routing, tool, resolvedQuery, registry) {
+  if (
+    !routing
+    || routing.route === "legacy_fallback"
+    || shadowResult?.executionPlanning?.validation?.valid !== true
+  ) return null;
+  const planWithResultPolicy = compileTftResultPolicy(
+    shadowResult.executionPlanning.plan,
+    resolvedQuery
   );
-  return Boolean(residue && (mention.endsWith(residue) || residue.endsWith(mention)));
+  const finalized = finalizeExecutionPlanArguments(
+    planWithResultPolicy,
+    tool,
+    compileTftToolArguments(tool, resolvedQuery),
+    { registry }
+  );
+  return finalized.validation?.valid ? finalized.plan : null;
 }
 
 function applyControlledSemanticCorrection(parsed, shadowResult, options = {}) {
   if (
     options.semanticTakeover === false
     || shadowResult?.status !== "completed"
-    || shadowResult.executionPlanning?.plan?.route !== "semantic_correction"
+    || !shadowResult.executionPlanning?.validation?.valid
   ) return parsed;
+  if (parsed?.intent === "unknown" && shadowResult.executionPlanning?.plan?.steps?.length === 1) {
+    const semanticTool = shadowResult.executionPlanning.plan.steps[0].tool;
+    if (!["item_carrier_rankings", "entity_catalog_query", "composition_member_statistics"].includes(semanticTool)) {
+      return parsed;
+    }
+    return adaptTftExecutionPlanToParsed(
+      parsed,
+      shadowResult.executionPlanning.plan,
+      shadowResult.semanticResult?.taskFrame,
+      "semantic_correction"
+    );
+  }
+  if (!shadowResult.executionPlanning?.plan?.conceptMapping) return parsed;
   const executionTools = (shadowResult.executionPlanning.plan.steps ?? []).map((step) => step.tool);
   const decision = createTakeoverDecision({
     taskFrame: shadowResult.semanticResult?.taskFrame,
@@ -233,36 +487,12 @@ function applyControlledSemanticCorrection(parsed, shadowResult, options = {}) {
     policy: options.semanticTakeoverPolicy
   });
   if (decision.route !== "semantic_correction") return parsed;
-  const mapping = shadowResult.executionPlanning.plan.conceptMapping;
-  if (
-    mapping?.conceptId !== "concept.strategy.fast9_nine_five"
-    || executionTools.length !== 1
-    || executionTools[0] !== "comps_rankings"
-  ) return parsed;
-  const currentHints = asArray(parsed?.parser?.unresolvedEntityHints);
-  const remainingHints = currentHints.filter((hint) => !isMappedConceptResidue(hint, mapping));
-  const semanticLimit = shadowResult.semanticResult?.taskFrame?.constraints?.limit;
-  return {
-    ...parsed,
-    intent: "comp_rankings",
-    preferenceRequested: true,
-    preferenceConditions: {
-      ...(parsed.preferenceConditions ?? {}),
-      strategy: "fast9",
-      ...(Number.isInteger(semanticLimit) ? { count: semanticLimit } : {})
-    },
-    parser: {
-      ...(parsed.parser ?? {}),
-      unresolvedEntityHints: remainingHints,
-      semanticCorrection: {
-        schemaVersion: decision.schemaVersion,
-        route: decision.route,
-        executionPath: decision.executionPath,
-        conceptId: mapping.conceptId,
-        queryCapability: mapping.queryCapability
-      }
-    }
-  };
+  return adaptTftExecutionPlanToParsed(
+    parsed,
+    shadowResult.executionPlanning.plan,
+    shadowResult.semanticResult?.taskFrame,
+    decision.route
+  );
 }
 
 function attachSemanticTakeover(result, decision, outcome = {}) {
@@ -279,12 +509,25 @@ function attachSemanticTakeover(result, decision, outcome = {}) {
         executionPath: decision.executionPath,
         semanticDifference: decision.semanticDifference,
         plannedTools: decision.plannedTools,
-        legacyTools: decision.legacyTools
+        legacyTools: decision.legacyTools,
+        shadowComparison: decision.shadowComparison
       }
     },
     agentTrace: {
       enumerable: false,
       value: finalizeTakeoverTrace(decision, outcome)
+    },
+    executionPlan: {
+      enumerable: false,
+      value: outcome.execution?.plan ?? decision.executionPlan ?? null
+    },
+    executionTrace: {
+      enumerable: false,
+      value: outcome.execution?.trace ?? null
+    },
+    agentStatus: {
+      enumerable: false,
+      value: outcome.agentStatus ?? null
     }
   });
   return result;
@@ -388,6 +631,345 @@ function storeOptionsFor(options = {}, extra = {}) {
   };
 }
 
+function cacheRefreshDue(entry, refreshAfterMs, now = Date.now()) {
+  const ttl = Number(refreshAfterMs);
+  if (!entry || !Number.isFinite(ttl) || ttl <= 0) return false;
+  const updatedAt = Date.parse(entry.updatedAt ?? "");
+  return Number.isFinite(updatedAt) && now - updatedAt >= ttl;
+}
+
+function cacheEntryWithinRetention(entry, options = {}) {
+  const retentionMs = Number(options.queryHardRetentionMs);
+  if (!Number.isFinite(retentionMs) || retentionMs <= 0) return true;
+  const updatedAt = Date.parse(entry?.updatedAt ?? "");
+  const now = typeof options.now === "function" ? Number(options.now()) : Date.now();
+  return Number.isFinite(updatedAt) && now - updatedAt <= retentionMs;
+}
+
+function cachedQueryState(key, entry, options = {}) {
+  const revalidating = cacheRefreshDue(
+    entry,
+    options.queryRefreshAfterMs,
+    typeof options.now === "function" ? Number(options.now()) : Date.now()
+  );
+  return {
+    key,
+    hit: true,
+    stale: false,
+    revalidating,
+    refreshDue: revalidating,
+    updatedAt: entry.updatedAt,
+    expiresAt: entry.expiresAt
+  };
+}
+
+export function conversationStateV2ModeFor(options = {}) {
+  const value = String(
+    options.conversationStateV2Mode
+    ?? process.env.TFT_AGENT_CONVERSATION_STATE_V2_MODE
+    ?? "off"
+  ).trim().toLowerCase();
+  return CONVERSATION_STATE_V2_MODES.has(value) ? value : "off";
+}
+
+function emitRecommendationProgress(options, type, data = {}) {
+  if (typeof options?.onProgress !== "function") return;
+  try {
+    options.onProgress({
+      schemaVersion: "recommendation-progress.v1",
+      type,
+      data
+    });
+  } catch {
+    // Progress reporting is observational and cannot change recommendation results.
+  }
+}
+
+function semanticResultForConversationResolution(resolution, interpretation) {
+  const frame = resolution.resolvedTaskFrame;
+  return {
+    taskFrame: frame,
+    telemetry: {
+      schemaVersion: "semantic-parser-telemetry.v1",
+      durationMs: 0,
+      usage: { cachedInputTokens: 0, uncachedInputTokens: 0, outputTokens: 0 },
+      budget: {
+        maxInputTokens: 1200,
+        maxOutputTokens: 300,
+        maxLatencyMs: 1500,
+        maxExamples: 0
+      },
+      exampleIds: [],
+      provider: interpretation?.telemetry?.provider ?? "conversation_state_v2",
+      providerFallback: interpretation?.telemetry?.providerFallback ?? null,
+      providerCalled: interpretation?.telemetry?.providerCalled === true,
+      providerSucceeded: interpretation?.telemetry?.providerSucceeded === true,
+      providerUsage: interpretation?.telemetry?.providerUsage ?? null,
+      providerError: interpretation?.telemetry?.providerError ?? null
+    },
+    stateBar: {
+      objective: frame.goal,
+      unresolvedAmbiguities: frame.ambiguities,
+      remainingBudget: {}
+    },
+    contextResolution: {
+      schemaVersion: resolution.schemaVersion,
+      taskFrame: frame,
+      resolved: true,
+      usedConversation: resolution.inheritedFields.length > 0,
+      inheritedFields: resolution.inheritedFields,
+      changedFields: resolution.changedFields
+    },
+    clarificationPolicy: {
+      taskFrame: frame,
+      needsClarification: false,
+      blocking: false,
+      strategy: "conversation_state_v2"
+    }
+  };
+}
+
+function actionOnlyGroupFollowupFrame(input, conversationState) {
+  if (!isActionOnlyBuildFollowup(input)) return null;
+  if (conversationState?.pendingClarification) return null;
+  const active = conversationState?.activeTask?.taskFrame;
+  if (!active) return null;
+  const traitEntities = [
+    ...(active.concepts ?? []),
+    ...(active.subjects ?? [])
+  ].filter((entity) => entity?.expectedType === "trait" && entity?.resolvedId);
+  const cost = active.constraints?.cost;
+  if (cost === undefined && traitEntities.length === 0) return null;
+  return createTaskFrame({
+    domain: "tft",
+    action: "recommend",
+    goal: "recommend_builds_for_candidate_group",
+    concepts: traitEntities,
+    constraints: {
+      ...(cost !== undefined ? { cost } : {}),
+      targetEntityType: "champion",
+      relation: "member_of_trait",
+      current: true,
+      ...(active.constraints?.patch !== undefined ? { patch: active.constraints.patch } : {}),
+      ...(active.constraints?.days !== undefined ? { days: active.constraints.days } : {}),
+      ...(active.constraints?.rank !== undefined ? { rank: active.constraints.rank } : {}),
+      ...(active.constraints?.minSamples !== undefined ? { minSamples: active.constraints.minSamples } : {}),
+      ...(active.constraints?.queue !== undefined ? { queue: active.constraints.queue } : {})
+    },
+    expectedOutput: ["recommendations", "results", "evidence"],
+    capabilityRequirements: ["entity_catalog_filtering", "unit_build_statistics"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported",
+    contextReferences: [{ type: "last_result", fields: ["shownEntities"] }]
+  });
+}
+
+function semanticResultForRecoveredFrame(frame, provider = "action_only_build_followup") {
+  return {
+    taskFrame: frame,
+    telemetry: {
+      schemaVersion: "semantic-parser-telemetry.v1",
+      durationMs: 0,
+      usage: { cachedInputTokens: 0, uncachedInputTokens: 0, outputTokens: 0 },
+      budget: {
+        maxInputTokens: 1200,
+        maxOutputTokens: 300,
+        maxLatencyMs: 1500,
+        maxExamples: 0
+      },
+      exampleIds: [],
+      provider,
+      providerFallback: null,
+      providerCalled: false,
+      providerSucceeded: false
+    },
+    stateBar: {
+      objective: frame.goal,
+      unresolvedAmbiguities: frame.ambiguities,
+      remainingBudget: {}
+    },
+    contextResolution: {
+      schemaVersion: "context-resolution.v1",
+      taskFrame: frame,
+      resolved: true,
+      usedConversation: true,
+      inheritedFields: ["cost", "targetEntityType", "relation"],
+      changedFields: ["goal", "capabilityRequirements"]
+    },
+    clarificationPolicy: {
+      taskFrame: frame,
+      needsClarification: false,
+      blocking: false,
+      strategy: provider
+    }
+  };
+}
+
+function providerInvocationFor(interpretation) {
+  const telemetry = interpretation?.telemetry ?? {};
+  const fallback = telemetry.providerFallback ?? null;
+  const corrected = fallback?.used === true && [
+    "contextual_task_recovery",
+    "action_only_build_followup_policy",
+    "catalog_backed_input_correction"
+  ].includes(fallback?.reason);
+  return {
+    attempted: telemetry.providerCalled === true,
+    succeeded: telemetry.providerSucceeded === true,
+    accepted: telemetry.providerSucceeded === true && fallback?.used !== true,
+    corrected,
+    correctionReason: fallback?.reason ?? null,
+    usage: telemetry.providerUsage ?? null,
+    validationErrors: telemetry.providerError ? [telemetry.providerError] : []
+  };
+}
+
+async function interpretConversationV2(input, state, options, catalog) {
+  const interpreter = options.turnInterpreter ?? interpretTurn;
+  const interpretationState = options.startNewTask === true
+    ? createConversationState({ seasonContextId: seasonContextIdFor(options) })
+    : state;
+  const raw = await interpreter({
+    currentMessage: input,
+    conversationState: interpretationState,
+    semanticProvider: options.turnDeltaProvider ?? options.semanticTaskProvider,
+    semanticTaskParser: options.semanticTaskParser ?? parseSemanticTask,
+    semanticExampleStore: options.semanticExampleStore,
+    catalog,
+    version: options.effectivePatch ?? catalog?.version ?? null,
+    currentTime: options.currentTime ?? null,
+    seasonContextId: seasonContextIdFor(options),
+    entitySemanticRetriever: options.semanticRetriever,
+    entityCandidateRetriever: options.entityCandidateRetriever,
+    entityCandidateReranker: options.semanticEntityReranker,
+    domainPolicy: options.conversationDomainPolicy ?? tftConversationPolicy,
+    budget: options.turnInterpreterBudget
+  });
+  const interpretation = raw?.turnDelta
+    ? raw
+    : {
+      schemaVersion: "turn-interpreter.v1",
+      turnDelta: raw,
+      telemetry: { provider: "injected", providerFallback: null },
+      messages: []
+    };
+  const resolution = reduceConversationState({
+    state,
+    delta: interpretation.turnDelta,
+    defaults: options.conversationDefaults ?? {},
+    domainPolicy: options.conversationDomainPolicy ?? tftConversationPolicy
+  });
+  return { interpretation, resolution };
+}
+
+function controlledConversationText(resolution, state) {
+  const missingBuildSubject = resolution.resolvedTaskFrame?.goal === "unit_build_rankings"
+    && resolution.resolvedTaskFrame?.ambiguities?.some((entry) => (
+      entry?.code === "missing_subject"
+      || entry?.missingFields?.includes?.("subjects")
+      || entry?.missingFields?.includes?.("subject.champion")
+  ));
+  if (missingBuildSubject) {
+    return "要查哪个英雄的出装？请告诉我英雄名称。";
+  }
+  const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
+    entry?.code === "ambiguous_query_type"
+    || entry?.missingFields?.includes?.("query_type")
+  ));
+  if (queryTypeAmbiguity) {
+    const unit = resolution.resolvedTaskFrame?.subjects?.find((entity) => (
+      entity?.expectedType === "champion"
+    ));
+    const name = unit?.canonicalName ?? unit?.rawText ?? "这个英雄";
+    return `你想查询${name}的推荐装备、所在阵容，还是技能与棋子资料？`;
+  }
+  if (resolution.decision === "exhausted") {
+    const shown = state.lastResult?.shownIds?.length ?? state.lastResult?.returnedCount ?? 0;
+    const total = state.lastResult?.totalCount;
+    const count = total == null ? String(shown) : `${shown}/${total}`;
+    return `当前条件下的结果已全部展示（${count}）。你可以明确修改一个条件后继续。`;
+  }
+  if (resolution.decision === "cancelled") return "已取消当前任务。";
+  if (resolution.decision === "unsupported") return "我理解了任务变化，但当前能力不支持执行。";
+  if (resolution.decision === "invalid_delta") return "本轮任务变化不符合受控协议，请换一种方式说明要继续、修改还是切换任务。";
+  return "我还不能确定本轮是继续当前任务、修改条件还是开始新任务，请补充一个关键信息。";
+}
+
+function controlledConversationSuggestions(resolution) {
+  const missingBuildSubject = resolution.resolvedTaskFrame?.goal === "unit_build_rankings"
+    && resolution.resolvedTaskFrame?.ambiguities?.some((entry) => (
+      entry?.code === "missing_subject"
+      || entry?.missingFields?.includes?.("subjects")
+      || entry?.missingFields?.includes?.("subject.champion")
+    ));
+  if (missingBuildSubject) return [];
+  const queryTypeAmbiguity = resolution.resolvedTaskFrame?.ambiguities?.find((entry) => (
+    entry?.code === "ambiguous_query_type"
+    || entry?.missingFields?.includes?.("query_type")
+  ));
+  if (!queryTypeAmbiguity) return [];
+  const unit = resolution.resolvedTaskFrame?.subjects?.find((entity) => (
+    entity?.expectedType === "champion"
+  ));
+  const name = unit?.canonicalName ?? unit?.rawText ?? "这个英雄";
+  return [`${name}推荐装备`, `${name}所在阵容`, `${name}技能描述（棋子资料）`];
+}
+
+async function controlledConversationResponse(input, state, interpretation, resolution, options) {
+  if (resolution.decision === "cancelled") {
+    await setStoreEntry(
+      sessionStoreFor(options),
+      "deleteSessionState",
+      sessionKeyFor(options),
+      storeOptionsFor(options)
+    );
+  } else if (resolution.decision === "clarify" || resolution.decision === "invalid_delta") {
+    await setStoreEntry(
+      sessionStoreFor(options),
+      "setSessionState",
+      sessionKeyFor(options),
+      resolution.nextState,
+      storeOptionsFor(options, { ttlMs: options.sessionTtlMs })
+    );
+  }
+  return {
+    type: resolution.decision === "exhausted"
+      ? "conversation_exhausted"
+      : resolution.decision === "cancelled"
+        ? "conversation_cancelled"
+        : "clarification",
+    parsed: null,
+    query: state.query ?? null,
+    validation: {
+      valid: resolution.decision === "exhausted" || resolution.decision === "cancelled",
+      errors: resolution.warnings,
+      warnings: []
+    },
+    clarification: resolution.decision === "clarify" || resolution.decision === "invalid_delta"
+      ? {
+        needsClarification: true,
+        blocking: true,
+        reason: resolution.nextState.pendingClarification?.reason ?? resolution.decision,
+        question: controlledConversationText(resolution, state),
+        suggestions: controlledConversationSuggestions(resolution)
+      }
+      : null,
+    filteredBuilds: [],
+    rankedBuilds: [],
+    results: [],
+    text: controlledConversationText(resolution, state),
+    conversation: {
+      mode: "on",
+      stateVersion: state.schemaVersion,
+      delta: interpretation.turnDelta,
+      resolution,
+      providerFallback: interpretation.telemetry?.providerFallback ?? null,
+      providerInvocation: providerInvocationFor(interpretation)
+    },
+    rawInput: input
+  };
+}
+
 async function getStoreEntry(store, method, ...args) {
   if (!store?.[method]) return null;
   return store[method](...args);
@@ -414,6 +996,9 @@ function inheritCompRankingFromSession(parsed, sessionValue, options = {}) {
   const explicitFreshCompRequest = isCompIntent(parsed?.intent)
     && !parsed?.preferenceRequested
     && !continuationWording;
+  if (explicitFreshCompRequest) {
+    return { parsed, inherited: false, inheritedKeys: [] };
+  }
   const inheritedKeys = [];
   for (const key of ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit", "specialMode"]) {
     const current = next[key];
@@ -691,7 +1276,7 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     applied.push(key);
   };
 
-  if (isCompIntent(structured.intent) && (!parsed.unit || structured.intent === "comp_analysis")) {
+  if (isCompIntent(structured.intent)) {
     next.intent = structured.intent;
     applied.push("intent");
   }
@@ -710,12 +1295,28 @@ function mergeStructuredParserResult(parsed, structured, reparsed) {
     structured.constraints.comparisonItemMentions,
     reparsed
   );
+  if (structured.intent === "item_carrier_rankings") {
+    const carrierItems = resolvedItemApiNamesForMentions(
+      [
+        ...(structured.entities.itemMentions ?? []),
+        ...(structured.constraints.lockedItemMentions ?? [])
+      ],
+      reparsed
+    );
+    if (carrierItems.length === 1) {
+      next.intent = "item_carrier_rankings";
+      next.carrierItem = carrierItems[0];
+      next.lockedItems = [];
+      next.ownedItems = [];
+      applied.push("intent", "carrierItem");
+    }
+  }
   const reclassifyAmbiguousItems = parsed.parser?.multipleItemRelationAmbiguous
     && structured.intent === "unit_item_comparison";
   const lockedItems = uniqueArray([
     ...(reclassifyAmbiguousItems ? [] : (parsed.lockedItems ?? parsed.ownedItems ?? [])),
     ...(reclassifyAmbiguousItems ? [] : (reparsed.lockedItems ?? reparsed.ownedItems ?? [])),
-    ...structuredLockedItems
+    ...(structured.intent === "item_carrier_rankings" ? [] : structuredLockedItems)
   ]);
   const comparisonItems = uniqueArray([
     ...(parsed.comparisonItems ?? []),
@@ -1253,6 +1854,10 @@ function serializeQueryForSession(query) {
     comparisonItems: query.comparisonItems,
     comparisonMode: query.comparisonMode,
     performanceItem: query.performanceItem ?? null,
+    carrierItem: query.carrierItem ?? query.item ?? null,
+    cost: query.cost,
+    targetEntityType: query.targetEntityType,
+    relation: query.relation,
     primaryMetric: query.primaryMetric,
     pendingComparison: Boolean(query.pendingComparison),
     comp: query.comp?.status === "applied" && query.comp?.value?.selection === "explicit"
@@ -1356,14 +1961,17 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
           };
           const explorerPlan = planMetaTFTCompCandidates(plannedQuery);
           return typeof options.metaTFTClient.getCompCandidates === "function"
-            ? options.metaTFTClient.getCompCandidates(explorerPlan)
+            ? options.metaTFTClient.getCompCandidates(explorerPlan, {
+              timeoutMs: options.metaTFTTimeoutMs
+            })
             : options.metaTFTClient.getExactUnitsTraits2(explorerPlan.params);
         },
         {
           intent: query.intent,
           toolExecutor: options.toolExecutor,
           agentRun: options.agentRun,
-          signal: options.abortSignal
+          signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs
         }
       );
       const stored = await setStoreEntry(cacheStore, "setDefaultContext", cacheKey, {
@@ -1376,7 +1984,7 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
       cache.expiresAt = stored?.expiresAt ?? null;
     } catch (error) {
       const stale = await getStoreEntry(cacheStore, "getDefaultContext", cacheKey, storeOptionsFor(options, { allowExpired: true }));
-      if (stale?.value?.response !== undefined) {
+      if (stale?.value?.response !== undefined && cacheEntryWithinRetention(stale, options)) {
         response = stale.value.response;
         cache = {
           key: cacheKey,
@@ -1448,22 +2056,299 @@ async function resolveCompConstraint(query, parsed, options, catalog) {
   };
 }
 
-function serializeResultIds(rankedBuilds) {
+async function recommendItemCarriersForInput(
+  input,
+  parsed,
+  options,
+  catalog,
+  semanticShadowResult
+) {
+  const query = itemCarrierQuery(parsed, options);
+  const itemRecord = catalog.itemByApiName.get(query.item);
+  if (!itemRecord) {
+    return attachRetrievalAudit({
+      type: "clarification",
+      parsed,
+      query,
+      validation: { valid: false, errors: ["缺少可识别的装备"], warnings: [] },
+      clarification: {
+        needsClarification: true,
+        blocking: true,
+        question: "请指定要查询携带者的装备名称。"
+      },
+      carriers: [],
+      rankedBuilds: [],
+      text: "请指定要查询携带者的装备名称。"
+    }, input, catalog);
+  }
+
+  const localDecision = unavailableItemDecision({ ...query, carrierItem: query.item }, catalog);
+  if (localDecision) {
+    return attachRetrievalAudit({
+      type: "item_carrier_rankings",
+      parsed,
+      query,
+      validation: { valid: true, errors: [], warnings: [] },
+      localDecision,
+      carriers: [],
+      rankedBuilds: [],
+      text: localDecision.text
+    }, input, catalog);
+  }
+
+  const validation = { valid: true, errors: [], warnings: [] };
+  const retrievalAudit = createRetrievalAudit({
+    parsed,
+    query,
+    validation,
+    clarification: null
+  }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
+  const semanticRouting = semanticTakeoverDecision(
+    semanticShadowResult,
+    retrievalAudit.retrievalPlan,
+    options
+  );
+  const executionPlan = activeExecutionPlan(
+    semanticShadowResult,
+    semanticRouting,
+    "item_carrier_rankings",
+    query,
+    options.toolRegistry ?? options.executionPlanExecutor?.registry
+  );
+  const queryCacheKey = makeQueryCacheKey(query);
+  const cacheStore = options.cacheStore ?? null;
+  let packet = options.itemCarrierResponse;
+  let queryCache = { key: queryCacheKey, hit: false, stale: false };
+  const warnings = [];
+
+  if (packet === undefined && !options.bypassQueryCache) {
+    const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
+    if (cached?.value?.response !== undefined) {
+      packet = cached.value.response;
+      queryCache = cachedQueryState(queryCacheKey, cached, options);
+    }
+  }
+
+  if (packet === undefined) {
+    try {
+      packet = await executePlannedStructuredQuery(
+        retrievalAudit.retrievalPlan,
+        "item_carrier_rankings",
+        async (params) => {
+          const plannedQuery = {
+            ...query,
+            item: params.item,
+            days: params.days,
+            patch: params.patch,
+            queue: params.queue,
+            rankFilter: params.rank,
+            minSamples: params.minSamples,
+            limit: params.limit,
+            buildLimit: params.buildLimit,
+            positiveOnly: params.positiveOnly,
+            sort: params.sort
+          };
+          if (typeof options.metaTFTClient?.getItemCarrierBuilds !== "function") {
+            throw new Error("item carrier rankings require getItemCarrierBuilds()");
+          }
+          const pbeItemDetail = String(plannedQuery.queue).toUpperCase() === "PBE";
+          if (!pbeItemDetail && typeof options.compsClient?.getUnitItemsProcessed !== "function") {
+            throw new Error("item carrier rankings require getUnitItemsProcessed()");
+          }
+          const baselineParams = {
+            queue: plannedQuery.queue,
+            patch: plannedQuery.patch,
+            days: plannedQuery.days,
+            permit_filter_adjustment: "true",
+            ...(plannedQuery.queue === "1100" && plannedQuery.rankFilter?.length
+              ? { rank: [...plannedQuery.rankFilter].sort().join(",") }
+              : {})
+          };
+          const buildResponse = await options.metaTFTClient.getItemCarrierBuilds(
+            planMetaTFTItemCarrierBuilds(plannedQuery),
+            { timeoutMs: options.metaTFTTimeoutMs }
+          );
+          const baselineResponse = pbeItemDetail
+            ? buildResponse
+            : await options.compsClient.getUnitItemsProcessed(baselineParams);
+          return {
+            source: "metatft",
+            updatedAt: baselineResponse?.updated
+              ?? baselineResponse?.data?.updated
+              ?? buildResponse?.capture?.capturedAt
+              ?? new Date().toISOString(),
+            buildResponse,
+            baselineResponse
+          };
+        },
+        {
+          intent: query.intent,
+          toolExecutor: options.toolExecutor,
+          executionPlanExecutor: options.executionPlanExecutor,
+          executionPlan,
+          handlers: options.agentToolHandlers,
+          agentRun: options.agentRun,
+          signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs
+        }
+      );
+      const stored = await setStoreEntry(cacheStore, "setQuery", queryCacheKey, {
+        request: planMetaTFTItemCarrierBuilds(query),
+        response: packet,
+        source: "metatft",
+        patch: query.patch
+      }, storeOptionsFor(options, { ttlMs: options.queryTtlMs }));
+      queryCache.updatedAt = stored?.updatedAt ?? packet.updatedAt ?? new Date().toISOString();
+      queryCache.expiresAt = stored?.expiresAt ?? null;
+    } catch (error) {
+      const stale = await getStoreEntry(
+        cacheStore,
+        "getQuery",
+        queryCacheKey,
+        storeOptionsFor(options, { allowExpired: true })
+      );
+      if (stale?.value?.response === undefined || !cacheEntryWithinRetention(stale, options)) throw error;
+      packet = stale.value.response;
+      queryCache = {
+        key: queryCacheKey,
+        hit: true,
+        stale: true,
+        updatedAt: stale.updatedAt,
+        expiresAt: stale.expiresAt
+      };
+      warnings.push(`MetaTFT 请求失败，已使用 ${stale.updatedAt} 的过期装备携带者缓存`);
+    }
+  }
+
+  const buildResponse = packet?.buildResponse ?? packet?.response ?? packet;
+  const baselineResponse = packet?.baselineResponse ?? options.itemCarrierBaselineResponse;
+  if (!baselineResponse) throw new Error("item carrier rankings require unit baseline data");
+
+  const result = aggregateItemCarrierRankings(buildResponse, baselineResponse, query, { catalog });
+  result.parsed = parsed;
+  result.validation = validation;
+  result.rankedBuilds = [];
+  result.warnings = warnings;
+  result.source = {
+    provider: "MetaTFT",
+    endpoint: String(query.queue).toUpperCase() === "PBE"
+      ? "tft-stat-api/item_detail"
+      : "tft-explorer-api/unit_builds + tft-comps-api/unit_items_processed",
+    patch: query.patch,
+    updatedAt: packet?.updatedAt ?? queryCache.updatedAt ?? null,
+    cache: queryCache.stale ? "stale" : queryCache.hit ? "hit" : "miss"
+  };
+  result.cache = {
+    query: queryCache,
+    session: {
+      inherited: false,
+      inheritedKeys: [],
+      updatedAt: null,
+      writtenAt: null
+    }
+  };
+  const itemName = itemRecord.preferredDisplayName
+    ?? itemRecord.shortName
+    ?? itemRecord.zhName
+    ?? query.item;
+  result.text = result.carriers.length
+    ? `${itemName}共找到 ${result.carriers.length} 个正向提升携带者。`
+    : `${itemName}在当前样本门槛下没有正向提升携带者。`;
+  result.taskFrame = semanticShadowResult?.semanticResult?.taskFrame ?? null;
+  result.capabilityMatch = semanticShadowResult?.capabilityMatch ?? null;
+  result.executionPlan = semanticShadowResult?.executionPlanning?.plan ?? executionPlan ?? null;
+  attachSemanticTakeover(result, semanticRouting, {
+    toolStatus: queryCache.stale ? "degraded" : queryCache.hit ? "cache_hit" : "completed",
+    conclusionStatus: "not_requested",
+    failureLayer: queryCache.stale ? "tool" : null,
+    latencyMs: semanticShadowResult?.semanticResult?.telemetry?.durationMs ?? 0
+  });
+  attachRetrievalAudit(result, input, catalog, retrievalAudit);
+  const sessionWrite = await writeLastQuerySession(result, options);
+  result.cache.session.writtenAt = sessionWrite?.updatedAt ?? null;
+  return result;
+}
+
+function serializeResultIds(rankedBuilds = []) {
   return rankedBuilds
     .slice(0, 3)
     .map((build) => build.raw?.unit_builds ?? build.raw?.unit_build ?? build.items.join("|"));
 }
 
 async function writeLastQuerySession(result, options) {
-  if (options.useSession === false) return null;
+  // Structured quick tasks deliberately skip reading session state so an old
+  // task cannot leak into their deterministic input. They still need to write
+  // their successful result, otherwise the next natural-language turn has no
+  // active task to modify.
+  if (options.useSession === false && options.persistSession !== true) return null;
+  const conversation = options.conversationStateV2Context;
+  if (conversation?.mode === "on") {
+    result.conversation = {
+      mode: "on",
+      stateVersion: conversation.previousState.schemaVersion,
+      delta: conversation.interpretation.turnDelta,
+      resolution: conversation.resolution,
+      providerFallback: conversation.interpretation.telemetry?.providerFallback ?? null,
+      providerInvocation: providerInvocationFor(conversation.interpretation)
+    };
+    if (
+      result.type === "clarification"
+      || result.clarification?.blocking
+      || result.validation?.valid === false
+      || result.localDecision
+    ) return null;
+    const compatibilityQuery = isCompIntent(result.type)
+      ? result.query
+      : serializeQueryForSession(result.query);
+    const state = updateConversationStateFromResult({
+      previousState: conversation.previousState,
+      resolution: conversation.resolution,
+      result,
+      delta: conversation.interpretation.turnDelta,
+      updatedAt: new Date().toISOString(),
+      compatibilityQuery
+    });
+    result.conversation.resultState = {
+      shownCount: state.lastResult?.shownIds?.length ?? 0,
+      returnedCount: state.lastResult?.returnedCount ?? 0,
+      totalCount: state.lastResult?.totalCount ?? null
+    };
+    if (
+      state === conversation.previousState
+      || (
+        state.lastResult == null
+        && conversation.previousState.lastResult != null
+      )
+    ) return null;
+    const entry = await setStoreEntry(
+      sessionStoreFor(options),
+      "setSessionState",
+      sessionKeyFor(options),
+      state,
+      storeOptionsFor(options, { ttlMs: options.sessionTtlMs })
+    );
+    Object.defineProperty(result, "conversationState", {
+      enumerable: false,
+      value: state
+    });
+    return entry;
+  }
   const pendingComparison = options.allowPendingComparison === true
     && result.query?.intent === "unit_item_comparison"
     && Boolean(result.query?.unit);
-  if (!result.validation?.valid && !pendingComparison) return null;
+  if (result.validation && !result.validation.valid && !pendingComparison) return null;
+  const compatibilityQuery = isCompIntent(result.type)
+    ? result.query
+    : serializeQueryForSession(result.query);
+  const resultIds = isCompIntent(result.type)
+    ? Object.values(result.rankings ?? {}).flat().slice(0, 10).map((comp) => comp.compId)
+    : result.type === "item_carrier_rankings"
+      ? (result.carriers ?? []).map((carrier) => carrier.unitApiName).slice(0, ITEM_CARRIER_MAX_LIMIT)
+      : serializeResultIds(result.rankedBuilds);
 
   return setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
-    query: serializeQueryForSession(result.query),
-    lastResultIds: serializeResultIds(result.rankedBuilds),
+    query: compatibilityQuery,
+    lastResultIds: resultIds,
     updatedAt: new Date().toISOString()
   }, {
     ...storeOptionsFor(options, { ttlMs: options.sessionTtlMs })
@@ -1595,7 +2480,9 @@ export function createRecommendationFromRows(input, responseOrRows, options = {}
       provider: responseOrRows?.provenance?.provider ?? "metatft",
       providerVersion: responseOrRows?.provenance?.providerVersion ?? options.providerVersion ?? "metatft-live.v1",
       seasonContextId: responseOrRows?.provenance?.seasonContextId ?? options.seasonContextId ?? "set17-live",
-      endpoint: "tft-explorer-api/unit_builds",
+      endpoint: plan?.path === "/tft-stat-api/unit_detail_items"
+        ? "tft-stat-api/unit_detail_items"
+        : "tft-explorer-api/unit_builds",
       patch: responseOrRows?.provenance?.effectivePatch ?? validatedQuery.patch ?? null,
       effectivePatch: responseOrRows?.provenance?.effectivePatch ?? validatedQuery.patch ?? null,
       region: responseOrRows?.provenance?.region ?? null,
@@ -1612,77 +2499,374 @@ export async function recommendForInput(input, options = {}) {
   const catalog = catalogFor(options);
   const cacheStore = options.cacheStore ?? null;
   const semanticParser = options.semanticTaskParser ?? parseSemanticTask;
-  const semanticTaskPromise = options.semanticShadow === false
-    ? null
-    : Promise.resolve().then(() => semanticParser(input, {
-      catalog,
-      conversation: options.semanticConversation ?? [],
-      dynamicContext: {
-        version: options.effectivePatch ?? catalog?.version ?? null,
-        currentTime: options.currentTime ?? null,
-        userState: options.semanticUserState ?? null
-      },
-      exampleStore: options.semanticExampleStore,
-      provider: options.semanticTaskProvider,
-      budget: options.semanticParserBudget,
-      entitySemanticRetriever: options.semanticRetriever,
-      entityCandidateRetriever: options.entityCandidateRetriever,
-      entityCandidateReranker: options.semanticEntityReranker
-    }));
-  semanticTaskPromise?.catch(() => {});
+  const directParsed = options.directParsed && typeof options.directParsed === "object"
+    ? structuredClone(options.directParsed)
+    : null;
+  const conversationMode = directParsed ? "off" : conversationStateV2ModeFor(options);
   const initialSessionEntry = options.useSession === false
     ? null
     : await getStoreEntry(sessionStoreFor(options), "getSessionState", sessionKeyFor(options), storeOptionsFor(options));
-  let deterministicParsed = parseQueryDeterministically(input, options, catalog);
-  deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
-  deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
+  const conversationState = migrateLegacySessionToConversationState(
+    initialSessionEntry?.value ?? {},
+    { seasonContextId: seasonContextIdFor(options) }
+  );
+  let conversationV2 = null;
+  if (conversationMode !== "off") {
+    const { interpretation, resolution } = await interpretConversationV2(
+      input,
+      conversationState,
+      options,
+      catalog
+    );
+    if (
+      conversationMode === "on"
+      && resolution.decision === "execute"
+      && resolution.resolvedTaskFrame
+    ) {
+      resolution.resolvedTaskFrame = await applyDeterministicTftSemantics(
+        resolution.resolvedTaskFrame,
+        input,
+        {
+          catalog,
+          dynamicContext: {
+            version: options.effectivePatch ?? catalog?.version ?? null,
+            currentTime: options.currentTime ?? null
+          },
+          conversation: options.startNewTask === true
+            ? []
+            : [
+                ...(conversationState.taskHistory ?? []),
+                ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
+              ],
+          managedConstraintFields: Array.isArray(interpretation.turnDelta?.constraintOperations)
+            ? interpretation.turnDelta.constraintOperations.map((operation) => operation?.field).filter(Boolean)
+            : [],
+          entitySemanticRetriever: options.semanticRetriever,
+          entityCandidateRetriever: options.entityCandidateRetriever,
+          entityCandidateReranker: options.semanticEntityReranker
+        }
+      );
+    }
+    conversationV2 = {
+      mode: conversationMode,
+      previousState: conversationState,
+      interpretation,
+      resolution,
+      semanticShadow: null,
+      comparison: null
+    };
+    emitRecommendationProgress(options, "understanding.resolved", {
+      conversation: {
+        mode: conversationMode,
+        stateVersion: conversationState.schemaVersion,
+        delta: interpretation.turnDelta,
+        resolution,
+        providerFallback: interpretation.telemetry?.providerFallback ?? null
+      }
+    });
+    if (conversationMode === "on" && resolution.decision !== "execute") {
+      return controlledConversationResponse(
+        input,
+        conversationState,
+        interpretation,
+        resolution,
+        options
+      );
+    }
+    options = {
+      ...options,
+      conversationStateV2Context: conversationV2
+    };
+  }
+  const actionOnlyFrame = conversationMode !== "on" && conversationState
+    ? actionOnlyGroupFollowupFrame(input, conversationState)
+    : null;
+  const semanticTaskPromise = directParsed || options.semanticShadow === false
+    ? null
+    : conversationMode === "on"
+      ? Promise.resolve(semanticResultForConversationResolution(
+        conversationV2.resolution,
+        conversationV2.interpretation
+      ))
+      : actionOnlyFrame
+        ? Promise.resolve(semanticResultForRecoveredFrame(actionOnlyFrame))
+      : Promise.resolve().then(() => semanticParser(input, {
+        catalog,
+        conversation: options.semanticConversation ?? [
+          ...(conversationState.taskHistory ?? []),
+          ...(conversationState.activeTask?.taskFrame ? [conversationState.activeTask] : [])
+        ],
+        dynamicContext: {
+          version: options.effectivePatch ?? catalog?.version ?? null,
+          currentTime: options.currentTime ?? null,
+          userState: options.semanticUserState ?? null
+        },
+        exampleStore: options.semanticExampleStore,
+        provider: options.semanticTaskProvider,
+        providerFailureFallback: true,
+        budget: options.semanticParserBudget,
+        entitySemanticRetriever: options.semanticRetriever,
+        entityCandidateRetriever: options.entityCandidateRetriever,
+        entityCandidateReranker: options.semanticEntityReranker
+      }));
+  semanticTaskPromise?.catch(() => {});
+  const hasResolvedParsedInput = Boolean(
+    options.resolvedParsedInput
+    && typeof options.resolvedParsedInput === "object"
+    && !Array.isArray(options.resolvedParsedInput)
+  );
+  let deterministicParsed = directParsed ?? (hasResolvedParsedInput
+    ? structuredClone(options.resolvedParsedInput)
+    : parseQueryDeterministically(input, options, catalog));
+  if (!directParsed && conversationMode !== "on" && !hasResolvedParsedInput) {
+    deterministicParsed = await applySemanticIntentHint(input, deterministicParsed, options);
+    deterministicParsed = await applySemanticEntityHints(input, deterministicParsed, options, catalog);
+  }
   let semanticShadowResult = null;
   if (semanticTaskPromise) {
     semanticShadowResult = await runSemanticShadow(input, deterministicParsed, {
       parser: () => semanticTaskPromise,
-      agentRun: options.agentRun
+      agentRun: options.agentRun,
+      toolRegistry: options.toolRegistry,
+      planner: options.controlledPlanner,
+      plannerFallback: options.controlledPlannerFallback,
+      compositeTools: options.compositeTools,
+      legacyTaskPlanCompatibility: options.executionPlanSovereignty !== true
+    });
+  }
+  if (
+    conversationMode === "shadow"
+    && conversationV2?.resolution?.decision === "execute"
+  ) {
+    conversationV2.semanticShadow = await runSemanticShadow(input, deterministicParsed, {
+      parser: async () => semanticResultForConversationResolution(
+        conversationV2.resolution,
+        conversationV2.interpretation
+      ),
+      toolRegistry: options.toolRegistry,
+      planner: options.controlledPlanner,
+      plannerFallback: options.controlledPlannerFallback,
+      compositeTools: options.compositeTools,
+      legacyTaskPlanCompatibility: false
     });
   }
   const structuredParserNeededBeforeSession = shouldUseStructuredParser(deterministicParsed, options);
-  const initialCompSessionMerge = inheritCompRankingFromSession(
-    deterministicParsed,
-    initialSessionEntry?.value,
-    options
-  );
-  const initialUnitSessionMerge = !isCompIntent(initialCompSessionMerge.parsed.intent)
-    && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
-    ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
-    : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
-  let parsedInput = await parseQueryWithOptionalStructuredParser(
-    input,
-    {
-      ...options,
-      forceStructuredParser: Boolean(options.forceStructuredParser || structuredParserNeededBeforeSession)
-    },
-    catalog,
-    initialUnitSessionMerge.parsed
-  );
-  const compSessionMerge = initialCompSessionMerge.inherited
-    ? {
-      parsed: parsedInput,
-      inherited: true,
-      inheritedKeys: initialCompSessionMerge.inheritedKeys
-    }
-    : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
+  const noSessionMerge = { parsed: deterministicParsed, inherited: false, inheritedKeys: [] };
+  const initialCompSessionMerge = conversationMode === "on"
+    ? noSessionMerge
+    : inheritCompRankingFromSession(deterministicParsed, initialSessionEntry?.value, options);
+  const initialUnitSessionMerge = conversationMode === "on"
+    ? noSessionMerge
+    : !isCompIntent(initialCompSessionMerge.parsed.intent)
+      && canPreinheritUnitFollowUp(initialCompSessionMerge.parsed)
+      ? inheritParsedFromSession(initialCompSessionMerge.parsed, initialSessionEntry?.value)
+      : { parsed: initialCompSessionMerge.parsed, inherited: false, inheritedKeys: [] };
+  let parsedInput = directParsed
+    ?? (conversationMode === "on"
+    ? resolvedTaskFrameToParsed(conversationV2.resolution.resolvedTaskFrame, {
+      input,
+      executionPlan: semanticShadowResult?.executionPlanning?.plan,
+      presentation: conversationV2.interpretation.turnDelta.presentation,
+      taskRelation: conversationV2.interpretation.turnDelta.taskRelation,
+      dialogueAct: conversationV2.interpretation.turnDelta.dialogueAct,
+      lastResult: conversationState.lastResult,
+      providerUsed: conversationV2.interpretation.telemetry?.provider === "injected"
+        && !conversationV2.interpretation.telemetry?.providerFallback?.used
+    })
+    : await parseQueryWithOptionalStructuredParser(
+      input,
+      {
+        ...options,
+        forceStructuredParser: Boolean(options.forceStructuredParser || structuredParserNeededBeforeSession)
+      },
+      catalog,
+      initialUnitSessionMerge.parsed
+    ));
+  const compSessionMerge = conversationMode === "on"
+    ? { parsed: parsedInput, inherited: false, inheritedKeys: [] }
+    : initialCompSessionMerge.inherited
+      ? {
+        parsed: parsedInput,
+        inherited: true,
+        inheritedKeys: initialCompSessionMerge.inheritedKeys
+      }
+      : inheritCompRankingFromSession(parsedInput, initialSessionEntry?.value, options);
   parsedInput = compSessionMerge.parsed;
-  parsedInput = applyControlledSemanticCorrection(parsedInput, semanticShadowResult, options);
+  if (conversationMode !== "on") {
+    parsedInput = applyControlledSemanticCorrection(parsedInput, semanticShadowResult, options);
+  }
+  const progressIntentEnvelope = createIntentEnvelope({
+    input,
+    parsed: parsedInput,
+    query: parsedInput,
+    catalog
+  });
+  emitRecommendationProgress(options, "plan.ready", {
+    conversation: conversationV2 ? {
+      mode: conversationMode,
+      stateVersion: conversationState.schemaVersion,
+      delta: conversationV2.interpretation.turnDelta,
+      resolution: conversationV2.resolution,
+      providerFallback: conversationV2.interpretation.telemetry?.providerFallback ?? null
+    } : null,
+    agent: {
+      executionPlan: semanticShadowResult?.executionPlanning?.plan ?? null
+    },
+    intentEnvelope: progressIntentEnvelope,
+    intent: parsedInput.intent ?? null
+  });
+  emitRecommendationProgress(options, "retrieval.started", {
+    source: isCompIntent(parsedInput.intent) ? "metatft_compositions" : "metatft_structured"
+  });
+
+  const semanticNativePlan = semanticNativeExecutionPlan(semanticShadowResult, options);
+  if (semanticNativePlan) {
+    const finalTool = semanticNativePlan.steps.at(-1).tool;
+    const execution = await options.executionPlanExecutor.execute(
+      semanticNativePlan,
+      {
+        handlers: options.agentToolHandlers ?? {},
+        run: options.agentRun,
+        signal: options.abortSignal,
+        intent: finalTool
+      }
+    );
+    if (execution.status === "completed") {
+      const value = execution.result;
+      const taskFrame = semanticShadowResult.semanticResult?.taskFrame ?? null;
+      const text = semanticNativeText(value, taskFrame);
+      const semanticTraitFilters = [...new Set([
+        ...(parsedInput.traitFilters ?? []),
+        ...[...(taskFrame?.concepts ?? []), ...(taskFrame?.subjects ?? []), ...(taskFrame?.candidates ?? [])]
+          .filter((entity) => entity?.expectedType === "trait" && entity?.resolvedId)
+          .map((entity) => entity.resolvedId)
+      ])];
+      const result = {
+        type: value?.type ?? "tool_using_agent_result",
+        parsed: parsedInput,
+        query: {
+          ...parsedInput,
+          intent: finalTool,
+          traitFilters: semanticTraitFilters,
+          ...(taskFrame?.constraints?.cost !== undefined ? { cost: taskFrame.constraints.cost } : {}),
+          warnings: parsedInput.warnings ?? []
+        },
+        validation: { valid: true, errors: [], warnings: [] },
+        clarification: null,
+        taskFrame,
+        capabilityMatch: semanticShadowResult.capabilityMatch,
+        executionPlan: semanticNativePlan,
+        plannerInvocation: semanticShadowResult.executionPlanning?.plannerInvocation ?? null,
+        executionTrace: execution.trace,
+        agentStatus: statusAfterExecution(semanticShadowResult.statusProtocol, execution),
+        result: value,
+        resultMode: value?.resultMode ?? null,
+        results: value?.results ?? [],
+        sourceId: typeof value?.source === "string" ? value.source : null,
+        source: semanticNativeSource(value, finalTool),
+        sourceUpdatedAt: value?.updatedAt ?? null,
+        text,
+        answer: {
+          summary: text,
+          methodology: semanticNativePlan.steps.length > 1
+            ? "先按官方当前赛季实体目录筛选候选，再用相同统计口径批量比较候选的主流出装。"
+            : "由已注册的只读结构化工具按当前赛季条件查询。"
+        }
+      };
+      await writeLastQuerySession(result, options);
+      return result;
+    }
+    const failedExecutionStep = execution.results?.find((entry) => entry.status === "failed");
+    const executionFailure = failedExecutionStep?.toolResult?.error?.message
+      ?? failedExecutionStep?.error
+      ?? execution.evidenceValidation?.errors?.[0]
+      ?? execution.resultPolicyExecution?.error
+      ?? "unknown_execution_failure";
+    throw Object.assign(new Error(`Semantic execution plan failed: ${executionFailure}`), {
+      code: "semantic_execution_plan_failed",
+      execution
+    });
+  }
+
+  const unknownEntityCandidates = parsedInput.intent === "unknown"
+    ? buildClarificationEntityCandidates(input, parsedInput, { unit: parsedInput.unit }, catalog, options)
+    : [];
+  const legacyClarificationSignal = Boolean(
+    parsedInput.parser?.entityAmbiguities?.length
+    || parsedInput.parser?.unresolvedEntityHints?.length
+    || parsedInput.parser?.structuredParser?.needsClarification
+    || parsedInput.parser?.bareUnitIntentAmbiguous
+    || parsedInput.parser?.genericEmblemRequested
+    || parsedInput.parser?.unknownStargazerEffectRequested
+    || parsedInput.parser?.genericSpecialComparisonRequested
+    || parsedInput.parser?.multipleItemRelationAmbiguous
+    || parsedInput.parser?.comparisonReplacementAmbiguous
+    || parsedInput.parser?.constraintConflicts?.length
+    || (
+      !parsedInput.unit
+      && !parsedInput.parser?.intentExplicit
+      && (parsedInput.ownedItems ?? []).length === 0
+      && (parsedInput.excludedItems ?? []).length === 0
+      && (parsedInput.traitFilters ?? []).length === 0
+      && [parsedInput.rankFilter, parsedInput.days, parsedInput.patch, parsedInput.minSamples, parsedInput.sort]
+        .some((value) => value !== undefined)
+    )
+    || unknownEntityCandidates.length
+  );
+  if (
+    parsedInput.intent === "unknown"
+    && !legacyClarificationSignal
+    && !initialSessionEntry?.value
+  ) {
+    const semantic = semanticShadowResult?.semanticResult;
+    const policy = semantic?.clarificationPolicy;
+    const needsClarification = policy?.needsClarification === true;
+    const text = needsClarification
+      ? policy.question
+      : semantic?.taskFrame?.understandingStatus === "understood_but_unsupported"
+        ? "我理解了这个 TFT 问题，但当前没有可提供可靠证据的已注册工具。"
+        : "我还不能可靠确定这个问题要调用哪类 TFT 工具，请补充你要查询的对象或目标。";
+    return {
+      type: needsClarification ? "clarification" : "unsupported",
+      parsed: parsedInput,
+      query: { ...parsedInput, warnings: [] },
+      validation: { valid: !needsClarification, errors: [], warnings: [] },
+      clarification: needsClarification ? {
+        blocking: true,
+        needsClarification: true,
+        reason: policy.missingInformation?.[0] ?? "semantic_clarification",
+        question: policy.question,
+        suggestions: policy.candidates?.map?.((candidate) => candidate.label).filter(Boolean) ?? []
+      } : null,
+      taskFrame: semantic?.taskFrame ?? null,
+      capabilityMatch: semanticShadowResult?.capabilityMatch ?? null,
+      executionPlan: semanticShadowResult?.executionPlanning?.plan ?? null,
+      executionTrace: null,
+      text
+    };
+  }
+
+  if (parsedInput.intent === "item_carrier_rankings") {
+    return recommendItemCarriersForInput(
+      input,
+      parsedInput,
+      options,
+      catalog,
+      semanticShadowResult
+    );
+  }
 
   if (isCompIntent(parsedInput.intent)) {
     const query = buildCompRankingQuery(parsedInput, {
       preferences: options.preferences,
       // v3 accepts MetaTFT's reproducible page calculation and distinguishes it
       // from both a raw legacy field and local 72-hour history.
-      dataVersion: options.compDataVersion ?? "comp-trend-gate-v3"
+      dataVersion: options.compDataVersion ?? "comp-trend-gate-v4"
     });
     query.sort = parsedInput.sort;
     query.sessionContext = parsedInput.sessionContext ?? null;
     query.constraintSources = Object.fromEntries(
-      ["rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit"]
+      ["unit", "rankFilter", "days", "patch", "queue", "minSamples", "sort", "metrics", "limit"]
         .map((key) => [key, compConstraintSource(parsedInput, options, key)])
     );
     if (query.preferenceRequested) {
@@ -1701,14 +2885,32 @@ export async function recommendForInput(input, options = {}) {
       validation: { valid: true, errors: [], warnings: [] },
       clarification: null
     }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
-    if (!retrievalAudit.retrievalPlan || retrievalAudit.retrievalPlan.needsClarification) {
-      throw new Error("A valid RetrievalPlan is required before structured retrieval");
-    }
     const semanticRouting = semanticTakeoverDecision(
       semanticShadowResult,
       retrievalAudit.retrievalPlan,
       options
     );
+    let executionPlanRun = null;
+    const operation = query.intent === "comp_trends"
+      ? "comps_trends"
+      : query.intent === "comp_analysis"
+        ? "comps_analysis"
+        : "comps_rankings";
+    const executionPlan = activeExecutionPlan(
+      semanticShadowResult,
+      semanticRouting,
+      operation,
+      query,
+      options.toolRegistry ?? options.executionPlanExecutor?.registry
+    );
+    if (executionPlan && semanticRouting) {
+      semanticRouting.executionPlan = executionPlan;
+      semanticRouting.shadowComparison = compareExecutionAndLegacyPlans(
+        executionPlan,
+        retrievalAudit.retrievalPlan,
+        { selectedPath: "execution_plan" }
+      );
+    }
     const queryCacheKey = makeQueryCacheKey(query);
     let response = options.compResponse ?? options.response;
     let queryCache = { key: queryCacheKey, hit: false };
@@ -1718,22 +2920,12 @@ export async function recommendForInput(input, options = {}) {
       const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
       if (cached?.value?.response !== undefined) {
         response = cached.value.response;
-        queryCache = {
-          key: queryCacheKey,
-          hit: true,
-          updatedAt: cached.updatedAt,
-          expiresAt: cached.expiresAt
-        };
+        queryCache = cachedQueryState(queryCacheKey, cached, options);
       }
     }
 
     if (response === undefined) {
       try {
-        const operation = query.intent === "comp_trends"
-          ? "comps_trends"
-          : query.intent === "comp_analysis"
-            ? "comps_analysis"
-            : "comps_rankings";
         const retrieved = await executePlannedStructuredQuery(
           retrievalAudit.retrievalPlan,
           operation,
@@ -1794,8 +2986,16 @@ export async function recommendForInput(input, options = {}) {
           {
             intent: query.intent,
             toolExecutor: options.toolExecutor,
+            executionPlanExecutor: options.executionPlanExecutor,
+            executionPlan,
+            handlers: options.agentToolHandlers,
             agentRun: options.agentRun,
-            signal: options.abortSignal
+            signal: options.abortSignal,
+            timeoutMs: options.toolTimeoutMs,
+            deferResultPolicy: true,
+            onExecution: (execution) => {
+              executionPlanRun = execution;
+            }
           }
         );
         const { dataParams, statsParams, dataClusterId } = retrieved;
@@ -1842,7 +3042,7 @@ export async function recommendForInput(input, options = {}) {
         }
       } catch (error) {
         const stale = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options, { allowExpired: true }));
-        if (stale?.value?.response === undefined) throw error;
+        if (stale?.value?.response === undefined || !cacheEntryWithinRetention(stale, options)) throw error;
         response = stale.value.response;
         queryCache = {
           key: queryCacheKey,
@@ -1867,18 +3067,76 @@ export async function recommendForInput(input, options = {}) {
         catalog,
         warnings
       });
+    const focusedResult = focusCompRankingResult(result, query.compId);
+    const officialItemDetails = options.officialItemDetails
+      ?? (typeof options.loadOfficialItemDetails === "function"
+        ? await options.loadOfficialItemDetails()
+        : null);
     const enriched = options.compEnrichmentService
-      ? await options.compEnrichmentService.enrichRankingResult(result, {
+      ? await options.compEnrichmentService.enrichRankingResult(focusedResult, {
         seasonContextId: query.seasonContextId,
         provider: options.provider ?? "metatft-live"
       })
-      : result;
-    const searched = query.preferenceRequested
+      : focusedResult;
+    const usesExecutionResultPolicy = (
+      executionPlanRun?.plan
+      ?? executionPlan
+    )?.resultPolicy?.type !== "identity";
+    const legacySearched = query.preferenceRequested
       ? applyCompPreferenceSearch(enriched, {
         conditions: query.preferenceConditions,
-        minSamples: query.minSamples
+        minSamples: query.minSamples,
+        avoidItemComponents: query.avoidItemComponents,
+        itemDetails: officialItemDetails
       })
       : enriched;
+    if (executionPlanRun && options.executionPlanExecutor) {
+      executionPlanRun = options.executionPlanExecutor.finalizeResult(
+        executionPlanRun,
+        usesExecutionResultPolicy ? enriched : legacySearched,
+        { run: options.agentRun }
+      );
+      if (executionPlanRun.status !== "completed") {
+        throw Object.assign(new Error("ExecutionPlan result policy or evidence validation failed"), {
+          code: "execution_plan_result_invalid",
+          execution: executionPlanRun
+        });
+      }
+    } else if (executionPlan && options.executionPlanExecutor) {
+      executionPlanRun = options.executionPlanExecutor.finalizeCachedResult(
+        executionPlan,
+        usesExecutionResultPolicy ? enriched : legacySearched,
+        {
+          run: options.agentRun,
+          source: executionPlan.steps[0].evidenceContract.source,
+          updatedAt: queryCache.updatedAt
+            ?? response?.capture?.capturedAt
+            ?? response?.capture?.captured_at
+            ?? response?.compsStats?.updated
+            ?? response?.stats?.updated
+            ?? null,
+          patch: query.patch
+        }
+      );
+      if (executionPlanRun.status !== "completed") {
+        throw Object.assign(new Error("Cached ExecutionPlan result evidence is invalid"), {
+          code: "execution_plan_cached_result_invalid",
+          execution: executionPlanRun
+        });
+      }
+    }
+    const searched = executionPlanRun?.result ?? legacySearched;
+    if (semanticRouting && executionPlanRun) {
+      semanticRouting.shadowComparison = compareExecutionAndLegacyPlans(
+        executionPlanRun.plan ?? executionPlan,
+        retrievalAudit.retrievalPlan,
+        {
+          selectedPath: "execution_plan",
+          executionResult: searched,
+          legacyResult: legacySearched
+        }
+      );
+    }
     const analyzed = query.analysisRequested
       ? analyzeCompRankingResult(searched, query.analysis ?? {})
       : searched;
@@ -1887,23 +3145,13 @@ export async function recommendForInput(input, options = {}) {
       catalog
     });
     decorated.parsed = parsedInput;
-    const sessionWrite = options.useSession === false
-      ? null
-      : await setStoreEntry(sessionStoreFor(options), "setSessionState", sessionKeyFor(options), {
-        query: decorated.query,
-        lastResultIds: Object.values(decorated.rankings ?? {})
-          .flat()
-          .slice(0, 10)
-          .map((comp) => comp.compId),
-        updatedAt: new Date().toISOString()
-      }, storeOptionsFor(options, { ttlMs: options.sessionTtlMs }));
     decorated.cache = {
       query: queryCache,
       session: {
         inherited: compSessionMerge.inherited,
         inheritedKeys: compSessionMerge.inheritedKeys,
         updatedAt: initialSessionEntry?.updatedAt ?? null,
-        writtenAt: sessionWrite?.updatedAt ?? null
+        writtenAt: null
       }
     };
     decorated.text = decorated.text ?? "";
@@ -1914,20 +3162,61 @@ export async function recommendForInput(input, options = {}) {
       latencyMs: semanticShadowResult?.semanticResult?.telemetry?.durationMs ?? 0,
       cachedInputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.cachedInputTokens ?? 0,
       inputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.uncachedInputTokens ?? 0,
-      outputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.outputTokens ?? 0
+      outputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.outputTokens ?? 0,
+      execution: executionPlanRun,
+      agentStatus: executionPlanRun
+        ? statusAfterExecution(semanticShadowResult?.statusProtocol, executionPlanRun)
+        : queryCache.hit
+          ? statusAfterExecution(semanticShadowResult?.statusProtocol, {
+            status: "completed",
+            evidenceValidation: { sufficient: true }
+          })
+          : semanticShadowResult?.statusProtocol ?? null
     });
     attachRetrievalAudit(decorated, input, catalog, retrievalAudit);
+    if (conversationMode === "on") {
+      applyConversationResultPresentation(decorated, {
+        dialogueAct: conversationV2.interpretation.turnDelta.dialogueAct,
+        presentation: conversationV2.interpretation.turnDelta.presentation,
+        lastResult: conversationState.lastResult
+      });
+    }
+    const sessionWrite = await writeLastQuerySession(decorated, options);
+    decorated.cache.session.writtenAt = sessionWrite?.updatedAt ?? null;
+    if (conversationMode === "shadow" && conversationV2) {
+      conversationV2.comparison = compareConversationStateV2Shadow({
+        delta: conversationV2.interpretation.turnDelta,
+        resolution: conversationV2.resolution,
+        executionPlan: conversationV2.semanticShadow?.executionPlanning?.plan,
+        legacyResult: decorated
+      });
+      Object.defineProperty(decorated, "conversationShadow", {
+        enumerable: false,
+        value: conversationV2.comparison
+      });
+      try {
+        options.agentRun?.emit?.({
+          type: "conversation_state_v2_shadow",
+          stage: "responding",
+          data: conversationV2.comparison
+        });
+      } catch {
+        // Shadow observability cannot alter the response.
+      }
+    }
     return decorated;
   }
 
   const sessionEntry = initialSessionEntry;
-  const sessionMerge = initialUnitSessionMerge.inherited
-    ? {
-      parsed: parsedInput,
-      inherited: true,
-      inheritedKeys: initialUnitSessionMerge.inheritedKeys
-    }
-    : inheritParsedFromSession(parsedInput, sessionEntry?.value);
+  const sessionMerge = conversationMode === "on"
+    ? { parsed: parsedInput, inherited: false, inheritedKeys: [] }
+    : initialUnitSessionMerge.inherited
+      ? {
+        parsed: parsedInput,
+        inherited: true,
+        inheritedKeys: initialUnitSessionMerge.inheritedKeys
+      }
+      : inheritParsedFromSession(parsedInput, sessionEntry?.value);
   const parsed = sessionMerge.parsed;
   const parsedUnavailableItems = unavailableItemRecords(referencedItemApiNames(parsed), catalog);
   const preflightEntityCandidates = buildClarificationEntityCandidates(input, parsed, {
@@ -2098,14 +3387,27 @@ export async function recommendForInput(input, options = {}) {
     validation,
     clarification
   }, input, catalog, options.retrievalPlanner ?? RETRIEVAL_PLANNER);
-  if (!finalRetrievalAudit.retrievalPlan || finalRetrievalAudit.retrievalPlan.needsClarification) {
-    throw new Error("A valid RetrievalPlan is required before structured retrieval");
-  }
   const semanticRouting = semanticTakeoverDecision(
     semanticShadowResult,
     finalRetrievalAudit.retrievalPlan,
     options
   );
+  let executionPlanRun = null;
+  const executionPlan = activeExecutionPlan(
+    semanticShadowResult,
+    semanticRouting,
+    "unit_builds",
+    validatedQuery,
+    options.toolRegistry ?? options.executionPlanExecutor?.registry
+  );
+  if (executionPlan && semanticRouting) {
+    semanticRouting.executionPlan = executionPlan;
+    semanticRouting.shadowComparison = compareExecutionAndLegacyPlans(
+      executionPlan,
+      finalRetrievalAudit.retrievalPlan,
+      { selectedPath: "execution_plan" }
+    );
+  }
   const queryCacheKey = makeQueryCacheKey(validatedQuery);
   let queryCache = {
     key: queryCacheKey,
@@ -2118,12 +3420,7 @@ export async function recommendForInput(input, options = {}) {
     const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
     if (cached?.value?.response !== undefined) {
       response = cached.value.response;
-      queryCache = {
-        key: queryCacheKey,
-        hit: true,
-        updatedAt: cached.updatedAt,
-        expiresAt: cached.expiresAt
-      };
+      queryCache = cachedQueryState(queryCacheKey, cached, options);
     }
   }
 
@@ -2158,13 +3455,27 @@ export async function recommendForInput(input, options = {}) {
               source: { queue: validatedQuery.queue, providerVersion: validatedQuery.providerVersion }
             }, plannedQuery);
           }
-          return options.metaTFTClient?.getUnitBuilds(planMetaTFTUnitBuilds(plannedQuery));
+          const liveResponse = await options.metaTFTClient?.getUnitBuilds(
+            planMetaTFTUnitBuilds(plannedQuery),
+            { timeoutMs: options.metaTFTTimeoutMs }
+          );
+          return withRetrievalTimestamp(
+            liveResponse,
+            new Date(typeof options.now === "function" ? options.now() : Date.now()).toISOString()
+          );
         },
         {
           intent: validatedQuery.intent,
           toolExecutor: options.toolExecutor,
+          executionPlanExecutor: options.executionPlanExecutor,
+          executionPlan,
+          handlers: options.agentToolHandlers,
           agentRun: options.agentRun,
-          signal: options.abortSignal
+          signal: options.abortSignal,
+          timeoutMs: options.toolTimeoutMs,
+          onExecution: (execution) => {
+            executionPlanRun = execution;
+          }
         }
       );
       if (response !== undefined) {
@@ -2189,7 +3500,7 @@ export async function recommendForInput(input, options = {}) {
       const stale = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options, {
         allowExpired: true
       }));
-      if (stale?.value?.response === undefined) throw error;
+      if (stale?.value?.response === undefined || !cacheEntryWithinRetention(stale, options)) throw error;
 
       response = stale.value.response;
       queryCache = {
@@ -2206,6 +3517,29 @@ export async function recommendForInput(input, options = {}) {
   if (!response) {
     throw new Error("recommendForInput requires rows/response or a metaTFTClient");
   }
+  if (!executionPlanRun && executionPlan && options.executionPlanExecutor) {
+    executionPlanRun = options.executionPlanExecutor.finalizeCachedResult(
+      executionPlan,
+      response,
+      {
+        run: options.agentRun,
+        source: executionPlan.steps[0].evidenceContract.source,
+        updatedAt: queryCache.updatedAt
+          ?? response.capture?.capturedAt
+          ?? response.capture?.captured_at
+          ?? options.sourceUpdatedAt
+          ?? options.agentRun?.startedAt
+          ?? new Date(typeof options.now === "function" ? options.now() : Date.now()).toISOString(),
+        patch: validatedQuery.patch
+      }
+    );
+    if (executionPlanRun.status !== "completed") {
+      throw Object.assign(new Error("Cached ExecutionPlan result evidence is invalid"), {
+        code: "execution_plan_cached_result_invalid",
+        execution: executionPlanRun
+      });
+    }
+  }
 
   const result = createRecommendationFromRows(input, response, {
     catalog,
@@ -2216,11 +3550,13 @@ export async function recommendForInput(input, options = {}) {
     comp: validatedQuery.comp,
     additionalWarnings: [...(compResult.warnings ?? []), ...additionalWarnings]
   });
-  result.sourceUpdatedAt = response.capture?.capturedAt
-    ?? response.capture?.captured_at
-    ?? queryCache.updatedAt
-    ?? options.sourceUpdatedAt
-    ?? null;
+  result.sourceUpdatedAt = queryCache.stale
+    ? queryCache.updatedAt ?? null
+    : response.capture?.capturedAt
+      ?? response.capture?.captured_at
+      ?? queryCache.updatedAt
+      ?? options.sourceUpdatedAt
+      ?? null;
   result.compCandidatePlan = compResult.plan ?? null;
 
   result.cache = {
@@ -2236,7 +3572,9 @@ export async function recommendForInput(input, options = {}) {
     provider: response?.provenance?.provider ?? "metatft",
     providerVersion: response?.provenance?.providerVersion ?? options.providerVersion ?? "metatft-live.v1",
     seasonContextId: response?.provenance?.seasonContextId ?? seasonContextIdFor(options),
-    endpoint: "tft-explorer-api/unit_builds",
+    endpoint: result.plan?.path === "/tft-stat-api/unit_detail_items"
+      ? "tft-stat-api/unit_detail_items"
+      : "tft-explorer-api/unit_builds",
     patch: response?.provenance?.effectivePatch ?? result.query?.patch ?? null,
     effectivePatch: response?.provenance?.effectivePatch ?? result.query?.patch ?? null,
     region: response?.provenance?.region ?? null,
@@ -2247,11 +3585,6 @@ export async function recommendForInput(input, options = {}) {
     cacheDetail: queryCache
   };
 
-  const sessionWrite = await writeLastQuerySession(result, options);
-  if (sessionWrite) {
-    result.cache.session.writtenAt = sessionWrite.updatedAt;
-  }
-
   attachSemanticTakeover(result, semanticRouting, {
     toolStatus: queryCache.stale ? "degraded" : queryCache.hit ? "cache_hit" : "completed",
     conclusionStatus: "completed",
@@ -2259,7 +3592,42 @@ export async function recommendForInput(input, options = {}) {
     latencyMs: semanticShadowResult?.semanticResult?.telemetry?.durationMs ?? 0,
     cachedInputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.cachedInputTokens ?? 0,
     inputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.uncachedInputTokens ?? 0,
-    outputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.outputTokens ?? 0
+    outputTokens: semanticShadowResult?.semanticResult?.telemetry?.usage?.outputTokens ?? 0,
+    execution: executionPlanRun,
+    agentStatus: executionPlanRun
+      ? statusAfterExecution(semanticShadowResult?.statusProtocol, executionPlanRun)
+      : semanticShadowResult?.statusProtocol ?? null
   });
-  return attachRetrievalAudit(result, input, catalog, finalRetrievalAudit);
+  attachRetrievalAudit(result, input, catalog, finalRetrievalAudit);
+  if (conversationMode === "on") {
+    applyConversationResultPresentation(result, {
+      dialogueAct: conversationV2.interpretation.turnDelta.dialogueAct,
+      presentation: conversationV2.interpretation.turnDelta.presentation,
+      lastResult: conversationState.lastResult
+    });
+  }
+  const sessionWrite = await writeLastQuerySession(result, options);
+  if (sessionWrite) result.cache.session.writtenAt = sessionWrite.updatedAt;
+  if (conversationMode === "shadow" && conversationV2) {
+    conversationV2.comparison = compareConversationStateV2Shadow({
+      delta: conversationV2.interpretation.turnDelta,
+      resolution: conversationV2.resolution,
+      executionPlan: conversationV2.semanticShadow?.executionPlanning?.plan,
+      legacyResult: result
+    });
+    Object.defineProperty(result, "conversationShadow", {
+      enumerable: false,
+      value: conversationV2.comparison
+    });
+    try {
+      options.agentRun?.emit?.({
+        type: "conversation_state_v2_shadow",
+        stage: "responding",
+        data: conversationV2.comparison
+      });
+    } catch {
+      // Shadow observability cannot alter the response.
+    }
+  }
+  return result;
 }

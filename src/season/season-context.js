@@ -17,12 +17,12 @@ const CONTEXTS = [
       providerVersion: "metatft-live.v1",
       queue: "1100",
       patchPolicy: "latest",
-      currentPatch: "17.7",
-      previousPatch: "17.6"
+      currentPatch: "17.8",
+      previousPatch: "17.7"
     },
     themeId: "set17",
     theme: {
-      documentTitle: "tftclarity · Set 17",
+      documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
         "zh-CN": "星神",
         "en-US": "Cosmic"
@@ -40,7 +40,7 @@ const CONTEXTS = [
         density: 1,
         speed: 1
       },
-      patchNoteVersion: "17.7",
+      patchNoteVersion: "17.8",
       quickQuestions: {
         "zh-CN": ["推荐当前版本热门阵容", "当前版本阵容趋势"],
         "en-US": ["Recommend popular comps in the current patch", "Show current comp trends"]
@@ -51,53 +51,64 @@ const CONTEXTS = [
   },
   {
     id: "set18-pbe",
-    label: "Set 18 · PBE 预览",
+    label: "Set 18 · PBE · 18.1",
     season: 18,
     environment: "pbe",
     mode: "standard",
-    status: "coming_soon",
+    status: "pbe",
     visible: true,
-    selectable: false,
+    selectable: true,
+    themePreview: false,
     isDefault: false,
     catalogNamespace: "set18-pbe",
     source: {
       provider: "metatft-pbe",
-      providerVersion: "metatft-pbe.unverified.v1",
+      providerVersion: "metatft-pbe.v1",
       pageUrl: "https://www.metatft.com/pbe-comps",
+      explorerUrl: "https://www.metatft.com/explorer?set=TFTSet18",
       queue: "PBE",
-      patchPolicy: "latest"
+      patchPolicy: "latest",
+      currentPatch: "18.1",
+      explorerPatch: "current",
+      unitBuildPatch: "18.1",
+      compsPatch: "18.1",
+      tftSet: "TFTSet18",
+      lookupChannel: "pbe",
+      lookupLocale: "zh_cn",
+      requestDeadlineMs: 20000
     },
     themeId: "set18",
     theme: {
-      documentTitle: "tftclarity · Set 18 PBE",
+      documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
-        "zh-CN": "PBE 预览",
-        "en-US": "PBE Preview"
+        "zh-CN": "S18 PBE · 18.1",
+        "en-US": "Set 18 PBE · 18.1"
       },
       colors: {
-        primary: "#7f6ac8",
-        secondary: "#d08bba"
+        primary: "#356b43",
+        secondary: "#48b8c7"
       },
       wallpaper: {
         seasonId: "set-18-pbe",
-        directory: null,
-        defaultId: null
+        directory: "/assets/wallpapers/set-18/",
+        defaultId: "set18-verdant-realm"
       },
       particles: {
-        density: 0.72,
-        speed: 0.8
+        density: 0.62,
+        speed: 0.62,
+        tones: ["214,239,160", "121,221,197", "239,211,116"]
       },
       patchNoteVersion: null,
       quickQuestions: {
-        "zh-CN": [],
-        "en-US": []
+        "zh-CN": ["当前有什么稳定阵容？", "当前版本阵容趋势", "阿狸最好的三件装备是什么"],
+        "en-US": ["What comps are stable right now?", "Show current comp trends", "What are Ahri's best three items?"]
       },
       riskNotice: {
-        "zh-CN": "PBE 数据准备中，当前不可查询。",
-        "en-US": "PBE data is being prepared and cannot be queried yet."
+        "zh-CN": "S18 PBE 数据已开放；测试服内容和统计会频繁变化，结果仅供当前版本参考。",
+        "en-US": "Set 18 PBE data is available. Test-realm content and statistics can change frequently."
       }
     },
-    notices: ["PBE 数据准备中，当前不可查询。"]
+    notices: ["S18 PBE 数据已开放；测试服内容和统计会频繁变化。"]
   }
 ];
 
@@ -145,14 +156,13 @@ export class SeasonContextService {
         }
       },
       "metatft-pbe": {
-        available: false,
-        status: "coming_soon",
-        reason: "PBE provider interface has not been verified",
+        available: true,
+        status: "available",
         health: {
-          status: "not_verified",
+          status: "ready",
           lastCheckedAt: null,
           lastSuccessfulSyncAt: null,
-          catalogStatus: "not_synced"
+          catalogStatus: "runtime_managed"
         }
       },
       ...(options.providerAvailability ?? {})
@@ -164,6 +174,25 @@ export class SeasonContextService {
 
   listVisible() {
     return [...this.contexts.values()].filter((context) => context.visible).map(clone);
+  }
+
+  updateProviderPatch(contextId, currentPatch, previousPatch = null, source = "runtime_resolved") {
+    const id = normalizeSeasonContextId(contextId, this.defaultContextId);
+    const existing = this.contexts.get(id);
+    if (!existing || existing.source?.patchPolicy !== "latest") return null;
+    if (!currentPatch) return this.get(id);
+    const updated = clone(existing);
+    updated.source = {
+      ...updated.source,
+      currentPatch: String(currentPatch),
+      ...(previousPatch ? { previousPatch: String(previousPatch) } : {})
+    };
+    updated.patchResolution = {
+      source: String(source),
+      resolvedAt: new Date().toISOString()
+    };
+    this.contexts.set(id, deepFreeze(updated));
+    return this.get(id);
   }
 
   get(contextId) {
@@ -240,6 +269,23 @@ export class SeasonContextService {
     });
   }
 
+  resolveForSelection(contextId) {
+    const context = this.resolve(contextId, {
+      requireVisible: true,
+      requireSelectable: false,
+      requireAvailable: false
+    });
+    if (!context.selectable && !context.themePreview) {
+      throw new SeasonContextError("该赛季空间当前不可选择", {
+        code: "season_context_not_selectable",
+        statusCode: 409,
+        contextStatus: context.status,
+        seasonContextId: context.id
+      });
+    }
+    return context;
+  }
+
   publicRecord(context) {
     const availability = this.getAvailability(context);
     return {
@@ -251,7 +297,9 @@ export class SeasonContextService {
       status: context.status,
       visible: context.visible,
       selectable: context.selectable && Boolean(availability.available),
+      themePreview: Boolean(context.themePreview),
       isDefault: context.isDefault,
+      currentPatch: context.source?.currentPatch ?? null,
       themeId: context.themeId,
       theme: context.theme ? clone(context.theme) : null,
       notices: [...(context.notices ?? [])],

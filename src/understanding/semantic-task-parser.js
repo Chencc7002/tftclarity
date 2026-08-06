@@ -1,7 +1,7 @@
-import { normalizeText } from "../core/normalizer.js";
-import { classifyDomain } from "./domain-gate.js";
+import { normalizeAlias, normalizeText } from "../core/normalizer.js";
+import { classifyDomain } from "../domain/tft/domain-gate.js";
 import { defaultFewShotExampleStore } from "./few-shot-example-store.js";
-import { extractEntityMentions } from "./entity-mention-extractor.js";
+import { extractEntityMentions } from "../domain/tft/entity-mention-extractor.js";
 import { linkTaskFrameEntities } from "./entity-linker.js";
 import {
   buildSemanticParserMessages,
@@ -12,6 +12,15 @@ import {
 import { createTaskFrame, validateTaskFrame } from "./task-frame.js";
 import { resolveTaskFrameContext } from "./context-resolver.js";
 import { applyClarificationPolicy } from "./ambiguity-policy.js";
+import { resolveGameConcept } from "../domain/tft/concept-resolver.js";
+import {
+  deriveTftCapabilityRequirements,
+  isRecognizedTftDomainRequest
+} from "../domain/tft/semantic-capability-rules.js";
+import {
+  HERO_COMP_REQUEST_PATTERN,
+  ITEM_CARRIER_REQUEST_PATTERN
+} from "../domain/tft/intent-patterns.js";
 
 const ACTION_PATTERNS = Object.freeze({
   find_video: /视频|視訊|视屏|影片|b站|bilibili/iu,
@@ -23,30 +32,18 @@ const ACTION_PATTERNS = Object.freeze({
   search: /只看|就看|查一下|查下|搜一下|数据|數據/iu
 });
 
-const UNSUPPORTED_PATTERNS = [
-  /视频|視訊|视屏|影片|b站|bilibili/iu,
-  /九五|95/iu,
-  /(?:17\.\d+|历史|歷史).*(?:现在|現在)|(?:现在|現在).*(?:17\.\d+|历史|歷史)/iu,
-  /(?:上个赛季|旧赛季|歷史版本|历史版本|十个版本前|上个版本).*(?:当前|现在|差异|趋势|勝率|胜率|强度)/iu,
-  /霞.*剑圣|霞.*劍聖|剑圣.*霞|劍聖.*霞/iu,
-  /数据库|資料庫|数剧库|數劇庫|任意sql|执行\s*sql|所有玩家信息|所有玩家資料|玩家信息|玩家资料|隐藏战绩|绕过限制|绕过权限|繞過限制|未授权接口|删除统计库|把库拖出来|把庫拖出來/iu
-];
-
 const MISSING_CONTEXT_PATTERNS = [
   /^(?:哥们|麻烦看下|我就想问下哈|想请问|想請問|局内问)?(?:哪个|哪個|啥)装备最(?:厉害|歷害|顶|頂)/u,
   /这套|這套|刚才|剛才/u
 ];
 
-const FAST9_CONCEPT_PATTERN = /(?:\u4e5d\u4e94|95|\u901f\u4e5d)/iu;
-const FAST9_SUPPORTED_ACTIONS = new Set(["recommend", "rank", "search"]);
-
 const EXPLICIT_ACTION_CUES = Object.freeze({
   find_video: /(?:\u89c6\u9891|B\u7ad9|bilibili|\u5f55\u50cf)/iu,
   compare: /(?:\u6bd4\u8f83|\u5bf9\u6bd4|\u8fd8\u662f|\u4e8c\u9009\u4e00|\u9009\u54ea\u4e2a|\u8c01\u66f4|\u8c01\u66f4\u7a33|\u8c01\u66f4\u597d|\u8c01\u66f4\u9ad8|\u9009\u54ea\u4ef6|\u9009\u90a3\u4ef6|(?:\u548c|\u4e0e|\u8ddf).{0,16}(?:\u600e\u4e48\u9009|\u8c01|\u54ea\u4e2a|\u54ea\u4ef6)|\u8fd9\u4fe9.{0,8}\u600e\u4e48\u9009|\u8ddf.{0,12}\u6bd4|\u4e0e.{0,12}\u6bd4|\u6bd4\u600e\u6837|\u6362.{0,8}\u4f1a\u66f4\u597d)/u,
   recommend: /(?:\u63a8\u8350|\u795e\u88c5|\u4e09\u4ef6\u5957|\u600e\u4e48\u51fa\u88c5|\u600e\u4e48\u914d|\u548b\u51fa|\u51fa[\u88c5\u5e84].{0,3}(?:\u600e\u4e48|\u548b)?\u9009|\u548b\u9009|\u548b\u585e|\u600e\u4e48\u585e|\u4e24\u4ef6\u548b\u5e26|\u7ed9\u5565|\u8865\u4e24\u4ef6|\u6765\u4e09\u5957|\u6765\u4e24\u5957|\u518d\u6765.{0,4}(?:\u5019\u9009|\u9635\u5bb9))/u,
-  rank: /(?:\u6392\u540d|\u6392\u884c|\u5f3a\u5ea6\u699c|\u600e\u4e48\u6392|\u6392\u4e00\u4e0b|\u4f18\u5148\u7ea7|\u8c01\u6700\u9876|\u5f3a\u7684[\u8f6c\u4e13]\u804c|\u90fd\u6700\u9ad8|\u6309.{0,18}\u6392|\u6700\u9ad8.{0,10}\u6392)/u,
-  explain: /(?:\u89e3\u91ca|\u4ec0\u4e48\u610f\u601d|\u5565\u610f\u601d|\u662f\u4ec0\u4e48|\u6548\u679c|\u8be6\u60c5|\u5c5e\u6027|\u6bcf\u6863|\u4e3a\u4ec0\u4e48|\u4e3a\u5565|\u4e3a\u751a\u4e48|\u7206\u706b)/u,
-  analyze: /(?:\u5206\u6790|\u8d8b\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u80dc\u7387|\u524d\u56db\u7387|\u5403\u5206\u7387|\u8868\u73b0|\u600e\u4e48\u6837|\u5f3a\u4e0d\u5f3a)/u,
+  rank: /(?:\u6392\u540d|\u6392\u884c|\u699c\u5355|\u5f3a\u5ea6\u699c|\u600e\u4e48\u6392|\u6392\u4e00\u4e0b|\u4f18\u5148\u7ea7|\u8c01\u6700\u9876|\u5f3a\u7684[\u8f6c\u4e13]\u804c|\u90fd\u6700\u9ad8|\u6309.{0,18}\u6392|\u6700\u9ad8.{0,10}\u6392)/u,
+  explain: /(?:\u89e3\u91ca|\u8bf4\u660e|\u4ec0\u4e48\u610f\u601d|\u5565\u610f\u601d|\u662f\u4ec0\u4e48|\u6548\u679c|\u8be6\u60c5|\u5c5e\u6027|\u6bcf\u6863|\u4e3a\u4ec0\u4e48|\u4e3a\u5565|\u4e3a\u751a\u4e48|\u7206\u706b)/u,
+  analyze: /(?:\u5206\u6790|\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u5dee\u591a\u5c11|\u7cbe\u786e.{0,4}\u80dc\u7387|\u70ed\u5ea6.{0,4}\u6da8|\u80dc\u7387|\u524d\u56db\u7387|\u5403\u5206\u7387|\u8868\u73b0|\u600e\u4e48\u6837|\u5f3a\u4e0d\u5f3a)/u,
   search: /(?:\u67e5|\u641c|\u53ea\u770b|\u6570\u636e|\u5019\u9009)/u
 });
 
@@ -61,6 +58,7 @@ function inferAction(text, domain, examples) {
     return "unknown";
   }
   if (ACTION_PATTERNS.find_video.test(text)) return "find_video";
+  if (ITEM_CARRIER_REQUEST_PATTERN.test(text)) return "rank";
   const explicit = explicitAction(text);
   if (explicit) return explicit;
   if (ACTION_PATTERNS.explain.test(text)) return "explain";
@@ -71,27 +69,70 @@ function inferAction(text, domain, examples) {
   for (const action of ["compare", "recommend", "rank", "search"]) {
     if (ACTION_PATTERNS[action].test(text)) return action;
   }
+  if (HERO_COMP_REQUEST_PATTERN.test(text)) return "rank";
   if (/(?:当前|當前|挡前|这版|這版).*(?:版本|板本)|(?:版本|板本).*(?:当前|當前|挡前)/u.test(text)) {
     return "search";
   }
+  const collection = collectionRequestType(text);
+  if (collection) return "search";
   return examples[0]?.action ?? "analyze";
 }
 
 function constraintsFor(text) {
   const constraints = {};
+  const itemCategories = [];
+  if (/(?:\u5965\u6069)?\u795e\u5668/u.test(text)) itemCategories.push("artifact");
+  if (/\u5149\u660e(?:\u88c5\u5907)?/u.test(text)) itemCategories.push("radiant");
+  if (/\u7eb9\u7ae0|\u8f6c\u804c/u.test(text)) itemCategories.push("emblem");
+  if (itemCategories.length > 0) {
+    constraints.itemCategories = [...new Set(itemCategories)];
+    constraints.itemPolicy = constraints.itemCategories.length > 1
+      ? "include_special"
+      : constraints.itemCategories[0] === "artifact"
+        ? "include_artifact"
+        : constraints.itemCategories[0] === "radiant"
+          ? "include_radiant"
+          : "include_special";
+  }
+  const costMatches = [...text.matchAll(/([一二两兩三四五六七八九\d])\s*费(?:卡|棋子|英雄)?/gu)];
+  if (costMatches.length) {
+    const costMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    const costs = [...new Set(costMatches.map((match) => costMap[match[1]] ?? Number(match[1])))]
+      .filter((value) => Number.isInteger(value) && value >= 1 && value <= 9)
+      .sort((left, right) => left - right);
+    constraints.cost = costs.length === 1 ? costs[0] : costs;
+    constraints.targetEntityType = "champion";
+    constraints.relation = "member_of_trait";
+    constraints.current = true;
+  }
+  if (/最高费|最高費/u.test(text)) {
+    constraints.targetEntityType = "champion";
+    constraints.relation = "member_of_trait";
+    constraints.sort = "cost_desc";
+    constraints.limit = 1;
+    constraints.current = true;
+  }
+  if (/(?:阵容|陣容).{0,8}(?:非|不属于|不屬於).{0,6}(?:羁绊|羈絆).{0,8}(?:外援|单挂|單掛|外挂)|(?:非|不属于|不屬於)(?:本)?羁绊外援/u.test(text)) {
+    constraints.externalSupportInterpretation = "non_trait_splash_unit";
+  }
+  if (/(?:提升|增益)(?:最大|最高)/u.test(text)) constraints.sort = "uplift_first";
+  if (/(?:携带|使用|样本)(?:最多|最高)|高频/u.test(text)) constraints.sort = "games_first";
+  if (/(?:\u8d8b\u52bf|\u8d70\u52bf|\u5728\u6da8|\u5f80\u4e0a\u8d70|\u53d8\u597d|\u70ed\u5ea6.{0,4}\u6da8)/u.test(text)) {
+    constraints.trend = "up";
+  }
   if (/当前|當前|这版|這版|现在|現在/u.test(text)) constraints.patch = "current";
   const historicalPatch = text.match(/\b\d{1,2}\.\d{1,2}\b/u)?.[0];
   if (historicalPatch) constraints.patch = historicalPatch;
   const itemCount = text.match(/([一二两兩三四五六七八九\d])件/u)?.[1];
-  if (itemCount) constraints.itemCount = "一二两兩三四五六七八九".includes(itemCount)
-    ? "一二两兩三四五六七八九".indexOf(itemCount) % 9 + 1
-    : Number(itemCount);
+  if (itemCount) {
+    const itemCountMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+    constraints.itemCount = itemCountMap[itemCount] ?? Number(itemCount);
+  }
   const limit = text.match(/(?:前|推荐|推薦|来|來)([一二两兩三四五六七八九十\d]+)(?:套|个|個|名)?/u)?.[1];
   if (limit) {
     const numberMap = { 一: 1, 二: 2, 两: 2, 兩: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9, 十: 10 };
     constraints.limit = finite(limit, numberMap[limit] ?? null);
   }
-  if (/九五|95|速九/u.test(text)) constraints.strategy = "fast9";
   if (/赌狗|賭狗|赌牌|賭牌|追三|reroll/iu.test(text)) constraints.strategy = "reroll";
   if (/不卷/u.test(text)) constraints.contested = "low";
   if (/新手|无脑|無腦/u.test(text)) constraints.beginnerFriendly = true;
@@ -132,9 +173,6 @@ function outputsFor(action) {
 
 function understandingStatus(text, domain, action, entityMentions, options) {
   if (domain === "out_of_domain") return "out_of_domain";
-  const unsupported = UNSUPPORTED_PATTERNS.some((pattern) => pattern.test(text));
-  const supportedFast9Request = FAST9_CONCEPT_PATTERN.test(text) && FAST9_SUPPORTED_ACTIONS.has(action);
-  if (unsupported && !supportedFast9Request) return "understood_but_unsupported";
   if (
     action === "compare"
     && /(?:\u53e6\u4e00\u4ef6\u88c5\u5907|\u4e24\u4ef6\u5019\u9009\u88c5\u5907|\u6ca1\u8bf4\u540d\u5b57)/u.test(text)
@@ -144,8 +182,31 @@ function understandingStatus(text, domain, action, entityMentions, options) {
   if (MISSING_CONTEXT_PATTERNS.some((pattern) => pattern.test(text)) && !(options.conversation ?? []).length) {
     return "understood_but_missing_context";
   }
-  if (action === "unknown" && entityMentions.length === 0) return "ambiguous";
+  if (
+    action === "unknown"
+    && entityMentions.length === 0
+    && !isRecognizedTftDomainRequest(text)
+  ) return "ambiguous";
   return "understood_and_supported";
+}
+
+function isBareChampionRequest(text, entityMentions) {
+  const champions = entityMentions.filter((entity) => entity.expectedType === "champion");
+  if (champions.length !== 1 || entityMentions.length !== 1) return false;
+  const alias = normalizeAlias(champions[0].rawText);
+  return Boolean(alias) && normalizeAlias(text).replace(alias, "") === "";
+}
+
+function isBareArtifactRequest(text, entityMentions, catalog) {
+  const items = entityMentions.filter((entity) => entity.expectedType === "item");
+  if (items.length !== 1 || entityMentions.length !== 1) return false;
+  const alias = normalizeAlias(items[0].rawText);
+  if (!alias || normalizeAlias(text).replace(alias, "") !== "") return false;
+  return (catalog?.items ?? []).some((item) => (
+    item.category === "artifact"
+    && [item.zhName, item.shortName, ...(item.aliases ?? [])]
+      .some((value) => normalizeAlias(value) === alias)
+  ));
 }
 
 function candidateRole(entity, action, allEntities) {
@@ -192,6 +253,22 @@ function explicitAction(text) {
   return null;
 }
 
+function collectionRequestType(text) {
+  if (/(是什么|什么是|效果|激活|层级|属性|详情|技能|说明)/u.test(text)) return null;
+  const category = /(?:棋子|英雄|弈子|卡)/u.test(text)
+    ? "champion"
+    : /(?:羁绊|羁絆)/u.test(text)
+      ? "trait"
+      : /(?:装备|裝備)/u.test(text)
+        ? "item"
+        : null;
+  if (!category) return null;
+  if (!/(哪些|什么|有些|有哪些|返回|列出|列一下|给我|看下|看一下|查询|查一下|查下|搜一下|全部|所有|名单|列表)/u.test(text)) {
+    return null;
+  }
+  return category;
+}
+
 const GENERIC_PROVIDER_ENTITY = /^(?:\u795e\u88c5|\u4e09\u4ef6[\u5957\u88c5\u5986]|\u5355\u4ef6\u88c5\u5907|\u6563\u4ef6|\u88c5[\u5907\u88ab]|\u5f53\u524d\u6570\u636e|\u6570\u636e|\u8868[\u73b0\u5148]|\u5403\u5206[\u7387\u5f8b]|\u5e73\u5747\u540d\u6b21|\u4f18\u5148[\u7ea7\u6781]|\u5019\u9009|\u8be6\u60c5|\u8fd9\u5f20\u5361|\u8fd9\u4ef6|\u8fd9\u4fe9|\u53e6\u4e00\u4ef6\u88c5\u5907|\u5979|\u4ed6|\u5b83)$/u;
 
 function usefulProviderEntity(entity) {
@@ -226,28 +303,40 @@ function mergeEntities(deterministic, provider, text) {
 
 function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
   const actionCue = explicitAction(text);
+  const deterministicCarrier = deterministicFrame.goal === "item_carrier_rankings";
   const deterministicDomain = deterministicFrame.domain === "out_of_domain";
   const providerOutOfDomain = providerFrame.domain === "out_of_domain";
   const action = deterministicDomain || providerOutOfDomain
     ? deterministicDomain ? deterministicFrame.action : "unknown"
-    : actionCue && deterministicFrame.action !== "unknown"
+    : (actionCue || deterministicCarrier) && deterministicFrame.action !== "unknown"
     ? deterministicFrame.action
     : providerFrame.action;
   const actionChanged = action !== providerFrame.action;
-  const deterministicStatus = deterministicFrame.understandingStatus;
+  const normalizeUnderstandingStatus = (status) => (
+    status === "out_of_domain"
+      ? "out_of_domain"
+      : status === "understood_but_missing_context"
+        ? "understood_but_missing_context"
+        : status === "ambiguous"
+          ? "ambiguous"
+          : "understood_and_supported"
+  );
+  const deterministicStatus = normalizeUnderstandingStatus(
+    deterministicFrame.understandingStatus
+  );
+  const providerStatus = normalizeUnderstandingStatus(providerFrame.understandingStatus);
   const forceDeterministicStatus = deterministicDomain
-    || deterministicStatus === "understood_but_unsupported"
     || deterministicStatus === "understood_but_missing_context"
     || (
       deterministicStatus === "understood_and_supported"
-      && providerFrame.understandingStatus === "understood_but_missing_context"
+      && providerStatus === "understood_but_missing_context"
     );
   const understandingStatus = deterministicDomain || providerOutOfDomain
     ? "out_of_domain"
     : forceDeterministicStatus
     ? deterministicStatus
-    : providerFrame.understandingStatus;
-  const ambiguities = deterministicDomain || deterministicStatus === "understood_but_unsupported"
+    : providerStatus;
+  const ambiguities = deterministicDomain
     ? deterministicFrame.ambiguities
     : deterministicStatus === "understood_but_missing_context"
       ? deterministicFrame.ambiguities
@@ -261,7 +350,10 @@ function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
   if (/(?:\u8d8b\u52bf|\u8d8b\u5f0f|\u5728\u6da8|\u5f80\u4e0a\u8d70)/u.test(text)) {
     constraints.trend = constraints.trend ?? "up";
   }
-  const useCanonicalSemantics = Boolean(actionCue) || deterministicDomain || providerOutOfDomain;
+  const useCanonicalSemantics = Boolean(actionCue)
+    || deterministicCarrier
+    || deterministicDomain
+    || providerOutOfDomain;
   return createTaskFrame({
     ...providerFrame,
     domain: deterministicDomain ? deterministicFrame.domain : providerFrame.domain,
@@ -271,9 +363,11 @@ function reconcileProviderFrame(providerFrame, deterministicFrame, text) {
     concepts: mergeEntities(deterministicFrame.concepts, providerFrame.concepts, text),
     constraints,
     ambiguities,
-    goal: useCanonicalSemantics || actionChanged ? goalFor(action) : providerFrame.goal,
+    goal: deterministicCarrier
+      ? deterministicFrame.goal
+      : useCanonicalSemantics || actionChanged ? goalFor(action) : providerFrame.goal,
     expectedOutput: useCanonicalSemantics || actionChanged
-      ? outputsFor(action)
+      ? deterministicCarrier ? deterministicFrame.expectedOutput : outputsFor(action)
       : providerFrame.expectedOutput,
     understandingStatus
   });
@@ -330,6 +424,131 @@ function applyUnresolvedEntityPolicy(taskFrame, input) {
   });
 }
 
+function applyExternalSupportSemantics(taskFrame, text, conversation = []) {
+  let frame = createTaskFrame(taskFrame);
+  if (!/外援|单挂|單掛|外挂/u.test(text)) return frame;
+
+  const explicitExternal = frame.constraints.externalSupportInterpretation === "non_trait_splash_unit";
+  const previousFrames = conversation
+    .map((entry) => entry?.taskFrame ?? entry?.frame ?? null)
+    .filter(Boolean);
+  const isEmblemCarrierFrame = (previous) => {
+    if (
+      previous?.goal === "item_carrier_rankings"
+      || previous?.goal === "rank_emblem_carriers"
+      || previous?.constraints?.externalSupportInterpretation === "emblem_carrier"
+    ) return true;
+    const items = [
+      ...(previous?.candidates ?? []),
+      ...(previous?.concepts ?? [])
+    ].filter((entity) => entity?.expectedType === "item");
+    return previous?.action === "rank"
+      && items.length === 1
+      && /emblem|纹章|轉|转/iu.test(`${items[0].resolvedId ?? ""} ${items[0].rawText ?? ""}`);
+  };
+  const emblemContext = /转谁带|轉誰帶|转职.{0,6}(?:谁|誰).{0,3}带|轉職.{0,6}(?:誰|谁).{0,3}帶/u.test(text)
+    || previousFrames.some(isEmblemCarrierFrame);
+  if (explicitExternal || emblemContext) {
+    const previousCarrierFrame = [...previousFrames].reverse().find(isEmblemCarrierFrame);
+    const previousItems = [
+      ...(previousCarrierFrame?.candidates ?? []),
+      ...(previousCarrierFrame?.concepts ?? [])
+    ].filter((entity) => entity?.expectedType === "item" && entity?.resolvedId);
+    return createTaskFrame({
+      ...frame,
+      action: "search",
+      goal: explicitExternal ? "find_external_support_units" : "rank_emblem_carriers",
+      expectedOutput: ["results", "ranking", "evidence"],
+      constraints: {
+        ...frame.constraints,
+        externalSupportInterpretation: explicitExternal ? "non_trait_splash_unit" : "emblem_carrier"
+      },
+      ...(emblemContext && previousItems.length === 1 ? {
+        candidates: previousItems,
+        concepts: frame.concepts.filter((entity) => entity.expectedType === "patch")
+      } : {}),
+      assumptions: emblemContext && !explicitExternal
+        ? [...new Set([...frame.assumptions, "按适合携带目标羁绊转职的外援棋子理解"])]
+        : frame.assumptions,
+      ambiguities: frame.ambiguities.filter((entry) => entry?.code !== "ambiguous_game_concept"),
+      understandingStatus: "understood_and_supported"
+    });
+  }
+  return createTaskFrame({
+    ...frame,
+    action: "search",
+    goal: "resolve_external_support_meaning",
+    ambiguities: [
+      ...frame.ambiguities.filter((entry) => entry?.code !== "ambiguous_game_concept"),
+      {
+        code: "ambiguous_game_concept",
+        inputFragment: "外援",
+        affectsResult: true,
+        affectsToolSelection: true,
+        candidates: [
+          { id: "non_trait_splash_unit", label: "阵容中常见的非本羁绊单挂棋子" },
+          { id: "emblem_carrier", label: "适合携带目标羁绊转职的棋子" }
+        ],
+        safeAssumption: null
+      }
+    ],
+    understandingStatus: "ambiguous"
+  });
+}
+
+function applyCandidateGroupBuildSemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  const buildRequest = /(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text);
+  const candidateScope = frame.constraints?.targetEntityType === "champion"
+    && (
+      frame.constraints?.cost !== undefined
+      || frame.constraints?.relation === "member_of_trait"
+      || frame.candidates.filter((entity) => entity?.expectedType === "champion").length > 1
+    );
+  if (!buildRequest || !candidateScope) return frame;
+  const comparison = /(?:谁|誰|哪个|哪個).{0,12}(?:表现|表現|最好|最强|最強)|(?:表现|表現).{0,8}(?:最好|最强|最強)|(?:最好|最强|最強).{0,8}(?:出装|出裝|装备|裝備)/u.test(text);
+  return createTaskFrame({
+    ...frame,
+    action: comparison ? "analyze" : "recommend",
+    goal: comparison
+      ? "compare_entity_build_performance"
+      : "recommend_builds_for_candidate_group",
+    expectedOutput: comparison
+      ? ["comparison", "ranking", "evidence"]
+      : ["recommendations", "results", "evidence"]
+  });
+}
+
+function applyEntityCollectionSemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  const resolvedCarrierItem = [
+    ...(frame.subjects ?? []),
+    ...(frame.candidates ?? []),
+    ...(frame.concepts ?? [])
+  ].some((entity) => entity?.expectedType === "item" && entity?.resolvedId);
+  if (resolvedCarrierItem && ITEM_CARRIER_REQUEST_PATTERN.test(text)) return frame;
+  const collectionType = collectionRequestType(text);
+  if (!collectionType) return frame;
+  if (/(?:出装|出裝|给装|給裝|配装|配裝|装备|裝備)/u.test(text)) return frame;
+  const hasCostMention = /[一二两兩三四五六七八九\d]\s*费(?:卡|棋子|英雄)?/u.test(text);
+  const constraints = {
+    ...frame.constraints,
+    targetEntityType: collectionType,
+    current: true
+  };
+  if (!hasCostMention) delete constraints.cost;
+  return createTaskFrame({
+    ...frame,
+    action: "search",
+    goal: goalFor("search"),
+    expectedOutput: outputsFor("search"),
+    constraints,
+    capabilityRequirements: [
+      ...new Set([...(frame.capabilityRequirements ?? []), "entity_catalog_filtering"])
+    ]
+  });
+}
+
 async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   let timeoutId;
   const providerPromise = Promise.resolve().then(() => provider(request));
@@ -347,6 +566,66 @@ async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   } finally {
     clearTimeout(timeoutId);
   }
+}
+
+export async function applyDeterministicTftSemantics(taskFrame, input, options = {}) {
+  const text = normalizeText(input);
+  let frame = createTaskFrame(taskFrame ?? {});
+  if (options.catalog) {
+    const mentions = extractEntityMentions(text, { catalog: options.catalog });
+    const holder = createTaskFrame({
+      action: frame.action,
+      goal: frame.goal,
+      subjects: frame.subjects,
+      candidates: frame.candidates,
+      concepts: [...(frame.concepts ?? []), ...mentions]
+    });
+    const linked = await linkTaskFrameEntities(holder, {
+      catalog: options.catalog,
+      patch: options.dynamicContext?.version ?? options.version ?? "current",
+      semanticRetriever: options.entitySemanticRetriever,
+      candidateRetriever: options.entityCandidateRetriever,
+      candidateReranker: options.entityCandidateReranker
+    });
+    const dedupeEntities = (entities) => {
+      const seen = new Set();
+      const result = [];
+      for (const entity of entities ?? []) {
+        const key = entity?.resolvedId
+          ? `${entity.expectedType}:${entity.resolvedId}`
+          : `${entity.expectedType}:${entity.rawText}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        result.push(entity);
+      }
+      return result;
+    };
+    frame = createTaskFrame({
+      ...frame,
+      subjects: dedupeEntities(linked.subjects),
+      candidates: dedupeEntities(linked.candidates),
+      concepts: dedupeEntities(linked.concepts)
+    });
+  }
+  const deterministicConstraints = constraintsFor(text);
+  for (const field of options.managedConstraintFields ?? []) {
+    delete deterministicConstraints[field];
+  }
+  frame = createTaskFrame({
+    ...frame,
+    constraints: {
+      ...frame.constraints,
+      ...deterministicConstraints
+    }
+  });
+  frame = applyExternalSupportSemantics(frame, text, options.conversation ?? []);
+  frame = applyCandidateGroupBuildSemantics(frame, text);
+  frame = applyEntityCollectionSemantics(frame, text);
+  frame = applyUnresolvedEntityPolicy(frame, input);
+  return createTaskFrame({
+    ...frame,
+    capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
+  });
 }
 
 export async function parseSemanticTask(input, options = {}) {
@@ -372,10 +651,28 @@ export async function parseSemanticTask(input, options = {}) {
     };
   }
   let action = inferAction(text, domainResult.domain, examples);
+  const inferredConstraints = constraintsFor(text);
+  if (
+    inferredConstraints.targetEntityType === "champion"
+    && inferredConstraints.relation === "member_of_trait"
+  ) {
+    action = "search";
+  }
   const entityMentions = extractEntityMentions(text, { catalog: options.catalog });
+  const bareChampionRequest = isBareChampionRequest(text, entityMentions);
+  const bareArtifactRequest = !(options.conversation ?? []).length
+    && isBareArtifactRequest(text, entityMentions, options.catalog);
   if (
     domainResult.domain === "out_of_domain"
-    && entityMentions.some((entity) => entity.expectedType === "game_concept")
+    && (
+      entityMentions.some((entity) => entity.expectedType === "game_concept")
+      || bareChampionRequest
+      || bareArtifactRequest
+      || (
+        ITEM_CARRIER_REQUEST_PATTERN.test(text)
+        && entityMentions.some((entity) => entity.expectedType === "item")
+      )
+    )
   ) {
     domainResult = {
       domain: "tft",
@@ -384,8 +681,19 @@ export async function parseSemanticTask(input, options = {}) {
     };
     action = inferAction(text, domainResult.domain, examples);
   }
-  const status = understandingStatus(text, domainResult.domain, action, entityMentions, options);
-  const ambiguities = status === "understood_but_missing_context"
+  if (bareChampionRequest) action = "unknown";
+  if (bareArtifactRequest) action = "rank";
+  const status = bareChampionRequest
+    ? "understood_but_missing_context"
+    : understandingStatus(text, domainResult.domain, action, entityMentions, options);
+  const ambiguities = bareChampionRequest
+    ? [{
+      code: "ambiguous_query_type",
+      affectsResult: true,
+      affectsToolSelection: true,
+      missingFields: ["query_type"]
+    }]
+    : status === "understood_but_missing_context"
     ? [{ code: "missing_context", affectsResult: true }]
     : status === "ambiguous"
       ? [{ code: "unclassified_tft_request", affectsResult: true }]
@@ -415,8 +723,8 @@ export async function parseSemanticTask(input, options = {}) {
     subjects,
     candidates,
     concepts,
-    constraints: constraintsFor(text),
-    goal: goalFor(action),
+    constraints: inferredConstraints,
+    goal: bareArtifactRequest ? "item_carrier_rankings" : goalFor(action),
     expectedOutput: outputsFor(action),
     contextReferences: [],
     ambiguities,
@@ -480,12 +788,23 @@ export async function parseSemanticTask(input, options = {}) {
     conversation: options.conversation,
     defaults: options.contextDefaults
   });
-  const clarificationPolicy = applyClarificationPolicy(
+  frame = applyExternalSupportSemantics(
     contextResolution.taskFrame,
+    text,
+    options.conversation ?? []
+  );
+  frame = applyCandidateGroupBuildSemantics(frame, text);
+  frame = applyEntityCollectionSemantics(frame, text);
+  const clarificationPolicy = applyClarificationPolicy(
+    frame,
     contextResolution,
     options.clarificationPolicy
   );
   frame = clarificationPolicy.taskFrame;
+  frame = createTaskFrame({
+    ...frame,
+    capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
+  });
 
   const validation = validateTaskFrame(frame);
   if (!validation.valid) {

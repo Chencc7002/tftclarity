@@ -8,6 +8,25 @@ export function createUnitTierNumItemsParam(unitApiName, starLevels, itemCount) 
 }
 
 export function planMetaTFTUnitBuilds(query) {
+  if (String(query.queue ?? DEFAULT_QUERY_OPTIONS.queue).toUpperCase() === "PBE") {
+    const [patch, buildPatch = ""] = String(query.patch ?? DEFAULT_QUERY_OPTIONS.patch).split("_", 2);
+    return {
+      endpoint: "unit_builds",
+      method: "GET",
+      pathUnit: query.unit,
+      path: "/tft-stat-api/unit_detail_items",
+      params: {
+        queue: "PBE",
+        patch,
+        b_patch: buildPatch,
+        days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+        permit_filter_adjustment: "true",
+        unit: query.unit,
+        num_items: String(query.itemCount ?? DEFAULT_QUERY_OPTIONS.itemCount ?? 3)
+      }
+    };
+  }
+
   const params = {
     formatnoarray: "true",
     compact: "true",
@@ -48,6 +67,42 @@ export function planMetaTFTCompCandidates(query) {
       rank: (query.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter).join(","),
       permit_filter_adjustment: "true",
       unit_unique: `${query.unit}-1`
+    }
+  };
+}
+
+export function planMetaTFTItemCarrierBuilds(query) {
+  const item = String(query.item ?? "").trim();
+  if (!item) throw new TypeError("planMetaTFTItemCarrierBuilds requires item");
+  if (String(query.queue ?? DEFAULT_QUERY_OPTIONS.queue).toUpperCase() === "PBE") {
+    const [patch, buildPatch = ""] = String(query.patch ?? DEFAULT_QUERY_OPTIONS.patch).split("_", 2);
+    return {
+      endpoint: "item_detail",
+      method: "GET",
+      path: "/tft-stat-api/item_detail",
+      params: {
+        queue: "PBE",
+        patch,
+        b_patch: buildPatch,
+        days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+        permit_filter_adjustment: "true",
+        itemName: item
+      }
+    };
+  }
+  return {
+    endpoint: "unit_builds",
+    method: "GET",
+    path: "/tft-explorer-api/unit_builds",
+    params: {
+      formatnoarray: "true",
+      compact: "true",
+      queue: query.queue ?? DEFAULT_QUERY_OPTIONS.queue,
+      patch: query.patch ?? DEFAULT_QUERY_OPTIONS.patch,
+      days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+      rank: (query.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter).join(","),
+      permit_filter_adjustment: "true",
+      item_unique: `${item}-1`
     }
   };
 }

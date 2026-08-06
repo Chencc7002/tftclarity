@@ -1,88 +1,128 @@
 # tftclarity
 
-> 听得懂中文俗称，支持自然语言查询，用 AI 总结数据，帮助玩家快速得到可靠结论。
+> 听得懂中文俗称，帮你快速得到结论，也说清楚结论从哪里来。
 
-tftclarity 是一个面向《云顶之弈》中文玩家的数据决策助手。它把玩家的自然语言问题转换为结构化查询，从 MetaTFT 获取数据并在本地计算指标，再给出首选方案、备选方案、样本可靠性和可选的 AI 数据解读。
+[在线体验：https://tftclarity.cn/](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [架构与可信度](#架构与可信度) · [部署指南](docs/deploy-tencent-cloud-v1.md)
 
-项目既可以作为浏览器中的本地小窗口运行，也可以部署为公开 Web 服务。
+![tftclarity 产品首页](docs/images/tftclarity-overview.png)
+
+tftclarity 把“霞有羊刀后两件怎么补”“当前有哪些阵容正在上升”这类问题转换为受控的结构化查询，结合 MetaTFT 统计、版本快照、攻略知识和可选的 AI 解读，返回首选方案、备选方案、样本规模、风险提示与证据来源。
+
+项目可作为浏览器 Web 应用、本地 Windows 小窗口或公开服务运行。目前仍处于测试阶段，在线站点主要用于个人使用、功能验证和项目演示，不承诺长期可用性或稳定性。
 
 ## 为什么使用 tftclarity？
 
-常规数据网站适合浏览完整榜单和手动筛选原始数据；tftclarity 更关注中文玩家的自然表达，以及从“提出问题”到“做出选择”的速度。
+- **快速得到结论**：不必在完整榜单中反复筛选，系统直接给出首选方案、备选方案、关键指标和下一步建议。
+- **中文俗称支持**：可以直接说“羊刀、无尽、巨杀、石像鬼、挑战者转”，无需记住官方全名或 API 名称。
+- **自然语言连续追问**：支持在多轮对话中继承英雄、阵容、星级、装备和样本条件，也可以随时修改要求。
+- **结论可追溯**：同时展示样本规模、缓存新鲜度、风险提示和证据来源，低样本或数据不足时不会强行下结论。
 
-### 中文俗称支持
+## 功能总览
 
-不需要记住完整官方名称或 API 名称，可以直接使用常见中文称呼：
+| 分类 | 已实现能力 |
+| --- | --- |
+| 装备分析 | 英雄三件套、已有装备补全、单件评估、多装备对比、特殊装备识别、核心装备信号 |
+| 阵容决策 | 热门阵容排行、上升/下降趋势、阵容分析、指定阵容棋子出装、条件筛选与排序 |
+| 资料百科 | 当前赛季英雄、装备、羁绊详情，中文/英文名称与常见俗称，当前版本公告 |
+| 智能复盘与资讯 | OP.GG 职业池趋势、个人近期对局复盘、职业选手教学、YouTube 攻略知识检索 |
 
-- 羊刀、无尽、巨杀、石像鬼
-- 挑战者转、斗士转
-- 英雄简称、旧称和常见中文别名
-- 简体中文、繁体中文及部分拼音表达
+### 中文俗称支持与连续追问
 
-系统会先在本地目录中解析这些称呼，无法确定唯一实体时会要求用户确认，不会直接猜测。
-
-### 自然语言查询
-
-可以像聊天一样描述需求：
+不需要记住完整官方名称或 API 字段，可以直接使用“羊刀、无尽、巨杀、石像鬼、挑战者转”等常见说法，也支持简繁中文、部分拼音、英雄简称和旧称。
 
 ```text
 霞已经有羊刀，剩下两件怎么补？
 
 查询这个阵容里三星贾克斯的出装，样本至少 500。
 
-当前版本有哪些阵容正在上升？
+推荐 3 套不卷、适合新手的九五阵容。
 
-推荐当前版本热门阵容，然后按胜率排序。
+当前版本有哪些阵容正在上升？
 ```
 
-系统会提取英雄、星级、阵容、装备、段位、统计时间、样本要求和排序目标，并支持在后续对话中继承或修改条件。
-
-### AI 总结数据
-
-除了展示前四率、胜率、平均名次和样本数，系统还可以说明：
-
-- 推荐方案为什么更合适
-- 高排名是否可能来自低样本波动
-- 哪个方案更普适
-- 不同备选方案适合什么取舍
-
-AI 只负责受控解析和数据解读，不能直接改写底层统计结果。生成内容必须通过证据 ID、数字、实体和风险边界校验；校验未通过时会自动使用确定性模板，不影响基础查询结果。
+系统会解析英雄、星级、阵容、装备、段位、统计时间、样本门槛和排序目标，并在后续对话中继承或修改条件。实体无法唯一确定时会要求确认，不会静默猜测。
 
 ### 快速得到结论
 
-查询结果会直接组织为：
+常规数据网站更适合浏览完整榜单和手动筛选原始数据；tftclarity 更关注从“提出问题”到“做出选择”的速度。结果不仅展示平均名次、前四率、登顶率、选择率和样本数，还会直接组织为：
 
-- 首选方案
-- 备选方案
-- 关键指标
-- 样本覆盖和稳定性
-- 推荐依据与下一步建议
+![快速得到装备结论：首选、备选、指标与数据解读](docs/images/tftclarity-quick-answer.png)
 
-用户还可以从阵容卡片直接查询某个棋子的出装，查询结束后返回原阵容继续分析其他棋子。
+- 首选方案与备选方案
+- 推荐理由和适用条件
+- 样本覆盖、缓存新鲜度与稳定性
+- 低样本、过期数据或无法判定时的风险提示
+- 统计、版本公告和攻略知识的证据来源
 
-## 当前功能
+AI 只在证据范围内解释数据，不能改写底层统计。生成内容必须通过证据 ID、实体、数字和风险边界校验；模型不可用或校验失败时，系统会返回确定性模板结果。
 
-- 英雄三件套、单件装备、已有装备补全和多装备对比
-- 普适性推荐：综合表现、样本规模和覆盖范围，降低低样本高排名误导
-- 热门阵容：准备 21 个展示样本，可在平均排名、前四率和胜率之间切换
-- 阵容趋势：上升 5 个、下降 5 个、选择率前 10 个，并标记高选择率“卷”阵容
-- 阵容棋子快捷查询：自动携带阵容、星级和高样本条件
-- 查询返回导航：棋子出装查询后可返回原阵容继续浏览
-- 英雄、装备和羁绊详情
-- 中文/英文界面、响应式布局和赛季壁纸
-- JSON 或 SQLite 持久化缓存
-- 可选结构化解析、语义检索和证据约束的 LLM 数据解读
-- 匿名公开访问、使用额度控制和反馈记录
+### 职业趋势与智能复盘
+
+![tftclarity 职业阵容趋势](docs/images/tftclarity-pro-trends.png)
+
+OP.GG 工作流支持职业选手池和个人关注池，能够增量采集近期对局、去重、按补丁隔离，并生成：
+
+- 职业池阵容频率、选手覆盖、平均名次、前四率、登顶率与老八率
+- 代表棋盘、单位出场率和装备组合热度
+- 单个选手近期对局与风格复盘
+- 基于结构化证据的 AI 教学点评
+
+职业池数据属于有限样本观察，不代表全服 Meta；样本不足时界面会弱化评级并明确标注。当前个人复盘不支持国服账号。OP.GG 单次接口返回量有限，因此正式复盘依赖本地定期增量积累。
+
+### 赛季、界面与本地小窗口
+
+- 中文/英文界面、响应式桌面与移动布局
+- 赛季白名单、主题色、壁纸和快捷问题随赛季上下文切换
+- 不可用的 PBE/预览赛季不会回退到正式服数据
+- Windows 浏览器 App 小窗口、置顶定位与全局热键唤回
+- 查询理解过程、工具执行进度、证据和结果分区展示
+- 匿名访问隔离、使用额度、反馈记录和受保护的管理入口
+
+## 架构与可信度
+
+```text
+用户输入
+  ↓
+TurnInterpreter / ConversationState
+  ↓
+TaskFrame / ContextResolver / EntityLinker
+  ↓
+CapabilityMatcher / ExecutionPlan
+  ↓
+ToolRegistry / ExecutionPlanExecutor / ResultPolicy
+  ↓
+MetaTFT / current_stats / OP.GG / 攻略与版本知识
+  ↓
+EvidenceBundle
+  ↓
+HybridAnswerService + 结论校验
+  ↓
+HTTP API / Web 界面 / Windows 小窗口
+```
+
+核心设计原则：
+
+- **确定性优先**：查询解析、过滤、聚合、指标计算和基础排序由代码完成。
+- **受控执行**：ExecutionPlan 只能调用已注册的第一方只读工具，并受步骤、调用次数、超时和重试预算约束。
+- **证据约束**：模型不能提供 EvidenceBundle 中不存在的数字、实体或 API 名称。
+- **诚实降级**：缺少历史快照、样本过低、外部服务失败或模型输出不合格时，明确说明边界并返回可验证结果。
+- **赛季隔离**：会话、缓存、目录和查询都携带赛季上下文，跨赛季切换不会继承旧条件。
+- **来源分层**：MetaTFT 用于当前统计，官方公告用于版本事实，攻略内容只用于原因和条件性建议，职业池观察不冒充全服数据。
+
+### 数据与存储
+
+默认本地模式可使用 JSON 缓存；SQLite 模式用于持久化查询缓存、赛季目录、会话、偏好、反馈、语义索引、`current_stats` 快照和 OP.GG 增量对局。
+
+SQLite 当前服务于单机开发、低成本部署和完整链路验证，并不代表最终生产数据架构。后续可在不改变 `TaskFrame → ExecutionPlan → ToolExecutor` 主链的前提下，将业务存储、缓存、对象文件和定时任务拆分到 PostgreSQL、Redis、对象存储与独立 Worker。
 
 ## 快速开始
 
 ### 环境要求
 
 - Windows、macOS 或 Linux
-- Node.js 18 或更高版本
-- 推荐使用带有 `node:sqlite` 的新版 Node.js；如果当前 Node.js 不包含该模块，需要成功安装可选依赖 `better-sqlite3`
-
-如果启动时同时提示缺少 `node:sqlite` 和 `better-sqlite3`，请升级 Node.js 后重新执行 `npm install`。
+- Node.js 20 或更高版本（安全版 MCP 依赖的最低要求）
+- 推荐 Node.js 22.5+ 或 24：可直接使用 `node:sqlite`，也能运行 OP.GG 增量采集；生产 Docker 镜像固定为 Node 24
+- Node.js 20–21 如需 SQLite，必须成功安装可选依赖 `better-sqlite3`
 
 ### 安装与启动
 
@@ -93,10 +133,10 @@ npm install
 npm start
 ```
 
-启动后访问：
+打开 [http://127.0.0.1:17317/](http://127.0.0.1:17317/)，或检查服务状态：
 
-```text
-http://127.0.0.1:17317/
+```powershell
+Invoke-RestMethod http://127.0.0.1:17317/api/health
 ```
 
 Windows 桌面小窗口：
@@ -111,78 +151,126 @@ npm run window
 npm run window:server
 ```
 
-## 可选 AI 配置
+启动器还支持端口、窗口尺寸、位置、置顶、浏览器路径和热键参数，详见 [Windows 小窗口启动器说明](docs/small-window-launcher.md)。
 
-基础数据查询不要求配置 LLM。需要自然语言增强解析、语义检索或 AI 数据解读时：
+## 可选 AI 与检索配置
+
+基础数据查询不要求配置 LLM。需要增强自然语言解析、语义检索、证据约束解读、OP.GG 教学或 YouTube 攻略提取时：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-然后在 `.env` 中填写所使用的 OpenAI-compatible 服务配置。不要把真实 API Key 提交到 Git。
-
-主要开关：
+然后填写所使用的 OpenAI-compatible 服务配置。不要把真实 API Key、PUUID 或其他凭据提交到 Git。
 
 | 配置 | 作用 |
 | --- | --- |
-| `TFT_AGENT_LLM_MODE` | 可选的结构化查询解析 |
+| `TFT_AGENT_LLM_MODE` | 结构化自然语言解析策略 |
 | `TFT_AGENT_CONCLUSION_MODE` | 证据约束的数据解读 |
-| `TFT_AGENT_EMBEDDING_MODE` | 持久化语义索引 |
-| `TFT_AGENT_CONCLUSION_MAX_CORRECTIONS` | 数据解读校验失败后的最大纠错次数 |
+| `TFT_AGENT_KNOWLEDGE_MODE` | 本地知识检索总开关 |
+| `TFT_AGENT_EMBEDDING_MODE` | 持久化语义向量索引 |
+| `TFT_AGENT_COACH_MODE` | 攻略与统计混合的教练回答 |
+| `TFT_AGENT_OPGG_TEACHING_TIMEOUT_MS` | OP.GG AI 教学单次尝试超时 |
+| `OPGG_PUUID_ENCRYPTION_KEY` | 可选的 PUUID 静态加密密钥；未配置时不落盘 PUUID |
 
-完整配置和安全占位符见 [.env.example](.env.example)。公开部署配置见 [.env.production.example](.env.production.example)。
+完整配置和安全占位符见 [.env.example](.env.example)，公开部署示例见 [.env.production.example](.env.production.example)。
 
 ## 常用命令
 
+### 开发与验证
+
 | 命令 | 用途 |
 | --- | --- |
-| `npm start` | 启动本地小窗口服务 |
-| `npm run window` | 启动 Windows 桌面窗口 |
-| `npm test` | 运行完整自动化测试 |
+| `npm start` | 启动本地 Web 服务 |
+| `npm run window` | 启动 Windows 桌面小窗口 |
+| `npm test` | 运行完整 Node 自动化测试 |
 | `npm run smoke:small-window` | 验证本地 API 主流程 |
-| `npm run smoke:conclusion-llm` | 一次性验证真实 LLM 数据解读 |
-| `npm run smoke:visual` | 运行可选的视觉冒烟测试 |
+| `npm run smoke:visual` | 运行多断点视觉冒烟测试 |
+| `npm run smoke:sqlite` | 验证 SQLite 持久化与重开缓存 |
+| `npm run smoke:metatft` | 验证真实 MetaTFT 数据链路 |
+| `npm run eval:agent` | 运行核心 Agent 离线评估 |
+
+涉及 MetaTFT、OP.GG、YouTube 或真实模型的命令会受到外部服务状态、网络和额度影响。
+
+### 数据与索引
+
+| 命令 | 用途 |
+| --- | --- |
+| `npm run stats:generate` | 生成 `current_stats` 快照 |
+| `npm run stats:daily` | 执行一次带锁、重试和告警的每日任务 |
+| `npm run stats:scheduler` | 启动 Node 常驻调度器 |
+| `npm run stats:schedule:windows` | 安装 Windows 每日计划任务 |
 | `npm run semantic:index` | 构建持久化语义索引 |
 | `npm run semantic:audit` | 审核语义索引状态 |
-| `npm run audit:aliases` | 审核实体别名覆盖 |
-| `npm run audit:items` | 审核当前装备可用性 |
+| `npm run refresh:item-localization` | 刷新装备本地化数据 |
+| `npm run audit:aliases` | 审核英雄、羁绊和装备别名覆盖 |
+| `npm run audit:items` | 审核当前装备可用性规则 |
+| `npm run audit:item-patch` | 对比版本间装备目录变化 |
 | `npm run backup:sqlite` | 创建并校验 SQLite 备份 |
 
-涉及 MetaTFT 或真实模型的联网 smoke 会受到外部服务状态、网络和额度影响。
+`current_stats` 的数据范围、保留精度、趋势阈值和告警方式均可在 `.env` 中配置。设计与验收记录见 [current_stats 架构和浏览器 E2E 报告](docs/current-stats-architecture-and-browser-e2e-report-2026-07-29.md)。
 
-## 数据与可信度边界
+### OP.GG 职业池与复盘
 
-- 查询解析、数据聚合、指标计算和基础排序保持确定性
-- LLM 不能提供未出现在证据包中的数字、实体或 API 名称
-- 低样本、旧缓存和无法确定胜出的对比必须显示风险边界
-- LLM 不可用或输出校验失败时，系统继续返回确定性结果
-- MetaTFT 是非官方外部数据源，接口变化或网络失败可能影响实时查询
-- `.probe/` 中保存离线捕获样本，用于回归测试、目录审核和数据契约验证
+```powershell
+# 采集默认职业池；定时模式每 60 分钟轮询一次
+npm run opgg:collect
+npm run opgg:collect:watch
 
-数据解读与检索设计详见：
+# 查看采集统计和职业池趋势
+npm run opgg:stats
+npm run opgg:trends
+
+# 查看单个选手的确定性复盘或 AI 教学
+npm run opgg:review -- --player broseph-lab
+npm run opgg:teaching -- --player broseph-lab
+```
+
+可使用 `--pool`、`--pool-create`、`--roster-add` 和 `--roster-remove` 管理自定义关注池。职业选手名单、荣誉资料与 PUUID 分离保存；真实 PUUID 不应写入仓库。
+
+### YouTube 攻略知识
+
+```powershell
+npm run youtube:import -- --url <URL>
+npm run smoke:youtube
+npm run youtube:acceptance
+```
+
+视频字幕由 Python 服务提取，Node 服务负责入库、检索、EvidenceBundle 和最终回答。未经人工审核的摘要会在 Schema、HTTP Evidence 和界面中标记“AI 生成 · 未经人工复核”，并保留原视频时间点链接。完整流程见 [YouTube 攻略知识与混合回答操作说明](docs/youtube-hybrid-operations.md)。
+
+## 测试与质量门槛
+
+```powershell
+npm test
+npm run smoke:small-window
+npm run smoke:comps
+npm run eval:agent
+```
+
+测试覆盖自然语言解析、实体链接、多轮上下文、能力规划、工具安全、结果策略、阵容与装备统计、赛季隔离、缓存、SQLite、OP.GG 聚合与复盘、YouTube 知识、HTTP API、流式进度和前端交互。
+
+阶段性 Agent 评估和验收结果见：
+
+- [Agent 升级进度](docs/agent-upgrade-progress.md)
+- [Phase 6.6 架构收敛](docs/phase-6-6-architecture-convergence.md)
+- [受控失败学习闭环](docs/reports/phase-8a-controlled-failure-loop.md)
+- [MVP 验证矩阵](docs/mvp-verification-matrix.md)
+
+## 进一步阅读
 
 - [LLM 检索与证据流水线](docs/llm-retrieval-evidence-pipeline.md)
 - [LLM 与会话记忆架构](docs/memory-llm-architecture.md)
 - [Question Contract 与 ConclusionSpec Registry](docs/question-contract-conclusion-spec.md)
 - [阵容排行数据来源](docs/comp-ranking-data-source.md)
 - [语义索引构建](docs/semantic-index-build.md)
+- [管理员赛季与数据运维](docs/admin-season-operations.md)
+- [腾讯云部署指南](docs/deploy-tencent-cloud-v1.md)
 
-## 测试
+## 数据来源与项目声明
 
-```powershell
-npm test
-```
+- MetaTFT 是非官方外部数据源，接口变化、网络失败或缓存过期可能影响实时查询。
+- OP.GG 职业池数据是小样本观察，不能替代全服统计，也不能推导稳定因果关系。
+- 官方版本公告只用于版本事实；攻略与 AI 摘要只用于原因、背景和条件性建议。
+- `.probe/` 保存离线捕获样本，用于回归测试、目录审核和数据契约验证。
 
-测试覆盖查询解析、别名解析、阵容趋势、热门阵容、多轮会话、缓存、SQLite、推荐排序、LLM 证据校验、HTTP 接口和前端交互。
-
-## 部署
-
-公开 Web 版本支持匿名访问隔离、LLM 使用额度、反馈记录、SQLite 持久化和 Caddy 自动 HTTPS。
-
-部署步骤见 [腾讯云部署指南](docs/deploy-tencent-cloud-v1.md)。
-
-## 项目声明
-
-tftclarity 是由玩家独立制作的非商业粉丝项目，与 Riot Games 不存在隶属、合作、赞助或认可关系。
-
-MetaTFT 为非官方外部数据来源。Riot Games、Teamfight Tactics 及相关角色、图像、名称和游戏资产归 Riot Games 或其权利人所有。
+tftclarity 是由玩家独立制作的非商业粉丝项目，与 Riot Games 不存在隶属、合作、赞助或认可关系。Riot Games、Teamfight Tactics 及相关角色、图像、名称和游戏资产归 Riot Games 或其权利人所有。

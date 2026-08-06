@@ -53,3 +53,45 @@ test("task frame migration keeps IntentEnvelope as a compatibility protocol", ()
   assert.equal(validateTaskFrame(migrated).valid, true);
   assert.throws(() => migrateTaskFrame({ schemaVersion: "task-frame.v0" }), /Unsupported task frame schema/u);
 });
+
+test("TaskFrame removes the same resolved entity across semantic roles", () => {
+  const frame = createTaskFrame({
+    domain: "tft",
+    action: "compare",
+    subjects: [{
+      rawText: "target",
+      expectedType: "champion",
+      resolvedId: "unit:target",
+      confidence: 1
+    }],
+    candidates: [{
+      rawText: "first mention",
+      expectedType: "item",
+      resolvedId: "item:one",
+      confidence: 1
+    }],
+    concepts: [
+      {
+        rawText: "repeated mention",
+        expectedType: "item",
+        resolvedId: "item:one",
+        confidence: 1
+      },
+      {
+        rawText: "second item",
+        expectedType: "item",
+        resolvedId: "item:two",
+        confidence: 1
+      }
+    ],
+    goal: "choose_best",
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+
+  assert.deepEqual(
+    [...frame.subjects, ...frame.candidates, ...frame.concepts]
+      .map((entity) => entity.resolvedId),
+    ["unit:target", "item:one", "item:two"]
+  );
+});

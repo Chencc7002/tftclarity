@@ -4,6 +4,16 @@ import { readFileSync } from "node:fs";
 import { runSemanticShadow } from "../src/understanding/semantic-shadow.js";
 import { recommendForInput } from "../src/core/recommendation-service.js";
 import { createCatalog } from "../src/data/static-data.js";
+import {
+  ExecutionPlanExecutor,
+  ToolExecutor,
+  ToolRegistry,
+  createStructuredToolDefinitions
+} from "../src/agent/index.js";
+import {
+  TFT_COMP_PREFERENCE_RESULT_POLICY_ID,
+  createTftResultPolicyExecutor
+} from "../src/domain/tft/result-policy.js";
 
 const COMP_PAGE_FIXTURE = JSON.parse(readFileSync(
   new URL("./fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url),
@@ -79,11 +89,83 @@ test("production recommendation path runs semantic shadow without changing the l
   assert.equal(Object.keys(routed).includes("agentRouting"), false);
 });
 
+test("live single-item recommendations attach a retrieval timestamp before evidence validation", async () => {
+  const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({
+    registry: toolRegistry,
+    toolExecutor
+  });
+  const result = await recommendForInput("霞单件装备排行", {
+    catalog: createCatalog(),
+    useSession: false,
+    bypassQueryCache: true,
+    executionPlanSovereignty: true,
+    metaTFTClient: {
+      async getUnitBuilds() {
+        return { data: [] };
+      }
+    },
+    toolRegistry,
+    toolExecutor,
+    executionPlanExecutor,
+    now: () => Date.parse("2026-07-31T02:31:00.000Z")
+  });
+
+  assert.equal(result.type, "unit_item_rankings");
+  assert.ok(result.executionTrace);
+  assert.equal(result.executionTrace.status, "completed");
+  assert.equal(result.executionTrace.evidenceStatus, "sufficient");
+  assert.equal(result.sourceUpdatedAt, "2026-07-31T02:31:00.000Z");
+});
+
+test("ExecutionPlan reports evidence validation instead of an unknown failure stage", async () => {
+  const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({
+    registry: toolRegistry,
+    toolExecutor
+  });
+
+  await assert.rejects(
+    recommendForInput("霞单件装备排行", {
+      catalog: createCatalog(),
+      useSession: false,
+      bypassQueryCache: true,
+      executionPlanSovereignty: true,
+      metaTFTClient: {
+        async getUnitBuilds() {
+          return null;
+        }
+      },
+      toolRegistry,
+      toolExecutor,
+      executionPlanExecutor
+    }),
+    (error) => {
+      assert.equal(error.code, "execution_evidence_invalid");
+      assert.match(error.message, /evidence_validation/u);
+      assert.doesNotMatch(error.message, /unknown/u);
+      return true;
+    }
+  );
+});
+
 test("production path routes 九五 through semantic correction and structured comp statistics", async () => {
+  const toolRegistry = new ToolRegistry(createStructuredToolDefinitions());
+  const toolExecutor = new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = new ExecutionPlanExecutor({
+    registry: toolRegistry,
+    toolExecutor,
+    resultPolicyExecutor: createTftResultPolicyExecutor()
+  });
   const result = await recommendForInput("给我推荐九五阵容", {
     catalog: createCatalog(),
     useSession: false,
     compResponse: COMP_PAGE_FIXTURE,
+    toolRegistry,
+    toolExecutor,
+    executionPlanExecutor,
     semanticTakeoverKey: "phase65-fast9"
   });
   assert.equal(result.agentRouting.route, "semantic_correction");
@@ -91,6 +173,14 @@ test("production path routes 九五 through semantic correction and structured c
   assert.equal(result.agentRouting.semanticDifference.kind, "trusted_correction");
   assert.deepEqual(result.agentRouting.plannedTools, ["comps_rankings"]);
   assert.equal(result.query.preferenceRequested, true);
-  assert.equal(result.query.preferenceConditions.strategy, "fast9");
+  assert.equal(result.executionPlan.resultPolicy.type, "registered");
+  assert.equal(
+    result.executionPlan.resultPolicy.policyId,
+    TFT_COMP_PREFERENCE_RESULT_POLICY_ID
+  );
+  assert.equal(result.executionTrace.resultPolicy.status, "applied");
+  assert.equal(result.executionTrace.source, "execution_plan_cache");
   assert.equal(result.retrievalPlan.structuredQueries[0].operation, "comps_rankings");
+  assert.equal(result.agentRouting.shadowComparison.resultComparisonStatus, "compared");
+  assert.equal(result.agentRouting.shadowComparison.publicResultComparison.equivalent, true);
 });

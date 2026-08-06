@@ -14,8 +14,8 @@ if (process.env.TFT_AGENT_LIVE_LLM_T3 !== "1") {
 
 const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..");
 const REPORT_DIR = resolve(ROOT, ".cache", "eval");
-const JSON_REPORT_PATH = resolve(REPORT_DIR, "phase-6-5-live-llm-t3.json");
-const MARKDOWN_REPORT_PATH = resolve(REPORT_DIR, "phase-6-5-live-llm-t3.md");
+const JSON_REPORT_PATH = resolve(REPORT_DIR, "phase-6-6-1-live-llm-t3.json");
+const MARKDOWN_REPORT_PATH = resolve(REPORT_DIR, "phase-6-6-1-live-llm-t3.md");
 const repetitions = Math.max(3, Number(process.env.TFT_AGENT_T3_REPETITIONS ?? 3));
 const concurrency = Math.max(1, Math.min(8, Number(process.env.TFT_AGENT_T3_CONCURRENCY ?? 4)));
 
@@ -26,7 +26,7 @@ function percent(value) {
 function markdown(report) {
   const failures = report.results.filter((result) => !result.passed);
   return [
-    "# Phase 6.5 Real LLM T3 Evaluation",
+    "# Phase 6.6.1 Real LLM T3 Evaluation",
     "",
     `- result: ${report.passed ? "PASS" : "FAIL"}`,
     `- provider/model: \`${report.configuration.provider}\` / \`${report.configuration.model}\``,
@@ -37,6 +37,9 @@ function markdown(report) {
     `- Pass^${report.metrics.repetitions}: ${percent(report.metrics.passPowerK)}`,
     `- entity mention / Top1: ${percent(report.metrics.entityMentionRecall)} / ${percent(report.metrics.entityResolutionTop1Accuracy)}`,
     `- tool selection: ${percent(report.metrics.toolSelectionAccuracy)}`,
+    `- complete argument semantics / plan shape: ${percent(report.metrics.argumentSemanticAccuracy)} / ${percent(report.metrics.planShapeAccuracy)}`,
+    `- unsupported honest downgrade: ${percent(report.metrics.unsupportedHonestDowngradeRate)}`,
+    `- context Pass^${report.metrics.repetitions}: ${percent(report.metrics.contextPassPowerK)}`,
     `- clarification: ${percent(report.metrics.clarificationAccuracy)}`,
     `- domain/action/status: ${percent(report.metrics.domainAccuracy)} / ${percent(report.metrics.actionAccuracy)} / ${percent(report.metrics.statusAccuracy)}`,
     `- tokens cached/uncached/output/total: ${report.metrics.tokens.cachedInput} / ${report.metrics.tokens.uncachedInput} / ${report.metrics.tokens.output} / ${report.metrics.tokens.total}`,
@@ -46,7 +49,7 @@ function markdown(report) {
     "## Category slices",
     "",
     ...Object.entries(report.slices).map(([category, value]) => (
-      `- ${category}: pass ${percent(value.passRate)}, entity ${percent(value.entityResolutionAccuracy)}, tool ${percent(value.toolSelectionAccuracy)}, clarification ${percent(value.clarificationAccuracy)}`
+      `- ${category}: pass ${percent(value.passRate)}, Pass@${report.metrics.repetitions} ${percent(value.passAtK)}, Pass^${report.metrics.repetitions} ${percent(value.passPowerK)}, entity ${percent(value.entityResolutionAccuracy)}, tool ${percent(value.toolSelectionAccuracy)}, arguments ${percent(value.argumentSemanticAccuracy)}, clarification ${percent(value.clarificationAccuracy)}`
     )),
     "",
     "## Failed runs",

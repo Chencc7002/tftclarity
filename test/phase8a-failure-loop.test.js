@@ -5,6 +5,11 @@ import {
   exportEvaluationCandidates,
   sanitizeFailureRecord
 } from "../src/evaluation/failure-loop.js";
+import {
+  ToolRegistry,
+  createStructuredToolDefinitions
+} from "../src/agent/index.js";
+import { matchTaskCapabilities } from "../src/understanding/capability-matcher.js";
 import { parseSemanticTask } from "../src/understanding/semantic-task-parser.js";
 
 const versionScope = {
@@ -139,6 +144,11 @@ test("8A isolates versions and does not expose raw query fields", () => {
 test("find_video is understood but unsupported and never becomes a video tool call", async () => {
   const parsed = await parseSemanticTask("帮我找霞的攻略视频", { entityLinking: false });
   assert.equal(parsed.taskFrame.action, "find_video");
-  assert.equal(parsed.taskFrame.understandingStatus, "understood_but_unsupported");
+  assert.equal(parsed.taskFrame.understandingStatus, "understood_and_supported");
+  assert.deepEqual(parsed.taskFrame.capabilityRequirements, ["strategy_video_search"]);
   assert.deepEqual(parsed.taskFrame.expectedOutput, ["video_candidates", "evidence"]);
+  const registry = new ToolRegistry(createStructuredToolDefinitions());
+  const capabilityMatch = matchTaskCapabilities(parsed.taskFrame, registry);
+  assert.equal(capabilityMatch.status, "understood_but_unsupported");
+  assert.equal(capabilityMatch.selected.length, 0);
 });

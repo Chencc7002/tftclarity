@@ -68,7 +68,10 @@ function createCaseRuntime(caseRecord, compFixture, eventSink) {
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
     metaTFTClient: {
-      getUnitBuilds: async () => UNIT_BUILD_FIXTURE
+      getUnitBuilds: async () => ({
+        data: UNIT_BUILD_FIXTURE,
+        capture: { capturedAt: "2026-07-24T00:00:00.000Z" }
+      })
     },
     compsClient: {
       getCompsData: async () => compFixture.compsData,

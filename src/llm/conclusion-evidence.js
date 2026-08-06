@@ -1,4 +1,6 @@
 import { requiredCoreItemAppearances } from "../core/core-item-frequency.js";
+import { analyzeItemDifferentiation } from "../core/item-differentiation.js";
+import { resolveItemApiNameAlias } from "../data/asset-resolver.js";
 import { CONCLUSION_SPEC_REGISTRY, deriveConclusionQuestionType } from "./conclusion-spec-registry.js";
 import { isLowSampleStats } from "./conclusion-requirements.js";
 
@@ -153,16 +155,31 @@ function buildRecommendations(result, catalog) {
       rank: index + 1,
       items: asArray(build.items).slice(0, 3).map((apiName) => itemRecord(apiName, catalog)),
       stats: statsRecord(build.stats),
+      ...(build.ranking ? {
+        ranking: {
+          method: build.ranking.method,
+          score: build.ranking.score,
+          baseScore: build.ranking.baseScore,
+          performanceScore: build.ranking.performanceScore,
+          coverageScore: build.ranking.coverageScore,
+          generalRecommendation: build.ranking.generalRecommendation === true,
+          sampleLeadRatio: build.ranking.sampleLeadRatio,
+          applicabilityBasis: build.ranking.applicabilityBasis
+        }
+      } : {}),
       stable: !lowSample,
       lowSample
     };
   });
 }
 
-function buildItemSignals(recommendations) {
+function buildItemSignals(recommendations, lockedItems = []) {
   const builds = asArray(recommendations).filter((entry) => String(entry?.evidenceId ?? "").startsWith("build:"));
-  if (builds.length < 2) return [];
+  if (builds.length === 0) return [];
   const requiredAppearances = requiredCoreItemAppearances(builds.length);
+  const lockedByApiName = new Map(asArray(lockedItems)
+    .filter((item) => item?.apiName)
+    .map((item) => [item.apiName, item]));
   const signals = new Map();
   for (const build of builds) {
     const seenInBuild = new Set();
@@ -183,13 +200,28 @@ function buildItemSignals(recommendations) {
       signals.set(item.apiName, signal);
     }
   }
+  for (const [apiName, item] of lockedByApiName) {
+    if (!signals.has(apiName)) {
+      signals.set(apiName, {
+        item,
+        appearances: 0,
+        firstRank: Number.MAX_SAFE_INTEGER,
+        buildEvidenceIds: [],
+        stable: true
+      });
+    }
+  }
   return [...signals.values()]
     .map((signal) => ({
       ...signal,
       recommendationCount: builds.length,
       requiredAppearances,
       appearanceRate: Number((signal.appearances / builds.length).toFixed(3)),
-      core: signal.appearances >= requiredAppearances,
+      eligibleForCore: !lockedByApiName.has(signal.item.apiName),
+      core: builds.length >= 2
+        && !lockedByApiName.has(signal.item.apiName)
+        && signal.appearances >= requiredAppearances,
+      ...(lockedByApiName.has(signal.item.apiName) ? { exclusionReason: "user_locked" } : {}),
       lowSample: !signal.stable
     }))
     .sort((left, right) => Number(right.core) - Number(left.core)
@@ -198,9 +230,90 @@ function buildItemSignals(recommendations) {
       || left.item.apiName.localeCompare(right.item.apiName))
     .map(({ firstRank, ...signal }, index) => ({
       evidenceId: `item-signal:${index + 1}`,
-      kind: "item_core_signal",
+      kind: signal.eligibleForCore ? "item_core_signal" : "locked_condition_signal",
       ...signal
     }));
+}
+
+function officialItemMechanics(recommendations, itemDetails) {
+  const uniqueItems = new Map();
+  for (const build of asArray(recommendations)) {
+    for (const item of asArray(build?.items)) {
+      if (item?.apiName && !uniqueItems.has(item.apiName)) uniqueItems.set(item.apiName, item);
+    }
+  }
+  const records = [];
+  const missingItemApiNames = [];
+  for (const item of uniqueItems.values()) {
+    const detail = itemDetails?.get?.(item.apiName)
+      ?? itemDetails?.get?.(resolveItemApiNameAlias(item.apiName));
+    const effect = clipped(detail?.effect, 1400)
+      ?.replace(/\{\{TFT_[A-Za-z0-9_]+\}\}/gu, "")
+      .replace(/\s{2,}/gu, " ")
+      .trim() ?? "";
+    if (!effect) {
+      missingItemApiNames.push(item.apiName);
+      continue;
+    }
+    records.push({
+      evidenceId: `item-mechanic:${records.length + 1}`,
+      kind: "official_item_mechanics",
+      type: "official_item_mechanics",
+      item,
+      officialEffect: effect,
+      text: `${item.name}：${effect}`,
+      visible: true,
+      authority: "official_static_catalog",
+      source: "Tencent TFT official item catalog",
+      sourceVersion: itemDetails?.meta?.version ?? null,
+      sourceUpdatedAt: itemDetails?.meta?.updatedAt ?? null
+    });
+  }
+  return {
+    records,
+    status: {
+      requestedItemCount: uniqueItems.size,
+      availableItemCount: records.length,
+      missingItemApiNames
+    }
+  };
+}
+
+function officialUnitMechanics(query, entityDetails) {
+  const apiName = query?.unit?.apiName;
+  const detail = apiName ? entityDetails?.units?.get?.(apiName) : null;
+  const role = clipped(detail?.role, 240);
+  if (!apiName || !role) {
+    return {
+      records: [],
+      status: {
+        requested: Boolean(apiName),
+        available: false,
+        missingUnitApiName: apiName ?? null
+      }
+    };
+  }
+  const unit = { apiName, name: query.unit.name };
+  return {
+    records: [{
+      evidenceId: "unit-mechanic:1",
+      kind: "official_unit_mechanics",
+      type: "official_unit_mechanics",
+      unit,
+      officialRole: role,
+      text: `${unit.name}的官方定位：${role}`,
+      visible: true,
+      authority: "official_static_catalog",
+      source: "Tencent TFT official unit catalog",
+      sourceVersion: entityDetails?.meta?.version ?? detail?.source?.version ?? null,
+      sourceUpdatedAt: entityDetails?.meta?.updatedAt ?? detail?.source?.updatedAt ?? null
+    }],
+    status: {
+      requested: true,
+      available: true,
+      missingUnitApiName: null
+    }
+  };
 }
 
 function buildItemRankings(result, catalog) {
@@ -393,7 +506,16 @@ function buildCompRankingContext(result, recommendations) {
   };
 }
 
-export function buildConclusionEvidence({ result, catalog, input = "", locale = "zh-CN", previousQuery = null, spec = null } = {}) {
+export function buildConclusionEvidence({
+  result,
+  catalog,
+  input = "",
+  locale = "zh-CN",
+  previousQuery = null,
+  spec = null,
+  officialItemDetails = null,
+  officialEntityDetails = null
+} = {}) {
   const resultIntent = result?.type ?? result?.query?.intent;
   if (!CONCLUSION_SPEC_REGISTRY.supportsIntent(resultIntent)) {
     throw new Error(`Unsupported conclusion evidence intent: ${resultIntent ?? "(missing)"}`);
@@ -413,9 +535,23 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
     : intent === "comp_rankings" || intent === "comp_trends" || intent === "comp_analysis"
       ? buildCompRankings(result, { trendOnly: intent === "comp_trends" })
       : comparison?.options ?? buildRecommendations(result, catalog);
+  const query = buildQuery(result, catalog);
   const itemSignals = ["unit_build_rankings", "unit_build_completion", "unit_best_3_items"].includes(intent)
-    ? buildItemSignals(recommendations)
+    ? buildItemSignals(recommendations, query.lockedItems)
     : [];
+  const itemMechanics = intent === "unit_build_rankings"
+    ? officialItemMechanics(recommendations, officialItemDetails)
+    : { records: [], status: { requestedItemCount: 0, availableItemCount: 0, missingItemApiNames: [] } };
+  const unitMechanics = intent === "unit_build_rankings"
+    ? officialUnitMechanics(query, officialEntityDetails)
+    : { records: [], status: { requested: false, available: false, missingUnitApiName: null } };
+  const itemDifferentiation = resultIntent === "unit_build_completion" && query.lockedItems.length > 0
+    ? analyzeItemDifferentiation({
+      recommendations,
+      lockedItems: query.lockedItems,
+      primaryMetric: result?.query?.primaryMetric ?? result?.query?.sort ?? "avgPlacement"
+    })
+    : null;
   const compRankingContext = ["comp_rankings", "comp_trends", "comp_analysis"].includes(intent)
     ? buildCompRankingContext(result, recommendations)
     : null;
@@ -435,9 +571,16 @@ export function buildConclusionEvidence({ result, catalog, input = "", locale = 
       inputSummary: clipped(input, 240),
       preferenceChanges: buildPreferenceChanges(previousQuery, result?.query, catalog)
     },
-    query: buildQuery(result, catalog),
+    query,
     recommendations,
     itemSignals,
+    itemMechanics: itemMechanics.records,
+    unitMechanics: unitMechanics.records,
+    mechanicsStatus: {
+      items: itemMechanics.status,
+      unit: unitMechanics.status
+    },
+    itemDifferentiation,
     itemRankingContext: intent === "unit_item_rankings" || intent === "unit_emblem_rankings" ? {
       displayedCount: recommendations.length,
       methodology: clipped(

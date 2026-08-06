@@ -124,6 +124,8 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     seasonContextId: String(preferences.seasonContextId ?? "set17-live"),
     providerVersion: preferences.providerVersion ?? null,
     effectivePatch: String(preferences.currentPatch ?? preferences.effectivePatch ?? parsed.patch ?? preferences.patch ?? "current"),
+    unit: parsed.unit ?? null,
+    compId: parsed.compId ?? null,
     intent,
     metrics: preferenceRequested
       ? preferenceMetrics
@@ -133,9 +135,12 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
       : Math.min(21, Math.max(1, Number(parsed.limit ?? defaultLimit))),
     minSamples: Math.max(0, Number(parsed.minSamples ?? options.minSamples ?? preferences.minSamples ?? 500)),
     days: Number(parsed.days ?? (trendRequested ? 3 : preferences.days) ?? 3),
-    patch: String(parsed.patch ?? preferences.patch ?? "current"),
+    patch: String(parsed.patch === "current" && preferences.compPatch
+      ? preferences.compPatch
+      : parsed.patch ?? preferences.compPatch ?? preferences.patch ?? "current"),
     queue: String(parsed.queue ?? preferences.queue ?? "1100"),
     rankFilter: [...(parsed.rankFilter ?? preferences.rankFilter ?? [])],
+    avoidItemComponents: [...(parsed.avoidItemComponents ?? [])],
     specialMode: Boolean(parsed.specialMode),
     popularRequested,
     trendRequested,

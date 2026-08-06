@@ -15,7 +15,9 @@ const resultFixture = JSON.parse(readFileSync(new URL("./fixtures/conclusion-fix
 const buildResult = (overrides = {}) => ({ ...structuredClone(resultFixture), ...overrides });
 
 const catalog = createCatalog();
-const evidence = buildConclusionEvidence({ result: buildResult(), catalog, input: "霞已有羊刀怎么补？" });
+const ordinaryBuildResult = buildResult();
+ordinaryBuildResult.query.lockedItems = [];
+const evidence = buildConclusionEvidence({ result: ordinaryBuildResult, catalog, input: "霞怎么出装？" });
 const itemEvidence = buildConclusionEvidence({
   result: {
     type: "unit_item_rankings",
@@ -48,7 +50,7 @@ function validOutput(overrides = {}) {
     summary: "当前统计口径下，第一套完整出装的前四率最高，可作为优先参考。",
     reasons: [{ evidenceIds: ["build:1"], text: "该组合前四率为61.2%，样本1248场，均名3.86。" }],
     alternatives: [{ evidenceIds: ["build:2"], text: "若更看重登顶率，可参考第二套组合。" }],
-    nextAction: "保留已有羊刀，再根据散件补齐另外两件装备。",
+    nextAction: "保留已有羊刀，再从当前展示方案中补齐另外两件装备。",
     riskNotice: null,
     ...overrides
   };
@@ -271,7 +273,7 @@ test("validateConclusionOutput does not treat generic stat aliases as unsupporte
     }]
   };
   const generic = validateConclusionOutput(validOutput({
-    nextAction: "如果需要补充攻速，可结合现有散件调整。"
+    nextAction: "可以按攻速这一统计词继续比较当前展示方案。"
   }), evidence, { catalog: aliasCatalog });
   assert.equal(generic.valid, true, generic.errors.join("\n"));
 
@@ -280,6 +282,14 @@ test("validateConclusionOutput does not treat generic stat aliases as unsupporte
   }), evidence, { catalog: aliasCatalog });
   assert.equal(inventedEntity.valid, false);
   assert.match(inventedEntity.errors.join("\n"), /catalog entity absent from evidence: 挑战者/u);
+});
+
+test("validateConclusionOutput treats mana restoration wording as a generic mechanic instead of an item entity", () => {
+  const generic = validateConclusionOutput(validOutput({
+    nextAction: "可以按回蓝这一机制词继续比较当前展示方案。"
+  }), evidence, { catalog });
+
+  assert.equal(generic.valid, true, generic.errors.join("\n"));
 });
 
 test("validateConclusionOutput prefers the longest catalog entity over nested aliases", () => {
@@ -325,33 +335,41 @@ test("validateConclusionOutput prefers the longest catalog entity over nested al
   assert.match(rejected.errors.join("\n"), /catalog entity absent from evidence: 帽子/u);
 });
 
-test("validateConclusionOutput caps evidence id expansion at three entries", () => {
+test("equipment conclusions allow more than three evidence ids for statistics and mechanics", () => {
   const value = validOutput({
     reasons: [{
-      evidenceIds: ["build:1", "build:2", "item-signal:1"],
+      evidenceIds: ["build:1", "build:2", "item-signal:1", "item-signal:2"],
       text: "该组合前四率为61.2%，样本1248场，另见 build:2。"
     }]
   });
   const result = validateConclusionOutput(value, evidence, { catalog });
   assert.equal(result.valid, true, result.errors.join("\n"));
-  assert.deepEqual(result.value.reasons[0].evidenceIds, ["build:1", "build:2", "item-signal:1"]);
+  assert.deepEqual(result.value.reasons[0].evidenceIds, ["build:1", "build:2", "item-signal:1", "item-signal:2"]);
 });
 
 test("repairConclusionCitations normalizes oversized evidence scopes by textual relevance", () => {
+  const expandedEvidence = structuredClone(evidence);
+  expandedEvidence.structuredEvidence = [
+    ...(expandedEvidence.structuredEvidence ?? []),
+    ...Array.from({ length: 13 }, (_, index) => ({
+      evidenceId: `note:${index + 1}`,
+      type: "static_description",
+      text: "仅用于测试装备结论的证据容量。"
+    }))
+  ];
   const value = validOutput({
     reasons: [{
-      evidenceIds: ["build:1", "build:2", "item-signal:1", "item-signal:2"],
-      text: "第一套前四率61.2%，样本1248场。"
+      evidenceIds: Array.from({ length: 13 }, (_, index) => `note:${index + 1}`),
+      text: "当前结论仅限展示范围。"
     }]
   });
-  const initial = validateConclusionOutput(value, evidence, { catalog });
+  const initial = validateConclusionOutput(value, expandedEvidence, { catalog });
   assert.equal(initial.valid, false);
-  assert.match(initial.errors.join("\n"), /evidenceIds must contain 1 to 3 entries/u);
-  const repaired = repairConclusionCitations(value, evidence, { catalog, validation: initial });
+  assert.match(initial.errors.join("\n"), /evidenceIds must contain 1 to 12 entries/u);
+  const repaired = repairConclusionCitations(value, expandedEvidence, { catalog, validation: initial });
   assert.equal(repaired.changed, true);
   assert.equal(repaired.validation.valid, true, repaired.validation.errors.join("\n"));
-  assert.equal(repaired.value.reasons[0].evidenceIds.length, 3);
-  assert.equal(repaired.value.reasons[0].evidenceIds.includes("build:1"), true);
+  assert.equal(repaired.value.reasons[0].evidenceIds.length, 12);
 });
 
 test("validateConclusionOutput reports allowed numbers from the linked evidence scope", () => {
@@ -427,7 +445,7 @@ test("validateConclusionOutput accepts only evidence-linked core-item claims", (
     reasons: [{ evidenceIds: ["item-signal:1"], text: "羊刀在两套推荐中都出现，出现率100.0%，是当前统计口径下的核心装备趋势（core=true）。" }]
   });
   const validResult = validateConclusionOutput(valid, evidence, { catalog });
-  assert.equal(validResult.valid, true);
+  assert.equal(validResult.valid, true, validResult.errors.join("\n"));
   assert.doesNotMatch(validResult.value.reasons[0].text, /core=/u);
   assert.doesNotMatch(validResult.value.summary, /(?:build|item-signal):/u);
   assert.doesNotMatch(validResult.value.summary, /stable/u);
@@ -438,14 +456,279 @@ test("validateConclusionOutput accepts only evidence-linked core-item claims", (
   });
   assert.equal(validateConclusionOutput(wrongLink, evidence, { catalog }).valid, true);
 
+  const coreThenCandidates = validOutput({
+    reasons: [{
+      evidenceIds: ["item-signal:1"],
+      text: "核心装备为羊刀，候选装备包括无尽、巨杀、轻语和杀人剑。"
+    }]
+  });
+  const coreThenCandidatesResult = validateConclusionOutput(coreThenCandidates, evidence, { catalog });
+  assert.equal(coreThenCandidatesResult.valid, true, coreThenCandidatesResult.errors.join("\n"));
+
   const promotedNonCore = validOutput({ summary: "无尽是当前前列方案的核心装备。" });
   assert.equal(validateConclusionOutput(promotedNonCore, evidence, { catalog }).valid, false);
 
   const absolute = validOutput({ nextAction: "羊刀是必备装备，优先合成。" });
   assert.equal(validateConclusionOutput(absolute, evidence, { catalog }).valid, false);
 
-  const qualified = validOutput({ nextAction: "羊刀不是必备装备，仍需根据散件选择。" });
+  const qualified = validOutput({ nextAction: "羊刀不是必备装备，仍需从当前展示方案中选择。" });
   assert.equal(validateConclusionOutput(qualified, evidence, { catalog }).valid, true);
+});
+
+test("completion validation excludes locked items and requires the server key differentiator for priority claims", () => {
+  const completionResult = buildResult({
+    type: "unit_build_completion",
+    query: {
+      ...buildResult().query,
+      intent: "unit_build_completion",
+      lockedItems: ["dawn"],
+      minSamples: 10,
+      primaryMetric: "avgPlacement"
+    },
+    rankedBuilds: [
+      { items: ["dawn", "rageblade", "infinity-edge"], stats: { games: 500, avgPlacement: 2.97, top4Rate: 0.6, winRate: 0.2 } },
+      { items: ["dawn", "deathblade", "rageblade"], stats: { games: 500, avgPlacement: 2.13, top4Rate: 0.7, winRate: 0.3 } },
+      { items: ["dawn", "deathblade", "infinity-edge"], stats: { games: 500, avgPlacement: 3.58, top4Rate: 0.5, winRate: 0.1 } }
+    ]
+  });
+  const completionEvidence = buildConclusionEvidence({ result: completionResult, catalog });
+  const priority = validOutput({
+    headline: "已携带dawn时，推荐当前第一套展示方案。",
+    reasons: [{
+      evidenceIds: [completionEvidence.itemDifferentiation.keyDifferentiatorEvidenceId],
+      text: "优先保证rageblade，它是当前可比展示方案中区分度最高的未锁定装备。"
+    }],
+    alternatives: [{
+      evidenceIds: ["build:1", "build:2", "build:3"],
+      text: "deathblade与infinity-edge构成当前可见候选差异。"
+    }],
+    nextAction: "dawn仅作为已携带条件保留。",
+    riskNotice: "当前对比只描述关联，不证明装备单独造成名次变化。"
+  });
+  const priorityValidation = validateConclusionOutput(priority, completionEvidence, { catalog });
+  assert.equal(priorityValidation.valid, true, priorityValidation.errors.join("\n"));
+
+  const lockedAsCore = structuredClone(priority);
+  lockedAsCore.summary = "核心装备：dawn。";
+  assert.equal(validateConclusionOutput(lockedAsCore, completionEvidence, { catalog }).valid, false);
+
+  const noSignal = structuredClone(completionEvidence);
+  noSignal.itemDifferentiation.itemSignals.forEach((signal) => { signal.keyDifferentiator = false; });
+  assert.equal(validateConclusionOutput(priority, noSignal, { catalog }).valid, false);
+
+  const noSignalFallback = validOutput({
+    headline: "已携带dawn时，推荐当前第一套展示方案。",
+    summary: "补装倾向不明确，按当前完整方案排名选择。",
+    reasons: [{
+      evidenceIds: ["build:1", "build:2", "build:3"],
+      text: "补装倾向不明确，未锁定装备之间没有稳定的唯一优先项。"
+    }],
+    alternatives: [{
+      evidenceIds: ["build:1", "build:2", "build:3"],
+      text: "可直接比较当前展示的完整补装方案。"
+    }],
+    nextAction: "dawn仅作为已携带条件保留。",
+    riskNotice: "结论仅限当前展示方案。"
+  });
+  assert.equal(validateConclusionOutput(noSignalFallback, noSignal, { catalog }).valid, true);
+
+  const forcedWithoutSignal = structuredClone(noSignalFallback);
+  forcedWithoutSignal.nextAction = "补装倾向不明确，但建议优先选择rageblade。";
+  assert.equal(validateConclusionOutput(forcedWithoutSignal, noSignal, { catalog }).valid, false);
+
+  const causal = structuredClone(priority);
+  causal.reasons[0].text = "rageblade导致平均名次提升，是当前优先保证装备。";
+  assert.equal(validateConclusionOutput(causal, completionEvidence, { catalog }).valid, false);
+});
+
+test("equipment mechanism and role explanations require matching official evidence and reject excluded scope", () => {
+  const result = buildResult();
+  result.query.lockedItems = [];
+  const mechanicsEvidence = buildConclusionEvidence({
+    result,
+    catalog,
+    officialItemDetails: new Map([
+      ["TFT_Item_GuinsoosRageblade", { effect: "攻击会提供攻击速度。" }],
+      ["TFT_Item_InfinityEdge", { effect: "提供暴击相关效果。" }],
+      ["TFT_Item_GiantSlayer", { effect: "对高生命值目标提供额外伤害。" }]
+    ]),
+    officialEntityDetails: {
+      units: new Map([["TFT17_Xayah", { role: "远程物理输出" }]]),
+      meta: { version: "17.7" }
+    }
+  });
+  const ragebladeName = mechanicsEvidence.itemMechanics[0].item.name;
+  const supported = validOutput({
+    reasons: [{
+      evidenceIds: ["item-mechanic:1", "unit-mechanic:1"],
+      text: `${ragebladeName}提供攻击速度；霞的官方定位为远程物理输出，这只用于解释当前统计结果。`
+    }]
+  });
+  assert.equal(validateConclusionOutput(supported, mechanicsEvidence, { catalog }).valid, true);
+
+  const matchupDescription = validOutput({
+    reasons: [{
+      evidenceIds: ["item-mechanic:1"],
+      text: `${ragebladeName}提供攻击速度，可用于对抗坦克。`
+    }]
+  });
+  assert.equal(validateConclusionOutput(matchupDescription, mechanicsEvidence, { catalog }).valid, true);
+
+  const missingRoleEvidence = structuredClone(mechanicsEvidence);
+  missingRoleEvidence.unitMechanics = [];
+  const unsupportedUnitRole = validOutput({
+    reasons: [{ evidenceIds: ["build:1"], text: "霞的官方定位是远程物理输出。" }]
+  });
+  const unsupportedUnitRoleValidation = validateConclusionOutput(unsupportedUnitRole, missingRoleEvidence, { catalog });
+  assert.equal(unsupportedUnitRoleValidation.valid, false);
+  assert.match(unsupportedUnitRoleValidation.errors.join("\n"), /role claim without linked official unit mechanics/u);
+
+  const percentageMechanicsClaim = validOutput({
+    reasons: [{
+      evidenceIds: ["build:1"],
+      text: `${ragebladeName}提供+35%攻击力、+35%暴击几率及技能暴击，提升爆发。`
+    }]
+  });
+  const percentageMechanicsEvidence = structuredClone(mechanicsEvidence);
+  percentageMechanicsEvidence.itemMechanics = [];
+  const percentageMechanicsValidation = validateConclusionOutput(percentageMechanicsClaim, percentageMechanicsEvidence, { catalog });
+  assert.equal(percentageMechanicsValidation.valid, false);
+  assert.match(percentageMechanicsValidation.errors.join("\n"), /item-mechanism claim without linked official item mechanics/u);
+
+  const effectCoverageEvidence = structuredClone(mechanicsEvidence);
+  effectCoverageEvidence.questionContract = {
+    schemaVersion: "question-contract.v1",
+    contractId: "e".repeat(64),
+    questionType: "default",
+    requiredAnswerDimensions: ["build_performance", "core_item_tendency"],
+    requiredEvidence: {
+      build_performance: ["visible_builds"],
+      core_item_tendency: ["visible_builds"]
+    }
+  };
+  const missingRequiredEffects = {
+    schemaVersion: "llm_conclusion.v2",
+    contractId: effectCoverageEvidence.questionContract.contractId,
+    status: "ok",
+    addressedDimensions: ["build_performance", "core_item_tendency"],
+    missingDimensions: [],
+    missingEvidence: [],
+    headline: "推荐当前第一套完整三件套。",
+    summary: "当前结论基于前三套展示方案。",
+    reasons: [
+      { dimension: "core_item_tendency", evidenceIds: ["item-signal:1"], text: "羊刀属于当前核心装备。" },
+      { dimension: "build_performance", evidenceIds: ["build:1"], text: "第一套方案可优先参考。" }
+    ],
+    alternatives: [],
+    nextAction: "按当前展示方案选择。",
+    riskNotice: null
+  };
+  const missingRequiredEffectsValidation = validateConclusionOutput(
+    missingRequiredEffects,
+    effectCoverageEvidence,
+    { catalog }
+  );
+  assert.equal(missingRequiredEffectsValidation.valid, false);
+  assert.match(missingRequiredEffectsValidation.errors.join("\n"), /must discuss the official item effect for core item/u);
+  assert.match(missingRequiredEffectsValidation.errors.join("\n"), /must discuss the official item effect for candidate item/u);
+
+  const repairedRequiredEffects = repairConclusionCitations(
+    missingRequiredEffects,
+    effectCoverageEvidence,
+    { catalog, validation: missingRequiredEffectsValidation }
+  );
+  assert.equal(repairedRequiredEffects.changed, true);
+  assert.equal(
+    repairedRequiredEffects.repairs.some((repair) => repair.kind === "required_item_effect"),
+    true
+  );
+  assert.equal(
+    repairedRequiredEffects.validation.valid,
+    true,
+    repairedRequiredEffects.validation.errors.join("\n")
+  );
+
+  const evidenceLinkedEffects = structuredClone(missingRequiredEffects);
+  evidenceLinkedEffects.reasons = [
+    {
+      dimension: "core_item_tendency",
+      evidenceIds: ["item-signal:1", "item-mechanic:1"],
+      text: `${ragebladeName}属于当前核心装备，并提供攻击速度。`
+    },
+    {
+      dimension: "build_performance",
+      evidenceIds: ["build:1", "item-mechanic:2", "item-mechanic:3"],
+      text: "候补无尽提供暴击相关效果；巨杀对高生命值目标提供额外伤害。"
+    }
+  ];
+  const evidenceLinkedEffectsValidation = validateConclusionOutput(
+    evidenceLinkedEffects,
+    effectCoverageEvidence,
+    { catalog }
+  );
+  assert.equal(evidenceLinkedEffectsValidation.valid, true, evidenceLinkedEffectsValidation.errors.join("\n"));
+
+  const citationWithoutEffectText = structuredClone(evidenceLinkedEffects);
+  citationWithoutEffectText.reasons[1].text = "无尽是当前候补装备；巨杀对高生命值目标提供额外伤害。";
+  const citationWithoutEffectTextValidation = validateConclusionOutput(
+    citationWithoutEffectText,
+    effectCoverageEvidence,
+    { catalog }
+  );
+  assert.equal(citationWithoutEffectTextValidation.valid, false);
+  assert.match(citationWithoutEffectTextValidation.errors.join("\n"), /must discuss the official item effect for candidate item/u);
+
+  mechanicsEvidence.structuredEvidence = [
+    ...(mechanicsEvidence.structuredEvidence ?? []),
+    ...Array.from({ length: 12 }, (_, index) => ({
+      evidenceId: `mechanics-note:${index + 1}`,
+      type: "static_description",
+      text: "仅用于测试已占满的证据范围。"
+    }))
+  ];
+  const repairableMechanicsCitation = validOutput({
+    reasons: [{
+      evidenceIds: Array.from({ length: 12 }, (_, index) => `mechanics-note:${index + 1}`),
+      text: `${ragebladeName}提供攻击速度。`
+    }]
+  });
+  const repairableInitial = validateConclusionOutput(repairableMechanicsCitation, mechanicsEvidence, { catalog });
+  assert.equal(repairableInitial.valid, false);
+  assert.match(repairableInitial.errors.join("\n"), /item-mechanism claim without linked official item mechanics/u);
+  const repairedMechanicsCitation = repairConclusionCitations(
+    repairableMechanicsCitation,
+    mechanicsEvidence,
+    { catalog, validation: repairableInitial }
+  );
+  assert.equal(repairedMechanicsCitation.changed, true);
+  assert.equal(repairedMechanicsCitation.validation.valid, true, repairedMechanicsCitation.validation.errors.join("\n"));
+  assert.equal(repairedMechanicsCitation.value.reasons[0].evidenceIds.includes("item-mechanic:1"), true);
+
+  const missingItemEvidence = structuredClone(mechanicsEvidence);
+  missingItemEvidence.itemMechanics = [];
+  const missingItemCitation = structuredClone(supported);
+  missingItemCitation.reasons[0].evidenceIds = ["build:1", "unit-mechanic:1"];
+  assert.equal(validateConclusionOutput(missingItemCitation, missingItemEvidence, { catalog }).valid, false);
+
+  const traitReasoning = validOutput({ nextAction: "根据羁绊档位决定羊刀是否更好。" });
+  assert.equal(validateConclusionOutput(traitReasoning, mechanicsEvidence, { catalog }).valid, false);
+  const componentPlanning = validOutput({ nextAction: "大剑紧缺时把散件留给其他英雄。" });
+  assert.equal(validateConclusionOutput(componentPlanning, mechanicsEvidence, { catalog }).valid, false);
+});
+
+test("equipment conclusion has no fixed character limit", () => {
+  const longButSupported = validOutput({
+    headline: "推荐当前第一套完整三件套方案。",
+    reasons: [{
+      dimension: "build_performance",
+      evidenceIds: ["build:1"],
+      text: `当前第一套完整方案可作为优先参考。${"这段补充说明不引入新的装备、数值或因果判断。".repeat(12)}`
+    }],
+    alternatives: [{ dimension: "core_item_tendency", evidenceIds: ["build:2"], text: "其他可见方案仅作为当前筛选范围内的备选参考。" }],
+    riskNotice: "结论仅限当前前三套展示方案与筛选条件。"
+  });
+  const validation = validateConclusionOutput(longButSupported, evidence, { catalog });
+  assert.equal(validation.valid, true, validation.errors.join("\n"));
 });
 
 test("validateConclusionOutput accepts evidence-backed emblem shorthand", () => {

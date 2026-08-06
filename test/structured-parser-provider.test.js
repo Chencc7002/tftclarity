@@ -147,6 +147,52 @@ test("OpenAI-compatible environment aliases infer chat configuration and normali
   assert.equal(explicit.model, "preferred-model");
 });
 
+test("small-window TurnDelta provider disables model thinking so structured content is not empty", async () => {
+  let observedBody;
+  const rawDelta = {
+    schemaVersion: "turn-delta.v1",
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    explicitTaskFrame: null,
+    entityOperations: [],
+    constraintOperations: [{
+      operation: "set",
+      field: "rank",
+      value: "MASTER_PLUS"
+    }],
+    presentation: {
+      requestedCount: null,
+      pageDirection: null,
+      avoidSeen: false
+    },
+    confidence: 0.92,
+    ambiguities: []
+  };
+  const runtime = await createSmallWindowRuntimeAsync({
+    cacheStore: new MemoryCacheStore(),
+    catalog: createCatalog(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    llmFetch: async (_url, init) => {
+      observedBody = JSON.parse(init.body);
+      return fakeChatResponse(JSON.stringify(rawDelta));
+    }
+  }, {
+    TFT_AGENT_LLM_PROVIDER: "chat",
+    TFT_AGENT_LLM_ENDPOINT: "https://llm.local/v1/chat/completions",
+    TFT_AGENT_LLM_MODEL: "test-model"
+  });
+
+  await runtime.turnDeltaProvider({
+    schemaVersion: "turn-delta.v1",
+    messages: [{ role: "user", content: "follow-up" }],
+    budget: { maxOutputTokens: 500 }
+  });
+
+  assert.deepEqual(observedBody.thinking, { type: "disabled" });
+});
+
 test("local env loading reads a selected file without overriding existing process values", () => {
   const tempDir = mkdtempSync(join(tmpdir(), "tft-agent-env-"));
   const envPath = join(tempDir, ".env");

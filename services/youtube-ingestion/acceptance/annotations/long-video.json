@@ -1,0 +1,264 @@
+{
+  "schemaVersion": "youtube_acceptance_annotation.v1",
+  "id": "long-video",
+  "category": "video_over_30_minutes",
+  "sourceUrl": "https://www.youtube.com/watch?v=FkDvDkdid_w",
+  "videoId": "FkDvDkdid_w",
+  "season": "set17-live",
+  "patch": "17.7",
+  "locale": "en",
+  "output": "FkDvDkdid_w.json",
+  "extractionInput": {
+    "mode": "authenticated_browser_capture",
+    "timedtextJson3": "FkDvDkdid_w.en.json3",
+    "sourceMetadata": "FkDvDkdid_w.metadata.json",
+    "chunkSeconds": 300
+  },
+  "annotationStatus": "provisional",
+  "annotationProvenance": {
+    "reviewer": "Codex transcript-window review",
+    "reviewerType": "codex",
+    "method": "claim-by-claim source transcript window review",
+    "independentHumanReview": false,
+    "seedSource": "model_output",
+    "sourceTranscriptHash": "1a8b8399add3779b83213bca00198e882a2c7442096565c9f13ace5327b30654",
+    "videoVersion": "0f046f02e055df975544",
+    "note": "Model-output-derived review seed; not independent human ground truth. Human verification and sign-off are required."
+  },
+  "annotations": {
+    "claims": [
+      {
+        "type": "mechanism",
+        "subjects": [
+          "set mechanic"
+        ],
+        "claimKeywords": [
+          "Tailor your rewards to your win condition because it is the most crucial thing this set."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 122.8,
+        "timestampEnd": 135.76000000000002,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Tailor your rewards to your win condition because it is the most crucial thing this set.",
+        "transcriptExcerpt": "[117.64] choose whichever rewards that you want\n[119.12] to inch towards and that way you can\n[121.00] kind of play around it later on. I\n[122.80] highly recommend doing that because\n[124.24] pretty much tailoring your rewards to\n[126.00] your win condition is probably going to\n[127.88] be the most crucial thing you do this\n[129.68] set. But now that we know what the set\n[131.36] mechanic is, let's get into the traits\n[133.12] and then the champions. So, first things\n[135.76] first, we have Anima Squad. This is\n[137.72] going to be like the fortune of the set."
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Nova",
+          "Deathblade"
+        ],
+        "claimKeywords": [
+          "When playing 5 Nova, focus on raw stats like Deathblade because the trait provides shred, sunder, attack speed, precision, healing, shielding, and true damage, making pure stat items more valuable."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 407.0,
+        "timestampEnd": 471.12,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "When playing 5 Nova, focus on raw stats like Deathblade because the trait provides shred, sunder, attack speed, precision, healing, shielding, and true damage, making pure stat items more valuable.",
+        "transcriptExcerpt": "[400.92] post it in my Discord, just so everyone\n[402.96] can kind of see what's going on there.\n[405.00] I'm sure it'll be a fun time. Next up,\n[407.00] we have is Nova. 6 seconds into combat,\n[409.72] Nova grants a power surge to allies\n[411.60] based on champions. And then at five,\n[413.72] you get a striker selector. And the\n[415.36] chosen Nova activates their strike\n[417.16] during the power surge. That's going to\n[418.56] be Aatrox, Caitlyn, Akali, Malzahar, and\n[420.76] Kindred. And the beautiful part about\n[423.28] this trait is that you don't need to\n[424.60] build any items when you build this\n[426.16] trait. Of course, I'm kidding with that.\n[427.76] But what I mean is that you just need to\n[429.36] focus on raw stats when you play with\n[431.12] Nova because if you play five Nova, you\n[433.68] get shred and sunder. You get bonus\n[436.28] attack speed. You get precision, which\n[437.92] is essentially just gaining critical\n[439.60] strike. That's what it's called now. It\n[441.28] has like a tag for it now. You get some\n[443.40] healing. You get some shielding. And you\n[445.28] also get true damage. So, what what do\n[446.92] you honestly want when you get all these\n[448.48] random effects? Well, you probably want\n[450.20] to get stuff like, I don't know, maybe\n[451.80] like a deathblade for attack damage. And\n[453.84] just pretty much just load up on a bunch\n[455.72] of raw stats. Cuz again, you don't need\n[457.44] crit. You don't need any of the sunder\n[458.92] items. You got attack speed. You got\n[460.80] true you got all these random effects,\n[462.72] so it's really cool and it's probably\n[464.36] going to make a lot of the purely stat\n[466.80] focused items a bit more valuable than\n[469.20] they were in previous sets if you are\n[471.12] going Nova. Next up we have is Tahm\n[473.24] Kench who is a four cost. Every three"
+      },
+      {
+        "type": "reroll_timing",
+        "subjects": [
+          "Cho'Gath",
+          "Cho'Gath reroll"
+        ],
+        "claimKeywords": [
+          "You could probably do some Cho'Gath reroll with that."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 959.88,
+        "timestampEnd": 964.68,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "You could probably do some Cho'Gath reroll with that.",
+        "transcriptExcerpt": "[953.04] kills them, devour them and permanently\n[955.12] gain even more maximum health instead.\n[957.44] So, that's going to be a nice little\n[958.40] stacking unit. You could probably do\n[959.88] some Cho'Gath reroll with that. Corki,\n[962.08] Meeple Fateweaver Asteroid Blaster,\n[964.68] strafe to a nearby position unleashing\n[966.80] missiles split between the target and"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Samira",
+          "knock-up"
+        ],
+        "claimKeywords": [
+          "You could build a knock-up composition with Samira because she shoots when enemies are knocked up."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1693.6,
+        "timestampEnd": 1699.16,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "You could build a knock-up composition with Samira because she shoots when enemies are knocked up.",
+        "transcriptExcerpt": "[1688.16] Whenever an enemy is knocked up, shoot\n[1690.12] them dealing physical damage and\n[1691.60] entering the groove for a few seconds. I\n[1693.60] guess you could build like a knock-up\n[1694.92] comp with Samira. Uh I'm surprised they\n[1697.48] actually didn't do this with Yasuo now\n[1699.16] that I think about it because it kind of\n[1700.44] fits with Yasuo's theme. Active is going"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Tahm Kench",
+          "healing"
+        ],
+        "claimKeywords": [
+          "You could build a healing composition around Tahm Kench because his ability benefits from healing taken."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1761.0,
+        "timestampEnd": 1785.96,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "You could build a healing composition around Tahm Kench because his ability benefits from healing taken.",
+        "transcriptExcerpt": "[1755.08] debris, dealing magic damage, then crush\n[1757.04] all debris onto the target, dealing\n[1758.76] magic damage and briefly stunning them.\n[1761.00] Tahm Kench is going to be an Arcana\n[1762.64] Brawler. Wait, is Arcana even a trait? I\n[1764.84] don't even remember hearing what Arcana\n[1766.60] was. Isn't that like a trait from\n[1768.12] previous sets? Oh, but this is a unique\n[1770.20] one. Never mind. Uh passive is once per\n[1772.12] combat, after dropping below a health\n[1773.80] threshold, gain a shield for a few\n[1775.28] seconds equal to a portion of the\n[1776.72] healing received this combat. Heal then\n[1778.88] tongue lash all enemies within two\n[1780.48] hexes, dealing magic damage. So, this\n[1782.48] one you can build maybe like a healing\n[1783.80] comp around. So, we have Samira, which\n[1785.96] wants to be knocked up, and then Tahm\n[1787.52] Kench, which wants to be healed. So, you"
+      },
+      {
+        "type": "opener",
+        "subjects": [
+          "Kickstart"
+        ],
+        "claimKeywords": [
+          "Kickstart is very good and you should take it to win streak."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 2007.36,
+        "timestampEnd": 2021.0,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Kickstart is very good and you should take it to win streak.",
+        "transcriptExcerpt": "[2002.60] powerful reward. I wonder why they chose\n[2004.28] 33. Cognitive tax. Gain eight gold and\n[2007.36] one XP. Kickstart. Gain a random\n[2009.60] two-star two-cost champion and one gold.\n[2012.24] Wait, isn't this really good? Like, holy\n[2014.48] cow. That sounds really good. Okay.\n[2017.12] I think you take this and just win\n[2018.68] streak a lot, right? Size matters. Gain\n[2021.00] a giant spell. After a champion begins\n[2023.60] combat with more than 3,800 max health,"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Size matters",
+          "giant spell"
+        ],
+        "claimKeywords": [
+          "Size matters is good for bruiser comps because 3800 health is achievable."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "playing bruisers"
+        ],
+        "timestampStart": 2018.68,
+        "timestampEnd": 2054.399,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Size matters is good for bruiser comps because 3800 health is achievable.",
+        "transcriptExcerpt": "[2012.24] Wait, isn't this really good? Like, holy\n[2014.48] cow. That sounds really good. Okay.\n[2017.12] I think you take this and just win\n[2018.68] streak a lot, right? Size matters. Gain\n[2021.00] a giant spell. After a champion begins\n[2023.60] combat with more than 3,800 max health,\n[2025.64] gain another. Is that even good? It's\n[2027.72] just like one item for a silver augment.\n[2030.40] That that doesn't sound that good,\n[2031.88] right? Like, you got to compare it to\n[2033.52] what is it called? Like, item grab bag\n[2035.32] or the one that gives you a random item\n[2037.52] as a silver augment. This one gives you\n[2039.60] a specific one, but you have to meet the\n[2041.64] requirement. So, this one seems a little\n[2044.20] weird. I don't know if I like this one.\n[2045.64] I guess if you're going bruisers, you\n[2047.00] could take this. You can get to 3,800\n[2049.20] pretty easily and then you could use one\n[2050.88] giant spell for Sunfire Cape, the other\n[2052.48] one for spirit visage. Those are like\n[2054.40] pretty good items for that team, right?\n[2056.04] Feeling lucky. Gain 12 gold, then flip a"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Charge transfer"
+        ],
+        "claimKeywords": [
+          "Charge transfer is good with high single target compositions."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "high single target damage"
+        ],
+        "timestampStart": 2081.44,
+        "timestampEnd": 2091.24,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Charge transfer is good with high single target compositions.",
+        "transcriptExcerpt": "[2076.20] really well with this. Comp you're\n[2077.52] doing. Good thing we have teamfight.lol\n[2079.56] for that for checking later. Next we\n[2081.44] have is charge transfer. Your team gains\n[2083.48] 5% damage amp. 50% of overkill damage is\n[2086.16] dealt to the nearest enemy. If you have\n[2087.60] really high single target, this is going\n[2089.08] to be really good. Group hug. Combat\n[2091.24] start allies grant other adjacent allies\n[2093.84] six armor and magic resist. This effect"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Money Hungry"
+        ],
+        "claimKeywords": [
+          "I think I'm going to take this every single time."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 2239.36,
+        "timestampEnd": 2251.44,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "I think I'm going to take this every single time.",
+        "transcriptExcerpt": "[2233.56] Backline blueprint, gain a three cost\n[2235.64] non-tank champion and an emblem for\n[2237.44] their last listed trait, so the opposite\n[2239.36] of the other one. Money hungry, gain 10\n[2241.56] gold now, then seven gold at the start\n[2243.40] of every stage. Picking up gold makes\n[2245.44] your tactician larger. I like this one a\n[2247.08] lot. That sounds pretty good to me. I\n[2248.36] think I'm going to take this every\n[2249.40] single time. Invader Zed, gain a\n[2251.44] bloodthirster. On stage 4-1, gain a Zed.\n[2254.12] After receiving Zed, he can then appear"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Jhin",
+          "four cost champions",
+          "sniper build",
+          "dark star build"
+        ],
+        "claimKeywords": [
+          "if you want a force Jhin, this is going to be an amazing augment for you. So if you're playing any sniper build or dark star build, yeah, you probably just take this."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "playing sniper build or dark star build"
+        ],
+        "timestampStart": 2307.88,
+        "timestampEnd": 2321.16,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "if you want a force Jhin, this is going to be an amazing augment for you. So if you're playing any sniper build or dark star build, yeah, you probably just take this.",
+        "transcriptExcerpt": "[2302.28] XP and one shop reroll. So, that's kind\n[2304.00] of like a little bit of everything. May\n[2306.04] the fours be with you.\n[2307.88] Your four cost champions and Jhin gain\n[2309.56] two or four health and 14% attack speed.\n[2312.00] You also gain a Jhin. So, if you want a\n[2313.36] force Jhin, this is going to be an\n[2314.52] amazing augment for you. So, if you're\n[2316.68] playing any sniper build or dark star\n[2318.44] build, yeah, you probably just take\n[2320.08] this.\n[2321.16] Play some four costs. There probably are\n[2322.48] going to be some specific builds for\n[2323.76] this, too, which should be pretty fun to"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Gragas",
+          "Warmog's Armor",
+          "Stoneplate"
+        ],
+        "claimKeywords": [
+          "stack warmogs on him, throw him in the front, isolate him. Maybe you stone plate him plus two warmogs."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "not against Rogues",
+          "isolate him"
+        ],
+        "timestampStart": 2143.08,
+        "timestampEnd": 2177.92,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "stack warmogs on him, throw him in the front, isolate him. Maybe you stone plate him plus two warmogs.",
+        "transcriptExcerpt": "[2136.84] burst of attack speed for as long as he\n[2138.56] has mana to spend. At combat start and\n[2140.96] on kill he gains a non mana locking\n[2143.08] shield. Self-destruct gain a Gragas.\n[2145.44] Gragas now self-destinates dealing 20%\n[2148.32] max health plus sacrifice health as\n[2150.68] magic damage in a four hex radius\n[2152.48] reduced by 20% per hex from the\n[2154.52] epicenter. So this is like a hero\n[2156.28] augment, but like uh Okay, I probably\n[2158.72] shouldn't say these, but it is a hero\n[2160.60] augment where he just I guess sacrifices\n[2162.96] himself, right? Like Seems interesting\n[2165.28] to be honest. Like you just stack\n[2166.84] warmogs on him, throw him in the front,\n[2168.56] isolate him. It's probably pretty decent\n[2170.92] value like to be honest. I'm assuming\n[2172.96] he's a bruiser. Maybe you stone plate\n[2174.44] him plus two warmogs or something like\n[2176.00] that. I mean he will die and he will do\n[2177.92] some crazy stuff. I guess as long as\n[2179.32] you're not against assassins, he should\n[2180.80] be good. Or what are they called?"
+      },
+      {
+        "type": "risk",
+        "subjects": [
+          "Anima trait"
+        ],
+        "claimKeywords": [
+          "if you want to super loose streak, this is going to be the way to go."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "want to lose streak"
+        ],
+        "timestampStart": 2125.68,
+        "timestampEnd": 2134.28,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "if you want to super loose streak, this is going to be the way to go.",
+        "transcriptExcerpt": "[2119.32] combat. So that's going to be his hero\n[2120.60] augment. Meep see gain a weaker version\n[2122.96] of brax spell and heavy attack damage.\n[2125.68] Oh by the way, this thing is for the the\n[2127.40] Anima is a fortune trait. So if you want\n[2129.44] to like super loose streak, this is\n[2130.80] going to be the way to go. Star\n[2132.48] conqueror Mordekaiser becomes an auto\n[2134.28] attack base AP carry whose channel is a\n[2136.84] burst of attack speed for as long as he"
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 2559.2,
+        "timestampEnd": 2575.88,
+        "reason": "closing remarks and call for comments"
+      }
+    ]
+  }
+}

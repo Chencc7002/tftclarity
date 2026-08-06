@@ -1,8 +1,8 @@
 import { performance } from "node:perf_hooks";
 import { createStructuredToolDefinitions } from "../src/agent/tools/definitions.js";
-import { compileExecutionPlan } from "../src/agent/execution-plan.js";
+import { planExecution } from "../src/agent/execution-plan.js";
+import { statusAfterPlanning } from "../src/agent/status-protocol.js";
 import { ToolRegistry } from "../src/agent/tools/registry.js";
-import { planTask } from "../src/agent/task-planner.js";
 import { resolveEntities } from "../src/core/entity-resolver.js";
 import { normalizeText } from "../src/core/normalizer.js";
 import { createPhase3EvaluationCatalog } from "./datasets/entity-linking-phase3-cases.mjs";
@@ -11,7 +11,7 @@ import { resolveGameConcept } from "../src/understanding/concept-resolver.js";
 import { defaultFewShotExampleStore } from "../src/understanding/few-shot-example-store.js";
 import { parseSemanticTask } from "../src/understanding/semantic-task-parser.js";
 
-export const LIVE_LLM_T3_EVALUATION_VERSION = "live-llm-t3-evaluation.v1";
+export const LIVE_LLM_T3_EVALUATION_VERSION = "live-llm-t3-evaluation.v2";
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -46,19 +46,34 @@ function matchesMention(entity, mention) {
   });
 }
 
-function expectedResolvedId(mention, catalog) {
+function expectedEntity(mention, catalog) {
+  const patch = String(mention ?? "").trim();
+  if (/^\d{1,2}\.\d{1,2}$/u.test(patch)) {
+    return { type: "patch", resolvedId: `patch.${patch}` };
+  }
+  if (/^(?:当前版本|當前版本|这版本|這版本|当前补丁|當前補丁)$/u.test(patch)) {
+    return { type: "patch", resolvedId: "patch.current" };
+  }
   const concept = resolveGameConcept(mention);
-  if (concept.resolvedId) return concept.resolvedId;
-  return resolveEntities(mention, { catalog }).all?.[0]?.target ?? null;
+  if (concept.resolvedId) {
+    return { type: "game_concept", resolvedId: concept.resolvedId };
+  }
+  const resolved = resolveEntities(mention, { catalog }).all?.[0] ?? null;
+  if (!resolved) return null;
+  return {
+    type: resolved.entityType === "unit" ? "champion" : resolved.entityType,
+    resolvedId: resolved.target
+  };
 }
 
-function evaluateEntities(frame, testCase, catalog) {
+export function evaluateEntities(frame, testCase, catalog) {
   const expectedMentions = array(testCase.expected.entityMentions);
   const entities = allEntities(frame);
   const matches = expectedMentions.map((mention) => {
-    const resolvedId = testCase.category === "unknown_entity"
+    const expected = testCase.category === "unknown_entity"
       ? null
-      : expectedResolvedId(mention, catalog);
+      : expectedEntity(mention, catalog);
+    const resolvedId = expected?.resolvedId ?? null;
     const candidates = entities.filter((entity) => (
       matchesMention(entity, mention)
       || (resolvedId && entity?.resolvedId === resolvedId)
@@ -68,10 +83,12 @@ function evaluateEntities(frame, testCase, catalog) {
     )) ?? candidates[0] ?? null;
   });
   const matched = matches.filter(Boolean).length;
-  const shouldResolve = testCase.category !== "unknown_entity";
-  const resolutionCorrect = matches.filter((entity) => (
-    entity && (shouldResolve ? Boolean(entity.resolvedId) : !entity.resolvedId)
-  )).length;
+  const resolutionCorrect = matches.filter((entity, index) => {
+    if (!entity) return false;
+    if (testCase.category === "unknown_entity") return !entity.resolvedId;
+    const expected = expectedEntity(expectedMentions[index], catalog);
+    return Boolean(expected?.resolvedId) && entity.resolvedId === expected.resolvedId;
+  }).length;
   return {
     expected: expectedMentions.length,
     matched,
@@ -94,6 +111,99 @@ function selectedTool(executionPlanning) {
   ) return null;
   const tools = [...new Set(array(executionPlanning.plan?.steps).map((step) => step.tool))];
   return tools.length === 1 ? tools[0] : tools.join("+");
+}
+
+function evaluationStatus(statusProtocol) {
+  if (statusProtocol.understandingStatus === "out_of_domain") return "out_of_domain";
+  if (statusProtocol.understandingStatus === "missing_context") {
+    return "understood_but_missing_context";
+  }
+  if (statusProtocol.understandingStatus === "ambiguous") return "ambiguous";
+  if (statusProtocol.capabilityStatus === "unsupported") return "understood_but_unsupported";
+  return "understood_and_supported";
+}
+
+function stableUnique(values) {
+  return [...new Set(array(values).filter(Boolean).map(String))];
+}
+
+function sameValues(actual, expected) {
+  return JSON.stringify(array(actual)) === JSON.stringify(array(expected));
+}
+
+function arraysContainNoDuplicates(argumentsValue) {
+  return Object.values(argumentsValue ?? {}).every((value) => (
+    !Array.isArray(value) || value.length === stableUnique(value).length
+  ));
+}
+
+function expectedIds(testCase, catalog, type) {
+  return stableUnique(array(testCase.expected.entityMentions)
+    .map((mention) => expectedEntity(mention, catalog))
+    .filter((entity) => entity?.type === type)
+    .map((entity) => entity.resolvedId));
+}
+
+export function semanticArgumentsCorrect(
+  frame,
+  executionPlanning,
+  registry,
+  testCase,
+  catalog
+) {
+  if (executionPlanning?.validation?.valid !== true) return true;
+  const steps = array(executionPlanning.plan?.steps);
+  if (steps.length < 1 || steps.length > 3) return false;
+  const entities = allEntities(frame);
+  const constraints = frame.constraints ?? {};
+  const frameChampionIds = stableUnique(entities
+    .filter((entity) => entity.expectedType === "champion" && entity.resolvedId)
+    .map((entity) => entity.resolvedId));
+  const expectedChampionIds = expectedIds(testCase, catalog, "champion");
+  const expectedItemIds = expectedIds(testCase, catalog, "item");
+  const expectedTraitIds = expectedIds(testCase, catalog, "trait");
+  for (const step of steps) {
+    if (!arraysContainNoDuplicates(step.arguments)) return false;
+    if (step.tool === "unit_builds") {
+      const championIds = expectedChampionIds.length ? expectedChampionIds : frameChampionIds;
+      if (championIds.length && step.arguments.unit !== championIds[0]) return false;
+      if (!sameValues(step.arguments.comparisonItems, expectedItemIds)) return false;
+    }
+    if (
+      step.tool === "unit_details"
+      && expectedChampionIds.length
+      && step.arguments.apiName !== expectedChampionIds[0]
+    ) {
+      return false;
+    }
+    if (
+      step.tool === "item_details"
+      && expectedItemIds.length
+      && step.arguments.apiName !== expectedItemIds[0]
+    ) return false;
+    if (
+      step.tool === "trait_details"
+      && expectedTraitIds.length
+      && step.arguments.apiName !== expectedTraitIds[0]
+    ) return false;
+    const supportedArguments = registry.get(step.tool)?.inputSchema?.properties ?? {};
+    for (const key of ["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"]) {
+      if (
+        constraints[key] !== undefined
+        && Object.hasOwn(supportedArguments, key)
+        && JSON.stringify(step.arguments[key]) !== JSON.stringify(constraints[key])
+      ) return false;
+    }
+  }
+  const mapping = executionPlanning.conceptMapping;
+  if (mapping?.argumentTemplate) {
+    const step = steps.find((entry) => entry.tool === mapping.tool);
+    if (!step) return false;
+    for (const [key, value] of Object.entries(mapping.argumentTemplate)) {
+      if (JSON.stringify(step.arguments[key]) !== JSON.stringify(value)) return false;
+    }
+  }
+  return true;
 }
 
 function sanitizedError(error) {
@@ -183,26 +293,15 @@ async function evaluateRun(testCase, repetition, options) {
     });
     const frame = semanticResult.taskFrame;
     const capabilityMatch = matchTaskCapabilities(frame, options.registry);
-    const taskPlanning = await planTask(frame, capabilityMatch, {
+    const executionPlanning = await planExecution(frame, capabilityMatch, {
       registry: options.registry,
       budget: { maxSteps: 3, maxToolCalls: 3, maxPlannerTokens: 600 }
     });
-    const executionPlanning = compileExecutionPlan(
-      frame,
-      capabilityMatch,
-      taskPlanning,
-      {
-        registry: options.registry,
-        budget: { maxSteps: 3, maxToolCalls: 3, maxPlanTokens: 800 }
-      }
-    );
+    const statusProtocol = statusAfterPlanning(frame, capabilityMatch, executionPlanning);
     const entity = evaluateEntities(frame, testCase, options.catalog);
     const tool = selectedTool(executionPlanning);
     const clarification = Boolean(semanticResult.clarificationPolicy?.needsClarification);
-    const effectiveStatus = frame.understandingStatus === "understood_and_supported"
-      && capabilityMatch.status !== "understood_and_supported"
-      ? "understood_but_unsupported"
-      : frame.understandingStatus;
+    const status = evaluationStatus(statusProtocol);
     const usage = requestLog?.usage ?? semanticResult.telemetry.usage;
     const durationMs = requestLog?.durationMs ?? semanticResult.telemetry.durationMs;
     const expectedDomain = expectedValues(
@@ -217,10 +316,26 @@ async function evaluateRun(testCase, repetition, options) {
     const checks = {
       domain: expectedDomain.has(frame.domain),
       action: expectedActions.has(frame.action),
-      status: expectedStatuses.has(effectiveStatus),
+      status: expectedStatuses.has(status),
       entityMention: entity.mentionRecall === 1,
       entityResolution: entity.top1Accuracy === 1,
       tool: tool === testCase.expected.tool,
+      arguments: semanticArgumentsCorrect(
+        frame,
+        executionPlanning,
+        options.registry,
+        testCase,
+        options.catalog
+      ),
+      planShape: executionPlanning.plan
+        ? executionPlanning.plan.steps.length >= 1
+          && executionPlanning.plan.steps.length <= 3
+          && executionPlanning.plan.route === (
+            capabilityMatch.mode === "single_tool"
+              ? "deterministic_fast_path"
+              : "controlled_planner"
+          )
+        : true,
       clarification: clarification === testCase.expected.clarification,
       inputBudget: (
         Number(usage.cachedInputTokens ?? 0) + Number(usage.uncachedInputTokens ?? 0)
@@ -236,9 +351,14 @@ async function evaluateRun(testCase, repetition, options) {
       actual: {
         domain: frame.domain,
         action: frame.action,
-        status: effectiveStatus,
+        status,
         parserStatus: frame.understandingStatus,
+        statusProtocol,
         tool,
+        arguments: executionPlanning.plan?.steps.map((step) => ({
+          tool: step.tool,
+          arguments: step.arguments
+        })) ?? [],
         clarification,
         entities: entity.values
       },
@@ -269,6 +389,8 @@ async function evaluateRun(testCase, repetition, options) {
         entityMention: false,
         entityResolution: false,
         tool: false,
+        arguments: false,
+        planShape: false,
         clarification: false,
         inputBudget: false,
         outputBudget: false,
@@ -318,16 +440,25 @@ function sliceMetrics(results) {
     if (!groups.has(result.category)) groups.set(result.category, []);
     groups.get(result.category).push(result);
   }
-  return Object.fromEntries([...groups].map(([category, values]) => [
-    category,
-    {
+  return Object.fromEntries([...groups].map(([category, values]) => {
+    const byCase = new Map();
+    for (const value of values) {
+      if (!byCase.has(value.id)) byCase.set(value.id, []);
+      byCase.get(value.id).push(value);
+    }
+    return [category, {
       runs: values.length,
       passRate: values.filter((value) => value.passed).length / values.length,
+      passAtK: [...byCase.values()].filter((runs) => runs.some((value) => value.passed)).length
+        / byCase.size,
+      passPowerK: [...byCase.values()].filter((runs) => runs.every((value) => value.passed)).length
+        / byCase.size,
       entityResolutionAccuracy: metricRate(values, "entityResolution"),
       toolSelectionAccuracy: metricRate(values, "tool"),
+      argumentSemanticAccuracy: metricRate(values, "arguments"),
       clarificationAccuracy: metricRate(values, "clarification")
-    }
-  ]));
+    }];
+  }));
 }
 
 export async function runLiveLlmT3Evaluation(cases, options = {}) {
@@ -386,6 +517,30 @@ export async function runLiveLlmT3Evaluation(cases, options = {}) {
   }
   const durations = results.map((result) => result.telemetry.durationMs).filter(Number.isFinite);
   const successful = results.filter((result) => !result.error);
+  const slices = sliceMetrics(results);
+  const unsupported = results.filter((result) => result.category === "unsupported");
+  const unsupportedHonestDowngrades = unsupported.filter((result) => (
+    !result.error
+    && (
+      (
+        result.actual?.status === "understood_but_unsupported"
+        && result.actual?.statusProtocol?.understandingStatus === "understood"
+        && result.actual?.statusProtocol?.capabilityStatus === "unsupported"
+        && result.actual?.statusProtocol?.planningStatus === "not_planned"
+        && result.actual?.statusProtocol?.finalOutcome === "degraded"
+      )
+      || (
+        result.actual?.status === "out_of_domain"
+        && result.actual?.statusProtocol?.understandingStatus === "out_of_domain"
+        && result.actual?.statusProtocol?.capabilityStatus === "unsupported"
+        && result.actual?.statusProtocol?.planningStatus === "not_planned"
+        && result.actual?.statusProtocol?.finalOutcome === "refused"
+      )
+    )
+    && result.actual?.tool === null
+    && array(result.actual?.arguments).length === 0
+    && result.actual?.clarification === false
+  )).length;
   const metrics = {
     cases: cases.length,
     repetitions,
@@ -402,7 +557,13 @@ export async function runLiveLlmT3Evaluation(cases, options = {}) {
     entityMentionRecall: metricRate(results, "entityMention"),
     entityResolutionTop1Accuracy: metricRate(results, "entityResolution"),
     toolSelectionAccuracy: metricRate(results, "tool"),
+    argumentSemanticAccuracy: metricRate(results, "arguments"),
+    planShapeAccuracy: metricRate(results, "planShape"),
     clarificationAccuracy: metricRate(results, "clarification"),
+    unsupportedHonestDowngradeRate: unsupported.length
+      ? unsupportedHonestDowngrades / unsupported.length
+      : 1,
+    contextPassPowerK: slices.context?.passPowerK ?? 1,
     tokenBudgetPassRate: successful.length ? successful.filter((result) => (
       result.checks.inputBudget && result.checks.outputBudget
     )).length / successful.length : 0,
@@ -443,20 +604,24 @@ export async function runLiveLlmT3Evaluation(cases, options = {}) {
     actionAccuracy: metrics.actionAccuracy >= 0.95,
     statusAccuracy: metrics.statusAccuracy >= 0.9,
     entityResolution: metrics.entityResolutionTop1Accuracy >= 0.97,
-    toolSelection: metrics.toolSelectionAccuracy >= 0.95,
+    toolSelection: metrics.toolSelectionAccuracy >= 0.99,
+    argumentSemantics: metrics.argumentSemanticAccuracy >= 0.98,
+    planShape: metrics.planShapeAccuracy >= 0.99,
     clarification: metrics.clarificationAccuracy >= 0.95,
+    unsupportedHonestDowngrade: metrics.unsupportedHonestDowngradeRate === 1,
+    contextPassPowerK: metrics.contextPassPowerK >= 0.95,
     tokenBudget: metrics.tokenBudgetPassRate === 1,
     latencyBudget: metrics.latencyBudgetPassRate === 1
   };
   return {
-    schemaVersion: "live-llm-t3-report.v1",
+    schemaVersion: "live-llm-t3-report.v2",
     evaluationVersion: LIVE_LLM_T3_EVALUATION_VERSION,
     datasetVersion: cases[0]?.datasetVersion ?? null,
     passed: Object.values(gates).every(Boolean),
     gates,
     budget,
     metrics,
-    slices: sliceMetrics(results),
+    slices,
     results
   };
 }

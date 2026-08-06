@@ -123,13 +123,23 @@ function correctionGatesPassed(input) {
     input.taskFrame?.schemaVersion === "task-frame.v1"
     && input.taskFrame?.understandingStatus === "understood_and_supported"
     && input.capabilityMatch?.status === "understood_and_supported"
-    && input.taskPlanning?.validation?.valid === true
-    && input.taskPlanning?.plan
     && input.executionPlanning?.validation?.valid === true
-    && input.executionPlanning?.plan?.route === "semantic_correction"
     && input.executionPlanning?.plan?.conceptMapping
     && input.executionPlanning?.plan?.finalEvidenceContract?.required === true
     && input.executionPlanning?.plan?.finalEvidenceContract?.allowModelGeneratedStatistics === false
+  );
+}
+
+function planningContractPassed(input) {
+  return Boolean(
+    (
+      input.executionPlanning?.validation?.valid === true
+      && input.executionPlanning?.plan
+    )
+    || (
+      input.taskPlanning?.validation?.valid === true
+      && input.taskPlanning?.plan
+    )
   );
 }
 
@@ -161,7 +171,7 @@ export function classifySemanticDifference(input = {}) {
     || input.clarificationPolicy?.needsClarification
     || frame.understandingStatus !== "understood_and_supported"
     || input.capabilityMatch?.status !== "understood_and_supported"
-    || input.taskPlanning?.validation?.valid !== true
+    || !planningContractPassed(input)
   ) {
     return result("low_confidence", "semantic_gates_not_satisfied");
   }
@@ -187,7 +197,7 @@ function traceFor(input = {}) {
   const entity = countEntityState(frame);
   const clarification = input.clarificationPolicy ?? {};
   const capability = input.capabilityMatch ?? {};
-  const planning = input.taskPlanning ?? {};
+  const planning = input.executionPlanning ?? {};
   return {
     schemaVersion: AGENT_TRACE_VERSION,
     action: frame.action ?? "unknown",
@@ -256,8 +266,8 @@ export function createTakeoverDecision(input = {}) {
   if (input.capabilityMatch?.status !== "understood_and_supported") {
     return fallback(input, "unsupported_capability", "planning");
   }
-  if (input.taskPlanning?.validation?.valid !== true || !input.taskPlanning?.plan) {
-    return fallback(input, "invalid_task_plan", "planning");
+  if (!planningContractPassed(input)) {
+    return fallback(input, "invalid_execution_plan", "planning");
   }
   const semanticDifference = classifySemanticDifference(input);
   const classifiedInput = { ...input, semanticDifference };
@@ -269,13 +279,21 @@ export function createTakeoverDecision(input = {}) {
   }
   if (semanticDifference.kind === "new_capability") {
     const difference = input.shadowDifference ?? {};
-    if (difference.actionChanged || difference.domainChanged || difference.clarificationChanged) {
+    if (
+      input.executionPlanSovereignty !== true
+      && (difference.actionChanged || difference.domainChanged || difference.clarificationChanged)
+    ) {
       return fallback(classifiedInput, "shadow_difference", "parsing");
     }
-    if (JSON.stringify(semanticDifference.plannedTools) !== JSON.stringify(semanticDifference.legacyTools)) {
+    if (
+      input.executionPlanSovereignty !== true
+      && JSON.stringify(semanticDifference.plannedTools) !== JSON.stringify(semanticDifference.legacyTools)
+    ) {
       return fallback(classifiedInput, "plan_not_compatible_with_legacy", "planning");
     }
-    return fallback(classifiedInput, "new_capability_not_enabled", "planning");
+    if (input.executionPlanSovereignty !== true) {
+      return fallback(classifiedInput, "new_capability_not_enabled", "planning");
+    }
   }
   const plannedTools = executionTools(input);
   const entityState = countEntityState(input.taskFrame);
@@ -303,6 +321,7 @@ export function createTakeoverDecision(input = {}) {
   const legacyTools = unique(input.legacyTools).sort();
   if (
     semanticDifference.kind === "equivalent"
+    && input.executionPlanSovereignty !== true
     && JSON.stringify(plannedTools) !== JSON.stringify(legacyTools)
   ) {
     return fallback(classifiedInput, "plan_not_compatible_with_legacy", "planning");
@@ -317,7 +336,9 @@ export function createTakeoverDecision(input = {}) {
     route: semanticDifference.kind === "trusted_correction" ? "semantic_correction" : "semantic",
     executionPath: semanticDifference.kind === "trusted_correction"
       ? "semantic_correction"
-      : "legacy_equivalent",
+      : input.executionPlanSovereignty === true
+        ? input.executionPlanning?.plan?.route ?? "execution_plan"
+        : "legacy_equivalent",
     mode: Number(gate.rolloutPercent) === 100 ? "active" : "canary",
     action,
     reason: semanticDifference.reason,

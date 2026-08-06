@@ -1,5 +1,7 @@
 import { DEFAULT_QUERY_OPTIONS, createCatalog } from "../data/static-data.js";
 
+const DEFAULT_THREE_STAR_MAX_UNIT_COST = 3;
+
 function sourceLabel(isUserProvided, preferenceProvided = false) {
   if (isUserProvided) return "current_input";
   return preferenceProvided ? "preference" : "system_default";
@@ -37,9 +39,29 @@ function hasSpecialItemScope(parsedQuery, catalog) {
   });
 }
 
+function widenItemPolicyForLockedItems(itemPolicy, lockedItems, catalog) {
+  const categories = new Set();
+  if (itemPolicy === "include_radiant" || itemPolicy === "include_special") categories.add("radiant");
+  if (itemPolicy === "include_artifact" || itemPolicy === "include_special") categories.add("artifact");
+  if (itemPolicy === "include_special") categories.add("other_special");
+  for (const apiName of lockedItems) {
+    const category = catalog.itemByApiName.get(apiName)?.category;
+    if (category === "radiant" || category === "artifact") categories.add(category);
+    else if (["emblem", "support", "set_special"].includes(category)) categories.add("other_special");
+  }
+  if (categories.has("other_special") || (categories.has("radiant") && categories.has("artifact"))) {
+    return "include_special";
+  }
+  if (categories.has("artifact")) return "include_artifact";
+  if (categories.has("radiant")) return "include_radiant";
+  return itemPolicy;
+}
+
 function defaultStarLevelForUnit(unitApiName, catalog) {
   const cost = Number(catalog.unitByApiName.get(unitApiName)?.cost);
-  return Number.isFinite(cost) && cost >= 1 && cost <= 2 ? [3] : [2];
+  return Number.isFinite(cost) && cost >= 1 && cost <= DEFAULT_THREE_STAR_MAX_UNIT_COST
+    ? [3]
+    : [2];
 }
 
 export function buildQueryContext(parsedQuery, options = {}) {
@@ -70,7 +92,10 @@ export function buildQueryContext(parsedQuery, options = {}) {
     ? parsedQuery.starLevel
     : defaultStarLevelForUnit(parsedQuery.unit, catalog);
   const itemCount = parsedQuery.itemCount ?? 3;
-  const itemPolicy = parsedQuery.itemPolicy ?? preferences.itemPolicy;
+  const lockedItems = parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [];
+  const requestedItemPolicy = parsedQuery.itemPolicy ?? preferences.itemPolicy;
+  const itemPolicy = widenItemPolicyForLockedItems(requestedItemPolicy, lockedItems, catalog);
+  const itemPolicyExpandedByLockedItems = itemPolicy !== requestedItemPolicy;
   const performanceCategory = parsedQuery.performanceItem
     ? catalog.itemByApiName.get(parsedQuery.performanceItem)?.category
     : null;
@@ -79,7 +104,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     : performanceCategory ? [performanceCategory] : [];
   const rankFilter = parsedQuery.rankFilter ?? preferences.rankFilter;
   const days = parsedQuery.days ?? preferences.days;
-  const patch = parsedQuery.patch ?? preferences.patch;
+  const patch = parsedQuery.patch ?? preferences.unitBuildPatch ?? preferences.patch;
   const queue = parsedQuery.queue ?? preferences.queue;
   const specialItemScope = hasSpecialItemScope(parsedQuery, catalog);
   const comparisonPreferenceOverridesSpecialDefault = parsedQuery.intent === "unit_item_comparison"
@@ -98,7 +123,13 @@ export function buildQueryContext(parsedQuery, options = {}) {
     sourcedConstraint("unit", parsedQuery.unit, fieldSource(parsedQuery, "unit", Boolean(parsedQuery.unitAlias))),
     sourcedConstraint("star_level", starLevel, fieldSource(parsedQuery, "starLevel", Boolean(parsedQuery.starLevel?.length))),
     sourcedConstraint("item_count", itemCount, fieldSource(parsedQuery, "itemCount", parsedQuery.itemCount !== undefined)),
-    sourcedConstraint("item_policy", itemPolicy, fieldSource(parsedQuery, "itemPolicy", Boolean(parsedQuery.itemPolicy), preferenceKeys.has("itemPolicy"))),
+    sourcedConstraint(
+      "item_policy",
+      itemPolicy,
+      itemPolicyExpandedByLockedItems
+        ? fieldSource(parsedQuery, "lockedItems", lockedItems.length > 0)
+        : fieldSource(parsedQuery, "itemPolicy", Boolean(parsedQuery.itemPolicy), preferenceKeys.has("itemPolicy"))
+    ),
     sourcedConstraint("item_categories", itemCategories, fieldSource(parsedQuery, "itemCategories", Boolean(parsedQuery.itemCategories?.length))),
     sourcedConstraint("trait_filters", traitFilters, traitSource),
     sourcedConstraint("owned_items", parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [], fieldSource(parsedQuery, "lockedItems", Boolean((parsedQuery.lockedItems ?? parsedQuery.ownedItems)?.length))),
@@ -136,7 +167,6 @@ export function buildQueryContext(parsedQuery, options = {}) {
     const origins = parsedQuery.sessionContext?.fieldOrigins?.[parsedKey] ?? [entry.source];
     return { ...entry, origin: origins[0], origins };
   });
-  const lockedItems = parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [];
   const comparisonItems = parsedQuery.comparisonItems
     ?? parsedQuery.parser?.comparison?.itemApiNames
     ?? [];

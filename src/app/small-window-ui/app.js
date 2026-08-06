@@ -3,10 +3,22 @@ import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
+import {
+  cancelOpggRequests,
+  renderOpggTrends,
+  renderOpggPersonal,
+  renderOpggProTeaching
+} from "./opgg-panel.js";
+import {
+  formatProcessingDuration,
+  formatDecisionAuditPayload,
+  renderUnderstandingPanel
+} from "./understanding-panel.js";
 import { WallpaperController } from "./wallpaper-controller.js";
 
 const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
 const SEASON_CONTEXT_STORAGE_KEY = "tftagent.seasonContextId";
+const SEASON_NOTICE_DISMISSED_STORAGE_KEY = "tftagent.dismissedSeasonNotice";
 
 const state = {
   minSamples: 100,
@@ -18,6 +30,7 @@ const state = {
   rankFilter: [],
   lastInput: "",
   lastDisplayInput: "",
+  lastQuickTask: null,
   lastResult: null,
   lastResultId: null,
   lastSuggestions: [],
@@ -41,6 +54,9 @@ const state = {
   responseCounter: 0,
   currentResponseId: null,
   compRankingMetric: null,
+  compDetailCache: new Map(),
+  compDetailRequests: new Map(),
+  compDetailDescriptors: new Map(),
   resultNavigation: [],
   feedbackByCard: {},
   explanationFeedback: null,
@@ -54,6 +70,10 @@ const state = {
 const shellEl = document.querySelector("#app-shell");
 const form = document.querySelector("#query-form");
 const queryInput = document.querySelector("#query-input");
+const quickTaskForm = document.querySelector("#quick-task-form");
+const quickTaskFormTitle = document.querySelector("#quick-task-form-title");
+const quickTaskFormClose = document.querySelector("#quick-task-form-close");
+const quickTaskFields = document.querySelector("#quick-task-fields");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
 const stopButton = document.querySelector("#stop-button");
@@ -86,6 +106,10 @@ const statusEl = document.querySelector("#status");
 const seasonContextSelect = document.querySelector("#season-context-select");
 const seasonContextSummary = document.querySelector("#season-context-summary");
 const seasonContextNotice = document.querySelector("#season-context-notice");
+const seasonContextNoticeText = document.querySelector("[data-season-context-notice-text]");
+const seasonContextNoticeClose = document.querySelector("#season-context-notice-close");
+const seasonPreviewBanner = document.querySelector("#season-preview-banner");
+const sendButton = form.querySelector(".send-button");
 const aiQuotaEl = document.querySelector("#ai-quota");
 const rawOutputEl = document.querySelector("#raw-output");
 const detailsEl = document.querySelector("#details");
@@ -116,6 +140,8 @@ const itemAuditExportCsv = document.querySelector("#item-audit-export-csv");
 let saveTimer = null;
 let itemAuditTimer = null;
 let activeResponseEl = null;
+let activeRecommendationProgress = null;
+let activeQuickTask = null;
 
 const conversationPane = new ConversationPane(resultEl);
 const composer = new Composer({ form, input: queryInput });
@@ -157,6 +183,12 @@ void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, comp
 
 function setResponseHtml(html) {
   resultPane.setHtml(`${renderResultNavigation()}${html}`);
+}
+
+function setDeveloperOutput(data) {
+  rawOutputEl.textContent = formatDecisionAuditPayload(data)
+    ?? data?.text
+    ?? JSON.stringify(data, null, 2);
 }
 
 const mobileLayoutQuery = window.matchMedia("(max-width: 759px)");
@@ -208,6 +240,16 @@ function compCardNavigationKey(card) {
 function renderResultNavigation() {
   const snapshot = state.resultNavigation.at(-1);
   if (!snapshot) return "";
+  if (snapshot.kind === "entity_catalog") {
+    return `
+      <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
+        <button type="button" data-return-catalog ${state.requestInFlight ? "disabled" : ""}>
+          <span aria-hidden="true">←</span>
+          <span>${escapeHtml(t("backToCatalog", { name: snapshot.catalogName }))}</span>
+        </button>
+        <small>${escapeHtml(t("catalogResultPreserved"))}</small>
+      </nav>`;
+  }
   return `
     <nav class="result-navigation" aria-label="${escapeHtml(t("resultNavigation"))}">
       <button type="button" data-return-comp ${state.requestInFlight ? "disabled" : ""}>
@@ -228,6 +270,7 @@ function captureCompNavigationSnapshot(compName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
     lastEntityCandidates: state.lastEntityCandidates,
@@ -241,6 +284,51 @@ function captureCompNavigationSnapshot(compName) {
   };
 }
 
+function captureEntityCatalogNavigationSnapshot(catalogName) {
+  if (state.lastResult?.type !== "entity_catalog") return null;
+  return {
+    kind: "entity_catalog",
+    catalogName,
+    data: state.lastResult,
+    lastInput: state.lastInput,
+    lastDisplayInput: state.lastDisplayInput,
+    lastQuickTask: state.lastQuickTask,
+    lastResultId: state.lastResultId,
+    lastSuggestions: state.lastSuggestions,
+    lastEntityCandidates: state.lastEntityCandidates,
+    currentResponseId: state.currentResponseId,
+    feedbackByCard: { ...state.feedbackByCard },
+    explanationFeedback: state.explanationFeedback,
+    rawOutput: rawOutputEl.textContent,
+    scrollTop: resultContentEl.scrollTop
+  };
+}
+
+function restorePreviousCatalogResult() {
+  if (state.requestInFlight) return;
+  const snapshot = state.resultNavigation.at(-1);
+  if (snapshot?.kind !== "entity_catalog") return;
+  state.resultNavigation.pop();
+  state.lastInput = snapshot.lastInput;
+  state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuickTask = snapshot.lastQuickTask ?? null;
+  state.lastResult = snapshot.data;
+  state.lastResultId = snapshot.lastResultId;
+  state.lastSuggestions = snapshot.lastSuggestions;
+  state.lastEntityCandidates = snapshot.lastEntityCandidates;
+  state.currentResponseId = snapshot.currentResponseId;
+  state.feedbackByCard = { ...snapshot.feedbackByCard };
+  state.explanationFeedback = snapshot.explanationFeedback;
+  state.resultView = { type: "result", data: snapshot.data };
+  rawOutputEl.textContent = snapshot.rawOutput;
+  resultTitleEl.textContent = t("resultTitle");
+  renderCurrentResult(snapshot.data);
+  resultContentEl.scrollTop = snapshot.scrollTop;
+  resultRefreshButton.disabled = !state.lastInput;
+  setStatusKey("statusReady", "ready");
+  resultPane.focus();
+}
+
 function restorePreviousCompResult() {
   if (state.requestInFlight) return;
   const snapshot = state.resultNavigation.pop();
@@ -248,6 +336,7 @@ function restorePreviousCompResult() {
 
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
   state.lastSuggestions = snapshot.lastSuggestions;
@@ -307,6 +396,19 @@ function localizedThemeValue(value, fallback = "") {
   return value ?? fallback;
 }
 
+function normalizedSeasonSummary(value) {
+  return String(value ?? "")
+    .toLowerCase()
+    .replace(/\bset\s*(?=\d)/g, "s")
+    .replace(/[^a-z0-9.]+/g, "");
+}
+
+function seasonSubtitleForSummary(label, subtitle) {
+  const value = String(subtitle ?? "").trim();
+  if (!value) return "";
+  return normalizedSeasonSummary(label) === normalizedSeasonSummary(value) ? "" : value;
+}
+
 function seasonStatusLabel(context) {
   if (context?.status === "archived") return t("seasonArchivedStatus");
   if (context?.status === "revival" || context?.mode === "revival") return t("seasonRevivalStatus");
@@ -329,7 +431,7 @@ function renderSeasonContextOptions() {
     const option = document.createElement("option");
     option.value = context.id;
     option.textContent = seasonOptionLabel(context);
-    option.disabled = !context.selectable;
+    option.disabled = !context.selectable && !context.themePreview;
     if (context.notices?.length) option.title = context.notices.join(" ");
     return option;
   }));
@@ -337,16 +439,41 @@ function renderSeasonContextOptions() {
   seasonContextSelect.disabled = state.seasonContexts.length === 0;
 }
 
+function seasonNoticeDismissed(seasonContextId) {
+  try {
+    return sessionStorage.getItem(`${SEASON_NOTICE_DISMISSED_STORAGE_KEY}.${seasonContextId}`) === "true";
+  } catch {
+    return false;
+  }
+}
+
+function dismissSeasonNotice(seasonContextId = state.seasonContextId) {
+  if (!seasonContextId) return;
+  try {
+    sessionStorage.setItem(`${SEASON_NOTICE_DISMISSED_STORAGE_KEY}.${seasonContextId}`, "true");
+  } catch {
+    // A storage failure should not prevent the current notice from closing.
+  }
+  if (seasonContextNotice) seasonContextNotice.hidden = true;
+}
+
 function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   if (!context) return;
   const theme = context.theme ?? {};
   const colors = theme.colors ?? {};
   const wallpaper = theme.wallpaper ?? {};
-  document.title = theme.documentTitle || `tftclarity · Set ${context.season}`;
+  const previewOnly = Boolean(context.themePreview && !context.selectable);
   shellEl.dataset.seasonContextId = context.id;
   shellEl.dataset.seasonEnvironment = context.environment;
+  shellEl.dataset.seasonTheme = context.themeId ?? "";
+  shellEl.dataset.seasonPreview = String(previewOnly);
   shellEl.style.setProperty("--season-primary", colors.primary ?? "#6b63df");
   shellEl.style.setProperty("--season-secondary", colors.secondary ?? "#34b9d6");
+  if (seasonPreviewBanner) seasonPreviewBanner.hidden = !previewOnly;
+  queryInput.disabled = previewOnly;
+  sendButton.disabled = previewOnly;
+  if (previewOnly) queryInput.setAttribute("aria-describedby", "season-preview-banner");
+  else queryInput.removeAttribute("aria-describedby");
   if (refreshWallpaper) {
     wallpaperController.setSeason(wallpaper.seasonId, wallpaper.defaultId, {
       primary: colors.primary,
@@ -356,12 +483,22 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   }
   const label = seasonContextSummary?.querySelector("[data-season-label]");
   const subtitle = seasonContextSummary?.querySelector("[data-season-subtitle]");
-  if (label) label.textContent = seasonOptionLabel(context).replace(/\s+—\s+.*/, "");
-  if (subtitle) subtitle.textContent = localizedThemeValue(theme.subtitle, context.themeId ?? "");
+  const subtitleSeparator = seasonContextSummary?.querySelector("[data-season-subtitle-separator]");
+  const labelText = seasonOptionLabel(context).replace(/\s+—\s+.*/, "");
+  const subtitleText = seasonSubtitleForSummary(
+    labelText,
+    localizedThemeValue(theme.subtitle, context.themeId ?? "")
+  );
+  if (label) label.textContent = labelText;
+  if (subtitle) {
+    subtitle.textContent = subtitleText;
+    subtitle.hidden = !subtitleText;
+  }
+  if (subtitleSeparator) subtitleSeparator.hidden = !subtitleText;
   const notice = localizedThemeValue(theme.riskNotice, context.notices?.[0] ?? "");
   if (seasonContextNotice) {
-    seasonContextNotice.textContent = notice;
-    seasonContextNotice.hidden = !notice;
+    if (seasonContextNoticeText) seasonContextNoticeText.textContent = notice;
+    seasonContextNotice.hidden = !notice || seasonNoticeDismissed(context.id);
   }
   renderSeasonContextOptions();
 }
@@ -408,7 +545,7 @@ async function loadSeasonContexts() {
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("seasonLoadFailed"));
     state.seasonContexts = data.seasonContexts ?? [];
     const storedId = localStorage.getItem(SEASON_CONTEXT_STORAGE_KEY);
-    const preferred = state.seasonContexts.find((context) => context.id === storedId && context.selectable)
+    const preferred = state.seasonContexts.find((context) => context.id === storedId && (context.selectable || context.themePreview))
       ?? state.seasonContexts.find((context) => context.id === data.defaultSeasonContextId && context.selectable)
       ?? state.seasonContexts.find((context) => context.selectable);
     renderSeasonContextOptions();
@@ -420,62 +557,289 @@ async function loadSeasonContexts() {
   }
 }
 
+const QUICK_TASK_CATEGORIES = [
+  {
+    id: "equipment",
+    titleKey: "quickCategoryEquipmentTitle",
+    bodyKey: "quickCategoryEquipmentBody",
+    countKey: "quickCategoryEquipmentCount",
+    icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
+  },
+  {
+    id: "comps",
+    titleKey: "quickCategoryCompsTitle",
+    bodyKey: "quickCategoryCompsBody",
+    countKey: "quickCategoryCompsCount",
+    icon: '<path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/>'
+  },
+  {
+    id: "library",
+    titleKey: "quickCategoryLibraryTitle",
+    bodyKey: "quickCategoryLibraryBody",
+    countKey: "quickCategoryLibraryCount",
+    icon: '<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 16h10M9 8h5M9 11h6"/>'
+  },
+  {
+    id: "news",
+    titleKey: "quickCategoryNewsTitle",
+    bodyKey: "quickCategoryNewsBody",
+    countKey: "quickCategoryNewsCount",
+    icon: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>'
+  }
+];
+
 const QUICK_TASKS = [
   {
+    category: "equipment",
+    id: "unit-build",
+    operation: "unit_build_rankings",
+    formFields: ["champion"],
+    queryTemplateKey: "quickTaskBuildTemplate",
+    titleKey: "quickTaskBuildTitle",
+    bodyKey: "quickTaskBuildBody",
+    exampleKey: "quickTaskBuildExample",
+    icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
+  },
+  {
+    category: "equipment",
+    id: "unit-build-completion",
+    operation: "unit_build_completion",
+    formFields: ["champion", "item1", "item2Optional"],
+    queryTemplateKey: "quickTaskCompletionTemplate",
+    optionalQueryTemplateKey: "quickTaskCompletionWithSecondTemplate",
+    titleKey: "quickTaskCompletionTitle",
+    bodyKey: "quickTaskCompletionBody",
+    exampleKey: "quickTaskCompletionExample",
+    icon: '<path d="M5 12h14M12 5v14"/><circle cx="12" cy="12" r="9"/>'
+  },
+  {
+    category: "equipment",
+    id: "item-performance",
+    operation: "unit_item_rankings",
+    formFields: ["item", "champion"],
+    queryTemplateKey: "quickTaskPerformanceTemplate",
+    titleKey: "quickTaskPerformanceTitle",
+    bodyKey: "quickTaskPerformanceBody",
+    exampleKey: "quickTaskPerformanceExample",
+    icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
+  },
+  {
+    category: "equipment",
+    id: "item-comparison",
+    operation: "unit_item_comparison",
+    formFields: ["champion", "comparisonItem1", "item2"],
+    queryTemplateKey: "quickTaskComparisonTemplate",
+    titleKey: "quickTaskComparisonTitle",
+    bodyKey: "quickTaskComparisonBody",
+    exampleKey: "quickTaskComparisonExample",
+    icon: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>'
+  },
+  {
+    category: "equipment",
+    id: "item-carriers",
+    operation: "item_carrier_rankings",
+    formFields: ["item"],
+    queryTemplateKey: "quickTaskCarriersTemplate",
+    titleKey: "quickTaskCarriersTitle",
+    bodyKey: "quickTaskCarriersBody",
+    exampleKey: "quickTaskCarriersExample",
+    icon: '<circle cx="12" cy="8" r="3"/><path d="M5.5 19c.8-3.4 3-5 6.5-5s5.7 1.6 6.5 5"/>'
+  },
+  {
+    category: "equipment",
+    id: "special-items",
+    operation: "unit_item_rankings",
+    formFields: ["champion", "specialCategory"],
+    queryTemplateKey: "quickTaskSpecialTemplate",
+    titleKey: "quickTaskSpecialTitle",
+    bodyKey: "quickTaskSpecialBody",
+    exampleKey: "quickTaskSpecialExample",
+    icon: '<path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>'
+  },
+  {
+    category: "comps",
     id: "comp-rankings",
+    operation: "comp_rankings",
     query: "\u63a8\u8350\u5f53\u524d\u7248\u672c\u70ed\u95e8\u9635\u5bb9",
     promptKey: "quickTaskCompsPrompt",
     titleKey: "quickTaskCompsTitle",
     bodyKey: "quickTaskCompsBody",
+    exampleKey: "quickTaskCompsExample",
     icon: '<path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/>'
   },
   {
+    category: "comps",
     id: "comp-trends",
+    operation: "comp_trends",
     query: "\u5f53\u524d\u7248\u672c\u9635\u5bb9\u8d8b\u52bf",
     promptKey: "quickTaskTrendsPrompt",
     titleKey: "quickTaskTrendsTitle",
     bodyKey: "quickTaskTrendsBody",
+    exampleKey: "quickTaskTrendsExample",
     icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
   },
   {
-    id: "unit-build",
-    inputTemplateKey: "quickTaskBuildTemplate",
-    selectionKey: "quickTaskBuildSelection",
-    titleKey: "quickTaskBuildTitle",
-    bodyKey: "quickTaskBuildBody",
-    icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
+    category: "comps",
+    id: "hero-comps",
+    operation: "comp_rankings",
+    formFields: ["champion"],
+    queryTemplateKey: "quickTaskHeroCompsTemplate",
+    titleKey: "quickTaskHeroCompsTitle",
+    bodyKey: "quickTaskHeroCompsBody",
+    exampleKey: "quickTaskHeroCompsExample",
+    icon: '<circle cx="9" cy="9" r="4"/><path d="m12 12 7 7M15 15l2-2"/>'
   },
   {
+    category: "library",
+    id: "unit-details",
+    operation: "unit_details",
+    formFields: ["champion"],
+    queryTemplateKey: "quickTaskUnitDetailsTemplate",
+    titleKey: "quickTaskUnitDetailsTitle",
+    bodyKey: "quickTaskUnitDetailsBody",
+    exampleKey: "quickTaskUnitDetailsExample",
+    icon: '<circle cx="12" cy="8" r="3"/><path d="M6 19c.7-3.4 2.7-5 6-5s5.3 1.6 6 5"/>'
+  },
+  {
+    category: "library",
+    id: "unit-catalog",
+    operation: "unit_catalog",
+    queryKey: "quickTaskUnitCatalogPrompt",
+    promptKey: "quickTaskUnitCatalogPrompt",
+    titleKey: "quickTaskUnitCatalogTitle",
+    bodyKey: "quickTaskUnitCatalogBody",
+    exampleKey: "quickTaskUnitCatalogExample",
+    icon: '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5M11 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5"/>'
+  },
+  {
+    category: "library",
+    id: "item-details",
+    operation: "item_details",
+    formFields: ["item"],
+    queryTemplateKey: "quickTaskItemDetailsTemplate",
+    titleKey: "quickTaskItemDetailsTitle",
+    bodyKey: "quickTaskItemDetailsBody",
+    exampleKey: "quickTaskItemDetailsExample",
+    icon: '<path d="m8 16 8-8M7 5l12 12M5 7l2-2M17 19l2-2"/>'
+  },
+  {
+    category: "library",
+    id: "trait-details",
+    operation: "trait_details",
+    formFields: ["trait"],
+    queryTemplateKey: "quickTaskTraitDetailsTemplate",
+    titleKey: "quickTaskTraitDetailsTitle",
+    bodyKey: "quickTaskTraitDetailsBody",
+    exampleKey: "quickTaskTraitDetailsExample",
+    icon: '<path d="M12 3 5 7v5c0 4.3 2.8 7.4 7 9 4.2-1.6 7-4.7 7-9V7z"/><path d="m9 12 2 2 4-5"/>'
+  },
+  {
+    category: "library",
+    id: "trait-catalog",
+    operation: "trait_catalog",
+    queryKey: "quickTaskTraitCatalogPrompt",
+    promptKey: "quickTaskTraitCatalogPrompt",
+    titleKey: "quickTaskTraitCatalogTitle",
+    bodyKey: "quickTaskTraitCatalogBody",
+    exampleKey: "quickTaskTraitCatalogExample",
+    icon: '<path d="M4 6h6v5H4zM14 6h6v5h-6zM9 15h6v5H9z"/><path d="M7 11v2h5M17 11v2h-5v2"/>'
+  },
+  {
+    category: "news",
     id: "patch-notes",
     view: "patch-note",
     titleKey: "quickTaskUpdatesTitle",
     bodyKey: "quickTaskUpdatesBody",
+    exampleKey: "quickTaskUpdatesExample",
     icon: '<path d="M6 5h12v14H6z"/><path d="M9 9h6M9 12h6M9 15h4"/>'
+  },
+  {
+    category: "news",
+    id: "opgg-pro-trends",
+    view: "opgg-pro-trends",
+    titleKey: "quickTaskOpggTrendsTitle",
+    bodyKey: "quickTaskOpggTrendsBody",
+    exampleKey: "quickTaskOpggTrendsExample",
+    icon: '<path d="M3 17l5-5 4 3 6-7 3 3"/><path d="M3 21h18"/>'
+  },
+  {
+    category: "news",
+    id: "opgg-personal-review",
+    view: "opgg-personal-review",
+    titleKey: "quickTaskOpggPersonalTitle",
+    bodyKey: "quickTaskOpggPersonalBody",
+    exampleKey: "quickTaskOpggPersonalExample",
+    icon: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 20c.8-3.5 3.6-5.5 8-5.5s7.2 2 8 5.5"/>'
+  },
+  {
+    category: "news",
+    id: "opgg-pro-teaching",
+    view: "opgg-pro-teaching",
+    titleKey: "quickTaskOpggTeachingTitle",
+    bodyKey: "quickTaskOpggTeachingBody",
+    exampleKey: "quickTaskOpggTeachingExample",
+    icon: '<path d="M8 4h8v16H8z"/><path d="M5 8h3M16 8h3M11 12h2M11 15h2"/>'
   }
 ];
 
 function quickTasksForSeason() {
   const configured = localizedThemeValue(state.seasonContext?.theme?.quickQuestions, []);
-  return QUICK_TASKS.map((task, index) => (
-    index < 2 && configured[index] ? { ...task, query: configured[index] } : task
-  ));
+  const configuredIndexes = new Map([
+    ["comp-rankings", 0],
+    ["comp-trends", 1]
+  ]);
+  return QUICK_TASKS.map((task) => {
+    const configuredIndex = configuredIndexes.get(task.id);
+    return configuredIndex !== undefined && configured[configuredIndex]
+      ? { ...task, query: configured[configuredIndex] }
+      : task;
+  });
+}
+
+function quickTaskCardHtml(task) {
+  const isInteractive = task.query || task.queryKey || task.view || task.formFields;
+  const action = isInteractive
+    ? ` data-quick-task="${escapeHtml(task.id)}"`
+    : " disabled";
+  return `
+    <button type="button" class="quick-task-card${isInteractive ? "" : " is-planned"}"${action}>
+      <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${task.icon}</svg></span>
+      <span class="quick-task-copy">
+        <strong data-i18n="${task.titleKey}">${escapeHtml(t(task.titleKey))}</strong>
+        <small data-i18n="${task.bodyKey}">${escapeHtml(t(task.bodyKey))}</small>
+        <span class="quick-task-example" data-i18n="${task.exampleKey}">${escapeHtml(t(task.exampleKey))}</span>
+      </span>
+      <span class="quick-task-arrow" aria-hidden="true">→</span>
+    </button>
+  `;
 }
 
 function quickTasksHtml() {
-  const cards = quickTasksForSeason().map((task) => {
-    const isInteractive = task.query || task.view || task.inputTemplateKey;
-    const action = isInteractive
-      ? ` data-quick-task="${escapeHtml(task.id)}"`
-      : " disabled";
-    const trailing = task.badgeKey
-      ? `<span class="quick-task-badge" data-i18n="${task.badgeKey}">${escapeHtml(t(task.badgeKey))}</span>`
-      : '<span class="quick-task-arrow" aria-hidden="true">↗</span>';
+  const tasks = quickTasksForSeason();
+  const categoryCards = QUICK_TASK_CATEGORIES.map((category) => `
+    <button type="button" class="quick-category-card" data-quick-category="${escapeHtml(category.id)}" aria-expanded="false" aria-controls="quick-category-panel-${escapeHtml(category.id)}">
+      <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${category.icon}</svg></span>
+      <span class="quick-category-copy">
+        <strong data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
+        <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
+      </span>
+      <span class="quick-category-count" data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
+      <span class="quick-category-chevron" aria-hidden="true">⌄</span>
+    </button>
+  `).join("");
+  const panels = QUICK_TASK_CATEGORIES.map((category) => {
+    const categoryTasks = tasks.filter((task) => task.category === category.id);
     return `
-      <button type="button" class="quick-task-card${isInteractive ? "" : " is-planned"}"${action}>
-        <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${task.icon}</svg></span>
-        <span class="quick-task-copy"><strong data-i18n="${task.titleKey}">${escapeHtml(t(task.titleKey))}</strong><small data-i18n="${task.bodyKey}">${escapeHtml(t(task.bodyKey))}</small></span>
-        ${trailing}
-      </button>
+      <section class="quick-task-panel" id="quick-category-panel-${escapeHtml(category.id)}" data-quick-category-panel="${escapeHtml(category.id)}" aria-labelledby="quick-category-title-${escapeHtml(category.id)}" hidden>
+        <header class="quick-task-panel-heading">
+          <div>
+            <strong id="quick-category-title-${escapeHtml(category.id)}" data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
+            <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
+          </div>
+          <span data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
+        </header>
+        <div class="quick-task-list">${categoryTasks.map(quickTaskCardHtml).join("")}</div>
+      </section>
     `;
   }).join("");
   return `
@@ -484,15 +848,130 @@ function quickTasksHtml() {
         <strong data-i18n="quickTasksTitle">${escapeHtml(t("quickTasksTitle"))}</strong>
         <span data-i18n="quickTasksHint">${escapeHtml(t("quickTasksHint"))}</span>
       </div>
-      <div class="quick-task-grid">${cards}</div>
+      <div class="quick-category-grid">${categoryCards}</div>
+      ${panels}
     </section>
   `;
+}
+
+const QUICK_TASK_FIELD_DEFINITIONS = {
+  champion: { labelKey: "quickFieldChampion", placeholderKey: "quickFieldChampionPlaceholder", required: true },
+  item: { labelKey: "quickFieldItem", placeholderKey: "quickFieldItemPlaceholder", required: true },
+  item1: { labelKey: "quickFieldOwnedItem", placeholderKey: "quickFieldOwnedItemPlaceholder", required: true },
+  comparisonItem1: { valueKey: "item1", labelKey: "quickFieldComparedItemOne", placeholderKey: "quickFieldComparedItemOnePlaceholder", required: true },
+  item2: { labelKey: "quickFieldComparedItem", placeholderKey: "quickFieldComparedItemPlaceholder", required: true },
+  item2Optional: { valueKey: "item2", labelKey: "quickFieldOptionalItem", placeholderKey: "quickFieldOptionalItemPlaceholder", required: false },
+  trait: { labelKey: "quickFieldTrait", placeholderKey: "quickFieldTraitPlaceholder", required: true },
+  specialCategory: { labelKey: "quickFieldSpecialCategory", placeholderKey: "quickFieldSpecialCategoryPlaceholder", required: true }
+};
+
+function closeQuickTaskForm({ focus = false } = {}) {
+  activeQuickTask = null;
+  quickTaskForm.hidden = true;
+  quickTaskFields.replaceChildren();
+  form.classList.remove("quick-task-form-active");
+  queryInput.hidden = false;
+  if (focus) queryInput.focus();
+}
+
+function openQuickTaskForm(task) {
+  activeQuickTask = task;
+  queryInput.value = "";
+  queryInput.setCustomValidity("");
+  queryInput.hidden = true;
+  quickTaskFormTitle.textContent = t(task.titleKey);
+  quickTaskFields.innerHTML = task.formFields.map((fieldName) => {
+    const field = QUICK_TASK_FIELD_DEFINITIONS[fieldName];
+    const valueKey = field.valueKey ?? fieldName;
+    return `
+      <label class="quick-task-field">
+        <span data-i18n="${field.labelKey}">${escapeHtml(t(field.labelKey))}${field.required ? `<b aria-hidden="true">*</b>` : ""}</span>
+        <input type="text" name="quick-${escapeHtml(valueKey)}" data-quick-field="${escapeHtml(valueKey)}"
+          data-i18n-placeholder="${field.placeholderKey}" placeholder="${escapeHtml(t(field.placeholderKey))}"
+          autocomplete="off" spellcheck="false"${field.required ? " required" : ""}>
+      </label>
+    `;
+  }).join("");
+  quickTaskForm.hidden = false;
+  form.classList.add("quick-task-form-active");
+  quickTaskFields.querySelector("input")?.focus();
+}
+
+function quickTaskQuery(task) {
+  const values = {};
+  for (const input of quickTaskFields.querySelectorAll("[data-quick-field]")) {
+    values[input.dataset.quickField] = input.value.trim();
+    if (!input.reportValidity()) return null;
+  }
+  const templateKey = task.optionalQueryTemplateKey && values.item2
+    ? task.optionalQueryTemplateKey
+    : task.queryTemplateKey;
+  return {
+    query: t(templateKey, values),
+    values
+  };
+}
+
+function structuredQuickTask(task, values = {}) {
+  if (!task?.id || !task?.operation) return null;
+  return {
+    schemaVersion: "quick-task.v1",
+    id: task.id,
+    operation: task.operation,
+    arguments: Object.fromEntries(
+      Object.entries(values)
+        .map(([key, value]) => [key, String(value ?? "").trim()])
+        .filter(([, value]) => value)
+    )
+  };
+}
+
+async function submitQuickTaskForm() {
+  if (!activeQuickTask) return false;
+  const task = activeQuickTask;
+  const submission = quickTaskQuery(task);
+  if (!submission) return true;
+  closeQuickTaskForm();
+  queryInput.value = submission.query;
+  await requestRecommendation(
+    false,
+    submission.query,
+    {
+      startNewTask: true,
+      quickTask: structuredQuickTask(task, submission.values)
+    }
+  );
+  return true;
+}
+
+function collapseQuickTaskCategories(section) {
+  if (!section) return;
+  for (const button of section.querySelectorAll("[data-quick-category]")) {
+    button.setAttribute("aria-expanded", "false");
+  }
+  for (const panel of section.querySelectorAll("[data-quick-category-panel]")) {
+    panel.hidden = true;
+  }
+}
+
+function toggleQuickTaskCategory(button) {
+  const section = button.closest(".quick-tasks");
+  if (!section) return;
+  const category = button.dataset.quickCategory;
+  const shouldExpand = button.getAttribute("aria-expanded") !== "true";
+  collapseQuickTaskCategories(section);
+  if (!shouldExpand) return;
+  const panel = [...section.querySelectorAll("[data-quick-category-panel]")]
+    .find((entry) => entry.dataset.quickCategoryPanel === category);
+  if (!panel) return;
+  button.setAttribute("aria-expanded", "true");
+  panel.hidden = false;
 }
 
 function welcomeConversationHtml(messageKey = "newConversation") {
   return `
     <article class="message assistant-message welcome-message">
-      <div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong data-i18n="assistant">${escapeHtml(t("assistant"))}</strong></div>
+      <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">${escapeHtml(t("assistant"))}</strong></div>
       <div class="message-body" data-i18n="${messageKey}">${escapeHtml(t(messageKey))}</div>
     </article>
     ${quickTasksHtml()}
@@ -763,7 +1242,7 @@ function compTrendSourceLabel(comp) {
 function compSignature(comp) {
   const units = [...new Set((comp.units ?? [])
     .map((unit) => String(unit.apiName ?? "").trim())
-    .filter((apiName) => /^TFT[\w-]+$/i.test(apiName)))];
+    .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
   const traits = [...new Set((comp.traits ?? [])
     .map((trait) => String(trait.filterId ?? "").trim())
     .filter((filterId) => /^TFT[\w-]+_\d+(?:plus|minus)?$/i.test(filterId)))];
@@ -803,7 +1282,311 @@ function renderCompUnit(unit, comp, expanded = false) {
   </div>`;
 }
 
-function renderCompCard(comp, metricKey, index) {
+function compDetailDescriptor(comp) {
+  const compId = String(comp?.source?.clusterId ?? "").trim();
+  const dataClusterId = String(comp?.source?.dataClusterId ?? "").trim();
+  if (!compId || !dataClusterId) return null;
+  const units = [...new Set((comp?.units ?? [])
+    .map((unit) => String(unit?.apiName ?? "").trim())
+    .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
+  const seasonContextId = String(state.seasonContextId ?? "").trim();
+  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|");
+  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units };
+  state.compDetailDescriptors.set(key, descriptor);
+  return descriptor;
+}
+
+function normalizedCompDetailStatus(value) {
+  return String(value ?? "").trim().toLowerCase();
+}
+
+function boardCellIndex(cell) {
+  const coordinate = (value, maximum) => {
+    if (value === "" || value === null || value === undefined) return null;
+    const number = Number(value);
+    return Number.isInteger(number) && number >= 0 && number <= maximum ? number : null;
+  };
+  const zeroBasedIndex = (value) => {
+    const number = coordinate(value, 27);
+    return number === null ? null : number;
+  };
+  const metaTftCellIndex = (value) => {
+    const number = Number(value);
+    // MetaTFT counts cells bottom-first, without serpentine rows: 1..7 => 21..27, 22..28 => 0..6.
+    return Number.isInteger(number) && number >= 1 && number <= 28
+      ? (3 - Math.floor((number - 1) / 7)) * 7 + ((number - 1) % 7)
+      : null;
+  };
+
+  if (Array.isArray(cell) && cell.length >= 2) {
+    const row = coordinate(cell[0], 3);
+    const column = coordinate(cell[1], 6);
+    return row === null || column === null ? null : row * 7 + column;
+  }
+  if (cell && typeof cell === "object") {
+    const direct = zeroBasedIndex(cell.index ?? cell.cellIndex);
+    if (direct !== null) return direct;
+    const row = coordinate(cell.row ?? cell.r ?? cell.y, 3);
+    const column = coordinate(cell.column ?? cell.col ?? cell.c ?? cell.x, 6);
+    return row === null || column === null ? null : row * 7 + column;
+  }
+  if (typeof cell === "string") {
+    const trimmed = cell.trim();
+    if (/^\d+$/u.test(trimmed)) return metaTftCellIndex(trimmed);
+    const match = trimmed.match(/^(\d+)\s*[,/:|-]\s*(\d+)$/u);
+    if (match) {
+      const row = coordinate(match[1], 3);
+      const column = coordinate(match[2], 6);
+      return row === null || column === null ? null : row * 7 + column;
+    }
+    return null;
+  }
+  return metaTftCellIndex(cell);
+}
+
+function normalizedDetailItem(item) {
+  if (typeof item === "string") return { apiName: item, name: item };
+  return item && typeof item === "object" ? item : {};
+}
+
+function positionedFormationUnits(comp, formation) {
+  const status = normalizedCompDetailStatus(formation?.status);
+  if (status === "unavailable" || status === "error" || status === "missing") return new Map();
+  const listedUnits = new Map((comp?.units ?? []).map((unit) => [String(unit?.apiName ?? ""), unit]));
+  const placed = new Map();
+  for (const sourceUnit of formation?.units ?? []) {
+    const cell = boardCellIndex(sourceUnit?.cell);
+    const apiName = String(sourceUnit?.apiName ?? "").trim();
+    if (cell === null || !apiName || placed.has(cell)) continue;
+    const listedUnit = listedUnits.get(apiName) ?? {};
+    const detailItems = Array.isArray(sourceUnit?.items) ? sourceUnit.items : null;
+    placed.set(cell, {
+      ...listedUnit,
+      ...sourceUnit,
+      apiName,
+      name: sourceUnit?.name ?? listedUnit.name ?? apiName,
+      iconUrl: sourceUnit?.iconUrl ?? listedUnit.iconUrl ?? null,
+      fallbackIconUrl: sourceUnit?.fallbackIconUrl ?? listedUnit.fallbackIconUrl ?? null,
+      targetStarLevel: sourceUnit?.targetStarLevel ?? listedUnit.targetStarLevel ?? null,
+      items: detailItems?.length ? detailItems : (listedUnit.items ?? [])
+    });
+  }
+  return placed;
+}
+
+function renderCompBoardUnit(unit, comp) {
+  const unitName = localizedName(unit, unit.apiName);
+  const targetStarLevel = Number(unit.targetStarLevel);
+  const queryStarLevel = targetStarLevel === 3 ? 3 : 2;
+  const queryLabel = t("queryCompUnit", {
+    star: queryStarLevel,
+    unit: unitName,
+    comp: localizedName(comp)
+  });
+  const targetStars = Number.isInteger(targetStarLevel) && targetStarLevel >= 3
+    ? `<span class="board-target-star" aria-hidden="true">${"★".repeat(Math.min(4, targetStarLevel))}</span>`
+    : "";
+  const items = (unit.items ?? []).slice(0, 3).map(normalizedDetailItem);
+  return `<div class="comp-board-unit comp-unit-query${unit.core ? " core" : ""}"
+    data-comp-unit-query
+    data-unit-api-name="${escapeHtml(unit.apiName)}"
+    data-unit-name="${escapeHtml(unitName)}"
+    data-unit-star-level="${queryStarLevel}"
+    role="button"
+    tabindex="0"
+    title="${escapeHtml(queryLabel)}"
+    aria-label="${escapeHtml(queryLabel)}">
+    ${targetStars}
+    ${assetThumb(unit.iconUrl, unitName, "board-unit-icon", unit.fallbackIconUrl)}
+    ${items.length ? `<span class="comp-board-unit-items">${items.map((item) => assetThumb(item.iconUrl, localizedName(item, item.name ?? item.apiName), "tiny-item-icon")).join("")}</span>` : ""}
+  </div>`;
+}
+
+function renderCompFormation(comp, formation, placedUnits) {
+  if (!placedUnits.size) {
+    return `<section class="comp-formation" data-status="unavailable"><h3>${escapeHtml(t("compFormation"))}</h3><p>${escapeHtml(t("compFormationUnavailable"))}</p></section>`;
+  }
+  return `<section class="comp-formation" data-status="available">
+    <h3>${escapeHtml(t("compFormation"))}</h3>
+    <div class="comp-hex-board" role="group" aria-label="${escapeHtml(t("compFormation"))}">
+      ${Array.from({ length: 28 }, (_, cell) => {
+        const row = Math.floor(cell / 7);
+        const unit = placedUnits.get(cell);
+        return `<div class="comp-hex-cell${row % 2 ? " is-offset" : ""}${unit ? " is-occupied" : ""}" data-cell="${cell}" data-row="${row}" data-column="${cell % 7}">${unit ? renderCompBoardUnit(unit, comp) : ""}</div>`;
+      }).join("")}
+    </div>
+  </section>`;
+}
+
+function augmentCompatibilityTier(entry) {
+  const tier = String(entry?.tier ?? "").trim().toUpperCase();
+  return /^[SABCD]$/u.test(tier) ? tier : "unknown";
+}
+
+function augmentCompatibilityLabel(tier) {
+  return tier === "unknown"
+    ? t("augmentCompatibilityUnavailable")
+    : t("augmentCompatibilityTier", { value: tier });
+}
+
+function augmentRarity(entry) {
+  const raw = String(entry?.rarity ?? "").trim().toLowerCase();
+  if (raw === "3" || /prismatic|orange/u.test(raw)) return "prismatic";
+  if (raw === "2" || /gold/u.test(raw)) return "gold";
+  if (raw === "1" || /silver/u.test(raw)) return "silver";
+  return "unknown";
+}
+
+function augmentRarityLabel(rarity) {
+  return t({
+    prismatic: "augmentRarityPrismatic",
+    gold: "augmentRarityGold",
+    silver: "augmentRaritySilver",
+    unknown: "augmentRarityUnknown"
+  }[rarity] ?? "augmentRarityUnknown");
+}
+
+const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
+const DISPLAYED_COMP_AUGMENT_LIMIT = 6;
+
+function availableAugmentEntries(recommendations) {
+  const status = normalizedCompDetailStatus(recommendations?.status);
+  if (status === "unavailable" || status === "error" || status === "missing") return [];
+  return (recommendations?.entries ?? [])
+    .filter((entry) => (
+      entry
+      && typeof entry === "object"
+      && (entry.apiName || entry.name)
+      && DISPLAYED_COMP_AUGMENT_RARITIES.has(augmentRarity(entry))
+    ))
+    .slice(0, DISPLAYED_COMP_AUGMENT_LIMIT);
+}
+
+function renderCompAugments(entries) {
+  if (!entries.length) return "";
+  return `<section class="comp-augment-recommendations">
+    <h3>${escapeHtml(t("compAugmentRecommendations"))}</h3>
+    <div class="comp-augment-list">
+      ${entries.map((entry) => {
+        const tier = augmentCompatibilityTier(entry);
+        const rarity = augmentRarity(entry);
+        const name = entry.enName ?? entry.name ?? localizedName(entry, entry.apiName);
+        const compatibilityLabel = augmentCompatibilityLabel(tier);
+        return `<div class="comp-augment-chip" data-tier="${tier}" data-rarity="${rarity}" title="${escapeHtml(`${name} · ${compatibilityLabel}`)}">
+          ${assetThumb(entry.iconUrl, name, "augment-icon", entry.fallbackIconUrl)}
+          <span class="comp-augment-copy"><strong>${escapeHtml(name)}</strong>${rarity === "unknown" ? "" : `<small>${escapeHtml(augmentRarityLabel(rarity))}</small>`}</span>
+          <span class="comp-augment-tier" data-tier="${tier}">${escapeHtml(compatibilityLabel)}</span>
+        </div>`;
+      }).join("")}
+    </div>
+  </section>`;
+}
+
+function compDetailSourceLabel(source) {
+  return [source?.provider, source?.endpoint].map((value) => String(value ?? "").trim()).filter(Boolean).join(" / ");
+}
+
+function renderCompDetailContent(descriptor) {
+  const detailState = state.compDetailCache.get(descriptor.key);
+  if (!detailState || detailState.status === "loading") {
+    return `<div class="comp-detail-state" data-status="loading" aria-live="polite">${escapeHtml(t("compDetailLoading"))}</div>`;
+  }
+  if (detailState.status === "error") {
+    return `<div class="comp-detail-state" data-status="error" role="alert"><span>${escapeHtml(t("compDetailLoadFailed"))}</span><small>${escapeHtml(detailState.error ?? "")}</small><button type="button" data-retry-comp-detail data-comp-detail-key="${escapeHtml(descriptor.key)}">${escapeHtml(t("retry"))}</button></div>`;
+  }
+  const detail = detailState.data ?? {};
+  const placedUnits = positionedFormationUnits(descriptor.comp, detail.formation);
+  const augmentEntries = availableAugmentEntries(detail.augmentRecommendations);
+  if (!placedUnits.size && !augmentEntries.length) {
+    return `<div class="comp-detail-state" data-status="unavailable">${escapeHtml(t("compDetailUnavailable"))}</div>`;
+  }
+  const sourceLabel = compDetailSourceLabel(detail.source);
+  return `${renderCompFormation(descriptor.comp, detail.formation, placedUnits)}${renderCompAugments(augmentEntries)}${sourceLabel ? `<small class="comp-detail-source">${escapeHtml(t("sourceLabel"))}：${escapeHtml(sourceLabel)}</small>` : ""}`;
+}
+
+function renderCompDetailPanel(descriptor) {
+  if (!descriptor) {
+    return `<section class="comp-tactical-detail" data-status="unavailable"><div class="comp-detail-state" data-status="unavailable">${escapeHtml(t("compDetailUnavailable"))}</div></section>`;
+  }
+  return `<section class="comp-tactical-detail" data-comp-detail data-comp-detail-key="${escapeHtml(descriptor.key)}" data-comp-detail-comp="${escapeHtml(descriptor.compId)}" data-comp-detail-cluster-id="${escapeHtml(descriptor.dataClusterId)}" data-comp-detail-units="${escapeHtml(descriptor.units.join(","))}">${renderCompDetailContent(descriptor)}</section>`;
+}
+
+function updateCompDetailPanels(key) {
+  const descriptor = state.compDetailDescriptors.get(key);
+  if (!descriptor) return;
+  for (const panel of resultContentEl.querySelectorAll("[data-comp-detail][data-comp-detail-key]")) {
+    if (panel.dataset.compDetailKey === key) panel.innerHTML = renderCompDetailContent(descriptor);
+  }
+}
+
+async function loadCompDetail(descriptor, { retry = false } = {}) {
+  const cached = state.compDetailCache.get(descriptor.key);
+  if (!retry && (cached?.status === "ready" || cached?.status === "unavailable" || cached?.status === "loading")) return;
+  if (state.compDetailRequests.has(descriptor.key)) return state.compDetailRequests.get(descriptor.key);
+
+  state.compDetailCache.set(descriptor.key, { status: "loading" });
+  updateCompDetailPanels(descriptor.key);
+  const request = (async () => {
+    try {
+      const params = new URLSearchParams({
+        comp: descriptor.compId,
+        clusterId: descriptor.dataClusterId,
+        seasonContextId: descriptor.seasonContextId,
+        units: descriptor.units.join(",")
+      });
+      const response = await fetch(`/api/comp-details?${params.toString()}`, {
+        headers: { accept: "application/json" }
+      });
+      let payload;
+      try {
+        payload = await response.json();
+      } catch {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      if (!response.ok || payload?.ok === false) throw new Error(payload?.error ?? `HTTP ${response.status}`);
+      const detail = payload?.detail ?? payload?.data ?? payload ?? {};
+      const hasFormation = positionedFormationUnits(descriptor.comp, detail.formation).size > 0;
+      const hasAugments = availableAugmentEntries(detail.augmentRecommendations).length > 0;
+      state.compDetailCache.set(descriptor.key, {
+        status: hasFormation || hasAugments ? "ready" : "unavailable",
+        data: detail
+      });
+    } catch (error) {
+      state.compDetailCache.set(descriptor.key, {
+        status: "error",
+        error: error?.message ?? t("compDetailLoadFailed")
+      });
+    } finally {
+      state.compDetailRequests.delete(descriptor.key);
+      updateCompDetailPanels(descriptor.key);
+    }
+  })();
+  state.compDetailRequests.set(descriptor.key, request);
+  return request;
+}
+
+function loadCompDetailForCard(card) {
+  const key = card?.dataset?.compDetailKey;
+  const descriptor = key ? state.compDetailDescriptors.get(key) : null;
+  if (!descriptor) return;
+  return loadCompDetail(descriptor);
+}
+
+function queueOpenCompDetailLoads() {
+  queueMicrotask(() => {
+    for (const card of resultContentEl.querySelectorAll(".comp-card[open][data-comp-detail-key]")) {
+      void loadCompDetailForCard(card);
+    }
+  });
+}
+
+function clearCompDetailState() {
+  state.compDetailCache.clear();
+  state.compDetailRequests.clear();
+  state.compDetailDescriptors.clear();
+}
+
+function renderCompCard(comp, metricKey, initiallyOpen = false) {
   const mainTraits = (comp.traits ?? []).filter((trait) => !/UniqueTrait|SummonTrait/.test(trait.filterId ?? trait.apiName)).slice(0, 3);
   const coreUnits = (comp.units ?? []).filter((unit) => unit.core).slice(0, 4);
   const foldedUnits = coreUnits.length ? coreUnits : (comp.units ?? []).slice(0, 5);
@@ -817,11 +1600,14 @@ function renderCompCard(comp, metricKey, index) {
     : `${formatNumber(comp.stats?.games ?? 0)} ${t("games")}`;
   const trendVariant = metricKey === "trend" ? "trend" : metricKey === "trendDown" ? "trend-down" : "ranking";
   const signature = compSignature(comp);
+  const detailDescriptor = compDetailDescriptor(comp);
+  const detailDataAttribute = detailDescriptor ? `data-comp-detail-key="${escapeHtml(detailDescriptor.key)}"` : "";
   return `
     <details class="comp-card" data-variant="${trendVariant}"
       data-comp-name="${escapeHtml(localizedName(comp))}"
       data-comp-signature="${escapeHtml(signature)}"
-      ${index === 0 ? "open" : ""}>
+      ${detailDataAttribute}
+      ${initiallyOpen ? "open" : ""}>
       <summary>
         <div class="comp-summary-main">
           <strong>${escapeHtml(localizedName(comp))}</strong>
@@ -844,6 +1630,7 @@ function renderCompCard(comp, metricKey, index) {
           <span>${t("appearanceShort")} ${rate(appearanceRate)}</span>
         </div>
         ${metricKey === "trend" || metricKey === "trendDown" ? `<div class="trend-model-line"><span>${escapeHtml(compTrendSourceLabel(comp))}</span><small>${t("trendWindow")}</small></div>` : ""}
+        ${renderCompDetailPanel(detailDescriptor)}
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, comp, true)).join("")}</div>
         <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
         <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
@@ -858,7 +1645,7 @@ function defaultPopularCompMetric(data) {
 }
 
 function renderPopularMetricSwitch(activeMetric) {
-  const metrics = ["avgPlacement", "top4Rate", "winRate"];
+  const metrics = ["avgPlacement", "top4Rate", "winRate", "popularity"];
   return `<div class="comp-metric-switch" role="group" aria-label="${escapeHtml(t("rankingStandard"))}">
     ${metrics.map((metric) => `<button type="button" data-comp-metric="${metric}" class="${metric === activeMetric ? "active" : ""}" aria-pressed="${metric === activeMetric}">${escapeHtml(compMetricLabel(metric))}</button>`).join("")}
   </div>`;
@@ -922,7 +1709,7 @@ function renderCompRankings(data) {
   if (isTrendView) {
     sections = [];
   } else if (isPopularView) {
-    const availableMetrics = ["avgPlacement", "top4Rate", "winRate"]
+    const availableMetrics = ["avgPlacement", "top4Rate", "winRate", "popularity"]
       .filter((metric) => data.rankings?.[metric]?.length);
     const defaultMetric = defaultPopularCompMetric(data);
     if (!availableMetrics.includes(state.compRankingMetric)) {
@@ -952,6 +1739,12 @@ function renderCompRankings(data) {
       <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
     return;
   }
+  let firstCompCard = true;
+  const renderCompCards = (comps, metricKey) => (comps ?? []).map((comp) => {
+    const initiallyOpen = firstCompCard;
+    firstCompCard = false;
+    return renderCompCard(comp, metricKey, initiallyOpen);
+  }).join("");
   setResponseHtml(`
     <div class="comp-overview">
       <strong>${t(isTrendView ? "currentCompTrends" : "currentCompRanking")}</strong>
@@ -962,12 +1755,13 @@ function renderCompRankings(data) {
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${isTrendView ? renderCompTrendNotice(data, [...rising, ...falling]) : ""}
     ${isPopularView ? `<div class="popular-ranking-toolbar"><span>${t("popularCompSample", { value: 21 })}</span>${metricSwitch}</div>` : ""}
-    ${isTrendView && rising.length ? `<section class="ranking-section improving-section"><h2>${t("risingComps")}</h2><p class="trend-method">${t("risingFormula")}</p>${rising.map((comp, index) => renderCompCard(comp, "trend", index)).join("")}</section>` : ""}
-    ${isTrendView && falling.length ? `<section class="ranking-section falling-section"><h2>${t("fallingComps")}</h2><p class="trend-method">${t("fallingFormula")}</p>${falling.map((comp, index) => renderCompCard(comp, "trendDown", index)).join("")}</section>` : ""}
-    ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${popularity.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
-    ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${comps.map((comp, index) => renderCompCard(comp, key, index)).join("")}</section>`).join("")}
-    ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${references.map((comp, index) => renderCompCard(comp, "popularity", index)).join("")}</section>` : ""}
+    ${isTrendView && rising.length ? `<section class="ranking-section improving-section"><h2>${t("risingComps")}</h2><p class="trend-method">${t("risingFormula")}</p>${renderCompCards(rising, "trend")}</section>` : ""}
+    ${isTrendView && falling.length ? `<section class="ranking-section falling-section"><h2>${t("fallingComps")}</h2><p class="trend-method">${t("fallingFormula")}</p>${renderCompCards(falling, "trendDown")}</section>` : ""}
+    ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${renderCompCards(popularity, "popularity")}</section>` : ""}
+    ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${renderCompCards(comps, key)}</section>`).join("")}
+    ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${renderCompCards(references, "popularity")}</section>` : ""}
     <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
+  queueOpenCompDetailLoads();
 }
 
 function feedbackActions(cardIndex) {
@@ -1034,7 +1828,11 @@ function formatCacheUpdatedAt(value) {
 
 function queryCacheLine(cache = {}) {
   if (!cache?.hit) return t("live");
-  const label = cache.stale ? t("staleCache") : t("localCache");
+  const label = cache.stale
+    ? t("staleCache")
+    : cache.revalidating
+      ? t("cacheRefreshing")
+      : t("localCache");
   const updatedAt = formatCacheUpdatedAt(cache.updatedAt);
   return updatedAt ? `${label} / ${t("updated")} ${updatedAt}` : label;
 }
@@ -1165,6 +1963,105 @@ function entityStat(label, value, suffix = "") {
   return `<div class="entity-stat"><span>${escapeHtml(label)}</span><strong>${escapeHtml(display)}</strong></div>`;
 }
 
+function entityCatalogCard(entry) {
+  const search = [
+    entry.name,
+    entry.apiName,
+    entry.role,
+    entry.traitType,
+    ...(entry.traitNames ?? [])
+  ].filter(Boolean).join(" ").toLocaleLowerCase(getLocale());
+  const isUnit = entry.entityType === "unit";
+  const metadata = isUnit
+    ? [
+      entry.cost ? t("unitCost", { value: entry.cost }) : null,
+      entry.role
+    ].filter(Boolean).join(" · ")
+    : entry.traitType === "race"
+      ? t("catalogOrigin")
+      : entry.traitType === "job"
+        ? t("catalogClass")
+        : "";
+  const chips = isUnit
+    ? (entry.traitNames ?? []).slice(0, 3)
+    : (entry.tierCounts ?? []).map((value) => t("unitsRequired", { value }));
+
+  return `
+    <button type="button"
+      class="entity-catalog-card"
+      data-entity-detail
+      data-entity-type="${escapeHtml(entry.entityType)}"
+      data-entity-id="${escapeHtml(entry.apiName)}"
+      data-catalog-search="${escapeHtml(search)}"
+      data-catalog-cost="${escapeHtml(entry.cost ?? "")}"
+      data-catalog-trait-type="${escapeHtml(entry.traitType ?? "")}"
+      aria-label="${escapeHtml(t("openEntityDetails", { name: entry.name }))}">
+      ${assetThumb(entry.iconUrl, entry.name, "entity-catalog-icon")}
+      <span class="entity-catalog-copy">
+        <strong>${escapeHtml(entry.name)}</strong>
+        ${metadata ? `<small>${escapeHtml(metadata)}</small>` : ""}
+        ${chips.length ? `<span class="entity-catalog-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</span>` : ""}
+      </span>
+      <span class="entity-catalog-arrow" aria-hidden="true">→</span>
+    </button>`;
+}
+
+function applyEntityCatalogFilters() {
+  const root = resultContentEl.querySelector("[data-entity-catalog]");
+  if (!root) return;
+  const search = root.querySelector("[data-catalog-query]")?.value.trim().toLocaleLowerCase(getLocale()) ?? "";
+  const selected = root.querySelector("[data-catalog-filter]")?.value ?? "";
+  let visible = 0;
+  const cards = [...root.querySelectorAll("[data-entity-detail]")];
+  for (const card of cards) {
+    const matchesSearch = !search || String(card.dataset.catalogSearch ?? "").includes(search);
+    const filterValue = root.dataset.entityType === "unit"
+      ? card.dataset.catalogCost
+      : card.dataset.catalogTraitType;
+    const matchesFilter = !selected || filterValue === selected;
+    const show = matchesSearch && matchesFilter;
+    card.hidden = !show;
+    if (show) visible += 1;
+  }
+  const count = root.querySelector("[data-catalog-visible-count]");
+  if (count) count.textContent = t("catalogVisibleCount", { visible, total: cards.length });
+  const empty = root.querySelector("[data-catalog-empty]");
+  if (empty) empty.hidden = visible > 0;
+}
+
+function renderEntityCatalog(data) {
+  const entityType = data.entityType === "trait" ? "trait" : "unit";
+  const title = entityType === "unit" ? t("unitCatalog") : t("traitCatalog");
+  const items = data.items ?? [];
+  const costs = [...new Set(items.map((entry) => Number(entry.cost)).filter(Number.isFinite))].sort((a, b) => a - b);
+  const filterOptions = entityType === "unit"
+    ? costs.map((cost) => `<option value="${cost}">${escapeHtml(t("unitCost", { value: cost }))}</option>`).join("")
+    : `<option value="race">${escapeHtml(t("catalogOrigin"))}</option><option value="job">${escapeHtml(t("catalogClass"))}</option>`;
+
+  setResponseHtml(`
+    ${resultHeader(title, data.text, t("catalogCount", { value: data.pagination?.total ?? items.length }))}
+    <section class="entity-catalog" data-entity-catalog data-entity-type="${entityType}">
+      <div class="entity-catalog-controls">
+        <label class="entity-catalog-control entity-catalog-search">
+          <span class="sr-only">${escapeHtml(t("catalogSearch"))}</span>
+          <input type="search" data-catalog-query placeholder="${escapeHtml(t("catalogSearch"))}" autocomplete="off">
+        </label>
+        <label class="entity-catalog-control entity-catalog-filter">
+          <span class="sr-only">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</span>
+          <select data-catalog-filter>
+            <option value="">${escapeHtml(entityType === "unit" ? t("catalogAllCosts") : t("catalogAllTypes"))}</option>
+            ${filterOptions}
+          </select>
+        </label>
+        <span class="entity-catalog-count" data-catalog-visible-count>${escapeHtml(t("catalogVisibleCount", { visible: items.length, total: items.length }))}</span>
+      </div>
+      <div class="entity-catalog-grid">${items.map(entityCatalogCard).join("")}</div>
+      <div class="empty-state entity-catalog-empty" data-catalog-empty ${items.length ? "hidden" : ""}>${escapeHtml(t("catalogEmpty"))}</div>
+    </section>
+    ${entitySourceLine(data.source)}
+  `);
+}
+
 function renderUnitDetails(data) {
   const unit = data.unit ?? {};
   const stats = unit.stats ?? {};
@@ -1181,7 +2078,6 @@ function renderUnitDetails(data) {
             <span>${escapeHtml(t("metricSamples"))} <b>${formatNumber(item.stats?.games ?? 0)}</b></span>
             <span>${escapeHtml(t("metricTop4Rate"))} <b>${formatNumber(item.stats?.top4 ?? 0)}%</b></span>
             <span>${escapeHtml(t("metricAvgPlacement"))} <b>${formatNumber(item.stats?.avg ?? 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span>
-            <span>${escapeHtml(t("recommendationScore"))} <b>${formatNumber(item.recommendationScore ?? 0, { minimumFractionDigits: 3, maximumFractionDigits: 3 })}</b></span>
           </div>
         </article>`).join("")}</div>`
     : `<div class="detail-muted">${escapeHtml(t("noStableItems"))}</div>`;
@@ -1429,6 +2325,46 @@ function sourceAndRisk(data) {
   `;
 }
 
+const EQUIPMENT_CONCLUSION_RESULT_TYPES = new Set([
+  "unit_build_rankings",
+  "unit_build_completion",
+  "unit_best_3_items"
+]);
+
+function equipmentConclusionViewModel(data, content) {
+  if (!EQUIPMENT_CONCLUSION_RESULT_TYPES.has(data?.type) || !content) return null;
+  const entries = [...(content.reasons ?? []), ...(content.alternatives ?? [])];
+  const uniqueText = (dimensions) => [...new Set(entries
+    .filter((entry) => dimensions.includes(entry?.dimension))
+    .map((entry) => String(entry?.text ?? "").trim())
+    .filter(Boolean))].join("；");
+  const completion = data.type === "unit_build_completion";
+  const prioritize = completion && data?.itemDifferentiation?.hasClearLeader === true;
+  const coreText = uniqueText(completion
+    ? ["locked_item_compatibility"]
+    : ["core_item_tendency"]);
+  const candidateText = uniqueText(completion
+    ? ["completion_options"]
+    : ["build_performance"]);
+  return [
+    {
+      key: "recommendation",
+      title: t("conclusionRecommendation"),
+      text: content.headline
+    },
+    {
+      key: "core-items",
+      title: t(prioritize ? "conclusionPrioritize" : "conclusionCoreItems"),
+      text: coreText || content.summary
+    },
+    {
+      key: "candidate-analysis",
+      title: t("conclusionCandidateAnalysis"),
+      text: candidateText || content.nextAction
+    }
+  ];
+}
+
 function generatedConclusionCard(data) {
   const conclusion = data?.answer?.generatedConclusion;
   if (!conclusion || conclusion.status === "disabled" || conclusion.status === "skipped") return "";
@@ -1456,6 +2392,18 @@ function generatedConclusionCard(data) {
     </li>
   `).join("");
   const feedback = state.explanationFeedback;
+  const equipmentSections = equipmentConclusionViewModel(data, content);
+  if (equipmentSections) {
+    return `<section class="generated-conclusion equipment-conclusion" data-conclusion-status="generated">
+      <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
+      <div class="equipment-conclusion-sections">
+        ${equipmentSections.map((section) => `<section class="conclusion-section ${section.key}"><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p></section>`).join("")}
+      </div>
+      ${missingDimensions ? `<div class="conclusion-missing"><strong>${t("conclusionMissingDimensions")}</strong><span>${escapeHtml(missingDimensions)}</span></div>` : ""}
+      ${supportingEvidence ? `<details class="conclusion-supporting-evidence"><summary>${t("staticEvidence")}</summary><ul>${supportingEvidence}</ul></details>` : ""}
+      <div class="conclusion-footer"><small>${escapeHtml(conclusion.model ?? "LLM")} · ${formatNumber(conclusion.latencyMs ?? 0)}ms</small><div class="result-feedback" data-explanation-feedback-group><button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button><button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button><span class="feedback-status">${feedback ? t("recorded") : ""}</span>${feedbackReasonPicker("explanation")}</div></div>
+    </section>`;
+  }
   return `<section class="generated-conclusion" data-conclusion-status="generated">
     <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
     <h3>${escapeHtml(content.headline)}</h3>
@@ -1590,11 +2538,12 @@ function renderCompAnalysis(data) {
       ${(answer.evidence ?? []).length ? `<h3>${escapeHtml(t("compAnalysisData"))}</h3><ul>${answer.evidence.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
       ${(answer.risks ?? []).length ? `<h3>${escapeHtml(t("compAnalysisRisks"))}</h3><ul>${answer.risks.map((entry) => `<li>${escapeHtml(entry)}</li>`).join("")}</ul>` : ""}
     </section>
-    ${target ? `<section class="ranking-section"><h2>${escapeHtml(t("compAnalysisTargetData"))}</h2>${renderCompCard(target, "avgPlacement", 0)}</section>` : ""}
+    ${target ? `<section class="ranking-section"><h2>${escapeHtml(t("compAnalysisTargetData"))}</h2>${renderCompCard(target, "avgPlacement", true)}</section>` : ""}
     <div class="comp-footnote">${escapeHtml(t("compAnalysisSources", { value: sourceTypes.join(" / ") || "unavailable" }))}</div>
     ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
     ${sourceAndRisk(data)}
   `);
+  queueOpenCompDetailLoads();
 }
 
 const EQUIPMENT_CORE_RESULT_TYPES = new Set([
@@ -1657,9 +2606,13 @@ function chatCoreScopeText(data) {
   return isItemPerformance(data) ? "\u6307\u5b9a\u88c5\u5907\u4e0e\u540c\u6761\u4ef6 Top 3 \u5bf9\u6bd4" : isSpecialItemRanking(data) ? t("chatSpecialRankingScope") : t("chatCoreScope");
 }
 
-function generatedConclusionText(conclusion) {
+function generatedConclusionText(conclusion, data = null) {
   const content = conclusion?.content;
   if (!content) return "";
+  const equipmentSections = equipmentConclusionViewModel(data, content);
+  if (equipmentSections) {
+    return equipmentSections.map((section) => `${section.title}\n${section.text}`).join("\n\n");
+  }
   const missingDimensions = conclusionMissingDimensions(content);
   return [
     content.headline,
@@ -1673,6 +2626,7 @@ function generatedConclusionText(conclusion) {
 }
 
 function chatCoreConclusionHtml(data, responseId, options = {}) {
+  if (data?.assistantResponse?.text) return "";
   const fullFixedText = chatCoreConclusionText(data);
   if (!fullFixedText) return "";
   const fixedText = Object.prototype.hasOwnProperty.call(options, "fixedCoreText") ? options.fixedCoreText : fullFixedText;
@@ -1680,7 +2634,7 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
   const interpretation = conclusion?.status === "pending"
     ? state.conclusionStreamText || t("conclusionStreaming")
     : conclusion?.status === "generated"
-      ? generatedConclusionText(conclusion)
+      ? generatedConclusionText(conclusion, data)
       : "";
   return `<section class="chat-core-conclusion" data-chat-core-conclusion="${escapeHtml(responseId)}">
     <header><strong>${t("chatCoreTitle")}</strong><small>${chatCoreScopeText(data)}</small></header>
@@ -1689,18 +2643,45 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
   </section>`;
 }
 
-function assistantResponseHtml(data, responseId = "", options = {}) {
-  if (data?.clarification?.needsClarification) {
-    return `<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
+function systemInteractionAnswerHtml(data) {
+  const answer = String(data?.systemInteraction?.answer ?? data?.answer?.summary ?? data?.text ?? "");
+  const lines = answer.split(/\r?\n/u);
+  const lead = [];
+  const examples = [];
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) continue;
+    if (trimmed.startsWith("- ")) examples.push(trimmed.slice(2));
+    else lead.push(trimmed);
   }
-  const summary = data?.answer?.summary
+  return `<div class="system-interaction-answer">
+    ${lead.map((line) => `<p>${escapeHtml(line)}</p>`).join("")}
+    ${examples.length ? `<ul>${examples.map((example) => `<li>${escapeHtml(example)}</li>`).join("")}</ul>` : ""}
+  </div>`;
+}
+
+function assistantResponseHtml(data, responseId = "", options = {}) {
+  if (data?.type === "system_interaction") {
+    return systemInteractionAnswerHtml(data);
+  }
+  const understanding = renderUnderstandingPanel(data, {
+    locale: getLocale(),
+    surface: "chat",
+    traceState: data?.processingTrace,
+    completed: true
+  });
+  if (data?.clarification?.needsClarification && !data?.assistantResponse?.text) {
+    return `${understanding}<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
+  }
+  const summary = data?.assistantResponse?.text
+    ?? data?.answer?.summary
     ?? data?.text
     ?? (data?.type === "comp_trends"
       ? t("currentCompTrends")
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
-  return `${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -1745,7 +2726,8 @@ function recordAssistantResponse(data) {
     target: activeResponseEl,
     data,
     input: state.lastInput,
-    displayInput: state.lastDisplayInput
+    displayInput: state.lastDisplayInput,
+    quickTask: state.lastQuickTask
   };
   const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
@@ -1761,6 +2743,7 @@ function activateResponseResult(record) {
   state.currentConclusionController = null;
   state.lastInput = record.input ?? state.lastInput;
   state.lastDisplayInput = record.displayInput ?? record.input ?? state.lastDisplayInput;
+  state.lastQuickTask = record.quickTask ?? null;
   state.lastResult = record.data;
   state.lastResultId = record.data.queryId ?? null;
   state.lastSuggestions = record.data.clarification?.suggestions ?? [];
@@ -1771,7 +2754,7 @@ function activateResponseResult(record) {
   state.explanationFeedback = null;
   state.conclusionStreamText = "";
   state.resultView = { type: "result", data: record.data };
-  rawOutputEl.textContent = record.data.text ?? JSON.stringify(record.data, null, 2);
+  setDeveloperOutput(record.data);
   resultTitleEl.textContent = t("resultTitle");
   renderCurrentResult(record.data);
   refreshButton.disabled = state.requestInFlight || !state.lastInput;
@@ -1781,10 +2764,22 @@ function activateResponseResult(record) {
 
 function rerenderLocalizedState() {
   applyI18n();
+  if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
   }
-  if (state.requestInFlight && activeResponseEl?.isConnected) activeResponseEl.innerHTML = progressStepsHtml(state.progressIndex);
+  if (
+    state.requestInFlight
+    && activeResponseEl?.isConnected
+    && activeRecommendationProgress
+  ) {
+    const understandingOpen = activeResponseEl
+      .querySelector(".chat-understanding-panel")
+      ?.hasAttribute("open");
+    activeResponseEl.innerHTML = recommendationProgressHtml(activeRecommendationProgress, {
+      understandingOpen: understandingOpen ?? true
+    });
+  }
   if (state.resultView.type === "result" && state.resultView.data) renderCurrentResult(state.resultView.data);
   else if (state.resultView.type === "loading") renderLoadingResult(false);
   else if (state.resultView.type === "error") renderErrorResult(state.resultView.message, false, state.resultView.messageKey);
@@ -1845,6 +2840,51 @@ function renderItemRankings(data) {
   `);
 }
 
+function renderItemCarrierRankings(data) {
+  const carriers = data.carriers ?? [];
+  const itemLabel = localizedName(data.item, data.query?.itemName ?? t("item"));
+  if (!carriers.length) {
+    setResponseHtml(`
+      ${resultHeader(t("itemCarriers"), data.text ?? t("noPositiveCarriers"), t("noResult"))}
+      <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noPositiveCarriers"))}</strong></div>
+      ${conditionPanel(data)}${sourceAndRisk(data)}
+    `);
+    return;
+  }
+  setResponseHtml(`
+    ${resultHeader(t("itemCarriers"), data.text, itemLabel)}
+    <div class="carrier-ranking-list">
+      ${carriers.map((carrier, index) => `
+        <article class="carrier-ranking-card">
+          <div class="carrier-ranking-head">
+            <div class="carrier-unit">
+              ${assetThumb(carrier.unit?.iconUrl, localizedName(carrier.unit), "equipment-unit-icon")}
+              <div><strong>${index + 1}. ${escapeHtml(localizedName(carrier.unit))}</strong><small>${t("positivePlacementUplift", { value: formatNumber(carrier.placementUplift, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</small></div>
+            </div>
+            ${data.item ? assetThumb(data.item.iconUrl, itemLabel, "tiny-item-icon") : ""}
+          </div>
+          <div class="stats">
+            ${metric(t("top4"), `${formatNumber(carrier.stats.top4)}%`)}
+            ${metric(t("win"), `${formatNumber(carrier.stats.win)}%`)}
+            ${metric(t("avg"), formatNumber(carrier.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+            ${metric(t("samples"), formatNumber(carrier.stats.games))}
+          </div>
+          <div class="carrier-baseline">${t("unitBaselineAvg", { value: formatNumber(carrier.baselineAvgPlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</div>
+          <div class="carrier-builds">
+            ${(carrier.builds ?? []).map((build) => `
+              <div class="carrier-build">
+                <div class="items">${build.items.map(itemPill).join("")}</div>
+                <small>${t("avg")} ${formatNumber(build.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} · ${t("samples")} ${formatNumber(build.stats.games)}</small>
+              </div>
+            `).join("")}
+          </div>
+        </article>
+      `).join("")}
+    </div>
+    ${conditionPanel(data)}${sourceAndRisk(data)}
+  `);
+}
+
 function recommendationCard(data, card, index) {
   const unitLabel = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? t("hero"));
   const comparedItem = card.items?.find((item) => item.compared);
@@ -1860,7 +2900,7 @@ function recommendationCard(data, card, index) {
   const difference = card.difference
     ? `<div class="difference-note">${t("relativeRecommendation")}：${card.difference.removed?.length ? `${t("replace")} ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : t("sameItems")}；${t("top4Short")} ${card.difference.top4Delta >= 0 ? "+" : ""}${formatNumber(card.difference.top4Delta)}pp，${t("samples")} ${card.difference.gamesDelta >= 0 ? "+" : ""}${formatNumber(card.difference.gamesDelta)}</div>`
     : "";
-  const rankingRationale = card.ranking?.method === "robust_applicability_v1"
+  const rankingRationale = card.ranking?.method === "robust_applicability_v3"
     ? `<div class="ranking-rationale${card.winner ? " primary" : ""}">
       <strong>${t(card.winner ? "applicabilityRecommendation" : "applicabilityScore")}</strong>
       <span>${t("applicabilityScoreValue", { score: formatNumber(card.ranking.score, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}</span>
@@ -1899,14 +2939,271 @@ function renderRecommendationResult(data) {
     ${conditionPanel(data)}${sourceAndRisk(data)}`);
 }
 
+function safeKnowledgeSourceUrl(value, timestampStart = null) {
+  try {
+    const url = new URL(String(value ?? ""));
+    if (!["http:", "https:"].includes(url.protocol)) return null;
+    if (Number.isFinite(Number(timestampStart)) && /(^|\.)youtube\.com$|(^|\.)youtu\.be$/i.test(url.hostname)) {
+      url.searchParams.set("t", `${Math.max(0, Math.floor(Number(timestampStart)))}s`);
+    }
+    return url.href;
+  } catch {
+    return null;
+  }
+}
+
+function knowledgeTimestamp(value) {
+  if (value === null || value === undefined || value === "") return null;
+  const seconds = Number(value);
+  if (!Number.isFinite(seconds) || seconds < 0) return null;
+  const wholeSeconds = Math.floor(seconds);
+  const hours = Math.floor(wholeSeconds / 3600);
+  const minutes = Math.floor((wholeSeconds % 3600) / 60);
+  const remainder = wholeSeconds % 60;
+  return hours
+    ? `${hours}:${String(minutes).padStart(2, "0")}:${String(remainder).padStart(2, "0")}`
+    : `${minutes}:${String(remainder).padStart(2, "0")}`;
+}
+
+function knowledgePublishedDate(value) {
+  const text = String(value ?? "").trim();
+  if (/^\d{4}-\d{2}-\d{2}$/.test(text)) {
+    return new Intl.DateTimeFormat(getLocale(), {
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+      timeZone: "UTC"
+    }).format(new Date(`${text}T00:00:00Z`));
+  }
+  return formatDate(value);
+}
+
+function renderKnowledgeEvidence(data) {
+  const evidence = Array.isArray(data?.knowledgeEvidence) ? data.knowledgeEvidence : [];
+  if (!evidence.length) return "";
+  return `<section class="knowledge-evidence" aria-label="${escapeHtml(t("knowledgeEvidenceTitle"))}">
+    <header class="knowledge-evidence-head">
+      <div><span>${escapeHtml(t("knowledgeEvidenceEyebrow"))}</span><h2>${escapeHtml(t("knowledgeEvidenceTitle"))}</h2></div>
+      <small>${escapeHtml(t("knowledgeEvidenceCount", { count: evidence.length }))}</small>
+    </header>
+    <div class="knowledge-evidence-list">
+      ${evidence.map((record) => {
+        const timestamp = knowledgeTimestamp(record.timestampStart);
+        const sourceUrl = safeKnowledgeSourceUrl(record.sourceUrl, record.timestampStart);
+        const sourceLabel = record.sourceType === "youtube"
+          ? t("videoGuideSource")
+          : record.namespace === "current_stats"
+            ? t("currentStatsSource")
+          : t("knowledgeSource");
+        const title = record.sourceTitle ?? sourceLabel;
+        const aiGenerated = record.aiGenerated === true
+          || record.contentOrigin === "ai_generated_transcript_summary";
+        const aiReviewLabel = record.reviewStatus === "human_reviewed"
+          ? t("aiGeneratedReviewed")
+          : t("aiGeneratedUnreviewed");
+        const metadata = [
+          record.author ? `${t("knowledgeAuthor")}: ${record.author}` : null,
+          record.publishedAt ? `${t("publishedAt")}: ${knowledgePublishedDate(record.publishedAt)}` : null,
+          timestamp ? `${t("timestamp")}: ${timestamp}` : null,
+          record.patch ? `${t("patchLabel")}: ${record.patch}` : null,
+          record.rank ? `${t("rankScope")}: ${record.rank}` : null,
+          record.timeWindow ? `${t("timeWindowLabel")}: ${record.timeWindow}` : null,
+          record.region ? `${t("regionLabel")}: ${record.region}` : null,
+          record.generatedAt ? `${t("generatedAtLabel")}: ${formatDate(record.generatedAt)}` : null
+        ].filter(Boolean);
+        return `<article class="knowledge-card">
+          <div class="knowledge-card-source">
+            <span>${escapeHtml(sourceLabel)}</span>
+            <strong>${escapeHtml(title)}</strong>
+            ${aiGenerated ? `<em class="knowledge-ai-badge">${escapeHtml(aiReviewLabel)}</em>` : ""}
+          </div>
+          ${metadata.length ? `<div class="knowledge-card-meta">${metadata.map((entry) => `<span>${escapeHtml(entry)}</span>`).join("")}</div>` : ""}
+          <p>${escapeHtml(record.claim)}</p>
+          ${aiGenerated ? `<p class="knowledge-ai-disclosure">${escapeHtml(t("aiGeneratedDisclosure"))}</p>` : ""}
+          ${record.conditions?.length ? `<div class="knowledge-card-conditions"><strong>${escapeHtml(t("applicableConditions"))}</strong>${record.conditions.map((condition) => `<span>${escapeHtml(condition)}</span>`).join("")}</div>` : ""}
+          ${sourceUrl ? `<a href="${escapeHtml(sourceUrl)}" target="_blank" rel="noopener noreferrer">${escapeHtml(timestamp ? t("openSourceAtTimestamp", { timestamp }) : t("openSourceVideo"))}</a>` : ""}
+        </article>`;
+      }).join("")}
+    </div>
+    <p class="knowledge-authority-note">${escapeHtml(t("knowledgeAuthorityNote"))}</p>
+  </section>`;
+}
+
+function renderCurrentStatsScopeStatus(data) {
+  const status = data?.currentStatsScope;
+  if (status?.status !== "scope_unavailable") return "";
+  const requested = status.requestedScope ?? {};
+  const requestedLabel = [
+    requested.season,
+    requested.patch,
+    requested.rank,
+    requested.timeWindow,
+    requested.region
+  ].filter(Boolean).join(" · ");
+  const available = (status.availableScopes ?? []).slice(0, 4).map((scope) => [
+    scope.season,
+    scope.patch,
+    scope.rank,
+    scope.timeWindow,
+    scope.region
+  ].filter(Boolean).join(" · "));
+  return `<section class="knowledge-evidence current-stats-scope-status" aria-live="polite">
+    <header class="knowledge-evidence-head">
+      <div><span>current_stats</span><h2>${escapeHtml(t("currentStatsScopeUnavailable"))}</h2></div>
+    </header>
+    <p>${escapeHtml(requestedLabel)}</p>
+    ${available.length ? `<div class="knowledge-card-meta"><strong>${escapeHtml(t("currentStatsAvailableScopes"))}</strong>${available.map((scope) => `<span>${escapeHtml(scope)}</span>`).join("")}</div>` : ""}
+  </section>`;
+}
+
+function renderCoachAnswerResult(data) {
+  const response = data?.assistantResponse?.content ?? {};
+  const warnings = Array.isArray(response.warnings) ? response.warnings : [];
+  setResponseHtml(`
+    ${resultHeader(t("coachAnswerTitle"), response.headline ?? data?.answer?.summary ?? data?.text, t("coachAnswerTitle"))}
+    <section class="coach-answer-card">
+      <p>${escapeHtml(data?.assistantResponse?.text ?? data?.text ?? t("noResult"))}</p>
+      ${response.currentRecommendation?.label ? `<div class="coach-current-recommendation"><strong>${escapeHtml(t("currentStatsRecommendation"))}</strong><span>${escapeHtml(response.currentRecommendation.label)}</span></div>` : ""}
+      ${warnings.length ? `<div class="coach-answer-warnings">${warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
+    </section>
+    ${data?.query ? conditionPanel(data) : ""}
+    ${data?.source ? sourceAndRisk(data) : ""}
+  `);
+}
+
+function renderSystemInteractionResult(data) {
+  setResponseHtml(`
+    ${resultHeader("TFTClarity", data?.answer?.summary ?? data?.text, "SYSTEM")}
+    <section class="system-interaction-card">
+      ${systemInteractionAnswerHtml(data)}
+    </section>
+  `);
+}
+
+function renderMechanismClassification(data) {
+  const entries = Array.isArray(data?.entries) ? data.entries : [];
+  const incompleteEntities = Array.isArray(data?.classificationMeta?.incompleteEntities)
+    ? data.classificationMeta.incompleteEntities
+    : [];
+  const cards = entries.map((entry) => {
+    const labels = [];
+    if (entry.isGrowth) labels.push(t("mechanismGrowth"));
+    if (entry.isDevelopment) labels.push(t("mechanismDevelopment"));
+    if (entry.needsReview) labels.push(t("mechanismNeedsReview"));
+    const metadata = [
+      entry.entityType === "trait" ? t("mechanismTrait") : t("mechanismUnit"),
+      entry.trigger ? t("mechanismTrigger", { value: entry.trigger }) : null,
+      entry.progression ? t("mechanismProgression", { value: entry.progression }) : null,
+      entry.isGrowth
+        ? t(entry.definitionMatchedGrowth
+          ? "mechanismDefinitionMatched"
+          : "mechanismDefinitionConflict")
+        : null,
+      Number.isFinite(Number(entry.confidence))
+        ? t("mechanismConfidence", { value: Math.round(Number(entry.confidence) * 100) })
+        : null
+    ].filter(Boolean);
+    const effectText = (entry.effects ?? []).filter(Boolean).join("; ");
+    const originalLevels = (entry.originalLevels ?? []).map((level) => `<li>
+      ${level.units == null ? "" : `<strong>${escapeHtml(t("mechanismTier", { value: level.units }))}</strong>`}
+      <span>${escapeHtml(level.effect ?? "")}</span>
+    </li>`).join("");
+    const hasOriginal = Boolean(entry.originalDescription || entry.originalAbilityName || originalLevels);
+    return `<details class="knowledge-card mechanism-classification-card" data-entity-type="${escapeHtml(entry.entityType)}">
+      <summary class="mechanism-card-summary">
+        <span class="knowledge-card-source">
+          <span>${escapeHtml(labels.join(" / ") || t("mechanismLabel"))}</span>
+          <strong>${escapeHtml(entry.name ?? entry.apiName)}</strong>
+        </span>
+        <span class="mechanism-card-description">${escapeHtml(entry.summary || effectText || t("mechanismSummaryUnavailable"))}</span>
+        ${metadata.length ? `<span class="knowledge-card-meta">${metadata.map((item) => `<span>${escapeHtml(item)}</span>`).join("")}</span>` : ""}
+        ${entry.reviewReason ? `<span class="knowledge-card-conditions"><strong>${escapeHtml(t("mechanismReviewReason"))}</strong><span>${escapeHtml(entry.reviewReason)}</span></span>` : ""}
+        ${hasOriginal ? `<span class="mechanism-expand-hint">${escapeHtml(t("mechanismExpandOriginal"))}</span>` : ""}
+      </summary>
+      ${hasOriginal ? `<div class="mechanism-original-text">
+        ${entry.originalAbilityName ? `<h3>${escapeHtml(entry.originalAbilityName)}</h3>` : ""}
+        ${entry.originalDescription ? `<section><strong>${escapeHtml(t("mechanismOriginalDescription"))}</strong><p>${escapeHtml(entry.originalDescription)}</p></section>` : ""}
+        ${originalLevels ? `<section><strong>${escapeHtml(t("mechanismOriginalLevels"))}</strong><ul>${originalLevels}</ul></section>` : ""}
+      </div>` : ""}
+    </details>`;
+  }).join("");
+  const cacheLabel = data?.classificationMeta?.cache === "hit" ? t("mechanismCacheHit") : t("mechanismCacheScan");
+  const rawModelOutput = data?.modelOutput ? JSON.stringify(data.modelOutput, null, 2) : "";
+  setResponseHtml(`
+    ${resultHeader(t("mechanismTitle"), data?.answer?.summary ?? data?.text, "MECHANISM")}
+    <section class="knowledge-evidence mechanism-classification-results">
+      <header class="knowledge-evidence-head">
+        <div><span>${escapeHtml(cacheLabel)}</span><h2>${escapeHtml(t("mechanismResultCount", { count: entries.length }))}</h2></div>
+      </header>
+      ${incompleteEntities.length ? `<div class="mechanism-incomplete-warning" role="alert">${escapeHtml(t("mechanismIncomplete", {
+        names: incompleteEntities.map((entity) => entity.name || entity.apiName).join("、")
+      }))}</div>` : ""}
+      ${cards || `<section class="empty-state"><p>${escapeHtml(data?.text ?? t("mechanismEmpty"))}</p></section>`}
+      ${rawModelOutput ? `<details class="knowledge-card mechanism-model-output"><summary>${escapeHtml(t("mechanismRawOutput"))}</summary><pre>${escapeHtml(rawModelOutput)}</pre></details>` : ""}
+    </section>
+    ${data?.source ? sourceAndRisk(data) : ""}
+  `);
+}
+
+function renderSemanticNativeResult(data) {
+  const isBatch = data.type === "unit_builds_batch_results";
+  const isRankedBatch = isBatch && (
+    data.resultMode === "rank_candidate_build_performance"
+    || data.executionPlan?.resultPolicy?.payload?.mode === "rank_candidate_build_performance"
+  );
+  const entries = data.results ?? [];
+  const cards = entries.map((entry, index) => {
+    const apiName = entry.apiName ?? entry.unit;
+    const name = entry.name ?? apiName;
+    const build = (entry.bestBuild ?? []).map((item) => typeof item === "string"
+      ? `<span class="item-pill">${escapeHtml(item)}</span>`
+      : itemPill(item)).join("");
+    const stats = isBatch || data.type === "trait_external_unit_statistics"
+      ? `<div class="stats">
+          ${metric(t("top4"), entry.top4Rate == null ? "-" : `${formatNumber(entry.top4Rate * 100)}%`)}
+          ${metric(t("win"), entry.winRate == null ? "-" : `${formatNumber(entry.winRate * 100)}%`)}
+          ${metric(t("avg"), entry.avgPlacement == null ? "-" : formatNumber(entry.avgPlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+          ${metric(t("samples"), formatNumber(entry.games ?? 0))}
+        </div>`
+      : "";
+    const isBest = index === 0 && isRankedBatch && entry.available !== false;
+    return `<article class="result-card${isBest ? " best" : ""}">
+      ${isBest ? `<span class="best-label">${t("best")}</span>` : ""}
+      <div class="card-head"><div class="card-title-group">${assetThumb(entry.iconUrl, name, "equipment-unit-icon")}<div><div class="card-title">${escapeHtml(name)}</div>${entry.cost != null ? `<small>${escapeHtml(t("unitCost", { value: entry.cost }))}</small>` : ""}</div></div></div>
+      ${build ? `<div class="items">${build}</div>` : ""}
+      ${entry.warning ? `<div class="risk-line">${escapeHtml(entry.warning)}</div>` : ""}
+      ${stats}
+    </article>`;
+  }).join("");
+  setResponseHtml(`
+    ${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
+    ${cards ? `<section class="ranking-section">${cards}</section>` : `<div class="empty-state"><strong>${escapeHtml(data.text ?? t("noResult"))}</strong></div>`}
+    ${data.query ? conditionPanel(data) : ""}
+    ${data.source ? sourceAndRisk(data) : ""}
+  `);
+}
+
 function renderCurrentResult(data) {
-  if (data.type === "unit_details") renderUnitDetails(data);
+  if (data.type === "system_interaction") renderSystemInteractionResult(data);
+  else if (
+    data.type === "coach_answer"
+    || (data?.clarification?.needsClarification && data?.assistantResponse?.text)
+  ) renderCoachAnswerResult(data);
+  else if (data.type === "mechanism_classification") renderMechanismClassification(data);
+  else if (data.type === "entity_catalog") renderEntityCatalog(data);
+  else if (data.type === "unit_details") renderUnitDetails(data);
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
+  else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
+  else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
+  const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
+  if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
+  const knowledgeHtml = renderKnowledgeEvidence(data);
+  if (knowledgeHtml) resultContentEl.insertAdjacentHTML("beforeend", knowledgeHtml);
 }
 
 function renderResult(data) {
@@ -1915,11 +3212,12 @@ function renderResult(data) {
   }
   state.lastResult = data;
   state.compRankingMetric = null;
+  clearCompDetailState();
   state.lastResultId = data.queryId ?? null;
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   state.conclusionStreamText = "";
-  rawOutputEl.textContent = data.text ?? JSON.stringify(data, null, 2);
+  setDeveloperOutput(data);
   state.lastSuggestions = data.clarification?.suggestions ?? [];
   state.lastEntityCandidates = data.clarification?.entityCandidates ?? [];
   state.currentResponseId = recordAssistantResponse(data);
@@ -1951,7 +3249,7 @@ function applyConclusionEvent(data, event) {
     resultContentEl.scrollTop = scrollTop;
     const record = state.responsesById.get(state.currentResponseId);
     if (record?.data === data) rerenderAssistantRecord(record);
-    rawOutputEl.textContent = JSON.stringify(data, null, 2);
+    setDeveloperOutput(data);
     return true;
   }
   return event.type === "start";
@@ -2387,15 +3685,168 @@ function appendUserMessage(input) {
   conversationPane.appendUser(escapeHtml(input), `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
 }
 
-function appendAssistantMessage() {
+function appendAssistantMessage(progress = null) {
   const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
-  return conversationPane.appendAssistant(progressStepsHtml(state.progressIndex), `<strong>${t("assistant")}</strong><time>${escapeHtml(time)}</time>`);
+  return conversationPane.appendAssistant(
+    progress ? recommendationProgressHtml(progress) : progressStepsHtml(state.progressIndex),
+    `<strong>${t("assistant")}</strong><time>${escapeHtml(time)}</time>`
+  );
 }
 
-function updateProgress(target, index) {
-  if (target === activeResponseEl) state.progressIndex = index;
-  const steps = target?.querySelectorAll?.(".progress-step") ?? [];
-  steps.forEach((step, stepIndex) => step.classList.toggle("active", stepIndex === index));
+function createRecommendationProgressState() {
+  return {
+    phase: "request.accepted",
+    data: null,
+    completed: new Set(),
+    active: "understanding",
+    startedAt: Date.now(),
+    completedAt: null,
+    clockTimer: null
+  };
+}
+
+function mergeRecommendationProgressData(current, incoming = {}) {
+  return {
+    ...(current ?? {}),
+    ...incoming,
+    conversation: incoming.conversation ?? current?.conversation,
+    answerModeRoute: incoming.answerModeRoute ?? current?.answerModeRoute,
+    agent: {
+      ...(current?.agent ?? {}),
+      ...(incoming.agent ?? {})
+    }
+  };
+}
+
+function applyRecommendationProgressState(progress, event) {
+  const phase = String(event?.phase ?? "");
+  progress.phase = phase;
+  progress.data = mergeRecommendationProgressData(progress.data, event?.data ?? {});
+  if (phase === "understanding.started" || phase === "request.accepted") {
+    progress.active = "understanding";
+  } else if (phase === "understanding.resolved") {
+    progress.completed.add("understanding");
+    progress.active = "plan";
+  } else if (phase === "plan.ready") {
+    progress.completed.add("understanding");
+    progress.completed.add("plan");
+    progress.active = "retrieval";
+  } else if (phase === "retrieval.started") {
+    progress.active = "retrieval";
+  } else if (phase === "retrieval.completed") {
+    progress.completed.add("retrieval");
+    progress.active = "answer";
+  } else if (phase === "answer.started") {
+    progress.active = "answer";
+  }
+}
+
+function recommendationProgressHtml(progress, options = {}) {
+  return renderUnderstandingPanel(progress.data, {
+    locale: getLocale(),
+    surface: "chat",
+    open: options.understandingOpen !== false,
+    traceState: progress,
+    now: options.now
+  });
+}
+
+function updateRecommendationProgressClock(target, progress) {
+  const elapsed = target?.querySelector("[data-processing-elapsed]");
+  if (!elapsed) return;
+  const end = Number.isFinite(progress.completedAt) ? progress.completedAt : Date.now();
+  elapsed.textContent = formatProcessingDuration(end - progress.startedAt);
+}
+
+function startRecommendationProgressClock(target, progress) {
+  if (progress.clockTimer) clearInterval(progress.clockTimer);
+  updateRecommendationProgressClock(target, progress);
+  progress.clockTimer = setInterval(() => {
+    if (!target?.isConnected) {
+      clearInterval(progress.clockTimer);
+      progress.clockTimer = null;
+      return;
+    }
+    updateRecommendationProgressClock(target, progress);
+  }, 1000);
+}
+
+function stopRecommendationProgressClock(progress) {
+  if (!progress?.clockTimer) return;
+  clearInterval(progress.clockTimer);
+  progress.clockTimer = null;
+}
+
+function completeRecommendationProgress(progress, data) {
+  progress.completedAt = Date.now();
+  progress.completed.add("answer");
+  progress.active = null;
+  stopRecommendationProgressClock(progress);
+  data.processingTrace = {
+    startedAt: progress.startedAt,
+    completedAt: progress.completedAt,
+    phase: "complete",
+    completed: [...progress.completed]
+  };
+}
+
+function renderRecommendationProgress(target, progress) {
+  if (!target?.isConnected) return;
+  const currentPanel = target.querySelector(".chat-understanding-panel");
+  target.innerHTML = recommendationProgressHtml(progress, {
+    understandingOpen: currentPanel ? currentPanel.hasAttribute("open") : true
+  });
+  const phaseIndex = progress.active === "understanding"
+    ? 0
+    : progress.active === "plan" || progress.active === "retrieval"
+      ? 1
+      : 2;
+  if (target === activeResponseEl) state.progressIndex = phaseIndex;
+  if (state.resultView.type === "loading") renderLoadingResult(false);
+  scrollConversation();
+}
+
+async function readRecommendationStream(response, target, progress, requestId, signal) {
+  if (!response.ok) throw new Error(`HTTP ${response.status}`);
+  if (!response.body?.getReader) throw new Error("recommendation progress stream is unavailable");
+  const reader = response.body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completion = null;
+  const applyLine = (line) => {
+    if (!line.trim()) return;
+    const event = JSON.parse(line);
+    if (event.type === "progress") {
+      applyRecommendationProgressState(progress, event.event);
+      if (requestId === state.requestSerial) renderRecommendationProgress(target, progress);
+      return;
+    }
+    if (event.type === "error") {
+      throw new Error(event.error ?? t("queryFailed"));
+    }
+    if (event.type === "complete") completion = event;
+  };
+  while (!signal.aborted) {
+    const { done, value } = await reader.read();
+    buffer += decoder.decode(value ?? new Uint8Array(), { stream: !done });
+    const lines = buffer.split("\n");
+    buffer = lines.pop() ?? "";
+    for (const line of lines) applyLine(line);
+    if (done) {
+      if (buffer.trim()) applyLine(buffer);
+      break;
+    }
+  }
+  if (signal.aborted) {
+    const abortError = new Error("recommendation request aborted");
+    abortError.name = "AbortError";
+    throw abortError;
+  }
+  if (!completion) throw new Error("recommendation stream ended before completion");
+  if (Number(completion.statusCode ?? 200) >= 400 || !completion.payload?.ok) {
+    throw new Error(completion.payload?.error ?? t("queryFailed"));
+  }
+  return completion.payload;
 }
 
 function setRequestRunning(running) {
@@ -2406,25 +3857,23 @@ function setRequestRunning(running) {
   form.querySelector("button[type=submit]").disabled = running;
   for (const button of resultEl.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
+  for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
 }
 
-async function requestRecommendation(refresh = false, displayInput = null) {
-  const input = refresh ? state.lastInput : queryInput.value.trim();
+async function requestRecommendation(refresh = false, displayInput = null, requestOptions = {}) {
+  const normalizedRequestOptions = requestOptions?.schemaVersion === "quick-task.v1"
+    ? { quickTask: requestOptions }
+    : (requestOptions ?? {});
+  const quickTask = normalizedRequestOptions.quickTask ?? null;
+  const reuseLastInput = refresh || normalizedRequestOptions.reuseLastInput === true;
+  if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
+    setStatus(t("seasonPreviewQueryDisabled"), "stale");
+    return;
+  }
+  const input = reuseLastInput ? state.lastInput : queryInput.value.trim();
   if (!input) {
     renderError("enterQuery", "enterQuery");
     return;
-  }
-  if (!refresh) {
-    const championPlaceholder = t("quickTaskBuildSelection");
-    const selectionStart = queryInput.value.indexOf(championPlaceholder);
-    if (selectionStart >= 0) {
-      queryInput.setCustomValidity(t("enterChampion"));
-      queryInput.focus();
-      queryInput.setSelectionRange(selectionStart, selectionStart + championPlaceholder.length);
-      queryInput.reportValidity();
-      return;
-    }
-    queryInput.setCustomValidity("");
   }
 
   state.currentController?.abort();
@@ -2433,35 +3882,37 @@ async function requestRecommendation(refresh = false, displayInput = null) {
   const requestId = ++state.requestSerial;
   state.progressIndex = 0;
   state.lastInput = input;
-  state.lastDisplayInput = refresh ? state.lastDisplayInput ?? input : displayInput ?? input;
+  state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? input;
+  state.lastQuickTask = reuseLastInput ? state.lastQuickTask : quickTask;
   appendUserMessage(state.lastDisplayInput);
-  activeResponseEl = appendAssistantMessage();
+  const recommendationProgress = createRecommendationProgressState();
+  activeRecommendationProgress = recommendationProgress;
+  activeResponseEl = appendAssistantMessage(recommendationProgress);
   const assistantTarget = activeResponseEl;
-  if (!refresh) composer.clear();
+  startRecommendationProgressClock(assistantTarget, recommendationProgress);
+  if (!reuseLastInput) composer.clear();
   scrollConversation();
   setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
   const controller = new AbortController();
   state.currentController = controller;
   setRequestRunning(true);
   renderLoadingResult();
-  const progressTimers = [
-    setTimeout(() => updateProgress(assistantTarget, 1), 280),
-    setTimeout(() => updateProgress(assistantTarget, 2), 720)
-  ];
-
   try {
-    const response = await fetch("/api/recommend", {
+    const response = await fetch("/api/recommend/stream", {
       method: "POST",
       signal: controller.signal,
       headers: {
-        "content-type": "application/json"
+        "content-type": "application/json",
+        accept: "application/x-ndjson"
       },
       body: JSON.stringify({
         input,
         conversationId: state.conversationId,
         seasonContextId: state.seasonContextId,
+        startNewTask: normalizedRequestOptions.startNewTask === true,
         refresh,
         deferConclusion: true,
+        ...(state.lastQuickTask ? { quickTask: state.lastQuickTask } : {}),
         preferences: {
           minSamples: state.minSamples,
           itemPolicy: state.itemPolicy,
@@ -2473,15 +3924,31 @@ async function requestRecommendation(refresh = false, displayInput = null) {
         }
       })
     });
-    const data = await response.json();
+    const data = await readRecommendationStream(
+      response,
+      assistantTarget,
+      recommendationProgress,
+      requestId,
+      controller.signal
+    );
     if (requestId !== state.requestSerial) return;
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    completeRecommendationProgress(recommendationProgress, data);
     if (data.access) renderAccessStatus(data.access);
     renderResult(data);
     if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);
     }
-    setStatusKey(data.cache?.query?.stale ? "statusStale" : data.cache?.query?.hit ? "statusCache" : "statusLive", data.cache?.query?.stale ? "stale" : "ready");
+    setStatusKey(
+      data.cache?.query?.stale
+        ? "statusStale"
+        : data.cache?.query?.revalidating
+          ? "statusCacheRefreshing"
+          : data.cache?.query?.hit
+            ? "statusCache"
+            : "statusLive",
+      data.cache?.query?.stale ? "stale" : "ready"
+    );
   } catch (error) {
     if (requestId !== state.requestSerial) return;
     if (error.name === "AbortError") {
@@ -2493,11 +3960,12 @@ async function requestRecommendation(refresh = false, displayInput = null) {
       setStatusKey("statusFailed", "error");
     }
   } finally {
-    progressTimers.forEach(clearTimeout);
+    stopRecommendationProgressClock(recommendationProgress);
     if (requestId === state.requestSerial) {
       state.currentController = null;
       setRequestRunning(false);
       activeResponseEl = null;
+      activeRecommendationProgress = null;
       scrollConversation();
     }
   }
@@ -2525,6 +3993,58 @@ async function requestCompUnitRecommendation(target) {
   state.resultNavigation.push(navigationSnapshot);
   queryInput.value = input;
   await requestRecommendation(false, displayInput);
+}
+
+async function requestEntityDetail(target) {
+  if (state.requestInFlight) return;
+  const entityType = target.dataset.entityType === "trait" ? "trait" : "unit";
+  const apiName = target.dataset.entityId?.trim();
+  if (!apiName) return;
+  const catalogName = entityType === "unit" ? t("unitCatalog") : t("traitCatalog");
+  const snapshot = captureEntityCatalogNavigationSnapshot(catalogName);
+  if (!snapshot) return;
+  state.resultNavigation.push(snapshot);
+  setRequestRunning(true);
+  setStatusKey("statusQuerying", "loading");
+  renderLoadingResult(false);
+  const controller = new AbortController();
+  state.currentController = controller;
+  let detailLoaded = false;
+
+  try {
+    const params = new URLSearchParams({
+      type: entityType,
+      id: apiName,
+      seasonContextId: state.seasonContextId
+    });
+    const response = await fetch(`/api/entity-details?${params.toString()}`, {
+      signal: controller.signal,
+      headers: { accept: "application/json" }
+    });
+    const data = await response.json();
+    if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    state.lastResult = data;
+    state.lastResultId = null;
+    state.resultView = { type: "result", data };
+    setDeveloperOutput(data);
+    resultTitleEl.textContent = t("resultTitle");
+    renderCurrentResult(data);
+    detailLoaded = true;
+    setStatusKey("statusLive", "ready");
+    openMobileResult();
+  } catch (error) {
+    if (error.name === "AbortError") {
+      restorePreviousCatalogResult();
+      setStatusKey("statusStopped", "error");
+    } else {
+      renderError(error.message, false);
+      setStatusKey("statusFailed", "error");
+    }
+  } finally {
+    state.currentController = null;
+    setRequestRunning(false);
+    if (detailLoaded) resultRefreshButton.disabled = true;
+  }
 }
 
 bindSegmented("#sample-control", "minSamples", Number);
@@ -2564,30 +4084,148 @@ rankControl.addEventListener("change", () => {
   scheduleSavePreferences();
 });
 
-form.addEventListener("submit", (event) => {
+form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (await submitQuickTaskForm()) return;
+  if (await routeNaturalLanguageQuickTask(queryInput.value)) return;
   requestRecommendation(false);
 });
 
 queryInput.addEventListener("keydown", (event) => {
   if (event.key === "Enter" && !event.shiftKey) {
     event.preventDefault();
-    if (!state.requestInFlight) requestRecommendation(false);
+    if (!state.requestInFlight) form.requestSubmit();
   }
-});
-
-queryInput.addEventListener("input", () => {
-  if (!queryInput.value.includes(t("quickTaskBuildSelection"))) queryInput.setCustomValidity("");
 });
 
 stopButton.addEventListener("click", () => {
   state.currentController?.abort();
 });
 
+quickTaskFormClose.addEventListener("click", () => closeQuickTaskForm({ focus: true }));
+
+const NATURAL_LANGUAGE_QUICK_TASK_RULES = [
+  {
+    id: "opgg-pro-teaching",
+    patterns: [
+      /\u804c\u4e1a\u9009\u624b.*(?:\u6559\u5b66|\u590d\u76d8|\u6253\u6cd5|\u600e\u4e48\u73a9)|(?:\u5b66\u4e60|\u770b\u770b|\u67e5\u770b).*\u804c\u4e1a\u9009\u624b|\u9ad8\u624b(?:\u6559\u5b66|\u590d\u76d8|\u6253\u6cd5)/iu,
+      /pro\s*(?:player\s*)?(?:teaching|coaching|review)/iu
+    ]
+  },
+  {
+    id: "opgg-pro-trends",
+    patterns: [
+      /\u804c\u4e1a\u9635\u5bb9\u8d8b\u52bf|\u804c\u4e1a\u8d8b\u52bf|(?:\u804c\u4e1a|\u9009\u624b|\u804c\u4e1a\u6c60).*(?:\u9635\u5bb9|\u4e0a\u5206).*(?:\u8d8b\u52bf|\u7edf\u8ba1|\u6570\u636e)/iu,
+      /pro\s*(?:comp|composition)\s*trends?/iu
+    ]
+  },
+  {
+    id: "patch-notes",
+    patterns: [
+      /\u66f4\u65b0\u516c\u544a|\u7248\u672c\u516c\u544a|\u8865\u4e01\u516c\u544a|(?:\u66f4\u65b0|\u7248\u672c|\u8865\u4e01).*(?:\u5185\u5bb9|\u8bf4\u660e|\u6539\u52a8|\u516c\u544a)/iu,
+      /patch\s*notes?|release\s*notes?|what(?:'s| is)?\s*new/iu
+    ]
+  },
+  {
+    id: "opgg-personal-review",
+    patterns: [
+      /(?:\u6211\u8981|\u6211\u60f3|\u5e2e\u6211|\u7ed9\u6211|\u8bf7|\u8fdb\u5165|\u6253\u5f00|\u67e5\u770b|\u5f00\u59cb|\u505a\u4e2a|\u505a\u4e00\u6b21)?(?:\u4e2a\u4eba|\u6211\u7684)?(?:\u6218\u7ee9|\u6218\u5c40|\u5bf9\u5c40|\u6e38\u620f)?\u590d\u76d8|\u590d\u76d8(?:\u4e00\u4e0b|\u6211\u7684\u6218\u7ee9|\u6211\u7684\u5bf9\u5c40)?/iu,
+      /review\s*my\s*(?:matches|games)|match\s*review/iu
+    ]
+  }
+];
+
+function naturalLanguageQuickTaskId(input) {
+  const text = String(input ?? "").trim();
+  if (!text) return null;
+  return NATURAL_LANGUAGE_QUICK_TASK_RULES.find(
+    (rule) => rule.patterns.some((pattern) => pattern.test(text))
+  )?.id ?? null;
+}
+
+async function routeNaturalLanguageQuickTask(input) {
+  const text = String(input ?? "").trim();
+  const taskId = naturalLanguageQuickTaskId(text);
+  if (!taskId) return false;
+  appendUserMessage(text);
+  state.lastInput = text;
+  state.lastDisplayInput = text;
+  queryInput.value = "";
+  await launchQuickTask(taskId);
+  scrollConversation();
+  return true;
+}
+
+async function launchQuickTask(quickTaskTarget) {
+  if (!quickTaskTarget || state.requestInFlight) return;
+  const taskId = typeof quickTaskTarget === "string"
+    ? quickTaskTarget
+    : quickTaskTarget.dataset.quickTask;
+  cancelOpggRequests();
+  // Keep the selected category expanded while its result is open, so
+  // returning to the conversation restores the same quick-entry context.
+  const baseQuickTask = QUICK_TASKS.find((task) => task.id === taskId);
+  const quickTask = quickTasksForSeason().find((task) => task.id === taskId) ?? baseQuickTask;
+  if (!quickTask) return;
+  if (quickTask.view) closeQuickTaskForm();
+  if (quickTask.view === "patch-note") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderPatchNote();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.view === "opgg-pro-trends") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderOpggTrends();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.view === "opgg-personal-review") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderOpggPersonal();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.view === "opgg-pro-teaching") {
+    state.currentConclusionController?.abort();
+    state.currentConclusionController = null;
+    renderOpggProTeaching();
+    openMobileResult();
+    return;
+  }
+  if (quickTask.formFields) {
+    openQuickTaskForm(quickTask);
+    return;
+  }
+  const quickQuery = quickTask.queryKey ? t(quickTask.queryKey) : quickTask.query;
+  if (!quickQuery) return;
+  queryInput.value = quickTask.query ?? quickQuery;
+  await requestRecommendation(false, t(quickTask.promptKey), {
+    startNewTask: true,
+    quickTask: structuredQuickTask(quickTask)
+  });
+}
+
 async function handleResultClick(event) {
+  const returnCatalogButton = event.target.closest("[data-return-catalog]");
+  if (returnCatalogButton) {
+    restorePreviousCatalogResult();
+    return;
+  }
   const returnCompButton = event.target.closest("[data-return-comp]");
   if (returnCompButton) {
     restorePreviousCompResult();
+    return;
+  }
+  const retryCompDetailButton = event.target.closest("button[data-retry-comp-detail]");
+  if (retryCompDetailButton) {
+    event.preventDefault();
+    event.stopPropagation();
+    const descriptor = state.compDetailDescriptors.get(retryCompDetailButton.dataset.compDetailKey);
+    if (descriptor) void loadCompDetail(descriptor, { retry: true });
     return;
   }
   const compUnitTarget = event.target.closest("[data-comp-unit-query]");
@@ -2597,39 +4235,26 @@ async function handleResultClick(event) {
     await requestCompUnitRecommendation(compUnitTarget);
     return;
   }
+  const entityDetailTarget = event.target.closest("[data-entity-detail]");
+  if (entityDetailTarget) {
+    event.preventDefault();
+    await requestEntityDetail(entityDetailTarget);
+    return;
+  }
   const compMetricButton = event.target.closest("button[data-comp-metric]");
   if (compMetricButton && state.lastResult?.type === "comp_rankings") {
     state.compRankingMetric = compMetricButton.dataset.compMetric;
     renderCompRankings(state.lastResult);
     return;
   }
+  const quickCategoryButton = event.target.closest("button[data-quick-category]");
+  if (quickCategoryButton) {
+    toggleQuickTaskCategory(quickCategoryButton);
+    return;
+  }
   const quickTaskButton = event.target.closest("button[data-quick-task]");
   if (quickTaskButton) {
-    if (state.requestInFlight) return;
-    const baseQuickTask = QUICK_TASKS.find((task) => task.id === quickTaskButton.dataset.quickTask);
-    const quickTask = quickTasksForSeason().find((task) => task.id === quickTaskButton.dataset.quickTask) ?? baseQuickTask;
-    if (quickTask?.view === "patch-note") {
-      state.currentConclusionController?.abort();
-      state.currentConclusionController = null;
-      renderPatchNote();
-      openMobileResult();
-      return;
-    }
-    if (quickTask?.inputTemplateKey) {
-      const template = t(quickTask.inputTemplateKey);
-      const selection = t(quickTask.selectionKey);
-      const selectionStart = template.indexOf(selection);
-      queryInput.value = template;
-      queryInput.focus();
-      if (selectionStart >= 0) {
-        queryInput.setSelectionRange(selectionStart, selectionStart + selection.length);
-      }
-      queryInput.dispatchEvent(new Event("input", { bubbles: true }));
-      return;
-    }
-    if (!quickTask?.query) return;
-    queryInput.value = quickTask.query;
-    await requestRecommendation(false, t(quickTask.promptKey));
+    await launchQuickTask(quickTaskButton);
     return;
   }
   const viewResultButton = event.target.closest("[data-view-result]");
@@ -2640,7 +4265,9 @@ async function handleResultClick(event) {
     return;
   }
   if (event.target.closest("[data-retry-result]")) {
-    if (state.lastInput && !state.requestInFlight) requestRecommendation(false);
+    if (state.lastInput && !state.requestInFlight) {
+      requestRecommendation(false, null, { reuseLastInput: true });
+    }
     return;
   }
   if (event.target.closest("[data-refresh-result]")) {
@@ -2781,6 +4408,17 @@ async function handleResultClick(event) {
 
 resultEl.addEventListener("click", handleResultClick);
 resultContentEl.addEventListener("click", handleResultClick);
+resultContentEl.addEventListener("input", (event) => {
+  if (event.target.closest("[data-catalog-query]")) applyEntityCatalogFilters();
+});
+resultContentEl.addEventListener("change", (event) => {
+  if (event.target.closest("[data-catalog-filter]")) applyEntityCatalogFilters();
+});
+resultContentEl.addEventListener("toggle", (event) => {
+  const card = event.target;
+  if (!card?.matches?.(".comp-card[open][data-comp-detail-key]")) return;
+  void loadCompDetailForCard(card);
+}, true);
 mobileResultBackButton.addEventListener("click", returnToMobileChat);
 window.addEventListener("popstate", (event) => {
   setMobileView(event.state?.tftclarityMobileView === "result" ? "result" : "chat");
@@ -2815,9 +4453,11 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.currentController = null;
   state.currentConclusionController = null;
   activeResponseEl = null;
+  activeRecommendationProgress = null;
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   state.lastInput = "";
   state.lastDisplayInput = "";
+  state.lastQuickTask = null;
   state.lastResult = null;
   state.lastResultId = null;
   state.lastSuggestions = [];
@@ -2827,9 +4467,12 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.responsesById.clear();
   state.currentResponseId = null;
   state.resultNavigation = [];
+  clearCompDetailState();
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   rawOutputEl.textContent = "";
+  closeQuickTaskForm();
+  composer.clear();
   resultEl.innerHTML = welcomeConversationHtml();
   renderEmptyResult();
   setMobileView("chat", { replaceHistory: true });
@@ -2858,11 +4501,15 @@ clearButton.addEventListener("click", () => {
 
 seasonContextSelect.addEventListener("change", () => {
   const requested = state.seasonContexts.find((context) => context.id === seasonContextSelect.value);
-  if (!requested?.selectable || requested.id === state.seasonContextId) {
+  if ((!requested?.selectable && !requested?.themePreview) || requested.id === state.seasonContextId) {
     seasonContextSelect.value = state.seasonContextId ?? "";
     return;
   }
   void selectSeasonContext(requested.id);
+});
+
+seasonContextNoticeClose?.addEventListener("click", () => {
+  dismissSeasonNotice();
 });
 
 openItemAuditButton.addEventListener("click", async () => {
@@ -3024,6 +4671,7 @@ clearCacheButton.addEventListener("click", async () => {
     });
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("clearFailed"));
+    clearCompDetailState();
     rawOutputEl.textContent = "";
     renderEmptyResult();
     setStatusKey("clearHistory");
@@ -3047,6 +4695,7 @@ resetPreferencesButton.addEventListener("click", async () => {
   }
 });
 
+resultEl.innerHTML = welcomeConversationHtml("welcome");
 setMobileView("chat", { replaceHistory: true });
 setLocale(getLocale());
 wallpaperController.refreshLocale();

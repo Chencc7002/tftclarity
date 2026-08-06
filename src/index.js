@@ -30,7 +30,12 @@ export {
 export { evaluateClarification } from "./core/clarification-policy.js";
 export { buildQueryContext } from "./core/context-builder.js";
 export { validateQueryContext } from "./core/query-validator.js";
-export { planMetaTFTCompCandidates, planMetaTFTUnitBuilds, buildUrl } from "./core/query-planner.js";
+export {
+  planMetaTFTCompCandidates,
+  planMetaTFTItemCarrierBuilds,
+  planMetaTFTUnitBuilds,
+  buildUrl
+} from "./core/query-planner.js";
 export {
   COMP_CANDIDATE_ENDPOINT,
   COMP_FILTER_SEMANTICS_VERSION,
@@ -44,6 +49,54 @@ export {
   selectStableCompCandidate
 } from "./core/comp-filter.js";
 export { calculatePlacementStats } from "./core/stats-calculator.js";
+export {
+  entityContentHash,
+  extractStatAtoms,
+  extractTextNumericAtoms,
+  sha256 as sha256MechanismValue,
+  stableStringify
+} from "./knowledge/mechanic-atom-extractor.js";
+export {
+  classifySampleEvidence,
+  createMechanismCase,
+  createQueryFingerprint,
+  createSingleItemReplacementComparisons,
+  MECHANISM_CASE_SCHEMA_VERSION,
+  REPLACEMENT_COMPARISON_SCHEMA_VERSION,
+  selectStandardCases,
+  validateMechanismCase
+} from "./knowledge/mechanism-case-builder.js";
+export {
+  FACTOR_CANDIDATE_SCHEMA_VERSION,
+  FACTOR_DISCOVERY_PACK_SCHEMA_VERSION,
+  FACTOR_SCHEMA_VERSION,
+  assignUnitsToDiscoverySplits,
+  buildFactorDiscoveryPack,
+  normalizeFactorCandidate,
+  selectStratifiedDiscoveryCases,
+  validateFactorCandidate
+} from "./knowledge/mechanism-discovery.js";
+export {
+  createMechanismExtractionProvider,
+  resolveMechanismExtractionConfig
+} from "./knowledge/mechanism-extraction-provider.js";
+export {
+  MECHANISM_CLASSIFICATION_SCHEMA_VERSION,
+  answerMechanismClassificationQuery,
+  buildMechanismClassificationEvidence,
+  normalizeMechanismClassifications,
+  parseMechanismClassificationQuery
+} from "./knowledge/mechanism-classification.js";
+export {
+  createMechanismClassificationProvider,
+  createMechanismClassificationProviderFromConfig,
+  resolveMechanismClassificationConfig
+} from "./knowledge/mechanism-classification-provider.js";
+export {
+  buildFactorSchemaEnvelope,
+  collectFactorObservations,
+  validateNormalizedFactorSchema
+} from "./knowledge/mechanism-factor-normalizer.js";
 export {
   COMP_METRICS,
   buildCompRankingQuery,
@@ -75,7 +128,8 @@ export {
 export {
   OFFICIAL_PATCH_EVIDENCE_VERSION,
   associateOfficialPatchChanges,
-  getOfficialPatchEvidence
+  getOfficialPatchEvidence,
+  listOfficialPatchEvidence
 } from "./data/official-patch-evidence.js";
 export { filterBuildRows } from "./core/item-policy-filter.js";
 export {
@@ -87,6 +141,12 @@ export {
 } from "./core/ranker.js";
 export { compareItemOptions, comparisonRankedBuilds } from "./core/item-comparison.js";
 export { aggregateUnitItemRankings } from "./core/item-ranking.js";
+export {
+  ITEM_CARRIER_DEFAULT_BUILD_LIMIT,
+  ITEM_CARRIER_MAX_BUILD_LIMIT,
+  ITEM_CARRIER_MAX_LIMIT,
+  aggregateItemCarrierRankings
+} from "./core/item-carrier-ranking.js";
 export { formatRecommendation } from "./core/response-formatter.js";
 export {
   normalizeCompBuildsResponse,
@@ -138,6 +198,12 @@ export {
   normalizeMetaTftDailyTrends
 } from "./core/metatft-page-trend.js";
 export {
+  buildEntityCatalog,
+  normalizeEntityCatalogType
+} from "./core/entity-catalog.js";
+export { queryEntityCatalog } from "./domain/tft/entity-catalog-query.js";
+export { aggregateExternalUnits } from "./domain/tft/external-unit-analysis.js";
+export {
   OFFICIAL_TFT_EQUIPMENT_URL,
   buildOfficialTftItemDetailsCatalog,
   fetchOfficialTftItemDetails,
@@ -150,6 +216,7 @@ export {
   buildOfficialTftEntityDetails,
   decodeOfficialTftHtml,
   fetchOfficialTftEntityDetails,
+  inspectOfficialTftTokens,
   parseOfficialTftEntityPayload
 } from "./data/official-entity-details.js";
 export { auditItemPatchChanges } from "./data/item-patch-audit.js";
@@ -247,6 +314,14 @@ export {
   DEFAULT_STRUCTURED_PARSER_TIMEOUT_MS,
   resolveStructuredParserConfig
 } from "./llm/chat-structured-parser.js";
+export {
+  LIVE_SEMANTIC_TASK_PROMPT_VERSION,
+  createChatSemanticTaskProvider
+} from "./llm/chat-semantic-task-provider.js";
+export {
+  LIVE_EXECUTION_PLANNER_PROMPT_VERSION,
+  createChatExecutionPlannerProvider
+} from "./llm/chat-execution-planner-provider.js";
 export {
   buildStructuredParserExpansion,
   shouldUseStructuredParser,
@@ -422,6 +497,184 @@ export {
   CONTEXT_RESOLUTION_VERSION,
   resolveTaskFrameContext
 } from "./understanding/context-resolver.js";
+export { parseSemanticTask } from "./understanding/semantic-task-parser.js";
+export {
+  FAST_PATH_POLICY_VERSION,
+  capabilityCoversExpectedOutput,
+  evaluateFastPathEligibility,
+  fastPathDefinition,
+  isPureEntityCatalogRequest
+} from "./routing/fast-path-policy.js";
+export {
+  TASK_FRAME_ACTIONS,
+  TASK_FRAME_ENTITY_TYPES,
+  TASK_FRAME_SCHEMA_VERSION,
+  TASK_FRAME_UNDERSTANDING_STATUSES,
+  createTaskFrame,
+  migrateTaskFrame,
+  taskFrameFromIntentEnvelope,
+  validateTaskFrame
+} from "./understanding/task-frame.js";
+export {
+  CONVERSATION_STATE_SCHEMA_VERSION,
+  MAX_CONVERSATION_SHOWN_IDS,
+  MAX_CONVERSATION_TASK_HISTORY,
+  conversationStateSessionKey,
+  createConversationState,
+  migrateLegacySessionToConversationState,
+  validateConversationState
+} from "./understanding/conversation-state.js";
+export {
+  TURN_DELTA_SCHEMA_VERSION,
+  TURN_DELTA_CONSTRAINT_FIELDS,
+  TURN_DELTA_DIALOGUE_ACTS,
+  TURN_DELTA_ENTITY_FIELDS,
+  TURN_DELTA_OPERATIONS,
+  TURN_DELTA_TASK_RELATIONS,
+  createTurnDelta,
+  unknownTurnDelta,
+  validateTurnDelta
+} from "./understanding/turn-delta.js";
+export {
+  TURN_INTERPRETER_VERSION,
+  buildTurnInterpreterMessages,
+  compactConversationStateForInterpreter,
+  interpretTurn
+} from "./understanding/turn-interpreter.js";
+export {
+  CONTEXT_REDUCER_VERSION,
+  normalizeContextualTurnDelta,
+  reduceConversationState
+} from "./understanding/context-reducer.js";
+export {
+  CONVERSATION_RESULT_STATE_VERSION,
+  conversationResultStateFromResponse,
+  updateConversationStateFromResult
+} from "./understanding/conversation-result-state.js";
+export {
+  CONVERSATION_PRESENTATION_VERSION,
+  applyConversationResultPresentation
+} from "./understanding/conversation-presentation.js";
+export {
+  CONVERSATION_STATE_V2_SHADOW_VERSION,
+  compareConversationStateV2Shadow
+} from "./understanding/conversation-shadow.js";
+export {
+  TFT_CONVERSATION_POLICY_VERSION,
+  tftConversationPolicy
+} from "./domain/tft/conversation-policy.js";
+export {
+  ANSWER_MODE_ROUTER_SCHEMA_VERSION,
+  ANSWER_MODES,
+  AnswerModeRouter,
+  createAnswerModeRouter,
+  routeAnswerMode
+} from "./routing/answer-mode-router.js";
+export {
+  SYSTEM_INTERACTION_ROUTE_SCHEMA_VERSION,
+  SYSTEM_INTERACTION_ANSWER_MODE,
+  SYSTEM_INTERACTION_TYPES,
+  compactSystemInteractionInput,
+  createSystemInteractionResult,
+  normalizeSystemInteractionInput,
+  unhandledSystemInteraction,
+  validateSystemInteractionResult
+} from "./system-interaction/system-interaction-contracts.js";
+export {
+  TFT_CAPABILITY_REGISTRY,
+  getTftCapabilityRegistry
+} from "./system-interaction/capability-registry.js";
+export {
+  DEFAULT_SYSTEM_INTERACTION_HANDLERS,
+  SystemInteractionRouter,
+  createSystemInteractionRouter,
+  routeSystemInteraction
+} from "./system-interaction/system-interaction-router.js";
+export {
+  CURRENT_STATS_DOCUMENT_TYPES,
+  CURRENT_STATS_SCHEMA_VERSION,
+  KNOWLEDGE_CLAIM_TYPES,
+  KNOWLEDGE_DOCUMENT_JSON_SCHEMA,
+  KNOWLEDGE_DOCUMENT_SCHEMA_VERSION,
+  KNOWLEDGE_DOCUMENT_TYPES,
+  KNOWLEDGE_NAMESPACES,
+  assertCurrentStatsKnowledgeDocument,
+  assertKnowledgeDocument,
+  createKnowledgeDocument,
+  knowledgeDocumentToSemanticDocument,
+  validateKnowledgeDocument
+} from "./knowledge/knowledge-document-schema.js";
+export {
+  OFFICIAL_PATCH_KNOWLEDGE_VERSION,
+  buildOfficialPatchKnowledgeDocuments,
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "./knowledge/official-patch-knowledge.js";
+export {
+  buildCompStatsDocuments,
+  buildMetaSnapshotDocument,
+  buildTrendSnapshotDocument,
+  buildUnitStatsDocuments,
+  createCurrentStatsScope,
+  currentStatsScopeKey,
+  generateCurrentStatsDocuments
+} from "./knowledge/metatft-document-generator.js";
+export {
+  CURRENT_STATS_SEMANTIC_PROJECTION_VERSION,
+  DEFAULT_CURRENT_STATS_SEMANTIC_CONFIG,
+  renderCurrentStatsSemanticProjection,
+  resolveCurrentStatsSemanticConfig,
+  semanticAveragePlacement,
+  semanticPercentage,
+  stabilizeCurrentStatsSemanticProjection
+} from "./knowledge/current-stats-semantic-projection.js";
+export {
+  CurrentStatsIndexManager,
+  createCurrentStatsIndexManager
+} from "./knowledge/current-stats-index-manager.js";
+export {
+  fetchMetaTftCurrentStats,
+  runMetaTftCurrentStatsPipeline
+} from "./knowledge/metatft-current-stats-pipeline.js";
+export {
+  millisecondsUntilDailyRun,
+  runCurrentStatsJob
+} from "./knowledge/current-stats-job-runner.js";
+export {
+  KnowledgeIndexer,
+  createKnowledgeIndexer
+} from "./knowledge/knowledge-indexer.js";
+export {
+  YouTubeKnowledgeIndexManager,
+  createYouTubeKnowledgeIndexManager
+} from "./knowledge/youtube-index-manager.js";
+export {
+  KnowledgeRetriever,
+  createKnowledgeRetriever,
+  semanticHitToKnowledgeEvidence
+} from "./knowledge/knowledge-retriever.js";
+export {
+  EVIDENCE_BUNDLE_SCHEMA_VERSION,
+  buildEvidenceBundle,
+  createEvidenceBundle,
+  validateEvidenceBundle
+} from "./knowledge/evidence-bundle-builder.js";
+export {
+  COACH_ANSWER_SCHEMA_VERSION,
+  COACH_RESPONSE_SCHEMA,
+  createCoachProviderFromConfig,
+  createOpenAICompatibleCoachProvider,
+  resolveCoachProviderConfig
+} from "./coach/coach-provider.js";
+export {
+  HybridAnswerService,
+  createHybridAnswerService,
+  validateCoachAnswer
+} from "./coach/hybrid-answer-service.js";
+export {
+  TFT_RESOLVED_TASK_FRAME_ADAPTER_VERSION,
+  resolvedTaskFrameToParsed
+} from "./domain/tft/resolved-task-frame-adapter.js";
 export {
   CLARIFICATION_POLICY_VERSION,
   applyClarificationPolicy
@@ -432,6 +685,7 @@ export {
 } from "./understanding/capability-matcher.js";
 export {
   createRecommendationFromRows,
+  conversationStateV2ModeFor,
   recommendForInput,
   SESSION_LAST_QUERY_KEY
 } from "./core/recommendation-service.js";
@@ -442,6 +696,12 @@ export {
   generateEvidenceBackedConclusion,
   makeConclusionCacheKey
 } from "./core/conclusion-service.js";
+export {
+  ITEM_DIFFERENTIATION_ALGORITHM_VERSION,
+  ITEM_DIFFERENTIATION_MINIMUMS,
+  analyzeItemDifferentiation,
+  subtractLockedItems
+} from "./core/item-differentiation.js";
 export {
   AGENT_EVENT_SCHEMA_VERSION,
   AGENT_RUN_PUBLIC_SCHEMA_VERSION,
@@ -455,6 +715,27 @@ export {
   ToolError,
   ToolExecutor,
   ToolRegistry,
+  ExecutionPlanExecutor,
+  ResultPolicyExecutor,
+  EXECUTION_PLAN_SCHEMA_VERSION,
+  EXECUTION_PLAN_VALIDATION_VERSION,
+  EXECUTION_TRACE_SCHEMA_VERSION,
+  EVIDENCE_VALIDATION_SCHEMA_VERSION,
+  AGENT_STATUS_PROTOCOL_VERSION,
+  AGENT_STATUS_ENUMS,
+  compileExecutionPlan,
+  finalizeExecutionPlanArguments,
+  planExecution,
+  validateExecutionPlan,
+  validateExecutionEvidence,
+  validateResultPolicy,
+  createAgentStatus,
+  statusAfterExecution,
+  statusAfterPlanning,
+  statusAfterUnderstanding,
+  validateAgentStatus,
+  comparePublicBusinessResults,
+  createTftControlledPlannerProvider,
   createStructuredToolDefinitions,
   normalizeRunBudget,
   TASK_PLAN_SCHEMA_VERSION,

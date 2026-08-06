@@ -21,6 +21,27 @@ function normalizedFailure(error, fallbackCode = "tool_failed") {
   };
 }
 
+function evidenceUpdatedAt(value) {
+  return value?.updatedAt
+    ?? value?.updated_at
+    ?? value?.provenance?.fetchedAt
+    ?? value?.provenance?.fetched_at
+    ?? value?.provenance?.updatedAt
+    ?? value?.provenance?.updated_at
+    ?? value?.capture?.capturedAt
+    ?? value?.capture?.captured_at
+    ?? value?.source?.updatedAt
+    ?? value?.response?.updatedAt
+    ?? value?.response?.capture?.capturedAt
+    ?? value?.response?.capture?.captured_at
+    ?? value?.response?.source?.updatedAt
+    ?? value?.response?.compsStats?.updated
+    ?? value?.response?.stats?.updated
+    ?? value?.compsStats?.updated
+    ?? value?.stats?.updated
+    ?? null;
+}
+
 function abortPromise(signal, code, message) {
   if (!signal) return { promise: new Promise(() => {}), cleanup() {} };
   let listener;
@@ -88,7 +109,13 @@ export class ToolExecutor {
     this.emit(context, {
       type: "tool_call_started",
       stage: "retrieving",
-      data: { toolCallId, toolName: name }
+      data: {
+        toolCallId,
+        toolName: name,
+        executionSource: context.executionPlanRoute ? "execution_plan" : "legacy_adapter",
+        executionPlanRoute: context.executionPlanRoute ?? null,
+        executionStepId: context.executionStepId ?? null
+      }
     });
 
     while (true) {
@@ -138,15 +165,25 @@ export class ToolExecutor {
           value,
           metadata: {
             source: definition.source,
+            evidenceType: definition.evidenceType,
+            updatedAt: evidenceUpdatedAt(value),
             patch: value?.patch ?? validatedInput.patch ?? null,
-            cache: value?.cache ?? null
+            cache: value?.cache ?? null,
+            modelGeneratedStatistics: false
           }
         });
         this.emit(context, {
           type: "tool_call_completed",
           stage: "retrieving",
           durationMs: result.durationMs,
-          data: { toolCallId, toolName: name, attempts }
+          data: {
+            toolCallId,
+            toolName: name,
+            attempts,
+            executionSource: context.executionPlanRoute ? "execution_plan" : "legacy_adapter",
+            executionPlanRoute: context.executionPlanRoute ?? null,
+            executionStepId: context.executionStepId ?? null
+          }
         });
         return result;
       } catch (caught) {
@@ -189,14 +226,29 @@ export class ToolExecutor {
           durationMs: Number(this.now()) - startedTimestamp,
           attempts,
           error: normalizedFailure(caught, error.code),
-          metadata: { source: definition.source, patch: validatedInput.patch ?? null, cache: null }
+          metadata: {
+            source: definition.source,
+            evidenceType: definition.evidenceType,
+            updatedAt: null,
+            patch: validatedInput.patch ?? null,
+            cache: null,
+            modelGeneratedStatistics: false
+          }
         });
         error.toolResult = result;
         this.emit(context, {
           type: "tool_call_failed",
           stage: "retrieving",
           durationMs: result.durationMs,
-          data: { toolCallId, toolName: name, attempts, error: result.error.code }
+          data: {
+            toolCallId,
+            toolName: name,
+            attempts,
+            error: result.error.code,
+            executionSource: context.executionPlanRoute ? "execution_plan" : "legacy_adapter",
+            executionPlanRoute: context.executionPlanRoute ?? null,
+            executionStepId: context.executionStepId ?? null
+          }
         });
         throw error;
       }

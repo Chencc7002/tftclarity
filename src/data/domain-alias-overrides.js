@@ -520,6 +520,69 @@ function createTraitTiers(override, counts) {
 
 const TRAIT_ALIAS_DEFINITIONS = [
   {
+    apiName: "DA_18_Hunter",
+    zhName: "猎人",
+    displayName: "猎人",
+    aliases: ["猎手", "hunter"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
+    apiName: "DA_18_Vanguard",
+    zhName: "重装战士",
+    displayName: "重装战士",
+    aliases: ["前卫", "vanguard"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
+    apiName: "DA_Riftbeast18",
+    zhName: "峡谷野怪",
+    displayName: "峡谷野怪",
+    aliases: ["峡谷野兽", "峡谷怪物", "裂隙野兽", "riftbeast"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
+    apiName: "DA_Emerald18",
+    zhName: "宝石骑士",
+    displayName: "宝石骑士",
+    aliases: ["翡翠骑士", "翡翠化身", "emerald"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
+    apiName: "DA_18_Caustic",
+    zhName: "帝王斑蝶",
+    displayName: "帝王斑蝶",
+    aliases: ["腐蚀巨口", "苛性", "caustic"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
+    apiName: "DA_18_Eclipse",
+    zhName: "日月双蚀",
+    displayName: "日月双蚀",
+    aliases: ["日月之蚀", "蚀", "eclipse"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
+    apiName: "DA_18_Sprykin",
+    zhName: "约德尔人…",
+    displayName: "约德尔人…",
+    aliases: ["约德尔人", "小精灵", "迅灵", "sprykin"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn"
+  },
+  {
     apiName: "TFT17_Stargazer",
     filterId: "TFT17_Stargazer_1",
     zhName: "观星者",

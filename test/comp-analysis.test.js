@@ -147,6 +147,21 @@ test("official patch changes associate only with related units or traits", () =>
   assert.equal(unrelated.some((entry) => entry.id === "17.7-vex-stargazer"), false);
 });
 
+test("17.8 official patch evidence associates champion and trait changes", () => {
+  const related = associateOfficialPatchChanges({
+    units: [{ apiName: "TFT17_Morgana" }, { apiName: "TFT17_Riven" }],
+    traits: [{ apiName: "TFT17_ManaTrait", filterId: "TFT17_ManaTrait_3" }]
+  }, "17.8");
+  const unrelated = associateOfficialPatchChanges({
+    units: [{ apiName: "TFT17_Nunu" }],
+    traits: [{ apiName: "TFT17_DarkStar", filterId: "TFT17_DarkStar_1" }]
+  }, "17.8");
+  assert.equal(related.some((entry) => entry.id === "17.8-morgana-conduit"), true);
+  assert.equal(related.some((entry) => entry.id === "17.8-riven-damage"), true);
+  assert.equal(related.some((entry) => entry.id === "17.8-conduit-mana-regen"), true);
+  assert.equal(unrelated.length, 0);
+});
+
 test("recommendation flow resolves a named comp and exposes typed Evidence Pack sources", async () => {
   const result = await recommendForInput("努努阵容当前版本还能玩吗？", {
     catalog: catalog(),

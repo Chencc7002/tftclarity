@@ -168,6 +168,18 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
     );
   }
 
+  if (parsed.parser?.bareUnitIntentAmbiguous && query.unit) {
+    const unit = catalog.unitByApiName.get(query.unit);
+    const name = unit?.zhName ?? unit?.displayName ?? parsed.unitAlias ?? query.unit;
+    return buildClarification(
+      "ambiguous_unit_query_type",
+      `你想查询${name}的推荐装备、所在阵容，还是技能与棋子资料？`,
+      {
+        suggestions: [`${name}推荐装备`, `${name}所在阵容`, `${name}技能描述（棋子资料）`]
+      }
+    );
+  }
+
   if (entityAmbiguity?.candidates?.length > 1) {
     const labels = candidateLabels(entityAmbiguity.candidates);
     return buildClarification(
@@ -205,13 +217,40 @@ export function evaluateClarification(parsed, query, validation, options = {}) {
     );
   }
 
-  if (!query.unit) {
-    const targetlessConstraintFollowUp = !parsed.parser?.intentExplicit
+  if ((query?.intent === "unknown" || parsed?.intent === "unknown") && unitCandidates.length > 0) {
+    return buildClarification(
+      "missing_unit",
+      "没有可靠识别到英雄名称，请确认你要查询的英雄。",
+      {
+        suggestions: candidateLabels(unitCandidates),
+        entityCandidates: unitCandidates
+      }
+    );
+  }
+
+  const targetlessConstraintFollowUp = !query.unit
+    && !parsed.parser?.intentExplicit
       && (parsed.ownedItems ?? []).length === 0
       && (parsed.excludedItems ?? []).length === 0
       && (parsed.traitFilters ?? []).length === 0
       && [parsed.rankFilter, parsed.days, parsed.patch, parsed.minSamples, parsed.sort]
         .some((value) => value !== undefined);
+
+  // An unclassified deterministic parse is handed to the semantic path only
+  // after concrete entity ambiguities and parser-authored clarification above.
+  // A constraint-only follow-up has no safe semantic target, so preserve the
+  // deterministic question that asks which query the user wants to continue.
+  if ((query?.intent === "unknown" || parsed?.intent === "unknown") && !targetlessConstraintFollowUp) {
+    return {
+      needsClarification: false,
+      blocking: false,
+      reason: "semantic_parse_required",
+      question: null,
+      suggestions: []
+    };
+  }
+
+  if (!query.unit) {
     if (targetlessConstraintFollowUp) {
       return buildClarification(
         "missing_query_target",

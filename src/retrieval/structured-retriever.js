@@ -13,21 +13,42 @@ const OPERATION_REGISTRY = Object.freeze({
     source: "metatft",
     params: Object.freeze(["unit", "mention", "days", "patch", "queue", "rank", "minSamples"])
   }),
+  unit_builds_batch: Object.freeze({
+    source: "metatft",
+    params: Object.freeze(["entities", "days", "patch", "queue", "rank", "minSamples", "limit"])
+  }),
+  item_carrier_rankings: Object.freeze({
+    source: "metatft",
+    params: Object.freeze([
+      "item", "days", "patch", "queue", "rank", "minSamples", "limit",
+      "buildLimit", "positiveOnly", "sort"
+    ])
+  }),
   comps_rankings: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+    params: Object.freeze(["unit", "days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   comps_trends: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   comps_analysis: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit"])
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   trait_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
+  entity_catalog_query: Object.freeze({
+    source: "official_tft_catalog",
+    params: Object.freeze(["entityType", "filters", "projection", "sort", "limit"])
+  }),
+  composition_member_statistics: Object.freeze({
+    source: "metatft",
+    params: Object.freeze([
+      "trait", "memberMode", "aggregateBy", "days", "patch", "queue", "rank", "minSamples", "limit"
+    ])
+  }),
   semantic_search: Object.freeze({
     source: "semantic_index",
     params: Object.freeze(["query", "documentTypes", "patch", "locale", "topK"])

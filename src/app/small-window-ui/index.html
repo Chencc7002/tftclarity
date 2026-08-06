@@ -4,9 +4,17 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
     <meta name="color-scheme" content="light">
-    <title>tftclarity · Set 17</title>
-    <link rel="icon" type="image/png" href="/favicon.png">
+    <title>TFTClarity｜云顶数据智答</title>
+    <meta name="description" content="tftclarity 是面向云顶之弈的对话式数据助手：直接用自然语言询问阵容、英雄出装或单件装备表现，结合样本量、平均名次与近期趋势生成可解释结论，并提供可追溯的数据详情和版本公告。">
+    <meta property="og:type" content="website">
+    <meta property="og:site_name" content="TFTClarity">
+    <meta property="og:title" content="TFTClarity｜云顶数据智答">
+    <meta property="og:description" content="用自然语言查询云顶之弈阵容、出装与装备表现，基于样本和排名数据生成可解释结论。">
+    <meta property="og:url" content="https://tftclarity.cn/">
+    <link rel="canonical" href="https://tftclarity.cn/">
+    <link rel="icon" type="image/png" href="/favicon.png?v=20260727">
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/opgg-panel.css">
   </head>
   <body>
     <main class="shell" id="app-shell">
@@ -16,11 +24,11 @@
         <span class="topbar-starfield" id="topbar-starfield" aria-hidden="true"></span>
         <div class="brand" aria-label="tftclarity">
           <span class="brand-mark" aria-hidden="true">
-            <img src="/favicon.png" alt="">
+            <img src="/favicon.png?v=20260727" alt="">
           </span>
           <span class="brand-copy">
             <strong>tftclarity</strong>
-            <small id="season-context-summary"><span data-season-label>Set 17 · 正式服</span> · <span data-season-subtitle>星神</span></small>
+            <small id="season-context-summary"><span data-season-label>Set 17 · 正式服</span><span data-season-subtitle-separator> · </span><span data-season-subtitle>星神</span></small>
           </span>
         </div>
 
@@ -30,7 +38,10 @@
             <select id="season-context-select" data-i18n-aria="seasonSwitchLabel" aria-label="选择赛季" disabled>
               <option value="set17-live">Set 17 · 正式服</option>
             </select>
-            <span id="season-context-notice" class="season-context-notice" role="status" hidden></span>
+            <span id="season-context-notice" class="season-context-notice" role="status" hidden>
+              <span data-season-context-notice-text></span>
+              <button type="button" id="season-context-notice-close" class="season-context-notice-close" data-i18n-title="closeSeasonNotice" data-i18n-aria="closeSeasonNotice" title="关闭赛季提示" aria-label="关闭赛季提示">×</button>
+            </span>
           </div>
           <div class="wallpaper-control" id="wallpaper-control">
             <button type="button" id="wallpaper-toggle" class="wallpaper-toggle" role="switch" aria-checked="true" title="关闭赛季壁纸" aria-label="关闭赛季壁纸">
@@ -63,40 +74,59 @@
           </div>
           <section class="conversation" id="result" aria-live="polite">
             <article class="message assistant-message welcome-message">
-              <div class="message-meta"><span class="assistant-avatar" aria-hidden="true">✦</span><strong data-i18n="assistant">tftclarity</strong></div>
-              <div class="message-body" data-i18n="welcome">直接问我英雄出装、单件装备或阵容排行。你也可以连续追问。</div>
+              <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">tftclarity</strong></div>
+              <div class="message-body" data-i18n="welcome">使用下方快捷查询可跳过语义理解，通常返回更快；你也可以直接用自然语言提问。</div>
             </article>
-            <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="常用任务">
+            <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="功能分类与快捷查询">
               <div class="quick-tasks-heading">
-                <strong data-i18n="quickTasksTitle">常用任务</strong>
-                <span data-i18n="quickTasksHint">选择一个入口快速开始</span>
+                <strong data-i18n="quickTasksTitle">功能导航</strong>
+                <span data-i18n="quickTasksHint">按类型查看当前已支持的功能</span>
               </div>
-              <div class="quick-task-grid">
-                <button type="button" class="quick-task-card" data-quick-task="comp-rankings">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskCompsTitle">热门阵容</strong><small data-i18n="quickTaskCompsBody">当前版本上分阵容排行</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+              <div class="quick-category-grid">
+                <button type="button" class="quick-category-card" data-quick-category="equipment" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryEquipmentTitle">装备分析</strong><small data-i18n="quickCategoryEquipmentBody">出装、补装、评估与对比</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryEquipmentCount">6 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
-                <button type="button" class="quick-task-card" data-quick-task="comp-trends">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskTrendsTitle">阵容趋势</strong><small data-i18n="quickTaskTrendsBody">发现近期上升阵容</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+                <button type="button" class="quick-category-card" data-quick-category="comps" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryCompsTitle">阵容决策</strong><small data-i18n="quickCategoryCompsBody">排行、趋势、指定英雄</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryCompsCount">3 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
-                <button type="button" class="quick-task-card" data-quick-task="unit-build">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskBuildTitle">英雄出装</strong><small data-i18n="quickTaskBuildBody">指定英雄后查询三件套</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+                <button type="button" class="quick-category-card" data-quick-category="library" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 16h10M9 8h5M9 11h6"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryLibraryTitle">资料百科</strong><small data-i18n="quickCategoryLibraryBody">英雄、装备与羁绊资料</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryLibraryCount">5 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
-                <button type="button" class="quick-task-card" data-quick-task="patch-notes">
-                  <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 5h12v14H6z"/><path d="M9 9h6M9 12h6M9 15h4"/></svg></span>
-                  <span class="quick-task-copy"><strong data-i18n="quickTaskUpdatesTitle">更新公告</strong><small data-i18n="quickTaskUpdatesBody">17.7 版本要点与改动</small></span>
-                  <span class="quick-task-arrow" aria-hidden="true">↗</span>
+                <button type="button" class="quick-category-card" data-quick-category="news" aria-expanded="false">
+                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
+                  <span class="quick-category-copy"><strong data-i18n="quickCategoryNewsTitle">智能复盘与资讯</strong><small data-i18n="quickCategoryNewsBody">个人复盘、职业教学与阵容资讯</small></span>
+                  <span class="quick-category-count" data-i18n="quickCategoryNewsCount">4 项</span>
+                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
                 </button>
               </div>
             </section>
           </section>
 
           <form class="query-panel composer" id="query-form">
+            <div class="season-preview-banner" id="season-preview-banner" role="status" hidden>
+              <span class="season-preview-mark" aria-hidden="true">✦</span>
+              <span><strong data-i18n="seasonPreviewMode">S18 PBE 暂不可用</strong><small data-i18n="seasonPreviewQueryDisabled">PBE 数据源当前不可用，已暂停查询以避免回退到其他赛季。</small></span>
+            </div>
+            <section class="quick-task-form" id="quick-task-form" aria-labelledby="quick-task-form-title" hidden>
+              <header class="quick-task-form-heading">
+                <div>
+                  <span data-i18n="quickTaskFormEyebrow">快捷查询</span>
+                  <strong id="quick-task-form-title"></strong>
+                </div>
+                <button type="button" id="quick-task-form-close" data-i18n-title="closeQuickTaskForm" data-i18n-aria="closeQuickTaskForm" title="取消快捷填写" aria-label="取消快捷填写">×</button>
+              </header>
+              <div class="quick-task-fields" id="quick-task-fields"></div>
+              <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">填写条件后将直接执行结构化查询，无需再次理解语义。</small>
+            </section>
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>
             <div class="action-row composer-actions">
               <button type="button" id="stop-button" class="compact-action hidden" data-i18n-title="stopTitle" title="停止查询"><span aria-hidden="true">■</span><span data-i18n="stop">停止</span></button>
@@ -109,14 +139,14 @@
 
         <section class="result-pane" id="result-pane" aria-labelledby="result-title">
           <div class="pane-heading result-heading">
-            <div>
+            <div class="result-heading-main">
               <button type="button" id="mobile-result-back" class="mobile-result-back" data-common-result-navigation data-i18n-title="backToChat" data-i18n-aria="backToChat" title="返回对话" aria-label="返回对话">
                 <span aria-hidden="true">←</span>
                 <span class="mobile-result-back-label" data-i18n="backToChat">返回对话</span>
               </button>
               <span class="result-heading-copy">
-                <span class="eyebrow" data-i18n="resultEyebrow">数据结果</span>
-                <h1 id="result-title" data-i18n="resultTitle">当前推荐</h1>
+                <span class="eyebrow" data-i18n="resultEyebrow">查询与证据</span>
+                <h1 id="result-title" data-i18n="resultTitle">查询与证据</h1>
               </span>
             </div>
             <button type="button" id="result-refresh-button" class="subtle-button" data-i18n-title="refreshTitle" title="刷新数据" disabled><span aria-hidden="true">⟳</span><span data-i18n="refresh">刷新</span></button>
@@ -125,7 +155,7 @@
             <section class="result-state result-empty" data-state="empty">
               <div class="state-orbit" aria-hidden="true">✦</div>
               <strong data-i18n="resultEmptyTitle">等待你的查询</strong>
-              <p data-i18n="resultEmptyBody">推荐、单件排行和阵容榜会显示在这里。</p>
+              <p data-i18n="resultEmptyBody">统计结果、知识证据和视频来源会显示在这里。</p>
             </section>
           </div>
         </section>

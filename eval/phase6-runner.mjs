@@ -1,7 +1,7 @@
 import { performance } from "node:perf_hooks";
 import { createStructuredToolDefinitions } from "../src/agent/tools/definitions.js";
 import { ToolRegistry } from "../src/agent/tools/registry.js";
-import { planTask } from "../src/agent/task-planner.js";
+import { planExecution } from "../src/agent/execution-plan.js";
 import {
   DEFAULT_PHASE6_ROLLOUT_POLICY,
   TAKEOVER_ACTION_ORDER,
@@ -62,9 +62,9 @@ function progressivePolicy(action, rolloutPercent) {
 async function executeCase(testCase, registry, repetition) {
   const startedAt = performance.now();
   const match = matchTaskCapabilities(testCase.taskFrame, registry);
-  const taskPlanning = await planTask(testCase.taskFrame, match, {
+  const executionPlanning = await planExecution(testCase.taskFrame, match, {
     registry,
-    budget: { maxSteps: 3, maxToolCalls: 3, maxPlannerTokens: 600 }
+    budget: { maxSteps: 3, maxToolCalls: 3, maxPlanTokens: 800 }
   });
   const shadowDifference = compareSemanticShadow(
     { intent: testCase.legacyIntent, parser: {} },
@@ -74,18 +74,18 @@ async function executeCase(testCase, registry, repetition) {
     taskFrame: testCase.taskFrame,
     clarificationPolicy: { needsClarification: false, strategy: "answer" },
     capabilityMatch: match,
-    taskPlanning,
+    executionPlanning,
     shadowDifference,
     legacyTools: [testCase.expectedTool],
     requestKey: `${testCase.id}:stable`,
     policy: DEFAULT_PHASE6_ROLLOUT_POLICY
   });
-  const actualTool = taskPlanning.plan?.steps?.[0]?.tool ?? null;
+  const actualTool = executionPlanning.plan?.steps?.[0]?.tool ?? null;
   const passed = decision.route === "semantic"
     && actualTool === testCase.expectedTool
-    && taskPlanning.validation?.valid === true;
+    && executionPlanning.validation?.valid === true;
   const inputTokens = Math.ceil(JSON.stringify(testCase.taskFrame).length / 3);
-  const outputTokens = Number(taskPlanning.validation?.estimatedTokens ?? 0);
+  const outputTokens = Number(executionPlanning.validation?.estimatedTokens ?? 0);
   const latencyMs = Math.max(0, performance.now() - startedAt);
   const trace = finalizeTakeoverTrace(decision, {
     toolStatus: passed ? "completed" : "failed",
@@ -148,12 +148,12 @@ export async function runPhase6Evaluation(options = {}) {
     let fallback = 0;
     for (let index = 0; index < 100; index += 1) {
       const match = matchTaskCapabilities(testCase.taskFrame, registry);
-      const taskPlanning = await planTask(testCase.taskFrame, match, { registry });
+      const executionPlanning = await planExecution(testCase.taskFrame, match, { registry });
       const decision = createTakeoverDecision({
         taskFrame: testCase.taskFrame,
         clarificationPolicy: { needsClarification: false },
         capabilityMatch: match,
-        taskPlanning,
+        executionPlanning,
         shadowDifference: compareSemanticShadow(
           { intent: testCase.legacyIntent, parser: {} },
           { taskFrame: testCase.taskFrame }

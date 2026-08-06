@@ -4,14 +4,44 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
+import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
+import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
+import {
+  normalizeCompAugmentTiers,
+  normalizeCompDetailsPositioning
+} from "../data/comp-detail-adapter.js";
 import {
   AgentRuntime,
+  DEFAULT_AGENT_RUN_BUDGET,
+  ExecutionPlanExecutor,
   ToolExecutor,
   ToolRegistry,
+  createAgentStatus,
   createStructuredToolDefinitions
 } from "../agent/index.js";
+import { createTftControlledPlannerProvider } from "../agent/controlled-planner-provider.js";
+import { createPatchResolver } from "../season/patch-resolver.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
+import {
+  buildEntityCatalog,
+  normalizeEntityCatalogType
+} from "../core/entity-catalog.js";
 import { normalizeAlias } from "../core/normalizer.js";
+import { compileExecutionPlan } from "../agent/execution-plan.js";
+import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
+import { queryEntityCatalog } from "../domain/tft/entity-catalog-query.js";
+import { aggregateExternalUnits } from "../domain/tft/external-unit-analysis.js";
+import {
+  buildOfficialPatchSemanticDocuments,
+  extractPatchVersionFromQuestion
+} from "../knowledge/official-patch-knowledge.js";
+import { matchTaskCapabilities } from "../understanding/capability-matcher.js";
+import { taskFrameFromIntentEnvelope } from "../understanding/task-frame.js";
+import {
+  evaluateFastPathEligibility,
+  isPureEntityCatalogRequest
+} from "../routing/fast-path-policy.js";
 import {
   anonymousScopeKey,
   createAnonymousAccessService
@@ -32,6 +62,8 @@ import {
   createProviderRouter,
   createStorageRuntime,
   applyEnabledEntityAliasesFromStore,
+  analyzeItemDifferentiation,
+  answerMechanismClassificationQuery,
   buildEntityAliasOverrideDraft,
   buildCompRankings,
   buildItemCatalogAudit,
@@ -41,31 +73,47 @@ import {
   buildUnitCatalogFromCompsData,
   buildUnitCatalogFromExplorerRows,
   createCatalog,
+  createAnswerModeRouter,
+  createSystemInteractionRouter,
+  createCoachProviderFromConfig,
   createCompsPageSnapshot,
   createConclusionProviderFromConfig,
   createCompEnrichmentService,
+  conversationResultStateFromResponse,
   createEmbeddingProviderFromConfig,
+  createHybridAnswerService,
   createSeasonContextService,
   createLineupSignature,
+  createMechanismClassificationProviderFromConfig,
   createIntentEnvelope,
+  createConversationState,
+  createTaskFrame,
   createPersistentSemanticRetriever,
   createAssetResolver,
+  createChatExecutionPlannerProvider,
+  createChatSemanticTaskProvider,
   createStructuredParserFromConfig,
   fetchOfficialTftEntityDetails,
   fetchOfficialTftItemDetails,
   filterItemCatalogAudit,
   hasUnsupportedCompRankingEntities,
+  mergeCatalogItems,
   mergeCatalogTraits,
   mergeCatalogUnits,
   normalizeCompProfileRecord,
   isLowSampleBuild,
   itemCatalogAuditToCsv,
+  KnowledgeRetriever,
+  parseSemanticTask,
   parseQuery,
+  parseMechanismClassificationQuery,
   recommendForInput,
   generateEvidenceBackedConclusion,
   RetrievalPlanner,
   resolveConclusionProviderConfig,
+  resolveCoachProviderConfig,
   resolveEmbeddingProviderConfig,
+  resolveMechanismClassificationConfig,
   retrieveSemanticPlan,
   serializeConclusionPayload,
   resolveStructuredParserConfig
@@ -75,9 +123,37 @@ const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17317;
 export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
 export const DEFAULT_COMP_RANKINGS_TIMEOUT_MS = 8000;
+export const DEFAULT_COMP_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
+export const DEFAULT_AUGMENT_LOOKUP_CACHE_TTL_MS = 30 * 60 * 1000;
+export const MAX_COMP_DETAIL_UNITS = 12;
+export const MAX_COMP_DETAIL_AUGMENTS = 6;
+const DISPLAYED_COMP_AUGMENT_RARITIES = new Set(["gold", "prismatic"]);
 export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
 export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
+export const QUICK_TASK_CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
+const QUICK_TASK_SCHEMA_VERSION = "quick-task.v1";
+const QUICK_TASK_DEFINITIONS = new Map([
+  ["unit-build", { operation: "unit_build_rankings", intent: "unit_build_rankings", required: ["champion"] }],
+  ["unit-build-completion", { operation: "unit_build_completion", intent: "unit_build_completion", required: ["champion", "item1"], optional: ["item2"] }],
+  ["item-performance", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "item"] }],
+  ["item-comparison", { operation: "unit_item_comparison", intent: "unit_item_comparison", required: ["champion", "item1", "item2"] }],
+  ["item-carriers", { operation: "item_carrier_rankings", intent: "item_carrier_rankings", required: ["item"] }],
+  ["special-items", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "specialCategory"] }],
+  ["comp-rankings", { operation: "comp_rankings", intent: "comp_rankings", required: [] }],
+  ["comp-trends", { operation: "comp_trends", intent: "comp_trends", required: [] }],
+  ["hero-comps", { operation: "comp_rankings", intent: "comp_rankings", required: ["champion"] }],
+  ["unit-details", { operation: "unit_details", intent: "unit_details", required: ["champion"], staticView: true }],
+  ["unit-catalog", { operation: "unit_catalog", intent: "unit_catalog", required: [], staticView: true }],
+  ["item-details", { operation: "item_details", intent: "item_details", required: ["item"], staticView: true }],
+  ["trait-details", { operation: "trait_details", intent: "trait_details", required: ["trait"], staticView: true }],
+  ["trait-catalog", { operation: "trait_catalog", intent: "trait_catalog", required: [], staticView: true }]
+]);
+export const DEFAULT_TURN_INTERPRETER_BUDGET = Object.freeze({
+  maxInputTokens: 1600,
+  maxOutputTokens: 900,
+  maxLatencyMs: 45000
+});
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
@@ -103,6 +179,329 @@ const CONTENT_TYPES = new Map([
   [".png", "image/png"],
   [".webp", "image/webp"]
 ]);
+
+function invalidQuickTask(message) {
+  return Object.assign(new TypeError(message), {
+    statusCode: 400,
+    code: "invalid_quick_task"
+  });
+}
+
+function normalizeQuickTask(value) {
+  if (value == null) return null;
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    throw invalidQuickTask("quickTask must be an object");
+  }
+  if (value.schemaVersion !== QUICK_TASK_SCHEMA_VERSION) {
+    throw invalidQuickTask(`quickTask.schemaVersion must be ${QUICK_TASK_SCHEMA_VERSION}`);
+  }
+  const id = String(value.id ?? "").trim();
+  const definition = QUICK_TASK_DEFINITIONS.get(id);
+  if (!definition || String(value.operation ?? "").trim() !== definition.operation) {
+    throw invalidQuickTask("quickTask id and operation do not match a supported shortcut");
+  }
+  const rawArguments = value.arguments;
+  if (!rawArguments || typeof rawArguments !== "object" || Array.isArray(rawArguments)) {
+    throw invalidQuickTask("quickTask.arguments must be an object");
+  }
+  const allowed = new Set([...(definition.required ?? []), ...(definition.optional ?? [])]);
+  const args = {};
+  for (const [key, raw] of Object.entries(rawArguments)) {
+    if (!allowed.has(key)) throw invalidQuickTask(`quickTask argument is not supported: ${key}`);
+    const normalized = String(raw ?? "").normalize("NFKC").trim();
+    if (normalized.length > 80) throw invalidQuickTask(`quickTask argument is too long: ${key}`);
+    if (normalized) args[key] = normalized;
+  }
+  for (const key of definition.required ?? []) {
+    if (!args[key]) throw invalidQuickTask(`quickTask argument is required: ${key}`);
+  }
+  return {
+    schemaVersion: QUICK_TASK_SCHEMA_VERSION,
+    id,
+    operation: definition.operation,
+    arguments: args,
+    definition
+  };
+}
+
+function quickTaskExecutionInput(task) {
+  const args = task.arguments;
+  switch (task.id) {
+    case "unit-build": return `查询${args.champion}的当前版本最稳三件装备`;
+    case "unit-build-completion": return args.item2
+      ? `查询${args.champion}已携带${args.item1}和${args.item2}时的推荐出装`
+      : `查询${args.champion}已携带${args.item1}时的推荐出装`;
+    case "item-performance": return `${args.item}在${args.champion}身上表现怎么样`;
+    case "item-comparison": return `比较${args.champion}使用${args.item1}和${args.item2}时的表现`;
+    case "item-carriers": return `${args.item}最适合哪些英雄携带`;
+    case "special-items": return `查询${args.champion}的${args.specialCategory}排行`;
+    case "comp-rankings": return "推荐当前版本热门阵容";
+    case "comp-trends": return "查看当前版本阵容趋势";
+    case "hero-comps": return `查询包含${args.champion}的热门阵容`;
+    case "unit-details": return `查询${args.champion}的技能、费用、属性和羁绊资料`;
+    case "unit-catalog": return "查看全部棋子";
+    case "item-details": return `查询${args.item}的效果和合成方式`;
+    case "trait-details": return `查询${args.trait}的效果和激活层级`;
+    case "trait-catalog": return "查看全部羁绊";
+    default: throw invalidQuickTask("quickTask is unsupported");
+  }
+}
+
+function resolveQuickTaskEntity(task, argumentName, entityType, catalog) {
+  const mention = task.arguments?.[argumentName];
+  if (!mention) return null;
+  const parsed = parseQuery(mention, { catalog });
+  const matches = (parsed.parser?.entityMatches ?? [])
+    .filter((entry) => entry.entityType === entityType)
+    .map((entry) => entry.apiName)
+    .filter(Boolean);
+  return [...new Set(matches)].length === 1 ? matches[0] : null;
+}
+
+function resolvedQuickTaskEntities(task, catalog) {
+  const unit = resolveQuickTaskEntity(task, "champion", "unit", catalog);
+  const item = resolveQuickTaskEntity(task, "item", "item", catalog);
+  const item1 = resolveQuickTaskEntity(task, "item1", "item", catalog);
+  const item2 = resolveQuickTaskEntity(task, "item2", "item", catalog);
+  const trait = resolveQuickTaskEntity(task, "trait", "trait", catalog);
+  const suppliedEntityArguments = [
+    ...(task.definition.required ?? []),
+    ...(task.definition.optional ?? [])
+  ].filter((key) => (
+    ["champion", "item", "item1", "item2", "trait"].includes(key)
+      && Boolean(task.arguments?.[key])
+  ));
+  const byArgument = { champion: unit, item, item1, item2, trait };
+  return {
+    unit,
+    item,
+    item1,
+    item2,
+    trait,
+    complete: suppliedEntityArguments.every((key) => Boolean(byArgument[key]))
+  };
+}
+
+function directParsedForQuickTask(task, input, catalog, preferences) {
+  const parsed = parseQuery(input, { catalog, compQuery: preferences });
+  const resolved = resolvedQuickTaskEntities(task, catalog);
+  const resolvedItems = [resolved.item1, resolved.item2].filter(Boolean);
+  const compTask = ["comp-rankings", "comp-trends", "hero-comps"].includes(task.id);
+  const equipmentTask = [
+    "unit-build",
+    "unit-build-completion",
+    "item-performance",
+    "item-comparison",
+    "item-carriers",
+    "special-items"
+  ].includes(task.id);
+  const complete = resolved.complete
+    && (task.id !== "special-items" || (parsed.itemCategories ?? []).length > 0);
+  const entityProjection = {
+    ...(resolved.unit ? { unit: resolved.unit } : {}),
+    ...(task.id === "item-performance" ? {
+      performanceItem: resolved.item ?? parsed.performanceItem ?? null,
+      lockedItems: [],
+      ownedItems: [],
+      comparisonItems: []
+    } : {}),
+    ...(task.id === "unit-build-completion" ? {
+      lockedItems: resolvedItems,
+      ownedItems: resolvedItems,
+      comparisonItems: []
+    } : {}),
+    ...(task.id === "item-comparison" ? {
+      lockedItems: [],
+      ownedItems: [],
+      comparisonItems: resolvedItems,
+      comparisonMode: "exclusive_presence"
+    } : {}),
+    ...(task.id === "item-carriers" ? {
+      carrierItem: resolved.item ?? parsed.carrierItem ?? null,
+      lockedItems: [],
+      ownedItems: [],
+      comparisonItems: []
+    } : {}),
+    ...(resolved.trait ? { traitFilters: [resolved.trait] } : {})
+  };
+  return {
+    ...parsed,
+    intent: task.definition.intent,
+    ...(equipmentTask ? {
+      patch: preferences.unitBuildPatch ?? preferences.patch,
+      queue: preferences.queue
+    } : {}),
+    ...(compTask ? {
+      patch: preferences.compPatch ?? preferences.patch,
+      queue: preferences.queue
+    } : {}),
+    ...entityProjection,
+    ...(task.id === "comp-rankings" || task.id === "hero-comps"
+      ? { popularRequested: true, trendRequested: false }
+      : {}),
+    ...(task.id === "comp-trends"
+      ? { popularRequested: false, trendRequested: true }
+      : {}),
+    parser: {
+      ...(parsed.parser ?? {}),
+      intentExplicit: true,
+      usedLLM: false,
+      ...(complete ? {
+        bareUnitIntentAmbiguous: false,
+        constraintConflicts: [],
+        entityAmbiguities: [],
+        unresolvedEntityHints: []
+      } : {}),
+      quickTask: {
+        schemaVersion: task.schemaVersion,
+        id: task.id,
+        operation: task.operation
+      }
+    }
+  };
+}
+
+function quickTaskCachePolicy(task, seasonContext) {
+  const pbe = /pbe/iu.test(String(seasonContext?.id ?? ""))
+    || /pbe/iu.test(String(seasonContext?.status ?? ""));
+  let refreshAfterMs;
+  if (["unit-details", "item-details", "trait-details", "unit-catalog", "trait-catalog"].includes(task.id)) {
+    refreshAfterMs = pbe ? 6 * 60 * 60 * 1000 : 12 * 60 * 60 * 1000;
+  } else if (task.id === "comp-trends") {
+    refreshAfterMs = pbe ? 15 * 60 * 1000 : 20 * 60 * 1000;
+  } else {
+    refreshAfterMs = pbe ? 10 * 60 * 1000 : 45 * 60 * 1000;
+  }
+  return {
+    refreshAfterMs,
+    retentionMs: QUICK_TASK_CACHE_RETENTION_MS
+  };
+}
+
+function scheduleQuickTaskRefresh(runtime, key, refresh) {
+  if (!key || typeof refresh !== "function") return false;
+  runtime.quickTaskRefreshes ??= new Map();
+  if (runtime.quickTaskRefreshes.has(key)) return false;
+  const promise = Promise.resolve()
+    .then(refresh)
+    .catch((error) => {
+      runtime.lastQuickTaskRefreshError = {
+        key,
+        code: error?.code ?? null,
+        message: String(error?.message ?? error),
+        at: new Date().toISOString()
+      };
+    })
+    .finally(() => {
+      if (runtime.quickTaskRefreshes.get(key) === promise) {
+        runtime.quickTaskRefreshes.delete(key);
+      }
+    });
+  runtime.quickTaskRefreshes.set(key, promise);
+  return true;
+}
+
+function quickTaskViewCacheKey(task, seasonContext, preferences = {}) {
+  const args = Object.fromEntries(
+    Object.entries(task.arguments)
+      .sort(([left], [right]) => left.localeCompare(right))
+      .map(([key, value]) => [key, normalizeAlias(value)])
+  );
+  return `quick_view:${JSON.stringify({
+    schemaVersion: task.schemaVersion,
+    id: task.id,
+    operation: task.operation,
+    args,
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source?.providerVersion ?? null,
+    effectivePatch: seasonContext.effectivePatch ?? null,
+    rankFilter: [...(preferences.rankFilter ?? [])].map(String).sort(),
+    days: preferences.days ?? null,
+    minSamples: preferences.minSamples ?? null,
+    itemPolicy: preferences.itemPolicy ?? null
+  })}`;
+}
+
+function quickTaskCacheMetadata(key, entry, policy, options = {}) {
+  const updatedAtMs = Date.parse(entry?.updatedAt ?? "");
+  const ageMs = Number.isFinite(updatedAtMs) ? Math.max(0, Date.now() - updatedAtMs) : null;
+  const refreshDue = ageMs !== null && ageMs >= policy.refreshAfterMs;
+  return {
+    key,
+    hit: options.hit === true,
+    stale: options.stale === true,
+    refreshDue,
+    revalidating: options.revalidating === true,
+    updatedAt: entry?.updatedAt ?? null,
+    expiresAt: entry?.expiresAt ?? null,
+    policy: {
+      refreshAfterMs: policy.refreshAfterMs,
+      retainForMs: policy.retentionMs
+    }
+  };
+}
+
+async function cachedQuickTaskView(runtime, options) {
+  const {
+    task,
+    seasonContext,
+    preferences,
+    refresh,
+    load,
+    backgroundRefresh
+  } = options;
+  const policy = quickTaskCachePolicy(task, seasonContext);
+  const key = quickTaskViewCacheKey(task, seasonContext, preferences);
+  const storeOptions = { seasonContextId: seasonContext.id };
+  const cached = await runtime.cacheStore?.getQuery?.(key, storeOptions) ?? null;
+
+  if (cached?.value?.response !== undefined && !refresh) {
+    const metadata = quickTaskCacheMetadata(key, cached, policy, { hit: true });
+    if (metadata.refreshDue) {
+      metadata.revalidating = scheduleQuickTaskRefresh(runtime, key, backgroundRefresh);
+      if (!metadata.revalidating) metadata.revalidating = runtime.quickTaskRefreshes?.has(key) === true;
+    }
+    const payload = structuredClone(cached.value.response);
+    payload.cache = { ...(payload.cache ?? {}), query: metadata };
+    return payload;
+  }
+
+  try {
+    const payload = await load();
+    if (!payload) return payload;
+    const stored = await runtime.cacheStore?.setQuery?.(key, {
+      request: {
+        schemaVersion: task.schemaVersion,
+        id: task.id,
+        operation: task.operation,
+        arguments: task.arguments
+      },
+      response: payload,
+      source: "structured_quick_task",
+      patch: seasonContext.effectivePatch ?? null
+    }, {
+      ...storeOptions,
+      ttlMs: policy.retentionMs
+    });
+    payload.cache = {
+      ...(payload.cache ?? {}),
+      query: quickTaskCacheMetadata(key, stored, policy, { hit: false })
+    };
+    return payload;
+  } catch (error) {
+    if (cached?.value?.response === undefined) throw error;
+    const payload = structuredClone(cached.value.response);
+    payload.cache = {
+      ...(payload.cache ?? {}),
+      query: quickTaskCacheMetadata(key, cached, policy, { hit: true, stale: true })
+    };
+    payload.warnings = [...new Set([
+      ...(payload.warnings ?? []),
+      `实时刷新失败，已使用 ${cached.updatedAt ?? "未知时间"} 的上一次成功数据。`
+    ])];
+    return payload;
+  }
+}
 const VALID_ITEM_POLICIES = new Set([
   "ordinary_only",
   "include_radiant",
@@ -116,6 +515,24 @@ const VALID_SORTS = new Set([
   "avg_first",
   "games_first"
 ]);
+
+function defaultAgentStatusForPayload(payload = {}) {
+  const clarification = payload.type === "clarification"
+    || payload.clarification?.needsClarification;
+  const refused = payload.type === "out_of_domain";
+  return createAgentStatus({
+    understandingStatus: refused
+      ? "out_of_domain"
+      : clarification
+        ? "missing_context"
+        : "understood",
+    capabilityStatus: refused ? "unsupported" : clarification ? "pending" : "supported",
+    planningStatus: clarification || refused ? "not_planned" : "planned",
+    executionStatus: clarification || refused ? "pending" : "completed",
+    evidenceStatus: clarification || refused ? "insufficient" : "sufficient",
+    finalOutcome: refused ? "refused" : clarification ? "clarified" : "answered"
+  });
+}
 const VALID_STRUCTURED_PARSER_MODES = new Set([
   "inherit",
   "auto",
@@ -202,6 +619,19 @@ export function resolveSmallWindowRequestTimeouts(options = {}, env = process.en
   };
 }
 
+export function resolveSmallWindowAgentRunBudget(options = {}, env = process.env) {
+  const configured = options.agentRunBudget ?? {};
+  return {
+    ...configured,
+    deadlineMs: positiveTimeout(
+      configured.deadlineMs
+        ?? options.agentRunDeadlineMs
+        ?? env.TFT_AGENT_RUN_DEADLINE_MS,
+      DEFAULT_AGENT_RUN_BUDGET.deadlineMs
+    )
+  };
+}
+
 export function resolveSmallWindowStructuredParserConfig(options = {}, env = process.env) {
   return resolveStructuredParserConfig({
     ...(options.structuredParserConfig ?? {}),
@@ -281,6 +711,84 @@ function createSmallWindowConclusionGenerator(options = {}, env = process.env) {
   };
 }
 
+export function resolveSmallWindowCoachConfig(options = {}, env = process.env) {
+  return resolveCoachProviderConfig({
+    ...(options.coachConfig ?? {}),
+    mode: options.coachMode ?? options.coachConfig?.mode,
+    endpoint: options.coachEndpoint ?? options.coachConfig?.endpoint,
+    model: options.coachModel ?? options.coachConfig?.model,
+    apiKey: options.coachApiKey ?? options.coachConfig?.apiKey,
+    timeoutMs: options.coachTimeoutMs ?? options.coachConfig?.timeoutMs,
+    maxOutputTokens: options.coachMaxOutputTokens ?? options.coachConfig?.maxOutputTokens,
+    allowUnauthenticated: options.coachAllowUnauthenticated ?? options.coachConfig?.allowUnauthenticated
+  }, env);
+}
+
+function createSmallWindowCoachRuntime(options = {}, env = process.env) {
+  if (options.coachProvider) {
+    return {
+      coachProvider: options.coachProvider,
+      coachConfig: {
+        enabled: true,
+        mode: "on",
+        provider: "injected",
+        model: options.coachModel ?? options.coachProvider.model ?? "injected-model",
+        ...(options.coachConfig ?? {})
+      }
+    };
+  }
+  const config = resolveSmallWindowCoachConfig(options, env);
+  return {
+    coachProvider: createCoachProviderFromConfig(config, {
+      fetchImpl: options.coachFetch ?? options.conclusionFetch ?? options.llmFetch
+    }),
+    coachConfig: config
+  };
+}
+
+function createSmallWindowMechanismClassificationRuntime(options = {}, env = process.env) {
+  if (options.mechanismClassificationProvider) {
+    return {
+      mechanismClassificationProvider: options.mechanismClassificationProvider,
+      mechanismClassificationConfig: {
+        enabled: true,
+        mode: "on",
+        provider: "injected",
+        model: options.mechanismClassificationModel
+          ?? options.mechanismClassificationProvider.model
+          ?? "injected-model",
+        timeoutMs: options.mechanismClassificationTimeoutMs ?? 90000,
+        promptVersion: options.mechanismClassificationProvider.promptVersion
+          ?? "classify-growth-development.v4",
+        ...(options.mechanismClassificationConfig ?? {})
+      }
+    };
+  }
+  const config = resolveMechanismClassificationConfig({
+    ...(options.mechanismClassificationConfig ?? {}),
+    mode: options.mechanismClassificationMode ?? options.mechanismClassificationConfig?.mode,
+    endpoint: options.mechanismClassificationEndpoint
+      ?? options.mechanismClassificationConfig?.endpoint,
+    model: options.mechanismClassificationModel ?? options.mechanismClassificationConfig?.model,
+    apiKey: options.mechanismClassificationApiKey ?? options.mechanismClassificationConfig?.apiKey,
+    timeoutMs: options.mechanismClassificationTimeoutMs
+      ?? options.mechanismClassificationConfig?.timeoutMs,
+    maxOutputTokens: options.mechanismClassificationMaxOutputTokens
+      ?? options.mechanismClassificationConfig?.maxOutputTokens,
+    thinkingMode: options.mechanismClassificationThinkingMode
+      ?? options.mechanismClassificationConfig?.thinkingMode,
+    allowUnauthenticated: options.mechanismClassificationAllowUnauthenticated
+      ?? options.mechanismClassificationConfig?.allowUnauthenticated
+  }, env);
+  return {
+    mechanismClassificationProvider: createMechanismClassificationProviderFromConfig(config, {
+      fetchImpl: options.mechanismClassificationFetch ?? options.llmFetch,
+      promptText: options.mechanismClassificationPromptText
+    }),
+    mechanismClassificationConfig: config
+  };
+}
+
 export function resolveSmallWindowSemanticConfig(options = {}, env = process.env) {
   const config = resolveEmbeddingProviderConfig({
     ...(options.embeddingConfig ?? {}),
@@ -294,8 +802,15 @@ export function resolveSmallWindowSemanticConfig(options = {}, env = process.env
     batchSize: options.embeddingBatchSize ?? options.embeddingConfig?.batchSize,
     allowUnauthenticated: options.embeddingAllowUnauthenticated ?? options.embeddingConfig?.allowUnauthenticated
   }, env);
+  const knowledgeMode = String(
+    options.knowledgeMode
+      ?? env.TFT_AGENT_KNOWLEDGE_MODE
+      ?? "off"
+  ).trim().toLowerCase();
   return {
     ...config,
+    knowledgeEnabled: ["1", "true", "on", "enabled", "auto"].includes(knowledgeMode),
+    knowledgeMode,
     indexPath: resolve(String(options.semanticIndexPath ?? env.TFT_AGENT_SEMANTIC_INDEX_PATH ?? DEFAULT_SEMANTIC_INDEX_PATH)),
     locale: String(options.semanticLocale ?? env.TFT_AGENT_SEMANTIC_LOCALE ?? "zh-CN")
   };
@@ -310,16 +825,24 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     };
   }
   const config = resolveSmallWindowSemanticConfig(options, env);
-  if (!config.enabled) {
+  if (!config.enabled && !config.knowledgeEnabled) {
     return { semanticRetriever: null, semanticDocumentStore: null, semanticConfig: config };
   }
-  if (!config.configured && !options.embeddingProvider) {
+  if (config.enabled && !config.configured && !options.embeddingProvider) {
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
-  const provider = options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
-    fetchImpl: options.embeddingFetch
-  });
+  if (typeof store.upsert === "function") {
+    await store.upsert(buildOfficialPatchSemanticDocuments({
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      locale: config.locale
+    }));
+  }
+  const provider = config.enabled
+    ? options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
+        fetchImpl: options.embeddingFetch
+      })
+    : null;
   return {
     semanticRetriever: createPersistentSemanticRetriever({ store, provider }),
     semanticDocumentStore: store,
@@ -385,6 +908,13 @@ function summarizeConclusionConfig(config = {}) {
   return summary;
 }
 
+function summarizeMechanismClassificationConfig(config = {}, cache = null) {
+  const summary = summarizeConclusionConfig(config);
+  summary.promptVersion = config.promptVersion ?? "classify-growth-development.v4";
+  summary.cachedSeasons = cache instanceof Map ? cache.size : 0;
+  return summary;
+}
+
 function summarizeSemanticConfig(config = {}, store = null) {
   return {
     enabled: Boolean(config.enabled),
@@ -400,6 +930,7 @@ function summarizeSemanticConfig(config = {}, store = null) {
 export function getSmallWindowRuntimeStatus(runtime = {}) {
   const cacheStoreInfo = runtime.cacheStoreInfo ?? summarizeCacheStore({}, runtime.cacheStore);
   const cachePath = cacheStoreInfo.cachePath ?? cacheStoreInfo.path ?? null;
+  const defaultSeason = runtime.seasonContextService?.getDefault?.() ?? {};
   const cache = {
     type: String(cacheStoreInfo.type ?? "unknown"),
     persistent: Boolean(cacheStoreInfo.persistent),
@@ -416,7 +947,26 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
     } : null,
     cache,
     structuredParser: summarizeStructuredParserConfig(runtime.structuredParserConfig ?? {}),
+    conversationState: {
+      schemaVersion: "conversation-state.v2",
+      mode: runtime.conversationStateV2Mode ?? "off",
+      turnDeltaProviderConfigured: typeof runtime.turnDeltaProvider === "function"
+    },
+    seasonPatch: {
+      currentPatch: runtime.patchState?.currentPatch
+        ?? defaultSeason.source?.currentPatch
+        ?? null,
+      previousPatch: runtime.patchState?.previousPatch
+        ?? defaultSeason.source?.previousPatch
+        ?? null,
+      source: runtime.patchState?.source ?? "season_context",
+      resolvedAt: runtime.patchState?.resolvedAt ?? null
+    },
     conclusionGenerator: summarizeConclusionConfig(runtime.conclusionGeneratorConfig ?? {}),
+    mechanismClassifier: summarizeMechanismClassificationConfig(
+      runtime.mechanismClassificationConfig ?? {},
+      runtime.mechanismClassificationCache
+    ),
     semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
     requests: {
       explorerTimeoutMs: runtime.requestTimeouts?.explorerTimeoutMs ?? null,
@@ -536,12 +1086,55 @@ function attachDetailRetrievalMetadata(payload, input, catalog) {
     catalog
   });
   const retrievalPlan = DETAIL_RETRIEVAL_PLANNER.plan(intentEnvelope);
-  return { ...payload, intentEnvelope, retrievalPlan };
+  const taskFrame = taskFrameFromIntentEnvelope(intentEnvelope);
+  return {
+    ...payload,
+    taskFrame,
+    intentEnvelope,
+    retrievalPlan
+  };
 }
 
 async function executeRegisteredDetailPayload(payload, runtime, context = {}) {
   const query = payload?.retrievalPlan?.structuredQueries?.[0];
   if (!query || !runtime.toolExecutor || !context.agentRun) return payload;
+  const taskFrame = await context.agentRun.stage("resolving", async () => payload.taskFrame);
+  const { capabilityMatch, executionPlanning } = await context.agentRun.stage("planning", async () => {
+    const matched = matchTaskCapabilities(taskFrame, runtime.toolRegistry);
+    return {
+      capabilityMatch: matched,
+      executionPlanning: compileExecutionPlan(taskFrame, matched, {
+        registry: runtime.toolRegistry
+      })
+    };
+  });
+  if (executionPlanning.plan && runtime.executionPlanExecutor) {
+    const execution = await runtime.executionPlanExecutor.execute(executionPlanning.plan, {
+      handlers: {
+        [query.operation]: async () => ({
+          ...payload,
+          updatedAt: payload.updatedAt
+            ?? payload.source?.updatedAt
+            ?? context.agentRun.startedAt
+            ?? new Date().toISOString()
+        })
+      },
+      run: context.agentRun,
+      signal: context.signal,
+      intent: payload.intentEnvelope?.intent
+    });
+    if (execution.status !== "completed") {
+      throw Object.assign(new Error("Detail ExecutionPlan failed"), {
+        code: "execution_plan_failed",
+        execution
+      });
+    }
+    const value = execution.results[0].toolResult.value;
+    value.capabilityMatch = capabilityMatch;
+    value.executionPlan = executionPlanning.plan;
+    value.executionTrace = execution.trace;
+    return value;
+  }
   const result = await runtime.toolExecutor.execute(query.operation, query.params ?? {}, {
     source: query.source,
     handler: async () => payload,
@@ -588,10 +1181,12 @@ async function loadOfficialItemDetails(runtime) {
   return runtime.officialItemDetailsPromise;
 }
 
-async function serializeItemDetailsQuery(input, catalog, runtime) {
+async function serializeItemDetailsQuery(input, catalog, runtime, options = {}) {
   const parsed = parseQuery(input, { catalog });
   if (!isItemDetailsQuestion(input) || parsed.unit) return null;
-  const itemApiNames = parsed.ownedItems ?? [];
+  const itemApiNames = options.resolvedItem
+    ? [options.resolvedItem]
+    : parsed.ownedItems ?? [];
   if (itemApiNames.length === 0 && !isUnknownItemDetailsQuestion(input)) return null;
   if (itemApiNames.length !== 1) {
     const hint = itemDetailsNameHint(input);
@@ -731,6 +1326,21 @@ function traitName(filterId, catalog) {
 function unitName(apiName, catalog) {
   const unit = catalog.unitByApiName.get(apiName);
   return unit?.zhName ?? apiName;
+}
+
+function officialUnitDetailsForApiName(apiName, catalog, entityDetails) {
+  const exact = entityDetails?.units?.get?.(apiName) ?? null;
+  if (exact) return exact;
+  const displayName = String(unitName(apiName, catalog) ?? "").trim().toLocaleLowerCase("zh-CN");
+  if (!displayName || displayName === String(apiName ?? "").trim().toLocaleLowerCase("zh-CN")) return null;
+  const matches = [...(entityDetails?.units?.values?.() ?? [])]
+    .filter((unit) => String(unit?.name ?? "").trim().toLocaleLowerCase("zh-CN") === displayName);
+  return matches.length === 1 ? matches[0] : null;
+}
+
+function resolvedUnitIconUrl(apiName, catalog, entityDetails) {
+  return officialUnitDetailsForApiName(apiName, catalog, entityDetails)?.iconUrl
+    ?? ASSET_RESOLVER.resolveUnit(apiName).iconUrl;
 }
 
 function serializeDefaultContextCandidate(candidate, catalog) {
@@ -876,14 +1486,20 @@ function sourcePayload(result, meta = {}) {
   const cache = result.cache?.query ?? {};
   const compCandidates = result.cache?.compCandidates ?? {};
   return {
-    provider: "MetaTFT",
+    provider: result.source?.provider ?? "MetaTFT",
     endpoint: result.type === "unit_item_comparison"
-      ? result.source?.endpoint ?? "tft-explorer-api/unit_builds"
-      : result.plan?.path ?? (["comp_rankings", "comp_trends"].includes(result.type)
-        ? "/tft-explorer-api/exact_units_traits2"
-        : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
-    patch: result.query?.patch ?? null,
-    updatedAt: cache.updatedAt ?? result.sourceUpdatedAt ?? meta.sourceUpdatedAt ?? null,
+      ? result.source?.endpoint ?? result.plan?.path ?? "tft-explorer-api/unit_builds"
+      : result.plan?.path
+        ?? result.source?.endpoint
+        ?? (["comp_rankings", "comp_trends"].includes(result.type)
+          ? "/tft-explorer-api/exact_units_traits2"
+          : `/tft-explorer-api/unit_builds/${result.query?.unit ?? ""}`),
+    patch: result.source?.patch ?? result.query?.patch ?? null,
+    updatedAt: cache.updatedAt
+      ?? result.source?.updatedAt
+      ?? result.sourceUpdatedAt
+      ?? meta.sourceUpdatedAt
+      ?? null,
     cache: cache.stale ? "stale" : cache.hit ? "cache" : "live",
     stale: Boolean(cache.stale),
     cacheDetail: result.cache?.query ?? null,
@@ -981,7 +1597,8 @@ function preferenceKey(scope) {
   return scope ? anonymousScopeKey(scope, SMALL_WINDOW_PREFERENCES_KEY) : SMALL_WINDOW_PREFERENCES_KEY;
 }
 
-async function loadOfficialEntityDetails(runtime) {
+async function loadOfficialEntityDetails(runtime, options = {}) {
+  if (options.entityDetails) return options.entityDetails;
   if (runtime.officialEntityDetails) return runtime.officialEntityDetails;
   if (!runtime.officialEntityDetailsPromise) {
     runtime.officialEntityDetailsPromise = runtime.fetchOfficialEntityDetails({
@@ -1017,14 +1634,311 @@ function explicitTraitDetailsQuestion(input) {
     && !/(装备|出装|转职|纹章|阵容|排行|排名|推荐)/u.test(text);
 }
 
-function normalizeRange(value, min, max, inverse = false) {
-  if (!Number.isFinite(value)) return 0;
-  if (!Number.isFinite(min) || !Number.isFinite(max) || max <= min) return 1;
-  const normalized = Math.max(0, Math.min(1, (value - min) / (max - min)));
-  return inverse ? 1 - normalized : normalized;
+function requestsSoftCompItemDemand(input, parsed = {}) {
+  const text = String(input ?? "");
+  const softPreference = /(?:最好|尽量|优先).{0,8}(?:少用|不用|避免|减少).{0,8}(?:装备|散件|大剑|反曲弓|大棒|眼泪|腰带|锁子甲|斗篷|拳套)/u.test(text)
+    || /(?:少用|减少).{0,8}(?:装备|散件|大剑|反曲弓|大棒|眼泪|腰带|锁子甲|斗篷|拳套)/u.test(text);
+  return softPreference && (
+    /阵容|体系/u.test(text)
+    || ["comp_rankings", "comp_trends", "comp_analysis"].includes(parsed?.intent)
+  );
 }
 
-function scoreStableItemRecommendations(entries, catalog) {
+function requestedEntityCatalogType(input) {
+  const text = String(input ?? "").replace(/\s+/gu, "");
+  const lower = text.toLowerCase();
+  const listWording = /(?:全部|所有|完整|大全|一览|列表|图鉴)/u;
+  if (
+    /(?:全部|所有|完整)(?:的)?(?:棋子|英雄)/u.test(text)
+    || /(?:棋子|英雄)(?:大全|一览|列表|图鉴)/u.test(text)
+    || (listWording.test(text) && /(?:棋子|英雄)/u.test(text))
+    || /(?:all|every)(?:champion|champions|unit|units)|(?:champion|unit)(?:list|catalog)/u.test(lower)
+  ) {
+    return "unit";
+  }
+  if (
+    /(?:全部|所有|完整)(?:的)?羁绊/u.test(text)
+    || /羁绊(?:大全|一览|列表|图鉴)/u.test(text)
+    || (listWording.test(text) && /羁绊/u.test(text))
+    || /(?:all|every)(?:trait|traits)|trait(?:list|catalog)/u.test(lower)
+  ) {
+    return "trait";
+  }
+  return null;
+}
+
+function entityCatalogText(entityType, count) {
+  return entityType === "unit"
+    ? `当前赛季共找到 ${count} 个棋子，点击棋子可以查看属性、技能和羁绊详情。`
+    : `当前赛季共找到 ${count} 个羁绊，点击羁绊可以查看效果和激活档位。`;
+}
+
+function requestSessionKey(scope, conversationId) {
+  const localKey = conversationId === "default" ? SESSION_LAST_QUERY_KEY : `last_query:${conversationId}`;
+  return scope ? anonymousScopeKey(scope, localKey) : localKey;
+}
+
+async function conversationStateEntry(runtime, scope, conversationId, seasonContextId) {
+  const entry = await runtime.cacheStore?.getSessionState?.(
+    requestSessionKey(scope, conversationId),
+    { seasonContextId }
+  );
+  return entry?.value ?? entry ?? null;
+}
+
+async function persistDetailTaskFrame(payload, runtime, options = {}) {
+  const taskFrame = options.taskFrame ?? payload?.taskFrame;
+  if (!taskFrame || !runtime.cacheStore?.setSessionState) return;
+  const current = createConversationState(
+    await conversationStateEntry(runtime, options.scope, options.conversationId, options.seasonContextId) ?? {}
+  );
+  const updatedAt = new Date().toISOString();
+  const lastResult = options.result
+    ? conversationResultStateFromResponse(options.result, { updatedAt })
+    : null;
+  const next = createConversationState({
+    ...current,
+    activeTask: {
+      taskFrame,
+      legacyIntent: options.result?.type ?? payload.type,
+      updatedAt
+    },
+    ...(lastResult ? { lastResult, lastResultIds: lastResult.shownIds } : {}),
+    pendingClarification: null,
+    updatedAt,
+    query: options.query ?? payload.query ?? null
+  });
+  await runtime.cacheStore.setSessionState(
+    requestSessionKey(options.scope, options.conversationId),
+    next,
+    { seasonContextId: options.seasonContextId }
+  );
+}
+
+function entityCatalogConversationContext(payload) {
+  const entityType = payload?.entityType;
+  const query = {
+    intent: "entity_catalog",
+    entityType,
+    filters: payload?.filters ?? {}
+  };
+  return {
+    taskFrame: createTaskFrame({
+      domain: "tft",
+      action: "search",
+      goal: "entity_catalog",
+      constraints: {
+        targetEntityType: entityType === "trait" ? "trait" : "champion",
+        selectionScope: "current_visible_results"
+      },
+      expectedOutput: ["results", "entities"],
+      capabilityRequirements: ["entity_catalog_filtering"],
+      confidence: 1,
+      understandingStatus: "understood_and_supported"
+    }),
+    query,
+    result: {
+      type: "entity_catalog_results",
+      entityType,
+      results: (payload?.items ?? []).map((entry) => ({
+        apiName: entry.apiName,
+        name: entry.name ?? entry.zhName ?? entry.displayName ?? entry.apiName
+      })),
+      total: payload?.pagination?.total ?? payload?.items?.length ?? 0,
+      filters: payload?.filters ?? {},
+      query
+    }
+  };
+}
+
+async function queryCompositionMemberStatistics(toolInput, catalog, runtime, options = {}) {
+  const traitId = baseTraitApiName(toolInput.trait);
+  const traitRecord = catalog.traitByApiName.get(traitId);
+  const name = traitRecord?.zhName ?? traitRecord?.displayName ?? traitId;
+  const compsData = options.compsData ?? await runtime.compsClient.getCompsData({
+    queue: options.preferences?.queue
+  });
+  const compsStats = await runtime.compsClient.getCompsStats({
+    queue: options.preferences?.queue,
+    patch: options.preferences?.patch,
+    days: toolInput.days ?? options.preferences?.days
+  });
+  const rankings = buildCompRankings({ compsData, compsStats }, {
+    catalog,
+    query: {
+      intent: "comp_rankings",
+      patch: options.preferences?.patch ?? "current",
+      minSamples: 0,
+      limit: 100,
+      popularRequested: true
+    }
+  });
+  const details = await loadOfficialEntityDetails(runtime);
+  const traitNames = new Set([name, traitRecord?.displayName, ...(traitRecord?.aliases ?? [])].filter(Boolean));
+  const traitMembers = [...(details.units ?? new Map()).values()]
+    .filter((unit) => (unit.traitNames ?? []).some((traitNameValue) => traitNames.has(traitNameValue)))
+    .map((unit) => unit.apiName);
+  const results = aggregateExternalUnits(rankings.candidates, {
+    trait: traitId,
+    traitMembers,
+    minSamples: toolInput.minSamples,
+    limit: toolInput.limit
+  });
+  return {
+    type: "trait_external_unit_statistics",
+    source: "metatft",
+    updatedAt: rankings.source?.updatedAt ?? new Date().toISOString(),
+    trait: traitId,
+    results,
+    text: results.length
+      ? `${name}阵容常见的非羁绊外援：${results.map((entry) => entry.name).join("、")}。`
+      : `${name}在当前样本门槛下没有可验证的非羁绊外援。`
+  };
+}
+
+async function tryExternalSupportRequest(input, catalog, runtime, options = {}) {
+  if (!/外援|单挂|單掛|外挂/u.test(input)) return null;
+  const explicitNonTrait = /(?:阵容|陣容).{0,10}(?:非|不属于|不屬於).{0,8}(?:羁绊|羈絆)|(?:非|不属于|不屬於)(?:本)?羁绊外援/u.test(input);
+  if (!explicitNonTrait) {
+    const state = await conversationStateEntry(
+      runtime,
+      options.scope,
+      options.conversationId,
+      options.seasonContextId
+    );
+    const previousTool = state?.lastResult?.toolName
+      ?? state?.activeTask?.legacyIntent
+      ?? state?.query?.intent;
+    if (previousTool === "item_carrier_rankings") return null;
+    const parsed = parseQuery(input, { catalog });
+    const traitId = baseTraitApiName(parsed.traitFilters?.[0]);
+    const trait = catalog.traitByApiName.get(traitId);
+    const name = trait?.zhName ?? trait?.displayName ?? "目标羁绊";
+    const question = `你说的“${name}外援”是指阵容中常见的非${name}单挂棋子，还是适合携带${name}转职的棋子？`;
+    return {
+      ok: true,
+      type: "clarification",
+      text: question,
+      query: { intent: "unknown", traitFilters: traitId ? [traitId] : [], warnings: [] },
+      clarification: {
+        blocking: true,
+        needsClarification: true,
+        reason: "ambiguous_game_concept",
+        question,
+        suggestions: [`${name}阵容里的非羁绊单挂`, `${name}转职适合谁带`]
+      },
+      taskFrame: createTaskFrame({
+        domain: "tft",
+        action: "search",
+        concepts: [
+          ...(traitId ? [{ rawText: name, expectedType: "trait", resolvedId: traitId, confidence: 1 }] : []),
+          { rawText: "外援", expectedType: "game_concept", resolvedId: "concept.unit.external_support", confidence: 1 }
+        ],
+        goal: "resolve_external_support_meaning",
+        ambiguities: [{
+          code: "ambiguous_game_concept",
+          inputFragment: "外援",
+          affectsResult: true,
+          affectsToolSelection: true,
+          candidates: [
+            { id: "non_trait_splash_unit", label: "阵容中常见的非本羁绊单挂棋子" },
+            { id: "emblem_carrier", label: "适合携带目标羁绊转职的棋子" }
+          ]
+        }],
+        confidence: 0.9,
+        understandingStatus: "ambiguous"
+      })
+    };
+  }
+  if (options.clarificationOnly) return null;
+
+  const parsed = parseQuery(input, { catalog });
+  const traitId = baseTraitApiName(parsed.traitFilters?.[0]);
+  if (!traitId) return null;
+  const traitRecord = catalog.traitByApiName.get(traitId);
+  const name = traitRecord?.zhName ?? traitRecord?.displayName ?? traitId;
+  const taskFrame = createTaskFrame({
+    domain: "tft",
+    action: "search",
+    concepts: [
+      { rawText: name, expectedType: "trait", resolvedId: traitId, confidence: 1 },
+      { rawText: "外援", expectedType: "game_concept", resolvedId: "concept.unit.external_support", confidence: 1 }
+    ],
+    constraints: {
+      externalSupportInterpretation: "non_trait_splash_unit",
+      days: options.preferences?.days ?? 2,
+      rank: options.preferences?.rankFilter,
+      minSamples: 300,
+      limit: 10
+    },
+    goal: "find_external_support_units",
+    expectedOutput: ["results", "ranking", "evidence"],
+    capabilityRequirements: ["composition_external_unit_statistics"],
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const capabilityMatch = matchTaskCapabilities(taskFrame, runtime.toolRegistry);
+  const executionPlanning = compileExecutionPlan(taskFrame, capabilityMatch, { registry: runtime.toolRegistry });
+  if (!executionPlanning.plan) return null;
+  const execution = await runtime.executionPlanExecutor.execute(executionPlanning.plan, {
+    handlers: {
+      composition_member_statistics: (toolInput) => queryCompositionMemberStatistics(
+        toolInput,
+        catalog,
+        runtime,
+        options
+      )
+    },
+    run: options.agentRun,
+    signal: options.signal,
+    intent: "composition_member_statistics"
+  });
+  if (execution.status !== "completed") throw Object.assign(new Error("external unit statistics failed"), { execution });
+  const result = execution.result;
+  const text = result.results.length
+    ? `${name}阵容常见的非羁绊外援：${result.results.map((entry) => entry.name).join("、")}。`
+    : `${name}在当前样本门槛下没有可验证的非羁绊外援。`;
+  return {
+    ok: true,
+    ...result,
+    text,
+    answer: { summary: text, methodology: "按包含目标羁绊的真实阵容聚合，并排除目标羁绊原生成员。" },
+    query: { intent: "composition_member_statistics", trait: traitId, warnings: [] },
+    taskFrame,
+    capabilityMatch,
+    executionPlan: executionPlanning.plan,
+    executionTrace: execution.trace
+  };
+}
+
+async function serializeEntityCatalog(catalog, runtime, options = {}) {
+  const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
+  if (!entityType) {
+    throw Object.assign(new TypeError("entityType must be unit or trait"), {
+      statusCode: 400,
+      code: "invalid_entity_catalog_type"
+    });
+  }
+  const details = await loadOfficialEntityDetails(runtime, options);
+  const view = buildEntityCatalog(catalog, details, {
+    ...options,
+    entityType,
+    assetResolver: ASSET_RESOLVER
+  });
+  const text = entityCatalogText(entityType, view.pagination.total);
+  return {
+    ok: true,
+    ...view,
+    text,
+    answer: {
+      summary: text,
+      methodology: "当前赛季动态实体目录限定可见范围，官方目录补充详情；羁绊按基础 API 名称合并档位。"
+    },
+    source: details.meta ?? null
+  };
+}
+
+function rankStableItemRecommendationsBySamples(entries, catalog) {
   const candidates = (entries ?? []).filter((entry) => {
     const item = catalog.itemByApiName.get(entry.apiName);
     return item?.category === "ordinary_completed"
@@ -1033,31 +1947,21 @@ function scoreStableItemRecommendations(entries, catalog) {
       && Number(entry.stats?.games) > 0
       && Number.isFinite(Number(entry.stats?.avgPlacement));
   });
-  if (!candidates.length) return [];
-  const observedMaxGames = Math.max(...candidates.map((entry) => Number(entry.stats.games)), 1);
-  const highFrequency = candidates.filter((entry) => Number(entry.stats.games) >= observedMaxGames * 0.10);
-  const stableCandidates = highFrequency.length >= 3 ? highFrequency : candidates;
-  const games = stableCandidates.map((entry) => Number(entry.stats.games));
-  const top4 = stableCandidates.map((entry) => Number(entry.stats.top4Rate)).filter(Number.isFinite);
-  const averages = stableCandidates.map((entry) => Number(entry.stats.avgPlacement)).filter(Number.isFinite);
-  const maxGames = Math.max(...games, 1);
-  const top4Min = Math.min(...top4);
-  const top4Max = Math.max(...top4);
-  const avgMin = Math.min(...averages);
-  const avgMax = Math.max(...averages);
-  const scored = stableCandidates.map((entry) => {
-    const frequencyScore = Math.log1p(Number(entry.stats.games)) / Math.log1p(maxGames);
-    const top4Score = normalizeRange(Number(entry.stats.top4Rate), top4Min, top4Max);
-    const placementScore = normalizeRange(Number(entry.stats.avgPlacement), avgMin, avgMax, true);
-    return {
-      entry,
-      score: 0.55 * frequencyScore + 0.30 * top4Score + 0.15 * placementScore,
-      acceptablePlacement: Number(entry.stats.avgPlacement) <= 4.5
-    };
-  });
-  const acceptable = scored.filter((entry) => entry.acceptablePlacement);
-  const pool = acceptable.length >= 3 ? acceptable : scored;
-  return pool.sort((a, b) => b.score - a.score || b.entry.stats.games - a.entry.stats.games).slice(0, 3);
+  return candidates
+    .sort((a, b) => (
+      Number(b.stats.games) - Number(a.stats.games)
+      || Number(a.stats.avgPlacement) - Number(b.stats.avgPlacement)
+      || Number(b.stats.top4Rate ?? 0) - Number(a.stats.top4Rate ?? 0)
+      || String(a.apiName).localeCompare(String(b.apiName))
+    ))
+    .slice(0, 3);
+}
+
+function highestSampleBuild(rankedBuilds) {
+  return [...(rankedBuilds ?? [])]
+    .sort((left, right) => (
+      Number(right?.stats?.games ?? 0) - Number(left?.stats?.games ?? 0)
+    ))[0] ?? null;
 }
 
 async function stableUnitItems(apiName, catalog, runtime, context = {}) {
@@ -1077,10 +1981,8 @@ async function stableUnitItems(apiName, catalog, runtime, context = {}) {
     useStructuredParser: "never",
     useSession: false
   });
-  return scoreStableItemRecommendations(result.itemRankings, catalog).map(({ entry, score }) => ({
-    ...serializeItemRanking(entry, catalog),
-    recommendationScore: Number(score.toFixed(3))
-  }));
+  return rankStableItemRecommendationsBySamples(result.itemRankings, catalog)
+    .map((entry) => serializeItemRanking(entry, catalog));
 }
 
 async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}) {
@@ -1092,7 +1994,7 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
   let entityCatalog = catalog;
   let parsed = parseQuery(input, { catalog: entityCatalog });
   if (!parsed.unit && !(parsed.traitFilters ?? []).length) {
-    details = await loadOfficialEntityDetails(runtime);
+    details = await loadOfficialEntityDetails(runtime, context);
     const officialUnits = buildUnitCatalogFromCompsData({
       compOptions: [{ units_list: [...details.units.keys()].join("&") }]
     });
@@ -1111,13 +2013,15 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
     parsed = parseQuery(input, { catalog: entityCatalog });
   }
 
-  const unitApiName = parsed.unit ?? null;
-  const traitApiNames = [...new Set((parsed.traitFilters ?? []).map(baseTraitApiName))];
+  const unitApiName = context.resolvedUnit ?? parsed.unit ?? null;
+  const traitApiNames = context.resolvedTrait
+    ? [baseTraitApiName(context.resolvedTrait)]
+    : [...new Set((parsed.traitFilters ?? []).map(baseTraitApiName))];
   const wantsUnit = Boolean(unitApiName && unitWording);
   const wantsTrait = Boolean(!unitApiName && traitApiNames.length === 1 && traitWording);
   if (!wantsUnit && !wantsTrait) return null;
 
-  details ??= await loadOfficialEntityDetails(runtime);
+  details ??= await loadOfficialEntityDetails(runtime, context);
   if (wantsUnit) {
     const official = details.units.get(unitApiName);
     const catalogUnit = entityCatalog.unitByApiName.get(unitApiName);
@@ -1135,13 +2039,13 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
       text: official ? `${name}：${official.ability?.name ?? "技能信息"}` : `${name}暂无官方棋子详情。`,
       answer: {
         summary: `${name}的属性、技能与稳定装备推荐`,
-        methodology: "先排除样本不足最高频装备 10% 的极低频候选，再按 55% 对数登场频率 + 30% 前四率 + 15% 平均名次计算稳定分，并优先保留平均名次不高于 4.5 的装备。"
+        methodology: "仅统计当前可获取的普通成装，并按样本数从高到低排序；平均名次与前四率仅用于展示，不参与排序。"
       },
       unit: {
         ...(official ?? { stats: {}, ability: {}, traitNames: [] }),
         apiName: unitApiName,
         name,
-        iconUrl: ASSET_RESOLVER.resolveUnit(unitApiName).iconUrl
+        iconUrl: official?.iconUrl ?? ASSET_RESOLVER.resolveUnit(unitApiName).iconUrl
       },
       recommendedItems: recommendations,
       recommendationWarning,
@@ -1168,6 +2072,129 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
   };
 }
 
+function entityCatalogPreferences(runtime, seasonContext) {
+  return {
+    seasonContextId: seasonContext.id,
+    providerVersion: seasonContext.source.providerVersion,
+    effectivePatch: seasonContext.environment === "pbe"
+      ? seasonContext.currentPatch ?? seasonContext.effectivePatch
+      : seasonContext.effectivePatch,
+    currentPatch: seasonContext.currentPatch,
+    previousPatch: seasonContext.previousPatch,
+    patch: seasonContext.source.explorerPatch ?? seasonContext.providerPatch ?? "current",
+    unitBuildPatch: seasonContext.source.unitBuildPatch
+      ?? seasonContext.source.explorerPatch
+      ?? seasonContext.providerPatch
+      ?? "current",
+    compPatch: seasonContext.source.compsPatch ?? seasonContext.providerPatch ?? "current",
+    queue: seasonContext.source.queue,
+    tftSet: seasonContext.source.tftSet ?? null,
+    lookupChannel: seasonContext.source.lookupChannel ?? null,
+    lookupLocale: seasonContext.source.lookupLocale ?? "zh_cn",
+    requestTimeoutMs: seasonContext.source.requestDeadlineMs ?? null
+  };
+}
+
+export async function handleEntityCatalogRequest(runtime, options = {}) {
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  const { catalog, warning, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  const payload = await serializeEntityCatalog(catalog, runtime, { ...options, entityDetails });
+  payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  payload.meta = {
+    catalogWarning: warning,
+    aliasMemory,
+    preferences
+  };
+  return payload;
+}
+
+function resolveEntityDetailApiName(entityType, requestedApiName, catalog, entityDetails) {
+  if (entityType !== "unit" || entityDetails?.units?.has?.(requestedApiName)) return requestedApiName;
+  const catalogUnit = catalog?.unitByApiName?.get?.(requestedApiName) ?? null;
+  const requestedName = String(
+    catalogUnit?.zhName ?? catalogUnit?.displayName ?? catalogUnit?.name ?? ""
+  ).trim().toLocaleLowerCase("zh-CN");
+  if (!requestedName) return requestedApiName;
+  const matches = [...(entityDetails?.units?.entries?.() ?? [])]
+    .filter(([, unit]) => String(unit?.name ?? "").trim().toLocaleLowerCase("zh-CN") === requestedName);
+  return matches.length === 1
+    ? String(matches[0][1]?.apiName ?? matches[0][0])
+    : requestedApiName;
+}
+
+function catalogForResolvedEntityDetail(entityType, resolvedApiName, catalog) {
+  if (entityType !== "unit") return catalog;
+  const resolved = catalog?.unitByApiName?.get?.(resolvedApiName) ?? null;
+  const resolvedName = String(
+    resolved?.zhName ?? resolved?.displayName ?? resolved?.name ?? ""
+  ).trim().toLocaleLowerCase("zh-CN");
+  if (!resolvedName) return catalog;
+  const units = (catalog?.units ?? []).filter((unit) => (
+    unit.apiName === resolvedApiName
+    || String(unit?.zhName ?? unit?.displayName ?? unit?.name ?? "")
+      .trim().toLocaleLowerCase("zh-CN") !== resolvedName
+  ));
+  if (units.length === (catalog?.units ?? []).length) return catalog;
+  return createCatalog({
+    units,
+    traits: catalog?.traits ?? [],
+    items: catalog?.items ?? []
+  });
+}
+
+export async function handleEntityDetailRequest(runtime, options = {}) {
+  const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
+  if (!entityType) {
+    throw Object.assign(new TypeError("entityType must be unit or trait"), {
+      statusCode: 400,
+      code: "invalid_entity_catalog_type"
+    });
+  }
+  const apiName = String(options.apiName ?? options.id ?? "").trim();
+  if (!/^[A-Za-z0-9_:.-]{1,128}$/u.test(apiName)) {
+    throw Object.assign(new TypeError("A valid entity id is required"), {
+      statusCode: 400,
+      code: "invalid_entity_id"
+    });
+  }
+
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
+  const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  const resolvedApiName = resolveEntityDetailApiName(entityType, apiName, catalog, entityDetails);
+  const detailCatalog = catalogForResolvedEntityDetail(entityType, resolvedApiName, catalog);
+  const input = entityType === "unit"
+    ? `${resolvedApiName} 棋子技能属性详情`
+    : `${resolvedApiName} 羁绊效果详情`;
+  const payload = await serializeEntityDetailsQuery(input, detailCatalog, runtime, {
+    preferences,
+    compsData,
+    entityDetails,
+    refresh: Boolean(options.refresh)
+  });
+  const returnedApiName = entityType === "unit"
+    ? payload?.unit?.apiName
+    : payload?.trait?.apiName;
+  if (!payload || returnedApiName !== resolvedApiName) {
+    throw Object.assign(new Error("Entity was not found in the current season catalog"), {
+      statusCode: 404,
+      code: "entity_not_found"
+    });
+  }
+
+  payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  payload.meta = {
+    ...(payload.meta ?? {}),
+    catalogWarning: warning,
+    aliasMemory,
+    preferences
+  };
+  return attachDetailRetrievalMetadata(payload, input, detailCatalog);
+}
+
 export async function loadSmallWindowPreferences(runtime, scope = null) {
   return completeSmallWindowPreferences(await loadStoredSmallWindowPreferences(runtime, scope));
 }
@@ -1192,12 +2219,144 @@ export async function resetSmallWindowPreferences(runtime, scope = null) {
   return completeSmallWindowPreferences();
 }
 
+const SEMANTIC_NATIVE_RESULT_TYPES = new Set([
+  "entity_catalog_results",
+  "unit_builds_batch_results",
+  "trait_external_unit_statistics"
+]);
+
+function serializeSemanticNativeResult(result, catalog, meta = {}) {
+  const { itemDetails: _itemDetails, ...publicMeta } = meta;
+  const query = result.query ?? {};
+  const source = result.source && typeof result.source === "object"
+    ? result.source
+    : {
+      provider: result.sourceId === "official_tft_catalog" ? "Official TFT Catalog" : "MetaTFT",
+      endpoint: result.sourceId ?? "registered_tool",
+      updatedAt: result.sourceUpdatedAt ?? null,
+      cache: "live"
+    };
+  const results = (result.results ?? []).map((entry) => {
+    if (result.type === "entity_catalog_results") {
+      return {
+        ...entry,
+        iconUrl: entry.iconUrl ?? (result.result?.entityType === "unit"
+          ? ASSET_RESOLVER.resolveUnit(entry.apiName).iconUrl
+          : null)
+      };
+    }
+    if (result.type === "unit_builds_batch_results") {
+      return {
+        ...entry,
+        iconUrl: entry.iconUrl ?? ASSET_RESOLVER.resolveUnit(entry.apiName).iconUrl,
+        bestBuild: (entry.bestBuild ?? []).map((apiName) => ({
+          apiName,
+          name: itemName(apiName, catalog),
+          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
+        }))
+      };
+    }
+    return entry;
+  });
+  return {
+    ...result,
+    ok: true,
+    answer: {
+      summary: result.answer?.summary ?? result.text,
+      warnings: query.warnings ?? [],
+      methodology: result.answer?.methodology ?? null
+    },
+    results,
+    query: {
+      ...query,
+      traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog))
+    },
+    source: {
+      ...source,
+      risks: [...new Set([...(source.risks ?? []), ...(query.warnings ?? [])])]
+    },
+    meta: {
+      returnedResults: results.length,
+      ...publicMeta
+    }
+  };
+}
+
 function serializeRecommendation(result, catalog, meta = {}) {
-  const { itemDetails, ...publicMeta } = meta;
+  if (SEMANTIC_NATIVE_RESULT_TYPES.has(result.type)) {
+    return serializeSemanticNativeResult(result, catalog, meta);
+  }
+  const { itemDetails, entityDetails, ...publicMeta } = meta;
   if (["comp_rankings", "comp_trends", "comp_analysis"].includes(result.type)) {
-    return serializeCompRankings(result, publicMeta);
+    return serializeCompRankings(result, publicMeta, catalog, entityDetails);
   }
   const query = result.query ?? {};
+  if (result.type === "item_carrier_rankings") {
+    const itemApiName = result.item ?? query.item;
+    const carriers = (result.carriers ?? []).slice(0, 8).map((carrier) => ({
+      unit: {
+        apiName: carrier.unitApiName,
+        name: unitName(carrier.unitApiName, catalog),
+        iconUrl: resolvedUnitIconUrl(carrier.unitApiName, catalog, entityDetails)
+      },
+      stats: {
+        top4: percent(carrier.stats.top4Rate),
+        win: percent(carrier.stats.winRate),
+        avg: Number(carrier.stats.avgPlacement.toFixed(2)),
+        games: carrier.stats.games
+      },
+      baselineAvgPlacement: Number(carrier.baselineAvgPlacement.toFixed(2)),
+      unitDelta: Number(carrier.unitDelta.toFixed(3)),
+      placementUplift: Number(carrier.placementUplift.toFixed(3)),
+      builds: (carrier.builds ?? []).map((build) => ({
+        items: build.items.map((apiName) => ({
+          apiName,
+          name: itemName(apiName, catalog),
+          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
+          target: apiName === itemApiName
+        })),
+        stats: {
+          top4: percent(build.stats.top4Rate),
+          win: percent(build.stats.winRate),
+          avg: Number(build.stats.avgPlacement.toFixed(2)),
+          games: build.stats.games
+        }
+      }))
+    }));
+    return {
+      ok: true,
+      type: "item_carrier_rankings",
+      text: result.text,
+      answer: {
+        summary: result.text,
+        warnings: result.warnings ?? [],
+        methodology: "仅保留携带该装备后平均名次优于该棋子自身基线的棋子；默认按样本量排序。"
+      },
+      item: {
+        apiName: itemApiName,
+        name: itemName(itemApiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveItem(itemApiName).iconUrl
+      },
+      carriers,
+      query: {
+        ...query,
+        itemName: itemName(itemApiName, catalog)
+      },
+      methodology: result.methodology,
+      diagnostics: result.diagnostics,
+      taskFrame: result.taskFrame ?? null,
+      capabilityMatch: result.capabilityMatch ?? null,
+      executionPlan: result.executionPlan ?? null,
+      executionTrace: result.executionTrace ?? null,
+      conversation: result.conversation ?? null,
+      source: sourcePayload(result, meta),
+      cache: result.cache ?? null,
+      meta: {
+        returnedCarriers: carriers.length,
+        ...publicMeta
+      }
+    };
+  }
   if (result.type === "unit_item_rankings" || result.type === "unit_emblem_rankings") {
     const itemRankings = (result.itemRankings ?? []).map((entry) => serializeItemRanking(entry, catalog));
     const references = (result.itemRankingReferences ?? []).slice(0, 5).map((entry) => serializeItemRanking(entry, catalog));
@@ -1218,7 +2377,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       unit: query.unit ? {
         apiName: query.unit,
         name: unitName(query.unit, catalog),
-        iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
+        iconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails)
       } : null,
       answer: {
         summary: itemPerformance?.conclusion ?? (best
@@ -1239,7 +2398,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       query: {
         ...query,
         unitName: unitName(query.unit, catalog),
-        unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
+        unitIconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails),
         traitNames: (query.traitFilters ?? []).map((filterId) => traitName(filterId, catalog)),
         ownedItemNames: (query.ownedItems ?? []).map((apiName) => itemName(apiName, catalog)),
         performanceItemName: query.performanceItem ? itemName(query.performanceItem, catalog) : null,
@@ -1297,13 +2456,19 @@ function serializeRecommendation(result, catalog, meta = {}) {
         avg: Number(build.stats.avgPlacement.toFixed(2)),
         games: build.stats.games
       },
-      ranking: build.ranking?.method === "robust_applicability_v1"
+      ranking: build.ranking?.method === "robust_applicability_v3"
         ? {
           method: build.ranking.method,
           score: Number((build.ranking.score * 100).toFixed(1)),
+          baseScore: Number((build.ranking.baseScore * 100).toFixed(1)),
           performanceScore: Number((build.ranking.performanceScore * 100).toFixed(1)),
           coverageScore: Number((build.ranking.coverageScore * 100).toFixed(1)),
-          priorSamples: build.ranking.priorSamples
+          priorSamples: build.ranking.priorSamples,
+          generalRecommendation: build.ranking.generalRecommendation === true,
+          sampleLeadRatio: Number.isFinite(build.ranking.sampleLeadRatio)
+            ? Number(build.ranking.sampleLeadRatio.toFixed(1))
+            : null,
+          applicabilityBasis: build.ranking.applicabilityBasis
         }
         : null,
       lowSample
@@ -1345,6 +2510,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
     }))
   });
   const coreFrequency = summarizeCoreItemFrequency(cards);
+  const lockedItemSet = new Set(lockedItemApiNames);
+  coreFrequency.items = coreFrequency.items.filter((entry) => !lockedItemSet.has(entry.apiName));
+  coreFrequency.coreItems = coreFrequency.coreItems.filter((entry) => !lockedItemSet.has(entry.apiName));
   const coreItems = coreFrequency.coreItems.map((entry) => ({
     apiName: entry.apiName,
     name: itemName(entry.apiName, catalog),
@@ -1361,6 +2529,19 @@ function serializeRecommendation(result, catalog, meta = {}) {
     requiredAppearances: coreFrequency.requiredAppearances,
     items: coreItems
   };
+  const itemDifferentiation = hasLockedItems
+    ? analyzeItemDifferentiation({
+      recommendations: (result.rankedBuilds ?? []).slice(0, 3).map((build, index) => ({
+        evidenceId: `build:${index + 1}`,
+        items: build.items.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+        stats: build.stats,
+        stable: !isLowSampleBuild(build, query),
+        lowSample: isLowSampleBuild(build, query)
+      })),
+      lockedItems: lockedItemApiNames.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
+      primaryMetric: query.primaryMetric ?? query.sort ?? "avgPlacement"
+    })
+    : null;
   const referenceCard = cards[0] ?? null;
   cards.forEach((card, index) => {
     card.difference = index === 0 ? null : itemDifferences(referenceCard, card, catalog);
@@ -1408,19 +2589,20 @@ function serializeRecommendation(result, catalog, meta = {}) {
         : `${compAnswerPrefix(query.comp)}${result.clarification?.question ?? result.text}`,
       evidence: cards[0]?.stats ?? null,
       warnings: query.warnings ?? [],
-      methodology: cards[0]?.ranking?.method === "robust_applicability_v1"
-        ? "稳健普适评分：对前四率、吃鸡率和平均名次做同查询样本的贝叶斯收缩校正，再加入 8% 的对数样本覆盖权重；表现接近时优先高覆盖方案，显著更强的方案仍可胜出。"
+      methodology: cards[0]?.ranking?.method === "robust_applicability_v3"
+        ? "稳健普适评分：前四率、吃鸡率和平均名次先做同查询样本的贝叶斯收缩校正，组成 90% 表现分；样本置信度按相对最大样本量的平方根连续计算，占 10%。前四率低于 50%或平均名次高于 4.5 的方案不获得样本加分。"
         : null,
       coreConclusion: coreItemSummary
     },
     unit: query.unit ? {
       apiName: query.unit,
       name: unitName(query.unit, catalog),
-      iconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl
+      iconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails)
     } : null,
     cards,
     coreItemSummary,
     commonCore: coreItems,
+    itemDifferentiation,
     comparison: serializedComparison,
     results: serializedComparison?.entries ?? [],
     overlap: serializedComparison?.overlap ?? null,
@@ -1430,11 +2612,12 @@ function serializeRecommendation(result, catalog, meta = {}) {
     })),
     decision: serializedComparison?.decision ?? result.localDecision ?? null,
     clarification: result.clarification ?? null,
+    conversation: result.conversation ?? null,
     query: {
       intent: query.intent,
       unit: query.unit,
       unitName: unitName(query.unit, catalog),
-      unitIconUrl: ASSET_RESOLVER.resolveUnit(query.unit).iconUrl,
+      unitIconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails),
       starLevel: query.starLevel,
       itemCount: query.itemCount,
       traitFilters: displayTraitFilters,
@@ -1487,7 +2670,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
   };
 }
 
-function serializeCompRankings(result, meta = {}) {
+function serializeCompRankings(result, meta = {}, catalog = null, entityDetails = null) {
   const serializeComp = (comp) => ({
       compId: comp.compId,
       name: comp.name,
@@ -1497,7 +2680,7 @@ function serializeCompRankings(result, meta = {}) {
       units: (comp.units ?? []).map((unit) => ({
         apiName: unit.apiName,
         name: unit.name,
-        iconUrl: unit.iconUrl ?? null,
+        iconUrl: unit.iconUrl ?? resolvedUnitIconUrl(unit.apiName, catalog, entityDetails),
         fallbackIconUrl: unit.fallbackIconUrl ?? null,
         assetFallback: Boolean(unit.assetFallback),
         targetStarLevel: Number.isInteger(unit.targetStarLevel) ? unit.targetStarLevel : null,
@@ -1569,6 +2752,7 @@ function serializeCompRankings(result, meta = {}) {
     references: (result.references ?? []).map(serializeComp),
     trend: result.trend ?? null,
     query: result.query,
+    conversation: result.conversation ?? null,
     text: result.text ?? "",
     answer: result.analysis ? {
       summary: result.analysis.answer?.conclusion ?? result.text ?? "",
@@ -1647,6 +2831,12 @@ export function createSmallWindowRuntime(options = {}) {
     }
   }));
   const toolExecutor = options.toolExecutor ?? new ToolExecutor({ registry: toolRegistry });
+  const executionPlanExecutor = options.executionPlanExecutor
+    ?? new ExecutionPlanExecutor({
+      registry: toolRegistry,
+      toolExecutor,
+      resultPolicyExecutor: createTftResultPolicyExecutor()
+    });
   const agentRuntime = options.agentRuntime ?? new AgentRuntime({
     budget: options.agentRunBudget,
     onEvent: options.agentRunEvent
@@ -1662,6 +2852,18 @@ export function createSmallWindowRuntime(options = {}) {
     providerRouter,
     cacheStore,
     cacheStoreInfo,
+    compDetailCache: options.compDetailCache ?? new Map(),
+    compDetailLoadPromises: options.compDetailLoadPromises ?? new Map(),
+    compDetailCacheTtlMs: Math.max(
+      1000,
+      Number(options.compDetailCacheTtlMs ?? DEFAULT_COMP_DETAIL_CACHE_TTL_MS)
+    ),
+    augmentLookupCache: options.augmentLookupCache ?? new Map(),
+    augmentLookupLoadPromises: options.augmentLookupLoadPromises ?? new Map(),
+    augmentLookupCacheTtlMs: Math.max(
+      1000,
+      Number(options.augmentLookupCacheTtlMs ?? DEFAULT_AUGMENT_LOOKUP_CACHE_TTL_MS)
+    ),
     requestTimeouts: {
       explorerTimeoutMs: metaTFTClient.timeoutMs ?? requestTimeouts.explorerTimeoutMs,
       catalogTimeoutMs: catalogMetaTFTClient.timeoutMs ?? requestTimeouts.catalogTimeoutMs,
@@ -1689,14 +2891,31 @@ export function createSmallWindowRuntime(options = {}) {
     officialJobUrl: options.officialJobUrl,
     officialEntityDetailsTimeoutMs: options.officialEntityDetailsTimeoutMs ?? 10000,
     fetchOfficialEntityDetails: options.fetchOfficialEntityDetails ?? fetchOfficialTftEntityDetails,
+    fetchCommunityDragonEntityDetails: options.fetchCommunityDragonEntityDetails ?? fetchCommunityDragonEntityDetails,
+    communityDragonEntityDetailsEnabled: options.communityDragonEntityDetailsEnabled
+      ?? Boolean(options.fetchCommunityDragonEntityDetails || (!options.compsClient && !options.catalogMetaTFTClient)),
     fetchItems: options.fetchItems ?? true,
     compsData: options.compsData ?? null,
     defaultContextOptions: options.defaultContextOptions ?? {},
     structuredParser: options.structuredParser ?? null,
     useStructuredParser: options.useStructuredParser ?? "auto",
     structuredParserConfig: options.structuredParserConfig ?? null,
+    turnDeltaProvider: options.turnDeltaProvider ?? options.semanticTaskProvider ?? null,
+    controlledPlanner: options.controlledPlanner ?? createTftControlledPlannerProvider(),
+    controlledPlannerFallback: options.controlledPlannerFallback ?? null,
+    conversationStateV2Mode: options.conversationStateV2Mode ?? "off",
+    turnInterpreterBudget: options.turnInterpreterBudget ?? DEFAULT_TURN_INTERPRETER_BUDGET,
     conclusionProvider: options.conclusionProvider ?? null,
     conclusionGeneratorConfig,
+    coachProvider: options.coachProvider ?? null,
+    coachConfig: options.coachConfig ?? { enabled: false, mode: "off", provider: "off" },
+    mechanismClassificationProvider: options.mechanismClassificationProvider ?? null,
+    mechanismClassificationConfig: options.mechanismClassificationConfig
+      ?? { enabled: false, mode: "off", provider: "off" },
+    mechanismClassificationCache: options.mechanismClassificationCache ?? new Map(),
+    mechanismClassificationLoadPromises: options.mechanismClassificationLoadPromises ?? new Map(),
+    systemInteractionRouter: options.systemInteractionRouter ?? createSystemInteractionRouter(),
+    answerModeRouter: options.answerModeRouter ?? createAnswerModeRouter(),
     conclusionJobs: options.conclusionJobCoordinator ? null : new Map(),
     conclusionJobCoordinator: options.conclusionJobCoordinator ?? null,
     conclusionWorker: options.conclusionWorker ?? null,
@@ -1716,7 +2935,8 @@ export function createSmallWindowRuntime(options = {}) {
     recommendForInputImpl: options.recommendForInputImpl ?? recommendForInput,
     agentRuntime,
     toolRegistry,
-    toolExecutor
+    toolExecutor,
+    executionPlanExecutor
   };
 }
 
@@ -1740,7 +2960,45 @@ export function createSmallWindowCacheStore(options = {}) {
 
 export async function createSmallWindowRuntimeAsync(options = {}, env = process.env) {
   const structuredParserRuntime = createSmallWindowStructuredParser(options, env);
+  const conversationStateV2Mode = String(
+    options.conversationStateV2Mode
+    ?? env.TFT_AGENT_CONVERSATION_STATE_V2_MODE
+    ?? "off"
+  ).trim().toLowerCase();
+  const turnDeltaProvider = options.turnDeltaProvider
+    ?? options.semanticTaskProvider
+    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+      ? createChatSemanticTaskProvider({
+        ...structuredParserRuntime.structuredParserConfig,
+        thinkingMode: options.turnDeltaThinkingMode ?? "disabled",
+        fetchImpl: options.structuredParserFetch ?? options.llmFetch,
+        onRequestLog: options.turnDeltaRequestLog
+          ?? options.semanticTaskRequestLog
+          ?? options.structuredParserRequestLog
+          ?? options.llmRequestLog
+      })
+      : null);
+  const deterministicControlledPlanner = options.controlledPlannerFallback
+    ?? createTftControlledPlannerProvider();
+  const llmControlledPlanner = structuredParserRuntime.structuredParserConfig?.enabled
+    ? createChatExecutionPlannerProvider({
+      ...structuredParserRuntime.structuredParserConfig,
+      thinkingMode: options.plannerThinkingMode ?? "disabled",
+      maxTokens: options.plannerMaxTokens ?? 900,
+      fetchImpl: options.structuredParserFetch ?? options.llmFetch,
+      onRequestLog: options.plannerRequestLog
+        ?? options.structuredParserRequestLog
+        ?? options.llmRequestLog
+    })
+    : null;
+  const controlledPlanner = options.controlledPlanner
+    ?? llmControlledPlanner
+    ?? deterministicControlledPlanner;
+  const controlledPlannerFallback = options.controlledPlannerFallback
+    ?? (controlledPlanner?.plannerKind === "llm" ? deterministicControlledPlanner : null);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
+  const coachRuntime = createSmallWindowCoachRuntime(options, env);
+  const mechanismClassificationRuntime = createSmallWindowMechanismClassificationRuntime(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
   const storageRequested = Boolean(options.storageRuntime
@@ -1773,8 +3031,15 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
   const runtimeOptions = {
     ...options,
     ...requestTimeouts,
+    agentRunBudget: resolveSmallWindowAgentRunBudget(options, env),
     ...structuredParserRuntime,
+    conversationStateV2Mode,
+    turnDeltaProvider,
+    controlledPlanner,
+    controlledPlannerFallback,
     ...conclusionRuntime,
+    ...coachRuntime,
+    ...mechanismClassificationRuntime,
     ...semanticRuntime,
     ...(storageRuntime ? {
       storageRuntime,
@@ -1837,12 +3102,20 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
 }
 
 function runtimeCatalogKey(preferences = {}) {
-  return [
+  const parts = [
     preferences.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
     preferences.providerVersion ?? "metatft-live.v1",
     preferences.effectivePatch ?? preferences.patch ?? "current",
     preferences.queue ?? "1100"
-  ].join(":");
+  ];
+  if (preferences.tftSet) {
+    parts.push(
+      preferences.tftSet,
+      preferences.lookupChannel ?? "latest",
+      preferences.lookupLocale ?? "zh_cn"
+    );
+  }
+  return parts.join(":");
 }
 
 function hasDynamicCatalogRecords(records = []) {
@@ -1902,7 +3175,8 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
 
   if (runtime.catalog) return applyAliasMemory(runtime.catalog, {
     warning: null,
-    compsData: runtime.compsData
+    compsData: runtime.compsData,
+    entityDetails: runtime.officialEntityDetails ?? null
   });
 
   const key = runtimeCatalogKey(preferences);
@@ -1916,6 +3190,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       catalog: createCatalog(),
       warning: null,
       compsData: null,
+      entityDetails: null,
       itemCatalogMemory: null,
       domainCatalogMemory: null
     };
@@ -1950,31 +3225,102 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         queue: preferences.queue ?? "1100",
         patch: preferences.patch ?? "current"
       };
+      const includeSeedCatalog = !preferences.tftSet;
+      const isPbeCatalog = String(preferences.queue ?? "").toUpperCase() === "PBE";
+      const catalogRequestTimeoutMs = Number.isFinite(Number(preferences.requestTimeoutMs))
+        ? Math.max(
+          runtime.requestTimeouts.catalogTimeoutMs,
+          Number(preferences.requestTimeoutMs) - 2000
+        )
+        : undefined;
+      const catalogRequestOptions = catalogRequestTimeoutMs
+        ? { timeoutMs: catalogRequestTimeoutMs }
+        : {};
+      const setLookupRemoteRequest = preferences.tftSet && typeof runtime.compsClient.getSetLookup === "function"
+        ? runtime.compsClient.getSetLookup(preferences.tftSet, {
+            channel: preferences.lookupChannel ?? "latest",
+            locale: preferences.lookupLocale ?? "zh_cn",
+            timeoutMs: catalogRequestTimeoutMs
+          })
+        : Promise.resolve(null);
+      const localLookupPath = `.cache/metatft-${preferences.tftSet}-${preferences.lookupChannel ?? "latest"}-${preferences.lookupLocale ?? "zh_cn"}.json`;
+      const setLookupRequest = isPbeCatalog
+        ? setLookupRemoteRequest.catch(async () => JSON.parse(await readFile(localLookupPath, "utf8")))
+        : setLookupRemoteRequest;
+      const communityDragonDetailsRequest = isPbeCatalog
+        && preferences.tftSet
+        && runtime.communityDragonEntityDetailsEnabled
+        ? runtime.fetchCommunityDragonEntityDetails({
+            fetchImpl: runtime.officialEntityDetailsFetch,
+            tftSet: preferences.tftSet,
+            version: preferences.currentPatch ?? "PBE",
+            lookupPromise: setLookupRequest,
+            localCachePaths: {
+              teamplanner: ".cache/communitydragon-pbe-tftchampions-teamplanner.json",
+              traits: ".cache/communitydragon-pbe-tfttraits.json",
+              lookup: localLookupPath
+            },
+            timeoutMs: catalogRequestTimeoutMs
+          })
+        : Promise.resolve(null);
       const requests = [
-        runtime.catalogMetaTFTClient.getItems(explorerParams),
-        runtime.catalogMetaTFTClient.getUnitsUnique(explorerParams),
-        runtime.catalogMetaTFTClient.getTraits(explorerParams),
-        runtime.compsClient.getLatestClusterInfo(compsParams),
-        runtime.compsClient.getCompOptions(compsParams),
-        typeof runtime.compsClient.getCompBuilds === "function"
+        runtime.catalogMetaTFTClient.getItems(explorerParams, catalogRequestOptions),
+        runtime.catalogMetaTFTClient.getUnitsUnique(explorerParams, catalogRequestOptions),
+        runtime.catalogMetaTFTClient.getTraits(explorerParams, catalogRequestOptions),
+        runtime.compsClient.getLatestClusterInfo(compsParams, catalogRequestOptions),
+        isPbeCatalog ? Promise.resolve([]) : runtime.compsClient.getCompOptions(compsParams),
+        !isPbeCatalog && typeof runtime.compsClient.getCompBuilds === "function"
           ? runtime.compsClient.getCompBuilds(compsParams)
-          : Promise.resolve([])
+          : Promise.resolve([]),
+        setLookupRequest,
+        communityDragonDetailsRequest
       ];
-      const [items, unitsUnique, traits, latestClusterInfo, compOptions, compBuilds] = await Promise.allSettled(requests);
+      const [items, unitsUnique, traits, latestClusterInfo, compOptions, compBuilds, setLookup, communityDragonDetails] = await Promise.allSettled(requests);
+      const setLookupPayload = setLookup.status === "fulfilled" ? setLookup.value : null;
+      if (communityDragonDetails.status === "fulfilled") {
+        entry.entityDetails = communityDragonDetails.value;
+      } else if (isPbeCatalog) {
+        warnings.push(`CommunityDragon PBE 棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
+      }
+      const itemLookupByApiName = new Map((setLookupPayload?.items ?? [])
+        .filter((row) => row?.apiName)
+        .map((row) => [row.apiName, row]));
+      const unitLookupByApiName = new Map((setLookupPayload?.units ?? [])
+        .filter((row) => row?.apiName)
+        .map((row) => [row.apiName, row]));
+      const traitLookupByApiName = new Map((setLookupPayload?.traits ?? [])
+        .filter((row) => row?.apiName)
+        .map((row) => [row.apiName, row]));
+      const pbeSetLookupItems = isPbeCatalog && itemLookupByApiName.size > 0
+        ? buildItemCatalogFromItemsResponse({
+            data: [...itemLookupByApiName.keys()].map((apiName) => ({ items: apiName }))
+          }, {
+            patch,
+            itemLookupByApiName,
+            includeSeeds: false
+          })
+        : [];
+
+      if (preferences.tftSet && setLookup.status !== "fulfilled") {
+        warnings.push(`Set lookup 刷新失败，目录将回退为 API 标识：${setLookup.reason.message}`);
+      }
 
       if (items.status === "fulfilled") {
         const generatedItems = buildItemCatalogFromItemsResponse(items.value, {
-          patch
+          patch,
+          itemLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
         if (generatedItems.length > 0) {
-          catalogOverrides.items = generatedItems;
+          const resolvedItems = mergeCatalogItems(generatedItems, pbeSetLookupItems, { patch });
+          catalogOverrides.items = resolvedItems;
           entry.itemCatalogMemory = {
-            source: "remote",
-            items: generatedItems.length,
+            source: pbeSetLookupItems.length > 0 ? "remote+set_lookup" : "remote",
+            items: resolvedItems.length,
             updatedAt: new Date().toISOString()
           };
           try {
-            const saved = await runtime.cacheStore?.setItemCatalog?.(patch, generatedItems, storeOptions);
+            const saved = await runtime.cacheStore?.setItemCatalog?.(patch, resolvedItems, storeOptions);
             if (saved?.updatedAt) entry.itemCatalogMemory.updatedAt = saved.updatedAt;
           } catch (error) {
             warnings.push(`装备目录已刷新，但持久化失败：${error.message}`);
@@ -1989,14 +3335,22 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       if (!catalogOverrides.items) {
         const cachedItems = persistedItemCatalog?.value?.items;
         if (Array.isArray(cachedItems) && cachedItems.length > 0) {
-          catalogOverrides.items = cachedItems;
+          catalogOverrides.items = mergeCatalogItems(cachedItems, pbeSetLookupItems, { patch });
           entry.itemCatalogMemory = {
-            source: "persistent",
-            items: cachedItems.length,
+            source: pbeSetLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
+            items: catalogOverrides.items.length,
             updatedAt: persistedItemCatalog.updatedAt ?? null
           };
           warnings.push(`已使用 ${persistedItemCatalog.updatedAt ?? "未知时间"} 的持久化装备目录`);
-        } else {
+        } else if (pbeSetLookupItems.length > 0) {
+          catalogOverrides.items = pbeSetLookupItems;
+          entry.itemCatalogMemory = {
+            source: "set_lookup",
+            items: pbeSetLookupItems.length,
+            updatedAt: new Date().toISOString()
+          };
+          warnings.push("MetaTFT /items 未返回 PBE 数据，已使用当前 PBE set lookup 装备目录");
+        } else if (includeSeedCatalog) {
           const snapshotItems = buildItemCatalogFromItemsResponse({
             data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
           }, { patch });
@@ -2009,17 +3363,29 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           warnings.push(
             `未找到持久化装备目录，已使用本地官方目录快照（${CURRENT_ITEM_LOCALIZATION.metadata?.sourcePatch ?? "版本未知"}）`
           );
+        } else {
+          catalogOverrides.items = [];
+          entry.itemCatalogMemory = {
+            source: "unavailable",
+            items: 0,
+            updatedAt: null
+          };
+          warnings.push("当前 PBE 装备目录不可用；为避免跨赛季污染，未回退正式服目录");
         }
       }
 
       if (unitsUnique.status === "fulfilled") {
         catalogOverrides.units = buildUnitCatalogFromExplorerRows(unitsUnique.value, {
-          patch
+          patch,
+          unitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
       }
       if (traits.status === "fulfilled") {
         catalogOverrides.traits = buildTraitCatalogFromExplorerRows(traits.value, {
-          patch
+          patch,
+          traitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
       }
       if (unitsUnique.status !== "fulfilled" || traits.status !== "fulfilled") {
@@ -2038,10 +3404,14 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
 
       if (compOptions.status === "fulfilled" || latestClusterInfo.status === "fulfilled") {
         const unitsFromComps = buildUnitCatalogFromCompsData(compsData, {
-          patch
+          patch,
+          unitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
         const traitsFromComps = buildTraitCatalogFromCompsData(compsData, {
-          patch
+          patch,
+          traitLookupByApiName,
+          includeSeeds: includeSeedCatalog
         });
         catalogOverrides.units = catalogOverrides.units
           ? mergeCatalogUnits(catalogOverrides.units, unitsFromComps)
@@ -2051,7 +3421,20 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           : traitsFromComps;
       }
       if (compOptions.status !== "fulfilled") {
-        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${compOptions.reason.message}`);
+        const compOptionsReason = compOptions.reason ?? {};
+        entry.compOptionsFailure = {
+          status: "failed",
+          code: String(compOptionsReason.code ?? "metatft_comp_options_unavailable"),
+          endpoint: "tft-comps-api/comp_options",
+          message: String(compOptionsReason.message ?? "unknown_error")
+        };
+        warnings.push(`阵容目录辅助端点刷新失败，动态英雄/羁绊目录将继续使用 Explorer、latest cluster 或持久化字典：${entry.compOptionsFailure.message}`);
+      } else {
+        entry.compOptionsFailure = {
+          status: "ok",
+          code: "ok",
+          endpoint: "tft-comps-api/comp_options"
+        };
       }
 
       const remoteUnitsAvailable = hasDynamicCatalogRecords(catalogOverrides.units);
@@ -2067,7 +3450,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         const refreshedPersistedUnits = mergeCatalogUnits(
           buildUnitCatalogFromExplorerRows({
             data: persistedUnits.map((unit) => ({ units_unique: `${unit.apiName}-1` }))
-          }, { patch }),
+          }, { patch, includeSeeds: includeSeedCatalog }),
           persistedUnits
         );
         catalogOverrides.units = remoteUnitsAvailable
@@ -2082,7 +3465,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         const refreshedPersistedTraits = mergeCatalogTraits(
           buildTraitCatalogFromExplorerRows({
             data: persistedTraits.map((trait) => ({ traits: trait.filterId }))
-          }, { patch }),
+          }, { patch, includeSeeds: includeSeedCatalog }),
           persistedTraits
         );
         catalogOverrides.traits = remoteTraitsAvailable
@@ -2094,8 +3477,10 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         }
       }
 
-      const finalUnits = catalogOverrides.units ?? createCatalog().units;
-      const finalTraits = catalogOverrides.traits ?? createCatalog().traits;
+      const finalUnits = catalogOverrides.units ?? (includeSeedCatalog ? createCatalog().units : []);
+      const finalTraits = catalogOverrides.traits ?? (includeSeedCatalog ? createCatalog().traits : []);
+      catalogOverrides.units = finalUnits;
+      catalogOverrides.traits = finalTraits;
       entry.domainCatalogMemory = {
         unitSource,
         traitSource,
@@ -2343,10 +3728,58 @@ export async function streamConclusionResponse(req, res, runtime, jobId, scope =
   res.end();
 }
 
+function llmActivityForPayload(payload, runtime) {
+  const interpretation = payload?.conversation?.providerInvocation ?? null;
+  const planner = payload?.plannerInvocation ?? null;
+  const conclusion = payload?.answer?.generatedConclusion ?? null;
+  const assistant = payload?.assistantResponse ?? null;
+  const stages = [];
+  if (interpretation?.attempted === true) stages.push("turn_interpreter");
+  if (planner?.attempted === true && planner?.llm === true) stages.push("planner");
+  if (conclusion?.status === "generated") stages.push("conclusion");
+  if (assistant?.status === "generated" || assistant?.model) stages.push("coach_answer");
+  const calls = [
+    ...(interpretation?.attempted === true ? [{
+      stage: "turn_interpreter",
+      model: runtime.structuredParserConfig?.model ?? null,
+      succeeded: interpretation.succeeded === true,
+      accepted: interpretation.accepted === true,
+      corrected: interpretation.corrected === true,
+      correctionReason: interpretation.correctionReason ?? null,
+      usage: interpretation.usage ?? null,
+      validationErrors: interpretation.validationErrors ?? []
+    }] : []),
+    ...(planner?.attempted === true && planner?.llm === true ? [{
+      stage: "planner",
+      model: planner.model ?? runtime.structuredParserConfig?.model ?? null,
+      succeeded: planner.succeeded === true,
+      accepted: planner.accepted === true,
+      corrected: planner.corrected === true,
+      correctionReason: planner.correctionReason ?? null,
+      durationMs: planner.durationMs ?? null,
+      usage: planner.usage ?? null,
+      validationErrors: planner.validationErrors ?? []
+    }] : [])
+  ];
+  return {
+    used: stages.length > 0,
+    model: conclusion?.model
+      ?? assistant?.model
+      ?? planner?.model
+      ?? runtime.structuredParserConfig?.model
+      ?? null,
+    stages,
+    calls,
+    turnInterpreter: interpretation,
+    planner
+  };
+}
+
 async function persistQueryResponse(payload, runtime, details = {}) {
   const queryId = randomUUID();
   const visitorScope = String(details.scope ?? "local");
   const conclusion = payload.answer?.generatedConclusion ?? null;
+  const llmActivity = llmActivityForPayload(payload, runtime);
   const responseSnapshot = structuredClone(payload);
   delete responseSnapshot.access;
   if (responseSnapshot.answer?.generatedConclusion?.status === "pending") {
@@ -2370,8 +3803,8 @@ async function persistQueryResponse(payload, runtime, details = {}) {
     patch: payload.query?.patch ?? payload.source?.patch ?? null,
     cacheHit: Boolean(payload.cache?.query?.hit),
     cacheStale: Boolean(payload.cache?.query?.stale),
-    llmUsed: conclusion?.status === "generated",
-    llmModel: conclusion?.model ?? null,
+    llmUsed: llmActivity.used,
+    llmModel: llmActivity.model,
     durationMs: Date.now() - details.startedAt
   });
   if (conclusion?.status === "pending" && conclusion.jobId) {
@@ -2393,11 +3826,224 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   return payload;
 }
 
+async function retrieveCoachKnowledge(input, route, runtime, options = {}) {
+  if (!runtime.semanticRetriever || !route?.retrievalScopes?.length) {
+    return {
+      evidence: [],
+      warnings: ["knowledge_index_unavailable"],
+      currentStats: null
+    };
+  }
+  try {
+    const retriever = new KnowledgeRetriever({ retriever: runtime.semanticRetriever });
+    return retriever.searchWithStatus(input, {
+      scopes: route.retrievalScopes,
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      season: options.season ?? null,
+      patch: options.patch ?? null,
+      rank: options.rank ?? null,
+      timeWindow: options.timeWindow ?? null,
+      region: options.region ?? null,
+      locale: options.locale ?? "zh-CN",
+      topK: options.topK ?? 8,
+      minimumScore: options.minimumScore ?? 0.08
+    });
+  } catch (error) {
+    return {
+      evidence: [],
+      warnings: [`knowledge_retrieval_failed:${error?.code ?? error?.name ?? "error"}`],
+      currentStats: null
+    };
+  }
+}
+
+function assistantResponseFromCoach(result) {
+  return {
+    status: result.status,
+    text: result.text,
+    citations: result.citations ?? [],
+    warnings: result.warnings ?? [],
+    model: result.model ?? null,
+    latencyMs: result.latencyMs ?? 0,
+    content: result.content
+  };
+}
+
+function localizeCoachStructuredResult(result, catalog) {
+  return {
+    ...result,
+    rankedBuilds: (result?.rankedBuilds ?? []).map((record) => ({
+      ...record,
+      items: (record.items ?? []).map((value) => ({
+        apiName: value?.apiName ?? value,
+        name: itemName(value?.apiName ?? value, catalog)
+      }))
+    })),
+    itemRankings: (result?.itemRankings ?? []).map((record) => ({
+      ...record,
+      name: itemName(record?.apiName ?? record?.item ?? record, catalog)
+    }))
+  };
+}
+
+function serializeSystemInteraction(result, options = {}) {
+  const outOfDomain = result.interactionType === "out_of_domain";
+  return {
+    ok: true,
+    type: "system_interaction",
+    handled: true,
+    interactionType: result.interactionType,
+    answerMode: result.answerMode,
+    mode: result.answerMode,
+    text: result.answer,
+    answer: {
+      summary: result.answer,
+      generatedConclusion: {
+        status: "skipped",
+        reason: "deterministic_system_interaction",
+        model: null
+      }
+    },
+    systemInteraction: result,
+    showEvidencePanel: false,
+    conversation: {
+      mode: options.conversationStateV2Mode ?? "off",
+      stateVersion: "conversation-state.v2",
+      delta: null,
+      resolution: null,
+      stateMutation: "none"
+    },
+    agent: {
+      status: outOfDomain
+        ? createAgentStatus({
+          understandingStatus: "out_of_domain",
+          capabilityStatus: "unsupported",
+          planningStatus: "not_planned",
+          executionStatus: "pending",
+          evidenceStatus: "insufficient",
+          finalOutcome: "refused"
+        })
+        : createAgentStatus({
+          understandingStatus: "understood",
+          capabilityStatus: "supported",
+          planningStatus: "planned",
+          executionStatus: "completed",
+          evidenceStatus: "sufficient",
+          finalOutcome: "answered"
+        }),
+      route: {
+        schemaVersion: result.schemaVersion,
+        selectedPath: "system_interaction",
+        route: result.interactionType,
+        fallbackReason: null
+      },
+      executionPlan: null,
+      executionTrace: null,
+      shadowComparison: null,
+      failureStage: null,
+      metrics: null
+    },
+    meta: {
+      deterministic: true,
+      llmUsed: false,
+      metatftUsed: false,
+      retrievalUsed: false
+    },
+    ...(options.seasonContext ? { seasonContext: options.seasonContext } : {}),
+    ...conversationMeta({ conversationId: options.conversationId })
+  };
+}
+
+function serializeKnowledgeAnswer({
+  input,
+  route,
+  coach,
+  knowledge,
+  parsed,
+  preferences
+}) {
+  const aiGeneratedKnowledgeEvidenceCount = (knowledge.evidence ?? []).filter(
+    (record) => record?.aiGenerated === true
+      || record?.contentOrigin === "ai_generated_transcript_summary"
+  ).length;
+  const query = {
+    intent: "knowledge_question",
+    requestedIntent: parsed?.intent ?? null,
+    entities: {
+      unit: parsed?.unit ?? null,
+      items: parsed?.ownedItems ?? []
+    },
+    constraints: {
+      patch: preferences?.effectivePatch ?? preferences?.patch ?? null,
+      locale: "zh-CN"
+    },
+    warnings: [...new Set([...(knowledge.warnings ?? []), ...(coach.warnings ?? [])])]
+  };
+  return {
+    ok: true,
+    type: "coach_answer",
+    mode: route.mode,
+    text: coach.text,
+    answer: {
+      summary: coach.text,
+      generatedConclusion: {
+        status: "skipped",
+        reason: "coach_answer_service",
+        model: coach.model ?? null
+      }
+    },
+    assistantResponse: assistantResponseFromCoach(coach),
+    answerModeRoute: route,
+    query,
+    queryResult: coach.evidenceBundle?.queryResult ?? {
+      resultType: null,
+      source: null,
+      candidates: []
+    },
+    knowledgeEvidence: knowledge.evidence,
+    currentStatsScope: knowledge.currentStats ?? null,
+    evidenceBundle: coach.evidenceBundle,
+    source: {
+      provider: "knowledge_index",
+      patch: query.constraints.patch,
+      updatedAt: null,
+      risk: knowledge.evidence.length
+        ? aiGeneratedKnowledgeEvidenceCount
+          ? "攻略摘要由 AI 从视频字幕生成，未经人工复核；需核对原视频，并结合版本和适用条件。"
+          : "攻略属于创作者观点，需结合版本和适用条件。"
+        : "未检索到足够相关的攻略知识。"
+    },
+    meta: {
+      input,
+      knowledgeEvidenceCount: knowledge.evidence.length,
+      aiGeneratedContent: aiGeneratedKnowledgeEvidenceCount > 0,
+      aiGeneratedKnowledgeEvidenceCount,
+      aiContentDisclosure: aiGeneratedKnowledgeEvidenceCount
+        ? "YouTube 攻略摘要由 AI 从字幕提取和概括，未经人工复核。"
+        : null
+    }
+  };
+}
+
 async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const startedAt = Date.now();
-  const input = String(body?.input ?? "").trim();
+  const displayInput = String(body?.input ?? "").trim();
+  const quickTask = normalizeQuickTask(body?.quickTask);
+  const input = quickTask ? quickTaskExecutionInput(quickTask) : displayInput;
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
   const scope = context.visitor?.scope ?? null;
+  const reportProgress = (type, data = {}) => {
+    if (typeof context.onProgress !== "function") return;
+    try {
+      context.onProgress({
+        schemaVersion: "recommendation-progress.v1",
+        type,
+        data
+      });
+    } catch {
+      // Streaming progress is observational and cannot change the request result.
+    }
+  };
   let llmUseReserved = false;
   const reserveLlmUseForRequest = async () => {
     if (llmUseReserved) return;
@@ -2413,15 +4059,33 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         context.visitor,
         reserveLlmUseForRequest
       ),
+      turnDeltaProvider: quotaWrappedCallable(
+        runtime.turnDeltaProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
+      ),
       conclusionProvider: quotaWrappedCallable(
         runtime.conclusionProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
+      ),
+      coachProvider: quotaWrappedCallable(
+        runtime.coachProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
+      ),
+      mechanismClassificationProvider: quotaWrappedCallable(
+        runtime.mechanismClassificationProvider,
         context.accessService,
         context.visitor,
         reserveLlmUseForRequest
       )
     }
     : runtime;
-  if (!input) {
+  if (!displayInput) {
     return {
       statusCode: 400,
       payload: {
@@ -2429,6 +4093,35 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         error: "请输入查询内容"
       }
     };
+  }
+  reportProgress("understanding.started");
+
+  const systemInteraction = requestRuntime.systemInteractionRouter.route({ input });
+  if (systemInteraction.handled) {
+    const respond = async () => {
+      const interactionSeasonContext = runtime.seasonContextService.resolveForQuery(
+        body?.seasonContextId
+      );
+      const payload = serializeSystemInteraction(systemInteraction, {
+        conversationId,
+        conversationStateV2Mode: requestRuntime.conversationStateV2Mode,
+        seasonContext: runtime.seasonContextService.publicRecord(interactionSeasonContext)
+      });
+      await persistQueryResponse(payload, runtime, {
+        scope,
+        conversationId,
+        input: displayInput,
+        startedAt,
+        runId: context.agentRun?.runId ?? null
+      });
+      if (context.accessService && context.visitor) {
+        payload.access = await context.accessService.publicStatus(context.visitor);
+      }
+      return { statusCode: 200, payload };
+    };
+    return context.agentRun?.stage
+      ? context.agentRun.stage("responding", respond)
+      : respond();
   }
 
   let seasonContext;
@@ -2449,18 +4142,53 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const publicSeasonContext = runtime.seasonContextService.publicRecord(seasonContext);
 
   const completeResponse = async (payload) => {
-    payload.seasonContext = publicSeasonContext;
-    await persistQueryResponse(payload, runtime, {
-      scope,
-      conversationId,
-      input,
-      startedAt,
-      runId: context.agentRun?.runId ?? null
-    });
-    if (context.accessService && context.visitor) {
-      payload.access = await context.accessService.publicStatus(context.visitor);
-    }
-    return { statusCode: 200, payload };
+    const respond = async () => {
+      payload.agent ??= {
+        status: defaultAgentStatusForPayload(payload),
+        route: null,
+        executionPlan: payload.executionPlan ?? null,
+        executionTrace: payload.executionTrace ?? null,
+        shadowComparison: null,
+        failureStage: null,
+        metrics: null
+      };
+      payload.seasonContext = publicSeasonContext;
+      if (quickTask) {
+        payload.quickTask = {
+          schemaVersion: quickTask.schemaVersion,
+          id: quickTask.id,
+          operation: quickTask.operation,
+          arguments: quickTask.arguments,
+          executionMode: "structured"
+        };
+      }
+      const llmActivity = llmActivityForPayload(payload, runtime);
+      payload.meta ??= {};
+      payload.meta.llmUsed = llmActivity.used;
+      payload.meta.llmModel = llmActivity.model;
+      payload.meta.llmStages = llmActivity.stages;
+      payload.meta.llmCalls = llmActivity.calls;
+      if (llmActivity.turnInterpreter) {
+        payload.meta.turnInterpreter = llmActivity.turnInterpreter;
+      }
+      if (llmActivity.planner) {
+        payload.meta.planner = llmActivity.planner;
+      }
+      await persistQueryResponse(payload, runtime, {
+        scope,
+        conversationId,
+        input: displayInput,
+        startedAt,
+        runId: context.agentRun?.runId ?? null
+      });
+      if (context.accessService && context.visitor) {
+        payload.access = await context.accessService.publicStatus(context.visitor);
+      }
+      return { statusCode: 200, payload };
+    };
+    return context.agentRun?.stage
+      ? context.agentRun.stage("responding", respond)
+      : respond();
   };
 
   const storedPreferences = await loadStoredSmallWindowPreferences(runtime, scope);
@@ -2470,23 +4198,182 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   });
   const preferences = {
     ...completeSmallWindowPreferences(explicitPreferences),
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    currentPatch: seasonContext.currentPatch,
-    previousPatch: seasonContext.previousPatch,
-    patch: seasonContext.providerPatch ?? "current",
-    queue: seasonContext.source.queue
+    ...entityCatalogPreferences(runtime, seasonContext)
   };
   if (body.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
-  const { catalog, warning, compsData, aliasMemory } = await loadRuntimeCatalog(runtime, preferences);
-  const entityDetailsPayload = await serializeEntityDetailsQuery(input, catalog, requestRuntime, {
+  const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  const resolveQuickView = async (load, taskIds) => quickTask?.definition.staticView
+    && taskIds.includes(quickTask.id)
+    ? cachedQuickTaskView(runtime, {
+      task: quickTask,
+      seasonContext,
+      preferences,
+      refresh: Boolean(body.refresh),
+      load,
+      backgroundRefresh: () => handleRecommendRequestInternal({
+        ...body,
+        refresh: true,
+        deferConclusion: false
+      }, runtime, {})
+    })
+    : load();
+  let fastPathTaskPromise = null;
+  const getFastPathTaskFrame = () => {
+    if (!fastPathTaskPromise) {
+      fastPathTaskPromise = conversationStateEntry(
+        requestRuntime,
+        scope,
+        conversationId,
+        seasonContext.id
+      ).then((storedState) => {
+        const state = createConversationState(storedState ?? {});
+        return parseSemanticTask(input, {
+          catalog,
+          provider: null,
+          conversation: body.startNewTask === true
+            ? []
+            : [
+                ...(state.taskHistory ?? []),
+                ...(state.activeTask?.taskFrame ? [state.activeTask] : [])
+              ],
+          dynamicContext: {
+            version: seasonContext.effectivePatch ?? catalog?.version ?? null
+          }
+        });
+      }).then((result) => result.taskFrame);
+    }
+    return fastPathTaskPromise;
+  };
+  const fastPathEligible = async (fastPath, options = {}) => evaluateFastPathEligibility({
+    fastPath,
+    taskFrame: await getFastPathTaskFrame(),
+    ...options
+  }).eligible;
+  const mechanismClassificationQuery = parseMechanismClassificationQuery(input);
+  if (mechanismClassificationQuery) {
+    reportProgress("understanding.resolved", {
+      intent: "mechanism_classification",
+      query: mechanismClassificationQuery
+    });
+    reportProgress("retrieval.started", { source: "current_season_entity_details" });
+    try {
+      const isPbeMechanismSeason = String(preferences.queue ?? "").toUpperCase() === "PBE";
+      const mechanismEntityDetails = entityDetails ?? (isPbeMechanismSeason
+        ? null
+        : await loadOfficialEntityDetails(requestRuntime));
+      const payload = await answerMechanismClassificationQuery({
+        query: mechanismClassificationQuery,
+        entityDetails: mechanismEntityDetails,
+        seasonContext: publicSeasonContext,
+        provider: requestRuntime.mechanismClassificationProvider,
+        cache: runtime.mechanismClassificationCache,
+        loadPromises: runtime.mechanismClassificationLoadPromises,
+        refresh: Boolean(body.refresh)
+      });
+      reportProgress("retrieval.completed", {
+        source: "current_season_entity_details",
+        entityCount: payload.classificationMeta?.entityCount ?? 0,
+        classifiedCount: payload.classificationMeta?.classifiedCount ?? 0,
+        cache: payload.classificationMeta?.cache ?? null
+      });
+      payload.meta = {
+        durationMs: Date.now() - startedAt,
+        catalogWarning: warning,
+        aliasMemory,
+        preferences
+      };
+      return completeResponse(payload);
+    } catch (error) {
+      const payload = {
+        ok: false,
+        type: "mechanism_classification_error",
+        error: error.message,
+        code: error.code ?? "mechanism_classification_failed",
+        seasonContext: publicSeasonContext,
+        configuration: error.code === "mechanism_classifier_unavailable"
+          ? {
+            enabled: Boolean(requestRuntime.mechanismClassificationConfig?.enabled),
+            missing: requestRuntime.mechanismClassificationConfig?.missing ?? []
+          }
+          : undefined
+      };
+      if (context.accessService && context.visitor) {
+        payload.access = await context.accessService.publicStatus(context.visitor);
+      }
+      return {
+        statusCode: error.statusCode ?? 502,
+        payload
+      };
+    }
+  }
+  const externalSupportPayload = await tryExternalSupportRequest(input, catalog, requestRuntime, {
+    scope,
+    conversationId,
+    seasonContextId: seasonContext.id,
     preferences,
     compsData,
-    refresh: Boolean(body.refresh)
+    clarificationOnly: true,
+    agentRun: context.agentRun,
+    signal: context.signal
   });
+  if (
+    externalSupportPayload
+    && await fastPathEligible("external_support_clarification")
+  ) {
+    externalSupportPayload.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return completeResponse(externalSupportPayload);
+  }
+  const quickTaskEntities = quickTask ? resolvedQuickTaskEntities(quickTask, catalog) : null;
+  const requestedCatalogType = quickTask?.id === "unit-catalog"
+    ? "unit"
+    : quickTask?.id === "trait-catalog"
+      ? "trait"
+      : requestedEntityCatalogType(input);
+  if (
+    requestedCatalogType
+    && await fastPathEligible("entity_catalog", {
+      pureCatalogRequest: isPureEntityCatalogRequest(input, requestedCatalogType)
+    })
+  ) {
+    const payload = await resolveQuickView(() => serializeEntityCatalog(catalog, requestRuntime, {
+      entityType: requestedCatalogType,
+      entityDetails
+    }), ["unit-catalog", "trait-catalog"]);
+    payload.meta = {
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    const conversationContext = entityCatalogConversationContext(payload);
+    await persistDetailTaskFrame(payload, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id,
+      ...conversationContext
+    });
+    return completeResponse(payload);
+  }
+  const entityDetailsFastPathEligible = ["unit-details", "trait-details"].includes(quickTask?.id)
+    || ((explicitUnitDetailsQuestion(input) || explicitTraitDetailsQuestion(input))
+      && await fastPathEligible("entity_details", { canResolveEntity: true }));
+  const entityDetailsPayload = entityDetailsFastPathEligible
+    ? await resolveQuickView(() => serializeEntityDetailsQuery(input, catalog, requestRuntime, {
+      preferences,
+      compsData,
+      entityDetails,
+      resolvedUnit: quickTaskEntities?.unit ?? null,
+      resolvedTrait: quickTaskEntities?.trait ?? null,
+      refresh: Boolean(body.refresh)
+    }), ["unit-details", "trait-details"])
+    : null;
   if (entityDetailsPayload) {
     entityDetailsPayload.meta = {
       durationMs: Date.now() - startedAt,
@@ -2495,16 +4382,146 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       preferences
     };
     const payload = attachDetailRetrievalMetadata(entityDetailsPayload, input, catalog);
-    return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
+    const executed = await executeRegisteredDetailPayload(payload, requestRuntime, context);
+    await persistDetailTaskFrame(executed, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id
+    });
+    return completeResponse(executed);
   }
-  const itemDetailsPayload = await serializeItemDetailsQuery(input, catalog, runtime);
+  const itemDetailsPayload = (quickTask?.id === "item-details"
+    || (isItemDetailsQuestion(input) && await fastPathEligible("item_details")))
+    ? await resolveQuickView(
+      () => serializeItemDetailsQuery(input, catalog, runtime, {
+        resolvedItem: quickTaskEntities?.item ?? null
+      }),
+      ["item-details"]
+    )
+    : null;
   if (itemDetailsPayload) {
     const payload = attachDetailRetrievalMetadata(itemDetailsPayload, input, catalog);
-    return completeResponse(await executeRegisteredDetailPayload(payload, requestRuntime, context));
+    const executed = await executeRegisteredDetailPayload(payload, requestRuntime, context);
+    await persistDetailTaskFrame(executed, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id,
+      query: {
+        intent: "item_details",
+        lockedItems: executed.item?.apiName ? [executed.item.apiName] : []
+      }
+    });
+    return completeResponse(executed);
   }
-  const parsedForIntent = parseQuery(input, { catalog });
-  const compEntityClarification = serializeCompRankingEntityClarification(parsedForIntent, catalog);
-  if (compEntityClarification) {
+  const parsedForIntent = quickTask
+    ? directParsedForQuickTask(quickTask, input, catalog, preferences)
+    : parseQuery(input, { catalog });
+  const extendedUnitBuildTimeoutMs = parsedForIntent.unit
+    && ["unit_item_rankings", "unit_emblem_rankings"].includes(parsedForIntent.intent)
+    && (parsedForIntent.itemCategories ?? []).length === 1
+    ? Math.max(
+      runtime.requestTimeouts.explorerTimeoutMs,
+      runtime.requestTimeouts.compRankingsTimeoutMs
+    )
+    : null;
+  const shouldLoadCompItemDetails = requestsSoftCompItemDemand(input, parsedForIntent);
+  const answerModeRoute = requestRuntime.answerModeRouter.route({
+    input,
+    parsed: parsedForIntent
+  });
+  const currentStatsRank = [
+    ...(parsedForIntent.rankFilter ?? preferences.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter)
+  ].map((rank) => String(rank).toUpperCase()).sort().join(",");
+  const currentStatsDays = Number(
+    parsedForIntent.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
+  );
+  const patchKnowledgeVersion = answerModeRoute.patchNotesRequested
+    ? extractPatchVersionFromQuestion(input)
+      ?? seasonContext.theme?.patchNoteVersion
+      ?? seasonContext.currentPatch
+      ?? seasonContext.effectivePatch
+    : null;
+  const coachKnowledgeOptions = {
+    seasonContextId: seasonContext.id,
+    season: seasonContext.id,
+    patch: patchKnowledgeVersion ?? seasonContext.currentPatch ?? seasonContext.effectivePatch,
+    rank: currentStatsRank,
+    timeWindow: `${currentStatsDays}d`,
+    region: String(body.region ?? "global").toLowerCase(),
+    locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
+  };
+  let coachKnowledgePromise = null;
+  const getCoachKnowledge = () => {
+    if (!coachKnowledgePromise) {
+      coachKnowledgePromise = answerModeRoute.mode === "structured"
+        ? Promise.resolve({ evidence: [], warnings: [], currentStats: null })
+        : retrieveCoachKnowledge(input, answerModeRoute, requestRuntime, coachKnowledgeOptions);
+    }
+    return coachKnowledgePromise;
+  };
+  if (
+    answerModeRoute.mode === "rag"
+    && await fastPathEligible("rag", {
+      requiredCapabilities: answerModeRoute.currentBestRequired
+        || answerModeRoute.retrievalScopes.includes("current_stats")
+        ? ["current_structured_statistics"]
+        : []
+    })
+  ) {
+    reportProgress("understanding.resolved", {
+      answerModeRoute,
+      intent: parsedForIntent.intent ?? "knowledge_question"
+    });
+    reportProgress("plan.ready", { answerModeRoute });
+    reportProgress("retrieval.started", { source: "knowledge_index" });
+    const knowledge = await getCoachKnowledge();
+    reportProgress("retrieval.completed", {
+      source: "knowledge_index",
+      evidenceCount: knowledge.evidence.length
+    });
+    reportProgress("answer.started");
+    const coach = await createHybridAnswerService({
+      provider: requestRuntime.coachProvider
+    }).answer({
+      question: input,
+      mode: "rag",
+      query: {
+        intent: "knowledge_question",
+        requestedIntent: parsedForIntent.intent ?? null,
+        constraints: {
+          patch: patchKnowledgeVersion ?? seasonContext.effectivePatch,
+          locale: requestRuntime.semanticConfig?.locale ?? "zh-CN"
+        }
+      },
+      knowledgeEvidence: knowledge.evidence,
+      warnings: knowledge.warnings
+    });
+    const payload = serializeKnowledgeAnswer({
+      input,
+      route: answerModeRoute,
+      coach,
+      knowledge,
+      parsed: parsedForIntent,
+      preferences
+    });
+    payload.meta = {
+      ...payload.meta,
+      durationMs: Date.now() - startedAt,
+      catalogWarning: warning,
+      aliasMemory,
+      preferences
+    };
+    return completeResponse(payload);
+  }
+  const compEntityClarification = requestsSoftCompItemDemand(input, parsedForIntent)
+    ? null
+    : serializeCompRankingEntityClarification(parsedForIntent, catalog);
+  if (
+    compEntityClarification
+    && await fastPathEligible("composition_entity_clarification", {
+      blockingReason: compEntityClarification.clarification?.reason
+    })
+  ) {
     compEntityClarification.meta = {
       durationMs: Date.now() - startedAt,
       catalogWarning: warning,
@@ -2521,21 +4538,191 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const previousSessionEntry = requestRuntime.conclusionGeneratorConfig?.enabled && preferences.conclusionMode !== "off"
     ? await runtime.cacheStore?.getSessionState?.(sessionKey, { seasonContextId: seasonContext.id })
     : null;
-  const result = await requestRuntime.recommendForInputImpl(input, {
+  const agentToolHandlers = {
+    entity_catalog_query: async (toolInput) => {
+      const details = await loadOfficialEntityDetails(requestRuntime);
+      return queryEntityCatalog({
+        catalog,
+        details,
+        input: toolInput,
+        updatedAt: details?.meta?.updatedAt
+      });
+    },
+    composition_member_statistics: (toolInput) => queryCompositionMemberStatistics(
+      toolInput,
+      catalog,
+      requestRuntime,
+      { preferences, compsData }
+    ),
+    unit_builds_batch: async (toolInput) => {
+      const entities = (toolInput.entities ?? []).slice(0, 5);
+      const results = [];
+      const sourceStates = [];
+      const sourceClient = runtime.metaTFTClient;
+      const batchClient = sourceClient instanceof MetaTFTClient
+        && Number(sourceClient.timeoutMs) < 5000
+        ? new MetaTFTClient({
+          baseUrl: sourceClient.baseUrl,
+          fetchImpl: sourceClient.fetchImpl,
+          timeoutMs: 5000,
+          maxRetries: sourceClient.maxRetries,
+          retryDelayMs: sourceClient.retryDelayMs,
+          maxRetryDelayMs: sourceClient.maxRetryDelayMs,
+          sleepImpl: sourceClient.sleepImpl
+        })
+        : sourceClient;
+      const loadBuild = async (entity) => {
+        const apiName = String(entity.apiName ?? "");
+        const name = entity.name ?? unitName(apiName, catalog);
+        if (!apiName) return null;
+        const parsedUnitQuery = {
+          intent: "unit_best_3_items",
+          unit: apiName,
+          unitAlias: apiName,
+          traitFilters: [],
+          ownedItems: [],
+          lockedItems: [],
+          excludedItems: [],
+          comparisonItems: [],
+          parser: { intentExplicit: true }
+        };
+        const batchPreferences = {
+          ...preferences,
+          ...(toolInput.days !== undefined ? { days: toolInput.days } : {}),
+          ...(toolInput.patch !== undefined ? { patch: toolInput.patch } : {}),
+          ...(toolInput.rank !== undefined ? { rankFilter: toolInput.rank } : {}),
+          ...(toolInput.minSamples !== undefined ? { minSamples: toolInput.minSamples } : {})
+        };
+        const recommendation = await requestRuntime.recommendForInputImpl(`${name}带哪三件装备最好`, {
+          catalog,
+          metaTFTClient: batchClient,
+          compsClient: runtime.compsClient,
+          compsData,
+          cacheStore: runtime.cacheStore,
+          preferences: batchPreferences,
+          resolvedParsedInput: parsedUnitQuery,
+          useSession: false,
+          semanticShadow: false,
+          conversationStateV2Mode: "off"
+        });
+        const best = highestSampleBuild(recommendation.rankedBuilds);
+        return {
+          sourceState: {
+            cache: recommendation.cache?.query ?? null,
+            updatedAt: recommendation.cache?.query?.updatedAt
+              ?? recommendation.sourceUpdatedAt
+              ?? recommendation.source?.updatedAt
+              ?? null,
+            warnings: recommendation.query?.warnings ?? []
+          },
+          result: {
+            apiName,
+            name,
+            bestBuild: best?.items ?? [],
+            stats: best?.stats ?? null,
+            games: Number(best?.stats?.games ?? 0),
+            top4Rate: best?.stats?.top4Rate ?? null,
+            winRate: best?.stats?.winRate ?? null,
+            avgPlacement: best?.stats?.avgPlacement ?? null,
+            available: Boolean(best)
+          }
+        };
+      };
+      const settled = await Promise.allSettled(entities.map(loadBuild));
+      settled.forEach((entry, index) => {
+        const entity = entities[index] ?? {};
+        const apiName = String(entity.apiName ?? "");
+        const name = entity.name ?? unitName(apiName, catalog);
+        if (entry.status === "fulfilled" && entry.value) {
+          sourceStates.push(entry.value.sourceState);
+          results.push(entry.value.result);
+          return;
+        }
+        const warning = `${name}的出装统计暂时不可用：${entry.reason?.message ?? String(entry.reason ?? "unknown error")}`;
+        sourceStates.push({ cache: null, updatedAt: null, warnings: [warning] });
+        if (apiName) {
+          results.push({
+            apiName,
+            name,
+            bestBuild: [],
+            stats: null,
+            games: 0,
+            top4Rate: null,
+            winRate: null,
+            avgPlacement: null,
+            available: false,
+            warning
+          });
+        }
+      });
+      const availableResults = results.filter((entry) => entry.available);
+      const unavailableResults = results.filter((entry) => !entry.available);
+      const text = availableResults.length
+        ? `已整理${availableResults.map((entry) => entry.name).join("、")}各自的主流出装。${unavailableResults.length ? ` ${unavailableResults.map((entry) => entry.name).join("、")}的统计暂时不可用。` : ""}`
+        : "候选棋子的出装统计暂时不可用，请稍后刷新。";
+      const stale = sourceStates.some((entry) => entry.cache?.stale === true);
+      const cached = stale || sourceStates.some((entry) => entry.cache?.hit === true);
+      const updatedAt = sourceStates.map((entry) => entry.updatedAt).filter(Boolean).sort().at(-1)
+        ?? new Date().toISOString();
+      return {
+        type: "unit_builds_batch_results",
+        source: {
+          provider: "MetaTFT",
+          endpoint: "tft-explorer-api/unit_builds (batch)",
+          updatedAt,
+          cache: stale ? "stale" : cached ? "cache" : "live",
+          risks: [...new Set(sourceStates.flatMap((entry) => entry.warnings))]
+        },
+        updatedAt,
+        results,
+        text
+      };
+    }
+  };
+  const quickCachePolicy = quickTask ? quickTaskCachePolicy(quickTask, seasonContext) : null;
+  const recommendationOptions = {
     catalog,
     metaTFTClient: runtime.metaTFTClient,
     compsClient: runtime.compsClient,
     statsProvider: runtime.statsProvider,
     seasonContext,
     compEnrichmentService: runtime.compEnrichmentService,
+    officialItemDetails: runtime.officialItemDetails,
+    loadOfficialItemDetails: shouldLoadCompItemDetails
+      ? () => loadOfficialItemDetails(runtime)
+      : null,
     compsData,
     cacheStore: runtime.cacheStore,
     preferences,
     explicitPreferences,
-    bypassQueryCache: Boolean(body.refresh),
+    bypassQueryCache: Boolean(body.refresh)
+      || (!quickTask && requestRuntime.conversationStateV2Mode === "on"),
     bypassDefaultContextCache: Boolean(body.refresh),
     structuredParser: requestRuntime.structuredParser,
-    useStructuredParser: structuredParserMode,
+    useStructuredParser: quickTask ? "never" : structuredParserMode,
+    ...(quickTask ? {
+      directParsed: parsedForIntent,
+      semanticShadow: false,
+      useSession: false,
+      persistSession: true,
+      queryTtlMs: quickCachePolicy.retentionMs,
+      queryRefreshAfterMs: quickCachePolicy.refreshAfterMs,
+      queryHardRetentionMs: quickCachePolicy.retentionMs,
+      defaultContextTtlMs: quickCachePolicy.refreshAfterMs
+    } : {}),
+    turnDeltaProvider: requestRuntime.turnDeltaProvider,
+    conversationStateV2Mode: quickTask ? "off" : requestRuntime.conversationStateV2Mode,
+    startNewTask: body.startNewTask === true,
+    turnInterpreterBudget: requestRuntime.turnInterpreterBudget,
+    controlledPlanner: requestRuntime.controlledPlanner,
+    controlledPlannerFallback: requestRuntime.controlledPlannerFallback,
+    agentToolHandlers,
+    onProgress(event) {
+      reportProgress(event?.type ?? "unknown", {
+        ...(event?.data ?? {}),
+        answerModeRoute
+      });
+    },
     semanticRetriever: requestRuntime.semanticRetriever,
     semanticLocale: requestRuntime.semanticConfig?.locale ?? "zh-CN",
     seasonContextId: seasonContext.id,
@@ -2543,24 +4730,120 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     effectivePatch: seasonContext.effectivePatch,
     sessionKey,
     toolExecutor: requestRuntime.toolExecutor,
+    toolRegistry: requestRuntime.toolRegistry,
+    executionPlanExecutor: requestRuntime.executionPlanExecutor,
+    metaTFTTimeoutMs: extendedUnitBuildTimeoutMs ?? (Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
+      ? Math.max(
+        runtime.requestTimeouts.explorerTimeoutMs,
+        Number(seasonContext.source.requestDeadlineMs) - 2000
+      )
+      : undefined),
+    toolTimeoutMs: extendedUnitBuildTimeoutMs ?? (Number.isFinite(Number(seasonContext.source.requestDeadlineMs))
+      ? Math.max(
+        runtime.requestTimeouts.explorerTimeoutMs,
+        Number(seasonContext.source.requestDeadlineMs) - 2000
+      )
+      : undefined),
+    executionPlanSovereignty: true,
     agentRun: context.agentRun,
     abortSignal: context.signal
-  });
+  };
+  const result = await requestRuntime.recommendForInputImpl(input, recommendationOptions);
+  if (quickTask && result.cache?.query) {
+    result.cache.query.policy = {
+      refreshAfterMs: quickCachePolicy.refreshAfterMs,
+      retainForMs: quickCachePolicy.retentionMs
+    };
+    if (result.cache.query.refreshDue) {
+      result.cache.query.revalidating = scheduleQuickTaskRefresh(
+        runtime,
+        result.cache.query.key,
+        async () => requestRuntime.recommendForInputImpl(input, {
+          ...recommendationOptions,
+          bypassQueryCache: true,
+          bypassDefaultContextCache: true,
+          onProgress: undefined,
+          agentRun: null,
+          abortSignal: undefined
+        })
+      ) || runtime.quickTaskRefreshes?.has(result.cache.query.key) === true;
+    }
+  }
+  if (result.taskFrame && result.executionTrace?.status === "completed") {
+    await persistDetailTaskFrame(result, requestRuntime, {
+      scope,
+      conversationId,
+      seasonContextId: seasonContext.id
+    });
+  }
   const warnings = warning ? [...(result.query?.warnings ?? []), warning] : result.query?.warnings;
-  if (warnings) result.query.warnings = warnings;
-  let comparisonItemDetails = runtime.officialItemDetails;
-  if (result.comparison && !comparisonItemDetails) {
+  if (warnings && result.query && typeof result.query === "object") {
+    result.query.warnings = warnings;
+  }
+  let coachKnowledge = answerModeRoute.mode === "hybrid"
+    ? await getCoachKnowledge()
+    : { evidence: [], warnings: [], currentStats: null };
+  if (
+    answerModeRoute.mode === "hybrid"
+    && answerModeRoute.retrievalScopes.includes("current_stats")
+  ) {
+    const finalRank = [
+      ...(result.query?.rankFilter ?? preferences.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter)
+    ].map((rank) => String(rank).toUpperCase()).sort().join(",");
+    const finalDays = Number(
+      result.query?.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days
+    );
+    if (finalRank !== currentStatsRank || finalDays !== currentStatsDays) {
+      coachKnowledge = await retrieveCoachKnowledge(
+        input,
+        answerModeRoute,
+        requestRuntime,
+        {
+          ...coachKnowledgeOptions,
+          rank: finalRank,
+          timeWindow: `${finalDays}d`
+        }
+      );
+    }
+  }
+  let conclusionItemDetails = runtime.officialItemDetails;
+  let conclusionEntityDetails = runtime.officialEntityDetails;
+  const equipmentConclusion = [
+    "unit_build_rankings",
+    "unit_build_completion",
+    "unit_best_3_items"
+  ].includes(result.type ?? result.query?.intent);
+  const needsConclusionMechanics = equipmentConclusion
+    && preferences.conclusionMode !== "off"
+    && requestRuntime.conclusionGeneratorConfig?.enabled
+    && requestRuntime.conclusionProvider;
+  if ((result.comparison || needsConclusionMechanics) && !conclusionItemDetails) {
     try {
-      comparisonItemDetails = await loadOfficialItemDetails(runtime);
+      conclusionItemDetails = await loadOfficialItemDetails(runtime);
     } catch (error) {
-      const detailWarning = `官方装备图标加载失败：${error.message}`;
+      const detailWarning = `官方装备详情加载失败：${error.message}`;
       result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
-      result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+      if (result.comparison) {
+        result.comparison.warnings = [...new Set([...(result.comparison.warnings ?? []), detailWarning])];
+      }
+    }
+  }
+  if (needsConclusionMechanics && !conclusionEntityDetails) {
+    try {
+      conclusionEntityDetails = await loadOfficialEntityDetails(runtime);
+    } catch (error) {
+      const detailWarning = `官方棋子定位加载失败：${error.message}`;
+      result.query.warnings = [...new Set([...(result.query?.warnings ?? []), detailWarning])];
     }
   }
 
   let semanticEvidence = [];
-  if (requestRuntime.semanticRetriever && result.retrievalPlan?.semanticQueries?.length) {
+  const usesExecutionPlanResult = String(result.executionTrace?.source ?? "").startsWith("execution_plan");
+  if (
+    !usesExecutionPlanResult
+    && requestRuntime.semanticRetriever
+    && result.retrievalPlan?.semanticQueries?.length
+  ) {
     try {
       const retrieve = () => retrieveSemanticPlan(result.retrievalPlan, requestRuntime.semanticRetriever, {
           seasonContextId: seasonContext.id,
@@ -2604,26 +4887,81 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     seasonContextId: seasonContext.id,
     principalId: scope ?? "anonymous",
     conversationId,
-    semanticEvidence
+    semanticEvidence,
+    officialItemDetails: conclusionItemDetails,
+    officialEntityDetails: conclusionEntityDetails
   };
-  const canDeferConclusion = body?.deferConclusion === true
+  const canDeferConclusion = answerModeRoute.mode !== "hybrid"
+    && body?.deferConclusion === true
     && conclusionOptions.requestEnabled
     && requestRuntime.conclusionGeneratorConfig?.enabled
     && requestRuntime.conclusionProvider;
-  const generatedConclusion = canDeferConclusion
-    ? pendingConclusion(
-      await createConclusionJob(runtime, conclusionOptions, scope),
-      requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
-    )
-    : context.agentRun
-      ? await context.agentRun.stage(
-        "generating_conclusion",
-        () => generateEvidenceBackedConclusion(conclusionOptions)
-      )
-      : await generateEvidenceBackedConclusion(conclusionOptions);
-  if (context.agentRun && !context.agentRun.terminal) {
-    await context.agentRun.stage("validating", async () => null);
+  let coachAnswer = null;
+  let generatedConclusion;
+  if (
+    result.type !== "clarification"
+    && !result.clarification?.blocking
+    && result.validation?.valid !== false
+  ) {
+    reportProgress("retrieval.completed", {
+      source: result.source?.provider ?? "structured_data",
+      resultType: result.type ?? null,
+      evidenceCount: coachKnowledge.evidence.length + semanticEvidence.length
+    });
   }
+  reportProgress("answer.started", {
+    resultType: result.type ?? null,
+    answerMode: answerModeRoute.mode
+  });
+  if (answerModeRoute.mode === "hybrid") {
+    const generateCoachAnswer = () => createHybridAnswerService({
+      provider: requestRuntime.coachProvider
+    }).answer({
+      question: input,
+      mode: "hybrid",
+      query: result.query,
+      structuredResult: localizeCoachStructuredResult(result, catalog),
+      knowledgeEvidence: coachKnowledge.evidence,
+      warnings: [
+        ...(result.query?.warnings ?? []),
+        ...coachKnowledge.warnings
+      ]
+    });
+    coachAnswer = context.agentRun
+      ? await context.agentRun.stage("generating_conclusion", generateCoachAnswer)
+      : await generateCoachAnswer();
+    generatedConclusion = {
+      status: "skipped",
+      reason: "coach_answer_service",
+      model: coachAnswer.model ?? null,
+      latencyMs: coachAnswer.latencyMs ?? 0
+    };
+  } else {
+    generatedConclusion = canDeferConclusion
+      ? pendingConclusion(
+        await createConclusionJob(runtime, conclusionOptions, scope),
+        requestRuntime.conclusionGeneratorConfig?.model ?? requestRuntime.conclusionProvider?.model ?? null
+      )
+      : context.agentRun
+        ? await context.agentRun.stage(
+          "generating_conclusion",
+          () => generateEvidenceBackedConclusion(conclusionOptions)
+        )
+        : await generateEvidenceBackedConclusion(conclusionOptions);
+  }
+  const responseEvidenceValidation = context.agentRun && !context.agentRun.terminal
+    ? await context.agentRun.stage("validating", async () => {
+      const conclusionUsesEvidence = generatedConclusion?.status !== "generated"
+        || Boolean(result.source || result.executionTrace?.status === "completed");
+      return {
+        schemaVersion: "response-evidence-validation.v1",
+        sufficient: conclusionUsesEvidence,
+        executionSource: result.executionTrace?.source
+          ?? (result.retrievalPlan ? "legacy_fallback" : "structured_response"),
+        errors: conclusionUsesEvidence ? [] : ["generated_conclusion_without_structured_evidence"]
+      };
+    })
+    : null;
 
   const payload = serializeRecommendation(result, catalog, {
     durationMs: Date.now() - startedAt,
@@ -2631,11 +4969,40 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     aliasMemory,
     preferences,
     conversationId,
-    itemDetails: comparisonItemDetails
+    itemDetails: conclusionItemDetails,
+    entityDetails
   });
   payload.answer = {
     ...(payload.answer ?? {}),
-    generatedConclusion
+    generatedConclusion,
+    evidenceValidation: responseEvidenceValidation
+  };
+  payload.mode = answerModeRoute.mode;
+  payload.answerModeRoute = answerModeRoute;
+  if (coachAnswer) {
+    payload.assistantResponse = assistantResponseFromCoach(coachAnswer);
+    payload.knowledgeEvidence = coachKnowledge.evidence;
+    payload.currentStatsScope = coachKnowledge.currentStats ?? null;
+    payload.evidenceBundle = coachAnswer.evidenceBundle;
+    payload.queryResult = coachAnswer.evidenceBundle?.queryResult ?? null;
+  }
+  payload.agent = {
+    status: result.agentStatus ?? null,
+    route: result.agentRouting ? {
+      schemaVersion: result.agentRouting.schemaVersion,
+      selectedPath: result.agentRouting.route === "legacy_fallback"
+        ? "legacy"
+        : "execution_plan",
+      route: result.agentRouting.route,
+      fallbackReason: result.agentRouting.route === "legacy_fallback"
+        ? result.agentRouting.reason
+        : null
+    } : null,
+    executionPlan: result.executionPlan ?? null,
+    executionTrace: result.executionTrace ?? null,
+    shadowComparison: result.agentRouting?.shadowComparison ?? null,
+    failureStage: result.agentTrace?.failureLayer ?? null,
+    metrics: result.agentTrace?.metrics ?? null
   };
   if (result.intentEnvelope) payload.intentEnvelope = result.intentEnvelope;
   if (result.retrievalPlan) payload.retrievalPlan = result.retrievalPlan;
@@ -2653,33 +5020,92 @@ function classifyAgentHttpResult(value) {
 }
 
 export async function handleRecommendRequest(body, runtime, context = {}) {
+  try {
+    normalizeQuickTask(body?.quickTask);
+  } catch (error) {
+    return {
+      statusCode: error.statusCode ?? 400,
+      payload: {
+        ok: false,
+        error: error.message,
+        code: error.code ?? "invalid_quick_task"
+      }
+    };
+  }
   if (context.agentRun || !runtime.agentRuntime) {
     return handleRecommendRequestInternal(body, runtime, context);
   }
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
+  const seasonRunDeadlineMs = Number(
+    runtime.seasonContextService.get(body?.seasonContextId)?.source?.requestDeadlineMs
+  );
+  const mechanismRunDeadlineMs = parseMechanismClassificationQuery(body?.input)
+    ? Math.min(
+      120000,
+      Number(runtime.mechanismClassificationConfig?.timeoutMs ?? 90000) + 15000
+    )
+    : 0;
+  const requestedRunDeadlineMs = Math.max(
+    Number.isFinite(seasonRunDeadlineMs) ? seasonRunDeadlineMs : 0,
+    Number.isFinite(mechanismRunDeadlineMs) ? mechanismRunDeadlineMs : 0
+  );
   const execution = await runtime.agentRuntime.run({
     conversationId,
     principalId: context.visitor?.scope ?? "anonymous",
     seasonContextId: body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID
   }, async (agentRun) => {
-    await agentRun.stage("resolving", async () => null);
-    await agentRun.stage("planning", async () => null);
-    const value = await agentRun.stage(
-      "retrieving",
-      () => handleRecommendRequestInternal(body, runtime, {
-        ...context,
-        agentRun,
-        signal: context.signal
-      })
-    );
-    await agentRun.stage("responding", async () => null);
-    return value;
+    return handleRecommendRequestInternal(body, runtime, {
+      ...context,
+      agentRun,
+      signal: context.signal
+    });
   }, {
     signal: context.signal,
-    classifyResult: classifyAgentHttpResult
+    classifyResult: classifyAgentHttpResult,
+    ...(requestedRunDeadlineMs > runtime.agentRuntime.budget.deadlineMs
+      ? { budget: { deadlineMs: requestedRunDeadlineMs } }
+      : {})
   });
   if (execution.value?.payload) execution.value.payload.run = execution.publicRun;
   return execution.value;
+}
+
+export async function streamRecommendResponse(req, res, body, runtime, context = {}) {
+  let sequence = 0;
+  beginNdjson(res);
+  const writeProgress = (event) => {
+    sequence += 1;
+    writeNdjson(res, {
+      type: "progress",
+      event: {
+        schemaVersion: "recommendation-progress.v1",
+        sequence,
+        phase: String(event?.type ?? "unknown"),
+        data: event?.data ?? {}
+      }
+    });
+  };
+  writeProgress({ type: "request.accepted" });
+  try {
+    const { statusCode, payload } = await handleRecommendRequest(body, runtime, {
+      ...context,
+      onProgress: writeProgress
+    });
+    if (res.destroyed || res.writableEnded) return;
+    writeNdjson(res, {
+      type: "complete",
+      statusCode,
+      payload
+    });
+  } catch (error) {
+    if (res.destroyed || res.writableEnded) return;
+    writeNdjson(res, {
+      type: "error",
+      statusCode: Number(error?.statusCode ?? 500),
+      error: String(error?.message ?? "recommendation stream failed").slice(0, 500)
+    });
+  }
+  res.end();
 }
 
 export async function handlePreferencesRequest(body, runtime, scope = null) {
@@ -2703,6 +5129,12 @@ export async function handleCacheClearRequest(runtime) {
     sessionState: 0
   };
   const catalogCache = invalidateRuntimeCatalog(runtime);
+  const compDetailCache = runtime.compDetailCache?.size ?? 0;
+  const augmentLookupCache = runtime.augmentLookupCache?.size ?? 0;
+  runtime.compDetailCache?.clear?.();
+  runtime.compDetailLoadPromises?.clear?.();
+  runtime.augmentLookupCache?.clear?.();
+  runtime.augmentLookupLoadPromises?.clear?.();
 
   return {
     ok: true,
@@ -2710,9 +5142,342 @@ export async function handleCacheClearRequest(runtime) {
       queryCache: storeCleared.queryCache ?? 0,
       defaultContextCache: storeCleared.defaultContextCache ?? 0,
       sessionState: storeCleared.sessionState ?? 0,
-      catalogCache
+      catalogCache,
+      compDetailCache,
+      augmentLookupCache
     }
   };
+}
+
+function normalizeCompDetailIdentifier(value, field) {
+  const normalized = String(value ?? "").trim();
+  if (!/^\d{1,12}$/u.test(normalized)) {
+    throw Object.assign(new TypeError(`${field} must be a MetaTFT numeric identifier`), {
+      statusCode: 400,
+      code: "invalid_comp_detail_identifier",
+      field
+    });
+  }
+  return normalized;
+}
+
+function normalizeCompDetailUnitApiNames(value) {
+  const candidates = Array.isArray(value)
+    ? value
+    : String(value ?? "").split(",");
+  const seen = new Set();
+  const units = [];
+  for (const candidate of candidates) {
+    const apiName = String(candidate ?? "").trim();
+    if (!apiName || seen.has(apiName)) continue;
+    if (!/^(?:TFT|DA_)[A-Za-z0-9_]+$/u.test(apiName)) {
+      throw Object.assign(new TypeError("units must contain current-set unit API identifiers"), {
+        statusCode: 400,
+        code: "invalid_comp_detail_unit",
+        field: "units"
+      });
+    }
+    seen.add(apiName);
+    units.push(apiName);
+  }
+  if (units.length === 0 || units.length > MAX_COMP_DETAIL_UNITS) {
+    throw Object.assign(new RangeError(`units must contain 1 to ${MAX_COMP_DETAIL_UNITS} unique champions`), {
+      statusCode: 400,
+      code: "invalid_comp_detail_units",
+      field: "units"
+    });
+  }
+  return units;
+}
+
+function metaTftDetailTimestamp(...responses) {
+  const value = responses
+    .map((response) => response?.updated)
+    .find((candidate) => candidate !== undefined && candidate !== null);
+  const timestamp = Number(value);
+  return Number.isFinite(timestamp) && timestamp > 0
+    ? new Date(timestamp).toISOString()
+    : null;
+}
+
+function catalogForCompDetail(runtime, seasonContext) {
+  if (runtime.catalog) return runtime.catalog;
+  const key = runtimeCatalogKey(entityCatalogPreferences(runtime, seasonContext));
+  const cachedCatalog = runtime.catalogCache?.get(key)?.catalog;
+  if (cachedCatalog) return cachedCatalog;
+  return seasonContext?.environment === "pbe"
+    ? createCatalog({ units: [], traits: [], items: [] })
+    : createCatalog();
+}
+
+function entityDetailsForCompDetail(runtime, seasonContext) {
+  const key = runtimeCatalogKey(entityCatalogPreferences(runtime, seasonContext));
+  return runtime.catalogCache?.get?.(key)?.entityDetails
+    ?? runtime.officialEntityDetails
+    ?? null;
+}
+
+function compDetailUnitLabel(apiName, catalog) {
+  const record = catalog?.unitByApiName?.get(apiName);
+  return record?.zhName ?? record?.displayName ?? record?.name ?? apiName;
+}
+
+function metaTftAugmentIconUrl(texture) {
+  const normalized = String(texture ?? "").trim();
+  if (!/^[A-Za-z0-9_-]+$/u.test(normalized)) return null;
+  return `https://cdn.metatft.com/file/metatft/augments/${normalized.toLowerCase()}.png`;
+}
+
+function normalizeCompDetailAugmentRarity(value) {
+  const normalized = String(value ?? "").trim().toLowerCase();
+  if (normalized === "3" || /prismatic|orange|彩色|棱彩/u.test(normalized)) return "prismatic";
+  if (normalized === "2" || /gold|金色/u.test(normalized)) return "gold";
+  if (normalized === "1" || /silver|银色/u.test(normalized)) return "silver";
+  return "unknown";
+}
+
+function augmentLookupRecords(response) {
+  const content = response?.content?.content ?? response?.content ?? response ?? {};
+  const records = Array.isArray(content?.augments) ? content.augments : [];
+  return new Map(records
+    .map((record) => [String(record?.apiName ?? "").trim(), record])
+    .filter(([apiName]) => apiName));
+}
+
+function augmentLookupCacheKey(tftSet, locale) {
+  return `${String(tftSet ?? "").trim()}|${String(locale ?? "").trim().toLowerCase()}`;
+}
+
+async function loadCachedAugmentLookup(runtime, tftSet, locale = "zh_cn") {
+  if (!tftSet || typeof runtime.compsClient?.getAugmentLookup !== "function") return null;
+  runtime.augmentLookupCache ??= new Map();
+  runtime.augmentLookupLoadPromises ??= new Map();
+  const key = augmentLookupCacheKey(tftSet, locale);
+  const now = Date.now();
+  const cached = runtime.augmentLookupCache.get(key);
+  if (cached && cached.expiresAt > now) return cached.response;
+  if (cached) runtime.augmentLookupCache.delete(key);
+
+  const existing = runtime.augmentLookupLoadPromises.get(key);
+  if (existing) return existing;
+
+  const load = Promise.resolve().then(() => runtime.compsClient.getAugmentLookup(tftSet, locale));
+  runtime.augmentLookupLoadPromises.set(key, load);
+  try {
+    const response = await load;
+    if (response) {
+      const ttlMs = Math.max(1000, Number(
+        runtime.augmentLookupCacheTtlMs ?? DEFAULT_AUGMENT_LOOKUP_CACHE_TTL_MS
+      ));
+      runtime.augmentLookupCache.set(key, {
+        response,
+        expiresAt: Date.now() + ttlMs
+      });
+    }
+    return response;
+  } finally {
+    if (runtime.augmentLookupLoadPromises.get(key) === load) {
+      runtime.augmentLookupLoadPromises.delete(key);
+    }
+  }
+}
+
+function decorateCompDetailFormation(positioning, catalog, entityDetails, updatedAt) {
+  return {
+    ...positioning,
+    units: positioning.units.map((unit) => {
+      const asset = ASSET_RESOLVER.resolveUnit(unit.apiName);
+      const iconUrl = resolvedUnitIconUrl(unit.apiName, catalog, entityDetails);
+      return {
+        ...unit,
+        name: compDetailUnitLabel(unit.apiName, catalog),
+        iconUrl,
+        fallbackIconUrl: asset.iconUrl && asset.iconUrl !== iconUrl
+          ? asset.iconUrl
+          : asset.fallbackIconUrl ?? null,
+        assetFallback: !iconUrl,
+        items: []
+      };
+    }),
+    source: {
+      ...positioning.source,
+      updatedAt
+    }
+  };
+}
+
+function decorateCompDetailAugments(augments, lookupResponse, updatedAt) {
+  const lookup = augmentLookupRecords(lookupResponse);
+  const eligibleEntries = augments.augments.map((augment) => {
+    const record = lookup.get(augment.apiName);
+    const nameOverride = augmentAliasOverrideByApiName.get(augment.apiName);
+    const rarity = normalizeCompDetailAugmentRarity(record?.rarity);
+    return {
+      apiName: augment.apiName,
+      name: String(nameOverride?.zhName ?? record?.name ?? augment.apiName),
+      aliases: nameOverride?.aliases ?? [],
+      iconUrl: metaTftAugmentIconUrl(record?.texture),
+      tier: augment.tier,
+      rarity,
+      tags: Array.isArray(record?.tags) ? record.tags.map(String).slice(0, 4) : []
+    };
+  }).filter((entry) => DISPLAYED_COMP_AUGMENT_RARITIES.has(entry.rarity));
+  const entries = eligibleEntries.slice(0, MAX_COMP_DETAIL_AUGMENTS);
+  const status = augments.status === "available" && entries.length === 0
+    ? "unavailable"
+    : augments.status;
+  const reasons = [...augments.reasons];
+  if (augments.status === "available" && entries.length === 0) {
+    reasons.push({
+      code: lookupResponse
+        ? "no_gold_or_prismatic_augments"
+        : "augment_rarity_lookup_unavailable"
+    });
+  }
+  return {
+    status,
+    semantics: "comp_compatibility_tier",
+    entries,
+    totalEntries: eligibleEntries.length,
+    totalCandidates: augments.totalAugments,
+    truncated: entries.length < eligibleEntries.length,
+    reasons,
+    filter: {
+      rarities: [...DISPLAYED_COMP_AUGMENT_RARITIES],
+      limit: MAX_COMP_DETAIL_AUGMENTS
+    },
+    source: {
+      ...augments.source,
+      updatedAt,
+      lookupEndpoint: lookupResponse ? "https://data.metatft.com/lookups/{set}_latest_zh_cn.json" : null,
+      lookupStatus: lookupResponse ? "available" : "unavailable"
+    }
+  };
+}
+
+async function createCompDetailPayload(input, runtime, seasonContext) {
+  const catalog = catalogForCompDetail(runtime, seasonContext);
+  const entityDetails = entityDetailsForCompDetail(runtime, seasonContext);
+  const queue = seasonContext?.source?.queue;
+  const requestContext = {
+    cluster_id: input.clusterId,
+    ...(queue ? { queue } : {})
+  };
+  const detailRequest = typeof runtime.compsClient?.getCompDetails === "function"
+    ? runtime.compsClient.getCompDetails({ comp: input.compId, ...requestContext })
+    : Promise.reject(new Error("MetaTFT comp-details client is unavailable"));
+  const augmentRequest = typeof runtime.compsClient?.getCompAugmentTiers === "function"
+    ? runtime.compsClient.getCompAugmentTiers(requestContext)
+    : Promise.reject(new Error("MetaTFT comp-augment-tiers client is unavailable"));
+  const [detailResult, augmentResult] = await Promise.allSettled([detailRequest, augmentRequest]);
+  const detailResponse = detailResult.status === "fulfilled" ? detailResult.value : null;
+  const augmentResponse = augmentResult.status === "fulfilled" ? augmentResult.value : null;
+  const updatedAt = metaTftDetailTimestamp(detailResponse, augmentResponse);
+  const positioning = normalizeCompDetailsPositioning(detailResponse ?? {}, input.units, {
+    compId: input.compId,
+    clusterId: input.clusterId
+  });
+  const normalizedAugments = normalizeCompAugmentTiers(augmentResponse ?? {}, input.compId, {
+    clusterId: input.clusterId
+  });
+  const tftSet = String(detailResponse?.tft_set ?? augmentResponse?.tft_set ?? "").trim();
+  let lookupResponse = null;
+  let lookupWarning = null;
+  if (normalizedAugments.status === "available" && tftSet) {
+    try {
+      lookupResponse = await loadCachedAugmentLookup(runtime, tftSet, "zh_cn");
+    } catch {
+      lookupWarning = "MetaTFT augment lookup is temporarily unavailable; gold and prismatic recommendations are hidden because rarity cannot be verified.";
+    }
+  }
+
+  const warnings = [
+    ...(detailResult.status === "rejected" ? ["MetaTFT positioning detail is temporarily unavailable."] : []),
+    ...(augmentResult.status === "rejected" ? ["MetaTFT comp augment tiers are temporarily unavailable."] : []),
+    ...(lookupWarning ? [lookupWarning] : [])
+  ];
+  const formation = decorateCompDetailFormation(positioning, catalog, entityDetails, updatedAt);
+  const augmentRecommendations = decorateCompDetailAugments(normalizedAugments, lookupResponse, updatedAt);
+
+  return {
+    ok: true,
+    compId: input.compId,
+    clusterId: input.clusterId,
+    seasonContextId: seasonContext.id,
+    formation,
+    augmentRecommendations,
+    source: {
+      provider: "MetaTFT",
+      detailsEndpoint: formation.source.endpoint,
+      augmentEndpoint: augmentRecommendations.source.endpoint,
+      updatedAt,
+      risk: "MetaTFT is an unofficial third-party data source. Positioning and augment compatibility are refreshed on demand and may change."
+    },
+    warnings
+  };
+}
+
+function compDetailCacheKey(input, seasonContext) {
+  return [
+    seasonContext.id,
+    input.clusterId,
+    input.compId,
+    input.units.join(",")
+  ].join("|");
+}
+
+function withCompDetailCacheMetadata(payload, cache) {
+  return {
+    ...payload,
+    cache
+  };
+}
+
+export async function handleCompDetailRequest(options = {}, runtime) {
+  const input = {
+    compId: normalizeCompDetailIdentifier(options.compId ?? options.comp, "comp"),
+    clusterId: normalizeCompDetailIdentifier(options.clusterId ?? options.cluster_id, "clusterId"),
+    units: normalizeCompDetailUnitApiNames(options.units)
+  };
+  const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const key = compDetailCacheKey(input, seasonContext);
+  runtime.compDetailCache ??= new Map();
+  runtime.compDetailLoadPromises ??= new Map();
+  const now = Date.now();
+  const cached = runtime.compDetailCache.get(key);
+  if (cached && cached.expiresAt > now) {
+    return withCompDetailCacheMetadata(cached.payload, {
+      hit: true,
+      updatedAt: cached.updatedAt,
+      expiresAt: new Date(cached.expiresAt).toISOString()
+    });
+  }
+  if (cached) runtime.compDetailCache.delete(key);
+
+  const existing = runtime.compDetailLoadPromises.get(key);
+  if (existing) {
+    const payload = await existing;
+    return withCompDetailCacheMetadata(payload, { hit: true, coalesced: true });
+  }
+
+  const load = createCompDetailPayload(input, runtime, seasonContext);
+  runtime.compDetailLoadPromises.set(key, load);
+  try {
+    const payload = await load;
+    const updatedAt = new Date().toISOString();
+    const ttlMs = Math.max(1000, Number(runtime.compDetailCacheTtlMs ?? DEFAULT_COMP_DETAIL_CACHE_TTL_MS));
+    const expiresAt = Date.now() + ttlMs;
+    runtime.compDetailCache.set(key, { payload, updatedAt, expiresAt });
+    return withCompDetailCacheMetadata(payload, {
+      hit: false,
+      updatedAt,
+      expiresAt: new Date(expiresAt).toISOString()
+    });
+  } finally {
+    if (runtime.compDetailLoadPromises.get(key) === load) {
+      runtime.compDetailLoadPromises.delete(key);
+    }
+  }
 }
 
 function normalizeFeedbackType(value) {
@@ -3226,11 +5991,7 @@ async function adminCatalogFor(runtime, seasonContext, refresh = false) {
   }
   const preferences = {
     ...completeSmallWindowPreferences(),
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    patch: seasonContext.effectivePatch,
-    queue: seasonContext.source.queue
+    ...entityCatalogPreferences(runtime, seasonContext)
   };
   if (refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   return (await loadRuntimeCatalog(runtime, preferences)).catalog;
@@ -3661,6 +6422,11 @@ async function handleSessionClear(runtime, body = {}, scope = null) {
 }
 
 export async function handleRuntimeStatusRequest(runtime) {
+  runtime.patchResolver?.ensureFresh?.()
+    .then((state) => {
+      runtime.patchState = state;
+    })
+    .catch(() => {});
   return {
     ok: true,
     runtime: getSmallWindowRuntimeStatus(runtime)
@@ -3675,11 +6441,7 @@ export async function handleItemCatalogAuditRequest(runtime, options = {}) {
   });
   const preferences = {
     ...completeSmallWindowPreferences(await loadSmallWindowPreferences(runtime)),
-    seasonContextId: seasonContext.id,
-    providerVersion: seasonContext.source.providerVersion,
-    effectivePatch: seasonContext.effectivePatch,
-    patch: seasonContext.effectivePatch,
-    queue: seasonContext.source.queue
+    ...entityCatalogPreferences(runtime, seasonContext)
   };
   if (options.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
@@ -3784,7 +6546,8 @@ function enforceSameOrigin(req) {
 }
 
 function isPublicMaintenanceRoute(pathname) {
-  return pathname.startsWith("/api/entity-")
+  return pathname === "/api/entity-memory/clear"
+    || pathname.startsWith("/api/entity-aliases")
     || pathname === "/api/item-catalog-audit";
 }
 
@@ -3821,6 +6584,7 @@ export function createSmallWindowHandler(options = {}) {
   const accessService = options.accessService
     ?? runtime.accessService
     ?? createAnonymousAccessService(runtime, { enabled: false }, {});
+  const opggRouter = createOpggApiRouter();
 
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -3887,6 +6651,10 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, 403, { ok: false, error: "Administrator authorization required" });
       }
 
+      if (url.pathname.startsWith("/api/opgg/")) {
+        return opggRouter(req, res, url, { scope: visitor.scope });
+      }
+
       if (req.method === "GET" && url.pathname === "/api/runtime") {
         const payload = await handleRuntimeStatusRequest(runtime);
         payload.runtime.publicMode = accessService.config.enabled;
@@ -3908,6 +6676,30 @@ export function createSmallWindowHandler(options = {}) {
         }));
       }
 
+      if (req.method === "GET" && url.pathname === "/api/entity-catalog") {
+        return sendJson(res, 200, await handleEntityCatalogRequest(runtime, {
+          entityType: url.searchParams.get("type"),
+          query: url.searchParams.get("query") ?? undefined,
+          cost: url.searchParams.get("cost") ?? undefined,
+          role: url.searchParams.get("role") ?? undefined,
+          trait: url.searchParams.get("trait") ?? undefined,
+          traitType: url.searchParams.get("traitType") ?? undefined,
+          page: url.searchParams.get("page") ?? undefined,
+          limit: url.searchParams.get("limit") ?? undefined,
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/entity-details") {
+        return sendJson(res, 200, await handleEntityDetailRequest(runtime, {
+          entityType: url.searchParams.get("type"),
+          apiName: url.searchParams.get("id"),
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
+          refresh: url.searchParams.get("refresh") === "1"
+        }));
+      }
+
       if (req.method === "POST" && url.pathname === "/api/recommend") {
         const body = await readJsonRequest(req);
         const controller = new AbortController();
@@ -3924,6 +6716,30 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, statusCode, payload);
       }
 
+      if (req.method === "POST" && url.pathname === "/api/recommend/stream") {
+        const body = await readJsonRequest(req);
+        const controller = new AbortController();
+        const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
+        req.once("aborted", abortRequest);
+        res.once("close", () => {
+          if (!res.writableEnded) abortRequest();
+        });
+        return streamRecommendResponse(req, res, body, runtime, {
+          visitor,
+          accessService,
+          signal: controller.signal
+        });
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/comp-details") {
+        return sendJson(res, 200, await handleCompDetailRequest({
+          compId: url.searchParams.get("comp"),
+          clusterId: url.searchParams.get("clusterId"),
+          units: url.searchParams.get("units"),
+          seasonContextId: url.searchParams.get("seasonContextId")
+        }, runtime));
+      }
+
       if (req.method === "GET" && url.pathname === "/api/season-contexts") {
         return sendJson(res, 200, {
           ok: true,
@@ -3934,7 +6750,7 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "POST" && url.pathname === "/api/season-contexts/select") {
         const body = await readJsonRequest(req);
-        const selected = runtime.seasonContextService.resolveForQuery(body?.seasonContextId);
+        const selected = runtime.seasonContextService.resolveForSelection(body?.seasonContextId);
         return sendJson(res, 200, {
           ok: true,
           seasonContext: runtime.seasonContextService.publicRecord(selected)
@@ -3982,7 +6798,14 @@ export function createSmallWindowHandler(options = {}) {
         if (accessService.config.enabled) {
           return sendJson(res, 200, {
             ok: true,
-            cleared: { queryCache: 0, defaultContextCache: 0, sessionState: 0, catalogCache: 0 }
+            cleared: {
+              queryCache: 0,
+              defaultContextCache: 0,
+              sessionState: 0,
+              catalogCache: 0,
+              compDetailCache: 0,
+              augmentLookupCache: 0
+            }
           });
         }
         return sendJson(res, 200, await handleCacheClearRequest(runtime));
@@ -4334,6 +7157,44 @@ function listen(server, host, port) {
   });
 }
 
+export async function primeSeasonPatch(runtime, options = {}) {
+  const env = options.env ?? process.env;
+  const configuredPatch = String(
+    options.currentPatch ?? env.TFT_AGENT_CURRENT_PATCH ?? ""
+  ).trim() || null;
+  const configuredPrevious = String(
+    options.previousPatch ?? env.TFT_AGENT_PREVIOUS_PATCH ?? ""
+  ).trim() || null;
+  const resolver = createPatchResolver({
+    fetchImpl: options.fetchImpl ?? globalThis.fetch,
+    url: options.patchNewsUrl,
+    timeoutMs: Number(
+      options.patchResolveTimeoutMs
+      ?? env.TFT_AGENT_PATCH_RESOLVE_TIMEOUT_MS
+      ?? 5000
+    ),
+    configuredPatch,
+    previousPatch: configuredPrevious
+  });
+  runtime.patchResolver = resolver;
+  runtime.patchState = resolver.state();
+  try {
+    const state = await resolver.ensureFresh();
+    runtime.patchState = state;
+    if (state.source === "official_riot_news" && state.currentPatch) {
+      runtime.seasonContextService?.updateProviderPatch?.(
+        DEFAULT_SEASON_CONTEXT_ID,
+        state.currentPatch,
+        state.previousPatch,
+        state.source
+      );
+    }
+  } catch {
+    // Patch resolution is best-effort; configured or season defaults remain authoritative.
+  }
+  return runtime.patchState;
+}
+
 export async function startSmallWindowServer(options = {}) {
   const host = options.host ?? process.env.HOST ?? DEFAULT_HOST;
   const firstPort = Number(options.port ?? process.env.PORT ?? DEFAULT_PORT);
@@ -4342,6 +7203,7 @@ export async function startSmallWindowServer(options = {}) {
   if (runtime.processRole === "worker") {
     throw Object.assign(new Error("TFT_AGENT_PROCESS_ROLE=worker does not start an HTTP server"), { code: "worker_role_only" });
   }
+  await primeSeasonPatch(runtime, options);
 
   for (let offset = 0; offset < attempts; offset += 1) {
     const port = firstPort + offset;
@@ -4377,7 +7239,11 @@ export async function startSmallWindowServer(options = {}) {
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   loadLocalEnvironment();
-  startSmallWindowServer(parseCliOptions(process.argv.slice(2)))
+  const cliOptions = parseCliOptions(process.argv.slice(2));
+  startSmallWindowServer({
+    conversationStateV2Mode: process.env.TFT_AGENT_CONVERSATION_STATE_V2_MODE ?? "on",
+    ...cliOptions
+  })
     .then(({ url }) => {
       console.log(`tftclarity small window: ${url}`);
     })

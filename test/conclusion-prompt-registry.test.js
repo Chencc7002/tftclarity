@@ -47,3 +47,11 @@ test("changing one intent prompt version is isolated in the route metadata", () 
   assert.notEqual(build.version, item.version);
   assert.equal(getConclusionPromptRoute("unit_build_completion").version, build.version);
 });
+
+test("equipment prompt requires official effect explanations for core and candidate items", async () => {
+  const registry = createConclusionPromptRegistry();
+  const prompt = await registry.load("unit_build_rankings");
+  assert.match(prompt.text, /每件核心装备都必须.*official_item_mechanics/su);
+  assert.match(prompt.text, /每件候补装备都必须.*official_item_mechanics/su);
+  assert.match(prompt.text, /最多可引用 12 个 ID/u);
+});

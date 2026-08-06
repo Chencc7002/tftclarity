@@ -1,0 +1,613 @@
+{
+  "schemaVersion": "youtube_acceptance_annotation.v1",
+  "id": "comp-operations",
+  "category": "comp_operations_guide",
+  "sourceUrl": "https://www.youtube.com/watch?v=Bv3nJAHUeLA",
+  "videoId": "Bv3nJAHUeLA",
+  "season": "set17-live",
+  "patch": "17.7",
+  "locale": "en",
+  "output": "Bv3nJAHUeLA.json",
+  "extractionInput": {
+    "mode": "authenticated_browser_capture",
+    "timedtextJson3": "Bv3nJAHUeLA.en.json3",
+    "sourceMetadata": "Bv3nJAHUeLA.metadata.json",
+    "chunkSeconds": 300
+  },
+  "annotationStatus": "provisional",
+  "annotationProvenance": {
+    "reviewer": "Codex transcript-window review",
+    "reviewerType": "codex",
+    "method": "claim-by-claim source transcript window review",
+    "independentHumanReview": false,
+    "seedSource": "model_output",
+    "sourceTranscriptHash": "34acde2f650a808af92b825a7f6a1755dedafaae7f65cc235f5d55b2772842bd",
+    "videoVersion": "a6a013787e3516ed02fd",
+    "note": "Model-output-derived review seed; not independent human ground truth. Human verification and sign-off are required."
+  },
+  "annotations": {
+    "claims": [
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Anima",
+          "Fiora",
+          "Briar",
+          "Illaoi",
+          "Aurora",
+          "Jinx",
+          "Anima emblem"
+        ],
+        "claimKeywords": [
+          "The five Anima comp is the best by far, especially with the Anima emblem. You can achieve it in stage 3 with the emblem and win the game almost guaranteed. If you cannot get the emblem, you need an early Fiora. Roll down on stage 3-2 to hit five Anima."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Have Anima emblem or early Fiora",
+          "Roll on stage 3-2"
+        ],
+        "timestampStart": 14.12,
+        "timestampEnd": 294.36,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "The five Anima comp is the best by far, especially with the Anima emblem. You can achieve it in stage 3 with the emblem and win the game almost guaranteed. If you cannot get the emblem, you need an early Fiora. Roll down on stage 3-2 to hit five Anima.",
+        "transcriptExcerpt": "[5.84] TFT for set 17. So, we got some wacky\n[9.24] crazy stuff going on right now. Right\n[11.88] now the best comp by far is the five\n[14.12] Anima comp. You essentially just get a\n[16.12] gold augment worth of stats every single\n[18.36] round. Very good if you can ever get it.\n[21.20] In the A tier, there's still some stuff\n[22.88] that's playable. Stargazer Zyra, they\n[24.48] made Vex a Stargazer, but we'll get more\n[26.28] into that later. Nova Akali, this is a\n[28.88] new comp that we just added. And then we\n[31.04] have Shepherd LeBlanc, Space Groove,\n[32.92] Brawler Ye, Vanguard Fast 9, Two Tanky\n[35.16] Samira, Mecha, and Vex in the A tier.\n[38.20] So, we're going to go over some of\n[39.40] those. We're going to be spending a\n[40.48] little bit more time on the new comps.\n[42.44] Everything else probably put on hold for\n[44.52] a bit. Not that it's impossible to play,\n[46.52] but you probably just want to play these\n[48.52] top comps. Like, mainly just try to go\n[50.36] for some of the weird stuff if you're\n[52.16] doing some sort of last minute climb.\n[53.72] But, let's go on with the five Anima\n[55.32] comp to start off with. So, this one's\n[57.00] very funny because Okay, so they changed\n[59.28] the way Anima works. It used to be three\n[61.32] and six as a trait breakpoints, but now\n[63.36] they moved it into three and five. And\n[65.76] you might be wondering, what makes it so\n[67.28] good? So, what makes it so good is if\n[69.36] you get the Anima emblem, it makes this\n[71.80] comp absolutely astronomically OP OP OP\n[75.44] because you do not need Fiora to start\n[77.84] getting five Anima. What you need\n[79.84] instead is four Anima. So, you need\n[82.16] Briar, Illaoi, Aurora, and Jinx. All\n[85.24] those are one, two, and three cost\n[87.12] characters. So, with the Anima emblem,\n[90.28] realistically get to five Anima in like\n[92.80] stage three. I mean, if you're extremely\n[95.24] lucky, you might even be able to get it\n[96.72] stage two. I haven't seen that happen\n[98.52] yet, but I've definitely seen it in\n[100.16] stage three. So, without the emblem, you\n[103.08] need Fiora, who's a legendary unit,\n[105.08] which is pretty hard to get. So, what\n[106.72] ends up happening is that you could get\n[108.20] five Anima in stage three with the\n[109.92] emblem and just start farming infinite\n[112.24] type of rewards. And like, you just\n[114.00] can't No other comp can compete with\n[115.88] that, you know? But yeah, you're pretty\n[117.20] much just able to win the game if you\n[118.56] can find five Anima before stage four.\n[120.92] And, yeah, it gets approximately a gold\n[122.92] augment's worth of stuff during a turn.\n[125.08] And, one augment that's really good with\n[126.96] this is called Flexible. Flexible is\n[129.24] just a augment that gives random\n[131.48] emblems, and oftentimes it does give you\n[133.20] the Anima one because you can't craft\n[135.52] Anima, so you have to get it from these\n[136.96] random emblem things. So, that's the\n[139.44] only tricky part about it. You have to\n[140.96] kind of luck into this comp. But, yeah,\n[142.48] pretty much this comp is a rarity\n[144.44] because it's described as you win the\n[146.40] game on stage three. Normally, when I\n[148.20] say that, I'm saying it as like a figure\n[150.24] of speech or something like that. In\n[151.60] this case, it's like, no, it you you you\n[153.44] win on game three unless like five other\n[155.28] people have it, you know? Worst case,\n[156.80] what you can do when you are going for\n[158.16] this is go for like a Jinx reroll comp\n[160.16] or something built around Aurelia or\n[161.88] Illaoi. But, ideally, you just play with\n[163.80] the emblem or an extremely early Fiora\n[166.12] and just play anything after that. Also,\n[168.20] the board is cheap, and you just throw\n[170.40] whatever you want in there after that.\n[172.56] Like, you just mix and match some random\n[174.32] synergies. So, we could play a little\n[176.08] little game right now. Go on "
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Flexible",
+          "Anima emblem"
+        ],
+        "claimKeywords": [
+          "Flexible augment is very good with the five Anima comp because it gives random emblems and often gives the Anima emblem."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Playing five Anima comp"
+        ],
+        "timestampStart": 122.92,
+        "timestampEnd": 144.44,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Flexible augment is very good with the five Anima comp because it gives random emblems and often gives the Anima emblem.",
+        "transcriptExcerpt": "[117.20] much just able to win the game if you\n[118.56] can find five Anima before stage four.\n[120.92] And, yeah, it gets approximately a gold\n[122.92] augment's worth of stuff during a turn.\n[125.08] And, one augment that's really good with\n[126.96] this is called Flexible. Flexible is\n[129.24] just a augment that gives random\n[131.48] emblems, and oftentimes it does give you\n[133.20] the Anima one because you can't craft\n[135.52] Anima, so you have to get it from these\n[136.96] random emblem things. So, that's the\n[139.44] only tricky part about it. You have to\n[140.96] kind of luck into this comp. But, yeah,\n[142.48] pretty much this comp is a rarity\n[144.44] because it's described as you win the\n[146.40] game on stage three. Normally, when I"
+      },
+      {
+        "type": "transition",
+        "subjects": [
+          "Jinx",
+          "Illaoi",
+          "Aurelia"
+        ],
+        "claimKeywords": [
+          "If you do not hit five Anima early, you can pivot to a Jinx reroll comp or build around Aurelia or Illaoi."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Going for five Anima but not hitting early"
+        ],
+        "timestampStart": 156.8,
+        "timestampEnd": 166.12,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "If you do not hit five Anima early, you can pivot to a Jinx reroll comp or build around Aurelia or Illaoi.",
+        "transcriptExcerpt": "[151.60] this case, it's like, no, it you you you\n[153.44] win on game three unless like five other\n[155.28] people have it, you know? Worst case,\n[156.80] what you can do when you are going for\n[158.16] this is go for like a Jinx reroll comp\n[160.16] or something built around Aurelia or\n[161.88] Illaoi. But, ideally, you just play with\n[163.80] the emblem or an extremely early Fiora\n[166.12] and just play anything after that. Also,\n[168.20] the board is cheap, and you just throw"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Akali",
+          "Nova",
+          "Fiora"
+        ],
+        "claimKeywords": [
+          "After getting five Anima, you should build around Akali and Nova synergies, for example by playing Akali with Fiora and other Nova units."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Have five Anima"
+        ],
+        "timestampStart": 198.12,
+        "timestampEnd": 211.16,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "After getting five Anima, you should build around Akali and Nova synergies, for example by playing Akali with Fiora and other Nova units.",
+        "transcriptExcerpt": "[192.36] champions with this. And, you want to\n[193.92] fill out some sort of like general\n[195.76] synergies as well. So, that's why stuff\n[198.12] like Akali's really good because she's\n[199.72] always going to be played with Fiora,\n[201.12] and they're both like Marauders. And,\n[202.92] Akali with Nova gives you free critical\n[205.80] strike chance. So, you could type in\n[206.96] like Nova here and play literally any of\n[209.40] these. Like, obviously, Kindred goes\n[211.16] with the Jinx, but let's say you don't\n[213.12] have items for that. You could play"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Maokai",
+          "Tahm Kench"
+        ],
+        "claimKeywords": [
+          "Maokai and Tahm Kench provide a good frontline for the five Anima comp."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Playing five Anima comp"
+        ],
+        "timestampStart": 264.04,
+        "timestampEnd": 268.56,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Maokai and Tahm Kench provide a good frontline for the five Anima comp.",
+        "transcriptExcerpt": "[259.00] have a three-star Illaoi which sometimes\n[260.68] you just get randomly because that takes\n[262.60] care of your tank line. The reason why I\n[264.04] like this Maokai plus Tahm Kench combo\n[266.44] is because it's just a nice little way\n[268.56] to get a good front line. But, you could\n[270.08] also play like Nunu because Illaoi plus"
+      },
+      {
+        "type": "mechanism",
+        "subjects": [
+          "Nunu",
+          "Illaoi",
+          "Vanguard"
+        ],
+        "claimKeywords": [
+          "Nunu with Illaoi gives Vanguard and a two-star Nunu can serve as a tank for the five Anima comp."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "Need frontline",
+          "Playing five Anima comp"
+        ],
+        "timestampStart": 270.08,
+        "timestampEnd": 277.68,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Nunu with Illaoi gives Vanguard and a two-star Nunu can serve as a tank for the five Anima comp.",
+        "transcriptExcerpt": "[264.04] like this Maokai plus Tahm Kench combo\n[266.44] is because it's just a nice little way\n[268.56] to get a good front line. But, you could\n[270.08] also play like Nunu because Illaoi plus\n[272.32] the Nunu gives Vanguard and you have\n[274.36] two-star Nunu that could serve as a tank\n[276.16] as well, but uh yeah, just make sure you\n[277.68] have a tank cuz all your damage is\n[279.40] pretty much taken care of. But, pretty"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Jax",
+          "Morgana",
+          "Akali",
+          "Gargoyle Stoneplate"
+        ],
+        "claimKeywords": [
+          "如果你瞬间找到阿卡丽三星，但只有两张贾克斯，你可以用莫甘娜代替，并做常规坦克装备而不是石像鬼石板甲。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "找到阿卡丽三星",
+          "只有两张贾克斯"
+        ],
+        "timestampStart": 600.6,
+        "timestampEnd": 612.24,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "如果你瞬间找到阿卡丽三星，但只有两张贾克斯，你可以用莫甘娜代替，并做常规坦克装备而不是石像鬼石板甲。",
+        "transcriptExcerpt": "[594.68] Nova much quicker since you don't need\n[596.60] Kindred cuz sometimes Kindred's hard to\n[598.48] get cuz she's a four-cost. Lastly, if\n[600.60] you don't get Jax three, Morgana two can\n[602.92] suffice. So, in the games where you find\n[604.76] Akali three like instantly, but you only\n[606.68] have like two copies of Jax, then yeah,\n[608.48] you could go for a Morgana instead and\n[610.72] just go for more of the regular tank\n[612.24] items instead of the Gargoyle\n[613.92] Stoneplate. But, we have the full item"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "LeBlanc",
+          "Morgana",
+          "Karma",
+          "Shepherd",
+          "Vanguard",
+          "Dark Star",
+          "Mordekaiser",
+          "Lissandra",
+          "Sona",
+          "Nunu",
+          "Arbiter"
+        ],
+        "claimKeywords": [
+          "勒布朗灵活阵容：勒布朗带鬼索的狂暴之刃和法爆；莫甘娜带坦克装，最优是皇冠守卫但不强求；努努带法力装；卡玛带功能装；如果拿到牧羊人转职，七牧羊人是质变但不是必须。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 627.64,
+        "timestampEnd": 695.76,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "勒布朗灵活阵容：勒布朗带鬼索的狂暴之刃和法爆；莫甘娜带坦克装，最优是皇冠守卫但不强求；努努带法力装；卡玛带功能装；如果拿到牧羊人转职，七牧羊人是质变但不是必须。",
+        "transcriptExcerpt": "[622.16] reroll Akali in this set. Next up we\n[624.20] have is LeBlanc flex. We got a couple of\n[626.08] different builds here. We got Morgana,\n[627.64] Vanguard, and Shepherd. Uh Morgana still\n[630.48] like one of the best four-costs in the\n[631.80] game right now. But, pretty much LeBlanc\n[633.44] is a pretty good unit to pair her up\n[635.32] with because you just have a solid tank,\n[637.40] so you want some Rageblade stacker in\n[639.00] the back. Um you could run her with\n[641.28] secondary carries such as like Karma. Uh\n[643.48] Karma's going to be the main go-to\n[644.88] because she is going to be just\n[646.60] providing a lot of complimentary\n[647.92] synergies whenever you play this comp,\n[649.84] namely like you could fit Dark Star in\n[651.60] pretty easily uh with Vanguards through\n[653.72] Mordekaiser or you want to fit in\n[655.88] Shepherd in the other cases with\n[657.40] Lissandra. So, that's kind of why you\n[658.76] want to keep Karma into the comp. Also,\n[660.60] she gives Voyager with Meepseed.\n[662.00] Meepseed is another Shepherd, so like\n[664.40] yeah, Karma just fits really well with\n[665.88] Shepherds, and you get like two of them\n[667.72] for free with Karma. But, for LeBlanc,\n[669.64] just Rageblade AP spell crit going to be\n[671.84] the standard builds. For your secondary\n[674.04] carry in Karma, just put the utility\n[675.96] items on her. You could also put them on\n[677.52] Sona if you get her. That's just the\n[679.08] Void Staff Morello. And then for\n[680.88] frontline, like obviously, I like\n[682.64] Morgana. Just build regular tank items\n[684.80] on her. You don't really care too much\n[686.20] which. Crown Guard I would say is her\n[687.88] best item, but don't like greed too much\n[689.68] for that cuz you do need the rods for\n[691.20] all your LeBlanc items. Uh for Nunu,\n[693.48] just get the mana items on him, and\n[695.76] yeah, you're going to be pretty much\n[696.72] good to go from there. This is just\n[697.96] standard fast eight comp. Uh for"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "LeBlanc",
+          "Rageblade",
+          "Morgana",
+          "Crown Guard",
+          "Nunu"
+        ],
+        "claimKeywords": [
+          "勒布朗要鬼索的狂暴之刃和法爆；莫甘娜的皇冠守卫最佳，但不要贪，因为法杖要给勒布朗；努努带法力装。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 682.64,
+        "timestampEnd": 695.76,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "勒布朗要鬼索的狂暴之刃和法爆；莫甘娜的皇冠守卫最佳，但不要贪，因为法杖要给勒布朗；努努带法力装。",
+        "transcriptExcerpt": "[677.52] Sona if you get her. That's just the\n[679.08] Void Staff Morello. And then for\n[680.88] frontline, like obviously, I like\n[682.64] Morgana. Just build regular tank items\n[684.80] on her. You don't really care too much\n[686.20] which. Crown Guard I would say is her\n[687.88] best item, but don't like greed too much\n[689.68] for that cuz you do need the rods for\n[691.20] all your LeBlanc items. Uh for Nunu,\n[693.48] just get the mana items on him, and\n[695.76] yeah, you're going to be pretty much\n[696.72] good to go from there. This is just\n[697.96] standard fast eight comp. Uh for"
+      },
+      {
+        "type": "leveling",
+        "subjects": [
+          "LeBlanc",
+          "Morgana"
+        ],
+        "claimKeywords": [
+          "这是标准的快速升八阵容。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 693.48,
+        "timestampEnd": 705.52,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "这是标准的快速升八阵容。",
+        "transcriptExcerpt": "[687.88] best item, but don't like greed too much\n[689.68] for that cuz you do need the rods for\n[691.20] all your LeBlanc items. Uh for Nunu,\n[693.48] just get the mana items on him, and\n[695.76] yeah, you're going to be pretty much\n[696.72] good to go from there. This is just\n[697.96] standard fast eight comp. Uh for\n[699.76] Arbiter, get AP or attack speed\n[701.68] generating Arbiter. And then ideally,\n[703.52] you get a lot of items for this comp cuz\n[705.52] you play a bunch of good units. Also, if\n[707.72] you get Shepherd emblem, it definitely"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Nami",
+          "Nunu",
+          "Tahm Kench",
+          "Riven",
+          "Blitzcrank",
+          "Space Groove emblem",
+          "Nashor's Tooth",
+          "Jeweled Gauntlet"
+        ],
+        "claimKeywords": [
+          "太空律动阵容：娜美主C带双纳什之牙和珠光护手；主坦努努或塔姆；副C锐雯（带太空律动转）和布里茨（带功能装）。需要转职才强，但无转也能玩。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 741.36,
+        "timestampEnd": 770.36,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "太空律动阵容：娜美主C带双纳什之牙和珠光护手；主坦努努或塔姆；副C锐雯（带太空律动转）和布里茨（带功能装）。需要转职才强，但无转也能玩。",
+        "transcriptExcerpt": "[735.04] super late levels, but pretty much in\n[736.96] this comp, you just have Nami as your\n[738.92] main carry, double Nashers JG for her,\n[741.36] main tank going to be Nunu or Tom Kench\n[743.72] depending on what version you're playing\n[745.52] or what you're fitting in or who you hit\n[747.36] two star first. And then two secondary\n[749.80] carries are going to be either Riven or\n[751.52] Blitzcrank. So Blitzcrank's great at\n[753.16] holding utility items cuz he does hit a\n[754.92] lot of units and like he he's pretty\n[757.52] durable since he has his passive which\n[759.28] kind of responds him. So you're pretty\n[761.20] much always going to have those utility\n[763.60] effects up when you put it on\n[764.80] Blitzcrank. Uh and then Riven just gets\n[766.88] a Space Groove emblem plus any leftover\n[768.76] items because she can play with\n[770.36] literally anything. I hope they add more\n[772.40] units like Riven in future sets cuz I"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Yi",
+          "Edge of Night",
+          "Giant Slayer"
+        ],
+        "claimKeywords": [
+          "易大师必须带夜之锋刃和巨人杀手。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 796.8,
+        "timestampEnd": 801.24,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "易大师必须带夜之锋刃和巨人杀手。",
+        "transcriptExcerpt": "[791.72] need like four different four costs in\n[793.52] this five Space Groove version. And then\n[795.40] if you get the emblem, that's pretty\n[796.80] much the only reason why I would play\n[798.36] this. It's not impossible to play it\n[800.04] without the emblem, but it definitely\n[801.24] does make it a lot better. I think it\n[802.88] becomes kind of like S tier with it. But"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Yi",
+          "Tahm Kench",
+          "Kindred",
+          "Brawler",
+          "Marauder",
+          "Fiora"
+        ],
+        "claimKeywords": [
+          "斗士易阵容：四个斗士，塔姆主坦带功能装，千珏后排；如果拿到斗士转给易，如果拿到游侠转可加菲奥娜凑六游侠。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 807.88,
+        "timestampEnd": 839.36,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "斗士易阵容：四个斗士，塔姆主坦带功能装，千珏后排；如果拿到斗士转给易，如果拿到游侠转可加菲奥娜凑六游侠。",
+        "transcriptExcerpt": "[801.24] does make it a lot better. I think it\n[802.88] becomes kind of like S tier with it. But\n[805.04] yeah, nothing's changed too much about\n[806.40] this comp. Let's move on into the next\n[807.88] one, which is Brawler Yi. Still very\n[809.88] solid option out there. He got small\n[811.60] buffs here. His requirements are still\n[813.28] the same though. You want the Edge of\n[815.00] Night plus the Giant Slayer on him just\n[817.16] to pierce through a lot of the tanks and\n[818.88] Edge of Night is just mandatory on him.\n[820.92] After that, just four Brawlers. Tom\n[823.40] Kench going to be the main tank holder,\n[825.12] but he's going to be holding utility\n[826.52] items and then Kindred in the back line.\n[828.28] If you get Marauder or Brawler emblem,\n[830.28] Brawler's incredibly good on Yi and then\n[832.08] if you get Marauder emblem, you could\n[833.36] add in Fiora very easily for six\n[835.40] Marauder and she is going to be a great\n[837.24] secondary carry. You do prefer having\n[839.36] like the AD Sy'anic items, but if you\n[841.28] have one of the other ones, it's not the"
+      },
+      {
+        "type": "opener",
+        "subjects": [
+          "Yi"
+        ],
+        "claimKeywords": [
+          "易大师需要打连胜节奏，不要连败。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 843.16,
+        "timestampEnd": 855.76,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "易大师需要打连胜节奏，不要连败。",
+        "transcriptExcerpt": "[837.24] secondary carry. You do prefer having\n[839.36] like the AD Sy'anic items, but if you\n[841.28] have one of the other ones, it's not the\n[843.16] end of the world. If you get a good Yi\n[844.84] start, like some games you just get Yi\n[846.32] early, you could just play him anyways\n[847.88] and I just accept that you're not going\n[849.68] to do that well that game, but you could\n[851.36] still farm top fours easily if you get\n[853.88] all the units without having to roll too\n[855.76] much. So, despite having a bad Sy'anic\n[857.60] item, it's still a viable comp. Um but"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Vex",
+          "Jax",
+          "Jhin",
+          "Zyra",
+          "Stargazer"
+        ],
+        "claimKeywords": [
+          "先锋快速九：薇古丝玩法没变；如果真想玩星之守护者，可以加贾克斯；如果是烬的快速九，可以加婕拉。"
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 891.76,
+        "timestampEnd": 902.4799999999999,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "先锋快速九：薇古丝玩法没变；如果真想玩星之守护者，可以加贾克斯；如果是烬的快速九，可以加婕拉。",
+        "transcriptExcerpt": "[885.20] Obviously like Vex got changed a bit,\n[887.16] but her build hasn't really changed. You\n[889.12] kind of just play her the same way,\n[890.52] honestly. Like you don't really care\n[891.76] that much about the Stargazer buff. If\n[894.08] you really want to, you could add in a\n[895.36] Jax to these builds or if you're playing\n[897.32] Jhin in your fast nine, you could add in\n[898.80] a Zyra, but uh a lot of the comps out\n[901.08] there like you don't really need to\n[902.48] change too much because like Vex was\n[904.32] already good on her own. She's mainly"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Vex",
+          "Rageblade",
+          "Shen",
+          "Jax",
+          "Nunu",
+          "Blitzcrank"
+        ],
+        "claimKeywords": [
+          "Vex is a great Rageblade user and needs a bunch of tanks like Shen, Jax, Nunu, and Blitzcrank to help her out."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 907.68,
+        "timestampEnd": 919.76,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Vex is a great Rageblade user and needs a bunch of tanks like Shen, Jax, Nunu, and Blitzcrank to help her out.",
+        "transcriptExcerpt": "[902.48] change too much because like Vex was\n[904.32] already good on her own. She's mainly\n[906.04] good because she's just a great\n[907.68] Rageblade user. So, you just need a\n[909.08] bunch of tanks up there to help her out.\n[910.88] But if you have like Shen in there, you\n[912.64] could just do like Vex plus Jax and Shen\n[915.92] with Nunu and Blitzcrank. But I would\n[918.20] say it's optional. You don't like have\n[919.76] to do it, but it is like a nice little\n[921.28] bonus for her, cuz honestly, is"
+      },
+      {
+        "type": "transition",
+        "subjects": [
+          "fast nine",
+          "legendaries"
+        ],
+        "claimKeywords": [
+          "When on a big win streak, go fast nine because legendaries are uncontested, unlike four-costs."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "high HP",
+          "big win streaks"
+        ],
+        "timestampStart": 930.48,
+        "timestampEnd": 970.72,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "When on a big win streak, go fast nine because legendaries are uncontested, unlike four-costs.",
+        "transcriptExcerpt": "[924.96] your comp compared to just having\n[926.96] everything two-star? Probably not, but\n[928.84] it definitely is an added bonus. But\n[930.48] yeah, fast nine is still pretty tricky,\n[931.92] cuz you need like lots of HP, you need\n[934.24] to be going on big win streaks, but a\n[935.88] lot of people ask me, \"What do I play if\n[937.60] I have like full win streak until stage\n[940.36] four?\" And then they just slowly bleed\n[942.16] out because they try to go for some comp\n[944.36] or they try to greed improperly. But the\n[946.24] best thing to do whenever you are in\n[947.56] those situations is to just go fast nine\n[949.72] just because a lot of the units are\n[951.24] going to be uncontested cuz most people\n[952.92] are playing like four-cost comps or like\n[954.80] some reroll. And if you greed your gold\n[957.52] and don't roll, you can't go for a\n[959.36] four-cost comp because all the units are\n[961.44] going to be taken by the time you roll.\n[962.84] So, even though you are a higher level,\n[964.68] still going to be very difficult to find\n[966.20] them. But if you go level nine and go\n[967.88] for the legendaries, not a lot of people\n[969.52] are going to have those, so you get\n[970.72] those access for free, which is why you\n[973.12] want to do that when you go on a super"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Samira",
+          "Ornn",
+          "space groove",
+          "sniper",
+          "Bastion"
+        ],
+        "claimKeywords": [
+          "Samira reroll is still good, especially with the two tanky augment, but can be risky due to low health after lose streaking."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "no one else is playing Samira",
+          "lose streaking"
+        ],
+        "timestampStart": 980.08,
+        "timestampEnd": 1084.08,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Samira reroll is still good, especially with the two tanky augment, but can be risky due to low health after lose streaking.",
+        "transcriptExcerpt": "[974.72] win streak. But yeah, pretty much you\n[976.40] need like a lot of health and a lot of\n[977.84] gold to go for this. So, only go fast\n[980.08] nine in those games where you're getting\n[981.52] a little bit lucky. Next comp up we have\n[983.32] is Samira reroll. So, uh it's not that\n[985.64] two tanky got nerfed. It did not get\n[987.24] nerfed at all in the recent patch, but\n[989.08] there's just a lot of other better stuff\n[990.68] to play out there. That's why I kind of\n[992.00] dropped Samira reroll down a little bit,\n[994.04] but still very good with a two tanky\n[996.04] augment. It It might become like S tier\n[997.96] still with this, but uh the regular comp\n[1000.24] is probably just regular A tier still.\n[1002.84] Uh but it might be like low S tier,\n[1004.32] maybe like S minus, you know? And\n[1006.68] especially with the anima players out\n[1008.84] there, a lot of times when you play\n[1010.36] Samira, you like lose streaks a lot\n[1012.56] because you're like, \"Oh, I'm going for\n[1013.96] a reroll comp. Let me maximize my econ.\"\n[1016.08] It's easier to get swords if you're lose\n[1017.88] streaking as well because you get\n[1019.20] component anvils instead of random\n[1021.20] components. And yeah, a lot of times\n[1023.48] when you play reroll, you do a lose\n[1025.04] streak, and then especially with\n[1026.52] three-costs, it's so hard to get\n[1028.12] three-star three-costs, especially\n[1029.80] without an econ augment because you took\n[1032.04] two tanky instead of something else. Uh\n[1034.32] a lot of times you end up with like one\n[1035.88] or two health by the time you hit your\n[1037.60] three stars and then you face the Emma\n[1039.12] guy twice and then you just lose the\n[1040.80] game, you know? Not saying this happens\n[1042.52] all the time, but it happens enough\n[1043.84] where I feel like that's one reason to\n[1046.04] kind of drop this down a little bit cuz\n[1047.88] whenever you play like those like comps\n[1049.56] that really play to the edge, you try to\n[1051.88] like squeeze out every ounce of life\n[1054.68] that you have in your game, punished a\n[1056.28] lot by those like fortune cash out\n[1058.16] players. So, you got to be a little bit\n[1059.76] careful. Obviously, if no one's doing\n[1061.24] it, then you're fine, but yeah, there's\n[1062.84] always going to be some like super high\n[1064.32] roller that can punish you if you do\n[1066.44] that soup. Just be a little bit careful\n[1068.76] when attempting that. But nothing's\n[1070.08] really changed too much about this comp\n[1071.52] like Ornn main tank, Samira main damage\n[1073.48] dealer, obviously, and then play\n[1074.80] duplicate copies of them and then just\n[1077.20] play five space groove, level up, and\n[1079.24] then add in the extra traits such as\n[1080.96] sniper and Bastion and that's, yeah,\n[1082.92] pretty much going to be the comp from\n[1084.08] there. Next build up we have is six\n[1086.00] Mecha. Mecha's Mecha's still pretty fun"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Mecha",
+          "Mighty Mecha",
+          "Stoneplate",
+          "Sterak's",
+          "Aurelion Sol",
+          "Rabadon's",
+          "Urgot",
+          "IE",
+          "Karma",
+          "Voyager"
+        ],
+        "claimKeywords": [
+          "Play Mecha comp if you have reinforcement or duplicators; main items: Stoneplate+Sterak's on Mighty Mecha, Rabadon's on Aurelion Sol, IE on Urgot; fast eight to get four-costs."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "have reinforcement augment",
+          "have duplicators",
+          "best-in-slot Mighty Mecha"
+        ],
+        "timestampStart": 1097.92,
+        "timestampEnd": 1185.2,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Play Mecha comp if you have reinforcement or duplicators; main items: Stoneplate+Sterak's on Mighty Mecha, Rabadon's on Aurelion Sol, IE on Urgot; fast eight to get four-costs.",
+        "transcriptExcerpt": "[1091.68] reinforcement or if I have some\n[1093.16] duplicators where I can get the two-star\n[1095.76] Mechs very easily. But if you ever get\n[1097.92] best-in-slot Mighty Mecha, this is the\n[1099.72] time to go for the comp as well. Double\n[1101.68] Stoneplate plus Sterak's going to be\n[1103.08] ideal, but like Stoneplate's probably\n[1104.84] the most important. If you have at least\n[1106.08] one of them in the early game, you can\n[1107.36] think about going for this comp uh just\n[1109.40] because, yeah, the Mighty Mecha is going\n[1111.12] to be the solo tank. So, like Stoneplate\n[1112.84] going to be super good on him and he\n[1114.40] counts as two units. So, you just want\n[1116.44] him as giant as possible and Stoneplate\n[1118.48] is definitely one way to do that. Uh in\n[1120.64] the backline, Aurelion Sol going to be\n[1121.96] the main carry, obviously, just regular\n[1124.00] AP on him, just full crit. No mana items\n[1126.52] needed on Aurelion Sol, which is nice,\n[1128.48] uh but the Rabadon's I'd say is like the\n[1130.12] most crucial item on him just because he\n[1132.12] really, really, really benefits from a\n[1133.80] lot of AP. If you ever get Urgot\n[1135.84] three-star, he's a really nice secondary\n[1137.60] carry. Um him with IE, he just one-taps\n[1140.48] a lot of units a lot of times. And then\n[1142.44] for the rest of your build like Tom\n[1144.00] Kench, Karma, these just fill in random\n[1146.24] traits for your team. Fiora,\n[1147.76] Mordekaiser, that just\n[1149.80] uh lines up very nicely with what you're\n[1151.80] playing. They're by no means like\n[1153.20] mandatory by any means, but I'd say the\n[1155.28] only one you really need is going to be\n[1156.72] Karma to give you Voyager for your\n[1158.32] Mecha, but apart from that like you\n[1159.84] could play a bunch of random stuff in\n[1161.84] these extra slots. I've even seen some\n[1164.16] people just play with four Mecha and\n[1166.36] take out the Urgot and then play other\n[1168.12] units instead. All these are viable\n[1170.04] options, but I'd say like if you can\n[1172.40] just stick to the standard one that you\n[1173.80] see here. Other things to take a note of\n[1176.04] is artifacts and radiant items are also\n[1178.20] really good in this comp because you\n[1179.40] just concentrate the power into the\n[1180.80] mighty Mecha or the A Sol and they just\n[1183.36] become even more powerful after that\n[1185.20] because they make more use out of those\n[1187.08] items because they take up two unit"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Vex",
+          "Graves",
+          "Vanguard",
+          "Akali",
+          "Nova"
+        ],
+        "claimKeywords": [
+          "If you get an early Graves, consider playing Vex fast nine; it's similar to Vanguard fast nine because Graves' upgrades are cheaper now."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "early Graves"
+        ],
+        "timestampStart": 1205.8,
+        "timestampEnd": 1214.52,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "If you get an early Graves, consider playing Vex fast nine; it's similar to Vanguard fast nine because Graves' upgrades are cheaper now.",
+        "transcriptExcerpt": "[1199.16] Urgot and not that important at all.\n[1201.36] Next build up we have is Vex fast nine.\n[1203.60] This one is going to be again just\n[1205.80] similar to the other Vanguard fast nine,\n[1207.40] but just a little bit different. It's\n[1209.04] really good if you get Graves early. I'd\n[1210.60] say if you get an early Graves and he is\n[1212.52] much better right now because his costs\n[1214.52] are reduced. Gets his upgrades for a lot\n[1216.48] cheaper now. So it's not that he gets"
+      },
+      {
+        "type": "item_priority",
+        "subjects": [
+          "Graves",
+          "QSS",
+          "Bloodthirster",
+          "Akali",
+          "Nova"
+        ],
+        "claimKeywords": [
+          "Build QSS AD on Graves; he gets precision from Akali via Nova trait and omnivamp from upgrades, so you don't need defensive items like Bloodthirster; prefer full damage."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1225.88,
+        "timestampEnd": 1259.52,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Build QSS AD on Graves; he gets precision from Akali via Nova trait and omnivamp from upgrades, so you don't need defensive items like Bloodthirster; prefer full damage.",
+        "transcriptExcerpt": "[1220.08] play him you can just afford to\n[1222.12] compliment him a bit better because all\n[1223.92] his upgrades are a lot cheaper. But for\n[1225.88] Graves I still like the melee one. You\n[1227.80] just do the QSS AD build. Obviously he\n[1230.68] gets precision already from Akali in\n[1232.64] this comp from the Nova trait. So yeah,\n[1234.60] just QSS makes a lot of sense. Gives him\n[1236.44] a lot of up time and yeah he will\n[1238.00] eventually just run over a lot of\n[1240.00] people. And he also gets like omnivamp\n[1242.00] from his upgrades already and like some\n[1244.36] defensive capabilities. That's why you\n[1245.84] don't really need stuff like\n[1247.24] Bloodthirster or things like that to\n[1249.24] really make him shine. Though they're\n[1250.36] not like bad items. You could still\n[1251.92] build them on him. I just prefer going\n[1253.96] full damage on him and getting his\n[1255.60] defensive stuff from his upgrades. But\n[1257.96] apart from that like just find some four\n[1259.52] cost tank. It could be Nunu with the\n[1261.52] mana items. Could be Morgana. Could even"
+      },
+      {
+        "type": "transition",
+        "subjects": [
+          "Nunu",
+          "Morgana",
+          "Tahm Kench",
+          "Aatrox"
+        ],
+        "claimKeywords": [
+          "In Vex fast nine, you can use any four-cost tank like Nunu, Morgana, Tahm Kench, or Aatrox; you can also swap Aatrox for Malakai and Tahm Kench."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1259.52,
+        "timestampEnd": 1274.0,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "In Vex fast nine, you can use any four-cost tank like Nunu, Morgana, Tahm Kench, or Aatrox; you can also swap Aatrox for Malakai and Tahm Kench.",
+        "transcriptExcerpt": "[1253.96] full damage on him and getting his\n[1255.60] defensive stuff from his upgrades. But\n[1257.96] apart from that like just find some four\n[1259.52] cost tank. It could be Nunu with the\n[1261.52] mana items. Could be Morgana. Could even\n[1263.92] be Tom Kench. You could run like Malakai\n[1265.88] Tom Kench in this build instead of the\n[1268.52] Aatrox for example, or just like run it\n[1270.40] with the Aatrox. You could take out Nunu\n[1272.36] and Morgana here, or like Nunu and\n[1274.00] Blitzcrank. It's a cheaper version of\n[1275.84] the build. So, if you don't have that"
+      },
+      {
+        "type": "late_game_pivot",
+        "subjects": [
+          "Nunu",
+          "Morgana",
+          "Blitzcrank",
+          "Aatrox"
+        ],
+        "claimKeywords": [
+          "If you don't have much gold when going fast nine, stabilize with a cheaper version by removing Nunu and Morgana or Nunu and Blitzcrank."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [
+          "low gold when going fast nine"
+        ],
+        "timestampStart": 1268.52,
+        "timestampEnd": 1282.28,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "If you don't have much gold when going fast nine, stabilize with a cheaper version by removing Nunu and Morgana or Nunu and Blitzcrank.",
+        "transcriptExcerpt": "[1261.52] mana items. Could be Morgana. Could even\n[1263.92] be Tom Kench. You could run like Malakai\n[1265.88] Tom Kench in this build instead of the\n[1268.52] Aatrox for example, or just like run it\n[1270.40] with the Aatrox. You could take out Nunu\n[1272.36] and Morgana here, or like Nunu and\n[1274.00] Blitzcrank. It's a cheaper version of\n[1275.84] the build. So, if you don't have that\n[1277.52] much gold when you're going fast nine,\n[1279.08] you could easily stabilize with that\n[1280.60] before you get into this final board.\n[1282.28] So, that's one nice thing to note there.\n[1283.64] But, yeah, that's pretty much all the\n[1284.96] comps I have for this week. Like, you"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Anima"
+        ],
+        "claimKeywords": [
+          "Five Anima is the comp you really want, but you won't get it every game."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1295.64,
+        "timestampEnd": 1300.5600000000002,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Five Anima is the comp you really want, but you won't get it every game.",
+        "transcriptExcerpt": "[1289.44] some of them are still pretty viable. Um\n[1291.72] you can check that out on the website\n[1293.08] bunnymuffins.lol, but don't forget five\n[1295.64] anima. That's what you really want. And\n[1297.92] yeah, you're not going to get it every\n[1299.04] game. If you want to just like default\n[1300.56] one or two comps, like I'd say like\n[1302.16] Stargazers eye, you just need a lot of"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Stargazers eye",
+          "bow"
+        ],
+        "claimKeywords": [
+          "Stargazers eye is a good comp to default, but you need a lot of bows."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1302.16,
+        "timestampEnd": 1306.4,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Stargazers eye is a good comp to default, but you need a lot of bows.",
+        "transcriptExcerpt": "[1297.92] yeah, you're not going to get it every\n[1299.04] game. If you want to just like default\n[1300.56] one or two comps, like I'd say like\n[1302.16] Stargazers eye, you just need a lot of\n[1304.04] bows, or like uh maybe Shepherd LeBlanc\n[1306.40] are like pretty hard forcible, or even\n[1307.96] like Brawler Ye. Um Brawler Ye probably"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Shepherd LeBlanc"
+        ],
+        "claimKeywords": [
+          "Shepherd LeBlanc is pretty hard forcible."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1304.04,
+        "timestampEnd": 1310.2,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Shepherd LeBlanc is pretty hard forcible.",
+        "transcriptExcerpt": "[1299.04] game. If you want to just like default\n[1300.56] one or two comps, like I'd say like\n[1302.16] Stargazers eye, you just need a lot of\n[1304.04] bows, or like uh maybe Shepherd LeBlanc\n[1306.40] are like pretty hard forcible, or even\n[1307.96] like Brawler Ye. Um Brawler Ye probably\n[1310.20] has the least requirements out of all\n[1311.80] these. You could probably get away with\n[1313.16] just playing a bunch of those. Um but"
+      },
+      {
+        "type": "comp_recommendation",
+        "subjects": [
+          "Brawler Ye"
+        ],
+        "claimKeywords": [
+          "Brawler Ye has the least requirements and you can probably get away with playing it."
+        ],
+        "minimumKeywordMatches": 1,
+        "conditions": [],
+        "timestampStart": 1307.96,
+        "timestampEnd": 1314.9199999999998,
+        "timestampTolerance": 5,
+        "reviewDecision": "supported",
+        "reviewedClaim": "Brawler Ye has the least requirements and you can probably get away with playing it.",
+        "transcriptExcerpt": "[1302.16] Stargazers eye, you just need a lot of\n[1304.04] bows, or like uh maybe Shepherd LeBlanc\n[1306.40] are like pretty hard forcible, or even\n[1307.96] like Brawler Ye. Um Brawler Ye probably\n[1310.20] has the least requirements out of all\n[1311.80] these. You could probably get away with\n[1313.16] just playing a bunch of those. Um but\n[1314.92] yeah, overall like let me know what you\n[1316.36] thought about set 17. I thought it was"
+      }
+    ],
+    "irrelevantWindows": [
+      {
+        "timestampStart": 1355.2,
+        "timestampEnd": 1367.92,
+        "reason": "channel plans and outro"
+      }
+    ]
+  }
+}

@@ -66,6 +66,7 @@ function buildEntities(parsed, query, catalog) {
 
   for (const match of matches) add(match.entityType, match.apiName, match.alias, match);
   add("unit", query?.unit ?? parsed?.unit, parsed?.unitAlias, matches.find((match) => match.entityType === "unit"));
+  add("item", query?.item ?? parsed?.carrierItem, null, matches.find((match) => match.entityType === "item"));
   for (const apiName of unique([
     ...array(query?.lockedItems),
     ...array(query?.comparisonItems),
@@ -83,6 +84,9 @@ function metricsFor(intent, query) {
   if (intent === "comp_trends") return ["placementImprovement", "pickRate", "games", "trendScore"];
   if (intent === "comp_analysis") return ["avgPlacement", "top4Rate", "winRate", "pickRate", "games", "historicalComparison", "officialPatch"];
   if (intent === "comp_rankings") return ["top4Rate", "winRate", "avgPlacement", "pickRate", "games"];
+  if (intent === "item_carrier_rankings") {
+    return ["games", "avgPlacement", "top4Rate", "winRate", "placementUplift"];
+  }
   if (["unit_build_rankings", "unit_build_completion", "unit_best_3_items"].includes(intent)) {
     return ["games", "avgPlacement", "top4Rate", "winRate"];
   }
@@ -123,6 +127,7 @@ function compConstraint(query, parsed) {
 
 export function createIntentEnvelope({ input = "", parsed = {}, query = {}, validation = {}, clarification = null, catalog = null } = {}) {
   const intent = query?.intent ?? parsed?.intent ?? null;
+  const preferenceConditions = query?.preferenceConditions ?? parsed?.preferenceConditions ?? {};
   const entities = buildEntities(parsed, query, catalog);
   const unresolved = array(parsed?.parser?.unresolvedEntityHints);
   const conflicts = [
@@ -163,13 +168,27 @@ export function createIntentEnvelope({ input = "", parsed = {}, query = {}, vali
       itemCategories: unique(query?.itemCategories).map(String),
       lockedItems: unique(query?.lockedItems).map(String),
       excludedItems: unique(query?.excludedItems).map(String),
+      avoidItemComponents: unique(
+        query?.avoidItemComponents ?? parsed?.avoidItemComponents
+      ).map(String),
       comparisonItems: unique(query?.comparisonItems).map(String),
       compMention: comp.mention,
       comp: comp.resolved,
       metrics: unique(query?.metrics).map(String),
-      limit: finite(query?.limit),
+      limit: finite(query?.limit ?? preferenceConditions.count),
+      buildLimit: finite(query?.buildLimit),
+      positiveOnly: query?.positiveOnly === undefined ? null : Boolean(query.positiveOnly),
+      sort: query?.sort ?? null,
+      strategy: preferenceConditions.strategy ?? null,
+      reroll: preferenceConditions.reroll ?? null,
+      goal: preferenceConditions.goal ?? null,
+      contested: preferenceConditions.contested ?? null,
+      difficulty: preferenceConditions.difficulty ?? null,
+      beginnerFriendly: preferenceConditions.beginnerFriendly ?? null,
       preferenceRequested: Boolean(query?.preferenceRequested),
-      preferenceConditions: query?.preferenceConditions ?? null,
+      preferenceConditions: Object.keys(preferenceConditions).length
+        ? preferenceConditions
+        : null,
       trendRequested: Boolean(query?.trendRequested),
       analysisRequested: Boolean(query?.analysisRequested),
       analysis: query?.analysis ?? null

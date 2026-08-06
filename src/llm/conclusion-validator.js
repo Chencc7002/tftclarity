@@ -27,15 +27,24 @@ const ROOT_KEYS = new Set([
   "headline", "summary", "reasons", "alternatives", "nextAction", "riskNotice"
 ]);
 const ENTRY_KEYS = new Set(["dimension", "evidenceIds", "text"]);
-const ABSOLUTE_OR_CAUSAL = /(?:(?<!不)(?<!未)必定|(?<!不)(?<!未)必然|(?<!不)(?<!不能)(?<!无法)(?<!难以)(?<!不可)保证|(?<!非)(?<!不是)(?<!并非)(?<!不能视为)必备|(?<!非)(?<!不是)(?<!并非)必出|必须出|稳操胜券|唯一(?:最强|核心)|绝对最强|百分之百|100%胜率|导致(?:胜率|前四率|登顶率).{0,8}(?:提高|提升|增加)|使(?:胜率|前四率|登顶率).{0,8}(?:提高|提升|增加))/u;
+const ABSOLUTE_OR_CAUSAL = /(?:(?<!不)(?<!未)必定|(?<!不)(?<!未)必然|(?<!不)(?<!不能)(?<!无法)(?<!难以)(?<!不可)(?<!优先)保证|(?<!非)(?<!不是)(?<!并非)(?<!不能视为)必备|(?<!非)(?<!不是)(?<!并非)必出|必须出|稳操胜券|唯一(?:最强|核心)|绝对最强|百分之百|100%胜率|导致(?:胜率|前四率|登顶率|平均名次|名次|数据|表现).{0,12}(?:变化|更好|提高|提升|增加|改善)|使(?:胜率|前四率|登顶率|平均名次|名次|数据|表现).{0,12}(?:变化|更好|提高|提升|增加|改善))/u;
 const WINNER_CLAIM = /(?:更优|胜出|优于|领先|最佳|首选|更好|最强)/u;
 const LOW_SAMPLE_CLAIM = /(?:低样本|样本(?:量)?不足|不能视为稳定推荐|不稳定推荐)/u;
 const CORE_CLAIM = /核心(?:装备|装|选择|趋势|倾向|单件)/u;
+const PRIORITY_CLAIM = /(?:优先保证|优先补|区分度最高|最大区分装备)/u;
+const EQUIPMENT_CONCLUSION_INTENTS = new Set([
+  "unit_build_rankings", "unit_build_completion", "unit_best_3_items"
+]);
+const DEFAULT_ENTRY_EVIDENCE_LIMIT = 3;
+const EQUIPMENT_ENTRY_EVIDENCE_LIMIT = 12;
+const ITEM_MECHANISM_CLAIM = /(?:(?:提供|增加|获得|带来|补充|赋予|触发|造成|降低|减少).{0,20}(?:攻击力|攻速|攻击速度|法强|法术强度|暴击|破甲|生命值|护盾|伤害|增伤|减伤|回复|吸血|容错|保命|启动|持续输出)|(?:攻击力|攻速|攻击速度|法强|法术强度|暴击|破甲|生命值|护盾|增伤|减伤|回复|吸血|容错|保命|启动|持续输出).{0,12}(?:效果|能力|属性|面板|价值))/u;
+const ROLE_CLAIM = /(?:官方)?定位|物理战士|法术战士|坦克|射手|法师|刺客|辅助|近战|远程|前排|后排/u;
+const FORBIDDEN_EQUIPMENT_SCOPE = /(?:羁绊|羁绊档位|散件|选秀|合成路线|(?:大剑|拳套|反曲弓|锁子甲|斗篷|腰带|眼泪).{0,10}(?:紧缺|不够|留给|占用|省下|优先拿)|不占用.{0,10}(?:大剑|拳套|反曲弓|锁子甲|斗篷|腰带|眼泪))/u;
 const API_NAME = /\bTFT\w*_[A-Za-z0-9_]+\b/gu;
 const QUOTED_ENTITY = /[“"]([^”"\n]{1,24}(?:刀|弓|剑|甲|杖|冠|拳|刃|矛|锤|盾|盔|铠|爪|枪|炮|帽|纹章|徽章))[”"]/gu;
 const GENERIC_CATALOG_ALIASES = new Set([
   "攻速", "攻击速度", "攻击力", "法强", "法术强度", "护甲", "魔抗", "魔法抗性",
-  "生命", "生命值", "法力", "法力值", "回血", "吸血", "暴击", "暴击率", "射程", "移速"
+  "生命", "生命值", "法力", "法力值", "回蓝", "回血", "吸血", "暴击", "暴击率", "射程", "移速"
 ]);
 
 function isObject(value) {
@@ -85,7 +94,7 @@ function naturalizeEvidenceReferences(value, records) {
   return text;
 }
 
-function readText(value, path, limit, errors, { nullable = false, records = null } = {}) {
+function readText(value, path, errors, { nullable = false, records = null } = {}) {
   if (nullable && value === null) return null;
   if (typeof value !== "string") {
     errors.push(`${path} must be a string${nullable ? " or null" : ""}`);
@@ -93,7 +102,6 @@ function readText(value, path, limit, errors, { nullable = false, records = null
   }
   const text = naturalizeEvidenceReferences(naturalizeTechnicalTerms(value), records).trim();
   if (!text) errors.push(`${path} must not be empty`);
-  if (text.length > limit) errors.push(`${path} exceeds ${limit} characters`);
   return text;
 }
 
@@ -106,6 +114,18 @@ function evidenceRecords(evidence) {
     if (record?.evidenceId) records.set(record.evidenceId, record);
   }
   for (const record of evidence?.itemSignals ?? []) {
+    if (record?.evidenceId) records.set(record.evidenceId, record);
+  }
+  for (const record of evidence?.itemDifferentiation?.pairSignals ?? []) {
+    if (record?.evidenceId) records.set(record.evidenceId, record);
+  }
+  for (const record of evidence?.itemDifferentiation?.itemSignals ?? []) {
+    if (record?.evidenceId) records.set(record.evidenceId, record);
+  }
+  for (const record of evidence?.itemMechanics ?? []) {
+    if (record?.evidenceId) records.set(record.evidenceId, record);
+  }
+  for (const record of evidence?.unitMechanics ?? []) {
     if (record?.evidenceId) records.set(record.evidenceId, record);
   }
   for (const record of evidence?.comparison?.options ?? []) {
@@ -132,6 +152,7 @@ function recordNames(record) {
     if (typeof value.name === "string") names.push(value.name);
   };
   collect(record?.item);
+  collect(record?.unit);
   collect(record);
   collect(record?.metadata);
   if (record?.metadata?.canonicalName) names.push(record.metadata.canonicalName);
@@ -204,7 +225,20 @@ function catalogNames(catalog) {
   const names = new Set();
   for (const collection of [catalog?.items, catalog?.units, catalog?.traits]) {
     for (const entity of collection ?? []) {
-      catalogEntityNames(entity)
+      const canonicalNames = [
+        entity?.apiName,
+        entity?.filterId,
+        entity?.preferredDisplayName,
+        entity?.zhName,
+        entity?.displayName,
+        entity?.shortName
+      ].filter(Boolean).flatMap(naturalEntityVariants);
+      canonicalNames
+        .filter((name) => !GENERIC_CATALOG_ALIASES.has(name))
+        .forEach((name) => names.add(name));
+      (entity?.aliases ?? [])
+        .filter((name) => [...String(name).trim()].length >= 3)
+        .flatMap(naturalEntityVariants)
         .filter((name) => !GENERIC_CATALOG_ALIASES.has(name))
         .forEach((name) => names.add(name));
     }
@@ -600,19 +634,27 @@ function primaryRecordNames(record) {
   ].filter(Boolean).map(String);
 }
 
-function inferEvidenceIds(entry, records) {
+function maxEvidenceIdsForEvidence(evidence) {
+  const intent = evidence?.request?.requestedIntent ?? evidence?.request?.intent;
+  return EQUIPMENT_CONCLUSION_INTENTS.has(intent)
+    ? EQUIPMENT_ENTRY_EVIDENCE_LIMIT
+    : DEFAULT_ENTRY_EVIDENCE_LIMIT;
+}
+
+function inferEvidenceIds(entry, records, maxEvidenceIds = DEFAULT_ENTRY_EVIDENCE_LIMIT) {
   const explicitIds = Array.isArray(entry?.evidenceIds)
     ? [...new Set(entry.evidenceIds.map(String))]
     : [];
-  if (explicitIds.length > 3) {
+  if (explicitIds.length > maxEvidenceIds) {
     return { ids: explicitIds, inferred: false, explicitCount: explicitIds.length };
   }
   const ids = [...explicitIds];
   const text = String(entry?.text ?? "");
   for (const [id, record] of records) {
-    if (ids.length >= 3) break;
+    if (ids.length >= maxEvidenceIds) break;
     const explicitlyReferenced = new RegExp(`(?<![A-Za-z0-9_-])${escapedPattern(id)}(?![A-Za-z0-9_-])`, "u").test(text);
-    const candidateNamed = record?.kind !== "item_core_signal" && primaryRecordNames(record)
+    const candidateNamed = !["item_core_signal", "official_item_mechanics"].includes(record?.kind)
+      && primaryRecordNames(record)
       .some((name) => name.length >= 2 && text.includes(name));
     if ((explicitlyReferenced || candidateNamed) && !ids.includes(id)) ids.push(id);
   }
@@ -627,8 +669,11 @@ function expandEvidenceLineage(ids, records) {
     seen.add(id);
     const record = records.get(id);
     expanded.push(record);
-    if (record?.kind === "item_core_signal") {
+    if (record?.kind === "item_core_signal" || record?.kind === "locked_condition_signal") {
       for (const buildId of record.buildEvidenceIds ?? []) add(String(buildId));
+    }
+    if (record?.kind === "item_differentiation_signal") {
+      for (const pairId of record.pairEvidenceIds ?? []) add(String(pairId));
     }
   };
   ids.forEach(add);
@@ -642,7 +687,10 @@ function escapedPattern(value) {
 function describesItemAsCore(text, item) {
   return [item?.apiName, item?.name].filter(Boolean).some((name) => {
     const escaped = escapedPattern(name);
-    return new RegExp(`(?:${escaped}(?:是|为|可视为|作为).{0,20}核心(?:装备|装|选择|趋势|倾向|单件)|核心(?:装备|装|选择|趋势|倾向|单件)(?:是|为|包括|包含|[:：])?\\s*${escaped})`, "u").test(text);
+    return new RegExp(
+      `(?:${escaped}[^。；！？\\n]{0,20}核心(?:装备|装|选择|趋势|倾向|单件)|核心(?:装备|装|选择|趋势|倾向|单件)(?:方面[，,]?|(?:主要)?(?:集中在|是|为|包括|包含|有)|[:：])?\\s*${escaped})`,
+      "u"
+    ).test(text);
   });
 }
 
@@ -669,9 +717,110 @@ function validateCoreClaim(text, records, evidence, path, errors) {
   }
 }
 
+function itemNamedInText(text, item) {
+  return [item?.apiName, item?.name].filter(Boolean).some((name) => String(text).includes(String(name)));
+}
+
+function containsTargetUnitRoleClaim(text, evidence) {
+  if (!ROLE_CLAIM.test(text)) return false;
+  if (/(?:官方)?定位/u.test(text)) return true;
+  const unit = evidence?.query?.unit;
+  return [unit?.apiName, unit?.name]
+    .filter(Boolean)
+    .some((name) => String(text).includes(String(name)));
+}
+
+function isOfficialItemMechanicsRecordForItem(record, item) {
+  const official = record?.kind === "official_item_mechanics"
+    || record?.authority === "official_static_catalog"
+    || /official|tencent/u.test(String(record?.source ?? ""));
+  return official && recordNames(record).some((name) => (
+    name === item?.apiName || name === item?.name
+  ));
+}
+
+function officialItemMechanicsEvidenceIdsForText(text, evidence) {
+  if (!ITEM_MECHANISM_CLAIM.test(String(text ?? ""))) return [];
+  const records = evidenceRecords(evidence);
+  const evidenceIds = [];
+  for (const signal of evidence?.itemSignals ?? []) {
+    if (!itemNamedInText(text, signal.item)) continue;
+    for (const [evidenceId, record] of records) {
+      if (isOfficialItemMechanicsRecordForItem(record, signal.item)
+        && !evidenceIds.includes(evidenceId)) {
+        evidenceIds.push(evidenceId);
+      }
+    }
+  }
+  return evidenceIds;
+}
+
+function describesLockedAsDecision(text, item) {
+  const names = [item?.apiName, item?.name].filter(Boolean).map(escapedPattern);
+  return names.some((name) => new RegExp(
+    `(?:(?:核心装备|优先保证|候选装备|候选项|差异来源|区分度最高)(?:是|为|包括|包含|[:：])?\\s*${name}|${name}(?:是|为|应作为|作为|属于).{0,8}(?:核心|优先保证|候选|差异来源|区分度最高))`,
+    "u"
+  ).test(text));
+}
+
+function describesItemAsCompletionPriority(text, item) {
+  const names = [item?.apiName, item?.name].filter(Boolean).map(escapedPattern);
+  return names.some((name) => new RegExp(
+    `(?:(?:优先考虑|建议优先(?:选择)?|优先选择|补装倾向(?!不明确)(?:是|为)?|补装首选).{0,10}${name}|${name}.{0,10}(?:应优先|优先补|优先考虑|补装首选))`,
+    "u"
+  ).test(text));
+}
+
+function validateEquipmentBoundaries(text, records, evidence, path, errors) {
+  const intent = evidence?.request?.requestedIntent ?? evidence?.request?.intent;
+  if (!EQUIPMENT_CONCLUSION_INTENTS.has(intent)) return;
+  if (FORBIDDEN_EQUIPMENT_SCOPE.test(text)) {
+    errors.push(`${path} contains forbidden equipment-planning or trait reasoning`);
+  }
+
+  for (const lockedItem of evidence?.query?.lockedItems ?? []) {
+    if (describesLockedAsDecision(text, lockedItem)) {
+      errors.push(`${path} describes a locked item as core, priority, candidate, or differentiator: ${lockedItem.name ?? lockedItem.apiName}`);
+    }
+  }
+
+  if (PRIORITY_CLAIM.test(text)) {
+    const keySignals = (evidence?.itemDifferentiation?.itemSignals ?? [])
+      .filter((signal) => signal?.keyDifferentiator === true);
+    const linkedKeySignals = [...records].filter((record) => (
+      record?.kind === "item_differentiation_signal" && record?.keyDifferentiator === true
+    ));
+    const keyNamed = keySignals.some((signal) => itemNamedInText(text, signal.item));
+    if (!keyNamed || (/^(?:reasons|alternatives)\[/u.test(path) && linkedKeySignals.length === 0)) {
+      errors.push(`${path} contains a priority claim without a linked key differentiator`);
+    }
+  }
+
+  if (ITEM_MECHANISM_CLAIM.test(text)) {
+    const mentionedVisibleItems = (evidence?.itemSignals ?? [])
+      .filter((signal) => itemNamedInText(text, signal.item));
+    for (const signal of mentionedVisibleItems) {
+      const supportsItem = (record) => isOfficialItemMechanicsRecordForItem(record, signal.item);
+      const available = [...evidenceRecords(evidence).values()].some(supportsItem);
+      const linked = [...records].some(supportsItem);
+      if (!available || (/^(?:reasons|alternatives)\[/u.test(path) && !linked)) {
+        errors.push(`${path} contains an item-mechanism claim without linked official item mechanics`);
+      }
+    }
+  }
+
+  if (containsTargetUnitRoleClaim(text, evidence)) {
+    const hasOfficialRole = [...records].some((record) => record?.kind === "official_unit_mechanics");
+    if (!hasOfficialRole) {
+      errors.push(`${path} contains a role claim without linked official unit mechanics`);
+    }
+  }
+}
+
 function validateTextFacts(text, records, evidence, catalog, path, errors) {
   if (ABSOLUTE_OR_CAUSAL.test(text)) errors.push(`${path} contains an absolute or causal claim`);
   validateCoreClaim(text, records, evidence, path, errors);
+  validateEquipmentBoundaries(text, records, evidence, path, errors);
   const names = allowedNames(evidence, records, catalog);
   validateNames(text, names, catalogNames(catalog), path, errors);
   validateNumbers(text, records, evidence, path, errors);
@@ -692,17 +841,18 @@ function readEntries(value, path, maxEntries, records, evidence, catalog, errors
     unknownKeys(entry, ENTRY_KEYS, entryPath, errors);
     const dimension = entry.dimension === undefined && !contract ? null : String(entry.dimension ?? "").trim();
     if (contract && !dimension) errors.push(`${entryPath}.dimension is required`);
-    const resolvedIds = inferEvidenceIds(entry, records);
+    const maxEvidenceIds = maxEvidenceIdsForEvidence(evidence);
+    const resolvedIds = inferEvidenceIds(entry, records, maxEvidenceIds);
     if (!Array.isArray(entry.evidenceIds)
       || resolvedIds.ids.length === 0
-      || resolvedIds.explicitCount > 3) {
-      errors.push(`${entryPath}.evidenceIds must contain 1 to 3 entries`);
+      || resolvedIds.explicitCount > maxEvidenceIds) {
+      errors.push(`${entryPath}.evidenceIds must contain 1 to ${maxEvidenceIds} entries`);
     }
-    const ids = resolvedIds.ids.slice(0, 3);
+    const ids = resolvedIds.ids.slice(0, maxEvidenceIds);
     for (const id of ids) {
       if (!records.has(id)) errors.push(`${entryPath}.evidenceIds contains unknown evidence: ${id}`);
     }
-    const text = readText(entry.text, `${entryPath}.text`, 220, errors, { records });
+    const text = readText(entry.text, `${entryPath}.text`, errors, { records });
     const validationRecords = expandEvidenceLineage(ids, records);
     validateTextFacts(text, validationRecords, evidence, catalog, `${entryPath}.text`, errors);
     return { ...(dimension ? { dimension } : {}), evidenceIds: ids, text };
@@ -757,7 +907,10 @@ function recordMatchesRequirement(record, requirement, evidence) {
   if (requirement === "historical_fact" || requirement === "historicalComparison") return record?.type === "historical_fact";
   if (requirement === "official_patch" || requirement === "officialPatch") return record?.type === "official_patch" || record?.authority === "official_patch";
   if (requirement === "sample_status") return record?.lowSample !== undefined || Number.isFinite(Number(recordMetric(record, "games")));
-  if (requirement === "lockedItems") return (evidence?.query?.lockedItems ?? []).length > 0 && id.startsWith("build:");
+  if (requirement === "lockedItems") {
+    return (evidence?.query?.lockedItems ?? []).length > 0
+      && (id.startsWith("build:") || record?.kind === "locked_condition_signal");
+  }
   if (requirement === "coverage") return Number.isFinite(Number(record?.coverage));
   if (requirement === "placementImprovement") return Number.isFinite(Number(record?.trend?.placementImprovement));
   if (requirement === "trendScore") return Number.isFinite(Number(record?.trend?.emergenceScore));
@@ -845,6 +998,180 @@ function validateQuestionFocus(entries, combined, evidence, errors) {
   }
 }
 
+const GENERIC_MECHANIC_BIGRAMS = new Set([
+  "装备", "效果", "提供", "获得", "增加", "提升", "降低", "造成", "可以", "使其"
+]);
+
+function normalizedMechanicComparisonText(value, item) {
+  let text = String(value ?? "").toLowerCase();
+  for (const name of [item?.apiName, item?.name].filter(Boolean)) {
+    text = text.replaceAll(String(name).toLowerCase(), "");
+  }
+  return text.replace(/[^\p{L}\p{N}%]+/gu, "");
+}
+
+function characterNgrams(value, size) {
+  const characters = [...String(value ?? "")];
+  const grams = new Set();
+  for (let index = 0; index <= characters.length - size; index += 1) {
+    grams.add(characters.slice(index, index + size).join(""));
+  }
+  return grams;
+}
+
+function hasOfficialMechanicContentOverlap(text, record, item) {
+  const outputText = normalizedMechanicComparisonText(text, item);
+  const officialText = normalizedMechanicComparisonText(
+    record?.officialEffect ?? record?.text,
+    item
+  );
+  if (!outputText || !officialText) return false;
+
+  const outputFourGrams = characterNgrams(outputText, 4);
+  if ([...characterNgrams(officialText, 4)].some((gram) => (
+    /\p{L}/u.test(gram) && outputFourGrams.has(gram)
+  ))) {
+    return true;
+  }
+
+  const outputBigrams = characterNgrams(outputText, 2);
+  const sharedSpecificBigrams = [...characterNgrams(officialText, 2)]
+    .filter((gram) => (
+      /\p{L}/u.test(gram)
+      && !GENERIC_MECHANIC_BIGRAMS.has(gram)
+      && outputBigrams.has(gram)
+    ));
+  return sharedSpecificBigrams.length >= 2;
+}
+
+function itemEffectTextSegments(text, item) {
+  return String(text ?? "")
+    .split(/[。！？；;\n]+/u)
+    .map((segment) => segment.trim())
+    .filter((segment) => segment && itemNamedInText(segment, item));
+}
+
+function entryExplainsOfficialItemEffect(entry, item, evidence) {
+  if (!entry || !itemNamedInText(entry.text, item)) return false;
+  const records = evidenceRecords(evidence);
+  const relevantText = itemEffectTextSegments(entry.text, item).join(" ");
+  return (entry.evidenceIds ?? [])
+    .map((evidenceId) => records.get(evidenceId))
+    .some((record) => (
+      isOfficialItemMechanicsRecordForItem(record, item)
+      && hasOfficialMechanicContentOverlap(relevantText, record, item)
+  ));
+}
+
+function conciseOfficialItemEffect(record) {
+  const itemName = String(record?.item?.name ?? "").trim();
+  let effect = String(record?.officialEffect ?? record?.text ?? "")
+    .replace(/\s+/gu, " ")
+    .trim();
+  if (itemName && effect.startsWith(`${itemName}：`)) {
+    effect = effect.slice(itemName.length + 1).trim();
+  }
+  if (!effect) return "";
+
+  const mechanicClause = effect
+    .split(/[;；]/u)
+    .map((clause) => clause.trim())
+    .find((clause) => clause && !/^\+\s*\d/u.test(clause));
+  if (mechanicClause) effect = mechanicClause;
+
+  const clauses = effect.match(/[^。！？；;\n]+[。！？；;]?/gu) ?? [effect];
+  let compact = "";
+  for (const clause of clauses) {
+    const next = `${compact}${clause}`.trim();
+    if (compact && next.length > 180) break;
+    compact = next;
+    if (compact.length >= 80) break;
+  }
+  return compact || effect.slice(0, 180);
+}
+
+function validateRequiredEquipmentEffectCoverage(entries, evidence, errors) {
+  if (!evidence?.questionContract) return;
+  const intent = evidence?.request?.requestedIntent ?? evidence?.request?.intent;
+  if (!EQUIPMENT_CONCLUSION_INTENTS.has(intent)) return;
+
+  const availableMechanicItems = (evidence?.itemMechanics ?? []).map((record) => record.item);
+  const hasOfficialMechanics = (item) => availableMechanicItems.some((availableItem) => (
+    availableItem?.apiName === item?.apiName || availableItem?.name === item?.name
+  ));
+  const requireEffect = (signal, dimensions, label) => {
+    if (!signal?.item || !hasOfficialMechanics(signal.item)) return;
+    const matchingEntries = entries.filter((entry) => dimensions.includes(entry.dimension));
+    if (!matchingEntries.some((entry) => entryExplainsOfficialItemEffect(entry, signal.item, evidence))) {
+      errors.push(`${dimensions.join("/")} must discuss the official item effect for ${label}: ${signal.item.name ?? signal.item.apiName}`);
+    }
+  };
+
+  for (const signal of evidence?.itemSignals ?? []) {
+    if (signal.core === true) {
+      requireEffect(signal, ["core_item_tendency"], "core item");
+      continue;
+    }
+    if (signal.exclusionReason === "user_locked") continue;
+    const dimensions = intent === "unit_build_completion"
+      ? ["completion_options", "locked_item_compatibility"]
+      : ["build_performance"];
+    requireEffect(signal, dimensions, "candidate item");
+  }
+}
+
+function repairRequiredEquipmentEffectCoverage(value, validation, evidence, records, maxEvidenceIds, repairs) {
+  const entries = [
+    ...(value?.reasons ?? []),
+    ...(value?.alternatives ?? [])
+  ];
+  let changed = false;
+  for (const issue of validation?.issues ?? []) {
+    const match = String(issue.message).match(
+      /^([a-z_]+(?:\/[a-z_]+)*) must discuss the official item effect for (?:core|candidate) item: (.+)$/u
+    );
+    if (!match) continue;
+    const dimensions = match[1].split("/");
+    const itemName = match[2].trim();
+    const mechanic = (evidence?.itemMechanics ?? []).find((record) => (
+      record?.item?.name === itemName || record?.item?.apiName === itemName
+    ));
+    const signal = (evidence?.itemSignals ?? []).find((record) => (
+      record?.item?.name === itemName || record?.item?.apiName === itemName
+    ));
+    const entry = entries.find((candidate) => dimensions.includes(candidate?.dimension));
+    const effect = conciseOfficialItemEffect(mechanic);
+    if (!entry || !mechanic?.evidenceId || !effect) continue;
+
+    const alreadyCoreClaimed = String(entry.text ?? "")
+      .split(/[。！？；;\n]/u)
+      .some((segment) => itemNamedInText(segment, mechanic.item) && CORE_CLAIM.test(segment));
+    const itemLabel = /core item/u.test(issue.message) && !alreadyCoreClaimed
+      ? `${mechanic.item.name}也是当前前三套的核心倾向，其官方效果为`
+      : `${mechanic.item.name}的官方效果为`;
+    entry.text = `${String(entry.text ?? "").replace(/[。；;\s]+$/u, "")}；${itemLabel}：${effect}`;
+    entry.evidenceIds = Array.isArray(entry.evidenceIds) ? [...entry.evidenceIds] : [];
+    for (const evidenceId of [signal?.evidenceId, mechanic.evidenceId].filter(Boolean)) {
+      if (!entry.evidenceIds.includes(evidenceId)) entry.evidenceIds.push(evidenceId);
+    }
+    if (entry.evidenceIds.length > maxEvidenceIds) {
+      const normalized = normalizeEntryEvidenceIds(entry, records, evidence);
+      entry.evidenceIds = normalized.includes(mechanic.evidenceId)
+        ? normalized
+        : [...normalized.slice(0, Math.max(0, maxEvidenceIds - 1)), mechanic.evidenceId];
+    }
+    repairs.push({
+      path: issue.path,
+      evidenceId: mechanic.evidenceId,
+      signalEvidenceId: signal?.evidenceId ?? null,
+      item: mechanic.item.name,
+      kind: "required_item_effect"
+    });
+    changed = true;
+  }
+  return changed;
+}
+
 function pathFromError(message) {
   const match = String(message).match(/^([A-Za-z][A-Za-z0-9_.\[\]-]*)\s/u);
   return match?.[1] ?? "output";
@@ -865,7 +1192,7 @@ function categoryForError(message) {
   if (/omits displayed evidence/u.test(value)) return "missing_coverage";
   if (/risk notice|freshness risk/u.test(value)) return "missing_risk_notice";
   if (/absolute or causal/u.test(value)) return "unsupported_causal_claim";
-  if (/core-item claim|non-core item|cannot claim a winner|stable evidence cannot|must discuss/u.test(value)) return "analysis_boundary";
+  if (/core-item claim|non-core item|locked item|locked condition|priority claim|item-mechanism claim|role claim|forbidden equipment-planning|build-completion conclusion|cannot claim a winner|stable evidence cannot|must discuss/u.test(value)) return "analysis_boundary";
   return "format_error";
 }
 
@@ -902,8 +1229,9 @@ function issueEvidenceScope(message, evidence, output) {
   }
   const entry = output?.[match[1]]?.[Number(match[2])];
   if (!entry) return { evidenceIds: [], records: [] };
-  const resolved = inferEvidenceIds(entry, records);
-  const evidenceIds = resolved.ids.slice(0, 3).filter((id) => records.has(id));
+  const maxEvidenceIds = maxEvidenceIdsForEvidence(evidence);
+  const resolved = inferEvidenceIds(entry, records, maxEvidenceIds);
+  const evidenceIds = resolved.ids.slice(0, maxEvidenceIds).filter((id) => records.has(id));
   return {
     evidenceIds,
     records: evidenceIds.map((id) => records.get(id))
@@ -1042,7 +1370,7 @@ function missingEvidenceForUnsupportedNumber(message, evidence, linkedEvidenceId
   const value = validationErrorNumber(message);
   if (!Number.isFinite(value)) return [];
   const linked = new Set(linkedEvidenceIds);
-  const remainingSlots = Math.max(0, 3 - linked.size);
+  const remainingSlots = Math.max(0, maxEvidenceIdsForEvidence(evidence) - linked.size);
   if (remainingSlots === 0) return [];
   return [...evidenceRecords(evidence)]
     .filter(([evidenceId, record]) => !linked.has(evidenceId) && recordSupportsValidationNumber(record, message, value))
@@ -1242,7 +1570,7 @@ export function classifyConclusionValidationErrors(errors, evidence, options = {
       }
     }
     if (category === "unsupported_entity" || category === "wrong_target") {
-      const remainingSlots = Math.max(0, 3 - scope.evidenceIds.length);
+      const remainingSlots = Math.max(0, maxEvidenceIdsForEvidence(evidence) - scope.evidenceIds.length);
       issue.missingEvidenceIds = entityRepairEvidenceIds(
         message,
         evidence,
@@ -1317,7 +1645,8 @@ function evidenceRelevanceScore(evidenceId, record, text, evidence) {
 function normalizeEntryEvidenceIds(entry, records, evidence) {
   if (!Array.isArray(entry?.evidenceIds)) return null;
   const original = [...new Set(entry.evidenceIds.map(String))].filter((id) => records.has(id));
-  if (original.length <= 3) return original;
+  const maxEvidenceIds = maxEvidenceIdsForEvidence(evidence);
+  if (original.length <= maxEvidenceIds) return original;
   return original
     .map((evidenceId, index) => ({
       evidenceId,
@@ -1325,7 +1654,7 @@ function normalizeEntryEvidenceIds(entry, records, evidence) {
       score: evidenceRelevanceScore(evidenceId, records.get(evidenceId), entry.text, evidence)
     }))
     .sort((left, right) => right.score - left.score || left.index - right.index)
-    .slice(0, 3)
+    .slice(0, maxEvidenceIds)
     .sort((left, right) => left.index - right.index)
     .map((entry) => entry.evidenceId);
 }
@@ -1356,6 +1685,46 @@ export function repairConclusionCitations(rawValue, evidence, options = {}) {
   let workingValidation = repairs.length > 0
     ? validateConclusionOutput(value, evidence, options)
     : initialValidation;
+  const maxEvidenceIds = maxEvidenceIdsForEvidence(evidence);
+  const evidenceOrder = new Map([...records.keys()].map((id, index) => [id, index]));
+  for (const issue of workingValidation.issues ?? []) {
+    if (!/item-mechanism claim without linked official item mechanics/u.test(issue.message)) continue;
+    const entry = citationEntryAtPath(value, issue.path);
+    if (!entry || !Array.isArray(entry.evidenceIds)) continue;
+    const addedEvidenceIds = [];
+    for (const evidenceId of officialItemMechanicsEvidenceIdsForText(entry.text, evidence)) {
+      if (entry.evidenceIds.includes(evidenceId)) continue;
+      entry.evidenceIds.push(evidenceId);
+      if (entry.evidenceIds.length > maxEvidenceIds) {
+        entry.evidenceIds = normalizeEntryEvidenceIds(entry, records, evidence);
+      }
+      if (!entry.evidenceIds.includes(evidenceId)) continue;
+      addedEvidenceIds.push(evidenceId);
+    }
+    if (addedEvidenceIds.length === 0) continue;
+    entry.evidenceIds.sort((left, right) => (
+      (evidenceOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
+      - (evidenceOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
+    ));
+    repairs.push({
+      path: issue.path,
+      evidenceIds: addedEvidenceIds,
+      kind: "item_mechanics"
+    });
+  }
+  if (repairs.some((repair) => repair.kind === "item_mechanics")) {
+    workingValidation = validateConclusionOutput(value, evidence, options);
+  }
+  if (repairRequiredEquipmentEffectCoverage(
+    value,
+    workingValidation,
+    evidence,
+    records,
+    maxEvidenceIds,
+    repairs
+  )) {
+    workingValidation = validateConclusionOutput(value, evidence, options);
+  }
   for (const issue of workingValidation.issues ?? []) {
     if (!["unsupported_number", "unsupported_entity", "wrong_target"].includes(issue.category)) continue;
     const entry = citationEntryAtPath(value, issue.path);
@@ -1363,9 +1732,8 @@ export function repairConclusionCitations(rawValue, evidence, options = {}) {
     const candidates = findConclusionCitationCandidates(issue, entry.text, evidence, options);
     if (candidates.length !== 1) continue;
     const evidenceId = candidates[0].evidenceId;
-    if (entry.evidenceIds.includes(evidenceId) || entry.evidenceIds.length >= 3) continue;
+    if (entry.evidenceIds.includes(evidenceId) || entry.evidenceIds.length >= maxEvidenceIds) continue;
     entry.evidenceIds.push(evidenceId);
-    const evidenceOrder = new Map([...evidenceRecords(evidence).keys()].map((id, index) => [id, index]));
     entry.evidenceIds.sort((left, right) => (
       (evidenceOrder.get(left) ?? Number.MAX_SAFE_INTEGER)
       - (evidenceOrder.get(right) ?? Number.MAX_SAFE_INTEGER)
@@ -1401,12 +1769,12 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   }
 
   const records = evidenceRecords(evidence);
-  const headline = readText(rawValue.headline, "headline", 80, errors, { records });
-  const summary = readText(rawValue.summary, "summary", 300, errors, { records });
+  const headline = readText(rawValue.headline, "headline", errors, { records });
+  const summary = readText(rawValue.summary, "summary", errors, { records });
   const reasons = readEntries(rawValue.reasons, "reasons", 8, records, evidence, options.catalog, errors, contract);
   const alternatives = readEntries(rawValue.alternatives, "alternatives", 6, records, evidence, options.catalog, errors, contract);
-  const nextAction = readText(rawValue.nextAction, "nextAction", 200, errors, { records });
-  const riskNotice = readText(rawValue.riskNotice, "riskNotice", 180, errors, { nullable: true, records });
+  const nextAction = readText(rawValue.nextAction, "nextAction", errors, { records });
+  const riskNotice = readText(rawValue.riskNotice, "riskNotice", errors, { nullable: true, records });
 
   const globalRecords = [...records.values()];
   for (const [path, text] of [["headline", headline], ["summary", summary], ["nextAction", nextAction], ["riskNotice", riskNotice ?? ""]]) {
@@ -1415,6 +1783,29 @@ export function validateConclusionOutput(rawValue, evidence, options = {}) {
   const combined = [headline, summary, nextAction, riskNotice, ...reasons.map((entry) => entry.text), ...alternatives.map((entry) => entry.text)].filter(Boolean).join("\n");
   const contractFields = validateQuestionContractBinding(rawValue, [...reasons, ...alternatives], evidence, errors);
   validateQuestionFocus([...reasons, ...alternatives], combined, evidence, errors);
+  validateRequiredEquipmentEffectCoverage([...reasons, ...alternatives], evidence, errors);
+  const requestedIntent = evidence?.request?.requestedIntent ?? evidence?.request?.intent;
+  if (rawValue.status === "ok" && requestedIntent === "unit_build_completion") {
+    const lockedItems = evidence?.query?.lockedItems ?? [];
+    if (lockedItems.length > 0 && (
+      !/(?:已携带|已锁定|查询条件|前置条件)/u.test(combined)
+      || lockedItems.some((item) => !itemNamedInText(combined, item))
+    )) {
+      errors.push("locked condition must be displayed separately in a build-completion conclusion");
+    }
+    const keySignals = (evidence?.itemDifferentiation?.itemSignals ?? [])
+      .filter((signal) => signal?.keyDifferentiator === true);
+    if (keySignals.length === 0) {
+      if (!combined.includes("补装倾向不明确")) {
+        errors.push("build-completion conclusion without a key differentiator must state 补装倾向不明确");
+      }
+      const forcedPriority = (evidence?.itemDifferentiation?.itemSignals ?? [])
+        .find((signal) => describesItemAsCompletionPriority(combined, signal?.item));
+      if (forcedPriority) {
+        errors.push(`build-completion conclusion forces an item priority without a key differentiator: ${forcedPriority.item?.name ?? forcedPriority.item?.apiName}`);
+      }
+    }
+  }
   if (rawValue.status === "ok" && evidence?.generationRules?.mustAnalyzeRepresentativeItemRankings) {
     const referencedIds = new Set([...reasons, ...alternatives].flatMap((entry) => entry.evidenceIds));
     const requiredIds = evidence?.itemRankingContext?.directAnalysisEvidenceIds ?? [];

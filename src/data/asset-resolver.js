@@ -7,6 +7,11 @@ const ITEM_ASSET_ALIASES = new Map([
   ["TFT_Item_GiantSlayer", "TFT_Item_MadredsBloodrazor"]
 ]);
 
+export function resolveItemApiNameAlias(apiName) {
+  const requested = String(apiName ?? "");
+  return ITEM_ASSET_ALIASES.get(requested) ?? requested;
+}
+
 function traitBase(value) {
   return String(value ?? "").replace(/_\d+$/, "");
 }
@@ -15,6 +20,13 @@ function metaTFTUnitIconUrl(apiName) {
   const slug = String(apiName ?? "").trim().toLowerCase();
   if (!/^tft\d+_[a-z0-9_]+$/u.test(slug)) return null;
   return `https://cdn.metatft.com/file/metatft/champions/${slug}.png`;
+}
+
+function metaTFTDataIconUrl(entityType, apiName) {
+  const slug = String(apiName ?? "").trim().toLowerCase();
+  if (!/^[a-z0-9_]+$/u.test(slug)) return null;
+  const directory = entityType === "item" ? "items" : entityType === "trait" ? "traits" : null;
+  return directory ? `https://cdn.metatft.com/file/metatft/${directory}/${slug}.png` : null;
 }
 
 export function normalizeAssetUrl(value) {
@@ -38,12 +50,14 @@ export function createAssetResolver(options = {}) {
     const lookup = entityType === "trait"
       ? traitBase(requested)
       : entityType === "item"
-        ? ITEM_ASSET_ALIASES.get(requested) ?? requested
+        ? resolveItemApiNameAlias(requested)
         : requested;
     const record = byKey.get(`${entityType}:${requested}`) ?? byKey.get(`${entityType}:${lookup}`);
     const manifestIconUrl = normalizeAssetUrl(record?.iconUrl);
     const metaTFTIconUrl = entityType === "unit"
       ? normalizeAssetUrl(metaTFTUnitIconUrl(lookup))
+      : (entityType === "item" || entityType === "trait") && !manifestIconUrl
+        ? normalizeAssetUrl(metaTFTDataIconUrl(entityType, lookup))
       : null;
     const iconUrl = metaTFTIconUrl ?? manifestIconUrl;
     return {

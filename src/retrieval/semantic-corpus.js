@@ -1,4 +1,5 @@
 import { normalizeSemanticDocument } from "./semantic-document-store.js";
+import { buildOfficialPatchSemanticDocuments } from "../knowledge/official-patch-knowledge.js";
 
 export const INTENT_SEMANTIC_SAMPLES = Object.freeze({
   unit_build_rankings: ["这名棋子的三件套排行", "哪个完整出装最好", "推荐三件成装"],
@@ -124,6 +125,13 @@ export function buildSemanticCorpus(catalog = {}, options = {}) {
     const normalized = descriptionDocument(document, `explicit:${index + 1}`, settings);
     if (normalized) documents.push(normalized);
   });
+  if (options.includePatchNotes !== false) {
+    documents.push(...buildOfficialPatchSemanticDocuments({
+      seasonContextId: settings.seasonContextId,
+      locale: settings.locale,
+      versions: options.patchNoteVersions
+    }));
+  }
   return [...new Map(documents.map((document) => [document.id, document])).values()]
     .sort((left, right) => left.id.localeCompare(right.id));
 }

@@ -120,7 +120,7 @@ test("comp ranking follow-up keeps the intent and only replaces the rank constra
   assert.equal(second.payload.clarification, undefined);
 });
 
-test("global comp rankings clarify unsupported unit, item, and trait constraints", async () => {
+test("comp rankings accept a unit filter but still clarify unsupported item and trait constraints", async () => {
   const cacheStore = new MemoryCacheStore();
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog(),
@@ -133,12 +133,11 @@ test("global comp rankings clarify unsupported unit, item, and trait constraints
   const genericEmblem = await handleRecommendRequest({ input: "推荐加入纹章的热门阵容" }, runtime);
   const unresolvedTrait = await handleRecommendRequest({ input: "推荐3神秘羁绊的热门阵容" }, runtime);
 
-  assert.equal(result.payload.type, "clarification");
-  assert.equal(result.payload.clarification.reason, "unsupported_comp_entity_filter");
+  assert.equal(result.payload.type, "comp_rankings");
   assert.equal(result.payload.query.unit, "TFT17_Xayah");
   assert.equal(genericEmblem.payload.clarification.reason, "missing_specific_emblem");
   assert.equal(unresolvedTrait.payload.clarification.reason, "unsupported_comp_entity_filter");
-  assert.equal(cacheStore.getSessionState("last_query"), null);
+  assert.equal((await cacheStore.getSessionState("last_query")).value.query.unit, "TFT17_Xayah");
 });
 
 test("comp win-first sorting uses a real win-rate field and never substitutes score", () => {

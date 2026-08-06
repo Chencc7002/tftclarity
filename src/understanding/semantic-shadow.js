@@ -3,8 +3,9 @@ import { parseSemanticTask } from "./semantic-task-parser.js";
 import { matchTaskCapabilities } from "./capability-matcher.js";
 import { createStructuredToolDefinitions } from "../agent/tools/definitions.js";
 import { ToolRegistry } from "../agent/tools/registry.js";
-import { planTask } from "../agent/task-planner.js";
-import { compileExecutionPlan } from "../agent/execution-plan.js";
+import { planExecution } from "../agent/execution-plan.js";
+import { statusAfterPlanning } from "../agent/status-protocol.js";
+import { planTask } from "../legacy/task-planner.js";
 
 export const SEMANTIC_SHADOW_EVENT_VERSION = "semantic-shadow-event.v1";
 const DEFAULT_TOOL_REGISTRY = new ToolRegistry(createStructuredToolDefinitions());
@@ -16,6 +17,7 @@ const LEGACY_ACTIONS = Object.freeze({
   unit_item_rankings: "rank",
   unit_emblem_rankings: "rank",
   unit_item_comparison: "compare",
+  item_carrier_rankings: "rank",
   unit_item_availability: "search",
   unit_details: "explain",
   item_details: "explain",
@@ -71,39 +73,52 @@ export function compareSemanticShadow(legacyParsed, semanticResult) {
 export async function runSemanticShadow(input, legacyParsed, options = {}) {
   const parser = options.parser ?? parseSemanticTask;
   try {
-    const semanticResult = await parser(input, {
-      conversation: options.conversation,
-      dynamicContext: options.dynamicContext,
-      exampleStore: options.exampleStore,
-      provider: options.provider,
-      budget: options.budget
-    });
+    const resolve = () => parser(input, {
+        conversation: options.conversation,
+        dynamicContext: options.dynamicContext,
+        exampleStore: options.exampleStore,
+        provider: options.provider,
+        budget: options.budget
+      });
+    const semanticResult = options.agentRun?.stage
+      ? await options.agentRun.stage("resolving", resolve)
+      : await resolve();
     const toolRegistry = options.toolRegistry ?? DEFAULT_TOOL_REGISTRY;
-    const capabilityMatch = matchTaskCapabilities(semanticResult.taskFrame, toolRegistry, {
-      compositeTools: options.compositeTools
-    });
-    const taskPlanning = await planTask(semanticResult.taskFrame, capabilityMatch, {
-      registry: toolRegistry,
-      planner: options.planner,
-      policyCheck: options.policyCheck,
-      budget: {
-        maxSteps: Math.min(3, Number(options.agentRun?.budget?.maxSteps ?? 3)),
-        maxToolCalls: Math.min(3, Number(options.agentRun?.budget?.maxToolCalls ?? 3)),
-        maxPlannerTokens: Number(options.plannerTokenBudget ?? 600)
-      }
-    });
-    const executionPlanning = compileExecutionPlan(
-      semanticResult.taskFrame,
-      capabilityMatch,
-      taskPlanning,
-      {
+    const plan = async () => {
+      const capabilityMatch = matchTaskCapabilities(semanticResult.taskFrame, toolRegistry, {
+        compositeTools: options.compositeTools
+      });
+      const executionPlanning = await planExecution(semanticResult.taskFrame, capabilityMatch, {
         registry: toolRegistry,
+        planner: options.planner,
+        plannerFallback: options.plannerFallback,
         budget: {
           maxSteps: Math.min(3, Number(options.agentRun?.budget?.maxSteps ?? 3)),
           maxToolCalls: Math.min(3, Number(options.agentRun?.budget?.maxToolCalls ?? 3)),
           maxPlanTokens: Number(options.executionPlanTokenBudget ?? 800)
         }
-      }
+      });
+      return { capabilityMatch, executionPlanning };
+    };
+    const { capabilityMatch, executionPlanning } = options.agentRun?.stage
+      ? await options.agentRun.stage("planning", plan)
+      : await plan();
+    const taskPlanning = options.legacyTaskPlanCompatibility === false
+      ? null
+      : await planTask(semanticResult.taskFrame, capabilityMatch, {
+        registry: toolRegistry,
+        planner: options.planner,
+        policyCheck: options.policyCheck,
+        budget: {
+          maxSteps: 3,
+          maxToolCalls: 3,
+          maxPlannerTokens: Number(options.plannerTokenBudget ?? 600)
+        }
+      });
+    const statusProtocol = statusAfterPlanning(
+      semanticResult.taskFrame,
+      capabilityMatch,
+      executionPlanning
     );
     const difference = compareSemanticShadow(legacyParsed, semanticResult);
     const stateBar = createAgentStateBar({
@@ -134,10 +149,11 @@ export async function runSemanticShadow(input, legacyParsed, options = {}) {
         contextResolution: semanticResult.contextResolution,
         clarificationPolicy: semanticResult.clarificationPolicy,
         capabilityMatch,
-        taskPlan: taskPlanning.plan,
-        taskPlanValidation: taskPlanning.validation,
+        taskPlan: taskPlanning?.plan ?? null,
+        taskPlanValidation: taskPlanning?.validation ?? null,
         executionPlan: executionPlanning.plan,
         executionPlanValidation: executionPlanning.validation,
+        statusProtocol,
         usage: semanticResult.telemetry.usage,
         parserBudget: semanticResult.telemetry.budget,
         exampleIds: semanticResult.telemetry.exampleIds,
@@ -151,7 +167,8 @@ export async function runSemanticShadow(input, legacyParsed, options = {}) {
       stateBar,
       capabilityMatch,
       taskPlanning,
-      executionPlanning
+      executionPlanning,
+      statusProtocol
     };
   } catch (error) {
     safeEmit(options.agentRun, {

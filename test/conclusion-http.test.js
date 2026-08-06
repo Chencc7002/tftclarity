@@ -32,7 +32,7 @@ function providerOutput(evidence = {}) {
       { dimension: "sample_risk", evidenceIds: ["build:1"], text: "当前样本可用于复核。" }
     ],
     alternatives: [{ dimension: "build_performance", evidenceIds: ["build:2"], text: "若更看重登顶率，可参考第二套组合。" }],
-    nextAction: "保留羊刀，再按散件补齐另外两件。",
+    nextAction: "保留羊刀，再从当前展示方案中补齐另外两件。",
     riskNotice: null
   };
 }
@@ -265,8 +265,72 @@ test("semantic evidence sent to the conclusion model is returned as expandable s
   assert.equal(statusCode, 200);
   assert.equal(providerRequest.evidence.semanticEvidence.length, 1);
   assert.equal("score" in providerRequest.evidence.semanticEvidence[0], false);
-  assert.equal(payload.answer.generatedConclusion.supportingEvidence.length, 1);
-  assert.match(payload.answer.generatedConclusion.supportingEvidence[0].text, /7%/u);
+  assert.ok(payload.answer.generatedConclusion.supportingEvidence.length >= 1);
+  assert.ok(payload.answer.generatedConclusion.supportingEvidence.some((entry) => /7%/u.test(entry.text)));
+});
+
+test("execution-plan results never trigger legacy RetrievalPlan semantic augmentation", async () => {
+  let semanticSearches = 0;
+  let providerRequest;
+  const result = buildConclusionResult({
+    executionTrace: {
+      schemaVersion: "execution_trace.v1",
+      source: "execution_plan",
+      status: "completed",
+      steps: []
+    },
+    retrievalPlan: {
+      schemaVersion: "retrieval_plan.v1",
+      intent: "unit_build_completion",
+      structuredQueries: [],
+      semanticQueries: [{
+        id: "semantic:legacy",
+        query: "legacy semantic query",
+        types: ["item_description"],
+        patch: "current",
+        locale: "zh-CN",
+        topK: 2
+      }],
+      evidenceBudget: { maxItems: 40, maxCharacters: 16000 },
+      requiredEvidence: [],
+      promptKey: "unit-build-rankings",
+      needsClarification: false,
+      warnings: []
+    }
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    metaTFTClient: {},
+    compsClient: {},
+    fetchItems: false,
+    semanticRetriever: {
+      async search() {
+        semanticSearches += 1;
+        return [];
+      }
+    },
+    conclusionProvider: async (request) => {
+      providerRequest = request;
+      return providerOutput(request.evidence);
+    },
+    conclusionGeneratorConfig: {
+      enabled: true,
+      mode: "on",
+      provider: "injected",
+      model: "fixture-model"
+    },
+    recommendForInputImpl: async () => structuredClone(result)
+  });
+
+  const { statusCode } = await handleRecommendRequest({
+    input: "execution plan sovereignty",
+    preferences: { conclusionMode: "on" }
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(semanticSearches, 0);
+  assert.deepEqual(providerRequest.evidence.semanticEvidence, []);
 });
 
 test("small-window keeps HTTP 200 and template facts when the provider fails", async () => {

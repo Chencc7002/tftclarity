@@ -16,18 +16,20 @@ function parsed(unit, starLevel) {
   };
 }
 
-test("one-cost and two-cost units default to three stars", () => {
+test("units costing three or less default to three stars", () => {
   const catalog = createCatalog({
     units: [
       { apiName: "TFT17_OneCost", aliases: [], cost: 1 },
       { apiName: "TFT17_TwoCost", aliases: [], cost: 2 },
-      { apiName: "TFT17_ThreeCost", aliases: [], cost: 3 }
+      { apiName: "TFT17_ThreeCost", aliases: [], cost: 3 },
+      { apiName: "TFT17_FourCost", aliases: [], cost: 4 }
     ]
   });
 
   assert.deepEqual(buildQueryContext(parsed("TFT17_OneCost"), { catalog }).starLevel, [3]);
   assert.deepEqual(buildQueryContext(parsed("TFT17_TwoCost"), { catalog }).starLevel, [3]);
-  assert.deepEqual(buildQueryContext(parsed("TFT17_ThreeCost"), { catalog }).starLevel, [2]);
+  assert.deepEqual(buildQueryContext(parsed("TFT17_ThreeCost"), { catalog }).starLevel, [3]);
+  assert.deepEqual(buildQueryContext(parsed("TFT17_FourCost"), { catalog }).starLevel, [2]);
 });
 
 test("an explicit star level is never replaced by the cost-based default", () => {
@@ -50,4 +52,48 @@ test("the live unit catalog carries patch-scoped costs used by default-star deci
   assert.equal(catalog.unitByApiName.get("TFT17_Xayah").cost, 4);
   assert.deepEqual(buildQueryContext(parsed("TFT17_Veigar"), { catalog }).starLevel, [3]);
   assert.deepEqual(buildQueryContext(parsed("TFT17_Xayah"), { catalog }).starLevel, [2]);
+});
+
+test("locked special items widen an inherited ordinary item policy", () => {
+  const artifact = "TFT_Item_TestArtifact";
+  const radiant = "TFT_Item_TestRadiant";
+  const catalog = createCatalog({
+    units: [{ apiName: "TFT17_Xayah", aliases: [], cost: 4 }],
+    items: [
+      {
+        apiName: artifact,
+        zhName: "测试神器",
+        aliases: [],
+        category: "artifact",
+        current: true,
+        obtainable: true
+      },
+      {
+        apiName: radiant,
+        zhName: "测试光明装",
+        aliases: [],
+        category: "radiant",
+        current: true,
+        obtainable: true
+      }
+    ]
+  });
+  const queryFor = (lockedItems, itemPolicy = "ordinary_only") => buildQueryContext({
+    ...parsed("TFT17_Xayah"),
+    lockedItems,
+    ownedItems: lockedItems,
+    itemPolicy
+  }, { catalog });
+
+  const artifactQuery = queryFor([artifact]);
+  const radiantQuery = queryFor([radiant]);
+  const mixedQuery = queryFor([artifact, radiant]);
+
+  assert.equal(artifactQuery.itemPolicy, "include_artifact");
+  assert.equal(radiantQuery.itemPolicy, "include_radiant");
+  assert.equal(mixedQuery.itemPolicy, "include_special");
+  assert.equal(
+    artifactQuery.assumptions.find((entry) => entry.key === "item_policy").source,
+    "current_input"
+  );
 });

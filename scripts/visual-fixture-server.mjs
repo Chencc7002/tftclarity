@@ -89,11 +89,66 @@ const runtime = createSmallWindowRuntime({
   catalog: visualCatalog,
   cacheStore,
   fetchItems: false,
+  semanticConfig: { enabled: true, provider: "visual-fixture", locale: "zh-CN" },
+  semanticRetriever: {
+    async search(_query, options = {}) {
+      if (!(options.documentTypes ?? []).includes("video_guide")) return [];
+      return [{
+        id: "youtube:abc123xyz00:item_priority:1",
+        seasonContextId: options.seasonContextId ?? "set17-live",
+        documentType: "video_guide",
+        score: 0.94,
+        patch: options.patch ?? "17.7",
+        locale: "zh-CN",
+        source: "youtube",
+        metadata: {
+          source: "youtube",
+          sourceId: "abc123xyz00",
+          sourceTitle: "霞完整攻略：装备、过渡与站位",
+          author: "测试攻略频道",
+          publishedAt: "2026-07-20",
+          season: options.seasonContextId ?? "set17-live",
+          patch: options.patch ?? "17.7",
+          timestampStart: 332,
+          timestampEnd: 351,
+          claimType: "creator_advice",
+          content: "作者建议在没有其他稳定攻速来源时优先保证羊刀；如果装备散件不支持，则先做可立即提升战力的成装。",
+          conditions: ["没有其他稳定攻速来源", "散件允许优先合成羊刀"],
+          topics: ["霞", "羊刀", "装备"],
+          sourceUrl: "https://www.youtube.com/watch?v=abc123xyz00",
+          namespace: "video_guides",
+          videoVersion: "version-001",
+          transcriptHash: "transcript-hash-001",
+          segmentId: "version-001:0000:segment",
+          segmentIndex: 0,
+          segmentStatus: "success",
+          ingestionStatus: "success",
+          aiGenerated: true,
+          contentOrigin: "ai_generated_transcript_summary",
+          reviewStatus: "ai_generated_unreviewed",
+          contentDisclosure: "AI-generated from the transcript; not human-reviewed.",
+          extractionModel: "visual-fixture-model",
+          isCurrentVersion: true
+        }
+      }];
+    }
+  },
   conclusionProvider: async ({ evidence }) => {
     const primary = evidence.recommendations?.[0];
     const games = primary?.stats?.games ?? 0;
     const lowSample = evidence.recommendations?.some((entry) => entry.lowSample);
     const dimensions = evidence.questionContract.requiredAnswerDimensions;
+    const lockedNames = (evidence.query?.lockedItems ?? [])
+      .map((item) => item.name)
+      .filter(Boolean);
+    const lockedLabel = lockedNames.join("、");
+    const dimensionText = {
+      build_performance: `候选分析：当前首选方案覆盖${games}场样本，前四率、吃鸡率和平均名次均来自同一查询口径；其余可见方案按页面原有顺序保留，方便结合样本量继续比较。`,
+      completion_options: `候选分析：当前首选补齐方案覆盖${games}场样本，前四率、吃鸡率和平均名次均来自同一查询口径；其余候选仍按页面原有顺序保留，方便结合样本量继续比较。`,
+      core_item_tendency: "核心倾向：只统计前三个可见方案中的装备共现；出现次数达到既定门槛才列为共同倾向，若频次接近则不强行指定唯一核心装备。",
+      locked_item_compatibility: `已携带${lockedLabel || "装备"}只作为查询前置条件，不参与补齐装备的频次统计；补齐建议仅比较剩余装备槽位，并保留原始三件套数据供核对。`,
+      sample_risk: "数据提醒：当前结果包含低样本候选，名次与胜率更容易波动；建议同时查看样本量，并在刷新数据后再次确认。"
+    };
     return {
       schemaVersion: "llm_conclusion.v2",
       contractId: evidence.questionContract.contractId,
@@ -101,15 +156,17 @@ const runtime = createSmallWindowRuntime({
       addressedDimensions: dimensions,
       missingDimensions: [],
       missingEvidence: [],
-      headline: "当前统计证据的行动参考",
+      headline: lockedLabel
+        ? `推荐：在已携带${lockedLabel}的条件下，优先采用当前排名第一的补齐组合。`
+        : "推荐：优先采用当前排名第一的三件套，并保留其余候选作为对照。",
       summary: "以下解读只组织已展示的统计事实，不改变本地排序与比较结果。",
       reasons: dimensions.map((dimension, index) => ({
         dimension,
         evidenceIds: [evidence.recommendations?.[Math.min(index, evidence.recommendations.length - 1)]?.evidenceId ?? primary.evidenceId],
-        text: index === 0 ? `当前首条证据包含${games}场样本。` : "当前可见证据用于回答这一维度。"
+        text: dimensionText[dimension] ?? `当前首条证据包含${games}场样本。`
       })),
       alternatives: [],
-      nextAction: "先按结构化结果行动，再结合现有散件选择补齐顺序。",
+      nextAction: "先按结构化结果行动，再参考候选组合表现。",
       riskNotice: lowSample ? "其中包含低样本结果，仅供参考。" : null
     };
   },

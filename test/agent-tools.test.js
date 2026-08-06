@@ -83,6 +83,21 @@ test("ToolExecutor returns a versioned result and emits run-linked tool events",
   assert.ok(toolEvents.every((event) => event.runId === "run-1" && event.data.toolCallId === "tool-call-1"));
 });
 
+test("ToolExecutor reads the evidence timestamp from a standardized provider envelope", async () => {
+  const executor = new ToolExecutor({
+    registry: new ToolRegistry([definition({
+      execute: async ({ value }) => ({
+        data: [{ value }],
+        provenance: { fetchedAt: "2026-08-06T00:00:00.000Z" }
+      })
+    })])
+  });
+
+  const result = await executor.execute("test_tool", { value: 7 }, { source: "test" });
+
+  assert.equal(result.metadata.updatedAt, "2026-08-06T00:00:00.000Z");
+});
+
 test("ToolExecutor normalizes timeout, cancellation and sensitive errors", async () => {
   const timeoutExecutor = new ToolExecutor({
     registry: new ToolRegistry([definition({

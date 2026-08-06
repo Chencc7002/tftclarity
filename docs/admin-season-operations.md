@@ -37,19 +37,21 @@
 ## SeasonContext 运维边界
 
 - 普通用户只提交稳定的 `seasonContextId`；`patch`、`queue`、provider 和 URL 始终由服务端注册表决定。
-- 当前默认空间是 `set17-live`。`set18-pbe` 仅为可见的 `coming_soon` 占位，不可选择、不可查询，也不会回退 Set 17。
+- 当前默认空间仍是 `set17-live`。`set18-pbe` 已开放选择和查询，固定使用 `queue=PBE`、`TFTSet18_pbe_zh_cn` lookup，并与 Set 17 缓存和目录严格隔离。
 - 跨赛季切换必须使用全新会话。浏览器会按旧赛季清理原 `conversationId`，后续每个查询携带新赛季 ID。
 - 缓存、目录、别名、语义文档、趋势快照、Profile 与绑定都必须带 `season_context_id`；禁止直接复制 provider 事实或查询缓存。
 - `buildSeasonContentPromotionPlan` 目前仅生成 `design_only` 的 PBE→Live 审核计划，不执行写入。真实提升流程必须在受保护管理端中增加显式审批、逐项预览和审计后才能开放。
 
-## PBE 上线门槛
+## PBE 上线状态
 
-在把 `set18-pbe.selectable` 改为 `true` 前，必须同时完成：
+`set18-pbe.selectable` 已于 2026-08-02 开放。上线验证覆盖：
 
-1. 从浏览器网络面板验证真实 PBE API、请求参数、返回字段、限流和更新时间。
-2. 实现真实 PBE Provider，并证明同名实体和阵容返回 PBE 而不是正式服数据。
-3. 同步并人工审核 Set 18 英雄、羁绊、装备、中文名称、俗称与 Comp Profile。
-4. 完成 Set 18 主题、正式壁纸、小屏适配和风险提示。
-5. 运行全量测试、SQLite smoke、small-window/comp/MetaTFT/visual smoke 及所有 audit。
+1. MetaTFT Explorer 的 `items`、`units_unique`、`traits`、`unit_builds` 在 `queue=PBE` 下返回 Set 18 数据。
+2. `/tft-comps-api/comps_data` 与 `/comps_stats` 在 `queue=PBE` 下返回 `tft_set=TFTSet18`，且 cluster 身份一致。
+3. `https://data.metatft.com/lookups/TFTSet18_pbe_zh_cn.json` 提供 Set 18 英雄、羁绊和装备的简中 lookup。
+4. PBE 目录禁用 Set 17 静态 seed 回退；远端不可用时只允许使用同一 `season_context_id` 的持久化目录。
+5. Set 18 主题、小屏交互和 PBE 数据波动提示保持启用。
+
+PBE 内容仍可能高频调整。每次版本切换后应运行全量测试、SQLite smoke、small-window/comp/MetaTFT/visual smoke 及目录 audit；如 MetaTFT 契约变化，应把 `set18-pbe` 临时标记为不可用，而不是回退 Set 17 数据。
 
 任一目录为空、健康检查失败或来源不可验证时，应继续返回 `unavailable`，不得以 Set 17 数据兜底。

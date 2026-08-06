@@ -16,10 +16,12 @@ const wallpaperCatalog = ui("wallpaper-catalog.js");
 const privacyHtml = ui("privacy.html");
 const termsHtml = ui("terms.html");
 const legalCss = ui("legal.css");
+const opggPanel = ui("opgg-panel.js");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
-  assert.match(indexHtml, /<title>tftclarity · Set 17<\/title>/);
-  assert.match(indexHtml, /<link rel="icon" type="image\/png" href="\/favicon\.png">/);
+  assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
+  assert.match(indexHtml, /<meta name="description" content="tftclarity 是面向云顶之弈的对话式数据助手/);
+  assert.match(indexHtml, /<link rel="icon" type="image\/png" href="\/favicon\.png\?v=20260727">/);
   assert.ok(statSync(new URL("../src/app/small-window-ui/favicon.png", import.meta.url)).size > 0);
   assert.doesNotMatch(indexHtml, />TFTAgent</);
   assert.match(indexHtml, /id="app-shell"/);
@@ -46,49 +48,102 @@ test("desktop UI exposes the responsive AppShell structure", () => {
 test("season switching is server-validated, conversation-isolated, and theme-driven", () => {
   assert.match(indexHtml, /id="season-context-select"/);
   assert.match(indexHtml, /id="season-context-summary"/);
+  assert.match(indexHtml, /data-season-subtitle-separator/);
+  assert.match(appJs, /seasonSubtitleForSummary/);
   assert.match(styles, /\.season-context-control/);
   assert.match(appJs, /fetch\("\/api\/season-contexts"\)/);
   assert.match(appJs, /fetch\("\/api\/season-contexts\/select"/);
   assert.match(appJs, /seasonContextId: state\.seasonContextId/);
   assert.match(appJs, /resetConversation\(\{ previousSeasonContextId/);
   assert.match(appJs, /seasonContextId: previousSeasonContextId/);
-  assert.match(appJs, /document\.title = theme\.documentTitle/);
+  assert.doesNotMatch(appJs, /document\.title\s*=/);
+  assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
   assert.match(appJs, /wallpaperController\.setSeason/);
+  assert.match(appJs, /shellEl\.dataset\.seasonTheme = context\.themeId/);
+  assert.match(appJs, /context\.selectable \|\| context\.themePreview/);
+  assert.match(appJs, /!requested\?\.selectable && !requested\?\.themePreview/);
   assert.match(appJs, /option\.disabled = !context\.selectable/);
   assert.match(appJs, /theme\?\.patchNoteVersion/);
   assert.match(wallpaperController, /setSeason\(seasonId, defaultWallpaperId/);
   assert.match(wallpaperController, /localStorage\.setItem\(`\$\{WALLPAPER_ID_STORAGE_KEY\}\.\$\{this\.seasonId\}`/);
   assert.match(wallpaperCatalog, /"set-18-pbe"/);
+  assert.match(wallpaperCatalog, /set18-verdant-realm/);
+  assert.match(styles, /\.shell\[data-season-theme="set18"\]/);
+  assert.ok(statSync(new URL("../src/app/small-window-ui/assets/wallpapers/set-18/verdant-realm.jpg", import.meta.url)).size > 100_000);
   assert.match(i18n, /seasonComingSoonStatus/);
   assert.match(i18n, /seasonArchivedStatus/);
   assert.match(i18n, /seasonRevivalStatus/);
+  assert.match(indexHtml, /id="season-context-notice-close"/);
+  assert.match(appJs, /sessionStorage\.setItem\(`\$\{SEASON_NOTICE_DISMISSED_STORAGE_KEY\}\.\$\{seasonContextId\}`/);
+  assert.match(appJs, /seasonContextNoticeClose\?\.addEventListener\("click"/);
+  assert.match(i18n, /closeSeasonNotice/);
 });
 
-test("welcome view exposes localized, actionable quick tasks", () => {
+test("welcome view exposes categorized, localized, actionable quick tasks", () => {
   assert.match(indexHtml, /class="quick-tasks"/);
-  assert.equal((indexHtml.match(/class="quick-task-card/g) ?? []).length, 4);
-  assert.match(indexHtml, /data-quick-task="comp-rankings"/);
-  assert.match(indexHtml, /data-quick-task="comp-trends"/);
-  assert.match(indexHtml, /data-quick-task="patch-notes"/);
+  assert.equal((indexHtml.match(/class="quick-category-card/g) ?? []).length, 4);
+  assert.match(indexHtml, /data-quick-category="equipment"/);
+  assert.match(indexHtml, /data-quick-category="comps"/);
+  assert.match(indexHtml, /data-quick-category="library"/);
+  assert.match(indexHtml, /data-quick-category="news"/);
+  assert.match(appJs, /const QUICK_TASK_CATEGORIES/);
   assert.match(appJs, /const QUICK_TASKS/);
-  assert.match(appJs, /inputTemplateKey: "quickTaskBuildTemplate"/);
-  assert.match(appJs, /queryInput\.setSelectionRange/);
-  assert.match(appJs, /queryInput\.reportValidity/);
-  assert.match(i18n, /enterChampion/);
+  assert.equal((appJs.match(/category: "comps"/g) ?? []).length, 3);
+  assert.match(appJs, /id: "comp-rankings"/);
+  assert.match(appJs, /id: "comp-trends"/);
+  assert.match(appJs, /id: "hero-comps"/);
+  assert.match(appJs, /formFields: \["champion"\]/);
+  assert.match(appJs, /queryTemplateKey: "quickTaskBuildTemplate"/);
+  assert.match(appJs, /formFields: \["champion", "item1", "item2Optional"\]/);
+  assert.match(appJs, /optionalQueryTemplateKey: "quickTaskCompletionWithSecondTemplate"/);
+  assert.match(appJs, /formFields: \["item", "champion"\]/);
+  assert.match(appJs, /formFields: \["champion", "comparisonItem1", "item2"\]/);
+  assert.match(appJs, /queryTemplateKey: "quickTaskCarriersTemplate"/);
+  assert.match(indexHtml, /id="quick-task-form"/);
+  assert.match(indexHtml, /id="quick-task-fields"/);
+  assert.match(appJs, /function openQuickTaskForm\(task\)/);
+  assert.match(appJs, /function submitQuickTaskForm\(\)/);
+  assert.match(appJs, /startNewTask: true/);
+  assert.doesNotMatch(appJs, /unresolvedQuickTaskPlaceholder/);
+  assert.doesNotMatch(i18n, /【英雄名称】|\[champion name\]/);
+  assert.match(i18n, /quickTaskCompletionTitle: "条件查询"/);
+  assert.match(i18n, /quickTaskCarriersTitle: "神器\/装备定阵"/);
   assert.doesNotMatch(i18n, /霞|Xayah/);
   assert.match(appJs, /quickTasksHtml/);
+  assert.match(appJs, /button\[data-quick-category\]/);
   assert.match(appJs, /button\[data-quick-task\]/);
+  assert.doesNotMatch(appJs, /collapseQuickTaskCategories\(quickTaskButton\.closest\("\.quick-tasks"\)\)/);
+  assert.doesNotMatch(indexHtml, /class="composer-feature-shortcuts"/);
+  assert.match(appJs, /const NATURAL_LANGUAGE_QUICK_TASK_RULES/);
+  assert.match(appJs, /function naturalLanguageQuickTaskId\(input\)/);
+  assert.match(appJs, /async function routeNaturalLanguageQuickTask\(input\)/);
+  assert.match(appJs, /routeNaturalLanguageQuickTask\(queryInput\.value\)/);
+  assert.match(appJs, /id: "opgg-personal-review"[\s\S]*\\u6211\\u8981/);
+  assert.match(appJs, /id: "opgg-pro-trends"[\s\S]*\\u804c\\u4e1a\\u9635\\u5bb9\\u8d8b\\u52bf/);
+  assert.match(appJs, /id: "opgg-pro-teaching"[\s\S]*\\u804c\\u4e1a\\u9009\\u624b/);
+  assert.match(appJs, /id: "patch-notes"[\s\S]*\\u66f4\\u65b0\\u516c\\u544a/);
+  assert.match(appJs, /async function launchQuickTask\(quickTaskTarget\)/);
   assert.match(appJs, /QUICK_TASKS\.find/);
   assert.match(appJs, /queryInput\.value = quickTask\.query/);
-  assert.match(appJs, /requestRecommendation\(false, t\(quickTask\.promptKey\)\)/);
+  assert.match(appJs, /structuredQuickTask\(quickTask\)/);
+  assert.match(appJs, /schemaVersion: "quick-task\.v1"/);
+  assert.match(appJs, /operation: "unit_build_rankings"/);
+  assert.match(appJs, /quickTask: state\.lastQuickTask/);
+  assert.match(i18n, /快捷查询可跳过语义理解，通常返回更快/);
+  assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.7"/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.8"/);
+  assert.match(patchNotes, /publishedAt: "2026-07-28T18:00:00\.000Z"/);
+  assert.match(patchNotes, /teamfight-tactics-patch-17-8/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
-  assert.match(styles, /\.quick-task-grid/);
+  assert.match(styles, /\.quick-category-grid/);
+  assert.match(styles, /\.quick-category-card/);
+  assert.match(styles, /\.quick-task-panel/);
   assert.match(styles, /\.quick-task-card/);
+  assert.match(styles, /\.quick-task-form/);
   assert.match(styles, /min-height: 54px/);
   assert.match(styles, /var\(--wallpaper-accent\)/);
   assert.match(styles, /\.composer-actions \.send-button[\s\S]*var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
@@ -96,6 +151,35 @@ test("welcome view exposes localized, actionable quick tasks", () => {
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("OP.GG review views use the result pane and preserve navigation context", () => {
+  assert.match(opggPanel, /const resultEl = el\("result-content"\)/u);
+  assert.doesNotMatch(opggPanel, /const resultEl = el\("result"\)/u);
+  assert.match(opggPanel, /backLink\("返回选手", "player", \{ player: state\.playerId \}\)/u);
+  assert.match(opggPanel, /unit\.displayName \?\? unit\.characterId/u);
+  assert.match(opggPanel, /unit\.cost \?\? "\?"/u);
+  assert.match(opggPanel, /itemDisplayNames/u);
+  assert.doesNotMatch(opggPanel, /<option value="kr">/u);
+  assert.doesNotMatch(opggPanel, /OP\.GG 风格评论/u);
+  assert.match(opggPanel, /AI 正在分析对局风格/u);
+  assert.match(opggPanel, /AI 智能复盘/u);
+  assert.match(opggPanel, /unitBoardHtml/u);
+  assert.match(opggPanel, /observedEighthRate/u);
+  assert.match(opggPanel, /pool: PERSONAL_POOL/u);
+  assert.match(opggPanel, /cancel-teaching/u);
+});
+
+test("assistant messages use the Tangyuan penguin brand mark", () => {
+  assert.match(indexHtml, /class="assistant-avatar"[^>]*><img src="\/favicon\.png\?v=20260727"/u);
+  assert.match(conversation, /class="assistant-avatar"[^>]*><img src="\/favicon\.png\?v=20260727"/u);
+  assert.match(styles, /\.assistant-avatar img \{/u);
+});
+
+test("mobile result toolbar uses one consistent control system", () => {
+  assert.match(indexHtml, /class="result-heading-main"/u);
+  assert.match(styles, /\.language-toggle\.top-language-toggle \{ display: none; \}/u);
+  assert.match(styles, /\.mobile-result-back, \.result-heading \.subtle-button \{[^}]*height: 38px[^}]*border-radius: 11px/u);
 });
 
 test("composer keeps one refresh action and a distinct accessible clear action", () => {
@@ -185,6 +269,16 @@ test("small-window clarification renders actionable entity candidates", () => {
   assert.match(styles, /\.candidate-actions/);
 });
 
+test("system interactions render inline without a details button or evidence panel", () => {
+  assert.match(appJs, /function systemInteractionAnswerHtml\(data\)/);
+  assert.match(appJs, /data\?\.type === "system_interaction"/);
+  assert.match(appJs, /function renderSystemInteractionResult\(data\)/);
+  assert.match(appJs, /if \(data\.type === "system_interaction"\) renderSystemInteractionResult\(data\)/);
+  assert.match(styles, /\.system-interaction-answer/);
+  assert.match(styles, /\.system-interaction-card/);
+  assert.match(appJs, /if \(!evidence\.length\) return ""/);
+});
+
 test("responsive layout supports three, two, single, and compact modes without a 460px cap", () => {
   assert.doesNotMatch(styles, /width:\s*min\(100%,\s*460px\)/);
   assert.match(styles, /grid-template-columns:\s*clamp\(320px, var\(--conversation-width\), 520px\) minmax\(360px, 1fr\)/);
@@ -222,7 +316,7 @@ test("small-window cards render the sample-risk marker", () => {
 test("small-window defaults to an explained robust applicability recommendation", () => {
   assert.match(indexHtml, /value="robust_first"[^>]*selected/);
   assert.match(appJs, /sort: "robust_first"/);
-  assert.match(appJs, /card\.ranking\?\.method === "robust_applicability_v1"/);
+  assert.match(appJs, /card\.ranking\?\.method === "robust_applicability_v3"/);
   assert.match(appJs, /applicabilityRecommendation/);
   assert.match(i18n, /普适推荐/);
   assert.match(styles, /\.ranking-rationale/);
@@ -266,6 +360,16 @@ test("small-window renders unit and trait encyclopedia result types", () => {
   assert.match(styles, /\.stable-item-grid/);
   assert.match(styles, /\.trait-level-list/);
   assert.match(i18n, /recommendationMethod/);
+});
+
+test("mechanism cards expand to source text and disclose unresolved model omissions", () => {
+  assert.match(appJs, /<details class="knowledge-card mechanism-classification-card"/u);
+  assert.match(appJs, /entry\.originalDescription/u);
+  assert.match(appJs, /entry\.originalLevels/u);
+  assert.match(appJs, /classificationMeta\?\.incompleteEntities/u);
+  assert.match(appJs, /mechanismIncomplete/u);
+  assert.match(styles, /\.mechanism-original-text/u);
+  assert.match(styles, /\.mechanism-incomplete-warning/u);
 });
 
 test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware", () => {
@@ -358,9 +462,11 @@ test("all existing real interactions and endpoints remain wired", () => {
   assert.match(appJs, /data-condition-key/);
 });
 
-test("request lifecycle isolates refreshes, clears, and stale abort completions", () => {
-  assert.match(appJs, /const input = refresh \? state\.lastInput : queryInput\.value\.trim\(\)/);
-  assert.match(appJs, /if \(!refresh\) composer\.clear\(\)/);
+test("request lifecycle isolates refreshes, retries, clears, and stale abort completions", () => {
+  assert.match(appJs, /const reuseLastInput = refresh \|\| normalizedRequestOptions\.reuseLastInput === true/);
+  assert.match(appJs, /const input = reuseLastInput \? state\.lastInput : queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /if \(!reuseLastInput\) composer\.clear\(\)/);
+  assert.match(appJs, /requestRecommendation\(false, null, \{ reuseLastInput: true \}\)/);
   assert.match(appJs, /const requestId = \+\+state\.requestSerial/);
   assert.match(appJs, /if \(requestId !== state\.requestSerial\) return/);
   assert.match(appJs, /state\.requestSerial \+= 1/);
@@ -371,7 +477,7 @@ test("request lifecycle isolates refreshes, clears, and stale abort completions"
 test("localized view state and historical clarification actions keep stable response context", () => {
   assert.match(appJs, /resultView: \{ type: "empty" \}/);
   assert.match(appJs, /state\.resultView\.type === "loading"/);
-  assert.match(appJs, /activeResponseEl\.innerHTML = progressStepsHtml/);
+  assert.match(appJs, /activeResponseEl\.innerHTML = recommendationProgressHtml/);
   assert.match(appJs, /data-response-id=/);
   assert.match(appJs, /state\.responsesById\.get\(candidateButton\.dataset\.responseId\)/);
   assert.match(appJs, /state\.responsesById\.get\(suggestionButton\.dataset\.responseId\)/);
@@ -384,9 +490,9 @@ test("result templates cover recommendations, item rankings, comps, risks, and e
   assert.match(appJs, /function renderRecommendationResult/);
   assert.match(appJs, /function renderItemRankings/);
   assert.match(appJs, /function renderCompRankings/);
-  assert.match(appJs, /renderCompCard\(comp, "trend", index\)/);
+  assert.match(appJs, /renderCompCards\(rising, "trend"\)/);
   assert.match(appJs, /data-comp-metric=/);
-  assert.match(appJs, /renderCompCard\(comp, "trendDown", index\)/);
+  assert.match(appJs, /renderCompCards\(falling, "trendDown"\)/);
   assert.match(appJs, /class="contested-label"/);
   assert.match(appJs, /winShareHighest/);
   assert.match(appJs, /class="best-label"/);
@@ -424,6 +530,68 @@ test("comp units are keyboard-accessible shortcuts for explicit high-sample buil
   assert.match(styles, /\.comp-unit-query:hover/);
   assert.match(styles, /\.comp-unit-query:focus-visible/);
   assert.match(i18n, /compUnitQueryDisplay/);
+});
+
+test("small-window exposes current-set entity catalogs with direct detail navigation", () => {
+  assert.match(appJs, /id: "unit-catalog"/);
+  assert.match(appJs, /id: "trait-catalog"/);
+  assert.match(appJs, /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.formFields/);
+  assert.match(appJs, /data-entity-catalog/);
+  assert.match(appJs, /data-entity-detail/);
+  assert.match(appJs, /\/api\/entity-details/);
+  assert.match(appJs, /function restorePreviousCatalogResult\(\)/);
+  assert.match(appJs, /data-return-catalog/);
+  assert.match(styles, /\.entity-catalog-grid/);
+  assert.match(styles, /\.entity-catalog-card/);
+  assert.match(styles, /\.entity-catalog-empty\[hidden\]\s*\{\s*display:\s*none/);
+  assert.match(styles, /\.sr-only\s*\{[\s\S]*clip:\s*rect\(0,\s*0,\s*0,\s*0\)/);
+  assert.match(appJs, /class="entity-catalog-control entity-catalog-search"/);
+  assert.match(appJs, /class="entity-catalog-control entity-catalog-filter"/);
+  assert.match(styles, /\.entity-catalog-controls select\s*\{[\s\S]*appearance:\s*none/);
+  assert.match(i18n, /unitCatalog:/);
+  assert.match(i18n, /traitCatalog:/);
+  assert.match(i18n, /backToCatalog:/);
+});
+
+test("comp cards lazy-load verified formation and augment details", () => {
+  assert.match(appJs, /function compDetailDescriptor\(comp\)/);
+  assert.ok(appJs.includes('.filter((apiName) => /^(?:TFT|DA_)[\\w-]+$/i.test(apiName))'));
+  assert.match(appJs, /comp: descriptor\.compId/);
+  assert.match(appJs, /clusterId: descriptor\.dataClusterId/);
+  assert.match(appJs, /units: descriptor\.units\.join\(","\)/);
+  assert.match(appJs, /units\.join\(","\)\]\.join\("\|"\)/);
+  assert.match(appJs, /const detailDataAttribute = detailDescriptor \? `data-comp-detail-key=/);
+  assert.match(appJs, /<details class="comp-card"[\s\S]*?\$\{detailDataAttribute\}/);
+  assert.match(appJs, /\[data-comp-detail\]\[data-comp-detail-key\]/);
+  assert.match(appJs, /function positionedFormationUnits/);
+  assert.match(appJs, /const metaTftCellIndex/);
+  assert.match(appJs, /\(3 - Math\.floor\(\(number - 1\) \/ 7\)\) \* 7 \+ \(\(number - 1\) % 7\)/);
+  const metaTftVisualCell = (number) => (3 - Math.floor((number - 1) / 7)) * 7 + ((number - 1) % 7);
+  assert.deepEqual([1, 7, 8, 22, 28].map(metaTftVisualCell), [21, 27, 14, 0, 6]);
+  assert.match(appJs, /Array\.from\(\{ length: 28 \}/);
+  assert.match(appJs, /resultContentEl\.addEventListener\("toggle"/);
+  assert.match(appJs, /let firstCompCard = true/);
+  assert.match(appJs, /const initiallyOpen = firstCompCard/);
+  assert.match(appJs, /compDetailRequests: new Map\(\)/);
+  assert.match(appJs, /function clearCompDetailState/);
+  assert.match(appJs, /state\.compDetailCache\.clear\(\)/);
+  assert.match(appJs, /state\.compDetailRequests\.clear\(\)/);
+  assert.match(appJs, /function augmentCompatibilityTier/);
+  assert.match(appJs, /\^\[SABCD\]\$/);
+  assert.match(appJs, /function augmentRarity\(entry\)/);
+  assert.match(appJs, /const DISPLAYED_COMP_AUGMENT_RARITIES = new Set\(\["gold", "prismatic"\]\)/);
+  assert.match(appJs, /const DISPLAYED_COMP_AUGMENT_LIMIT = 6/);
+  assert.match(appJs, /DISPLAYED_COMP_AUGMENT_RARITIES\.has\(augmentRarity\(entry\)\)/);
+  assert.match(appJs, /entry\.enName \?\? entry\.name \?\? localizedName\(entry, entry\.apiName\)/);
+  assert.match(styles, /\.comp-hex-board/);
+  assert.match(styles, /\.comp-hex-cell/);
+  assert.match(styles, /\.comp-augment-chip/);
+  assert.match(styles, /\.comp-augment-list \{[^}]*grid-template-columns: repeat\(2, minmax\(0, 1fr\)\)/);
+  assert.match(styles, /\.comp-augment-tier\[data-tier="S"\]/);
+  assert.match(styles, /\.comp-augment-tier\[data-tier="D"\]/);
+  assert.match(i18n, /compDetailLoading:/);
+  assert.match(i18n, /compFormation:/);
+  assert.match(i18n, /augmentCompatibilityTier:/);
 });
 
 test("comp unit drill-down preserves and restores the previous comp result", () => {

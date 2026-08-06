@@ -1,5 +1,6 @@
 import { normalizeAlias } from "../core/normalizer.js";
 import { pinyinAliasesForRecord } from "../data/pinyin-aliases.js";
+import { canonicalUnitIdentity, preferEquivalentUnit } from "../data/unit-identity.js";
 import { retrieveEntityCandidates } from "../llm/entity-candidate-retriever.js";
 import { resolveGameConcept } from "./concept-resolver.js";
 
@@ -68,8 +69,16 @@ function aliases(record, expectedType) {
 }
 
 function candidate(record, expectedType, value = {}) {
+  const canonicalApiName = expectedType === "champion"
+    ? record.canonicalApiName
+      ?? array(record.aliases).find((alias) => /^TFT18_/i.test(String(alias ?? "")))
+    : null;
   return {
     id: String(recordId(record, expectedType)),
+    ...(canonicalApiName ? { canonicalApiName: String(canonicalApiName) } : {}),
+    ...(Number(record.providerSampleCount) > 0
+      ? { providerSampleCount: Number(record.providerSampleCount) }
+      : {}),
     canonicalName: String(canonicalName(record, expectedType)),
     type: expectedType,
     version: String(value.version ?? record.patch ?? "current"),
@@ -83,12 +92,39 @@ function deduplicateCandidates(values) {
   const byId = new Map();
   for (const value of values) {
     if (!value?.id) continue;
-    const existing = byId.get(value.id);
-    if (!existing || value.confidence > existing.confidence) byId.set(value.id, value);
+    const identity = value.type === "champion" ? canonicalUnitIdentity(value) : value.id;
+    const existing = byId.get(identity);
+    if (!existing || value.confidence > existing.confidence) {
+      byId.set(identity, value);
+    } else if (value.confidence === existing.confidence && value.type === "champion") {
+      byId.set(identity, preferEquivalentUnit(existing, value));
+    }
   }
   return [...byId.values()].sort((left, right) => (
     right.confidence - left.confidence || left.canonicalName.localeCompare(right.canonicalName)
   ));
+}
+
+function collapseTraitTierCandidates(candidates, catalog) {
+  if (!candidates.length) return candidates;
+  const baseIds = new Set(candidates.map((candidate) => (
+    String(candidate?.id ?? "").replace(/_\d+$/, "")
+  )));
+  if (baseIds.size !== 1) return candidates;
+  const baseId = [...baseIds][0];
+  if (new Set(candidates.map((candidate) => String(candidate?.id ?? ""))).size <= 1) {
+    return candidates;
+  }
+  const record = catalog?.traitByApiName?.get?.(baseId);
+  const top = [...candidates].sort((left, right) => (
+    right.confidence - left.confidence || left.canonicalName.localeCompare(right.canonicalName)
+  ))[0];
+  if (!top) return candidates;
+  return [{
+    ...top,
+    id: baseId,
+    canonicalName: record?.zhName ?? record?.displayName ?? top.canonicalName
+  }];
 }
 
 function deterministicCandidates(rawText, expectedType, catalog, version) {
@@ -224,6 +260,9 @@ export async function linkEntityMention(entity = {}, options = {}) {
   let candidates = deterministicCandidates(rawText, expectedType, options.catalog, version);
   if (!candidates.length && !exactOnly) {
     candidates = fuzzyCandidates(rawText, expectedType, options.catalog, version, options);
+  }
+  if (expectedType === "trait") {
+    candidates = collapseTraitTierCandidates(candidates, options.catalog);
   }
   if (
     !exactOnly
