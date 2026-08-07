@@ -103,7 +103,7 @@ function renderLookupText(value, lookup) {
 
 function sourceRecord(options = {}) {
   return {
-    version: options.version ?? "PBE 18.1",
+    version: options.version ?? "PBE current",
     season: options.tftSet ?? "TFTSet18",
     updatedAt: options.updatedAt ?? null,
     url: COMMUNITYDRAGON_PBE_TEAMPLANNER_URL,
