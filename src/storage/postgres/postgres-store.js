@@ -14,6 +14,12 @@ const providerContext = (options = {}) => ({
 });
 const normalizedAlias = (value) => String(value ?? "").trim().toLowerCase().replace(/\s+/gu, "");
 const limit = (value, fallback = 100) => Number.isInteger(Number(value)) && Number(value) > 0 ? Number(value) : fallback;
+const nullableBoolean = (value) => {
+  if (value === null || value === undefined || typeof value === "boolean") return value ?? null;
+  if (value === 0 || value === "0") return false;
+  if (value === 1 || value === "1") return true;
+  return value;
+};
 
 function resultEntry(value, updatedAt, expiresAt = null) {
   return { value, updatedAt: iso(updatedAt), expiresAt, expired: false };
@@ -45,7 +51,7 @@ function feedbackRow(row) {
 function profileRow(row) {
   if (!row) return null;
   return { seasonContextId: row.season_context_id, profileKey: row.profile_key, difficulty: row.difficulty,
-    beginnerFriendly: row.beginner_friendly, pivotDifficulty: row.pivot_difficulty, positionDifficulty: row.position_difficulty,
+    beginnerFriendly: nullableBoolean(row.beginner_friendly), pivotDifficulty: row.pivot_difficulty, positionDifficulty: row.position_difficulty,
     contestTolerance: row.contest_tolerance, econDifficulty: row.econ_difficulty, notes: row.notes_json ?? [], enabled: row.enabled,
     source: row.source, createdAt: iso(row.created_at), updatedAt: iso(row.updated_at) };
 }
