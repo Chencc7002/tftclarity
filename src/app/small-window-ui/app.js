@@ -616,7 +616,7 @@ const QUICK_TASKS = [
     category: "equipment",
     id: "item-performance",
     operation: "unit_item_rankings",
-    formFields: ["item", "champion"],
+    formFields: ["champion", "itemCategory"],
     queryTemplateKey: "quickTaskPerformanceTemplate",
     titleKey: "quickTaskPerformanceTitle",
     bodyKey: "quickTaskPerformanceBody",
@@ -862,6 +862,7 @@ const QUICK_TASK_FIELD_DEFINITIONS = {
   item2: { labelKey: "quickFieldComparedItem", placeholderKey: "quickFieldComparedItemPlaceholder", required: true },
   item2Optional: { valueKey: "item2", labelKey: "quickFieldOptionalItem", placeholderKey: "quickFieldOptionalItemPlaceholder", required: false },
   trait: { labelKey: "quickFieldTrait", placeholderKey: "quickFieldTraitPlaceholder", required: true },
+  itemCategory: { labelKey: "quickFieldItemCategory", placeholderKey: "quickFieldItemCategoryPlaceholder", required: true },
   specialCategory: { labelKey: "quickFieldSpecialCategory", placeholderKey: "quickFieldSpecialCategoryPlaceholder", required: true }
 };
 

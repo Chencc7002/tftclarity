@@ -49,6 +49,7 @@ function mentionsEmblemCategory(input) {
 function parseItemCategories(input) {
   const normalized = normalizeText(input);
   const categories = [];
+  if (normalized.includes("普通")) categories.push("ordinary_completed");
   if (mentionsEmblemCategory(normalized)) categories.push("emblem");
   if (mentionsArtifactCategory(normalized)) categories.push("artifact");
   if (normalized.includes("光明")) categories.push("radiant");

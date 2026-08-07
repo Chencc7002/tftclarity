@@ -96,7 +96,9 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /queryTemplateKey: "quickTaskBuildTemplate"/);
   assert.match(appJs, /formFields: \["champion", "item1", "item2Optional"\]/);
   assert.match(appJs, /optionalQueryTemplateKey: "quickTaskCompletionWithSecondTemplate"/);
-  assert.match(appJs, /formFields: \["item", "champion"\]/);
+  assert.match(appJs, /formFields: \["champion", "itemCategory"\]/);
+  assert.match(i18n, /quickTaskPerformanceTitle: "单装备排行榜"/);
+  assert.match(i18n, /quickFieldItemCategoryPlaceholder: "输入神器、普通或纹章"/);
   assert.match(appJs, /formFields: \["champion", "comparisonItem1", "item2"\]/);
   assert.match(appJs, /queryTemplateKey: "quickTaskCarriersTemplate"/);
   assert.match(indexHtml, /id="quick-task-form"/);

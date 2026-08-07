@@ -3260,7 +3260,7 @@ test("all PBE equipment shortcuts resolve form entities directly and use the cur
   const tasks = [
     ["unit-build", "unit_build_rankings", { champion: "Ahri" }],
     ["unit-build-completion", "unit_build_completion", { champion: "Ahri", item1: "Test A" }],
-    ["item-performance", "unit_item_rankings", { champion: "Ahri", item: "Test A" }],
+    ["item-performance", "unit_item_rankings", { champion: "Ahri", itemCategory: "神器" }],
     ["item-comparison", "unit_item_comparison", { champion: "Ahri", item1: "Test A", item2: "Test B" }],
     ["special-items", "unit_item_rankings", { champion: "Ahri", specialCategory: "神器" }]
   ];
@@ -3281,6 +3281,28 @@ test("all PBE equipment shortcuts resolve form entities directly and use the cur
     assert.notEqual(response.payload.type, "clarification", id);
     assert.equal(response.payload.query.unit, unit, id);
     assert.equal(response.payload.query.patch, "current", id);
+  }
+
+  for (const [itemCategory, expectedCategory, expectedType] of [
+    ["普通", "ordinary_completed", "unit_item_rankings"],
+    ["神器", "artifact", "unit_item_rankings"],
+    ["纹章", "emblem", "unit_emblem_rankings"]
+  ]) {
+    const response = await handleRecommendRequest({
+      input: `Ahri ${itemCategory}单装备排行`,
+      seasonContextId: "set18-pbe",
+      conversationId: `pbe-item-category-${expectedCategory}`,
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id: "item-performance",
+        operation: "unit_item_rankings",
+        arguments: { champion: "Ahri", itemCategory }
+      }
+    }, runtime);
+    assert.equal(response.statusCode, 200, itemCategory);
+    assert.equal(response.payload.type, expectedType, itemCategory);
+    assert.deepEqual(response.payload.query.itemCategories, [expectedCategory], itemCategory);
+    assert.equal(response.payload.query.performanceItem, null, itemCategory);
   }
 
   const naturalLanguageResponse = await handleRecommendRequest({

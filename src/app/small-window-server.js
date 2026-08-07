@@ -136,7 +136,7 @@ const QUICK_TASK_SCHEMA_VERSION = "quick-task.v1";
 const QUICK_TASK_DEFINITIONS = new Map([
   ["unit-build", { operation: "unit_build_rankings", intent: "unit_build_rankings", required: ["champion"] }],
   ["unit-build-completion", { operation: "unit_build_completion", intent: "unit_build_completion", required: ["champion", "item1"], optional: ["item2"] }],
-  ["item-performance", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "item"] }],
+  ["item-performance", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "itemCategory"] }],
   ["item-comparison", { operation: "unit_item_comparison", intent: "unit_item_comparison", required: ["champion", "item1", "item2"] }],
   ["item-carriers", { operation: "item_carrier_rankings", intent: "item_carrier_rankings", required: ["item"] }],
   ["special-items", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "specialCategory"] }],
@@ -231,7 +231,7 @@ function quickTaskExecutionInput(task) {
     case "unit-build-completion": return args.item2
       ? `查询${args.champion}已携带${args.item1}和${args.item2}时的推荐出装`
       : `查询${args.champion}已携带${args.item1}时的推荐出装`;
-    case "item-performance": return `${args.item}在${args.champion}身上表现怎么样`;
+    case "item-performance": return `查询${args.champion}的${args.itemCategory}单装备排行`;
     case "item-comparison": return `比较${args.champion}使用${args.item1}和${args.item2}时的表现`;
     case "item-carriers": return `${args.item}最适合哪些英雄携带`;
     case "special-items": return `查询${args.champion}的${args.specialCategory}排行`;
@@ -295,8 +295,9 @@ function directParsedForQuickTask(task, input, catalog, preferences) {
     "item-carriers",
     "special-items"
   ].includes(task.id);
+  const categoryRankingTask = task.id === "item-performance" || task.id === "special-items";
   const complete = resolved.complete
-    && (task.id !== "special-items" || (parsed.itemCategories ?? []).length > 0);
+    && (!categoryRankingTask || (parsed.itemCategories ?? []).length > 0);
   const entityProjection = {
     ...(resolved.unit ? { unit: resolved.unit } : {}),
     ...(task.id === "item-performance" ? {
@@ -326,7 +327,9 @@ function directParsedForQuickTask(task, input, catalog, preferences) {
   };
   return {
     ...parsed,
-    intent: task.definition.intent,
+    intent: task.id === "item-performance" && parsed.itemCategories?.includes("emblem")
+      ? "unit_emblem_rankings"
+      : task.definition.intent,
     ...(equipmentTask ? {
       patch: preferences.unitBuildPatch ?? preferences.patch,
       queue: preferences.queue
