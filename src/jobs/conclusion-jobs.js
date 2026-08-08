@@ -6,24 +6,33 @@ import { createConclusionProviderFromConfig, resolveConclusionProviderConfig } f
 const hash = (value) => createHash("sha256").update(String(value)).digest("hex");
 const safeEqual = (left, right) => { const a=Buffer.from(String(left)); const b=Buffer.from(String(right)); return a.length===b.length&&timingSafeEqual(a,b); };
 
+function jsonSafeClone(value) {
+  if (value === undefined) return null;
+  return JSON.parse(JSON.stringify(value, (_key, entry) => {
+    if (entry instanceof Set) return [...entry];
+    if (entry instanceof Map) return Object.fromEntries(entry);
+    return entry;
+  }));
+}
+
 export function serializeConclusionPayload(options = {}) {
   const catalog = options.catalog ?? {};
   return {
     payloadVersion: "conclusion_job.v1",
-    result: structuredClone(options.result),
+    result: jsonSafeClone(options.result),
     catalog: {
       items: [...(catalog.items ?? catalog.itemByApiName?.values?.() ?? [])],
       units: [...(catalog.units ?? catalog.unitByApiName?.values?.() ?? [])],
       traits: [...(catalog.traits ?? catalog.traitByApiName?.values?.() ?? [])]
     },
     input: String(options.input ?? ""),
-    previousQuery: structuredClone(options.previousQuery ?? null),
+    previousQuery: jsonSafeClone(options.previousQuery ?? null),
     requestEnabled: options.requestEnabled !== false,
     bypassCache: Boolean(options.bypassCache),
     seasonContextId: options.seasonContextId,
     principalId: options.principalId,
     conversationId: options.conversationId,
-    semanticEvidence: structuredClone(options.semanticEvidence ?? [])
+    semanticEvidence: jsonSafeClone(options.semanticEvidence ?? [])
   };
 }
 

@@ -96,7 +96,18 @@ test("MetaTFT provider returns standardized unit builds with provenance", async 
 
 test("conclusion queue payload is serializable and excludes clients and API keys", () => {
   const payload = serializeConclusionPayload({
-    result: { type: "recommendation" },
+    result: {
+      type: "recommendation",
+      intentEnvelope: {
+        warnings: new Set(),
+        entities: new Set(["unit"])
+      },
+      validation: {
+        warnings: new Set(["sample_warning"]),
+        errors: new Set()
+      },
+      entityLookup: new Map([["unit", "DA_Nidalee18_AP"]])
+    },
     catalog: { items: [], units: [], traits: [] },
     input: "test",
     provider: () => {},
@@ -106,6 +117,12 @@ test("conclusion queue payload is serializable and excludes clients and API keys
   assert.equal(serialized.includes("must-not-leak"), false);
   assert.equal(serialized.includes("provider"), false);
   assert.doesNotThrow(() => structuredClone(payload));
+  const roundTripped = JSON.parse(serialized);
+  assert.deepEqual(roundTripped.result.intentEnvelope.warnings, []);
+  assert.deepEqual(roundTripped.result.intentEnvelope.entities, ["unit"]);
+  assert.deepEqual(roundTripped.result.validation.warnings, ["sample_warning"]);
+  assert.deepEqual(roundTripped.result.validation.errors, []);
+  assert.deepEqual(roundTripped.result.entityLookup, { unit: "DA_Nidalee18_AP" });
 });
 
 test("PostgreSQL migrations contain durable business and future provider tables only", async () => {
