@@ -64,8 +64,18 @@ test("Set 18 PBE can be selected and queried through its isolated provider conte
 });
 
 test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17 seeds", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const catalogStoreCalls = [];
+  for (const methodName of ["getItemCatalog", "getDomainCatalog", "setItemCatalog", "setDomainCatalog"]) {
+    const original = cacheStore[methodName].bind(cacheStore);
+    cacheStore[methodName] = (value, options, maybeOptions) => {
+      const storeOptions = methodName.startsWith("set") ? maybeOptions : options;
+      catalogStoreCalls.push({ methodName, options: storeOptions });
+      return original(value, options, maybeOptions);
+    };
+  }
   const runtime = createSmallWindowRuntime({
-    cacheStore: new MemoryCacheStore(),
+    cacheStore,
     catalogMetaTFTClient: {
       async getItems() {
         return { data: [{ items: "DA_JeweledGauntlet" }] };
@@ -117,6 +127,13 @@ test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17
   assert.match(resolver.resolveUnit("TFT18_Ahri").iconUrl, /champions\/tft18_ahri\.png$/);
   assert.match(resolver.resolveItem("DA_JeweledGauntlet").iconUrl, /items\/da_jeweledgauntlet\.png$/);
   assert.match(resolver.resolveTrait("DA_Riftbeast18_3").iconUrl, /traits\/da_riftbeast18\.png$/);
+  assert.ok(catalogStoreCalls.length >= 4);
+  for (const call of catalogStoreCalls) {
+    assert.equal(call.options.seasonContextId, "set18-pbe");
+    assert.equal(call.options.provider, "metatft");
+    assert.equal(call.options.providerVersion, "metatft-pbe.v1");
+    assert.equal(call.options.queue, "PBE");
+  }
 });
 
 test("two selectable live seasons resolve independent UI themes during a simulated switch", () => {

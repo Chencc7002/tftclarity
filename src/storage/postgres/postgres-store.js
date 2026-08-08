@@ -20,6 +20,7 @@ const nullableBoolean = (value) => {
   if (value === 1 || value === "1") return true;
   return value;
 };
+const jsonb = (value) => JSON.stringify(value ?? null);
 
 function resultEntry(value, updatedAt, expiresAt = null) {
   return { value, updatedAt: iso(updatedAt), expiresAt, expired: false };
@@ -84,8 +85,8 @@ export class PostgresStore {
 
   async getItemCatalog(patch = "current", options = {}) {
     const context = providerContext({ ...options, effectivePatch: patch });
-    const { rows } = await this.pool.query(`SELECT * FROM item_catalog WHERE season_context_id=$1 AND provider=$2 AND effective_patch=$3 ORDER BY external_id`,
-      [season(options), context.provider, context.effectivePatch]);
+    const { rows } = await this.pool.query(`SELECT * FROM item_catalog WHERE season_context_id=$1 AND provider=$2 AND provider_version=$3 AND effective_patch=$4 ORDER BY external_id`,
+      [season(options), context.provider, context.providerVersion, context.effectivePatch]);
     if (!rows.length) return null;
     const items = rows.map((row) => ({ ...(row.provider_metadata ?? {}), apiName: row.external_id, zhName: row.zh_name,
       category: row.category, current: row.current, obtainable: row.obtainable, patch: row.effective_patch, aliases: row.aliases ?? [] }));
@@ -100,7 +101,10 @@ export class PostgresStore {
         region_or_platform=EXCLUDED.region_or_platform,queue=EXCLUDED.queue,zh_name=EXCLUDED.zh_name,category=EXCLUDED.category,current=EXCLUDED.current,
         obtainable=EXCLUDED.obtainable,aliases=EXCLUDED.aliases,provider_metadata=EXCLUDED.provider_metadata,fetched_at=EXCLUDED.fetched_at,updated_at=now()`,
       [randomUUID(),seasonContextId,context.provider,context.providerVersion,String(item.apiName),context.effectivePatch,context.region,context.queue,
-        item.zhName ?? null,String(item.category ?? "unknown"),item.current !== false,item.obtainable !== false,item.aliases ?? [],item,context.fetchedAt]);
+        item.zhName ?? null,String(item.category ?? "unknown"),item.current !== false,item.obtainable !== false,jsonb(item.aliases ?? []),jsonb(item),context.fetchedAt]);
+      const externalIds = (items ?? []).map((item) => String(item.apiName));
+      await client.query(`DELETE FROM item_catalog WHERE season_context_id=$1 AND provider=$2 AND effective_patch=$3
+        AND NOT (external_id = ANY($4::text[]))`, [seasonContextId,context.provider,context.effectivePatch,externalIds]);
     });
     return resultEntry({ seasonContextId, patch: context.effectivePatch, items }, new Date());
   }
@@ -112,10 +116,10 @@ export class PostgresStore {
   }
 
   async getDomainCatalog(patch = "current", options = {}) {
-    const context = providerContext({ ...options, effectivePatch: patch }); const values = [season(options), context.provider, context.effectivePatch];
+    const context = providerContext({ ...options, effectivePatch: patch }); const values = [season(options), context.provider, context.providerVersion, context.effectivePatch];
     const [unitResult, traitResult] = await Promise.all([
-      this.pool.query("SELECT * FROM units WHERE season_context_id=$1 AND provider=$2 AND effective_patch=$3 ORDER BY external_id", values),
-      this.pool.query("SELECT * FROM traits WHERE season_context_id=$1 AND provider=$2 AND effective_patch=$3 ORDER BY filter_id", values)
+      this.pool.query("SELECT * FROM units WHERE season_context_id=$1 AND provider=$2 AND provider_version=$3 AND effective_patch=$4 ORDER BY external_id", values),
+      this.pool.query("SELECT * FROM traits WHERE season_context_id=$1 AND provider=$2 AND provider_version=$3 AND effective_patch=$4 ORDER BY filter_id", values)
     ]);
     if (!unitResult.rows.length && !traitResult.rows.length) return null;
     const units = unitResult.rows.map((row) => ({ ...(row.provider_metadata ?? {}), apiName: row.external_id, zhName: row.zh_name, aliases: row.aliases ?? [], current: row.current, patch: row.effective_patch }));
@@ -129,12 +133,18 @@ export class PostgresStore {
       for (const unit of value.units ?? []) await client.query(`INSERT INTO units(id,season_context_id,provider,provider_version,external_id,effective_patch,region_or_platform,queue,zh_name,aliases,current,provider_metadata,fetched_at)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13) ON CONFLICT(season_context_id,provider,external_id) DO UPDATE SET provider_version=EXCLUDED.provider_version,
         effective_patch=EXCLUDED.effective_patch,region_or_platform=EXCLUDED.region_or_platform,queue=EXCLUDED.queue,zh_name=EXCLUDED.zh_name,aliases=EXCLUDED.aliases,current=EXCLUDED.current,provider_metadata=EXCLUDED.provider_metadata,fetched_at=EXCLUDED.fetched_at,updated_at=now()`,
-      [randomUUID(),seasonContextId,context.provider,context.providerVersion,String(unit.apiName),context.effectivePatch,context.region,context.queue,unit.zhName ?? null,unit.aliases ?? [],unit.current !== false,unit,context.fetchedAt]);
+      [randomUUID(),seasonContextId,context.provider,context.providerVersion,String(unit.apiName),context.effectivePatch,context.region,context.queue,unit.zhName ?? null,jsonb(unit.aliases ?? []),unit.current !== false,jsonb(unit),context.fetchedAt]);
       for (const trait of value.traits ?? []) await client.query(`INSERT INTO traits(id,season_context_id,provider,provider_version,external_id,filter_id,effective_patch,region_or_platform,queue,zh_name,display_name,aliases,current,provider_metadata,fetched_at)
         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15) ON CONFLICT(season_context_id,provider,external_id) DO UPDATE SET filter_id=EXCLUDED.filter_id,
         provider_version=EXCLUDED.provider_version,effective_patch=EXCLUDED.effective_patch,region_or_platform=EXCLUDED.region_or_platform,queue=EXCLUDED.queue,zh_name=EXCLUDED.zh_name,
         display_name=EXCLUDED.display_name,aliases=EXCLUDED.aliases,current=EXCLUDED.current,provider_metadata=EXCLUDED.provider_metadata,fetched_at=EXCLUDED.fetched_at,updated_at=now()`,
-      [randomUUID(),seasonContextId,context.provider,context.providerVersion,String(trait.apiName ?? trait.filterId),String(trait.filterId ?? trait.apiName),context.effectivePatch,context.region,context.queue,trait.zhName ?? null,trait.displayName ?? null,trait.aliases ?? [],trait.current !== false,trait,context.fetchedAt]);
+      [randomUUID(),seasonContextId,context.provider,context.providerVersion,String(trait.apiName ?? trait.filterId),String(trait.filterId ?? trait.apiName),context.effectivePatch,context.region,context.queue,trait.zhName ?? null,trait.displayName ?? null,jsonb(trait.aliases ?? []),trait.current !== false,jsonb(trait),context.fetchedAt]);
+      const unitIds = (value.units ?? []).map((unit) => String(unit.apiName));
+      const traitIds = (value.traits ?? []).map((trait) => String(trait.apiName ?? trait.filterId));
+      await client.query(`DELETE FROM units WHERE season_context_id=$1 AND provider=$2 AND effective_patch=$3
+        AND NOT (external_id = ANY($4::text[]))`, [seasonContextId,context.provider,context.effectivePatch,unitIds]);
+      await client.query(`DELETE FROM traits WHERE season_context_id=$1 AND provider=$2 AND effective_patch=$3
+        AND NOT (external_id = ANY($4::text[]))`, [seasonContextId,context.provider,context.effectivePatch,traitIds]);
     });
     return resultEntry({ seasonContextId, patch: context.effectivePatch, units: value.units ?? [], traits: value.traits ?? [] }, new Date());
   }

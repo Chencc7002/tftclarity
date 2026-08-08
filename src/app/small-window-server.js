@@ -3163,7 +3163,12 @@ export function invalidateRuntimeCatalog(runtime, key = null) {
 
 export async function loadRuntimeCatalog(runtime, preferences = {}) {
   const seasonContextId = preferences.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID;
-  const storeOptions = { seasonContextId };
+  const storeOptions = {
+    seasonContextId,
+    provider: "metatft",
+    providerVersion: preferences.providerVersion ?? "metatft-live.v1",
+    queue: preferences.queue ?? "1100"
+  };
   const applyAliasMemory = async (catalog, entry = {}) => {
     const aliasMemory = await applyEnabledEntityAliasesFromStore(catalog, runtime.cacheStore, storeOptions);
     return {

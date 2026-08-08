@@ -350,6 +350,41 @@ test("Set 18 catalog merge removes a persisted TFT18 alias when the DA unit arri
   assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
 });
 
+test("Set 18 catalog prefers Nidalee's populated embedded-set provider id", () => {
+  const merged = mergeCatalogUnits([
+    {
+      apiName: "TFT18_Nidalee",
+      canonicalApiName: "TFT18_Nidalee",
+      zhName: "奈德丽",
+      aliases: ["奈德丽", "DA_Nidalee18_AP"]
+    }
+  ], [
+    {
+      apiName: "DA_Nidalee18_AP",
+      canonicalApiName: "TFT18_Nidalee",
+      zhName: "奈德丽",
+      aliases: ["奈德丽", "TFT18_Nidalee"]
+    }
+  ]);
+
+  assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_Nidalee18_AP"]);
+  const planned = planQuery("查询奈德丽的当前版本最稳三件装备", {
+    catalog: createCatalog({ units: merged, traits: [], items: [] })
+  });
+  assert.equal(planned.query.unit, "DA_Nidalee18_AP");
+  assert.equal(planned.parsed.parser.entityAmbiguities.length, 0);
+});
+
+test("Set 18 Nidalee transformed forms share one canonical identity", () => {
+  const merged = mergeCatalogUnits([
+    { apiName: "TFT18_NidaleeCougar", providerSampleCount: 2 }
+  ], [
+    { apiName: "DA_Nidalee18_AP", providerSampleCount: 100 }
+  ]);
+
+  assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_Nidalee18_AP"]);
+});
+
 test("catalog merge still lets a refreshed record replace the same provider id", () => {
   const merged = mergeCatalogUnits([
     { apiName: "DA_18_Kayle", zhName: "凯尔", aliases: ["凯尔"], source: "persistent" }
