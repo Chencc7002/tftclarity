@@ -125,6 +125,28 @@ test("conclusion queue payload is serializable and excludes clients and API keys
   assert.deepEqual(roundTripped.result.entityLookup, { unit: "DA_Nidalee18_AP" });
 });
 
+test("Redis conclusion jobs keep JSON payloads opaque across Lua cjson rewrites", async () => {
+  let stored = null;
+  const client = {
+    async set(_key, value) { stored = value; return "OK"; },
+    async get() { return stored; }
+  };
+  const store = new RedisStore({ client, prefix: "tft:v1" });
+  const payload = {
+    result: {
+      intentEnvelope: { warnings: [], entities: [] },
+      validation: { warnings: [], errors: [] }
+    }
+  };
+
+  const created = await store.createConclusionJob({ jobId: "job-json", requestPayload: payload });
+  const redisValue = JSON.parse(stored);
+  assert.equal(redisValue.requestPayload, undefined);
+  assert.equal(typeof redisValue.requestPayloadJson, "string");
+  assert.deepEqual(created.requestPayload, payload);
+  assert.deepEqual((await store.getConclusionJob("job-json")).requestPayload, payload);
+});
+
 test("PostgreSQL migrations contain durable business and future provider tables only", async () => {
   const business = await readFile(new URL("../src/storage/postgres/migrations/001_business_schema.sql", import.meta.url), "utf8");
   const future = await readFile(new URL("../src/storage/postgres/migrations/002_provider_and_riot_reservations.sql", import.meta.url), "utf8");

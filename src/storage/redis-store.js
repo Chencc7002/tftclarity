@@ -12,6 +12,31 @@ function parseJson(value) {
   return JSON.parse(value);
 }
 
+const OPAQUE_JOB_FIELDS = ["requestPayload", "result", "error"];
+
+function encodeOpaqueJobFields(value) {
+  if (!value || typeof value !== "object") return value;
+  const encoded = { ...value };
+  for (const field of OPAQUE_JOB_FIELDS) {
+    if (!Object.hasOwn(encoded, field) || encoded[field] === undefined) continue;
+    encoded[`${field}Json`] = JSON.stringify(encoded[field]);
+    delete encoded[field];
+  }
+  return encoded;
+}
+
+function decodeOpaqueJobFields(value) {
+  if (!value || typeof value !== "object") return value;
+  const decoded = { ...value };
+  for (const field of OPAQUE_JOB_FIELDS) {
+    const encodedField = `${field}Json`;
+    if (!Object.hasOwn(decoded, encodedField)) continue;
+    decoded[field] = parseJson(decoded[encodedField]);
+    delete decoded[encodedField];
+  }
+  return decoded;
+}
+
 function entry(value, ttlMs = null) {
   const updatedAt = new Date().toISOString();
   return {
@@ -111,17 +136,17 @@ export class RedisStore {
   async createConclusionJob(job, options = {}) {
     const ttlMs = positiveTtl(options.ttlMs, this.conclusionJobTtlMs);
     const now = new Date().toISOString();
-    const value = {
+    const value = encodeOpaqueJobFields({
       ...job,
       status: job.status ?? "queued",
       attempts: Number(job.attempts ?? 0),
       createdAt: job.createdAt ?? now,
       updatedAt: now,
       expiresAt: new Date(Date.now() + ttlMs).toISOString()
-    };
+    });
     const created = await this.client.set(this._jobKey(value.jobId), JSON.stringify(value), { NX: true, PX: ttlMs });
-    if (!created) return parseJson(await this.client.get(this._jobKey(value.jobId)));
-    return value;
+    if (!created) return decodeOpaqueJobFields(parseJson(await this.client.get(this._jobKey(value.jobId))));
+    return decodeOpaqueJobFields(value);
   }
 
   async enqueueConclusionJob(jobId) {
@@ -158,7 +183,7 @@ export class RedisStore {
   }
 
   async getConclusionJob(jobId) {
-    return parseJson(await this.client.get(this._jobKey(jobId)));
+    return decodeOpaqueJobFields(parseJson(await this.client.get(this._jobKey(jobId))));
   }
 
   async claimConclusionJob(jobId, workerId) {
@@ -177,7 +202,7 @@ export class RedisStore {
     `;
     const now = new Date().toISOString();
     const result = await this.client.eval(script, { keys: [this._jobKey(jobId)], arguments: [String(workerId), now] });
-    return parseJson(result);
+    return decodeOpaqueJobFields(parseJson(result));
   }
 
   async completeConclusionJob(jobId, status, fields = {}) {
@@ -194,10 +219,10 @@ export class RedisStore {
       redis.call('SET', KEYS[1], cjson.encode(job), 'KEEPTTL')
       return cjson.encode(job)
     `;
-    return parseJson(await this.client.eval(script, {
+    return decodeOpaqueJobFields(parseJson(await this.client.eval(script, {
       keys: [this._jobKey(jobId)],
-      arguments: [status, JSON.stringify(fields), new Date().toISOString()]
-    }));
+      arguments: [status, JSON.stringify(encodeOpaqueJobFields(fields)), new Date().toISOString()]
+    })));
   }
 
   async updateConclusionJob(jobId, fields = {}) {
@@ -211,10 +236,10 @@ export class RedisStore {
       redis.call('SET', KEYS[1], cjson.encode(job), 'KEEPTTL')
       return cjson.encode(job)
     `;
-    return parseJson(await this.client.eval(script, {
+    return decodeOpaqueJobFields(parseJson(await this.client.eval(script, {
       keys: [this._jobKey(jobId)],
-      arguments: [JSON.stringify(fields), new Date().toISOString()]
-    }));
+      arguments: [JSON.stringify(encodeOpaqueJobFields(fields)), new Date().toISOString()]
+    })));
   }
 
   async appendConclusionChunk(jobId, chunk) {
