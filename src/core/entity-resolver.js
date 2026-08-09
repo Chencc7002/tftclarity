@@ -2,6 +2,24 @@ import { createCatalog } from "../data/static-data.js";
 import { canonicalUnitIdentity, preferEquivalentUnit } from "../data/unit-identity.js";
 import { normalizeAlias } from "./normalizer.js";
 
+const ambiguityLabelCollator = new Intl.Collator("zh-CN-u-co-pinyin", {
+  numeric: true,
+  sensitivity: "base"
+});
+
+function compareStableStrings(left, right) {
+  const normalizedLeft = String(left ?? "");
+  const normalizedRight = String(right ?? "");
+  if (normalizedLeft < normalizedRight) return -1;
+  if (normalizedLeft > normalizedRight) return 1;
+  return 0;
+}
+
+function compareAmbiguityCandidates(left, right) {
+  return ambiguityLabelCollator.compare(left.label, right.label)
+    || compareStableStrings(left.apiName, right.apiName);
+}
+
 function buildAliasCandidates(records, entityType, getTarget) {
   const candidates = [];
   const recordsByApiName = entityType === "item"
@@ -136,7 +154,7 @@ function findMatches(input, candidates) {
         start: match.start,
         end: match.end,
         candidates: [...candidatesByTarget.values()].map(ambiguityCandidate)
-          .sort((left, right) => left.label.localeCompare(right.label))
+          .sort(compareAmbiguityCandidates)
       });
       continue;
     }
