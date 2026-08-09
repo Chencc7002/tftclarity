@@ -50,3 +50,40 @@ test("mobile web requests fast results and consumes independent conclusion strea
   assert.match(app, /streamAssistantCoreConclusion/u);
   assert.match(css, /@media \(max-width: 759px\)[\s\S]*\.chat-core-conclusion \{/u);
 });
+
+test("ReAct final free text is visibly labeled as the model conclusion in chat", () => {
+  const app = readUi("app.js");
+  const css = readUi("styles.css");
+  const i18n = readUi("i18n.js");
+
+  assert.match(app, /function reactModelConclusionHtml\(data, summary\)/u);
+  assert.match(app, /typeof data\?\.reactAnswer === "string"/u);
+  assert.match(app, /data-chat-model-conclusion/u);
+  assert.match(app, /data\?\.answerOrigin === "system_evidence_fallback"/u);
+  assert.match(app, /data\?\.modelConclusion\?\.answer/u);
+  assert.match(app, /data-chat-rejected-model-conclusion/u);
+  assert.match(app, /if \(modelConclusion\)[\s\S]*\$\{modelConclusion\}/u);
+  assert.match(css, /\.chat-model-conclusion \{/u);
+  assert.match(i18n, /modelFinalConclusion: "模型最终结论"/u);
+  assert.match(i18n, /systemEvidenceConclusion: "系统证据结论"/u);
+  assert.match(i18n, /rejectedModelConclusion: "模型原始结论（未通过校验）"/u);
+  assert.match(i18n, /modelConclusionEvidenceLimited/u);
+  assert.match(app, /modelConclusionGroundingWarning/u);
+  assert.match(app, /data\?\.terminationReason === "insufficient_evidence"/u);
+});
+
+test("model conclusions render safe rich text without exposing Markdown markers", () => {
+  const app = readUi("app.js");
+  const formatter = readUi("conclusion-rich-text.js");
+  const css = readUi("styles.css");
+
+  assert.match(app, /import \{[^}]*conclusionRichTextHtml[^}]*\} from "\.\/conclusion-rich-text\.js"/u);
+  assert.match(app, /conclusionRichTextHtml\(answer \|\| summary\)/u);
+  assert.match(formatter, /replaceAll\("\*\*", ""\)/u);
+  assert.match(formatter, /assistant-rich-text__section-title/u);
+  assert.match(formatter, /assistant-rich-text__summary/u);
+  assert.match(formatter, /assistant-rich-text__emphasis/u);
+  assert.doesNotMatch(formatter, /\.innerHTML\s*=/u);
+  assert.match(css, /\.assistant-rich-text__section-title \{/u);
+  assert.match(css, /\.assistant-rich-text__summary \{/u);
+});

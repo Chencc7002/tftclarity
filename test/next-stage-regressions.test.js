@@ -126,6 +126,22 @@ test("comp rankings accept a unit filter but still clarify unsupported item and 
     catalog: createCatalog(),
     compsData: { compOptions },
     cacheStore,
+    metaTFTClient: exactCompClient(),
+    compsClient: {
+      async getCompsData() {
+        return {
+          results: {
+            data: {
+              cluster_id: 409,
+              cluster_details: {}
+            }
+          }
+        };
+      },
+      async getCompsStats() {
+        return { results: { data: {} } };
+      }
+    },
     fetchItems: false
   });
 

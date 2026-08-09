@@ -15,6 +15,7 @@ import {
   renderUnderstandingPanel
 } from "./understanding-panel.js";
 import { WallpaperController } from "./wallpaper-controller.js";
+import { conclusionDisplayText, conclusionRichTextHtml } from "./conclusion-rich-text.js";
 
 const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
 const SEASON_CONTEXT_STORAGE_KEY = "tftagent.seasonContextId";
@@ -31,6 +32,7 @@ const state = {
   lastInput: "",
   lastDisplayInput: "",
   lastQuickTask: null,
+  lastSupplementalText: "",
   lastResult: null,
   lastResultId: null,
   lastSuggestions: [],
@@ -74,6 +76,7 @@ const quickTaskForm = document.querySelector("#quick-task-form");
 const quickTaskFormTitle = document.querySelector("#quick-task-form-title");
 const quickTaskFormClose = document.querySelector("#quick-task-form-close");
 const quickTaskFields = document.querySelector("#quick-task-fields");
+const quickTaskSupplemental = document.querySelector("#quick-task-supplemental");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
 const stopButton = document.querySelector("#stop-button");
@@ -870,6 +873,7 @@ function closeQuickTaskForm({ focus = false } = {}) {
   activeQuickTask = null;
   quickTaskForm.hidden = true;
   quickTaskFields.replaceChildren();
+  quickTaskSupplemental.value = "";
   form.classList.remove("quick-task-form-active");
   queryInput.hidden = false;
   if (focus) queryInput.focus();
@@ -880,6 +884,7 @@ function openQuickTaskForm(task) {
   queryInput.value = "";
   queryInput.setCustomValidity("");
   queryInput.hidden = true;
+  quickTaskSupplemental.value = "";
   quickTaskFormTitle.textContent = t(task.titleKey);
   quickTaskFields.innerHTML = task.formFields.map((fieldName) => {
     const field = QUICK_TASK_FIELD_DEFINITIONS[fieldName];
@@ -917,6 +922,8 @@ function structuredQuickTask(task, values = {}) {
   if (!task?.id || !task?.operation) return null;
   return {
     schemaVersion: "quick-task.v1",
+    requestId: globalThis.crypto?.randomUUID?.()
+      ?? `quick-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     id: task.id,
     operation: task.operation,
     arguments: Object.fromEntries(
@@ -932,6 +939,7 @@ async function submitQuickTaskForm() {
   const task = activeQuickTask;
   const submission = quickTaskQuery(task);
   if (!submission) return true;
+  const supplementalText = quickTaskSupplemental.value.trim();
   closeQuickTaskForm();
   queryInput.value = submission.query;
   await requestRecommendation(
@@ -939,7 +947,8 @@ async function submitQuickTaskForm() {
     submission.query,
     {
       startNewTask: true,
-      quickTask: structuredQuickTask(task, submission.values)
+      quickTask: structuredQuickTask(task, submission.values),
+      supplementalText
     }
   );
   return true;
@@ -2250,6 +2259,15 @@ function rankChip(values = []) {
 function conditionChipValue(key, constraint, query) {
   const value = constraint?.value;
   if (key === "unit") return getLocale() === "en-US" ? (query.unit ?? value) : (query.unitName ?? value);
+  if (key === "season_context") {
+    const context = state.seasonContexts.find((entry) => entry.id === value);
+    return t("conditionSeason", { value: context ? seasonOptionLabel(context) : value });
+  }
+  if (key === "patch") return t("conditionPatch", { value });
+  if (key === "queue") {
+    const queueLabel = ["1100", "RANKED_TFT"].includes(String(value)) ? t("rankedTftQueue") : value;
+    return t("conditionQueue", { value: queueLabel });
+  }
   if (key === "star_level") return t("starLevel", { value: (value ?? []).join("/") });
   if (key === "item_count") return t("completedItems", { value });
   if (key === "item_policy") return itemPolicyChip(value);
@@ -2284,7 +2302,7 @@ function conditionChips(data) {
     ? ["locked_items", "comparison_items", "primary_metric"]
     : ["owned_items"];
   const order = [
-    "unit", "star_level", "rank_filter", "days", "comp", "item_policy", "item_categories",
+    "unit", "season_context", "patch", "queue", "star_level", "rank_filter", "days", "item_count", "comp", "item_policy", "item_categories",
     ...itemConditionKeys,
     "excluded_items", "trait_filters", "min_samples"
   ];
@@ -2304,7 +2322,7 @@ function conditionChips(data) {
 }
 
 function conditionPanel(data) {
-  return `<section class="condition-panel"><h3>${t("conditions")}</h3>${conditionChips(data)}<div class="source-legend" aria-label="${t("conditionSources")}"><span><i></i>${t("sourceCurrent")}</span><span><i></i>${t("sourceConversation")}</span><span><i></i>${t("sourcePreference")}</span><span><i></i>${t("sourceDefault")}</span></div></section>`;
+  return `<section class="condition-panel"><header class="condition-panel-head"><h3>${t("conditions")}</h3><small>${t("conditionEditHint")}</small></header>${conditionChips(data)}<div class="source-legend" aria-label="${t("conditionSources")}"><span><i></i>${t("sourceCurrent")}</span><span><i></i>${t("sourceConversation")}</span><span><i></i>${t("sourcePreference")}</span><span><i></i>${t("sourceDefault")}</span></div></section>`;
 }
 
 function sourceCacheLabel(value, fallbackCache) {
@@ -2661,6 +2679,61 @@ function systemInteractionAnswerHtml(data) {
   </div>`;
 }
 
+function reactModelConclusionHtml(data, summary) {
+  const answer = typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "";
+  if (!answer) return "";
+  const systemFallback = data?.answerOrigin === "system_evidence_fallback";
+  const rejectedModelAnswer = systemFallback && typeof data?.modelConclusion?.answer === "string"
+    ? conclusionDisplayText(data.modelConclusion.answer).trim()
+    : "";
+  const rejectionErrors = Array.isArray(data?.modelConclusion?.validationErrors)
+    ? data.modelConclusion.validationErrors.filter(Boolean).map(String)
+    : [];
+  const limited = data?.terminationReason === "insufficient_evidence"
+    || data?.terminationReason === "missing_required_evidence";
+  const hasGroundingWarnings = Array.isArray(data?.narrativeWarnings) && data.narrativeWarnings.length > 0;
+  const rejectedCard = rejectedModelAnswer
+    ? `<section class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
+      <header>
+        <strong>${escapeHtml(t("rejectedModelConclusion"))}</strong>
+        <small>${escapeHtml(t("rejectedModelConclusionNotice"))}</small>
+      </header>
+      ${conclusionRichTextHtml(rejectedModelAnswer)}
+      ${rejectionErrors.length ? `<details class="model-conclusion-rejection-reasons">
+        <summary>${escapeHtml(t("rejectedModelConclusionReasons", { count: rejectionErrors.length }))}</summary>
+        <ul>${rejectionErrors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
+      </details>` : ""}
+    </section>`
+    : "";
+  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}" data-chat-model-conclusion>
+    <header>
+      <strong>${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
+      <small>${escapeHtml(t(systemFallback
+        ? "systemConclusionFallback"
+        : hasGroundingWarnings
+          ? "modelConclusionGroundingWarning"
+          : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
+    </header>
+    ${conclusionRichTextHtml(answer || summary)}
+  </section>`;
+  return `${rejectedCard}${acceptedOrFallbackCard}`;
+}
+
+function buildNarrativeWarningText(error) {
+  const value = String(error ?? "");
+  const unsupportedStatistic = value.match(/statistic is not present in cited evidence:\s*(.+)$/u);
+  if (unsupportedStatistic) return t("buildNarrativeUnsupportedStatistic", { value: unsupportedStatistic[1] });
+  if (/unknown evidenceId/u.test(value)) return t("buildNarrativeUnknownEvidence");
+  if (/available current-season item mechanics|lacks item-level evidence/u.test(value)) {
+    return t("buildNarrativeItemMechanismMissing");
+  }
+  if (/outside the deterministic difference plan|contradicts the deterministic build rank/u.test(value)) {
+    return t("buildNarrativePlanMismatch");
+  }
+  if (/optionId is not present/u.test(value)) return t("buildNarrativeOptionMismatch");
+  return t("buildNarrativeValidationGeneric");
+}
+
 function assistantResponseHtml(data, responseId = "", options = {}) {
   if (data?.type === "system_interaction") {
     return systemInteractionAnswerHtml(data);
@@ -2682,6 +2755,10 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
+  const modelConclusion = reactModelConclusionHtml(data, summary);
+  if (modelConclusion) {
+    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  }
   return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
@@ -3146,13 +3223,288 @@ function renderMechanismClassification(data) {
   `);
 }
 
+function buildOptionDecisionLabel(option, options) {
+  const itemOccurrences = new Map();
+  options.forEach((candidate) => {
+    const seen = new Set();
+    (candidate.items ?? []).forEach((item) => {
+      const apiName = String(typeof item === "string" ? item : item?.apiName ?? item?.displayName ?? "");
+      if (!apiName || seen.has(apiName)) return;
+      seen.add(apiName);
+      itemOccurrences.set(apiName, (itemOccurrences.get(apiName) ?? 0) + 1);
+    });
+  });
+  const groupedItems = new Map();
+  (option.items ?? []).forEach((item) => {
+    const apiName = String(typeof item === "string" ? item : item?.apiName ?? item?.displayName ?? "");
+    const name = typeof item === "string"
+      ? localizedName(item)
+      : item?.displayName ?? item?.name ?? localizedName(item?.apiName);
+    if (!apiName || !name) return;
+    const current = groupedItems.get(apiName) ?? { apiName, name, count: 0 };
+    current.count += 1;
+    groupedItems.set(apiName, current);
+  });
+  const items = [...groupedItems.values()];
+  const differentiators = items.filter((item) => itemOccurrences.get(item.apiName) < options.length);
+  const focusItems = (differentiators.length ? differentiators : items).slice(0, 2);
+  return t("buildOptionDecisionLabel", {
+    items: focusItems.map((item) => item.count > 1
+      ? t("buildItemCopies", { count: item.count, item: item.name })
+      : item.name).join(" + ")
+  });
+}
+
+function buildRecommendationDecisionSummary(entries) {
+  const overview = entries.reduce((result, entry) => {
+    const options = entry.buildOptions ?? [];
+    result.units.push(entry.name ?? entry.unit?.displayName ?? entry.apiName);
+    result.preferred += options.filter((option) => ["stable", "best_available"].includes(option.role)).length;
+    result.alternatives += options.filter((option) => !["stable", "best_available"].includes(option.role)).length;
+    return result;
+  }, { units: [], preferred: 0, alternatives: 0 });
+  const fallback = t("buildRecommendationOverview", {
+    units: overview.units.filter(Boolean).join(getLocale().startsWith("zh") ? "、" : ", "),
+    preferred: overview.preferred,
+    alternatives: overview.alternatives
+  });
+  if (entries.length !== 1) return fallback;
+  const options = entries[0].buildOptions ?? [];
+  const preferred = options.find((option) => ["stable", "best_available"].includes(option.role)) ?? options[0];
+  const metrics = preferred?.metrics ?? {};
+  if (
+    !preferred
+    || !Number.isFinite(Number(metrics.top4Rate))
+    || !Number.isFinite(Number(metrics.winRate))
+    || !Number.isFinite(Number(metrics.averagePlacement))
+  ) return fallback;
+  const preferredTop4 = Number(metrics.top4Rate);
+  const preferredWin = Number(metrics.winRate);
+  const preferredAverage = Number(metrics.averagePlacement);
+  const comparable = options.filter((option) => (
+    Number.isFinite(Number(option.metrics?.top4Rate))
+    && Number.isFinite(Number(option.metrics?.winRate))
+    && Number.isFinite(Number(option.metrics?.averagePlacement))
+  ));
+  const leadsAllMetrics = comparable.length > 0
+    && preferredTop4 >= Math.max(...comparable.map((option) => Number(option.metrics.top4Rate)))
+    && preferredWin >= Math.max(...comparable.map((option) => Number(option.metrics.winRate)))
+    && preferredAverage <= Math.min(...comparable.map((option) => Number(option.metrics.averagePlacement)));
+  const optionLabel = buildOptionDecisionLabel(preferred, options);
+  const performance = t(leadsAllMetrics ? "buildRecommendationMetricLead" : "buildRecommendationMetrics", {
+    option: optionLabel,
+    top4: `${formatNumber(preferredTop4 * 100, { maximumFractionDigits: 1 })}%`,
+    win: `${formatNumber(preferredWin * 100, { maximumFractionDigits: 1 })}%`,
+    average: formatNumber(preferredAverage, { minimumFractionDigits: 2, maximumFractionDigits: 2 })
+  });
+  const preferredSamples = Number(metrics.samples ?? 0);
+  const sampleLeader = options
+    .filter((option) => option !== preferred)
+    .sort((left, right) => Number(right.metrics?.samples ?? 0) - Number(left.metrics?.samples ?? 0))[0];
+  const sampleLeaderSamples = Number(sampleLeader?.metrics?.samples ?? 0);
+  const sampleTradeoff = sampleLeader && sampleLeaderSamples > preferredSamples
+    ? t("buildRecommendationSampleTradeoff", {
+      samples: formatNumber(preferredSamples),
+      comparison: buildOptionDecisionLabel(sampleLeader, options),
+      comparisonSamples: formatNumber(sampleLeaderSamples)
+    })
+    : t("buildRecommendationSampleStrength", { samples: formatNumber(preferredSamples) });
+  const alternatives = overview.alternatives > 0
+    ? t("buildRecommendationAlternativeHint", { alternatives: overview.alternatives })
+    : "";
+  const knowledgeSignal = preferred.knowledgeSignals?.[0];
+  const knowledgeHint = knowledgeSignal?.text
+    ? t("buildKnowledgeSummary", { text: knowledgeSignal.text })
+    : "";
+  return `${performance}${sampleTradeoff}${knowledgeHint}${alternatives}`;
+}
+
 function renderSemanticNativeResult(data) {
+  if (data.type === "composition_tactical_details") {
+    const comp = {
+      name: data.compositionRef?.name ?? data.compositionRef?.compId ?? t("compFormation"),
+      units: data.formation?.units ?? []
+    };
+    const placedUnits = positionedFormationUnits(comp, data.formation);
+    const augmentEntries = availableAugmentEntries(data.augmentRecommendations);
+    const sourceLabel = compDetailSourceLabel(data.source);
+    setResponseHtml(`
+      <section class="comp-tactical-detail react-comp-tactical-detail" data-status="${placedUnits.size || augmentEntries.length ? "available" : "unavailable"}">
+        ${renderCompFormation(comp, data.formation, placedUnits)}
+        ${renderCompAugments(augmentEntries)}
+        ${sourceLabel ? `<small class="comp-detail-source">${escapeHtml(t("sourceLabel"))}：${escapeHtml(sourceLabel)}</small>` : ""}
+      </section>
+      ${(data.warnings ?? []).length ? `<div class="risk-line">${(data.warnings ?? []).map(escapeHtml).join("<br>")}</div>` : ""}
+    `);
+    return;
+  }
   const isBatch = data.type === "unit_builds_batch_results";
   const isRankedBatch = isBatch && (
     data.resultMode === "rank_candidate_build_performance"
     || data.executionPlan?.resultPolicy?.payload?.mode === "rank_candidate_build_performance"
   );
   const entries = data.results ?? [];
+  if (isBatch && entries.some((entry) => Array.isArray(entry.buildOptions))) {
+    const narrative = data.narrative?.schemaVersion === "grounded-build-narrative.v1"
+      ? data.narrative
+      : null;
+    const itemBatchEvidence = (data.evidence ?? []).find((entry) => entry.toolName === "item_details_batch");
+    const mechanismStatus = itemBatchEvidence?.value?.mechanismStatus ?? null;
+    const narrativeByOption = new Map((narrative?.options ?? []).map((entry) => [entry.optionId, entry]));
+    const buildOverviewText = buildRecommendationDecisionSummary(entries);
+    const unitGroups = entries.map((entry) => {
+      const unitName = entry.name ?? entry.unit?.displayName ?? entry.apiName;
+      const options = entry.buildOptions ?? [];
+      const lockedItems = new Set((entry.constraintAudit?.lockedItems ?? []).map(String));
+      const fallbackFrequency = new Map();
+      options.forEach((option) => {
+        const seen = new Set();
+        (option.items ?? []).forEach((item) => {
+          const apiName = String(typeof item === "string" ? item : item?.apiName ?? "");
+          if (!apiName || seen.has(apiName) || lockedItems.has(apiName)) return;
+          seen.add(apiName);
+          const current = fallbackFrequency.get(apiName) ?? {
+            ...(typeof item === "object" && item ? item : { apiName, displayName: item }),
+            apiName,
+            appearances: 0
+          };
+          current.appearances += 1;
+          fallbackFrequency.set(apiName, current);
+        });
+      });
+      const requiredCoreAppearances = Math.max(2, Math.ceil(options.length * 2 / 3));
+      const coreItemSummary = entry.coreItemSummary ?? {
+        rule: "visible_build_frequency_2_of_3",
+        recommendationCount: options.length,
+        requiredAppearances: requiredCoreAppearances,
+        items: options.length >= 2
+          ? [...fallbackFrequency.values()].filter((item) => item.appearances >= requiredCoreAppearances)
+          : []
+      };
+      const coreItems = coreItemSummary.items ?? [];
+      const coreItemsHtml = coreItems.length
+        ? `<aside class="build-core-items" data-build-core-items>
+          <div class="build-core-items-heading">
+            <strong>${escapeHtml(t("conclusionCoreItems"))}</strong>
+            <small>${escapeHtml(t("coreFrequencyRule", {
+              count: coreItemSummary.recommendationCount ?? options.length,
+              required: coreItemSummary.requiredAppearances ?? requiredCoreAppearances
+            }))}</small>
+          </div>
+          <div class="items">${coreItems.map((item) => typeof item === "string"
+            ? `<span class="item-pill">${escapeHtml(item)}</span>`
+            : itemPill(item)).join("")}</div>
+        </aside>`
+        : "";
+      const optionCards = options.map((option, index) => {
+        const explanation = narrativeByOption.get(option.optionId) ?? null;
+        const mechanismComparison = entry.mechanismQueryPlan?.comparisons?.find((candidate) => (
+          candidate.optionId === option.optionId
+        ));
+        const requiresMechanism = Boolean(mechanismComparison?.selectedPairs?.length);
+        const roleLabel = option.role === "stable"
+          ? t("stableBuildOption")
+          : option.role === "best_available"
+            ? t("bestAvailableBuildOption")
+            : t("alternativeBuildOption", { value: Math.max(1, Number(option.rank ?? index + 1) - 1) });
+        const items = (option.items ?? []).map((item) => typeof item === "string"
+          ? `<span class="item-pill">${escapeHtml(item)}</span>`
+          : itemPill(item)).join("");
+        const metrics = option.metrics ?? {};
+        const explanationLists = [
+          ["buildSuitableWhen", explanation?.suitableWhen],
+          ["buildTradeoffs", explanation?.tradeoffs],
+          ["buildRisks", explanation?.risks]
+        ].filter(([, values]) => values?.length).map(([label, values]) => `
+          <section class="build-option-explanation-list">
+            <strong>${escapeHtml(t(label))}</strong>
+            ${label === "buildSuitableWhen" && values.some((value) => value?.inferenceType === "mechanism_based_advice")
+              ? `<span class="mechanism-inference-badge">${escapeHtml(t("mechanismBasedInference"))}</span>`
+              : ""}
+            <ul>${values.map((value) => `<li>${escapeHtml(value?.text ?? value)}</li>`).join("")}</ul>
+          </section>
+        `).join("");
+        const mechanismDifference = explanation?.mechanismDifference?.text
+          ? `<section class="build-option-mechanism"><strong>${escapeHtml(t("buildMechanismDifference"))}</strong><p>${escapeHtml(explanation.mechanismDifference.text)}</p></section>`
+          : requiresMechanism && mechanismStatus === "unavailable"
+            ? `<div class="risk-line build-mechanism-missing">${escapeHtml(t("currentSeasonMechanismMissing"))}</div>`
+            : "";
+        const knowledgeSignals = (option.knowledgeSignals ?? []).filter((signal) => signal?.text);
+        const knowledgeSignalHtml = knowledgeSignals.length
+          ? `<aside class="build-knowledge-signal" data-build-knowledge-signal>
+            <strong>${escapeHtml(t("buildKnowledgePossibleCause"))}</strong>
+            ${knowledgeSignals.map((signal) => `<p>${escapeHtml(signal.text)}</p>`).join("")}
+          </aside>`
+          : "";
+        const headlineExplanation = explanation?.mechanismDifference?.text
+          ?? explanation?.statisticalBasis?.text
+          ?? explanation?.explanation
+          ?? ((data.narrativeWarnings ?? []).length
+            ? t("buildNarrativeRejectedShort")
+            : requiresMechanism && mechanismStatus === "unavailable"
+              ? t("currentSeasonMechanismMissing")
+              : t("buildNarrativeNotProvided"));
+        return `<details class="result-card build-option-card${index === 0 ? " best" : " alternative"}" data-build-option-id="${escapeHtml(option.optionId)}" ${index === 0 ? "open" : ""}>
+          <summary class="build-option-summary">
+            <span class="build-option-role">${escapeHtml(roleLabel)}</span>
+            <span class="build-option-unit">${escapeHtml(unitName)}</span>
+            <span class="items">${items}</span>
+            <span class="build-option-samples">${escapeHtml(t("buildOptionSamples", { value: formatNumber(metrics.samples ?? 0) }))}</span>
+            <span class="build-option-difference">${escapeHtml(headlineExplanation)}</span>
+          </summary>
+          <div class="build-option-detail">
+            <div class="stats">
+              ${metric(t("top4"), metrics.top4Rate == null ? "-" : `${formatNumber(metrics.top4Rate * 100, { maximumFractionDigits: 1 })}%`)}
+              ${metric(t("win"), metrics.winRate == null ? "-" : `${formatNumber(metrics.winRate * 100, { maximumFractionDigits: 1 })}%`)}
+              ${metric(t("avg"), metrics.averagePlacement == null ? "-" : formatNumber(metrics.averagePlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
+              ${metric(t("recommendationScore"), option.ranking?.score == null ? "-" : formatNumber(option.ranking.score * 100, { maximumFractionDigits: 1 }))}
+            </div>
+            ${mechanismDifference}
+            ${knowledgeSignalHtml}
+            ${explanationLists}
+            <small class="build-option-evidence">${escapeHtml(t("updated"))}：${escapeHtml(formatDate(data.updatedAt ?? data.source?.updatedAt))}</small>
+          </div>
+        </details>`;
+      }).join("");
+      const shortage = Number(entry.availableOptionCount ?? options.length) < Number(entry.requestedOptionCount ?? 3)
+        ? `<div class="risk-line build-options-shortage">${escapeHtml(t("buildOptionsShortage", { value: entry.availableOptionCount ?? options.length }))}</div>`
+        : "";
+      return `<section class="unit-build-options" data-unit-build-options="${escapeHtml(entry.apiName ?? "")}">
+        ${coreItemsHtml}
+        ${optionCards || `<div class="empty-state"><strong>${escapeHtml(entry.warning ?? data.text ?? t("noResult"))}</strong></div>`}
+        ${shortage}
+      </section>`;
+    }).join("");
+    const narrativeWarnings = (data.narrativeWarnings ?? []).filter(Boolean).map(String);
+    const narrativeWarning = narrativeWarnings.length
+      ? `<details class="build-narrative-warning" data-build-narrative-warning>
+        <summary>${escapeHtml(t("buildNarrativeWarningSummary", { count: narrativeWarnings.length }))}</summary>
+        <p>${escapeHtml(t("buildNarrativeRejected"))}</p>
+        <ul>${narrativeWarnings.map((warning) => `<li>
+          <span>${escapeHtml(buildNarrativeWarningText(warning))}</span>
+          <details class="build-narrative-technical">
+            <summary>${escapeHtml(t("buildNarrativeTechnicalDetails"))}</summary>
+            <code>${escapeHtml(warning)}</code>
+          </details>
+        </li>`).join("")}</ul>
+      </details>`
+      : "";
+    const narrativeSummary = narrative?.summary?.text
+      ? `<details class="build-model-summary">
+        <summary>${escapeHtml(t("buildModelSummary"))}</summary>
+        <p>${escapeHtml(narrative.summary.text)}</p>
+      </details>`
+      : "";
+    setResponseHtml(`
+      ${resultHeader(t("recommendation"), buildOverviewText, t("recommendation"))}
+      ${data.query ? conditionPanel(data) : ""}
+      ${narrativeWarning}
+      <section class="ranking-section build-options-ranking">${unitGroups}</section>
+      ${narrativeSummary}
+      ${data.source ? sourceAndRisk(data) : ""}
+    `);
+    return;
+  }
   const cards = entries.map((entry, index) => {
     const apiName = entry.apiName ?? entry.unit;
     const name = entry.name ?? apiName;
@@ -3199,7 +3551,7 @@ function renderCurrentResult(data) {
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
-  else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics"].includes(data.type)) renderSemanticNativeResult(data);
+  else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
   const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
@@ -3817,6 +4169,21 @@ async function readRecommendationStream(response, target, progress, requestId, s
   const applyLine = (line) => {
     if (!line.trim()) return;
     const event = JSON.parse(line);
+    if (event.type === "diagnostic") {
+      progress.diagnostic = event;
+      return;
+    }
+    if (event.type === "event") {
+      const phase = String(event.event?.type ?? "react.event");
+      applyRecommendationProgressState(progress, {
+        schemaVersion: "recommendation-progress.v1",
+        sequence: Number(event.event?.sequence ?? 0),
+        phase,
+        data: event.event ?? {}
+      });
+      if (requestId === state.requestSerial) renderRecommendationProgress(target, progress);
+      return;
+    }
     if (event.type === "progress") {
       applyRecommendationProgressState(progress, event.event);
       if (requestId === state.requestSerial) renderRecommendationProgress(target, progress);
@@ -3850,6 +4217,74 @@ async function readRecommendationStream(response, target, progress, requestId, s
   return completion.payload;
 }
 
+function normalizeEndpointPayload(payload) {
+  if (payload?.type !== "react_chat_result") return payload;
+  const answerText = conclusionDisplayText(typeof payload.answer === "string"
+    ? payload.answer
+    : String(payload.question ?? payload.error ?? t("noResult")));
+  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  const nativeResultTypes = new Set([
+    "entity_catalog_results",
+    "unit_builds_batch_results",
+    "trait_external_unit_statistics",
+    "composition_tactical_details"
+  ]);
+  const evidenceValues = [...evidence].reverse().map((entry) => entry?.value);
+  const primaryValue = evidenceValues.find((value) => nativeResultTypes.has(value?.type))
+    ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
+    ?? null;
+  const semanticHits = evidence
+    .filter((entry) => entry?.toolName === "semantic_search")
+    .flatMap((entry) => entry?.value?.hits ?? []);
+  return {
+    ...(primaryValue ?? {}),
+    ...payload,
+    type: nativeResultTypes.has(primaryValue?.type) ? primaryValue.type : payload.type,
+    reactAnswer: answerText,
+    text: answerText,
+    assistantResponse: { text: answerText },
+    answer: { summary: answerText },
+    ...(semanticHits.length ? {
+      knowledgeEvidence: semanticHits.map((hit) => ({
+        evidenceId: hit.evidenceId,
+        claim: hit.claim,
+        claimType: hit.claimType,
+        sourceType: hit.sourceType,
+        sourceId: hit.sourceId,
+        sourceTitle: hit.title,
+        sourceUrl: hit.sourceUrl,
+        author: hit.author,
+        publishedAt: hit.publishedAt,
+        patch: hit.patch,
+        locale: hit.locale,
+        score: hit.score
+      }))
+    } : {}),
+    agent: {
+      status: payload.status ?? null,
+      route: { selectedPath: "react_chat", route: "react_chat" },
+      executionPlan: null,
+      executionTrace: payload.observations ?? null,
+      shadowComparison: null,
+      failureStage: null,
+      metrics: payload.usage ?? null
+    }
+  };
+}
+
+function reactChatMessages() {
+  return state.responseRecords.slice(-8).flatMap((record) => {
+    const assistant = record.data?.assistantResponse?.text
+      ?? record.data?.answer?.summary
+      ?? record.data?.text
+      ?? record.data?.reactAnswer;
+    return [
+      { role: "user", content: String(record.displayInput ?? record.input ?? "").slice(0, 8000) },
+      { role: "assistant", content: String(assistant ?? "").slice(0, 8000) }
+    ].filter((message) => message.content);
+  }).slice(-20);
+}
+
 function setRequestRunning(running) {
   state.requestInFlight = running;
   stopButton.classList.toggle("hidden", !running);
@@ -3866,6 +4301,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     ? { quickTask: requestOptions }
     : (requestOptions ?? {});
   const quickTask = normalizedRequestOptions.quickTask ?? null;
+  const supplementalText = String(normalizedRequestOptions.supplementalText ?? "").trim().slice(0, 1200);
   const reuseLastInput = refresh || normalizedRequestOptions.reuseLastInput === true;
   if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
@@ -3885,6 +4321,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   state.lastInput = input;
   state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? input;
   state.lastQuickTask = reuseLastInput ? state.lastQuickTask : quickTask;
+  state.lastSupplementalText = reuseLastInput ? state.lastSupplementalText : supplementalText;
   appendUserMessage(state.lastDisplayInput);
   const recommendationProgress = createRecommendationProgressState();
   activeRecommendationProgress = recommendationProgress;
@@ -3899,7 +4336,15 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   setRequestRunning(true);
   renderLoadingResult();
   try {
-    const response = await fetch("/api/recommend/stream", {
+    if (!state.runtimeStatus) await loadRuntimeStatus();
+    const reactChatEnabled = Boolean(state.runtimeStatus?.routing?.reactChatEnabled);
+    const endpoint = state.lastQuickTask || !reactChatEnabled
+      ? "/api/recommend/stream"
+      : "/api/react-chat/stream";
+    const transportRequestId = state.lastQuickTask?.requestId
+      ?? globalThis.crypto?.randomUUID?.()
+      ?? `request-${Date.now()}-${requestId}`;
+    const response = await fetch(endpoint, {
       method: "POST",
       signal: controller.signal,
       headers: {
@@ -3908,12 +4353,17 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
       },
       body: JSON.stringify({
         input,
+        requestId: transportRequestId,
         conversationId: state.conversationId,
         seasonContextId: state.seasonContextId,
         startNewTask: normalizedRequestOptions.startNewTask === true,
         refresh,
         deferConclusion: true,
         ...(state.lastQuickTask ? { quickTask: state.lastQuickTask } : {}),
+        ...(state.lastQuickTask && state.lastSupplementalText
+          ? { supplementalText: state.lastSupplementalText }
+          : {}),
+        ...(!state.lastQuickTask && reactChatEnabled ? { messages: reactChatMessages() } : {}),
         preferences: {
           minSamples: state.minSamples,
           itemPolicy: state.itemPolicy,
@@ -3925,13 +4375,13 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
         }
       })
     });
-    const data = await readRecommendationStream(
+    const data = normalizeEndpointPayload(await readRecommendationStream(
       response,
       assistantTarget,
       recommendationProgress,
       requestId,
       controller.signal
-    );
+    ));
     if (requestId !== state.requestSerial) return;
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     completeRecommendationProgress(recommendationProgress, data);
@@ -4395,6 +4845,7 @@ async function handleResultClick(event) {
   const conditionButton = event.target.closest("button[data-condition-key]");
   if (conditionButton) {
     queryInput.value = t("editCondition", { value: conditionButton.textContent.split("·")[0].trim() });
+    setMobileView("chat");
     queryInput.focus();
     return;
   }
@@ -4704,3 +5155,4 @@ setRequestRunning(false);
 void loadSeasonContexts();
 loadPreferences();
 loadAccessStatus();
+void loadRuntimeStatus();

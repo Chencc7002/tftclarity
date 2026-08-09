@@ -11,7 +11,8 @@ import {
   createSmallWindowRuntimeAsync,
   createSmallWindowRuntime,
   handleRecommendRequest,
-  loadRuntimeCatalog
+  loadRuntimeCatalog,
+  queryUnitBuildsBatchStatistics
 } from "../src/app/small-window-server.js";
 import { CompsContextClient } from "../src/data/metatft-client.js";
 
@@ -512,6 +513,18 @@ test("batch build page shows the highest-sample build per champion", async () =>
   assert.deepEqual(
     bramble.bestBuild.map((entry) => entry.apiName),
     ["TFT_Item_GuinsoosRageblade", "TFT_Item_InfinityEdge", "TFT_Item_Deathblade"]
+  );
+  const { catalog } = await loadRuntimeCatalog(runtime);
+  const deterministicBatch = await queryUnitBuildsBatchStatistics({
+    entities: [{ apiName: "TFT17_Bramble", name: "Bramble" }],
+    optionsPerUnit: 3
+  }, catalog, runtime);
+  const batchBramble = deterministicBatch.results[0];
+  assert.equal(batchBramble.coreItemSummary.recommendationCount, 2);
+  assert.equal(batchBramble.coreItemSummary.requiredAppearances, 2);
+  assert.deepEqual(
+    batchBramble.coreItemSummary.items.map((entry) => entry.apiName),
+    ["TFT_Item_GuinsoosRageblade", "TFT_Item_InfinityEdge"]
   );
 });
 

@@ -274,6 +274,21 @@ test("query snapshots default to 30 days and honor an explicit override", async 
   assert.equal(overridden.queryEventRetentionDays, 14);
 });
 
+test("ReAct acceptance deadline can be extended through environment without adding a tool-call budget", async () => {
+  const runtime = await createSmallWindowRuntimeAsync({
+    cacheStore: new MemoryCacheStore(),
+    catalog: createCatalog(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {}
+  }, {
+    TFT_AGENT_REACT_DEADLINE_MS: "90000"
+  });
+
+  assert.equal(runtime.reactChatBudget.deadlineMs, 90000);
+  assert.equal(runtime.reactChatBudget.maxToolCalls, null);
+});
+
 test("small-window runtime can use an injected SQLite cache store", async () => {
   const database = new FakeSQLiteDatabase();
   const runtime = await createSmallWindowRuntimeAsync({
@@ -1854,6 +1869,18 @@ test("small-window runtime bounds core Explorer, catalog, and comps timeouts", (
   assert.equal(runtime.compsClient.rankingsTimeoutMs, 8000);
 });
 
+test("unit_builds_batch tool timeout stays above its upstream Explorer timeout", () => {
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    explorerTimeoutMs: 8000,
+    compRankingsTimeoutMs: 8000
+  });
+
+  assert.equal(runtime.metaTFTClient.timeoutMs, 8000);
+  assert.equal(runtime.toolRegistry.get("unit_builds_batch").timeoutMs, 10000);
+});
+
 test("async small-window runtime applies environment timeout overrides", async () => {
   const runtime = await createSmallWindowRuntimeAsync({
     cacheStore: new MemoryCacheStore(),
@@ -2155,8 +2182,8 @@ test("comp details preserve observed positioning, expose compatible augments, an
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog({
       units: [
-        { apiName: "TFT17_Front", zhName: "Frontline", aliases: [] },
-        { apiName: "TFT17_Back", zhName: "Backline", aliases: [] }
+        { apiName: "TFT17_Front", zhName: "Frontline", aliases: [], stats: { attackRange: 1 } },
+        { apiName: "TFT17_Back", zhName: "Backline", aliases: [], stats: { attackRange: 4 } }
       ],
       traits: [],
       items: []
@@ -2254,6 +2281,16 @@ test("comp details preserve observed positioning, expose compatible augments, an
   assert.deepEqual(first.formation.units.map(({ apiName, cell, name }) => ({ apiName, cell, name })), [
     { apiName: "TFT17_Front", cell: 24, name: "Frontline" },
     { apiName: "TFT17_Back", cell: 1, name: "Backline" }
+  ]);
+  assert.deepEqual(first.formation.units.map(({ apiName, boardPosition, combatProfile }) => ({
+    apiName,
+    row: boardPosition.rowFromFront,
+    column: boardPosition.columnFromLeft,
+    zone: boardPosition.rowZone,
+    range: combatProfile.attackRange
+  })), [
+    { apiName: "TFT17_Front", row: 1, column: 3, zone: "front", range: 1 },
+    { apiName: "TFT17_Back", row: 4, column: 1, zone: "back", range: 4 }
   ]);
   assert.equal(first.formation.units.some((unit) => unit.apiName === "TFT17_NotInComp"), false);
   assert.equal(first.augmentRecommendations.semantics, "comp_compatibility_tier");

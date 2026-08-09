@@ -125,6 +125,12 @@
                 <button type="button" id="quick-task-form-close" data-i18n-title="closeQuickTaskForm" data-i18n-aria="closeQuickTaskForm" title="取消快捷填写" aria-label="取消快捷填写">×</button>
               </header>
               <div class="quick-task-fields" id="quick-task-fields"></div>
+              <label class="quick-task-field quick-task-supplemental-field">
+                <span data-i18n="quickFieldSupplemental">补充说明（选填）</span>
+                <textarea id="quick-task-supplemental" rows="2" maxlength="1200"
+                  data-i18n-placeholder="quickFieldSupplementalPlaceholder"
+                  placeholder="可补充目的、限制，或夹带一句普通聊天"></textarea>
+              </label>
               <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">填写条件后将直接执行结构化查询，无需再次理解语义。</small>
             </section>
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>

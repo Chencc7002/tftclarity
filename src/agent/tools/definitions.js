@@ -4,18 +4,22 @@ import { ToolError } from "./tool-errors.js";
 
 const DESCRIPTIONS = Object.freeze({
   unit_builds: "Use for current structured unit build statistics. Not for arbitrary URLs or model-generated facts. Input contains validated unit query constraints. Returns existing unit-build response data.",
-  unit_builds_batch: "Return current structured build statistics for at most five catalog-resolved units. Units must come from a prior registered tool step or a validated current-conversation catalog result snapshot.",
+  unit_builds_batch: "Return current structured build statistics for at most five validated units. Send only keys declared by inputSchema. seasonContextId, patch, and scopeKey are server-scoped and MUST NOT appear in arguments. Optional starLevel accepts one or more explicit levels from 1 to 3; omit it when the user did not specify a level so the server reuses the fixed-query cost-based default (1-3 cost units use 3 stars, 4-5 cost units use 2 stars). Optional constraints.lockedItems and constraints.excludedItems are deterministic query-affecting filters applied to source rows before ranking; the response echoes all effective query conditions and provenance. For composition item-contention analysis, compositionId, entities, and optionsPerUnit must exactly match the deterministic itemContentionQueryPlan from prior resolved comps_rankings evidence. The response computes itemContentionPlan internally from cross-unit build-option intersections and never assigns item priority.",
   unit_comp_candidates: "Use for validated unit composition candidates. Not for global rankings. Input contains a unit and bounded sample scope. Returns existing candidate data.",
   item_carrier_rankings: "Use for current item-to-carrier statistics. Input requires one validated item and returns deterministic positive-uplift carrier aggregates with representative builds. Not for model-generated item advice.",
-  comps_rankings: "Use for current composition rankings. Not for historical claims without evidence. Input contains validated ranking scope. Returns existing page-aligned ranking data.",
+  comps_rankings: "Resolve a user-facing composition mention against current live MetaTFT composition definitions, or return current composition rankings when mention is omitted. Use the returned resolution status; never invent a composition identity or silently choose an ambiguous candidate. Member-of-composition and itemized-candidate relations are evidence, but do not imply primary carry, primary tank, core member, or flex slot unless separately supported.",
+  composition_tactical_details: "Return verified MetaTFT positioning and compatible gold/prismatic augment references for one previously resolved composition. formation.units[].boardPosition is the authoritative user-facing row/column translation and combatProfile.attackRange is official unit evidence; raw cell is only a provider identifier. compositionId, clusterId, units, and seasonContextId must exactly match the tacticalDetailQueryPlan from prior resolved comps_rankings evidence. Never invent board cells, units, or augments.",
+  composition_replacement_evaluation: "Deterministically evaluate a user-specified member replacement in one resolved current composition. Requires a compositionId from prior resolved comps_rankings evidence and official unit_details evidence for both targetApiName and replacementApiName. Returns validated membership plus exact trait-count and breakpoint deltas. It never claims the replacement is stronger or finds the best replacement.",
+  composition_change_evaluation: "Deterministically evaluate one user-specified composition member change: add, remove, or replace. Requires a compositionId from prior resolved comps_rankings evidence. add requires incomingApiName and its official unit_details evidence; remove requires targetApiName and its official unit_details evidence; replace requires both. Returns exact before/after members, trait counts, and breakpoint deltas. Never calculate these changes yourself or claim the changed composition is stronger.",
   comps_trends: "Use for composition trend retrieval. Not for causal claims. Input contains validated trend scope. Returns existing trend evidence.",
   comps_analysis: "Use for deterministic composition analysis evidence. Not for LLM-created statistics. Input contains validated analysis scope. Returns existing analysis inputs.",
-  unit_details: "Use for current trusted unit catalog details. Not for live ranking statistics. Input requires an official unit apiName. Returns catalog data.",
-  item_details: "Use for current trusted item catalog details. Not for ranking equipment strength. Input requires an official item apiName. Returns catalog data.",
-  trait_details: "Use for current trusted trait catalog details. Not for live composition strength. Input requires an official trait apiName. Returns catalog data.",
-  entity_catalog_query: "Query current TFT units, items or traits with bounded structured filters. Use for collection questions such as units of a given cost that belong to a trait.",
+  unit_details: "Requires an official unit apiName and returns current trusted unit catalog details. For a user-facing name or alias, call entity_catalog_query first. Do not guess apiName. Not for live ranking statistics.",
+  item_details: "Requires an official item apiName and returns current trusted item catalog details. For a user-facing name or alias, call entity_catalog_query first. Do not guess apiName. Not for ranking equipment strength.",
+  item_details_batch: "Return current-season official details for 1 to 4 item apiNames selected by a deterministic prior unit_builds_batch plan. The apiNames must exactly match either the build-difference mechanismQueryPlan or composition itemContentionPlan; never add, remove, or reorder items.",
+  trait_details: "Requires an official trait apiName and returns current trusted trait catalog details. For a user-facing name or alias, call entity_catalog_query first. Do not guess apiName. Not for live composition strength.",
+  entity_catalog_query: "Query current TFT units, items or traits with bounded filters or exact normalized name/alias resolution. For natural-language entity names, call this before a details tool and follow resolution.requests[].status; never guess an apiName or silently choose an ambiguous candidate.",
   composition_member_statistics: "Aggregate current composition samples by unit and optionally exclude native members of a target trait. Use for non-trait splash-unit statistics, never emblem-carrier rankings.",
-  semantic_search: "Use for static semantic recall of aliases and descriptions. Not for realtime statistics or strength ranking. Input contains a bounded query and filters. Returns semantic candidates."
+  semantic_search: "Search only the local knowledge index for mechanism_knowledge, patch_note, static_game_knowledge, or explicitly requested video_guide documents. Never use for current statistics, realtime web/video discovery, or strength ranking. Creator advice must stay attributed."
 });
 
 const CAPABILITIES = Object.freeze({
@@ -189,6 +193,59 @@ const CAPABILITIES = Object.freeze({
       outputs: ["explanation", "evidence"]
     })
   ]),
+  composition_tactical_details: Object.freeze([
+    Object.freeze({
+      action: "explain",
+      requiredEntityTypes: ["composition"],
+      allowedEntityTypes: ["composition", "champion", "game_concept", "patch"],
+      features: ["composition_positioning", "composition_augment_references"],
+      outputs: ["explanation", "evidence"]
+    })
+  ]),
+  composition_replacement_evaluation: Object.freeze([
+    Object.freeze({
+      action: "analyze",
+      requiredEntityTypes: ["composition", "champion"],
+      allowedEntityTypes: ["composition", "champion", "trait", "patch"],
+      goals: ["analyze_evidence"],
+      features: ["composition_replacement_structural_evaluation"],
+      outputs: ["analysis", "evidence"]
+    }),
+    Object.freeze({
+      action: "compare",
+      requiredEntityTypes: ["composition", "champion"],
+      allowedEntityTypes: ["composition", "champion", "trait", "patch"],
+      goals: ["choose_best"],
+      features: ["composition_replacement_structural_evaluation"],
+      outputs: ["comparison", "evidence"]
+    })
+  ]),
+  composition_change_evaluation: Object.freeze([
+    Object.freeze({
+      action: "analyze",
+      requiredEntityTypes: ["composition", "champion"],
+      allowedEntityTypes: ["composition", "champion", "trait", "patch"],
+      goals: ["analyze_evidence"],
+      features: ["composition_member_change_structural_evaluation"],
+      outputs: ["analysis", "evidence"]
+    }),
+    Object.freeze({
+      action: "compare",
+      requiredEntityTypes: ["composition", "champion"],
+      allowedEntityTypes: ["composition", "champion", "trait", "patch"],
+      goals: ["choose_best"],
+      features: ["composition_member_change_structural_evaluation"],
+      outputs: ["comparison", "evidence"]
+    })
+  ]),
+  item_details_batch: Object.freeze([
+    Object.freeze({
+      action: "explain",
+      requiredEntityTypes: ["item"],
+      allowedEntityTypes: ["item"],
+      outputs: ["explanation", "evidence"]
+    })
+  ]),
   trait_details: Object.freeze([
     Object.freeze({
       action: "explain",
@@ -269,10 +326,14 @@ const EVIDENCE_TYPES = Object.freeze({
   unit_comp_candidates: "composition_candidates",
   item_carrier_rankings: "item_carrier_statistics",
   comps_rankings: "composition_rankings",
+  composition_tactical_details: "composition_tactical_details",
+  composition_replacement_evaluation: "composition_replacement_evaluation",
+  composition_change_evaluation: "composition_change_evaluation",
   comps_trends: "composition_trends",
   comps_analysis: "composition_analysis",
   unit_details: "official_unit",
   item_details: "official_item",
+  item_details_batch: "official_item_batch",
   trait_details: "official_trait",
   entity_catalog_query: "official_entity_catalog",
   composition_member_statistics: "trait_external_unit_statistics",
@@ -283,12 +344,39 @@ const PARAMETER_SCHEMAS = Object.freeze({
   unit: { type: "string" },
   item: { type: "string" },
   mention: { type: "string" },
+  compositionId: { type: "string", minLength: 1, maxLength: 160 },
+  clusterId: { type: "string", pattern: "^[0-9]{1,12}$" },
+  units: {
+    type: "array",
+    minItems: 1,
+    maxItems: 12,
+    uniqueItems: true,
+    items: { type: "string", pattern: "^(?:TFT|DA_)[A-Za-z0-9_]+$" }
+  },
+  targetApiName: { type: "string", minLength: 1, maxLength: 160 },
+  replacementApiName: { type: "string", minLength: 1, maxLength: 160 },
+  incomingApiName: { type: "string", minLength: 1, maxLength: 160 },
+  operation: { type: "string", enum: ["add", "remove", "replace"] },
+  optionsPerUnit: { type: "integer", minimum: 1, maximum: 3 },
   apiName: { type: "string" },
+  apiNames: {
+    type: "array",
+    minItems: 1,
+    maxItems: 4,
+    items: { type: "string", minLength: 1, maxLength: 160 }
+  },
+  seasonContextId: { type: "string", minLength: 1, maxLength: 80 },
   days: { type: "integer" },
   patch: { type: "string" },
   queue: { type: ["string", "number"] },
   rank: { type: "array", items: { type: "string" } },
-  starLevel: { type: "array", items: { type: "integer" } },
+  starLevel: {
+    type: "array",
+    minItems: 1,
+    maxItems: 3,
+    uniqueItems: true,
+    items: { type: "integer", minimum: 1, maximum: 3 }
+  },
   itemCount: { type: "integer" },
   traitFilters: { type: "array", items: { type: "string" } },
   comp: { type: ["object", "null"] },
@@ -297,6 +385,22 @@ const PARAMETER_SCHEMAS = Object.freeze({
   lockedItems: { type: "array", items: { type: "string" } },
   excludedItems: { type: "array", items: { type: "string" } },
   comparisonItems: { type: "array", items: { type: "string" } },
+  constraints: {
+    type: "object",
+    additionalProperties: false,
+    properties: {
+      lockedItems: {
+        type: "array",
+        maxItems: 3,
+        items: { type: "string", minLength: 1, maxLength: 160 }
+      },
+      excludedItems: {
+        type: "array",
+        maxItems: 6,
+        items: { type: "string", minLength: 1, maxLength: 160 }
+      }
+    }
+  },
   minSamples: { type: "integer" },
   strategy: { type: "string" },
   metrics: { type: "array", items: { type: "string" } },
@@ -312,9 +416,16 @@ const PARAMETER_SCHEMAS = Object.freeze({
   filters: {
     type: "object",
     additionalProperties: false,
+    not: { required: ["names", "apiNames"] },
     properties: {
       cost: { oneOf: [{ type: "integer" }, { type: "array", items: { type: "integer" } }] },
       traits: { type: "array", items: { type: "string" } },
+      names: {
+        type: "array",
+        minItems: 1,
+        maxItems: 5,
+        items: { type: "string", minLength: 1, maxLength: 80 }
+      },
       apiNames: { type: "array", items: { type: "string" } },
       categories: { type: "array", items: { type: "string" } },
       current: { type: "boolean" },
@@ -342,8 +453,18 @@ const REQUIRED_PARAMETERS = Object.freeze({
   unit_builds_batch: Object.freeze(["entities"]),
   unit_comp_candidates: Object.freeze(["unit", "mention"]),
   item_carrier_rankings: Object.freeze(["item"]),
+  composition_tactical_details: Object.freeze([
+    "compositionId", "clusterId", "units", "seasonContextId"
+  ]),
+  composition_replacement_evaluation: Object.freeze([
+    "compositionId", "targetApiName", "replacementApiName", "seasonContextId"
+  ]),
+  composition_change_evaluation: Object.freeze([
+    "operation", "compositionId", "seasonContextId"
+  ]),
   unit_details: Object.freeze(["apiName"]),
   item_details: Object.freeze(["apiName"]),
+  item_details_batch: Object.freeze(["apiNames", "seasonContextId"]),
   trait_details: Object.freeze(["apiName"]),
   entity_catalog_query: Object.freeze(["entityType"]),
   composition_member_statistics: Object.freeze(["trait"]),

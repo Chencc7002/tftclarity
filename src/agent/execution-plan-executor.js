@@ -4,6 +4,7 @@ import {
   resolveResultPath
 } from "./result-policy-executor.js";
 import { runtimeError } from "./runtime-errors.js";
+import { validateToolEvidence } from "./tool-evidence-validator.js";
 
 export const EXECUTION_TRACE_SCHEMA_VERSION = "execution-trace.v1";
 export const EVIDENCE_VALIDATION_SCHEMA_VERSION = "evidence-validation.v2";
@@ -98,22 +99,12 @@ export function validateExecutionEvidence(plan, toolResults, options = {}) {
     completedResults.push(result);
     const contract = step.evidenceContract;
     const metadata = result.toolResult?.metadata;
-    if (metadata?.evidenceType !== contract.type) {
-      stepErrors.push(`evidence type mismatch for ${step.id}`);
-    }
-    if (metadata?.source !== contract.source) {
-      stepErrors.push(`evidence source mismatch for ${step.id}`);
-    }
-    if (result.toolResult?.toolName !== step.tool) {
-      stepErrors.push(`evidence tool mismatch for ${step.id}`);
-    }
-    validateRequiredFields(
-      result.toolResult?.value,
-      metadata,
-      contract.requiredFields,
-      `evidence for ${step.id}`,
-      stepErrors
-    );
+    const validation = validateToolEvidence({
+      definition: { name: step.tool, source: contract.source, evidenceType: contract.type },
+      toolResult: result.toolResult,
+      evidenceContract: contract
+    });
+    stepErrors.push(...validation.errors.map((error) => `evidence for ${step.id}: ${error}`));
   }
 
   const finalContract = plan.finalEvidenceContract;

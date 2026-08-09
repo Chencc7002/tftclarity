@@ -97,7 +97,7 @@ test("controlled planner and fast path share the same executor with dependency o
       id: "search",
       tool: "semantic_search",
       arguments: {
-        documentTypes: ["entity"],
+        documentTypes: ["static_game_knowledge"],
         patch: "current",
         locale: "zh-CN",
         topK: 3

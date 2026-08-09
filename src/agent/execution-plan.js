@@ -263,6 +263,15 @@ function resolvedIds(values, type = null) {
     .map(String))];
 }
 
+function resolvedConstraintIds(values) {
+  return [...new Set(array(values)
+    .map((value) => typeof value === "string"
+      ? value
+      : value?.resolvedId ?? value?.rawText)
+    .filter(Boolean)
+    .map(String))];
+}
+
 function allowlistedArguments(tool, frame) {
   const entities = allEntities(frame);
   const constraints = frame?.constraints ?? {};
@@ -280,6 +289,11 @@ function allowlistedArguments(tool, frame) {
     };
   }
   if (tool === "unit_builds_batch") {
+    const batchConstraints = {
+      lockedItems: resolvedConstraintIds(constraints.lockedItems ?? constraints.ownedItems),
+      excludedItems: resolvedConstraintIds(constraints.excludedItems)
+    };
+    const hasBatchConstraints = Object.values(batchConstraints).some((values) => values.length > 0);
     return {
       entities: entities
         .filter((entity) => entity?.expectedType === "champion" && entity?.resolvedId)
@@ -288,6 +302,7 @@ function allowlistedArguments(tool, frame) {
           apiName: entity.resolvedId,
           name: entity.canonicalName ?? entity.rawText ?? entity.resolvedId
         })),
+      ...(hasBatchConstraints ? { constraints: batchConstraints } : {}),
       ...Object.fromEntries(
         ["days", "patch", "rank", "minSamples"]
           .filter((key) => constraints[key] !== undefined && constraints[key] !== null)

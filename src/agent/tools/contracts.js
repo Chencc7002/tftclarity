@@ -19,7 +19,29 @@ function validateValue(value, schema, path, errors) {
     return;
   }
   if (schema.enum && !schema.enum.includes(value)) errors.push(`${path} must be an allowed value`);
+  if (typeof value === "string") {
+    if (Number.isInteger(schema.minLength) && value.length < schema.minLength) {
+      errors.push(`${path} must contain at least ${schema.minLength} characters`);
+    }
+    if (Number.isInteger(schema.maxLength) && value.length > schema.maxLength) {
+      errors.push(`${path} must contain at most ${schema.maxLength} characters`);
+    }
+  }
+  if (typeof value === "number") {
+    if (Number.isFinite(schema.minimum) && value < schema.minimum) {
+      errors.push(`${path} must be at least ${schema.minimum}`);
+    }
+    if (Number.isFinite(schema.maximum) && value > schema.maximum) {
+      errors.push(`${path} must be at most ${schema.maximum}`);
+    }
+  }
   if (Array.isArray(value) && schema.items) {
+    if (Number.isInteger(schema.minItems) && value.length < schema.minItems) {
+      errors.push(`${path} must contain at least ${schema.minItems} items`);
+    }
+    if (Number.isInteger(schema.maxItems) && value.length > schema.maxItems) {
+      errors.push(`${path} must contain at most ${schema.maxItems} items`);
+    }
     value.forEach((entry, index) => validateValue(entry, schema.items, `${path}[${index}]`, errors));
   }
   if (value && typeof value === "object" && !Array.isArray(value) && schema.type === "object") {
@@ -34,6 +56,13 @@ function validateValue(value, schema, path, errors) {
     }
     for (const [field, child] of Object.entries(properties)) {
       if (field in value) validateValue(value[field], child, `${path}.${field}`, errors);
+    }
+    if (
+      Array.isArray(schema.not?.required)
+      && schema.not.required.length
+      && schema.not.required.every((field) => field in value)
+    ) {
+      errors.push(`${path} must not contain ${schema.not.required.join(" and ")} together`);
     }
   }
 }
