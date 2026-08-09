@@ -1,5 +1,5 @@
-import { readdirSync } from "node:fs";
-import { basename, join, relative, resolve } from "node:path";
+import { mkdirSync, readdirSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -60,8 +60,10 @@ if (files.length === 0) throw new Error(`No tests selected for ${lane} lane`);
 const nodeArguments = ["--test"];
 if (lane === "integration") nodeArguments.push("--test-concurrency=1");
 if (reportPath) {
+  const reportDestination = resolve(REPO_ROOT, reportPath);
+  mkdirSync(dirname(reportDestination), { recursive: true });
   nodeArguments.push("--test-reporter=junit");
-  nodeArguments.push(`--test-reporter-destination=${resolve(REPO_ROOT, reportPath)}`);
+  nodeArguments.push(`--test-reporter-destination=${reportDestination}`);
 }
 nodeArguments.push(...files.map((path) => relative(REPO_ROOT, path)));
 
