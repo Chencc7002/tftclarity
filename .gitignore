@@ -14,6 +14,8 @@ tftclarityKey.txt
 *.db-*
 dist/
 coverage/
+.artifacts/
+tmp/
 services/youtube-ingestion/output/
 services/youtube-ingestion/__pycache__/
 scripts/__pycache__/

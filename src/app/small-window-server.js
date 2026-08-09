@@ -1,5 +1,5 @@
 import { createServer } from "node:http";
-import { randomUUID, timingSafeEqual } from "node:crypto";
+import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -21,6 +21,15 @@ import {
   createStructuredToolDefinitions
 } from "../agent/index.js";
 import { createTftControlledPlannerProvider } from "../agent/controlled-planner-provider.js";
+import { ChatAgent } from "../chat/chat-agent.js";
+import { createReactDecisionProvider } from "../react/react-decision-provider.js";
+import {
+  buildConversationBridgeContextView,
+  isHistoryDependentInput
+} from "../conversation/conversation-bridge.js";
+import { classifyQuickTaskSupplement } from "../conversation/quick-task-supplemental-classifier.js";
+import { createQuickTaskSupplementalClassifierProvider } from "../conversation/quick-task-supplemental-provider.js";
+import { SQLiteConversationBridgeStore } from "../conversation/sqlite-conversation-bridge-store.js";
 import { createPatchResolver } from "../season/patch-resolver.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import {
@@ -31,11 +40,23 @@ import { normalizeAlias } from "../core/normalizer.js";
 import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
 import { queryEntityCatalog } from "../domain/tft/entity-catalog-query.js";
+import { selectDifferentiatingItems } from "../domain/tft/differentiating-item-selector.js";
+import { detectItemContention } from "../domain/tft/item-contention-detector.js";
+import { createTftToolHandlers } from "../domain/tft/tool-handler-factory.js";
+import { resolveCompositionMention } from "../domain/tft/composition-resolution.js";
+import {
+  evaluateCompositionChange,
+  evaluateCompositionReplacement
+} from "../domain/tft/composition-replacement-evaluator.js";
 import { aggregateExternalUnits } from "../domain/tft/external-unit-analysis.js";
 import {
   buildOfficialPatchSemanticDocuments,
   extractPatchVersionFromQuestion
 } from "../knowledge/official-patch-knowledge.js";
+import {
+  buildUserStrategySemanticDocuments,
+  evaluateBuildKnowledgeSignals
+} from "../knowledge/user-strategy-knowledge.js";
 import { matchTaskCapabilities } from "../understanding/capability-matcher.js";
 import { taskFrameFromIntentEnvelope } from "../understanding/task-frame.js";
 import {
@@ -52,6 +73,7 @@ import {
   DEFAULT_SEASON_CONTEXT_ID,
   DEFAULT_QUERY_OPTIONS,
   JsonFileCacheStore,
+  makeQueryCacheKey,
   ConclusionJobCoordinator,
   ConclusionWorker,
   MetaTftLiveProvider,
@@ -96,18 +118,23 @@ import {
   fetchOfficialTftEntityDetails,
   fetchOfficialTftItemDetails,
   filterItemCatalogAudit,
+  filterBuildRows,
   hasUnsupportedCompRankingEntities,
   mergeCatalogItems,
   mergeCatalogTraits,
   mergeCatalogUnits,
+  normalizeUnitBuildRows,
   normalizeCompProfileRecord,
   isLowSampleBuild,
+  stableSampleThreshold,
   itemCatalogAuditToCsv,
   KnowledgeRetriever,
   parseSemanticTask,
   parseQuery,
   parseMechanismClassificationQuery,
   recommendForInput,
+  rankBuilds,
+  planMetaTFTUnitBuilds,
   generateEvidenceBackedConclusion,
   RetrievalPlanner,
   resolveConclusionProviderConfig,
@@ -132,6 +159,8 @@ export const DEFAULT_CONCLUSION_JOB_TTL_MS = 10 * 60 * 1000;
 export const DEFAULT_CONCLUSION_STREAM_INTERVAL_MS = 18;
 export const DEFAULT_CONCLUSION_JOB_LIMIT = 128;
 export const QUICK_TASK_CACHE_RETENTION_MS = 24 * 60 * 60 * 1000;
+export const REACT_UNIT_BUILD_CACHE_TTL_MS = 30 * 60 * 1000;
+export const REACT_UNIT_BUILD_STALE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const QUICK_TASK_SCHEMA_VERSION = "quick-task.v1";
 const QUICK_TASK_DEFINITIONS = new Map([
   ["unit-build", { operation: "unit_build_rankings", intent: "unit_build_rankings", required: ["champion"] }],
@@ -157,6 +186,7 @@ export const DEFAULT_TURN_INTERPRETER_BUDGET = Object.freeze({
 const DEFAULT_JSON_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.json");
 const DEFAULT_SQLITE_CACHE_PATH = resolve(process.cwd(), ".cache", "small-window-cache.sqlite");
 const DEFAULT_SEMANTIC_INDEX_PATH = resolve(process.cwd(), ".cache", "semantic-index.sqlite");
+const DEFAULT_CONVERSATION_BRIDGE_PATH = resolve(process.cwd(), ".cache", "conversation-bridge.sqlite");
 const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url));
 const STATIC_PAGE_ROUTES = new Map([
   ["/admin", "admin.html"],
@@ -215,10 +245,15 @@ function normalizeQuickTask(value) {
   for (const key of definition.required ?? []) {
     if (!args[key]) throw invalidQuickTask(`quickTask argument is required: ${key}`);
   }
+  const requestId = String(value.requestId ?? randomUUID()).normalize("NFKC").trim();
+  if (!requestId || requestId.length > 160) {
+    throw invalidQuickTask("quickTask.requestId must contain between 1 and 160 characters");
+  }
   return {
     schemaVersion: QUICK_TASK_SCHEMA_VERSION,
     id,
     operation: definition.operation,
+    requestId,
     arguments: args,
     definition
   };
@@ -816,6 +851,28 @@ export function resolveSmallWindowSemanticConfig(options = {}, env = process.env
   };
 }
 
+export const ACCEPTANCE_M17_DOCUMENT = Object.freeze({
+  schemaVersion: "knowledge_document.v1",
+  seasonContextId: "set17-live",
+  id: "acceptance:s17:mechanism:M17",
+  documentType: "mechanism_knowledge",
+  title: "验收知识样本 M17",
+  text: "验收标记 M17：启动装备会影响首次施法等待。本条仅用于验收语义检索，不代表实时强度结论。",
+  patch: "16.14",
+  locale: "zh-CN",
+  source: "acceptance_fixture",
+  metadata: {
+    source: "acceptance_fixture",
+    sourceId: "M17",
+    claimType: "mechanism",
+    season: "17",
+    patch: "16.14",
+    locale: "zh-CN",
+    topics: ["启动", "施法循环"],
+    namespace: "mechanism_knowledge"
+  }
+});
+
 async function createSmallWindowSemanticRuntime(options = {}, env = process.env) {
   if (options.semanticRetriever) {
     return {
@@ -837,6 +894,14 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
       seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
       locale: config.locale
     }));
+    await store.upsert(buildUserStrategySemanticDocuments({
+      seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+      locale: config.locale
+    }));
+    const acceptanceMode = ["1", "true", "on", "enabled"].includes(String(
+      options.acceptanceMode ?? env.TFT_AGENT_ACCEPTANCE_MODE ?? "off"
+    ).trim().toLowerCase());
+    if (acceptanceMode) await store.upsert(ACCEPTANCE_M17_DOCUMENT);
   }
   const provider = config.enabled
     ? options.embeddingProvider ?? createEmbeddingProviderFromConfig(config, {
@@ -940,6 +1005,7 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
 
   return {
     processRole: runtime.processRole ?? "all",
+    acceptanceMode: Boolean(runtime.acceptanceMode),
     storage: runtime.storageRuntime ? {
       persistent: runtime.storageRuntime.config.persistentStore,
       ephemeral: runtime.storageRuntime.config.ephemeralStore,
@@ -968,6 +1034,23 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       runtime.mechanismClassificationCache
     ),
     semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
+    routing: {
+      reactChatMode: runtime.reactChatMode ?? "off",
+      reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
+      conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
+      conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
+    },
+    acceptanceProvenance: {
+      decisionProviderMode: runtime.reactDecisionProvider?.providerKind === "react_decision_llm"
+        ? "real_model"
+        : runtime.reactDecisionProvider
+          ? "injected"
+          : "unavailable",
+      model: runtime.reactDecisionProvider?.model ?? null,
+      toolHandlerMode: "production",
+      dataMode: "live_or_production_cache",
+      fixtureMode: runtime.reactDecisionProvider?.providerKind !== "react_decision_llm"
+    },
     requests: {
       explorerTimeoutMs: runtime.requestTimeouts?.explorerTimeoutMs ?? null,
       catalogTimeoutMs: runtime.requestTimeouts?.catalogTimeoutMs ?? null,
@@ -977,6 +1060,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
     agent: {
       schemaVersion: "agent_run.v1",
       budget: runtime.agentRuntime?.budget ?? null,
+      reactSafety: runtime.reactChatBudget ?? null,
+      groundingMode: runtime.reactGroundingMode ?? "strict",
       registeredTools: runtime.toolRegistry?.list?.().map((tool) => tool.name) ?? []
     }
   };
@@ -2225,7 +2310,26 @@ const SEMANTIC_NATIVE_RESULT_TYPES = new Set([
   "trait_external_unit_statistics"
 ]);
 
+export function hydrateUnitBuildKnowledgeSignals(value) {
+  if (value?.type !== "unit_builds_batch_results") return value;
+  for (const result of value.results ?? []) {
+    for (const option of result.buildOptions ?? []) {
+      if (Array.isArray(option.knowledgeSignals) && option.knowledgeSignals.length) continue;
+      option.knowledgeSignals = evaluateBuildKnowledgeSignals(option.items ?? []);
+    }
+  }
+  return value;
+}
+
+function hydrateReactResultKnowledgeSignals(result) {
+  for (const evidence of result?.evidence ?? []) {
+    hydrateUnitBuildKnowledgeSignals(evidence?.value);
+  }
+  return result;
+}
+
 function serializeSemanticNativeResult(result, catalog, meta = {}) {
+  hydrateUnitBuildKnowledgeSignals(result);
   const { itemDetails: _itemDetails, ...publicMeta } = meta;
   const query = result.query ?? {};
   const source = result.source && typeof result.source === "object"
@@ -2249,6 +2353,19 @@ function serializeSemanticNativeResult(result, catalog, meta = {}) {
       return {
         ...entry,
         iconUrl: entry.iconUrl ?? ASSET_RESOLVER.resolveUnit(entry.apiName).iconUrl,
+        buildOptions: (entry.buildOptions ?? []).map((option) => ({
+          ...option,
+          items: (option.items ?? []).map((item) => {
+            const apiName = typeof item === "string" ? item : item.apiName;
+            return {
+              ...(typeof item === "object" && item ? item : {}),
+              apiName,
+              displayName: item?.displayName ?? item?.name ?? itemName(apiName, catalog),
+              name: item?.name ?? item?.displayName ?? itemName(apiName, catalog),
+              iconUrl: item?.iconUrl ?? ASSET_RESOLVER.resolveItem(apiName).iconUrl
+            };
+          })
+        })),
         bestBuild: (entry.bestBuild ?? []).map((apiName) => ({
           apiName,
           name: itemName(apiName, catalog),
@@ -2821,12 +2938,17 @@ export function createSmallWindowRuntime(options = {}) {
     defaultTimeoutMs: requestTimeouts.compRankingsTimeoutMs,
     timeoutByTool: {
       unit_builds: requestTimeouts.explorerTimeoutMs,
+      unit_builds_batch: Math.max(
+        requestTimeouts.explorerTimeoutMs + 2_000,
+        requestTimeouts.compRankingsTimeoutMs
+      ),
       unit_comp_candidates: requestTimeouts.explorerTimeoutMs,
       comps_rankings: requestTimeouts.compRankingsTimeoutMs,
       comps_trends: requestTimeouts.compRankingsTimeoutMs,
       comps_analysis: requestTimeouts.compRankingsTimeoutMs,
       unit_details: requestTimeouts.catalogTimeoutMs,
       item_details: requestTimeouts.catalogTimeoutMs,
+      item_details_batch: requestTimeouts.catalogTimeoutMs,
       trait_details: requestTimeouts.catalogTimeoutMs
     }
   }));
@@ -2927,6 +3049,12 @@ export function createSmallWindowRuntime(options = {}) {
     semanticRetriever: options.semanticRetriever ?? null,
     semanticDocumentStore: options.semanticDocumentStore ?? null,
     semanticConfig: options.semanticConfig ?? { enabled: false, provider: "off" },
+    conversationBridgeStore: options.conversationBridgeStore ?? null,
+    conversationBridgeMode: String(options.conversationBridgeMode ?? "off").toLowerCase(),
+    reactChatMode: String(options.reactChatMode ?? "off").toLowerCase(),
+    acceptanceMode: Boolean(options.acceptanceMode),
+    quickTaskSupplementalClassifier: options.quickTaskSupplementalClassifier ?? null,
+    quickTaskSupplementalTimeoutMs: Math.max(1, Math.min(5000, Number(options.quickTaskSupplementalTimeoutMs ?? 4000))),
     accessService: options.accessService ?? null,
     adminToken: String(options.adminToken ?? "").trim() || null,
     queryEventRetentionDays: Number.isInteger(Number(options.queryEventRetentionDays))
@@ -2936,7 +3064,699 @@ export function createSmallWindowRuntime(options = {}) {
     agentRuntime,
     toolRegistry,
     toolExecutor,
-    executionPlanExecutor
+    executionPlanExecutor,
+    reactDecisionProvider: options.reactDecisionProvider ?? null,
+    reactToolHandlers: options.reactToolHandlers ?? {},
+    createReactToolHandlers: options.createReactToolHandlers ?? null,
+    // Acceptance runs preserve qualitative model output so unsupported-claim
+    // frequency can be measured. Callers can set "strict" to hide rejected text.
+    reactGroundingMode: String(options.reactGroundingMode ?? "observe").toLowerCase() === "strict"
+      ? "strict"
+      : "observe",
+    reactChatBudget: {
+      deadlineMs: 30_000,
+      maxDecisions: 24,
+      maxToolCalls: null,
+      maxRetriesPerTool: 1,
+      maxConsecutiveNoProgress: 3,
+      ...(options.reactChatBudget ?? {})
+    }
+  };
+}
+
+export async function queryCompositionRankings(toolInput, catalog, runtime, options = {}) {
+  const seasonContext = options.seasonContext
+    ?? runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const queue = toolInput.queue ?? options.preferences?.queue ?? seasonContext.source?.queue;
+  const patch = toolInput.patch
+    ?? options.preferences?.patch
+    ?? seasonContext.currentPatch
+    ?? seasonContext.effectivePatch
+    ?? "current";
+  const days = toolInput.days ?? options.preferences?.days ?? 3;
+  const requestedLimit = Number(toolInput.limit ?? 20);
+  const limit = Number.isFinite(requestedLimit)
+    ? Math.max(1, Math.min(100, Math.floor(requestedLimit)))
+    : 20;
+  const compsData = options.compsData ?? await runtime.compsClient.getCompsData({ queue });
+  options.signal?.throwIfAborted?.();
+  const dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+  const compsStats = await runtime.compsClient.getCompsStats({
+    queue,
+    patch,
+    days,
+    permit_filter_adjustment: "true",
+    ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+  });
+  options.signal?.throwIfAborted?.();
+  const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+  if (
+    dataClusterId !== undefined
+    && statsClusterId !== undefined
+    && String(dataClusterId) !== String(statsClusterId)
+  ) {
+    throw Object.assign(new Error("MetaTFT composition definition and statistics clusters do not match"), {
+      code: "comp_cluster_mismatch",
+      recoverable: true
+    });
+  }
+  const rankings = buildCompRankings(createCompsPageSnapshot(compsData, compsStats), {
+    catalog,
+    query: {
+      intent: "comp_rankings",
+      seasonContextId: seasonContext.id,
+      patch,
+      queue,
+      days,
+      unit: toolInput.unit,
+      minSamples: Math.max(0, Number(toolInput.minSamples ?? 0)),
+      metrics: toolInput.metrics ?? ["top4_rate"],
+      limit
+    }
+  });
+  const details = options.details ?? await loadOfficialEntityDetails(runtime, {
+    signal: options.signal
+  });
+  const resolution = resolveCompositionMention(rankings, {
+    mention: toolInput.mention,
+    limit,
+    catalog,
+    details
+  });
+  for (const result of resolution.results ?? []) {
+    const detailCompId = String(result.source?.clusterId ?? "");
+    const detailClusterId = String(result.source?.dataClusterId ?? resolution.source?.clusterId ?? "");
+    result.tacticalDetailQueryPlan = {
+      schemaVersion: "composition-tactical-detail-query.v1",
+      status: /^\d{1,12}$/u.test(detailCompId) && /^\d{1,12}$/u.test(detailClusterId)
+        ? "ready"
+        : "unavailable",
+      compositionId: detailCompId,
+      clusterId: detailClusterId,
+      units: (result.members ?? []).map((member) => String(member.apiName ?? "")).filter(Boolean),
+      seasonContextId: seasonContext.id
+    };
+  }
+  return resolution;
+}
+
+export async function queryCompositionReplacementEvaluation(toolInput, catalog, runtime, options = {}) {
+  const seasonContext = options.seasonContext
+    ?? runtime.seasonContextService.resolveForQuery(toolInput.seasonContextId);
+  const details = options.details ?? await loadOfficialEntityDetails(runtime, {
+    signal: options.signal
+  });
+  const resolution = await queryCompositionRankings({
+    mention: toolInput.compositionId,
+    days: toolInput.days,
+    patch: toolInput.patch,
+    queue: toolInput.queue,
+    rank: toolInput.rank,
+    limit: 5
+  }, catalog, runtime, {
+    preferences: options.preferences,
+    seasonContext,
+    details,
+    signal: options.signal
+  });
+  options.signal?.throwIfAborted?.();
+  const composition = resolution.resolution.status === "resolved"
+    ? resolution.results[0]
+    : null;
+  const result = evaluateCompositionReplacement({
+    composition,
+    targetApiName: toolInput.targetApiName,
+    replacementApiName: toolInput.replacementApiName,
+    catalog,
+    details
+  });
+  return {
+    ...result,
+    scope: {
+      seasonContextId: seasonContext.id,
+      patch: seasonContext.currentPatch ?? seasonContext.effectivePatch ?? toolInput.patch ?? "current",
+      queue: toolInput.queue ?? options.preferences?.queue ?? seasonContext.source?.queue ?? null
+    },
+    compositionResolution: resolution.resolution,
+    source: {
+      ...(result.source ?? {}),
+      compositionRankings: resolution.source
+    }
+  };
+}
+
+export async function queryCompositionChangeEvaluation(toolInput, catalog, runtime, options = {}) {
+  const seasonContext = options.seasonContext
+    ?? runtime.seasonContextService.resolveForQuery(toolInput.seasonContextId);
+  const details = options.details ?? await loadOfficialEntityDetails(runtime, {
+    signal: options.signal
+  });
+  const resolution = await queryCompositionRankings({
+    mention: toolInput.compositionId,
+    days: toolInput.days,
+    patch: toolInput.patch,
+    queue: toolInput.queue,
+    rank: toolInput.rank,
+    limit: 5
+  }, catalog, runtime, {
+    preferences: options.preferences,
+    seasonContext,
+    details,
+    signal: options.signal
+  });
+  options.signal?.throwIfAborted?.();
+  const composition = resolution.resolution.status === "resolved"
+    ? resolution.results[0]
+    : null;
+  const result = evaluateCompositionChange({
+    composition,
+    operation: toolInput.operation,
+    targetApiName: toolInput.targetApiName,
+    incomingApiName: toolInput.incomingApiName,
+    catalog,
+    details
+  });
+  return {
+    ...result,
+    scope: {
+      seasonContextId: seasonContext.id,
+      patch: seasonContext.currentPatch ?? seasonContext.effectivePatch ?? toolInput.patch ?? "current",
+      queue: toolInput.queue ?? options.preferences?.queue ?? seasonContext.source?.queue ?? null
+    },
+    compositionResolution: resolution.resolution,
+    source: {
+      ...(result.source ?? {}),
+      compositionRankings: resolution.source
+    }
+  };
+}
+
+const UNIT_BUILD_BATCH_CONSTRAINT_SCHEMA_VERSION = "unit-build-batch-constraints.v1";
+
+function normalizeUnitBuildBatchConstraints(toolInput, catalog) {
+  const input = toolInput?.constraints && typeof toolInput.constraints === "object"
+    ? toolInput.constraints
+    : {};
+  const uniqueItems = (values, limit) => [...new Set((Array.isArray(values) ? values : [])
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean))].slice(0, limit);
+  const lockedItems = uniqueItems(input.lockedItems, 3);
+  const excludedItems = uniqueItems(input.excludedItems, 6);
+  const conflicts = lockedItems.filter((apiName) => excludedItems.includes(apiName));
+  if (conflicts.length) {
+    throw Object.assign(new Error(
+      `unit_builds_batch constraints conflict: ${conflicts.join(", ")} cannot be both locked and excluded`
+    ), {
+      code: "conflicting_batch_constraints",
+      recoverable: true
+    });
+  }
+  const constrainedItems = [...new Set([...lockedItems, ...excludedItems])];
+  const unknownItems = constrainedItems.filter((apiName) => !catalog?.itemByApiName?.has?.(apiName));
+  if (unknownItems.length) {
+    throw Object.assign(new Error(
+      `unit_builds_batch constraints require current catalog item apiNames: ${unknownItems.join(", ")}`
+    ), {
+      code: "unknown_batch_constraint_item",
+      recoverable: true
+    });
+  }
+  return {
+    schemaVersion: UNIT_BUILD_BATCH_CONSTRAINT_SCHEMA_VERSION,
+    lockedItems,
+    excludedItems,
+    applied: constrainedItems.length > 0,
+    applicationMode: constrainedItems.length > 0
+      ? "deterministic_source_row_filter_before_ranking"
+      : "none"
+  };
+}
+
+function normalizeUnitBuildStarLevels(value) {
+  return [...new Set((Array.isArray(value) ? value : [])
+    .map(Number)
+    .filter((level) => Number.isInteger(level) && level >= 1 && level <= 3))]
+    .sort((left, right) => left - right);
+}
+
+function defaultUnitBuildStarLevels(apiName, catalog) {
+  const cost = Number(catalog?.unitByApiName?.get?.(apiName)?.cost);
+  return Number.isFinite(cost) && cost >= 1 && cost <= 3 ? [3] : [2];
+}
+
+export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime, options = {}) {
+  const entities = (toolInput.entities ?? []).slice(0, 5);
+  const preferences = options.preferences ?? {};
+  const seasonContext = options.seasonContext
+    ?? runtime.seasonContextService.resolveForQuery(options.seasonContextId);
+  const constraints = normalizeUnitBuildBatchConstraints(toolInput, catalog);
+  const explicitStarLevels = normalizeUnitBuildStarLevels(toolInput.starLevel);
+  const entityStarLevels = entities.map((entity) => {
+    const apiName = String(entity.apiName ?? "");
+    return {
+      apiName,
+      name: entity.name ?? unitName(apiName, catalog),
+      starLevel: explicitStarLevels.length
+        ? [...explicitStarLevels]
+        : defaultUnitBuildStarLevels(apiName, catalog)
+    };
+  });
+  const sourceClient = runtime.metaTFTClient;
+  const batchClient = sourceClient instanceof MetaTFTClient
+    && Number(sourceClient.timeoutMs) < 5000
+    ? new MetaTFTClient({
+      baseUrl: sourceClient.baseUrl,
+      fetchImpl: sourceClient.fetchImpl,
+      timeoutMs: 5000,
+      maxRetries: sourceClient.maxRetries,
+      retryDelayMs: sourceClient.retryDelayMs,
+      maxRetryDelayMs: sourceClient.maxRetryDelayMs,
+      sleepImpl: sourceClient.sleepImpl
+    })
+    : sourceClient;
+  if (!batchClient || typeof batchClient.getUnitBuilds !== "function") {
+    throw Object.assign(new Error("MetaTFT unit-build client is unavailable"), {
+      code: "unit_builds_unavailable",
+      recoverable: true
+    });
+  }
+
+  const optionsPerUnit = entities.length === 1
+    ? 3
+    : Math.max(1, Math.min(3, Number(toolInput.optionsPerUnit ?? 1)));
+  const loadBuild = async (entity, entityIndex) => {
+    options.signal?.throwIfAborted?.();
+    const apiName = String(entity.apiName ?? "");
+    const name = entity.name ?? unitName(apiName, catalog);
+    if (!apiName) return null;
+    const query = {
+      unit: apiName,
+      days: toolInput.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days,
+      patch: toolInput.patch ?? preferences.unitBuildPatch ?? preferences.patch ?? DEFAULT_QUERY_OPTIONS.patch,
+      queue: toolInput.queue ?? preferences.queue ?? DEFAULT_QUERY_OPTIONS.queue,
+      rankFilter: toolInput.rank ?? preferences.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter,
+      starLevel: [...(entityStarLevels[entityIndex]?.starLevel ?? [2])],
+      itemCount: 3,
+      traitFilters: [],
+      lockedItems: constraints.lockedItems,
+      ownedItems: constraints.lockedItems,
+      excludedItems: constraints.excludedItems,
+      comparisonItems: [],
+      itemPolicy: "ordinary_only",
+      itemCategories: [],
+      minSamples: toolInput.minSamples ?? 0,
+      sort: "robust_first"
+    };
+    const effectivePatch = String(
+      seasonContext.currentPatch
+      ?? runtime.patchState?.currentPatch
+      ?? seasonContext.effectivePatch
+      ?? query.patch
+      ?? "current"
+    );
+    const cacheKey = makeQueryCacheKey({
+      ...query,
+      intent: "react_unit_builds_batch",
+      seasonContextId: seasonContext.id,
+      effectivePatch,
+      buildLimit: optionsPerUnit,
+      dataVersion: "react-unit-build-options.v4"
+    });
+    const cacheOptions = { seasonContextId: seasonContext.id };
+    const fresh = await runtime.cacheStore?.getQuery?.(cacheKey, cacheOptions) ?? null;
+    let response = fresh?.value?.response;
+    let cacheState = fresh
+      ? { hit: true, stale: false, updatedAt: fresh.updatedAt, expiresAt: fresh.expiresAt }
+      : { hit: false, stale: false, updatedAt: null, expiresAt: null };
+    const cacheWarnings = [];
+    if (response === undefined) {
+      try {
+        response = await batchClient.getUnitBuilds(planMetaTFTUnitBuilds(query), {
+          timeoutMs: Math.min(5000, Number(runtime.requestTimeouts?.explorerTimeoutMs ?? 5000))
+        });
+        const stored = await runtime.cacheStore?.setQuery?.(cacheKey, {
+          request: query,
+          response,
+          source: "metatft",
+          patch: effectivePatch,
+          seasonContextId: seasonContext.id
+        }, {
+          ...cacheOptions,
+          ttlMs: REACT_UNIT_BUILD_CACHE_TTL_MS
+        }) ?? null;
+        cacheState = {
+          hit: false,
+          stale: false,
+          updatedAt: stored?.updatedAt ?? response?.provenance?.fetchedAt ?? new Date().toISOString(),
+          expiresAt: stored?.expiresAt ?? null
+        };
+      } catch (error) {
+        const stale = await runtime.cacheStore?.getQuery?.(cacheKey, {
+          ...cacheOptions,
+          allowExpired: true
+        }) ?? null;
+        const cacheAgeMs = (typeof options.now === "function" ? Number(options.now()) : Date.now())
+          - Date.parse(stale?.updatedAt ?? "");
+        const compatible = (
+          stale?.value?.response !== undefined
+          && stale.value.patch === effectivePatch
+          && stale.value.seasonContextId === seasonContext.id
+          && Number.isFinite(cacheAgeMs)
+          && cacheAgeMs >= 0
+          && cacheAgeMs <= REACT_UNIT_BUILD_STALE_RETENTION_MS
+        );
+        if (!compatible) throw error;
+        response = stale.value.response;
+        cacheState = {
+          hit: true,
+          stale: true,
+          updatedAt: stale.updatedAt,
+          expiresAt: stale.expiresAt
+        };
+        cacheWarnings.push(
+          `MetaTFT live request failed; using same-season same-patch cache from ${stale.updatedAt}.`
+        );
+      }
+    }
+    options.signal?.throwIfAborted?.();
+    const rows = normalizeUnitBuildRows(response);
+    const unconstrainedQuery = {
+      ...query,
+      lockedItems: [],
+      ownedItems: [],
+      excludedItems: [],
+      minSamples: 0
+    };
+    const eligibleBeforeConstraints = filterBuildRows(rows, unconstrainedQuery, { catalog });
+    const filtered = filterBuildRows(rows, query, { catalog });
+    const unthresholded = filterBuildRows(rows, { ...query, minSamples: 0 }, { catalog });
+    const ranked = rankBuilds(filtered.builds, query);
+    const rawDistinctKeys = new Set(unthresholded.builds.map((build) => (
+      [...(build.items ?? [])].map(String).sort().join("|")
+    )));
+    const distinct = [];
+    const seenItemSets = new Set();
+    for (const build of ranked) {
+      const itemSetKey = [...(build.items ?? [])].map(String).sort().join("|");
+      if (!itemSetKey || seenItemSets.has(itemSetKey)) continue;
+      seenItemSets.add(itemSetKey);
+      distinct.push(build);
+      if (distinct.length >= optionsPerUnit) break;
+    }
+    const stableThreshold = stableSampleThreshold(query);
+    const firstIsStable = distinct.length > 0 && !isLowSampleBuild(distinct[0], query);
+    const buildOptions = distinct.map((build, index) => {
+      const optionHash = createHash("sha256")
+        .update(`${apiName}|${[...(build.items ?? [])].map(String).sort().join("|")}`)
+        .digest("hex")
+        .slice(0, 12);
+      const items = (build.items ?? []).map((itemApiName) => ({
+        apiName: itemApiName,
+        displayName: itemName(itemApiName, catalog),
+        iconUrl: ASSET_RESOLVER.resolveItem(itemApiName).iconUrl
+      }));
+      return {
+        optionId: `${apiName}:build:${optionHash}`,
+        rank: index + 1,
+        role: index === 0
+          ? (firstIsStable ? "stable" : "best_available")
+          : "alternative",
+        items,
+        knowledgeSignals: evaluateBuildKnowledgeSignals(items),
+        metrics: {
+          samples: Number(build.stats?.games ?? 0),
+          averagePlacement: build.stats?.avgPlacement ?? null,
+          top4Rate: build.stats?.top4Rate ?? null,
+          winRate: build.stats?.winRate ?? null
+        },
+        ranking: {
+          strategy: "robust_applicability_v3",
+          score: Number(build.ranking?.score ?? 0),
+          reasonCodes: [
+            build.ranking?.generalRecommendation ? "coverage_adjusted_score" : "robust_score",
+            Number(build.stats?.games ?? 0) >= stableThreshold
+              ? "stable_sample_floor_met"
+              : "below_stable_sample_floor"
+          ]
+        },
+        evidenceId: `unit-build-option:${optionHash}`,
+        evidencePath: `/results/${entityIndex}/buildOptions/${index}`
+      };
+    });
+    const lockedItemSet = new Set(constraints.lockedItems.map(String));
+    const coreFrequency = summarizeCoreItemFrequency(buildOptions);
+    const coreItemSummary = {
+      rule: "visible_build_frequency_2_of_3",
+      recommendationCount: coreFrequency.recommendationCount,
+      requiredAppearances: coreFrequency.requiredAppearances,
+      items: coreFrequency.coreItems
+        .filter((item) => !lockedItemSet.has(item.apiName))
+        .map((item) => ({
+          ...(typeof item.item === "object" && item.item ? item.item : { apiName: item.apiName }),
+          apiName: item.apiName,
+          appearances: item.appearances,
+          recommendationCount: item.recommendationCount,
+          appearanceRate: Number(item.appearanceRate.toFixed(3))
+        }))
+    };
+    const shortageReason = constraints.applied
+      && eligibleBeforeConstraints.builds.length > 0
+      && unthresholded.builds.length === 0
+      ? "constraint_no_matching_builds"
+      : buildOptions.length > 0 && !firstIsStable
+      ? "no_stable_option"
+      : buildOptions.length >= optionsPerUnit
+        ? null
+        : rawDistinctKeys.size >= optionsPerUnit
+          ? "insufficient_samples"
+          : "insufficient_distinct_builds";
+    const mechanismQueryPlan = selectDifferentiatingItems(buildOptions, { limit: 4 });
+    const best = distinct[0] ?? null;
+    const updatedAt = response?.provenance?.fetchedAt ?? new Date().toISOString();
+    const constraintAudit = {
+      schemaVersion: "unit-build-batch-constraint-audit.v1",
+      applicationMode: constraints.applicationMode,
+      lockedItems: [...constraints.lockedItems],
+      excludedItems: [...constraints.excludedItems],
+      sourceRowCount: rows.length,
+      eligibleBeforeConstraints: eligibleBeforeConstraints.builds.length,
+      eligibleAfterConstraints: unthresholded.builds.length,
+      changedEligibleRowSet: constraints.applied
+        ? eligibleBeforeConstraints.builds.length !== unthresholded.builds.length
+        : false,
+      appliedBeforeRanking: true
+    };
+    return {
+      sourceState: {
+        cache: cacheState,
+        updatedAt: cacheState.updatedAt ?? updatedAt,
+        warnings: [...(filtered.warnings ?? []), ...cacheWarnings]
+      },
+      result: {
+        schemaVersion: "unit-build-options.v2",
+        unit: { apiName, displayName: name },
+        apiName,
+        name,
+        starLevel: [...query.starLevel],
+        buildOptions,
+        requestedOptionCount: optionsPerUnit,
+        availableOptionCount: buildOptions.length,
+        shortageReason,
+        constraintAudit,
+        mechanismQueryPlan,
+        coreItemSummary,
+        bestBuild: best?.items ?? [],
+        stats: best?.stats ?? null,
+        games: Number(best?.stats?.games ?? 0),
+        top4Rate: best?.stats?.top4Rate ?? null,
+        winRate: best?.stats?.winRate ?? null,
+        avgPlacement: best?.stats?.avgPlacement ?? null,
+        available: Boolean(best)
+      }
+    };
+  };
+
+  const results = [];
+  const sourceStates = [];
+  const settled = await Promise.allSettled(entities.map(loadBuild));
+  settled.forEach((entry, index) => {
+    const entity = entities[index] ?? {};
+    const apiName = String(entity.apiName ?? "");
+    const name = entity.name ?? unitName(apiName, catalog);
+    if (entry.status === "fulfilled" && entry.value) {
+      sourceStates.push(entry.value.sourceState);
+      results.push(entry.value.result);
+      return;
+    }
+    const reason = entry.status === "rejected" ? entry.reason : "empty entity";
+    const warning = `${name} build statistics are unavailable: ${reason?.message ?? String(reason)}`;
+    sourceStates.push({ cache: null, updatedAt: null, warnings: [warning] });
+    if (apiName) {
+      results.push({
+        schemaVersion: "unit-build-options.v2",
+        unit: { apiName, displayName: name },
+        apiName,
+        name,
+        starLevel: [...(entityStarLevels[index]?.starLevel ?? [2])],
+        buildOptions: [],
+        requestedOptionCount: optionsPerUnit,
+        availableOptionCount: 0,
+        shortageReason: "insufficient_distinct_builds",
+        constraintAudit: {
+          schemaVersion: "unit-build-batch-constraint-audit.v1",
+          applicationMode: constraints.applicationMode,
+          lockedItems: [...constraints.lockedItems],
+          excludedItems: [...constraints.excludedItems],
+          sourceRowCount: null,
+          eligibleBeforeConstraints: null,
+          eligibleAfterConstraints: null,
+          changedEligibleRowSet: null,
+          appliedBeforeRanking: true
+        },
+        bestBuild: [],
+        stats: null,
+        games: 0,
+        top4Rate: null,
+        winRate: null,
+        avgPlacement: null,
+        available: false,
+        warning
+      });
+    }
+  });
+  const availableResults = results.filter((entry) => entry.available);
+  const unavailableResults = results.filter((entry) => !entry.available);
+  const stale = sourceStates.some((entry) => entry.cache?.stale === true);
+  const cached = stale || sourceStates.some((entry) => entry.cache?.hit === true);
+  const updatedAt = sourceStates.map((entry) => entry.updatedAt).filter(Boolean).sort().at(-1)
+    ?? new Date().toISOString();
+  const itemContentionPlan = toolInput.compositionId
+    ? detectItemContention(results, {
+      compositionId: toolInput.compositionId,
+      limit: 4
+    })
+    : null;
+  const queryStarLevel = [...new Set(entityStarLevels.flatMap((entity) => entity.starLevel))].sort();
+  const queryPatch = toolInput.patch ?? preferences.unitBuildPatch ?? preferences.patch ?? DEFAULT_QUERY_OPTIONS.patch;
+  const effectiveQueryPatch = seasonContext.currentPatch
+    ?? runtime.patchState?.currentPatch
+    ?? seasonContext.effectivePatch
+    ?? queryPatch;
+  const queryQueue = toolInput.queue ?? preferences.queue ?? DEFAULT_QUERY_OPTIONS.queue;
+  const queryRank = toolInput.rank ?? preferences.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter;
+  const queryDays = toolInput.days ?? preferences.days ?? DEFAULT_QUERY_OPTIONS.days;
+  const queryMinSamples = toolInput.minSamples ?? 0;
+  const queryProvenance = {
+    schemaVersion: "unit-builds-batch-query.v1",
+    compositionId: toolInput.compositionId ?? null,
+    entities: entities.map((entity) => ({
+      apiName: String(entity.apiName ?? ""),
+      name: entity.name ?? unitName(String(entity.apiName ?? ""), catalog)
+    })),
+    optionsPerUnit,
+    unit: entities.length === 1 ? String(entities[0]?.apiName ?? "") : null,
+    unitName: entities.length === 1
+      ? entities[0]?.name ?? unitName(String(entities[0]?.apiName ?? ""), catalog)
+      : null,
+    starLevel: queryStarLevel,
+    entityStarLevels: entityStarLevels.map((entity) => ({
+      apiName: entity.apiName,
+      name: entity.name,
+      starLevel: [...entity.starLevel]
+    })),
+    itemCount: 3,
+    itemPolicy: "ordinary_only",
+    constraints: {
+      schemaVersion: constraints.schemaVersion,
+      lockedItems: [...constraints.lockedItems],
+      excludedItems: [...constraints.excludedItems],
+      unit: {
+        value: entities.length === 1
+          ? String(entities[0]?.apiName ?? "")
+          : entities.map((entity) => String(entity.apiName ?? "")),
+        source: "current_input",
+        confidence: 1
+      },
+      season_context: { value: seasonContext.id, source: "system_default", confidence: 1 },
+      patch: {
+        value: effectiveQueryPatch,
+        source: toolInput.patch !== undefined
+          ? "current_input"
+          : preferences.unitBuildPatch !== undefined || preferences.patch !== undefined
+            ? "preference"
+            : "system_default",
+        confidence: 1
+      },
+      queue: {
+        value: queryQueue,
+        source: toolInput.queue !== undefined ? "current_input" : preferences.queue !== undefined ? "preference" : "system_default",
+        confidence: 1
+      },
+      star_level: {
+        value: queryStarLevel,
+        source: explicitStarLevels.length ? "current_input" : "system_default",
+        confidence: 1
+      },
+      item_count: { value: 3, source: "system_default", confidence: 1 },
+      item_policy: { value: "ordinary_only", source: "system_default", confidence: 1 },
+      rank_filter: {
+        value: queryRank,
+        source: toolInput.rank !== undefined ? "current_input" : preferences.rankFilter !== undefined ? "preference" : "system_default",
+        confidence: 1
+      },
+      days: {
+        value: queryDays,
+        source: toolInput.days !== undefined ? "current_input" : preferences.days !== undefined ? "preference" : "system_default",
+        confidence: 1
+      },
+      owned_items: {
+        value: [...constraints.lockedItems],
+        source: constraints.lockedItems.length ? "current_input" : "system_default",
+        confidence: 1
+      },
+      excluded_items: {
+        value: [...constraints.excludedItems],
+        source: constraints.excludedItems.length ? "current_input" : "system_default",
+        confidence: 1
+      },
+      min_samples: {
+        value: queryMinSamples,
+        source: toolInput.minSamples !== undefined ? "current_input" : "system_default",
+        confidence: 1
+      }
+    },
+    seasonContextId: seasonContext.id,
+    patch: queryPatch,
+    effectivePatch: effectiveQueryPatch,
+    queue: queryQueue,
+    rank: queryRank,
+    rankFilter: queryRank,
+    days: queryDays,
+    minSamples: queryMinSamples
+  };
+  const constraintQueryFingerprint = createHash("sha256")
+    .update(JSON.stringify(queryProvenance))
+    .digest("hex");
+  return {
+    type: "unit_builds_batch_results",
+    source: {
+      provider: "MetaTFT",
+      endpoint: "tft-explorer-api/unit_builds (batch)",
+      updatedAt,
+      cache: stale ? "stale" : cached ? "cache" : "live",
+      constraintApplication: constraints.applicationMode,
+      risks: [...new Set(sourceStates.flatMap((entry) => entry.warnings))]
+    },
+    updatedAt,
+    seasonContextId: seasonContext.id,
+    query: queryProvenance,
+    constraints,
+    constraintQueryFingerprint,
+    results,
+    ...(itemContentionPlan ? { itemContentionPlan } : {}),
+    text: availableResults.length
+      ? `Build statistics loaded for ${availableResults.map((entry) => entry.name).join(", ")}.${unavailableResults.length ? ` Unavailable: ${unavailableResults.map((entry) => entry.name).join(", ")}.` : ""}`
+      : "Build statistics are currently unavailable for the requested units."
   };
 }
 
@@ -2996,10 +3816,61 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ?? deterministicControlledPlanner;
   const controlledPlannerFallback = options.controlledPlannerFallback
     ?? (controlledPlanner?.plannerKind === "llm" ? deterministicControlledPlanner : null);
+  const reactDecisionProvider = options.reactDecisionProvider
+    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+      ? createReactDecisionProvider({
+        ...structuredParserRuntime.structuredParserConfig,
+        timeoutMs: options.reactDecisionTimeoutMs
+          ?? env.TFT_AGENT_REACT_DECISION_TIMEOUT_MS
+          ?? 25_000,
+        thinkingMode: options.reactDecisionThinkingMode ?? "disabled",
+        maxTokens: options.reactDecisionMaxTokens ?? 1800,
+        fetchImpl: options.reactDecisionFetch ?? options.structuredParserFetch ?? options.llmFetch,
+        onRequestLog: options.reactDecisionRequestLog
+          ?? options.structuredParserRequestLog
+          ?? options.llmRequestLog
+      })
+      : null);
+  const quickTaskSupplementalClassifier = options.quickTaskSupplementalClassifier
+    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+      ? createQuickTaskSupplementalClassifierProvider({
+        ...structuredParserRuntime.structuredParserConfig,
+        thinkingMode: options.quickTaskSupplementalThinkingMode ?? "disabled",
+        maxTokens: options.quickTaskSupplementalMaxTokens ?? 180,
+        fetchImpl: options.quickTaskSupplementalFetch
+          ?? options.structuredParserFetch
+          ?? options.llmFetch
+      })
+      : null);
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
   const coachRuntime = createSmallWindowCoachRuntime(options, env);
   const mechanismClassificationRuntime = createSmallWindowMechanismClassificationRuntime(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
+  const conversationBridgeMode = String(
+    options.conversationBridgeMode
+      ?? env.TFT_AGENT_CONVERSATION_BRIDGE_MODE
+      ?? "off"
+  ).trim().toLowerCase();
+  const conversationBridgeEnabled = ["1", "true", "on", "enabled"].includes(conversationBridgeMode);
+  const reactChatMode = String(
+    options.reactChatMode
+      ?? env.TFT_AGENT_REACT_CHAT_MODE
+      ?? "off"
+  ).trim().toLowerCase();
+  const acceptanceMode = ["1", "true", "on", "enabled"].includes(String(
+    options.acceptanceMode ?? env.TFT_AGENT_ACCEPTANCE_MODE ?? "off"
+  ).trim().toLowerCase());
+  const conversationBridgeStore = options.conversationBridgeStore ?? (
+    conversationBridgeEnabled
+      ? await SQLiteConversationBridgeStore.open({
+        filePath: resolve(String(
+          options.conversationBridgePath
+            ?? env.TFT_AGENT_CONVERSATION_BRIDGE_PATH
+            ?? DEFAULT_CONVERSATION_BRIDGE_PATH
+        ))
+      })
+      : null
+  );
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options, env);
   const storageRequested = Boolean(options.storageRuntime
     || options.persistentStore
@@ -3037,10 +3908,22 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     turnDeltaProvider,
     controlledPlanner,
     controlledPlannerFallback,
+    reactDecisionProvider,
+    quickTaskSupplementalClassifier,
     ...conclusionRuntime,
     ...coachRuntime,
     ...mechanismClassificationRuntime,
     ...semanticRuntime,
+    conversationBridgeMode,
+    conversationBridgeStore,
+    reactChatMode,
+    acceptanceMode,
+    reactChatBudget: {
+      ...(options.reactChatBudget ?? {}),
+      ...(env.TFT_AGENT_REACT_DEADLINE_MS
+        ? { deadlineMs: Number(env.TFT_AGENT_REACT_DEADLINE_MS) }
+        : {})
+    },
     ...(storageRuntime ? {
       storageRuntime,
       cacheStore: storageRuntime.store,
@@ -4029,6 +4912,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const startedAt = Date.now();
   const displayInput = String(body?.input ?? "").trim();
   const quickTask = normalizeQuickTask(body?.quickTask);
+  const supplementalText = String(body?.supplementalText ?? "").normalize("NFKC").trim().slice(0, 1200);
   const input = quickTask ? quickTaskExecutionInput(quickTask) : displayInput;
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
   const scope = context.visitor?.scope ?? null;
@@ -4079,6 +4963,12 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       ),
       mechanismClassificationProvider: quotaWrappedCallable(
         runtime.mechanismClassificationProvider,
+        context.accessService,
+        context.visitor,
+        reserveLlmUseForRequest
+      ),
+      quickTaskSupplementalClassifier: quotaWrappedCallable(
+        runtime.quickTaskSupplementalClassifier,
         context.accessService,
         context.visitor,
         reserveLlmUseForRequest
@@ -4140,6 +5030,19 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     };
   }
   const publicSeasonContext = runtime.seasonContextService.publicRecord(seasonContext);
+  const supplemental = quickTask
+    ? await classifyQuickTaskSupplement({
+      quickTask,
+      originalInput: displayInput,
+      supplementalText
+    }, {
+      classifier: requestRuntime.quickTaskSupplementalClassifier,
+      timeoutMs: requestRuntime.quickTaskSupplementalTimeoutMs,
+      signal: context.signal
+    })
+    : null;
+  const quickTaskBridgeReservation = context.quickTaskBridgeReservation ?? null;
+  let quickTaskBridgeWarning = context.quickTaskBridgeWarning ?? null;
 
   const completeResponse = async (payload) => {
     const respond = async () => {
@@ -4158,9 +5061,53 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
           schemaVersion: quickTask.schemaVersion,
           id: quickTask.id,
           operation: quickTask.operation,
+          requestId: quickTask.requestId,
           arguments: quickTask.arguments,
-          executionMode: "structured"
+          executionMode: "structured",
+          supplemental: supplemental ? {
+            ...supplemental.classification,
+            source: supplemental.source,
+            modelCalls: supplemental.modelCalls,
+            deferred: supplemental.classification.relation === "new_tool_task"
+          } : null
         };
+        if (quickTaskBridgeReservation && requestRuntime.conversationBridgeStore) {
+          try {
+            const committed = await requestRuntime.conversationBridgeStore.commitQuickTask({
+              scopeKey: String(scope ?? "local"),
+              conversationId,
+              requestId: quickTask.requestId,
+              quickTask,
+              userPurpose: displayInput,
+              supplementalClassification: supplemental?.classification ?? null,
+              payload,
+              seasonContextId: seasonContext.id
+            });
+            payload.conversationBridge = {
+              status: "saved",
+              recordId: committed.record.recordId,
+              snapshotId: committed.snapshot.snapshotId,
+              turnOrdinal: committed.record.turnOrdinal,
+              contextEpoch: committed.record.contextEpoch,
+              replay: committed.replay === true
+            };
+          } catch {
+            quickTaskBridgeWarning = "conversation_bridge_write_failed";
+          }
+        }
+        if (quickTaskBridgeWarning) {
+          payload.warnings = [...new Set([...(Array.isArray(payload.warnings) ? payload.warnings : []), quickTaskBridgeWarning])];
+          payload.conversationBridge = {
+            status: "not_saved",
+            warning: quickTaskBridgeWarning
+          };
+        }
+        if (supplemental?.warning) {
+          payload.warnings = [...new Set([
+            ...(Array.isArray(payload.warnings) ? payload.warnings : []),
+            supplemental.warning
+          ])];
+        }
       }
       const llmActivity = llmActivityForPayload(payload, runtime);
       payload.meta ??= {};
@@ -4538,23 +5485,21 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const previousSessionEntry = requestRuntime.conclusionGeneratorConfig?.enabled && preferences.conclusionMode !== "off"
     ? await runtime.cacheStore?.getSessionState?.(sessionKey, { seasonContextId: seasonContext.id })
     : null;
-  const agentToolHandlers = {
-    entity_catalog_query: async (toolInput) => {
-      const details = await loadOfficialEntityDetails(requestRuntime);
-      return queryEntityCatalog({
-        catalog,
-        details,
-        input: toolInput,
-        updatedAt: details?.meta?.updatedAt
-      });
-    },
-    composition_member_statistics: (toolInput) => queryCompositionMemberStatistics(
+  const { handlers: agentToolHandlers } = createTftToolHandlers({
+    registry: requestRuntime.toolRegistry,
+    catalog,
+    seasonContext,
+    preferences,
+    compsData,
+    queryEntityCatalog,
+    loadOfficialEntityDetails: () => loadOfficialEntityDetails(requestRuntime),
+    queryCompositionMemberStatistics: (toolInput) => queryCompositionMemberStatistics(
       toolInput,
       catalog,
       requestRuntime,
       { preferences, compsData }
     ),
-    unit_builds_batch: async (toolInput) => {
+    queryUnitBuildsBatch: async (toolInput) => {
       const entities = (toolInput.entities ?? []).slice(0, 5);
       const results = [];
       const sourceStates = [];
@@ -4678,7 +5623,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         text
       };
     }
-  };
+  });
   const quickCachePolicy = quickTask ? quickTaskCachePolicy(quickTask, seasonContext) : null;
   const recommendationOptions = {
     catalog,
@@ -5019,9 +5964,120 @@ function classifyAgentHttpResult(value) {
   return "completed";
 }
 
-export async function handleRecommendRequest(body, runtime, context = {}) {
+function quickTaskBridgeTerminal(error, signal) {
+  const code = String(error?.code ?? "");
+  const message = String(error?.message ?? "");
+  if (signal?.aborted || code === "run_cancelled" || error?.name === "AbortError") {
+    return {
+      status: "cancelled",
+      warning: "quick_task_cancelled",
+      failureCode: code || "request_cancelled"
+    };
+  }
+  if (code === "run_timed_out" || /timed?\s*out|deadline/iu.test(message)) {
+    return {
+      status: "failed",
+      warning: "quick_task_timeout",
+      failureCode: code || "request_timed_out"
+    };
+  }
+  return {
+    status: "failed",
+    warning: "quick_task_failed",
+    failureCode: code || "quick_task_failed"
+  };
+}
+
+async function prepareQuickTaskBridgeLifecycle(body, runtime, context, quickTask) {
+  const store = runtime.conversationBridgeStore;
+  if (!quickTask || !store) return { prepared: true, reservation: null, warning: null };
+  const scopeKey = String(context.visitor?.scope ?? "local");
+  const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
+  const seasonContext = runtime.seasonContextService.resolveForQuery(body?.seasonContextId);
   try {
-    normalizeQuickTask(body?.quickTask);
+    const reservation = await store.reserveQuickTask({
+      scopeKey,
+      conversationId,
+      requestId: quickTask.requestId,
+      quickTask,
+      seasonContextId: seasonContext.id,
+      startNewTask: body.startNewTask === true,
+      deadlineMs: Number(runtime.agentRuntime?.budget?.deadlineMs ?? 30_000)
+    });
+    if (reservation.replay) {
+      if (reservation.status === "completed" && reservation.response) {
+        const payload = structuredClone(reservation.response);
+        payload.conversationBridge = {
+          status: "saved",
+          recordId: reservation.record?.recordId ?? null,
+          snapshotId: reservation.snapshot?.snapshotId ?? null,
+          turnOrdinal: reservation.turnOrdinal,
+          contextEpoch: reservation.contextEpoch,
+          replay: true
+        };
+        return {
+          prepared: true,
+          replayResponse: { statusCode: 200, payload },
+          reservation,
+          warning: null
+        };
+      }
+      return {
+        prepared: true,
+        replayResponse: {
+          statusCode: 409,
+          payload: {
+            ok: false,
+            code: "conversation_bridge_request_terminal",
+            error: `quickTask request is already ${reservation.status}`,
+            quickTask: { requestId: quickTask.requestId, status: reservation.status }
+          }
+        },
+        reservation,
+        warning: null
+      };
+    }
+    if (typeof store.startQuickTask === "function") {
+      await store.startQuickTask({ scopeKey, conversationId, requestId: quickTask.requestId });
+    }
+    return { prepared: true, reservation, warning: null, scopeKey, conversationId, quickTask };
+  } catch (error) {
+    if ([
+      "conversation_bridge_idempotency_conflict",
+      "conversation_bridge_quick_task_in_progress"
+    ].includes(error?.code)) {
+      return {
+        prepared: true,
+        replayResponse: {
+          statusCode: error.statusCode ?? 409,
+          payload: { ok: false, code: error.code, error: error.message }
+        },
+        reservation: null,
+        warning: null
+      };
+    }
+    return { prepared: true, reservation: null, warning: "conversation_bridge_write_failed" };
+  }
+}
+
+async function finalizeQuickTaskBridgeLifecycle(lifecycle, runtime, body, terminal) {
+  if (!lifecycle?.reservation || lifecycle.reservation.replay) return null;
+  const store = runtime.conversationBridgeStore;
+  if (typeof store?.finalizeQuickTask !== "function") return null;
+  return store.finalizeQuickTask({
+    scopeKey: lifecycle.scopeKey,
+    conversationId: lifecycle.conversationId,
+    requestId: lifecycle.quickTask.requestId,
+    quickTask: lifecycle.quickTask,
+    userPurpose: String(body?.input ?? ""),
+    ...terminal
+  });
+}
+
+export async function handleRecommendRequest(body, runtime, context = {}) {
+  let quickTask;
+  try {
+    quickTask = normalizeQuickTask(body?.quickTask);
   } catch (error) {
     return {
       statusCode: error.statusCode ?? 400,
@@ -5032,47 +6088,116 @@ export async function handleRecommendRequest(body, runtime, context = {}) {
       }
     };
   }
-  if (context.agentRun || !runtime.agentRuntime) {
-    return handleRecommendRequestInternal(body, runtime, context);
-  }
-  const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
-  const seasonRunDeadlineMs = Number(
-    runtime.seasonContextService.get(body?.seasonContextId)?.source?.requestDeadlineMs
+  const bridgeLifecycle = context.quickTaskBridgeLifecycle ?? await prepareQuickTaskBridgeLifecycle(
+    body,
+    runtime,
+    context,
+    quickTask
   );
-  const mechanismRunDeadlineMs = parseMechanismClassificationQuery(body?.input)
-    ? Math.min(
-      120000,
-      Number(runtime.mechanismClassificationConfig?.timeoutMs ?? 90000) + 15000
-    )
-    : 0;
-  const requestedRunDeadlineMs = Math.max(
-    Number.isFinite(seasonRunDeadlineMs) ? seasonRunDeadlineMs : 0,
-    Number.isFinite(mechanismRunDeadlineMs) ? mechanismRunDeadlineMs : 0
-  );
-  const execution = await runtime.agentRuntime.run({
-    conversationId,
-    principalId: context.visitor?.scope ?? "anonymous",
-    seasonContextId: body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID
-  }, async (agentRun) => {
-    return handleRecommendRequestInternal(body, runtime, {
-      ...context,
-      agentRun,
-      signal: context.signal
+  if (bridgeLifecycle.replayResponse) return bridgeLifecycle.replayResponse;
+  const bridgeContext = {
+    ...context,
+    quickTaskBridgeLifecycle: bridgeLifecycle,
+    quickTaskBridgeReservation: bridgeLifecycle.reservation,
+    quickTaskBridgeWarning: bridgeLifecycle.warning
+  };
+  const execute = async () => {
+    if (context.agentRun || !runtime.agentRuntime) {
+      return handleRecommendRequestInternal(body, runtime, bridgeContext);
+    }
+    const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
+    const seasonRunDeadlineMs = Number(
+      runtime.seasonContextService.get(body?.seasonContextId)?.source?.requestDeadlineMs
+    );
+    const mechanismRunDeadlineMs = parseMechanismClassificationQuery(body?.input)
+      ? Math.min(
+        120000,
+        Number(runtime.mechanismClassificationConfig?.timeoutMs ?? 90000) + 15000
+      )
+      : 0;
+    const requestedRunDeadlineMs = Math.max(
+      Number.isFinite(seasonRunDeadlineMs) ? seasonRunDeadlineMs : 0,
+      Number.isFinite(mechanismRunDeadlineMs) ? mechanismRunDeadlineMs : 0
+    );
+    const execution = await runtime.agentRuntime.run({
+      conversationId,
+      principalId: context.visitor?.scope ?? "anonymous",
+      seasonContextId: body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID
+    }, async (agentRun) => {
+      return handleRecommendRequestInternal(body, runtime, {
+        ...bridgeContext,
+        agentRun,
+        signal: context.signal
+      });
+    }, {
+      signal: context.signal,
+      classifyResult: classifyAgentHttpResult,
+      ...(requestedRunDeadlineMs > runtime.agentRuntime.budget.deadlineMs
+        ? { budget: { deadlineMs: requestedRunDeadlineMs } }
+        : {})
     });
-  }, {
-    signal: context.signal,
-    classifyResult: classifyAgentHttpResult,
-    ...(requestedRunDeadlineMs > runtime.agentRuntime.budget.deadlineMs
-      ? { budget: { deadlineMs: requestedRunDeadlineMs } }
-      : {})
-  });
-  if (execution.value?.payload) execution.value.payload.run = execution.publicRun;
-  return execution.value;
+    if (execution.value?.payload) execution.value.payload.run = execution.publicRun;
+    return execution.value;
+  };
+  try {
+    const response = await execute();
+    if (
+      bridgeLifecycle.reservation
+      && response?.payload?.conversationBridge?.status !== "saved"
+    ) {
+      const terminal = quickTaskBridgeTerminal(
+        Object.assign(new Error(response?.payload?.error ?? "quickTask failed"), {
+          code: response?.payload?.code
+        }),
+        context.signal
+      );
+      try {
+        await finalizeQuickTaskBridgeLifecycle(bridgeLifecycle, runtime, body, terminal);
+      } catch {
+        response.payload ??= { ok: false };
+        response.payload.warnings = [...new Set([
+          ...(response.payload.warnings ?? []),
+          "conversation_bridge_write_failed"
+        ])];
+      }
+      if (terminal.warning === "quick_task_timeout") {
+        response.payload.warnings = [...new Set([...(response.payload.warnings ?? []), terminal.warning])];
+      }
+    }
+    return response;
+  } catch (error) {
+    const terminal = quickTaskBridgeTerminal(error, context.signal);
+    try {
+      await finalizeQuickTaskBridgeLifecycle(bridgeLifecycle, runtime, body, terminal);
+    } catch {
+      // The original execution error remains authoritative.
+    }
+    if (bridgeLifecycle.reservation) {
+      return {
+        statusCode: terminal.status === "cancelled" ? 408 : Number(error?.statusCode ?? 500),
+        payload: {
+          ok: false,
+          code: terminal.failureCode,
+          error: String(error?.publicMessage ?? error?.message ?? "quickTask failed").slice(0, 500),
+          warnings: [terminal.warning]
+        }
+      };
+    }
+    throw error;
+  }
 }
 
 export async function streamRecommendResponse(req, res, body, runtime, context = {}) {
   let sequence = 0;
   beginNdjson(res);
+  writeNdjson(res, {
+    type: "diagnostic",
+    endpointMode: "recommend",
+    bridgeMode: runtime.conversationBridgeStore ? runtime.conversationBridgeMode : "off",
+    requestId: String(body?.quickTask?.requestId ?? body?.requestId ?? "unknown"),
+    conversationId: String(body?.conversationId ?? body?.conversation_id ?? "default"),
+    seasonContextId: String(body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID)
+  });
   const writeProgress = (event) => {
     sequence += 1;
     writeNdjson(res, {
@@ -5104,6 +6229,362 @@ export async function streamRecommendResponse(req, res, body, runtime, context =
       statusCode: Number(error?.statusCode ?? 500),
       error: String(error?.message ?? "recommendation stream failed").slice(0, 500)
     });
+  }
+  res.end();
+}
+
+function normalizeReactChatMessages(value) {
+  if (value === undefined) return [];
+  if (!Array.isArray(value)) {
+    throw Object.assign(new TypeError("messages must be an array"), {
+      statusCode: 400,
+      code: "invalid_react_chat_request"
+    });
+  }
+  if (value.length > 20) {
+    throw Object.assign(new TypeError("messages must contain at most 20 entries"), {
+      statusCode: 400,
+      code: "invalid_react_chat_request"
+    });
+  }
+  return value.map((message) => {
+    const role = String(message?.role ?? "");
+    const content = String(message?.content ?? "").trim();
+    if (!["user", "assistant"].includes(role) || !content || content.length > 8000) {
+      throw Object.assign(new TypeError("each message requires a valid role and content"), {
+        statusCode: 400,
+        code: "invalid_react_chat_request"
+      });
+    }
+    return { role, content };
+  });
+}
+
+function normalizeReactChatRequest(body = {}) {
+  const input = String(body.input ?? "").trim();
+  if (!input || input.length > 8000) {
+    throw Object.assign(new TypeError("input must contain between 1 and 8000 characters"), {
+      statusCode: 400,
+      code: "invalid_react_chat_request"
+    });
+  }
+  return {
+    input,
+    conversationId: String(body.conversationId ?? body.conversation_id ?? "default").trim() || "default",
+    seasonContextId: String(body.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID),
+    startNewTask: body.startNewTask === true,
+    messages: normalizeReactChatMessages(body.messages),
+    taskAnchor: body.taskAnchor && typeof body.taskAnchor === "object"
+      ? structuredClone(body.taskAnchor)
+      : null
+  };
+}
+
+export async function createDefaultReactToolHandlerBundle({ request, runtime, context = {} }) {
+  const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
+  const scope = context.visitor?.scope ?? null;
+  const storedPreferences = await loadStoredSmallWindowPreferences(runtime, scope);
+  const preferences = {
+    ...completeSmallWindowPreferences(preferenceOverrides(storedPreferences)),
+    ...entityCatalogPreferences(runtime, seasonContext)
+  };
+  let resourcesPromise = null;
+  const resources = () => {
+    resourcesPromise ??= loadRuntimeCatalog(runtime, preferences);
+    return resourcesPromise;
+  };
+  const handlers = {};
+
+  if (typeof runtime.fetchOfficialEntityDetails === "function") {
+    handlers.entity_catalog_query = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      const details = loaded.entityDetails ?? await loadOfficialEntityDetails(runtime, {
+        signal: toolContext.signal
+      });
+      toolContext.signal?.throwIfAborted?.();
+      return queryEntityCatalog({
+        catalog: loaded.catalog,
+        details,
+        input,
+        updatedAt: details?.meta?.updatedAt
+      });
+    };
+  }
+
+  if (
+    typeof runtime.compsClient?.getCompsData === "function"
+    && typeof runtime.compsClient?.getCompsStats === "function"
+    && typeof runtime.fetchOfficialEntityDetails === "function"
+  ) {
+    handlers.comps_rankings = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      return queryCompositionRankings(input, loaded.catalog, runtime, {
+        preferences,
+        seasonContext,
+        details: loaded.entityDetails,
+        signal: toolContext.signal
+      });
+    };
+    if (
+      typeof runtime.compsClient?.getCompDetails === "function"
+      && typeof runtime.compsClient?.getCompAugmentTiers === "function"
+    ) {
+      handlers.composition_tactical_details = async (input, toolContext = {}) => {
+        toolContext.signal?.throwIfAborted?.();
+        const detail = await handleCompDetailRequest({
+          compId: input.compositionId,
+          clusterId: input.clusterId,
+          units: input.units,
+          seasonContextId: input.seasonContextId
+        }, runtime);
+        toolContext.signal?.throwIfAborted?.();
+        return {
+          ...detail,
+          type: "composition_tactical_details",
+          compositionRef: {
+            compId: input.compositionId,
+            clusterId: input.clusterId
+          }
+        };
+      };
+    }
+    handlers.composition_replacement_evaluation = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      return queryCompositionReplacementEvaluation(input, loaded.catalog, runtime, {
+        preferences,
+        seasonContext,
+        details: loaded.entityDetails,
+        signal: toolContext.signal
+      });
+    };
+    handlers.composition_change_evaluation = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      return queryCompositionChangeEvaluation(input, loaded.catalog, runtime, {
+        preferences,
+        seasonContext,
+        details: loaded.entityDetails,
+        signal: toolContext.signal
+      });
+    };
+    handlers.composition_member_statistics = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      return queryCompositionMemberStatistics(input, loaded.catalog, runtime, {
+        preferences,
+        signal: toolContext.signal
+      });
+    };
+  }
+
+  if (typeof runtime.metaTFTClient?.getUnitBuilds === "function") {
+    handlers.unit_builds_batch = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      return queryUnitBuildsBatchStatistics(input, loaded.catalog, runtime, {
+        preferences,
+        seasonContext,
+        signal: toolContext.signal
+      });
+    };
+  }
+
+  return createTftToolHandlers({
+    registry: runtime.toolRegistry,
+    handlers,
+    seasonContext,
+    seasonContextId: seasonContext.id,
+    locale: runtime.semanticConfig?.locale ?? "zh-CN",
+    loadOfficialEntityDetails: (toolContext = {}) => loadOfficialEntityDetails(runtime, {
+      signal: toolContext.signal
+    }),
+    loadOfficialItemDetails: (toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      return loadOfficialItemDetails(runtime);
+    },
+    knowledgeSearch: runtime.semanticRetriever?.search
+      ? (input, toolContext = {}) => {
+        toolContext.signal?.throwIfAborted?.();
+        const knowledgeRetriever = new KnowledgeRetriever({ retriever: runtime.semanticRetriever });
+        return knowledgeRetriever.searchEvidence(input.query, {
+          documentTypes: input.documentTypes,
+          seasonContextId: seasonContext.id,
+          patch: input.patch ?? seasonContext.currentPatch ?? seasonContext.effectivePatch,
+          locale: input.locale ?? runtime.semanticConfig?.locale ?? "zh-CN",
+          topK: Math.max(1, Math.min(6, Number(input.topK ?? 4))),
+          minimumScore: 0.1
+        });
+      }
+      : null
+  });
+}
+
+export async function handleReactChatRequest(body, runtime, context = {}) {
+  const request = normalizeReactChatRequest(body);
+  if (typeof runtime.reactDecisionProvider !== "function") {
+    return {
+      statusCode: 503,
+      payload: {
+        ok: false,
+        code: "react_chat_unavailable",
+        error: "ReAct chat decision provider is not configured"
+      }
+    };
+  }
+  const bridgeScopeKey = String(context.visitor?.scope ?? "local");
+  let bridgeContext = null;
+  let loadedBridgeState = null;
+  if (runtime.conversationBridgeStore) {
+    try {
+      await runtime.conversationBridgeStore.advanceContextEpoch({
+        scopeKey: bridgeScopeKey,
+        conversationId: request.conversationId,
+        seasonContextId: request.seasonContextId,
+        startNewTask: request.startNewTask
+      });
+      loadedBridgeState = await runtime.conversationBridgeStore.load({
+        scopeKey: bridgeScopeKey,
+        conversationId: request.conversationId,
+        seasonContextId: request.seasonContextId
+      });
+      bridgeContext = buildConversationBridgeContextView(request.input, loadedBridgeState, {
+        scopeKey: bridgeScopeKey,
+        conversationId: request.conversationId,
+        seasonContextId: request.seasonContextId,
+        startNewTask: request.startNewTask
+      });
+    } catch {
+      bridgeContext = {
+        relation: "none",
+        view: null,
+        promotedEvidence: [],
+        estimatedTokens: 0,
+        warning: "conversation_bridge_read_failed",
+        ...(isHistoryDependentInput(request.input) ? {
+          requiredClarification: {
+            question: "我暂时无法读取刚才的快捷工具结果。请告诉我你指的是哪个结果或实体。",
+            missingFields: ["referenced_quick_tool_result"]
+          }
+        } : {})
+      };
+    }
+  }
+  const injectedHandlers = runtime.reactToolHandlers ?? {};
+  const handlerBundle = typeof runtime.createReactToolHandlers === "function"
+    ? await runtime.createReactToolHandlers({ request, runtime, context })
+    : Object.keys(injectedHandlers).length
+      ? createTftToolHandlers({ registry: runtime.toolRegistry, handlers: injectedHandlers })
+      : await createDefaultReactToolHandlerBundle({ request, runtime, context });
+  const agent = new ChatAgent({
+    registry: runtime.toolRegistry,
+    toolExecutor: runtime.toolExecutor,
+    decisionProvider: runtime.reactDecisionProvider,
+    handlers: handlerBundle.handlers ?? handlerBundle,
+    availableToolNames: handlerBundle.availableToolNames
+      ?? Object.keys(handlerBundle.handlers ?? handlerBundle),
+    agentRuntime: runtime.agentRuntime,
+    budget: runtime.reactChatBudget,
+    groundingMode: runtime.reactGroundingMode
+  });
+  try {
+    const result = hydrateReactResultKnowledgeSignals(await agent.chat({
+      ...request,
+      bridgeContext,
+      principalId: context.visitor?.scope ?? "anonymous"
+    }, {
+      signal: context.signal,
+      onEvent: context.onProgress,
+      budget: runtime.reactChatBudget,
+      groundingMode: runtime.reactGroundingMode
+    }));
+    if (runtime.conversationBridgeStore) {
+      try {
+        if (result.status === "clarification_required") {
+          await runtime.conversationBridgeStore.saveClarification({
+            scopeKey: bridgeScopeKey,
+            conversationId: request.conversationId,
+            seasonContextId: request.seasonContextId,
+            clarification: {
+              reason: result.terminationReason,
+              question: result.question,
+              missingFields: result.missingFields,
+              recordId: loadedBridgeState?.activeRecordId ?? null
+            }
+          });
+        } else if (loadedBridgeState?.pendingClarification) {
+          await runtime.conversationBridgeStore.saveClarification({
+            scopeKey: bridgeScopeKey,
+            conversationId: request.conversationId,
+            seasonContextId: request.seasonContextId,
+            clarification: null
+          });
+        }
+      } catch {
+        result.warnings = [...new Set([...(result.warnings ?? []), "conversation_bridge_write_failed"])];
+      }
+    }
+    return {
+      statusCode: 200,
+      payload: {
+        ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
+        type: "react_chat_result",
+        ...result,
+        ...(bridgeContext ? {
+          conversationBridge: {
+            relation: bridgeContext.relation,
+            relationSource: "deterministic",
+            estimatedTokens: bridgeContext.estimatedTokens,
+            promotedEvidenceCount: bridgeContext.promotedEvidence?.length ?? 0,
+            warning: bridgeContext.warning ?? null
+          }
+        } : {}),
+        unavailableTools: handlerBundle.unavailableTools ?? []
+      }
+    };
+  } catch (error) {
+    return {
+      statusCode: ["run_cancelled", "run_timed_out"].includes(error?.code) ? 408 : 500,
+      payload: {
+        ok: false,
+        type: "react_chat_error",
+        code: String(error?.code ?? "react_chat_failed"),
+        error: String(error?.publicMessage ?? error?.message ?? "ReAct chat failed").slice(0, 500),
+        run: error?.publicRun ?? null
+      }
+    };
+  }
+}
+
+export async function streamReactChatResponse(req, res, body, runtime, context = {}) {
+  beginNdjson(res);
+  writeNdjson(res, {
+    type: "diagnostic",
+    endpointMode: "react_chat",
+    bridgeMode: runtime.conversationBridgeStore ? runtime.conversationBridgeMode : "off",
+    requestId: String(body?.requestId ?? "unknown"),
+    conversationId: String(body?.conversationId ?? body?.conversation_id ?? "default"),
+    seasonContextId: String(body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID)
+  });
+  try {
+    const { statusCode, payload } = await handleReactChatRequest(body, runtime, {
+      ...context,
+      onProgress: (event) => writeNdjson(res, { type: "event", event })
+    });
+    if (!res.destroyed && !res.writableEnded) {
+      writeNdjson(res, { type: "complete", statusCode, payload });
+    }
+  } catch (error) {
+    if (!res.destroyed && !res.writableEnded) {
+      writeNdjson(res, {
+        type: "error",
+        statusCode: Number(error?.statusCode ?? 500),
+        code: String(error?.code ?? "react_chat_stream_failed"),
+        error: String(error?.message ?? "ReAct chat stream failed").slice(0, 500)
+      });
+    }
   }
   res.end();
 }
@@ -5222,6 +6703,46 @@ function compDetailUnitLabel(apiName, catalog) {
   return record?.zhName ?? record?.displayName ?? record?.name ?? apiName;
 }
 
+function compDetailBoardPosition(cell) {
+  const number = Number(cell);
+  if (!Number.isInteger(number) || number < 1 || number > 28) return null;
+  const rowFromFront = 4 - Math.floor((number - 1) / 7);
+  const columnFromLeft = ((number - 1) % 7) + 1;
+  const rowZone = rowFromFront === 1
+    ? "front"
+    : rowFromFront === 4
+      ? "back"
+      : "middle";
+  const horizontalZone = columnFromLeft <= 3
+    ? "left"
+    : columnFromLeft >= 5
+      ? "right"
+      : "center";
+  return {
+    rowFromFront,
+    columnFromLeft,
+    rowZone,
+    horizontalZone,
+    isBoardEdge: columnFromLeft === 1 || columnFromLeft === 7,
+    label: `第${rowFromFront}排·第${columnFromLeft}列（${
+      rowZone === "front" ? "前排" : rowZone === "back" ? "后排" : "中排"
+    }${horizontalZone === "left" ? "左侧" : horizontalZone === "right" ? "右侧" : "中央"}）`
+  };
+}
+
+function compDetailAttackRange(apiName, catalog, entityDetails) {
+  const official = entityDetails?.units?.get?.(apiName);
+  const catalogUnit = catalog?.unitByApiName?.get?.(apiName);
+  const value = official?.stats?.attackRange
+    ?? official?.attackRange
+    ?? official?.range
+    ?? catalogUnit?.stats?.attackRange
+    ?? catalogUnit?.attackRange
+    ?? catalogUnit?.range;
+  const number = Number(value);
+  return Number.isFinite(number) && number >= 0 ? number : null;
+}
+
 function metaTftAugmentIconUrl(texture) {
   const normalized = String(texture ?? "").trim();
   if (!/^[A-Za-z0-9_-]+$/u.test(normalized)) return null;
@@ -5291,6 +6812,10 @@ function decorateCompDetailFormation(positioning, catalog, entityDetails, update
       return {
         ...unit,
         name: compDetailUnitLabel(unit.apiName, catalog),
+        boardPosition: compDetailBoardPosition(unit.cell),
+        combatProfile: {
+          attackRange: compDetailAttackRange(unit.apiName, catalog, entityDetails)
+        },
         iconUrl,
         fallbackIconUrl: asset.iconUrl && asset.iconUrl !== iconUrl
           ? asset.iconUrl
@@ -6725,6 +8250,21 @@ export function createSmallWindowHandler(options = {}) {
           if (!res.writableEnded) abortRequest();
         });
         return streamRecommendResponse(req, res, body, runtime, {
+          visitor,
+          accessService,
+          signal: controller.signal
+        });
+      }
+
+      if (req.method === "POST" && url.pathname === "/api/react-chat/stream") {
+        const body = await readJsonRequest(req);
+        const controller = new AbortController();
+        const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
+        req.once("aborted", abortRequest);
+        res.once("close", () => {
+          if (!res.writableEnded) abortRequest();
+        });
+        return streamReactChatResponse(req, res, body, runtime, {
           visitor,
           accessService,
           signal: controller.signal

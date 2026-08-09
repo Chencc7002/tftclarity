@@ -79,7 +79,8 @@ export function semanticHitToKnowledgeEvidence(hit, index = 0) {
     extractionModel: metadata.extractionModel ?? null,
     isCurrentVersion: metadata.isCurrentVersion ?? null,
     namespace: metadata.namespace ?? null,
-    documentType: hit?.documentType ?? metadata.documentType ?? "static_game_knowledge"
+    documentType: hit?.documentType ?? metadata.documentType ?? "static_game_knowledge",
+    score: Number.isFinite(Number(hit?.score)) ? Number(hit.score) : 0
   };
 }
 
@@ -164,11 +165,13 @@ export class KnowledgeRetriever {
   }
 
   async searchEvidence(question, options = {}) {
-    const types = documentTypes(options.scopes ?? [
-      "video_guides",
-      "mechanism_knowledge",
-      "static_knowledge"
-    ]);
+    const types = Array.isArray(options.documentTypes)
+      ? [...new Set(options.documentTypes.map(String))]
+      : documentTypes(options.scopes ?? [
+        "video_guides",
+        "mechanism_knowledge",
+        "static_knowledge"
+      ]);
     if (!types.length) return [];
     const hits = await this.retriever.search(String(question ?? ""), {
       documentTypes: types,

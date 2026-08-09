@@ -1,3 +1,5 @@
+import { normalizeAlias } from "../../core/normalizer.js";
+
 const ENTITY_TYPES = new Set(["unit", "item", "trait"]);
 const MAX_LIMIT = 200;
 
@@ -15,6 +17,63 @@ function displayName(record = {}) {
     ?? record.displayName
     ?? record.name
     ?? record.apiName;
+}
+
+function catalogRecords(catalog, entityType) {
+  return entityType === "unit"
+    ? array(catalog?.units)
+    : entityType === "item"
+      ? array(catalog?.items)
+      : array(catalog?.traits);
+}
+
+function canonicalApiName(record, entityType) {
+  return entityType === "trait"
+    ? baseTraitId(record?.apiName ?? record?.filterId)
+    : String(record?.apiName ?? "");
+}
+
+function recordAliases(record, entityType) {
+  return [
+    canonicalApiName(record, entityType),
+    record?.apiName,
+    record?.preferredDisplayName,
+    record?.shortName,
+    record?.zhName,
+    record?.displayName,
+    record?.name,
+    ...(record?.aliases ?? [])
+  ].filter(Boolean).map(String);
+}
+
+function exactAliasResolution(catalog, entityType, requestedNames) {
+  const records = catalogRecords(catalog, entityType).filter((record) => record?.current !== false);
+  const requests = requestedNames.map((inputName) => {
+    const normalizedName = normalizeAlias(inputName);
+    const byApiName = new Map();
+    for (const record of records) {
+      const matchedAlias = recordAliases(record, entityType).find((alias) => (
+        normalizeAlias(alias) === normalizedName
+      ));
+      const apiName = canonicalApiName(record, entityType);
+      if (!matchedAlias || !apiName || byApiName.has(apiName)) continue;
+      byApiName.set(apiName, {
+        apiName,
+        name: String(displayName(record)),
+        matchedAlias
+      });
+    }
+    const candidates = [...byApiName.values()].sort((left, right) => (
+      left.apiName.localeCompare(right.apiName)
+    ));
+    return {
+      inputName,
+      normalizedName,
+      status: candidates.length === 1 ? "resolved" : candidates.length ? "ambiguous" : "not_found",
+      candidates
+    };
+  });
+  return { mode: "exact_alias", requests };
 }
 
 function traitNamesFor(filters, catalog) {
@@ -109,6 +168,16 @@ export function queryEntityCatalog({ catalog, details, input = {}, updatedAt } =
   const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
   const requestedTraitIds = array(filters.traits).map(String);
   const requestedTraitNames = traitNamesFor(filters, catalog);
+  const requestedNames = array(filters.names).map(String);
+  if (requestedNames.length && array(filters.apiNames).length) {
+    throw new TypeError("filters.names and filters.apiNames are mutually exclusive");
+  }
+  const resolution = requestedNames.length
+    ? exactAliasResolution(catalog, entityType, requestedNames)
+    : null;
+  const resolvedApiNames = new Set(
+    resolution?.requests.flatMap((request) => request.candidates.map((candidate) => candidate.apiName)) ?? []
+  );
   let results = entityType === "unit"
     ? unitRecords(catalog, details)
     : entityType === "item"
@@ -117,6 +186,7 @@ export function queryEntityCatalog({ catalog, details, input = {}, updatedAt } =
   results = results.filter((record) => {
     if (filters.cost !== undefined && !array(filters.cost).map(Number).includes(Number(record.cost))) return false;
     if (filters.apiNames && !array(filters.apiNames).map(String).includes(record.apiName)) return false;
+    if (resolution && !resolvedApiNames.has(record.apiName)) return false;
     if (filters.categories && !array(filters.categories).map(String).includes(record.category)) return false;
     if (filters.current !== undefined && record.current !== filters.current) return false;
     if (filters.obtainable !== undefined && record.obtainable !== filters.obtainable) return false;
@@ -131,6 +201,7 @@ export function queryEntityCatalog({ catalog, details, input = {}, updatedAt } =
     updatedAt: updatedAt ?? details?.meta?.updatedAt ?? new Date().toISOString(),
     entityType,
     filters: structuredClone(filters),
+    ...(resolution ? { requestedNames: [...requestedNames], resolution } : {}),
     results,
     total: results.length
   };

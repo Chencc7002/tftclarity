@@ -28,6 +28,10 @@ export {
 export { ToolError } from "./tools/tool-errors.js";
 export { ToolExecutor } from "./tools/executor.js";
 export { createStructuredToolDefinitions } from "./tools/definitions.js";
+export {
+  TOOL_EVIDENCE_VALIDATION_VERSION,
+  validateToolEvidence
+} from "./tool-evidence-validator.js";
 export { STRUCTURED_OPERATION_REGISTRY } from "../retrieval/structured-retriever.js";
 export {
   EXECUTION_PLAN_SCHEMA_VERSION,

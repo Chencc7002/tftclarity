@@ -676,6 +676,71 @@ export {
   resolvedTaskFrameToParsed
 } from "./domain/tft/resolved-task-frame-adapter.js";
 export {
+  TFT_TOOL_HANDLER_FACTORY_VERSION,
+  assertHandlerCoverage,
+  createTftToolHandlers
+} from "./domain/tft/tool-handler-factory.js";
+export {
+  evaluateCompositionChange,
+  evaluateCompositionReplacement
+} from "./domain/tft/composition-replacement-evaluator.js";
+export { ChatAgent } from "./chat/chat-agent.js";
+export {
+  CONVERSATION_BRIDGE_CONTEXT_SCHEMA_VERSION,
+  CONVERSATION_BRIDGE_RELATIONS,
+  CONVERSATION_BRIDGE_RETENTION_MS,
+  MAX_CONVERSATION_BRIDGE_CONTEXT_TOKENS,
+  MAX_CONVERSATION_BRIDGE_RECORDS,
+  QUICK_TOOL_BRIDGE_STATE_SCHEMA_VERSION,
+  QUICK_TOOL_EVIDENCE_SNAPSHOT_SCHEMA_VERSION,
+  QUICK_TOOL_TURN_SCHEMA_VERSION,
+  buildConversationBridgeContextView,
+  createQuickToolBridgeArtifacts,
+  createQuickToolTerminalRecord,
+  estimateBridgeTokens,
+  isCurrentStatsInput,
+  isHistoryDependentInput,
+  quickTaskFingerprint,
+  resolveConversationBridgeRelation,
+  sanitizeBridgeText,
+  verifyQuickToolSnapshot
+} from "./conversation/conversation-bridge.js";
+export {
+  SQLITE_CONVERSATION_BRIDGE_SCHEMA,
+  SQLiteConversationBridgeStore
+} from "./conversation/sqlite-conversation-bridge-store.js";
+export {
+  QUICK_TASK_SUPPLEMENTAL_RELATIONS,
+  QUICK_TASK_SUPPLEMENTAL_REQUEST_SCHEMA_VERSION,
+  QUICK_TASK_SUPPLEMENTAL_SCHEMA_VERSION,
+  classifyQuickTaskSupplement,
+  createQuickTaskSupplementalClassificationRequest,
+  deterministicQuickTaskSupplementalClassification,
+  fallbackQuickTaskSupplementalClassification,
+  resolveQuickTaskSupplementalRelation,
+  validateQuickTaskSupplementalClassification
+} from "./conversation/quick-task-supplemental-classifier.js";
+export {
+  QUICK_TASK_SUPPLEMENTAL_PROMPT_VERSION,
+  createQuickTaskSupplementalClassifierProvider
+} from "./conversation/quick-task-supplemental-provider.js";
+export {
+  REACT_ACTION_SCHEMA_VERSION,
+  REACT_ACTION_TYPES,
+  createReactAction,
+  validateReactAction
+} from "./react/react-action.js";
+export {
+  DEFAULT_REACT_LOOP_BUDGET,
+  REACT_STREAM_EVENT_SCHEMA_VERSION,
+  ReactLoop,
+  normalizeReactLoopBudget
+} from "./react/react-loop.js";
+export {
+  REACT_DECISION_PROMPT_VERSION,
+  createReactDecisionProvider
+} from "./react/react-decision-provider.js";
+export {
   CLARIFICATION_POLICY_VERSION,
   applyClarificationPolicy
 } from "./understanding/ambiguity-policy.js";

@@ -15,7 +15,9 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   unit_builds_batch: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["entities", "days", "patch", "queue", "rank", "minSamples", "limit"])
+    params: Object.freeze([
+      "entities", "compositionId", "optionsPerUnit", "constraints", "starLevel", "days", "patch", "queue", "rank", "minSamples", "limit"
+    ])
   }),
   item_carrier_rankings: Object.freeze({
     source: "metatft",
@@ -26,7 +28,25 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   comps_rankings: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["unit", "days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
+    params: Object.freeze(["unit", "mention", "days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
+  }),
+  composition_tactical_details: Object.freeze({
+    source: "metatft",
+    params: Object.freeze(["compositionId", "clusterId", "units", "seasonContextId"])
+  }),
+  composition_replacement_evaluation: Object.freeze({
+    source: "metatft",
+    params: Object.freeze([
+      "compositionId", "targetApiName", "replacementApiName", "seasonContextId",
+      "days", "patch", "queue", "rank"
+    ])
+  }),
+  composition_change_evaluation: Object.freeze({
+    source: "metatft",
+    params: Object.freeze([
+      "operation", "compositionId", "targetApiName", "incomingApiName", "seasonContextId",
+      "days", "patch", "queue", "rank"
+    ])
   }),
   comps_trends: Object.freeze({
     source: "metatft",
@@ -38,6 +58,10 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
+  item_details_batch: Object.freeze({
+    source: "official_catalog",
+    params: Object.freeze(["apiNames", "seasonContextId", "locale"])
+  }),
   trait_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   entity_catalog_query: Object.freeze({
     source: "official_tft_catalog",

@@ -101,6 +101,9 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /queryTemplateKey: "quickTaskCarriersTemplate"/);
   assert.match(indexHtml, /id="quick-task-form"/);
   assert.match(indexHtml, /id="quick-task-fields"/);
+  assert.match(indexHtml, /id="quick-task-supplemental"/);
+  assert.match(appJs, /supplementalText/);
+  assert.match(i18n, /quickFieldSupplemental/);
   assert.match(appJs, /function openQuickTaskForm\(task\)/);
   assert.match(appJs, /function submitQuickTaskForm\(\)/);
   assert.match(appJs, /startNewTask: true/);
@@ -151,6 +154,17 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("feature-flagged chat routing keeps quick tools on recommend and normal chat on ReAct", () => {
+  assert.match(appJs, /state\.runtimeStatus\?\.routing\?\.reactChatEnabled/);
+  assert.match(appJs, /state\.lastQuickTask \|\| !reactChatEnabled/);
+  assert.match(appJs, /"\/api\/recommend\/stream"/);
+  assert.match(appJs, /"\/api\/react-chat\/stream"/);
+  assert.match(appJs, /conversationId: state\.conversationId/);
+  assert.match(appJs, /seasonContextId: state\.seasonContextId/);
+  assert.match(appJs, /messages: reactChatMessages\(\)/);
+  assert.match(appJs, /event\.type === "diagnostic"/);
 });
 
 test("OP.GG review views use the result pane and preserve navigation context", () => {
@@ -320,6 +334,58 @@ test("small-window defaults to an explained robust applicability recommendation"
   assert.match(appJs, /applicabilityRecommendation/);
   assert.match(i18n, /普适推荐/);
   assert.match(styles, /\.ranking-rationale/);
+});
+
+test("UI-07 renders deterministic build options independently from grounded narrative", () => {
+  assert.match(appJs, /entry\.buildOptions/);
+  assert.match(appJs, /grounded-build-narrative\.v1/);
+  assert.match(appJs, /data-build-option-id/);
+  assert.match(appJs, /index === 0 \? "open"/);
+  assert.match(appJs, /buildOptionsShortage/);
+  assert.match(appJs, /narrativeByOption\.get\(option\.optionId\)/);
+  assert.match(appJs, /item_details_batch/);
+  assert.match(appJs, /mechanismDifference/);
+  assert.match(appJs, /mechanism_based_advice/);
+  assert.match(appJs, /currentSeasonMechanismMissing/);
+  assert.match(appJs, /data-build-core-items/);
+  assert.match(appJs, /coreItemSummary/);
+  assert.match(appJs, /buildNarrativeNotProvided/);
+  assert.match(appJs, /data-build-narrative-warning/);
+  assert.match(appJs, /buildNarrativeWarningText/);
+  assert.match(appJs, /buildRecommendationOverview/);
+  assert.match(appJs, /buildRecommendationDecisionSummary/);
+  assert.match(appJs, /buildRecommendationMetricLead/);
+  assert.match(appJs, /buildRecommendationSampleTradeoff/);
+  assert.match(appJs, /buildItemCopies/);
+  assert.match(appJs, /data-build-knowledge-signal/);
+  assert.match(appJs, /buildKnowledgeSummary/);
+  assert.match(appJs, /"season_context", "patch", "queue", "star_level"/);
+  assert.match(appJs, /conditionEditHint/);
+  assert.match(appJs, /queryInput\.value = t\("editCondition"[\s\S]*setMobileView\("chat"\)/);
+  assert.match(appJs, /resultHeader\(t\("recommendation"\), buildOverviewText, t\("recommendation"\)\)[\s\S]*conditionPanel\(data\)[\s\S]*build-options-ranking/);
+  assert.match(appJs, /resultHeader\(t\("recommendation"\), buildOverviewText, t\("recommendation"\)\)/);
+  assert.match(appJs, /build-narrative-technical/);
+  assert.match(appJs, /build-model-summary/);
+  assert.match(appJs, /maximumFractionDigits: 1/);
+  assert.match(appJs, /t\("updated"\)/);
+  assert.doesNotMatch(appJs, /buildNarrativeUnavailable/);
+  assert.match(styles, /\.build-option-card/);
+  assert.match(styles, /\.build-core-items/);
+  assert.match(styles, /\.mechanism-inference-badge/);
+  assert.match(styles, /\.build-option-card:not\(\[open\]\)/);
+  assert.match(styles, /\.build-narrative-technical/);
+  assert.match(styles, /\.build-model-summary/);
+  assert.match(styles, /\.condition-panel-head/);
+  assert.match(i18n, /仅有 \{value\} 套满足当前样本门槛/);
+  assert.match(i18n, /Only \{value\} builds meet the current sample threshold/);
+  assert.match(i18n, /基于装备机制推断/);
+  assert.match(i18n, /缺少当前赛季装备机制证据/);
+});
+
+test("ReAct build metrics wrap inside their card instead of overflowing the result pane", () => {
+  assert.match(styles, /\.build-option-card \{[^}]*min-width: 0;[^}]*max-width: 100%/);
+  assert.match(styles, /\.build-option-summary \{[^}]*grid-template-columns: auto minmax\(0, 1fr\) auto/);
+  assert.match(styles, /\.build-option-detail \.stats \{[^}]*grid-template-columns: repeat\(auto-fit, minmax\(min\(150px, 100%\), 1fr\)\)/);
 });
 
 test("small-window comparison cards distinguish winners and compared items", () => {
@@ -592,6 +658,10 @@ test("comp cards lazy-load verified formation and augment details", () => {
   assert.match(i18n, /compDetailLoading:/);
   assert.match(i18n, /compFormation:/);
   assert.match(i18n, /augmentCompatibilityTier:/);
+  assert.match(appJs, /data\.type === "composition_tactical_details"/);
+  assert.match(appJs, /react-comp-tactical-detail/);
+  assert.match(appJs, /"composition_tactical_details"/);
+  assert.doesNotMatch(appJs, /tactical-result-header/);
 });
 
 test("comp unit drill-down preserves and restores the previous comp result", () => {

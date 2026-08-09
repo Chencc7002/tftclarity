@@ -177,8 +177,10 @@ test("recommendation stream keeps validation errors inside the terminal event", 
   await streamRecommendResponse({}, response, { input: "   " }, runtime);
 
   const events = parsedEvents(chunks);
-  assert.equal(events[0].type, "progress");
-  assert.equal(events[0].event.phase, "request.accepted");
+  assert.equal(events[0].type, "diagnostic");
+  assert.equal(events[0].endpointMode, "recommend");
+  assert.equal(events[1].type, "progress");
+  assert.equal(events[1].event.phase, "request.accepted");
   assert.equal(events.at(-1).type, "complete");
   assert.equal(events.at(-1).statusCode, 400);
   assert.equal(events.at(-1).payload.ok, false);

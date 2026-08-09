@@ -10,6 +10,22 @@ tftclarity 把“霞有羊刀后两件怎么补”“当前有哪些阵容正在
 
 项目可作为浏览器 Web 应用、本地 Windows 小窗口或公开服务运行。目前仍处于测试阶段，在线站点主要用于个人使用、功能验证和项目演示，不承诺长期可用性或稳定性。
 
+## V2 开发版状态
+
+当前 `codex/chatbot` 分支是 tftclarity **第二版开发基线**。V2 已完成独立 ReAct Agent、QuickTask 会话桥接、多工具组合查询、证据约束结论和可编辑查询条件等核心改造，但**本版本尚未部署**；上方在线地址仍运行上一版，不能用于判断 V2 的当前能力。
+
+V2 当前重点：
+
+- 普通聊天由 ReAct Agent 根据问题动态选择工具，可连续执行英雄、装备、阵容、站位和知识检索等多步查询。
+- 快捷工具继续走确定性快速路径；工具目的、关键条件和结果会通过 Conversation Bridge 进入后续普通聊天上下文。
+- 出装查询保留并展示赛季、版本、模式、星级、段位、时间窗口、装备数量和样本门槛，用户可以点击条件继续修改。
+- 阵容支持加人、下人和换人后的确定性羁绊人数及档位重算；模型只负责解释结构变化，不自行编造羁绊统计。
+- 站位解释必须基于工具返回的棋盘位置和攻击距离，不能在文本中改写英雄所在排数。
+- 用户策略知识以不确定性规则接入检索和结果证据。例如重复帽子或杀人剑可以提示可能相关的强化符文，但不能反推玩家一定拥有该强化。
+- 当前开发验收不设置工具调用次数上限，保留总时限、决策次数、重复调用和无进展保护，用于观察模型边界与幻觉频率。
+
+V2 的架构、验收矩阵和阶段结论见 [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md) 与 [R1 验收报告](docs/r1-acceptance-report.md)。
+
 ## 为什么使用 tftclarity？
 
 - **快速得到结论**：不必在完整榜单中反复筛选，系统直接给出首选方案、备选方案、关键指标和下一步建议。
@@ -22,9 +38,9 @@ tftclarity 把“霞有羊刀后两件怎么补”“当前有哪些阵容正在
 | 分类 | 已实现能力 |
 | --- | --- |
 | 装备分析 | 英雄三件套、已有装备补全、单件评估、多装备对比、特殊装备识别、核心装备信号 |
-| 阵容决策 | 热门阵容排行、上升/下降趋势、阵容分析、指定阵容棋子出装、条件筛选与排序 |
+| 阵容决策 | 热门阵容排行、上升/下降趋势、阵容分析、指定阵容棋子出装、条件筛选与排序，以及加人、下人、换人后的确定性羁绊人数与档位重算 |
 | 资料百科 | 当前赛季英雄、装备、羁绊详情，中文/英文名称与常见俗称，当前版本公告 |
-| 智能复盘与资讯 | OP.GG 职业池趋势、个人近期对局复盘、职业选手教学、YouTube 攻略知识检索 |
+| 智能复盘与资讯 | OP.GG 职业池趋势、个人近期对局复盘、职业选手教学、YouTube 攻略知识检索、可扩展用户策略知识 |
 
 ### 中文俗称支持与连续追问
 
@@ -83,19 +99,20 @@ OP.GG 工作流支持职业选手池和个人关注池，能够增量采集近�
 ```text
 用户输入
   ↓
-TurnInterpreter / ConversationState
+Chat Router
   ↓
-TaskFrame / ContextResolver / EntityLinker
-  ↓
-CapabilityMatcher / ExecutionPlan
-  ↓
-ToolRegistry / ExecutionPlanExecutor / ResultPolicy
+┌─────────────────────────────┬──────────────────────────────┐
+│ QuickTask 确定性快速路径     │ ReAct 普通聊天动态工具路径     │
+│ ExecutionPlan / ResultPolicy │ Decide → Tool → Observe 循环  │
+└─────────────────────────────┴──────────────────────────────┘
+                ↓ Conversation Bridge
+ToolRegistry / ToolExecutor / Evidence Ledger
   ↓
 MetaTFT / current_stats / OP.GG / 攻略与版本知识
   ↓
-EvidenceBundle
+EvidenceBundle / Grounded Narrative
   ↓
-HybridAnswerService + 结论校验
+Termination Policy + 结论校验
   ↓
 HTTP API / Web 界面 / Windows 小窗口
 ```
@@ -103,7 +120,8 @@ HTTP API / Web 界面 / Windows 小窗口
 核心设计原则：
 
 - **确定性优先**：查询解析、过滤、聚合、指标计算和基础排序由代码完成。
-- **受控执行**：ExecutionPlan 只能调用已注册的第一方只读工具，并受步骤、调用次数、超时和重试预算约束。
+- **双路径执行**：快捷工具保留低延迟 ExecutionPlan；普通聊天由 ReAct 循环动态组合已注册的只读工具。
+- **受控执行**：工具必须来自注册目录并通过参数 Schema；开发验收阶段不限制调用次数，但仍受总时限、决策次数、重复调用、重试和无进展保护约束。
 - **证据约束**：模型不能提供 EvidenceBundle 中不存在的数字、实体或 API 名称。
 - **诚实降级**：缺少历史快照、样本过低、外部服务失败或模型输出不合格时，明确说明边界并返回可验证结果。
 - **赛季隔离**：会话、缓存、目录和查询都携带赛季上下文，跨赛季切换不会继承旧条件。
@@ -170,6 +188,8 @@ Copy-Item .env.example .env
 | `TFT_AGENT_KNOWLEDGE_MODE` | 本地知识检索总开关 |
 | `TFT_AGENT_EMBEDDING_MODE` | 持久化语义向量索引 |
 | `TFT_AGENT_COACH_MODE` | 攻略与统计混合的教练回答 |
+| `TFT_AGENT_REACT_CHAT_MODE` | 开启 V2 ReAct 普通聊天路径；本地验收使用 `on` |
+| `TFT_AGENT_CONVERSATION_BRIDGE_MODE` | 让 QuickTask 目的、条件和结果进入后续聊天上下文 |
 | `TFT_AGENT_OPGG_TEACHING_TIMEOUT_MS` | OP.GG AI 教学单次尝试超时 |
 | `OPGG_PUUID_ENCRYPTION_KEY` | 可选的 PUUID 静态加密密钥；未配置时不落盘 PUUID |
 
@@ -188,6 +208,7 @@ Copy-Item .env.example .env
 | `npm run smoke:visual` | 运行多断点视觉冒烟测试 |
 | `npm run smoke:sqlite` | 验证 SQLite 持久化与重开缓存 |
 | `npm run smoke:metatft` | 验证真实 MetaTFT 数据链路 |
+| `npm run smoke:react-chat:live` | 验证真实模型 ReAct 多工具聊天链路 |
 | `npm run eval:agent` | 运行核心 Agent 离线评估 |
 
 涉及 MetaTFT、OP.GG、YouTube 或真实模型的命令会受到外部服务状态、网络和额度影响。
@@ -253,8 +274,21 @@ npm run eval:agent
 
 - [Agent 升级进度](docs/agent-upgrade-progress.md)
 - [Phase 6.6 架构收敛](docs/phase-6-6-architecture-convergence.md)
+- [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md)
 - [受控失败学习闭环](docs/reports/phase-8a-controlled-failure-loop.md)
 - [MVP 验证矩阵](docs/mvp-verification-matrix.md)
+
+## V2 后续开发
+
+V2 后续工作以“先扩展能力和验收，再考虑部署”为原则：
+
+1. 扩展 YouTube、哔哩哔哩等视频攻略搜索、字幕抽取、来源时间点和人工复核流程。
+2. 将用户策略知识从代码内规则继续演进为可维护、可审核、可版本化的知识库，并记录适用赛季与置信边界。
+3. 完善阵容、棋子、装备、站位、强化符文之间的多工具组合案例和长对话上下文继承。
+4. 建立模型边界与幻觉频率评估，记录原始自由文本、证据校验结果、失败原因和人工审核结论。
+5. 补齐真实数据、真实模型、小窗口交互和 CI 分层门禁；全部通过后再单独制定 V2 部署与回滚计划。
+
+本分支的提交和推送不代表发布。除非另行执行并审核部署流程，否则不会更新 `tftclarity.cn` 的线上版本。
 
 ## 进一步阅读
 
