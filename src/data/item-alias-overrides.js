@@ -1,4 +1,83 @@
+export const ITEM_DISPLAY_VERSION = "s18-pbe-items-zh-2026-08-10";
+
 export const ITEM_ALIAS_OVERRIDES = [
+  {
+    apiName: "DA_18_EmblemBlossom",
+    zhName: "灵魂莲华纹章",
+    shortName: "灵魂莲华纹章",
+    preferredDisplayName: "灵魂莲华纹章",
+    aliases: ["Blossom Emblem"],
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_from_verified_s18_trait_name",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_18_EmblemFloraFatalis",
+    zhName: "绝命花妖纹章",
+    shortName: "绝命花妖纹章",
+    preferredDisplayName: "绝命花妖纹章",
+    aliases: ["Flora Fatalis Emblem"],
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_from_verified_s18_trait_name",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_18_EmblemFloraFatalisAugment",
+    zhName: "绝命花妖纹章",
+    shortName: "绝命花妖纹章",
+    preferredDisplayName: "绝命花妖纹章",
+    aliases: ["Flora Fatalis Emblem", "强化版绝命花妖纹章"],
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_from_verified_s18_trait_name",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_18_EmblemJuggernaut",
+    zhName: "主宰纹章",
+    shortName: "主宰纹章",
+    preferredDisplayName: "主宰纹章",
+    aliases: ["Juggernaut Emblem"],
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_from_verified_s18_trait_name",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_18_EmblemPrimal",
+    zhName: "野兽之灵纹章",
+    shortName: "野兽之灵纹章",
+    preferredDisplayName: "野兽之灵纹章",
+    aliases: ["Primal Emblem"],
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_from_verified_s18_trait_name",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_Artifact_ForbiddenIdol",
+    zhName: "禁忌雕像",
+    shortName: "禁忌雕像",
+    preferredDisplayName: "禁忌雕像",
+    aliases: ["Forbidden Idol"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_MasterworkUpgrade",
+    zhName: "杰作升级",
+    shortName: "杰作升级",
+    preferredDisplayName: "杰作升级",
+    aliases: ["Masterwork Upgrade"],
+    preferZhName: true,
+    confidence: 1,
+    source: "communitydragon_pbe_2026_08_05_zh_cn",
+    season: "TFT18"
+  },
   {
     apiName: "DA_18_EmblemHunter",
     zhName: "猎人纹章",
@@ -12,10 +91,10 @@ export const ITEM_ALIAS_OVERRIDES = [
   },
   {
     apiName: "DA_18_EmblemSprykin",
-    zhName: "约德尔人…纹章",
-    shortName: "约德尔人…纹章",
-    preferredDisplayName: "约德尔人…纹章",
-    aliases: ["约德尔人纹章", "小精灵纹章", "迅灵纹章"],
+    zhName: "约德尔人纹章",
+    shortName: "约德尔人纹章",
+    preferredDisplayName: "约德尔人纹章",
+    aliases: ["约德尔人…纹章", "小精灵纹章", "迅灵纹章"],
     preferZhName: true,
     confidence: 1,
     source: "communitydragon_pbe_2026_08_05_zh_cn",

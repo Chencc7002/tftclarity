@@ -6,6 +6,10 @@ import {
   traitAliasOverrideByFilterId,
   unitAliasOverrideByApiName
 } from "./domain-alias-overrides.js";
+import {
+  traitDisplayOverrideByApiName,
+  unitDisplayOverrideByApiName
+} from "./entity-display-overrides.js";
 import { canonicalUnitIdentity, preferEquivalentUnit } from "./unit-identity.js";
 
 const seedUnitByApiName = new Map(UNITS.map((unit) => [unit.apiName, unit]));
@@ -82,6 +86,7 @@ function sourceLabel(seed, override, dynamicSource) {
 function unitRecord(apiName, options = {}, dynamicSource = null) {
   const seed = seedUnitByApiName.get(apiName);
   const override = unitAliasOverrideByApiName.get(apiName);
+  const displayOverride = unitDisplayOverrideByApiName.get(apiName);
   const lookup = unitLookupRecord(apiName, options.unitLookupByApiName);
   const lookupName = String(lookup?.name ?? lookup?.displayName ?? "").trim() || null;
   const token = apiToken(apiName);
@@ -93,8 +98,10 @@ function unitRecord(apiName, options = {}, dynamicSource = null) {
     canonicalApiName: lookup?.apiName ?? apiName,
     ...(Number.isFinite(providerSampleCount) && providerSampleCount > 0 ? { providerSampleCount } : {}),
     ...(Number.isFinite(cost) && cost > 0 ? { cost } : {}),
-    zhName: lookupName ?? override?.zhName ?? seed?.zhName ?? null,
+    zhName: displayOverride?.zhName ?? lookupName ?? override?.zhName ?? seed?.zhName ?? null,
+    enName: displayOverride?.enName ?? null,
     aliases: compact([
+      ...(displayOverride?.aliases ?? []),
       lookupName,
       override?.zhName,
       seed?.zhName,
@@ -110,7 +117,7 @@ function unitRecord(apiName, options = {}, dynamicSource = null) {
     current: true,
     patch: options.patch ?? "current",
     source: sourceLabel(seed, override, dynamicSource),
-    aliasSource: override?.source ?? null,
+    aliasSource: displayOverride?.source ?? override?.source ?? null,
     aliasConfidence: override?.confidence ?? null
   };
 }
@@ -128,11 +135,15 @@ function collapseEquivalentUnits(units) {
       ? unit
       : preferEquivalentUnit(existing, unit);
     const fallback = preferred === existing ? unit : existing;
+    const displayOverride = unitDisplayOverrideByApiName.get(preferred.apiName)
+      ?? unitDisplayOverrideByApiName.get(fallback.apiName);
     byIdentity.set(identity, {
       ...preferred,
       canonicalApiName: preferred.canonicalApiName ?? fallback.canonicalApiName,
-      zhName: existing.zhName ?? unit.zhName,
+      zhName: displayOverride?.zhName ?? existing.zhName ?? unit.zhName,
+      enName: displayOverride?.enName ?? existing.enName ?? unit.enName,
       aliases: compact([
+        ...(displayOverride?.aliases ?? []),
         ...(preferred.aliases ?? []),
         ...(fallback.aliases ?? [])
       ])
@@ -145,6 +156,7 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
   const apiName = traitApiNameFromFilterId(filterId);
   const seed = seedTraitByFilterId.get(filterId) ?? seedTraitByApiName.get(apiName);
   const override = traitAliasOverrideByFilterId.get(filterId) ?? traitAliasOverrideByApiName.get(apiName);
+  const displayOverride = traitDisplayOverrideByApiName.get(apiName);
   const lookup = options.traitLookupByApiName?.get?.(apiName) ?? null;
   const lookupName = String(lookup?.name ?? lookup?.displayName ?? "").trim() || null;
   const tierOverride = traitTierOverride(filterId, override);
@@ -153,13 +165,16 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
   return {
     apiName: override?.apiName ?? seed?.apiName ?? apiName,
     filterId,
-    zhName: preferredOverrideName
+    zhName: displayOverride?.zhName
+      ?? preferredOverrideName
       ?? lookupName
       ?? tierOverride?.zhName
       ?? override?.zhName
       ?? seed?.zhName
       ?? null,
-    displayName: tierOverride?.displayName
+    enName: displayOverride?.enName ?? null,
+    displayName: displayOverride?.zhName
+      ?? tierOverride?.displayName
       ?? override?.displayName
       ?? seed?.displayName
       ?? lookupName
@@ -168,6 +183,7 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
       ?? seed?.zhName
       ?? token,
     aliases: compact([
+      ...(displayOverride?.aliases ?? []),
       tierOverride?.zhName,
       tierOverride?.displayName,
       lookupName,
@@ -185,7 +201,7 @@ function traitRecord(filterId, options = {}, dynamicSource = null) {
     current: true,
     patch: options.patch ?? "current",
     source: sourceLabel(seed, override, dynamicSource),
-    aliasSource: override?.source ?? null,
+    aliasSource: displayOverride?.source ?? override?.source ?? null,
     aliasConfidence: override?.confidence ?? null
   };
 }
@@ -332,12 +348,18 @@ export function mergeCatalogTraits(baseTraits, generatedTraits) {
   for (const trait of baseTraits ?? []) merged.set(trait.filterId, trait);
   for (const trait of generatedTraits ?? []) {
     const existing = merged.get(trait.filterId);
+    const displayOverride = traitDisplayOverrideByApiName.get(existing?.apiName ?? trait.apiName);
     merged.set(trait.filterId, existing ? {
       ...trait,
       apiName: existing.apiName ?? trait.apiName,
-      zhName: existing.zhName ?? trait.zhName,
-      displayName: existing.displayName ?? trait.displayName,
-      aliases: compact([...(existing.aliases ?? []), ...(trait.aliases ?? [])])
+      zhName: displayOverride?.zhName ?? existing.zhName ?? trait.zhName,
+      enName: displayOverride?.enName ?? existing.enName ?? trait.enName,
+      displayName: displayOverride?.zhName ?? existing.displayName ?? trait.displayName,
+      aliases: compact([
+        ...(displayOverride?.aliases ?? []),
+        ...(existing.aliases ?? []),
+        ...(trait.aliases ?? [])
+      ])
     } : trait);
   }
   return [...merged.values()].sort((a, b) => a.filterId.localeCompare(b.filterId));

@@ -141,7 +141,7 @@ test("8A isolates versions and does not expose raw query fields", () => {
   assert.equal(store.list({ ...versionScope, userId: "other-user", sessionId: "session-raw-001" }).length, 0);
 });
 
-test("find_video is understood but unsupported and never becomes a video tool call", async () => {
+test("find_video is understood and resolves to the strategy-video tool", async () => {
   const parsed = await parseSemanticTask("帮我找霞的攻略视频", { entityLinking: false });
   assert.equal(parsed.taskFrame.action, "find_video");
   assert.equal(parsed.taskFrame.understandingStatus, "understood_and_supported");
@@ -149,6 +149,7 @@ test("find_video is understood but unsupported and never becomes a video tool ca
   assert.deepEqual(parsed.taskFrame.expectedOutput, ["video_candidates", "evidence"]);
   const registry = new ToolRegistry(createStructuredToolDefinitions());
   const capabilityMatch = matchTaskCapabilities(parsed.taskFrame, registry);
-  assert.equal(capabilityMatch.status, "understood_but_unsupported");
-  assert.equal(capabilityMatch.selected.length, 0);
+  assert.equal(capabilityMatch.status, "understood_and_supported");
+  assert.equal(capabilityMatch.selected.length, 1);
+  assert.equal(capabilityMatch.selected[0].tool, "strategy_video_search");
 });

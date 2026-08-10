@@ -195,7 +195,7 @@ export function classifyFailure(event = {}) {
     return "prompt_injection";
   }
   if (status === "out_of_domain" || layer.includes("domain")) return "domain_error";
-  if (status === "understood_but_unsupported" || action === "find_video" || layer.includes("unsupported")) {
+  if (status === "understood_but_unsupported" || layer.includes("unsupported")) {
     return "unsupported_capability";
   }
   if (status === "understood_but_missing_context" || layer.includes("context") || layer.includes("clarif")) {

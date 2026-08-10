@@ -24,6 +24,49 @@ export function normalizeGroundingMode(value) {
     : "strict";
 }
 
+function applyRequestBoundVideoScope(action, request = {}) {
+  if (action?.type !== "call_tool" || action.tool !== "strategy_video_search") return action;
+  const userText = [
+    request.input,
+    request.question,
+    ...(Array.isArray(request.messages) ? request.messages.map((message) => message?.content) : [])
+  ].map((value) => String(value ?? "")).join("\n");
+  const requestsTft = /(?:云顶之弈|teamfight\s*tactics|\btft\b)/iu.test(userText);
+  const requestsGoldenSpatula = /(?:金铲铲(?:之战)?|golden\s*spatula)/iu.test(userText);
+  if (!requestsTft || !requestsGoldenSpatula) return action;
+  return {
+    ...action,
+    arguments: { ...(action.arguments ?? {}), ecosystem: "both" }
+  };
+}
+
+function deterministicStrategyVideoFallback(request, availableToolNames, ledger) {
+  if (!availableToolNames.has("strategy_video_search")) return null;
+  if (ledger.snapshot().entries.some((entry) => entry.temporalStatus !== "historical")) return null;
+  const userText = [
+    request.input,
+    request.question,
+    ...(Array.isArray(request.messages) ? request.messages.map((message) => message?.content) : [])
+  ].map((value) => String(value ?? "")).join("\n").trim();
+  if (!/(?:\u89c6\u9891|\u653b\u7565|bilibili|\u54d4\u54e9\u54d4\u54e9|b\u7ad9)/iu.test(userText)) return null;
+  const requestsTft = /(?:\u4e91\u9876\u4e4b\u5f08|teamfight\s*tactics|\btft\b)/iu.test(userText);
+  const requestsGoldenSpatula = /(?:\u91d1\u94f2\u94f2(?:\u4e4b\u6218)?|golden\s*spatula)/iu.test(userText);
+  const ecosystem = requestsTft && requestsGoldenSpatula
+    ? "both"
+    : requestsGoldenSpatula
+      ? "golden_spatula"
+      : requestsTft
+        ? "tft_pc"
+        : undefined;
+  return {
+    schemaVersion: "react-action.v1",
+    type: "call_tool",
+    tool: "strategy_video_search",
+    arguments: { query: userText, ...(ecosystem ? { ecosystem } : {}) },
+    purposeCode: "retrieve_supporting_knowledge"
+  };
+}
+
 function boundedInteger(value, fallback, min, max) {
   const number = Number(value);
   return Number.isInteger(number) && number >= min ? Math.min(number, max) : fallback;
@@ -905,6 +948,15 @@ export class ReactLoop {
       } catch (error) {
         const normalized = safeError(error);
         emit("error", { code: normalized.code, message: normalized.message });
+        const deterministicVideoAction = deterministicStrategyVideoFallback(
+          request,
+          this.availableToolNames,
+          ledger
+        );
+        if (deterministicVideoAction) {
+          state.warn("decision_provider_video_fallback");
+          provided = { action: deterministicVideoAction };
+        } else {
         const fallback = buildItemContentionFallback(ledger) ?? buildAvailableEvidenceFallback(ledger);
         if (fallback) {
           state.warn("decision_provider_answer_fallback");
@@ -923,6 +975,7 @@ export class ReactLoop {
           });
         }
         return terminate("decision_provider_failed", { status: "failed" });
+        }
       }
 
       const candidate = provided?.action ?? provided;
@@ -959,7 +1012,7 @@ export class ReactLoop {
         continue;
       }
 
-      const action = validation.value;
+      const action = applyRequestBoundVideoScope(validation.value, request);
       state.recordDecision(action);
       emit("decision", decisionEventData(action, state, budget));
 

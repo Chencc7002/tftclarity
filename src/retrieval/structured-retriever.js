@@ -76,6 +76,13 @@ const OPERATION_REGISTRY = Object.freeze({
   semantic_search: Object.freeze({
     source: "semantic_index",
     params: Object.freeze(["query", "documentTypes", "patch", "locale", "topK"])
+  }),
+  strategy_video_search: Object.freeze({
+    source: "bilibili",
+    params: Object.freeze(["query", "ecosystem", "page", "limit"]),
+    trustTier: "third_party",
+    credentialScope: "bilibili_mcp",
+    plannerAllowed: true
   })
 });
 

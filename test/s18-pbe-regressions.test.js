@@ -166,7 +166,7 @@ test("Set 18 PBE traits prefer the latest CommunityDragon Chinese names and reta
     ["DA_Emerald18_1", "DA_Emerald18", "翡翠化身", "宝石骑士"],
     ["DA_18_Caustic_1", "DA_18_Caustic", "苛性", "帝王斑蝶"],
     ["DA_18_Eclipse_1", "DA_18_Eclipse", "蚀", "日月双蚀"],
-    ["DA_18_Sprykin_3", "DA_18_Sprykin", "迅灵", "约德尔人…"]
+    ["DA_18_Sprykin_3", "DA_18_Sprykin", "迅灵", "约德尔人"]
   ];
   const traitLookupByApiName = new Map(cases.map(([, apiName, staleName]) => [
     apiName,
@@ -196,8 +196,13 @@ test("Set 18 PBE traits prefer the latest CommunityDragon Chinese names and reta
 test("Set 18 PBE emblems prefer the latest Chinese names and retain old query aliases", () => {
   const cases = [
     ["DA_18_EmblemHunter", "猎手纹章", "猎人纹章"],
-    ["DA_18_EmblemSprykin", "迅灵纹章", "约德尔人…纹章"],
-    ["DA_18_EmblemVanguard", "前卫纹章", "重装战士纹章"]
+    ["DA_18_EmblemSprykin", "迅灵纹章", "约德尔人纹章"],
+    ["DA_18_EmblemVanguard", "前卫纹章", "重装战士纹章"],
+    ["DA_18_EmblemBlossom", "Blossom Emblem", "灵魂莲华纹章"],
+    ["DA_18_EmblemFloraFatalis", "Flora Fatalis Emblem", "绝命花妖纹章"],
+    ["DA_18_EmblemFloraFatalisAugment", "Flora Fatalis Emblem", "绝命花妖纹章"],
+    ["DA_18_EmblemJuggernaut", "Juggernaut Emblem", "主宰纹章"],
+    ["DA_18_EmblemPrimal", "Primal Emblem", "野兽之灵纹章"]
   ];
   const itemLookupByApiName = new Map(cases.map(([apiName, staleName]) => [
     apiName,
@@ -226,6 +231,41 @@ test("Set 18 PBE emblems prefer the latest Chinese names and retain old query al
   assert.deepEqual(planQuery("阿狸已有猎手纹章怎么出装", { catalog }).query.ownedItems, [
     "DA_18_EmblemHunter"
   ]);
+});
+
+test("Set 18 PBE untranslated special items use verified Chinese client names", () => {
+  const cases = [
+    ["DA_Artifact_ForbiddenIdol", "Forbidden Idol", "禁忌雕像"],
+    ["DA_MasterworkUpgrade", "Masterwork Upgrade", "杰作升级"]
+  ];
+  const itemLookupByApiName = new Map(cases.map(([apiName, englishName]) => [
+    apiName,
+    { apiName, name: englishName }
+  ]));
+  const items = buildItemCatalogFromItemsResponse({
+    data: cases.map(([apiName]) => ({ items: apiName }))
+  }, { includeSeeds: false, itemLookupByApiName });
+
+  for (const [apiName, englishName, zhName] of cases) {
+    const item = items.find((entry) => entry.apiName === apiName);
+    assert.equal(item?.zhName, zhName);
+    assert.equal(item?.preferredDisplayName, zhName);
+    assert.equal(item?.aliases.includes(englishName), true);
+  }
+});
+
+test("Set 18 PBE items do not expose derived English tokens as Chinese short names", () => {
+  const apiName = "DA_18_EmblemBlackthorn";
+  const [item] = buildItemCatalogFromItemsResponse({
+    data: [{ items: apiName }]
+  }, {
+    includeSeeds: false,
+    itemLookupByApiName: new Map([[apiName, { apiName, name: "黑色荆棘纹章" }]])
+  });
+
+  assert.equal(item.zhName, "黑色荆棘纹章");
+  assert.equal(item.shortName, "黑色荆棘纹章");
+  assert.equal(item.aliases.includes("EmblemBlackthorn"), true);
 });
 
 test("chat routing resolves 巨九 to the Set 18 DA Artifact item", async () => {

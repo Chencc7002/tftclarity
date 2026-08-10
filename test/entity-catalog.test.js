@@ -124,6 +124,29 @@ test("trait catalog collapses activation tiers into one base trait", () => {
   assert.equal(stargazer.traitType, "race");
 });
 
+test("entity catalogs project bilingual names, roles, and trait labels by display locale", () => {
+  const units = buildEntityCatalog(fixtureCatalog(), fixtureDetails(), {
+    entityType: "unit",
+    locale: "en-US"
+  });
+  const traits = buildEntityCatalog(fixtureCatalog(), fixtureDetails(), {
+    entityType: "trait",
+    locale: "en-US"
+  });
+
+  const xayah = units.items.find((entry) => entry.apiName === "TFT17_Xayah");
+  const masterYi = units.items.find((entry) => entry.apiName === "TFT17_MasterYi");
+  const stargazer = traits.items.find((entry) => entry.apiName === "TFT17_Stargazer");
+  assert.equal(xayah.name, "Xayah");
+  assert.equal(xayah.zhName, "霞");
+  assert.equal(xayah.role, "AD Carry");
+  assert.deepEqual(xayah.traitNames, ["Stargazer"]);
+  assert.equal(masterYi.name, "Master Yi");
+  assert.deepEqual(masterYi.traitNames, ["Duelist"]);
+  assert.equal(stargazer.name, "Stargazer");
+  assert.equal(stargazer.zhName, "观星者");
+});
+
 test("entity catalog pagination is bounded", () => {
   const result = buildEntityCatalog(fixtureCatalog(), fixtureDetails(), {
     entityType: "unit",

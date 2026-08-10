@@ -105,6 +105,15 @@ function containsHan(value) {
   return /[\u3400-\u9fff]/u.test(String(value ?? ""));
 }
 
+function normalizeChineseItemShortName(item) {
+  if (!containsHan(item?.zhName) || containsHan(item?.shortName)) return item;
+  return {
+    ...item,
+    shortName: item.zhName,
+    aliases: compact([item.shortName, ...(item.aliases ?? [])])
+  };
+}
+
 function normalizeLookupToken(value) {
   return String(value ?? "").toLowerCase().replace(/[^a-z0-9]/g, "");
 }
@@ -418,7 +427,7 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
     : deriveItemAlias(apiName, category);
   const preferredOverrideName = override?.preferZhName ? override.zhName : null;
 
-  return applyOfficialItemLocalization({
+  const localized = applyOfficialItemLocalization({
     apiName,
     zhName: preferredOverrideName
       ?? lookupName
@@ -464,6 +473,8 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
   }, {
     localizationByApiName: options.localizationByApiName
   });
+
+  return normalizeChineseItemShortName(localized);
 }
 
 export function buildItemCatalogFromItemsResponse(response, options = {}) {
@@ -517,5 +528,6 @@ export function mergeCatalogItems(baseItems, generatedItems, options = {}) {
     .map((item) => applyOfficialItemLocalization(item, {
       localizationByApiName: options.localizationByApiName
     }))
+    .map(normalizeChineseItemShortName)
     .sort((a, b) => a.apiName.localeCompare(b.apiName));
 }
