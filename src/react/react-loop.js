@@ -891,6 +891,7 @@ export class ReactLoop {
 
     while (state.decisions.length < budget.maxDecisions) {
       context.run?.assertActive?.();
+      state.recordRuntimeState();
       let provided;
       try {
         provided = await this.decisionProvider({
@@ -1382,6 +1383,7 @@ export class ReactLoop {
         evidenceId: addition.entry?.evidenceId ?? null,
         evidenceStatus: addition.added ? "valid" : addition.reason,
         value: toolResult.value,
+        evidence: addition.entry ?? null,
         ...(nextActionAffordance ? { nextActionAffordance } : {})
       }, { toolCall: true, progress: addition.added });
       if (addition.added) {
