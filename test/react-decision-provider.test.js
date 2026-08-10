@@ -64,6 +64,42 @@ test("react decision provider sends bounded state and returns a validated action
   assert.match(observedBody.messages[0].content, /never guess apiName/iu);
 });
 
+test("react decision provider deterministically preserves an explicit dual video ecosystem request", async () => {
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async () => ({
+      ok: true,
+      async json() {
+        return {
+          choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1",
+            type: "call_tool",
+            tool: "strategy_video_search",
+            arguments: { query: "九五阵容攻略" },
+            purposeCode: "retrieve_supporting_knowledge"
+          }) } }]
+        };
+      }
+    })
+  });
+  const response = await provider({
+    state: { question: "分别找云顶之弈和金铲铲的九五攻略", messages: [], evidence: [] },
+    toolCatalog: [{
+      name: "strategy_video_search",
+      inputSchema: {
+        type: "object",
+        properties: {
+          query: { type: "string" },
+          ecosystem: { type: "string", enum: ["tft_pc", "golden_spatula", "both"] }
+        },
+        required: ["query"]
+      }
+    }]
+  });
+  assert.equal(response.action.arguments.ecosystem, "both");
+});
+
 test("react decision provider keeps the stable contract and run context as an append-only prefix", async () => {
   const bodies = [];
   const provider = createReactDecisionProvider({

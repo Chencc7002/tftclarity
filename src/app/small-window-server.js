@@ -8,6 +8,10 @@ import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.j
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import {
+  createBilibiliStrategyVideoService,
+  resolveBilibiliMcpConfig
+} from "../../services/bilibili/service.mjs";
+import {
   normalizeCompAugmentTiers,
   normalizeCompDetailsPositioning
 } from "../data/comp-detail-adapter.js";
@@ -2965,6 +2969,16 @@ export function createSmallWindowRuntime(options = {}) {
     version: options.providerVersion ?? "metatft-live.v1"
   });
   const providerRouter = options.providerRouter ?? createProviderRouter({ metatft: statsProvider }, options.providerConfig ?? {}, options.env ?? process.env);
+  const bilibiliConfig = options.bilibiliConfig
+    ?? resolveBilibiliMcpConfig(options.bilibili ?? {}, options.env ?? process.env);
+  const strategyVideoSearchService = options.strategyVideoSearchService
+    ?? createBilibiliStrategyVideoService({
+      config: bilibiliConfig,
+      client: options.bilibiliMcpClient,
+      adapter: options.bilibiliMcpAdapter,
+      fetchImpl: options.bilibiliFetch ?? options.fetchImpl,
+      now: options.now
+    }, options.env ?? process.env);
   const cacheStoreInfo = summarizeCacheStore(options, cacheStore);
   const conclusionGeneratorConfig = options.conclusionGeneratorConfig ?? (options.conclusionProvider
     ? {
@@ -3016,6 +3030,8 @@ export function createSmallWindowRuntime(options = {}) {
     compsClient,
     statsProvider,
     providerRouter,
+    bilibiliConfig,
+    strategyVideoSearchService,
     cacheStore,
     cacheStoreInfo,
     compDetailCache: options.compDetailCache ?? new Map(),
@@ -3945,6 +3961,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     : null);
   const runtimeOptions = {
     ...options,
+    env,
     ...requestTimeouts,
     agentRunBudget: resolveSmallWindowAgentRunBudget(options, env),
     ...structuredParserRuntime,
@@ -5538,6 +5555,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     registry: requestRuntime.toolRegistry,
     catalog,
     seasonContext,
+    patchState: requestRuntime.patchState,
+    strategyVideoSearchService: requestRuntime.strategyVideoSearchService,
     preferences,
     compsData,
     queryEntityCatalog,
@@ -6445,6 +6464,8 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     registry: runtime.toolRegistry,
     handlers,
     seasonContext,
+    patchState: runtime.patchState,
+    strategyVideoSearchService: runtime.strategyVideoSearchService,
     seasonContextId: seasonContext.id,
     locale: runtime.semanticConfig?.locale ?? "zh-CN",
     loadOfficialEntityDetails: (toolContext = {}) => loadOfficialEntityDetails(runtime, {

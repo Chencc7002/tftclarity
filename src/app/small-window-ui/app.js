@@ -2815,6 +2815,23 @@ function buildNarrativeWarningText(error) {
   return t("buildNarrativeValidationGeneric");
 }
 
+function strategyVideoChatSummary(data) {
+  if (data?.type !== "strategy_video_search_results") return null;
+  if (data.status === "unsupported_scope") {
+    return getLocale().startsWith("zh")
+      ? "\u4ec5\u652f\u6301\u4e91\u9876\u4e4b\u5f08\u548c\u91d1\u94f2\u94f2\u653b\u7565\u89c6\u9891\u3002"
+      : "Only Teamfight Tactics and Golden Spatula strategy videos are supported.";
+  }
+  const groups = Array.isArray(data.groups) && data.groups.length
+    ? data.groups
+    : [{ videos: data.videos ?? data.results ?? [] }];
+  const count = groups.reduce((total, group) => total + (group.videos ?? group.results ?? []).length, 0);
+  if (!count) return getLocale().startsWith("zh") ? "\u672a\u627e\u5230\u653b\u7565\u89c6\u9891\u3002" : "No strategy videos found.";
+  return getLocale().startsWith("zh")
+    ? `\u627e\u5230 ${count} \u4e2a\u653b\u7565\u89c6\u9891\uff0c\u6700\u65b0\u4f18\u5148\u3002`
+    : `Found ${count} strategy videos, newest first.`;
+}
+
 function assistantResponseHtml(data, responseId = "", options = {}) {
   if (data?.type === "system_interaction") {
     return systemInteractionAnswerHtml(data);
@@ -2825,6 +2842,10 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
     traceState: data?.processingTrace,
     completed: true
   });
+  const compactVideoSummary = strategyVideoChatSummary(data);
+  if (compactVideoSummary) {
+    return `${understanding}<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div><button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  }
   if (data?.clarification?.needsClarification && !data?.assistantResponse?.text) {
     return `${understanding}<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
   }
@@ -3415,7 +3436,112 @@ function buildRecommendationDecisionSummary(entries) {
   return `${performance}${sampleTradeoff}${knowledgeHint}${alternatives}`;
 }
 
+function renderStrategyVideoSearchResult(data) {
+  const zh = getLocale().startsWith("zh");
+  const labels = zh ? {
+    title: "Bilibili \u653b\u7565\u89c6\u9891",
+    unavailable: "\u5f53\u524d\u65e0\u6cd5\u83b7\u53d6 Bilibili \u89c6\u9891\u641c\u7d22\u7ed3\u679c\u3002",
+    unsupported: "\u4ec5\u652f\u6301\u4e91\u9876\u4e4b\u5f08\u548c\u91d1\u94f2\u94f2\u653b\u7565\u89c6\u9891\u3002",
+    empty: "\u6ca1\u6709\u627e\u5230\u7b26\u5408\u8303\u56f4\u7684\u653b\u7565\u89c6\u9891\u3002",
+    current: "\u5f53\u524d\u7248\u672c",
+    previous: "\u4e0a\u4e00\u7248\u672c",
+    older: "\u8f83\u65e7\u7248\u672c",
+    unknown: "\u7248\u672c\u672a\u6807\u6ce8",
+    tft_pc: "\u4e91\u9876\u4e4b\u5f08",
+    golden_spatula: "\u91d1\u94f2\u94f2\u4e4b\u6218",
+    cross_ecosystem: "\u53cc\u7aef\u901a\u7528",
+    author: "UP \u4e3b",
+    published: "\u53d1\u5e03",
+    publishedUnknown: "\u53d1\u5e03\u65e5\u671f\u672a\u77e5",
+    views: "\u64ad\u653e",
+    detailUnavailable: "\u8be6\u60c5\u6682\u4e0d\u53ef\u7528",
+    previousFallback: "\u542b\u4e0a\u4e00\u7248\u672c\u653b\u7565\u3002",
+    olderFallback: "\u8f83\u65e7\u7248\u672c\u00b7\u4ec5\u4f9b\u53c2\u8003\u3002",
+    unknownFallback: "\u7248\u672c\u672a\u6807\u6ce8\u00b7\u5df2\u6309\u53d1\u5e03\u65e5\u671f\u6392\u5e8f\u3002",
+    crossFallback: "\u542b\u53cc\u7aef\u901a\u7528\u653b\u7565\u3002",
+    open: "\u6253\u5f00\u89c6\u9891"
+  } : {
+    title: "Bilibili strategy videos",
+    unavailable: "Bilibili video search is currently unavailable.",
+    unsupported: "Only Teamfight Tactics and Golden Spatula strategy videos are supported.",
+    empty: "No in-scope strategy videos were found.",
+    current: "Current patch",
+    previous: "Previous patch",
+    older: "Older patch",
+    unknown: "Patch not tagged",
+    tft_pc: "Teamfight Tactics",
+    golden_spatula: "Golden Spatula",
+    cross_ecosystem: "Works in both",
+    author: "Creator",
+    published: "Published",
+    publishedUnknown: "Publish date unavailable",
+    views: "Views",
+    detailUnavailable: "Details unavailable",
+    previousFallback: "Includes previous-patch guides.",
+    olderFallback: "Older patch · for reference.",
+    unknownFallback: "Patch not tagged · sorted by publish date.",
+    crossFallback: "Includes guides for both games.",
+    open: "Open video"
+  };
+  const fallbackText = (group) => group.fallbackType === "previous_patch" ? labels.previousFallback
+    : group.fallbackType === "older_patch" ? labels.olderFallback
+      : group.fallbackType === "unknown_patch" ? labels.unknownFallback
+        : group.fallbackType === "cross_ecosystem" ? labels.crossFallback : "";
+  const groups = data.status === "unsupported_scope"
+    ? []
+    : Array.isArray(data.groups) && data.groups.length
+      ? data.groups
+      : [{ ecosystem: data.requestedEcosystem ?? "tft_pc", ...data }];
+  const sections = groups.map((group) => {
+    const videos = group.results ?? group.videos ?? [];
+    const fallback = fallbackText(group);
+    const cards = videos.map((video) => {
+      const url = safeKnowledgeSourceUrl(video.url);
+      const cover = safeKnowledgeSourceUrl(video.coverUrl);
+      const ecosystem = video.ecosystem ?? group.ecosystem ?? "tft_pc";
+      const metrics = [
+        video.authorName ? `${labels.author}：${video.authorName}` : null,
+        video.publishedAt ? `${labels.published}：${formatDate(video.publishedAt)}` : labels.publishedUnknown,
+        video.viewCount != null ? `${labels.views}：${formatNumber(video.viewCount)}` : null
+      ].filter(Boolean);
+      return `<article class="result-card strategy-video-card" data-patch-time-status="${escapeHtml(video.patchTimeStatus ?? "unknown")}">
+        ${cover ? `<img class="strategy-video-cover" src="${escapeHtml(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
+        <div class="strategy-video-body">
+          <div class="card-head"><div>
+            <span class="ranking-badge strategy-video-ecosystem">${escapeHtml(labels[ecosystem] ?? ecosystem)}</span>
+            <span class="ranking-badge patch-time-badge">${escapeHtml(labels[video.patchTimeStatus] ?? labels.unknown)}</span>
+            <div class="card-title">${escapeHtml(video.title)}</div>
+          </div></div>
+          ${metrics.length ? `<small>${metrics.map(escapeHtml).join(" · ")}</small>` : ""}
+          ${video.detailStatus === "unavailable" ? `<div class="risk-line">${escapeHtml(labels.detailUnavailable)}</div>` : ""}
+          ${url ? `<a class="strategy-video-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(labels.open)} →</a>` : ""}
+        </div>
+      </article>`;
+    }).join("");
+    const groupLabel = labels[group.ecosystem] ?? group.ecosystem ?? labels.title;
+    return `<section class="strategy-video-group" data-ecosystem="${escapeHtml(group.ecosystem ?? "unknown")}">
+      <h3>${escapeHtml(groupLabel)}</h3>
+      ${fallback ? `<div class="risk-line strategy-video-fallback">${escapeHtml(fallback)}</div>` : ""}
+      ${cards ? `<div class="ranking-section strategy-video-grid">${cards}</div>` : `<div class="empty-state"><strong>${escapeHtml(group.status === "unavailable" ? labels.unavailable : labels.empty)}</strong></div>`}
+    </section>`;
+  }).join("");
+  const resultCount = groups.reduce((total, group) => total + (group.results ?? group.videos ?? []).length, 0);
+  const summary = data.status === "unsupported_scope" ? labels.unsupported
+    : data.status === "unavailable" ? labels.unavailable
+    : resultCount ? (zh ? `\u627e\u5230 ${resultCount} \u4e2a\u653b\u7565\u89c6\u9891 \u00b7 \u6700\u65b0\u4f18\u5148` : `${resultCount} strategy videos \u00b7 newest first`)
+      : labels.empty;
+  setResponseHtml(`
+    ${resultHeader(labels.title, summary, "BILIBILI")}
+    ${data.partialFailure?.message ? `<div class="risk-line strategy-video-fallback">${escapeHtml(data.partialFailure.message)}</div>` : ""}
+    ${sections}
+  `);
+}
+
 function renderSemanticNativeResult(data) {
+  if (data.type === "strategy_video_search_results") {
+    renderStrategyVideoSearchResult(data);
+    return;
+  }
   if (data.type === "composition_tactical_details") {
     const comp = {
       name: data.compositionRef?.name ?? data.compositionRef?.compId ?? t("compFormation"),
@@ -3647,7 +3773,7 @@ function renderCurrentResult(data) {
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
-  else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details"].includes(data.type)) renderSemanticNativeResult(data);
+  else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details", "strategy_video_search_results"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
   const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
@@ -4255,6 +4381,49 @@ function renderRecommendationProgress(target, progress) {
   scrollConversation();
 }
 
+function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
+  const nested = failure?.data ?? failure?.event?.data ?? {};
+  const code = String(failure?.code ?? nested.code ?? failure?.terminationReason ?? "").trim();
+  const rawMessage = String(failure?.error ?? failure?.message ?? nested.message ?? "").trim();
+  const timeoutMatch = rawMessage.match(/react decision provider timed out after (\d+)ms/i);
+  if (timeoutMatch) {
+    const seconds = Math.max(1, Math.round(Number(timeoutMatch[1]) / 1000));
+    return getLocale().startsWith("zh")
+      ? `\u6a21\u578b\u51b3\u7b56\u8d85\u65f6\uff08${seconds} \u79d2\uff09\uff0c\u5c1a\u672a\u8c03\u7528\u6570\u636e\u5de5\u5177\u3002\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002`
+      : `The model decision timed out after ${seconds} seconds before a data tool was called. Please retry.`;
+  }
+  if (code === "decision_provider_failed") {
+    const strategyEvidence = Array.isArray(failure?.evidence)
+      ? failure.evidence.find((entry) => entry?.value?.type === "strategy_video_search_results")?.value
+      : null;
+    if (strategyEvidence?.status === "found") {
+      return getLocale().startsWith("zh")
+        ? "\u6a21\u578b\u603b\u7ed3\u6682\u4e0d\u53ef\u7528\uff0c\u4ee5\u4e0b\u4e3a\u5df2\u83b7\u53d6\u7684\u89c6\u9891\u7ed3\u679c\u3002"
+        : "The model summary is unavailable; retrieved video results are shown below.";
+    }
+    return getLocale().startsWith("zh")
+      ? "\u6a21\u578b\u51b3\u7b56\u670d\u52a1\u6682\u65f6\u4e0d\u53ef\u7528\uff0c\u5c1a\u672a\u5b8c\u6210\u6570\u636e\u67e5\u8be2\u3002\u8bf7\u7a0d\u540e\u91cd\u8bd5\u3002"
+      : "The model decision service is temporarily unavailable, so the data query did not complete. Please retry.";
+  }
+  if (code === "missing_required_evidence") {
+    return getLocale().startsWith("zh")
+      ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
+      : "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below.";
+  }
+  return rawMessage || fallback;
+}
+
+function hasRenderableNativeEvidence(payload) {
+  const nativeTypes = new Set([
+    "entity_catalog_results",
+    "unit_builds_batch_results",
+    "trait_external_unit_statistics",
+    "composition_tactical_details",
+    "strategy_video_search_results"
+  ]);
+  return Array.isArray(payload?.evidence) && payload.evidence.some((entry) => nativeTypes.has(entry?.value?.type));
+}
+
 async function readRecommendationStream(response, target, progress, requestId, signal) {
   if (!response.ok) throw new Error(`HTTP ${response.status}`);
   if (!response.body?.getReader) throw new Error("recommendation progress stream is unavailable");
@@ -4262,6 +4431,7 @@ async function readRecommendationStream(response, target, progress, requestId, s
   const decoder = new TextDecoder();
   let buffer = "";
   let completion = null;
+  let failureDiagnostic = null;
   const applyLine = (line) => {
     if (!line.trim()) return;
     const event = JSON.parse(line);
@@ -4271,6 +4441,7 @@ async function readRecommendationStream(response, target, progress, requestId, s
     }
     if (event.type === "event") {
       const phase = String(event.event?.type ?? "react.event");
+      if (phase === "error") failureDiagnostic = event.event;
       applyRecommendationProgressState(progress, {
         schemaVersion: "recommendation-progress.v1",
         sequence: Number(event.event?.sequence ?? 0),
@@ -4286,7 +4457,7 @@ async function readRecommendationStream(response, target, progress, requestId, s
       return;
     }
     if (event.type === "error") {
-      throw new Error(event.error ?? t("queryFailed"));
+      throw new Error(recommendationFailureMessage(event));
     }
     if (event.type === "complete") completion = event;
   };
@@ -4308,7 +4479,24 @@ async function readRecommendationStream(response, target, progress, requestId, s
   }
   if (!completion) throw new Error("recommendation stream ended before completion");
   if (Number(completion.statusCode ?? 200) >= 400 || !completion.payload?.ok) {
-    throw new Error(completion.payload?.error ?? t("queryFailed"));
+    if (hasRenderableNativeEvidence(completion.payload)) {
+      const strategyEvidence = completion.payload.evidence
+        ?.find((entry) => entry?.value?.type === "strategy_video_search_results")?.value;
+      return {
+        ...completion.payload,
+        ok: true,
+        ...(strategyEvidence?.status === "unsupported_scope" ? {} : {
+          partialFailure: {
+            code: String(completion.payload?.terminationReason ?? "evidence_validation_failed"),
+            message: recommendationFailureMessage(completion.payload)
+          }
+        })
+      };
+    }
+    throw new Error(recommendationFailureMessage(
+      completion.payload,
+      recommendationFailureMessage(failureDiagnostic)
+    ));
   }
   return completion.payload;
 }
@@ -4317,13 +4505,14 @@ function normalizeEndpointPayload(payload) {
   if (payload?.type !== "react_chat_result") return payload;
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
     ? payload.answer
-    : String(payload.question ?? payload.error ?? t("noResult")));
+    : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
   const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
   const nativeResultTypes = new Set([
     "entity_catalog_results",
     "unit_builds_batch_results",
     "trait_external_unit_statistics",
-    "composition_tactical_details"
+    "composition_tactical_details",
+    "strategy_video_search_results"
   ]);
   const evidenceValues = [...evidence].reverse().map((entry) => entry?.value);
   const primaryValue = evidenceValues.find((value) => nativeResultTypes.has(value?.type))
@@ -4335,6 +4524,9 @@ function normalizeEndpointPayload(payload) {
   return {
     ...(primaryValue ?? {}),
     ...payload,
+    ...(nativeResultTypes.has(primaryValue?.type) && primaryValue?.status
+      ? { status: primaryValue.status, runStatus: payload.status }
+      : {}),
     type: nativeResultTypes.has(primaryValue?.type) ? primaryValue.type : payload.type,
     reactAnswer: answerText,
     text: answerText,

@@ -189,6 +189,68 @@ test("R1-02 one static tool produces validated evidence and ordered events", asy
   assert.equal(provider.requests[1].state.transcript[2].value.evidence.evidenceId, "ev-1");
 });
 
+test("explicit TFT and Golden Spatula request binds one video call to both ecosystems", async () => {
+  let observedInput = null;
+  const provider = queueProvider([
+    call("strategy_video_search", { query: "九五阵容攻略" }, "retrieve_supporting_knowledge"),
+    finish("已返回两个生态的视频候选。", ["ev-1"])
+  ]);
+  const { result } = await runCase({
+    input: "分别找云顶之弈和金铲铲的九五攻略",
+    provider,
+    definitions: [definition("strategy_video_search", {
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["query"],
+        properties: {
+          query: { type: "string" },
+          ecosystem: { type: "string", enum: ["tft_pc", "golden_spatula", "both"] }
+        }
+      }
+    })],
+    handlers: {
+      strategy_video_search: async (input) => {
+        observedInput = input;
+        return evidence([{ title: "候选视频" }]);
+      }
+    }
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(observedInput.ecosystem, "both");
+});
+
+test("video search falls back deterministically when the decision provider is unavailable", async () => {
+  let observedInput = null;
+  const provider = async () => { throw new Error("model unavailable"); };
+  const { result } = await runCase({
+    input: "请分别找云顶之弈和金铲铲的九五攻略视频",
+    provider,
+    definitions: [definition("strategy_video_search", {
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["query"],
+        properties: {
+          query: { type: "string" },
+          ecosystem: { type: "string", enum: ["tft_pc", "golden_spatula", "both"] }
+        }
+      }
+    })],
+    handlers: {
+      strategy_video_search: async (input) => {
+        observedInput = input;
+        return evidence([{ title: "九五攻略" }], { type: "strategy_video_search_results" });
+      }
+    }
+  });
+  assert.equal(observedInput.ecosystem, "both");
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminationReason, "decision_provider_failed");
+  assert.ok(result.warnings.includes("decision_provider_video_fallback"));
+});
+
 test("R1-03 statistical answers require evidence with updatedAt", async () => {
   const valid = await runCase({
     provider: queueProvider([

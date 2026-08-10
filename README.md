@@ -198,6 +198,8 @@ Copy-Item .env.example .env
 | `TFT_AGENT_CONVERSATION_BRIDGE_MODE` | 让 QuickTask 目的、条件和结果进入后续聊天上下文 |
 | `TFT_AGENT_OPGG_TEACHING_TIMEOUT_MS` | OP.GG AI 教学单次尝试超时 |
 | `OPGG_PUUID_ENCRYPTION_KEY` | 可选的 PUUID 静态加密密钥；未配置时不落盘 PUUID |
+| `BILIBILI_MCP_ENDPOINT` | 外部 `bilibili-mcp-js` 的 Streamable HTTP `/mcp` 地址 |
+| `BILIBILI_PATCH_DISCOVERY_MODE` | 在线发现云顶与金铲铲当前/上一版本时间窗；默认 `auto` |
 
 完整配置和安全占位符见 [.env.example](.env.example)，公开部署示例见 [.env.production.example](.env.production.example)。
 
@@ -265,6 +267,33 @@ npm run youtube:acceptance
 
 视频字幕由 Python 服务提取，Node 服务负责入库、检索、EvidenceBundle 和最终回答。未经人工审核的摘要会在 Schema、HTTP Evidence 和界面中标记“AI 生成 · 未经人工复核”，并保留原视频时间点链接。完整流程见 [YouTube 攻略知识与混合回答操作说明](docs/youtube-hybrid-operations.md)。
 
+### Bilibili 攻略视频 MCP
+
+本项目通过外部 [bilibili-mcp-js](https://github.com/34892002/bilibili-mcp-js) 提供只读攻略视频搜索。能力范围限定为云顶之弈与金铲铲之战；明确要求两个生态时会分别检索并分组，双端都适用的视频显示为“双端通用”。编程、影视、宠物等无关视频请求会在调用 MCP 前被拒绝。
+
+```powershell
+git clone https://github.com/34892002/bilibili-mcp-js.git
+cd bilibili-mcp-js
+npm install
+$env:TRANSPORT="remote"
+$env:PORT="18888"
+npm start
+```
+
+在 TFTAgent 的 `.env` 中配置：
+
+```dotenv
+BILIBILI_MCP_ENDPOINT=http://127.0.0.1:18888/mcp
+BILIBILI_PATCH_DISCOVERY_MODE=auto
+```
+
+版本窗默认在线获取并缓存 6 小时：云顶读取 [Riot 官方 Game Updates](https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/)，金铲铲读取可配置的[更新公告索引](https://newgame.17173.com/game-newslist-4075117.html)。在线来源不可用时不会猜测版本，界面会显示“版本未标注”；生产环境也可用 `BILIBILI_TFT_PATCH_WINDOWS_JSON` 与 `BILIBILI_GOLDEN_SPATULA_PATCH_WINDOWS_JSON` 固定覆盖。视频发布日期来自 Bilibili 搜索/详情结果，组内始终按“当前版本、上一版本、未标注、较旧版本”排序，同一档内发布日期越新越靠前。
+
+外部 MCP 当前没有认证能力，只应监听 localhost 或受信内网。浏览器验收截图：
+
+- [双端分组、当前版本与最新优先](docs/images/bilibili-browser-dual-ecosystem.png)
+- [非云顶/金铲铲内容拦截](docs/images/bilibili-browser-domain-gate.png)
+
 ## 测试与质量门槛
 
 ```powershell
@@ -288,7 +317,7 @@ npm run eval:agent
 
 V2 后续工作以“先扩展能力和验收，再考虑部署”为原则：
 
-1. 扩展 YouTube、哔哩哔哩等视频攻略搜索、字幕抽取、来源时间点和人工复核流程。
+1. 完善 YouTube 与 Bilibili 视频字幕抽取、来源时间点、缓存降级和人工复核流程。
 2. 将用户策略知识从代码内规则继续演进为可维护、可审核、可版本化的知识库，并记录适用赛季与置信边界。
 3. 完善阵容、棋子、装备、站位、强化符文之间的多工具组合案例和长对话上下文继承。
 4. 建立模型边界与幻觉频率评估，记录原始自由文本、证据校验结果、失败原因和人工审核结论。
@@ -311,6 +340,7 @@ V2 后续工作以“先扩展能力和验收，再考虑部署”为原则：
 - MetaTFT 是非官方外部数据源，接口变化、网络失败或缓存过期可能影响实时查询。
 - OP.GG 职业池数据是小样本观察，不能替代全服统计，也不能推导稳定因果关系。
 - 官方版本公告只用于版本事实；攻略与 AI 摘要只用于原因、背景和条件性建议。
+- Bilibili 搜索与金铲铲公告索引属于第三方来源，可能受接口、页面结构、网络或限流影响；失败时保留明确原因且不伪造版本与视频。
 - `.probe/` 保存离线捕获样本，用于回归测试、目录审核和数据契约验证。
 
 tftclarity 是由玩家独立制作的非商业粉丝项目，与 Riot Games 不存在隶属、合作、赞助或认可关系。Riot Games、Teamfight Tactics 及相关角色、图像、名称和游戏资产归 Riot Games 或其权利人所有。

@@ -321,6 +321,19 @@ export function createTftToolHandlers(dependencies = {}) {
     );
   }
 
+  if (typeof dependencies.strategyVideoSearchService?.search === "function") {
+    handlers.strategy_video_search = (input, context = {}) => (
+      dependencies.strategyVideoSearchService.search(input, {
+        ...context,
+        currentPatch: dependencies.patchState?.currentPatch
+          ?? dependencies.seasonContext?.currentPatch
+          ?? dependencies.seasonContext?.effectivePatch
+          ?? null,
+        previousPatch: dependencies.patchState?.previousPatch ?? null
+      })
+    );
+  }
+
   const registeredTools = dependencies.registry?.list?.().map((definition) => definition.name) ?? [];
   const unavailableTools = registeredTools.filter((name) => typeof handlers[name] !== "function");
   const availableToolNames = Object.freeze(Object.keys(handlers).filter((name) => (

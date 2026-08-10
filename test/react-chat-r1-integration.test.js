@@ -55,7 +55,8 @@ test("independent react endpoint answers without entering recommendForInput", as
     "item_details_batch",
     "trait_details",
     "entity_catalog_query",
-    "composition_member_statistics"
+    "composition_member_statistics",
+    "strategy_video_search"
   ]);
 });
 
@@ -161,7 +162,8 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
     "trait_details",
     "item_details",
     "item_details_batch",
-    "semantic_search"
+    "semantic_search",
+    "strategy_video_search"
   ]);
   assert.deepEqual(
     [...bundle.availableToolNames].sort(),

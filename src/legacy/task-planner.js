@@ -60,6 +60,12 @@ function allowlistedArguments(tool, frame) {
       topK: 8
     };
   }
+  if (tool === "strategy_video_search") {
+    return {
+      query: entities.map((entity) => entity.rawText).filter(Boolean).join(" ") || frame.goal,
+      ...(constraints.limit !== undefined ? { limit: structuredClone(constraints.limit) } : {})
+    };
+  }
   return {};
 }
 
@@ -95,7 +101,7 @@ function hasCycle(steps) {
 
 function policyAllowed(definition, options) {
   if (
-    definition.trustTier === "first_party"
+    (definition.trustTier === "first_party" || definition.plannerAllowed === true)
     && definition.readOnly
     && definition.sideEffect === "none"
     && !definition.requiresApproval

@@ -105,11 +105,12 @@ export function buildPhase5CapabilityCases() {
     testCase.expectedTool = testCase.taskFrame.__expectedTool;
     delete testCase.taskFrame.__expectedTool;
   }
-  addGroup("unsupported", 10, frame({
+  addGroup("strategy_video", 10, frame({
     action: "find_video",
+    subjects: [champion],
     goal: "find_strategy_video",
     expectedOutput: ["video_candidates", "evidence"]
-  }), null);
+  }), "strategy_video_search");
   return cases;
 }
 

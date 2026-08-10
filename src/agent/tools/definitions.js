@@ -19,7 +19,8 @@ const DESCRIPTIONS = Object.freeze({
   trait_details: "Requires an official trait apiName and returns current trusted trait catalog details. For a user-facing name or alias, call entity_catalog_query first. Do not guess apiName. Not for live composition strength.",
   entity_catalog_query: "Query current TFT units, items or traits with bounded filters or exact normalized name/alias resolution. For natural-language entity names, call this before a details tool and follow resolution.requests[].status; never guess an apiName or silently choose an ambiguous candidate.",
   composition_member_statistics: "Aggregate current composition samples by unit and optionally exclude native members of a target trait. Use for non-trait splash-unit statistics, never emblem-carrier rankings.",
-  semantic_search: "Search only the local knowledge index for mechanism_knowledge, patch_note, static_game_knowledge, or explicitly requested video_guide documents. Never use for current statistics, realtime web/video discovery, or strength ranking. Creator advice must stay attributed."
+  semantic_search: "Search only the local knowledge index for mechanism_knowledge, patch_note, static_game_knowledge, or explicitly requested video_guide documents. Never use for current statistics, realtime web/video discovery, or strength ranking. Creator advice must stay attributed.",
+  strategy_video_search: "Search Bilibili for current TFT strategy-video candidates through the configured MCP adapter. Returns source links, publish-time patch inference, detail availability, interaction signals, fallback metadata, and traceable ranking signals. It does not inspect or validate video content and must never be described as an攻略正确性评分。"
 });
 
 const CAPABILITIES = Object.freeze({
@@ -317,6 +318,16 @@ const CAPABILITIES = Object.freeze({
       goals: ["explain_concept_or_entity"],
       outputs: ["explanation", "evidence"]
     })
+  ]),
+  strategy_video_search: Object.freeze([
+    Object.freeze({
+      action: "find_video",
+      allowedEntityTypes: ["champion", "composition", "trait", "game_concept", "patch", "video"],
+      allowNoEntities: true,
+      features: ["strategy_video_search"],
+      goals: ["find_strategy_video"],
+      outputs: ["video_candidates", "evidence"]
+    })
   ])
 });
 
@@ -337,7 +348,8 @@ const EVIDENCE_TYPES = Object.freeze({
   trait_details: "official_trait",
   entity_catalog_query: "official_entity_catalog",
   composition_member_statistics: "trait_external_unit_statistics",
-  semantic_search: "semantic_candidates"
+  semantic_search: "semantic_candidates",
+  strategy_video_search: "strategy_video_candidates"
 });
 
 const PARAMETER_SCHEMAS = Object.freeze({
@@ -405,7 +417,9 @@ const PARAMETER_SCHEMAS = Object.freeze({
   strategy: { type: "string" },
   metrics: { type: "array", items: { type: "string" } },
   limit: { type: "integer" },
+  page: { type: "integer", minimum: 1, maximum: 100 },
   query: { type: "string" },
+  ecosystem: { type: "string", enum: ["tft_pc", "golden_spatula", "both"] },
   documentTypes: { type: "array", items: { type: "string" } },
   locale: { type: "string" },
   topK: { type: "integer" },
@@ -468,7 +482,8 @@ const REQUIRED_PARAMETERS = Object.freeze({
   trait_details: Object.freeze(["apiName"]),
   entity_catalog_query: Object.freeze(["entityType"]),
   composition_member_statistics: Object.freeze(["trait"]),
-  semantic_search: Object.freeze(["query"])
+  semantic_search: Object.freeze(["query"]),
+  strategy_video_search: Object.freeze(["query"])
 });
 
 export function createStructuredToolDefinitions(options = {}) {
@@ -494,11 +509,12 @@ export function createStructuredToolDefinitions(options = {}) {
     timeoutMs: Number(options.timeoutByTool?.[name] ?? options.defaultTimeoutMs ?? 5000),
     idempotent: true,
     cacheable: true,
-    trustTier: "first_party",
+    trustTier: registration.trustTier ?? "first_party",
+    plannerAllowed: registration.plannerAllowed === true,
     sideEffect: "none",
     requiresApproval: false,
     permissions: [`${registration.source}:read`],
-    credentialScope: "none",
+    credentialScope: registration.credentialScope ?? "none",
     evidenceType: EVIDENCE_TYPES[name] ?? "structured_evidence",
     execute: async (input, context = {}) => {
       if (typeof context.handler !== "function") {

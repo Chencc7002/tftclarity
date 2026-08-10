@@ -53,6 +53,10 @@ const REACT_DECISION_CONTRACT = [
   "After a tool result, inspect the latest transcript observation nextActionAffordance when present. If recommendedAction=call_tool, execute callTool exactly as provided without changing its tool or arguments. If recommendedAction=finish, finish immediately with its finish.reasonCode and requiredEvidenceIds. Do not repeat unit_builds_batch. Call item_details_batch only when mechanismLookup.required=true and only with allowedItemApiNames; required=false forbids a mechanism lookup for that result.",
   "For semantic_search evidence, official_fact may support official facts and mechanism may support mechanics. creator_advice or strategic_advice must be attributed as advice; speculation must use uncertain language.",
   "Never use semantic_search or video_guide evidence alone to claim current win rates, rankings, or the statistically best option.",
+  "For a request to find Bilibili or strategy videos, call strategy_video_search with a concise TFT search query. Treat patchTimeStatus as a publish-time inference, not proof of the video's actual patch or correctness.",
+  "If the user explicitly requests both Teamfight Tactics and Golden Spatula results, call strategy_video_search once with ecosystem=both and let the tool return separate ecosystem groups. Do not split the request into two tool calls.",
+  "For strategy_video_search evidence, cite only returned video URLs and metadata. If status=unavailable, say Bilibili search is currently unavailable and never invent a link. If fallbackUsed=true, explicitly state whether results are from the previous, older, unknown-patch, or cross-ecosystem supplement bucket.",
+  "When finishing from strategy_video_search evidence, prefer titles and URLs. Do not abbreviate view or interaction counts (for example 5.3万) because rounded statistics are not exact cited evidence.",
   "Do not reveal hidden reasoning. purposeCode is a short stable category, not chain-of-thought.",
   "Keep finish.answer concise. Keep narrative text compact enough to complete the JSON within the output limit.",
   'All objects use schemaVersion "react-action.v1" and reject additional properties.'
@@ -89,6 +93,24 @@ function stableJsonValue(value) {
   return Object.fromEntries(
     Object.keys(value).sort().map((key) => [key, stableJsonValue(value[key])])
   );
+}
+
+function applyDeterministicVideoScope(action, state = {}) {
+  if (action?.type !== "call_tool" || action.tool !== "strategy_video_search") return action;
+  const userText = [
+    state.question,
+    ...(Array.isArray(state.messages) ? state.messages.map((message) => message?.content) : [])
+  ].map((value) => String(value ?? "")).join("\n");
+  const requestsTft = /(?:云顶之弈|teamfight\s*tactics|\btft\b)/iu.test(userText);
+  const requestsGoldenSpatula = /(?:金铲铲(?:之战)?|golden\s*spatula)/iu.test(userText);
+  if (!requestsTft || !requestsGoldenSpatula) return action;
+  return {
+    ...action,
+    arguments: {
+      ...(action.arguments ?? {}),
+      ecosystem: "both"
+    }
+  };
 }
 
 function stableJson(value) {
@@ -288,6 +310,7 @@ export function createReactDecisionProvider(options = {}) {
           if (!validation.valid) {
             throw new TypeError(`react decision provider returned invalid action: ${validation.errors.join("; ")}`);
           }
+          const scopedAction = applyDeterministicVideoScope(validation.value, request.state);
           const telemetry = {
             status: "ok",
             requestKind: "react_decision",
@@ -296,8 +319,8 @@ export function createReactDecisionProvider(options = {}) {
             attempts: attempt,
             usage: normalizedUsage(payload)
           };
-          options.onRequestLog?.({ ...telemetry, action: validation.value });
-          return { action: validation.value, telemetry };
+          options.onRequestLog?.({ ...telemetry, action: scopedAction });
+          return { action: scopedAction, telemetry };
         } catch (error) {
           terminalUsage = normalizedUsage(payload);
           const finishReason = String(payload?.choices?.[0]?.finish_reason ?? "");

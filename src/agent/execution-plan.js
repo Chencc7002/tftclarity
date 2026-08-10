@@ -102,7 +102,7 @@ function hasCycle(steps) {
 function trustedReadOnlyTool(definition) {
   return Boolean(
     definition
-    && definition.trustTier === "first_party"
+    && (definition.trustTier === "first_party" || definition.plannerAllowed === true)
     && definition.readOnly === true
     && definition.sideEffect === "none"
     && definition.requiresApproval === false
@@ -155,7 +155,7 @@ export function validateExecutionPlan(plan, options = {}) {
       continue;
     }
     if (!trustedReadOnlyTool(definition)) {
-      errors.push(`tool is not an allowlisted first-party read-only tool: ${step.tool}`);
+      errors.push(`tool is not an allowlisted first-party read-only tool or explicitly planner-allowed third-party tool: ${step.tool}`);
     }
     try {
       const boundArguments = new Set(step.argumentBindings.map((binding) => binding.argument));
@@ -380,6 +380,13 @@ function allowlistedArguments(tool, frame) {
       patch: constraints.patch ?? "current",
       locale: "zh-CN",
       topK: 8
+    };
+  }
+  if (tool === "strategy_video_search") {
+    const terms = entities.map((entity) => entity.rawText).filter(Boolean);
+    return {
+      query: terms.join(" ") || "TFT 攻略",
+      ...(constraints.limit ? { limit: constraints.limit } : {})
     };
   }
   return {};
