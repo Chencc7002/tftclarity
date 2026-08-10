@@ -51,7 +51,7 @@ const CONTEXTS = [
   },
   {
     id: "set18-pbe",
-    label: "Set 18 · PBE · 18.1",
+    label: "Set 18 · PBE · Current",
     season: 18,
     environment: "pbe",
     mode: "standard",
@@ -68,10 +68,10 @@ const CONTEXTS = [
       explorerUrl: "https://www.metatft.com/explorer?set=TFTSet18",
       queue: "PBE",
       patchPolicy: "latest",
-      currentPatch: "18.1",
+      currentPatch: "current",
       explorerPatch: "current",
-      unitBuildPatch: "18.1",
-      compsPatch: "18.1",
+      unitBuildPatch: "current",
+      compsPatch: "current",
       tftSet: "TFTSet18",
       lookupChannel: "pbe",
       lookupLocale: "zh_cn",
@@ -81,8 +81,8 @@ const CONTEXTS = [
     theme: {
       documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
-        "zh-CN": "S18 PBE · 18.1",
-        "en-US": "Set 18 PBE · 18.1"
+        "zh-CN": "S18 PBE · 当前版本",
+        "en-US": "Set 18 PBE · Current"
       },
       colors: {
         primary: "#356b43",

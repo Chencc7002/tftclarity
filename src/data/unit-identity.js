@@ -1,10 +1,15 @@
 function set18IdentityToken(apiName) {
-  const match = String(apiName ?? "").match(/^(?:DA_18_|TFT18_)(.+)$/i);
-  if (!match) return null;
-  const token = match[1].replace(/_(?:AD|AP)$/i, "").toLowerCase();
+  const value = String(apiName ?? "");
+  const prefixed = value.match(/^(?:DA_18_|TFT18_)(.+)$/i);
+  const embeddedSet = value.match(/^DA_(.+?)18(?:_(?:AD|AP))?$/i);
+  if (!prefixed && !embeddedSet) return null;
+  const token = String(prefixed?.[1] ?? embeddedSet?.[1] ?? "")
+    .replace(/_(?:AD|AP)$/i, "")
+    .toLowerCase();
   // MetaTFT emits Elise's transformed board form as a second unit even though
   // it is not a shop unit and has the same user-facing champion name.
   if (token === "elisespider") return "elise";
+  if (token === "nidaleecougar") return "nidalee";
   return token;
 }
 
@@ -34,9 +39,9 @@ function providerSampleCount(value) {
 
 function apiPreference(apiName) {
   const value = String(apiName ?? "");
-  if (/^DA_18_.+_AD$/i.test(value)) return 40;
-  if (/^DA_18_/i.test(value) && !/_AP$/i.test(value)) return 35;
-  if (/^DA_18_.+_AP$/i.test(value)) return 30;
+  if (/^(?:DA_18_.+_AD|DA_.+18_AD)$/i.test(value)) return 40;
+  if (/^(?:DA_18_.+|DA_.+18)$/i.test(value) && !/_AP$/i.test(value)) return 35;
+  if (/^(?:DA_18_.+_AP|DA_.+18_AP)$/i.test(value)) return 30;
   if (/^TFT18_/i.test(value)) return 10;
   return 0;
 }

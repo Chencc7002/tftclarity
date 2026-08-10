@@ -20,7 +20,7 @@ import { buildQueryContext } from "../src/core/context-builder.js";
 import { planMetaTFTItemCarrierBuilds, planMetaTFTUnitBuilds } from "../src/core/query-planner.js";
 import { normalizeUnitBuildRows } from "../src/data/metatft-response-adapter.js";
 
-test("Set 18 PBE unit builds use the working patch aggregate stats endpoint", () => {
+test("Set 18 PBE unit builds use the current patch aggregate stats endpoint", () => {
   const query = buildQueryContext({
     intent: "unit_best_3_items",
     unit: "DA_18_Morgana"
@@ -33,20 +33,20 @@ test("Set 18 PBE unit builds use the working patch aggregate stats endpoint", ()
     preferences: {
       seasonContextId: "set18-pbe",
       providerVersion: "metatft-pbe.v1",
-      effectivePatch: "18.1",
-      currentPatch: "18.1",
+      effectivePatch: "current",
+      currentPatch: "current",
       patch: "current",
-      unitBuildPatch: "18.1",
+      unitBuildPatch: "current",
       queue: "PBE"
     }
   });
   const plan = planMetaTFTUnitBuilds(query);
 
-  assert.equal(query.patch, "18.1");
+  assert.equal(query.patch, "current");
   assert.equal(plan.path, "/tft-stat-api/unit_detail_items");
   assert.deepEqual(plan.params, {
     queue: "PBE",
-    patch: "18.1",
+    patch: "current",
     b_patch: "",
     days: "3",
     permit_filter_adjustment: "true",
@@ -63,7 +63,7 @@ test("Set 18 PBE unit detail builds adapt to Explorer-compatible rows", () => {
       places: [20, 18, 16, 14, 10, 8, 6, 4],
       total: 96
     }],
-    build_games: [{ patch: "18.1", b_patch_version: "", count: 30702 }]
+    build_games: [{ patch: "current", b_patch_version: "", count: 30702 }]
   });
 
   assert.equal(rows.length, 1);
@@ -78,7 +78,7 @@ test("Set 18 PBE item carriers use the aggregate item detail endpoint", () => {
   const plan = planMetaTFTItemCarrierBuilds({
     item: "DA_Artifact_TitanicHydra",
     queue: "PBE",
-    patch: "18.1",
+    patch: "current",
     days: 3,
     rankFilter: ["CHALLENGER"]
   });
@@ -86,7 +86,7 @@ test("Set 18 PBE item carriers use the aggregate item detail endpoint", () => {
   assert.equal(plan.path, "/tft-stat-api/item_detail");
   assert.deepEqual(plan.params, {
     queue: "PBE",
-    patch: "18.1",
+    patch: "current",
     b_patch: "",
     days: "3",
     permit_filter_adjustment: "true",
@@ -351,6 +351,41 @@ test("Set 18 catalog merge removes a persisted TFT18 alias when the DA unit arri
   assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
 });
 
+test("Set 18 catalog prefers Nidalee's populated embedded-set provider id", () => {
+  const merged = mergeCatalogUnits([
+    {
+      apiName: "TFT18_Nidalee",
+      canonicalApiName: "TFT18_Nidalee",
+      zhName: "奈德丽",
+      aliases: ["奈德丽", "DA_Nidalee18_AP"]
+    }
+  ], [
+    {
+      apiName: "DA_Nidalee18_AP",
+      canonicalApiName: "TFT18_Nidalee",
+      zhName: "奈德丽",
+      aliases: ["奈德丽", "TFT18_Nidalee"]
+    }
+  ]);
+
+  assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_Nidalee18_AP"]);
+  const planned = planQuery("查询奈德丽的当前版本最稳三件装备", {
+    catalog: createCatalog({ units: merged, traits: [], items: [] })
+  });
+  assert.equal(planned.query.unit, "DA_Nidalee18_AP");
+  assert.equal(planned.parsed.parser.entityAmbiguities.length, 0);
+});
+
+test("Set 18 Nidalee transformed forms share one canonical identity", () => {
+  const merged = mergeCatalogUnits([
+    { apiName: "TFT18_NidaleeCougar", providerSampleCount: 2 }
+  ], [
+    { apiName: "DA_Nidalee18_AP", providerSampleCount: 100 }
+  ]);
+
+  assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_Nidalee18_AP"]);
+});
+
 test("catalog merge still lets a refreshed record replace the same provider id", () => {
   const merged = mergeCatalogUnits([
     { apiName: "DA_18_Kayle", zhName: "凯尔", aliases: ["凯尔"], source: "persistent" }
@@ -516,7 +551,7 @@ test("CommunityDragon PBE details expose Set 18 unit stats, ability, and trait t
         attributeValues: { MagicDamage: [56, 84, 98, 112] }
       }]
     }
-  }, { tftSet: "TFTSet18", version: "18.1" });
+  }, { tftSet: "TFTSet18", version: "current" });
 
   const kayle = details.units.get("DA_18_Kayle");
   assert.equal(kayle.stats.health, 550);
@@ -563,7 +598,7 @@ test("CommunityDragon PBE details fall back to local raw snapshots when the netw
 });
 
 test("composition cache keys isolate popular, trend, and preference result contracts", () => {
-  const base = { seasonContextId: "set18-pbe", providerVersion: "metatft-pbe.v1", effectivePatch: "18.1", patch: "18.1", queue: "PBE", intent: "comp_rankings" };
+  const base = { seasonContextId: "set18-pbe", providerVersion: "metatft-pbe.v1", effectivePatch: "current", patch: "current", queue: "PBE", intent: "comp_rankings" };
   const popular = makeQueryCacheKey({ ...base, metrics: ["popularity"], popularRequested: true });
   const metricOnly = makeQueryCacheKey({ ...base, metrics: ["popularity"], popularRequested: false });
   const preference = makeQueryCacheKey({ ...base, metrics: ["avg_placement"], preferenceRequested: true, preferenceConditions: { goal: "balanced", count: 3 } });
@@ -571,7 +606,7 @@ test("composition cache keys isolate popular, trend, and preference result contr
   assert.notEqual(popular, preference);
 });
 
-test("Set 18 composition queries use patch 18.1 while Explorer remains on current", () => {
+test("Set 18 composition and Explorer queries both use the current patch", () => {
   const query = buildCompRankingQuery({
     intent: "comp_rankings",
     patch: "current",
@@ -579,14 +614,14 @@ test("Set 18 composition queries use patch 18.1 while Explorer remains on curren
   }, {
     preferences: {
       seasonContextId: "set18-pbe",
-      currentPatch: "18.1",
+      currentPatch: "current",
       patch: "current",
-      compPatch: "18.1",
+      compPatch: "current",
       queue: "PBE"
     }
   });
 
-  assert.equal(query.patch, "18.1");
-  assert.equal(query.effectivePatch, "18.1");
+  assert.equal(query.patch, "current");
+  assert.equal(query.effectivePatch, "current");
   assert.equal(query.popularRequested, true);
 });

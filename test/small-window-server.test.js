@@ -3266,15 +3266,15 @@ test("PBE Artifact carrier quick task uses the PBE item detail source without a 
   assert.equal(response.statusCode, 200);
   assert.equal(response.payload.type, "item_carrier_rankings");
   assert.equal(response.payload.query.item, hydra);
-  assert.equal(response.payload.query.patch, "18.1");
+  assert.equal(response.payload.query.patch, "current");
   assert.equal(response.payload.source.endpoint, "tft-stat-api/item_detail");
   assert.equal(capturedPlan.path, "/tft-stat-api/item_detail");
-  assert.equal(capturedPlan.params.patch, "18.1");
+  assert.equal(capturedPlan.params.patch, "current");
   assert.equal(baselineCalls, 0);
   assert.ok(response.payload.carriers.length > 0);
 });
 
-test("all PBE equipment shortcuts resolve form entities directly and use patch 18.1", async () => {
+test("all PBE equipment shortcuts resolve form entities directly and use the current patch", async () => {
   const unit = "DA_18_Ahri";
   const itemA = "DA_Item_TestA";
   const itemB = "DA_Item_TestB";
@@ -3332,7 +3332,29 @@ test("all PBE equipment shortcuts resolve form entities directly and use patch 1
     assert.equal(response.statusCode, 200, id);
     assert.notEqual(response.payload.type, "clarification", id);
     assert.equal(response.payload.query.unit, unit, id);
-    assert.equal(response.payload.query.patch, "18.1", id);
+    assert.equal(response.payload.query.patch, "current", id);
+  }
+
+  for (const [itemCategory, expectedCategory, expectedType] of [
+    ["普通", "ordinary_completed", "unit_item_rankings"],
+    ["神器", "artifact", "unit_item_rankings"],
+    ["纹章", "emblem", "unit_emblem_rankings"]
+  ]) {
+    const response = await handleRecommendRequest({
+      input: `Ahri ${itemCategory}单装备排行`,
+      seasonContextId: "set18-pbe",
+      conversationId: `pbe-item-category-${expectedCategory}`,
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id: "item-performance",
+        operation: "unit_item_rankings",
+        arguments: { champion: "Ahri", itemCategory }
+      }
+    }, runtime);
+    assert.equal(response.statusCode, 200, itemCategory);
+    assert.equal(response.payload.type, expectedType, itemCategory);
+    assert.deepEqual(response.payload.query.itemCategories, [expectedCategory], itemCategory);
+    assert.equal(response.payload.query.performanceItem, null, itemCategory);
   }
 
   const naturalLanguageResponse = await handleRecommendRequest({
@@ -3344,13 +3366,13 @@ test("all PBE equipment shortcuts resolve form entities directly and use patch 1
   assert.equal(naturalLanguageResponse.statusCode, 200);
   assert.equal(naturalLanguageResponse.payload.type, "unit_item_rankings");
   assert.equal(naturalLanguageResponse.payload.query.unit, unit);
-  assert.equal(naturalLanguageResponse.payload.query.patch, "18.1");
+  assert.equal(naturalLanguageResponse.payload.query.patch, "current");
 
   assert.ok(plans.length >= tasks.length);
   for (const plan of plans) {
     assert.equal(plan.path, "/tft-stat-api/unit_detail_items");
     assert.equal(plan.params.queue, "PBE");
-    assert.equal(plan.params.patch, "18.1");
+    assert.equal(plan.params.patch, "current");
   }
 });
 
@@ -3442,7 +3464,7 @@ test("all PBE comp and library shortcuts keep the selected season context", asyn
   assert.equal(compStatsCalls.length, 3);
   for (const params of compStatsCalls) {
     assert.equal(params.queue, "PBE");
-    assert.equal(params.patch, "18.1");
+    assert.equal(params.patch, "current");
   }
 });
 
