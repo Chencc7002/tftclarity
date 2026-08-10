@@ -132,6 +132,7 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /queryInput\.value = quickTask\.query/);
   assert.match(appJs, /structuredQuickTask\(quickTask\)/);
   assert.match(appJs, /schemaVersion: "quick-task\.v1"/);
+  assert.match(appJs, /locale: getLocale\(\)/);
   assert.match(appJs, /operation: "unit_build_rankings"/);
   assert.match(appJs, /quickTask: state\.lastQuickTask/);
   assert.match(i18n, /快捷查询可跳过语义理解，通常返回更快/);
@@ -165,6 +166,7 @@ test("feature-flagged chat routing keeps quick tools on recommend and normal cha
   assert.match(appJs, /"\/api\/react-chat\/stream"/);
   assert.match(appJs, /conversationId: state\.conversationId/);
   assert.match(appJs, /seasonContextId: state\.seasonContextId/);
+  assert.match(appJs, /locale: getLocale\(\)/);
   assert.match(appJs, /messages: reactChatMessages\(\)/);
   assert.match(appJs, /event\.type === "diagnostic"/);
 });

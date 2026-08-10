@@ -924,6 +924,7 @@ function structuredQuickTask(task, values = {}) {
       ?? `quick-${Date.now()}-${Math.random().toString(16).slice(2)}`,
     id: task.id,
     operation: task.operation,
+    locale: getLocale(),
     arguments: Object.fromEntries(
       Object.entries(values)
         .map(([key, value]) => [key, String(value ?? "").trim()])
@@ -1970,18 +1971,25 @@ function entityStat(label, value, suffix = "") {
 }
 
 function entityCatalogCard(entry) {
+  const name = localizedName(entry, entry.name);
+  const role = getLocale() === "en-US" ? (entry.roleEn ?? entry.role) : (entry.roleZh ?? entry.role);
+  const traitNames = getLocale() === "en-US"
+    ? (entry.traitNamesEn ?? entry.traitNames ?? [])
+    : (entry.traitNamesZh ?? entry.traitNames ?? []);
   const search = [
-    entry.name,
+    name,
+    entry.zhName,
+    entry.enName,
     entry.apiName,
-    entry.role,
+    role,
     entry.traitType,
-    ...(entry.traitNames ?? [])
+    ...traitNames
   ].filter(Boolean).join(" ").toLocaleLowerCase(getLocale());
   const isUnit = entry.entityType === "unit";
   const metadata = isUnit
     ? [
       entry.cost ? t("unitCost", { value: entry.cost }) : null,
-      entry.role
+      role
     ].filter(Boolean).join(" · ")
     : entry.traitType === "race"
       ? t("catalogOrigin")
@@ -1989,7 +1997,7 @@ function entityCatalogCard(entry) {
         ? t("catalogClass")
         : "";
   const chips = isUnit
-    ? (entry.traitNames ?? []).slice(0, 3)
+    ? traitNames.slice(0, 3)
     : (entry.tierCounts ?? []).map((value) => t("unitsRequired", { value }));
 
   return `
@@ -2001,10 +2009,10 @@ function entityCatalogCard(entry) {
       data-catalog-search="${escapeHtml(search)}"
       data-catalog-cost="${escapeHtml(entry.cost ?? "")}"
       data-catalog-trait-type="${escapeHtml(entry.traitType ?? "")}"
-      aria-label="${escapeHtml(t("openEntityDetails", { name: entry.name }))}">
-      ${assetThumb(entry.iconUrl, entry.name, "entity-catalog-icon")}
+      aria-label="${escapeHtml(t("openEntityDetails", { name }))}">
+      ${assetThumb(entry.iconUrl, name, "entity-catalog-icon")}
       <span class="entity-catalog-copy">
-        <strong>${escapeHtml(entry.name)}</strong>
+        <strong>${escapeHtml(name)}</strong>
         ${metadata ? `<small>${escapeHtml(metadata)}</small>` : ""}
         ${chips.length ? `<span class="entity-catalog-chips">${chips.map((chip) => `<span>${escapeHtml(chip)}</span>`).join("")}</span>` : ""}
       </span>
@@ -2043,9 +2051,11 @@ function renderEntityCatalog(data) {
   const filterOptions = entityType === "unit"
     ? costs.map((cost) => `<option value="${cost}">${escapeHtml(t("unitCost", { value: cost }))}</option>`).join("")
     : `<option value="race">${escapeHtml(t("catalogOrigin"))}</option><option value="job">${escapeHtml(t("catalogClass"))}</option>`;
+  const total = data.pagination?.total ?? items.length;
+  const summary = t(entityType === "unit" ? "catalogUnitSummary" : "catalogTraitSummary", { value: total });
 
   setResponseHtml(`
-    ${resultHeader(title, data.text, t("catalogCount", { value: data.pagination?.total ?? items.length }))}
+    ${resultHeader(title, summary, t("catalogCount", { value: total }))}
     <section class="entity-catalog" data-entity-catalog data-entity-type="${entityType}">
       <div class="entity-catalog-controls">
         <label class="entity-catalog-control entity-catalog-search">
@@ -2070,6 +2080,11 @@ function renderEntityCatalog(data) {
 
 function renderUnitDetails(data) {
   const unit = data.unit ?? {};
+  const unitName = localizedName(unit, unit.name ?? t("unitDetails"));
+  const unitRole = getLocale() === "en-US" ? (unit.roleEn ?? unit.role) : (unit.roleZh ?? unit.role);
+  const unitTraitNames = getLocale() === "en-US"
+    ? (unit.traitNamesEn ?? unit.traitNames ?? [])
+    : (unit.traitNamesZh ?? unit.traitNames ?? []);
   const stats = unit.stats ?? {};
   const ability = unit.ability ?? {};
   const recommendations = data.recommendedItems ?? [];
@@ -2092,10 +2107,10 @@ function renderUnitDetails(data) {
   setResponseHtml(`
     <article class="result-card entity-detail-card">
       <header class="entity-detail-head">
-        ${assetThumb(unit.iconUrl, unit.name, "entity-icon")}
-        <div><div class="card-title">${escapeHtml(unit.name ?? t("unitDetails"))}</div><small>${unit.cost ? escapeHtml(t("unitCost", { value: unit.cost })) : ""}${unit.role ? ` · ${escapeHtml(unit.role)}` : ""}</small></div>
+        ${assetThumb(unit.iconUrl, unitName, "entity-icon")}
+        <div><div class="card-title">${escapeHtml(unitName)}</div><small>${unit.cost ? escapeHtml(t("unitCost", { value: unit.cost })) : ""}${unitRole ? ` · ${escapeHtml(unitRole)}` : ""}</small></div>
       </header>
-      ${(unit.traitNames ?? []).length ? `<div class="entity-chips">${unit.traitNames.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}</div>` : ""}
+      ${unitTraitNames.length ? `<div class="entity-chips">${unitTraitNames.map((name) => `<span>${escapeHtml(name)}</span>`).join("")}</div>` : ""}
       <strong class="detail-label">${escapeHtml(t("baseStats"))}</strong>
       <div class="entity-stat-grid">
         ${entityStat(t("health"), stats.health)}${entityStat(t("mana"), manaValue)}${entityStat(t("attackDamage"), stats.attackDamage)}${entityStat(t("armor"), stats.armor)}
@@ -2116,12 +2131,13 @@ function renderUnitDetails(data) {
 
 function renderTraitDetails(data) {
   const trait = data.trait ?? {};
+  const traitName = localizedName(trait, trait.name ?? t("traitDetails"));
   const levels = trait.levels ?? [];
   setResponseHtml(`
     <article class="result-card entity-detail-card">
       <header class="entity-detail-head">
-        ${assetThumb(trait.iconUrl, trait.name, "entity-icon")}
-        <div><div class="card-title">${escapeHtml(trait.name ?? t("traitDetails"))}</div><small>${escapeHtml(trait.type === "race" ? t("traitRace") : trait.type === "job" ? t("traitJob") : "")}</small></div>
+        ${assetThumb(trait.iconUrl, traitName, "entity-icon")}
+        <div><div class="card-title">${escapeHtml(traitName)}</div><small>${escapeHtml(trait.type === "race" ? t("traitRace") : trait.type === "job" ? t("traitJob") : "")}</small></div>
       </header>
       <div class="detail-effect">${escapeHtml(trait.description ?? "-").replace(/\n/g, "<br>")}</div>
       <strong class="detail-label">${escapeHtml(t("traitTiers"))}</strong>
@@ -3981,6 +3997,7 @@ function renderAliases(aliases = []) {
 
 function auditParams(format = "") {
   const params = new URLSearchParams();
+  if (state.seasonContextId) params.set("seasonContextId", state.seasonContextId);
   if (itemAuditQuery.value.trim()) params.set("query", itemAuditQuery.value.trim());
   if (itemAuditPatch.value.trim()) params.set("patch", itemAuditPatch.value.trim());
   if (itemAuditSource.value.trim()) params.set("source", itemAuditSource.value.trim());
@@ -4641,6 +4658,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
       },
       body: JSON.stringify({
         input,
+        locale: getLocale(),
         requestId: transportRequestId,
         conversationId: state.conversationId,
         seasonContextId: state.seasonContextId,
@@ -4754,7 +4772,8 @@ async function requestEntityDetail(target) {
     const params = new URLSearchParams({
       type: entityType,
       id: apiName,
-      seasonContextId: state.seasonContextId
+      seasonContextId: state.seasonContextId,
+      locale: getLocale()
     });
     const response = await fetch(`/api/entity-details?${params.toString()}`, {
       signal: controller.signal,

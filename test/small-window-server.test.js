@@ -744,6 +744,10 @@ test("entity catalog returns current units and groups trait tiers", async () => 
 
   const units = await handleEntityCatalogRequest(runtime, { entityType: "unit" });
   const traits = await handleEntityCatalogRequest(runtime, { entityType: "trait" });
+  const englishUnits = await handleEntityCatalogRequest(runtime, {
+    entityType: "unit",
+    locale: "en-US"
+  });
   const conversationId = "unit-catalog-context";
   const naturalLanguage = await handleRecommendRequest({
     conversationId,
@@ -756,6 +760,9 @@ test("entity catalog returns current units and groups trait tiers", async () => 
   assert.equal(units.items[0].hasDetails, true);
   assert.equal(traits.items.length, 1);
   assert.deepEqual(traits.items[0].tierCounts, [2, 4]);
+  assert.equal(englishUnits.locale, "en-US");
+  assert.match(englishUnits.text, /^2 champions found/u);
+  assert.equal(englishUnits.items.some((entry) => /[\p{Script=Han}]/u.test(entry.name)), false);
   assert.equal(naturalLanguage.statusCode, 200);
   assert.equal(naturalLanguage.payload.type, "entity_catalog");
   assert.equal(naturalLanguage.payload.entityType, "unit");
@@ -811,11 +818,20 @@ test("entity detail endpoint contract opens a catalog entry by stable id", async
     entityType: "unit",
     apiName: "TFT17_MasterYi"
   });
+  const englishPayload = await handleEntityDetailRequest(runtime, {
+    entityType: "unit",
+    apiName: "TFT17_MasterYi",
+    locale: "en-US"
+  });
 
   assert.equal(payload.type, "unit_details");
   assert.equal(payload.unit.apiName, "TFT17_MasterYi");
   assert.equal(payload.unit.ability.name, "灵能打击");
   assert.equal(payload.retrievalPlan.structuredQueries[0].operation, "unit_details");
+  assert.equal(englishPayload.locale, "en-US");
+  assert.equal(englishPayload.unit.name, "Master Yi");
+  assert.equal(englishPayload.unit.ability.name, "Ability");
+  assert.equal(/[\p{Script=Han}]/u.test(englishPayload.text), false);
 });
 
 test("S18 entity detail redirects a duplicate MetaTFT id to the official CommunityDragon unit", async () => {
@@ -884,7 +900,7 @@ test("entity catalog and detail HTTP routes are publicly readable", async () => 
   const started = await startSmallWindowServer({ host: "127.0.0.1", port: 0, runtime });
 
   try {
-    const catalogUrl = new URL("/api/entity-catalog?type=unit&seasonContextId=set17-live", started.url);
+    const catalogUrl = new URL("/api/entity-catalog?type=unit&seasonContextId=set17-live&locale=en-US", started.url);
     const catalogResponse = await fetch(catalogUrl, { headers: { connection: "close" } });
     const catalogPayload = await catalogResponse.json();
     const detailUrl = new URL(
@@ -896,6 +912,8 @@ test("entity catalog and detail HTTP routes are publicly readable", async () => 
 
     assert.equal(catalogResponse.status, 200);
     assert.equal(catalogPayload.type, "entity_catalog");
+    assert.equal(catalogPayload.locale, "en-US");
+    assert.equal(catalogPayload.items[0].name, "Master Yi");
     assert.equal(catalogPayload.items[0].apiName, "TFT17_MasterYi");
     assert.equal(detailResponse.status, 200);
     assert.equal(detailPayload.type, "unit_details");

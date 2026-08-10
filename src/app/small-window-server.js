@@ -37,6 +37,19 @@ import { SQLiteConversationBridgeStore } from "../conversation/sqlite-conversati
 import { createPatchResolver } from "../season/patch-resolver.js";
 import { summarizeCoreItemFrequency } from "../core/core-item-frequency.js";
 import {
+  containsHan,
+  deriveEnglishEntityName,
+  localizedEntityName,
+  localizedRoleLabel,
+  normalizeDisplayLocale
+} from "../core/display-locale.js";
+import {
+  ENTITY_DISPLAY_VERSION,
+  traitDisplayOverrideByApiName,
+  unitDisplayOverrideByApiName
+} from "../data/entity-display-overrides.js";
+import { ITEM_DISPLAY_VERSION } from "../data/item-alias-overrides.js";
+import {
   buildEntityCatalog,
   normalizeEntityCatalogType
 } from "../core/entity-catalog.js";
@@ -259,6 +272,7 @@ function normalizeQuickTask(value) {
     id,
     operation: definition.operation,
     requestId,
+    locale: normalizeDisplayLocale(value.locale),
     arguments: args,
     definition
   };
@@ -460,6 +474,9 @@ function quickTaskViewCacheKey(task, seasonContext, preferences = {}) {
     seasonContextId: seasonContext.id,
     providerVersion: seasonContext.source?.providerVersion ?? null,
     effectivePatch: seasonContext.effectivePatch ?? null,
+    entityDisplayVersion: ENTITY_DISPLAY_VERSION,
+    itemDisplayVersion: ITEM_DISPLAY_VERSION,
+    locale: normalizeDisplayLocale(preferences.displayLocale ?? task.locale),
     rankFilter: [...(preferences.rankFilter ?? [])].map(String).sort(),
     days: preferences.days ?? null,
     minSamples: preferences.minSamples ?? null,
@@ -519,7 +536,8 @@ async function cachedQuickTaskView(runtime, options) {
         schemaVersion: task.schemaVersion,
         id: task.id,
         operation: task.operation,
-        arguments: task.arguments
+        arguments: task.arguments,
+        locale: normalizeDisplayLocale(preferences.displayLocale ?? task.locale)
       },
       response: payload,
       source: "structured_quick_task",
@@ -542,7 +560,9 @@ async function cachedQuickTaskView(runtime, options) {
     };
     payload.warnings = [...new Set([
       ...(payload.warnings ?? []),
-      `实时刷新失败，已使用 ${cached.updatedAt ?? "未知时间"} 的上一次成功数据。`
+      normalizeDisplayLocale(preferences.displayLocale ?? task.locale) === "en-US"
+        ? `Live refresh failed. Showing the last successful result from ${cached.updatedAt ?? "an unknown time"}.`
+        : `实时刷新失败，已使用 ${cached.updatedAt ?? "未知时间"} 的上一次成功数据。`
     ])];
     return payload;
   }
@@ -1776,7 +1796,12 @@ function requestedEntityCatalogType(input) {
   return null;
 }
 
-function entityCatalogText(entityType, count) {
+function entityCatalogText(entityType, count, locale = "zh-CN") {
+  if (normalizeDisplayLocale(locale) === "en-US") {
+    return entityType === "unit"
+      ? `${count} champions found in the current set. Select a champion to view stats, ability, and traits.`
+      : `${count} traits found in the current set. Select a trait to view its effect and activation tiers.`;
+  }
   return entityType === "unit"
     ? `当前赛季共找到 ${count} 个棋子，点击棋子可以查看属性、技能和羁绊详情。`
     : `当前赛季共找到 ${count} 个羁绊，点击羁绊可以查看效果和激活档位。`;
@@ -2021,6 +2046,7 @@ async function tryExternalSupportRequest(input, catalog, runtime, options = {}) 
 }
 
 async function serializeEntityCatalog(catalog, runtime, options = {}) {
+  const locale = normalizeDisplayLocale(options.locale);
   const entityType = normalizeEntityCatalogType(options.entityType ?? options.type);
   if (!entityType) {
     throw Object.assign(new TypeError("entityType must be unit or trait"), {
@@ -2034,14 +2060,17 @@ async function serializeEntityCatalog(catalog, runtime, options = {}) {
     entityType,
     assetResolver: ASSET_RESOLVER
   });
-  const text = entityCatalogText(entityType, view.pagination.total);
+  const text = entityCatalogText(entityType, view.pagination.total, locale);
   return {
     ok: true,
     ...view,
+    locale,
     text,
     answer: {
       summary: text,
-      methodology: "当前赛季动态实体目录限定可见范围，官方目录补充详情；羁绊按基础 API 名称合并档位。"
+      methodology: locale === "en-US"
+        ? "The current-set runtime catalog defines the visible scope. Official data supplements details, and trait tiers are merged by base API name."
+        : "当前赛季动态实体目录限定可见范围，官方目录补充详情；羁绊按基础 API 名称合并档位。"
     },
     source: details.meta ?? null
   };
@@ -2094,7 +2123,81 @@ async function stableUnitItems(apiName, catalog, runtime, context = {}) {
     .map((entry) => serializeItemRanking(entry, catalog));
 }
 
+function localizedTraitLabels(values, catalog, locale) {
+  return [...new Set((values ?? []).map((value) => {
+    const normalized = normalizeAlias(value);
+    const trait = (catalog?.traits ?? []).find((entry) => (
+      normalizeAlias(entry.zhName) === normalized
+      || normalizeAlias(entry.displayName) === normalized
+      || (entry.aliases ?? []).some((alias) => normalizeAlias(alias) === normalized)
+    ));
+    if (trait) return localizedEntityName(trait, locale, value);
+    return normalizeDisplayLocale(locale) === "en-US" && containsHan(value) ? null : value;
+  }).filter(Boolean))];
+}
+
+function localizedUnitDetail(official, catalogUnit, apiName, catalog, locale) {
+  const normalizedLocale = normalizeDisplayLocale(locale);
+  const displayOverride = unitDisplayOverrideByApiName.get(apiName);
+  const zhName = displayOverride?.zhName ?? catalogUnit?.zhName ?? official?.name ?? apiName;
+  const enName = displayOverride?.enName ?? deriveEnglishEntityName(catalogUnit ?? { apiName }, apiName);
+  const name = normalizedLocale === "en-US" ? enName : zhName;
+  const ability = official?.ability ?? {};
+  const traitNamesZh = localizedTraitLabels(official?.traitNames, catalog, "zh-CN");
+  const traitNamesEn = localizedTraitLabels(official?.traitNames, catalog, "en-US");
+  const roleZh = localizedRoleLabel(official?.role, "zh-CN") || null;
+  const roleEn = localizedRoleLabel(official?.role, "en-US") || null;
+  const localizedAbility = normalizedLocale === "en-US"
+    ? {
+      ...ability,
+      name: ability.enName ?? ability.nameEn ?? (containsHan(ability.name) ? "Ability" : ability.name),
+      description: ability.enDescription ?? ability.descriptionEn
+        ?? (containsHan(ability.description) ? null : ability.description),
+      type: ability.typeEn ?? (containsHan(ability.type) ? null : ability.type)
+    }
+    : ability;
+  return {
+    ...(official ?? { stats: {}, ability: {}, traitNames: [] }),
+    apiName,
+    name,
+    zhName,
+    enName,
+    role: normalizedLocale === "en-US" ? roleEn : roleZh,
+    roleZh,
+    roleEn,
+    traitNames: normalizedLocale === "en-US" ? traitNamesEn : traitNamesZh,
+    traitNamesZh,
+    traitNamesEn,
+    ability: localizedAbility,
+    iconUrl: official?.iconUrl ?? ASSET_RESOLVER.resolveUnit(apiName).iconUrl
+  };
+}
+
+function localizedTraitDetail(official, catalogTrait, apiName, locale) {
+  const normalizedLocale = normalizeDisplayLocale(locale);
+  const displayOverride = traitDisplayOverrideByApiName.get(apiName);
+  const zhName = displayOverride?.zhName ?? catalogTrait?.zhName ?? official?.name ?? catalogTrait?.displayName ?? apiName;
+  const enName = displayOverride?.enName ?? deriveEnglishEntityName(catalogTrait ?? { apiName }, apiName);
+  const name = normalizedLocale === "en-US" ? enName : zhName;
+  const levels = (official?.levels ?? []).map((level) => ({
+    ...level,
+    effect: normalizedLocale === "en-US" && containsHan(level.effect) ? "-" : level.effect
+  }));
+  return {
+    ...(official ?? { description: null, levels: [], type: null, iconUrl: null }),
+    apiName,
+    name,
+    zhName,
+    enName,
+    description: normalizedLocale === "en-US" && containsHan(official?.description)
+      ? null
+      : official?.description ?? null,
+    levels
+  };
+}
+
 async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}) {
+  const locale = normalizeDisplayLocale(context.locale);
   const unitWording = explicitUnitDetailsQuestion(input);
   const traitWording = explicitTraitDetailsQuestion(input);
   if (!unitWording && !traitWording) return null;
@@ -2141,21 +2244,24 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
     } catch (error) {
       recommendationWarning = error?.message ?? String(error);
     }
-    const name = catalogUnit?.zhName ?? official?.name ?? unitApiName;
+    const unit = localizedUnitDetail(official, catalogUnit, unitApiName, entityCatalog, locale);
+    const name = unit.name;
     return {
       ok: true,
       type: "unit_details",
-      text: official ? `${name}：${official.ability?.name ?? "技能信息"}` : `${name}暂无官方棋子详情。`,
+      locale,
+      text: locale === "en-US"
+        ? (official ? `${name}: ${unit.ability?.name ?? "Ability details"}` : `Official champion details are unavailable for ${name}.`)
+        : (official ? `${name}：${official.ability?.name ?? "技能信息"}` : `${name}暂无官方棋子详情。`),
       answer: {
-        summary: `${name}的属性、技能与稳定装备推荐`,
-        methodology: "仅统计当前可获取的普通成装，并按样本数从高到低排序；平均名次与前四率仅用于展示，不参与排序。"
+        summary: locale === "en-US"
+          ? `${name} stats, ability, and stable item recommendations`
+          : `${name}的属性、技能与稳定装备推荐`,
+        methodology: locale === "en-US"
+          ? "Only currently obtainable completed standard items are included and sorted by sample size. Average placement and Top 4 rate are shown for context only."
+          : "仅统计当前可获取的普通成装，并按样本数从高到低排序；平均名次与前四率仅用于展示，不参与排序。"
       },
-      unit: {
-        ...(official ?? { stats: {}, ability: {}, traitNames: [] }),
-        apiName: unitApiName,
-        name,
-        iconUrl: official?.iconUrl ?? ASSET_RESOLVER.resolveUnit(unitApiName).iconUrl
-      },
+      unit,
       recommendedItems: recommendations,
       recommendationWarning,
       source: official?.source ?? details.meta ?? null
@@ -2166,17 +2272,21 @@ async function serializeEntityDetailsQuery(input, catalog, runtime, context = {}
   const official = details.traits.get(traitApiName);
   const catalogTrait = entityCatalog.traitByApiName.get(traitApiName)
     ?? entityCatalog.traitByFilterId.get(parsed.traitFilters[0]);
-  const name = official?.name ?? catalogTrait?.displayName ?? catalogTrait?.zhName ?? traitApiName;
+  const trait = localizedTraitDetail(official, catalogTrait, traitApiName, locale);
+  const name = trait.name;
   return {
     ok: true,
     type: "trait_details",
-    text: official ? `${name}：${official.description}` : `${name}暂无官方羁绊详情。`,
-    answer: { summary: `${name}的羁绊效果与档位属性` },
-    trait: {
-      ...(official ?? { description: null, levels: [], type: null, iconUrl: null }),
-      apiName: traitApiName,
-      name
+    locale,
+    text: locale === "en-US"
+      ? (official ? `${name} trait details` : `Official trait details are unavailable for ${name}.`)
+      : (official ? `${name}：${official.description}` : `${name}暂无官方羁绊详情。`),
+    answer: {
+      summary: locale === "en-US"
+        ? `${name} effect and activation tiers`
+        : `${name}的羁绊效果与档位属性`
     },
+    trait,
     source: official?.source ?? details.meta ?? null
   };
 }
@@ -2206,10 +2316,14 @@ function entityCatalogPreferences(runtime, seasonContext) {
 
 export async function handleEntityCatalogRequest(runtime, options = {}) {
   const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
-  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  const locale = normalizeDisplayLocale(options.locale);
+  const preferences = {
+    ...entityCatalogPreferences(runtime, seasonContext),
+    displayLocale: locale
+  };
   if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   const { catalog, warning, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
-  const payload = await serializeEntityCatalog(catalog, runtime, { ...options, entityDetails });
+  const payload = await serializeEntityCatalog(catalog, runtime, { ...options, locale, entityDetails });
   payload.seasonContext = runtime.seasonContextService.publicRecord(seasonContext);
   payload.meta = {
     catalogWarning: warning,
@@ -2270,7 +2384,11 @@ export async function handleEntityDetailRequest(runtime, options = {}) {
   }
 
   const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
-  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  const locale = normalizeDisplayLocale(options.locale);
+  const preferences = {
+    ...entityCatalogPreferences(runtime, seasonContext),
+    displayLocale: locale
+  };
   if (options.refresh) invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
   const resolvedApiName = resolveEntityDetailApiName(entityType, apiName, catalog, entityDetails);
@@ -2282,6 +2400,7 @@ export async function handleEntityDetailRequest(runtime, options = {}) {
     preferences,
     compsData,
     entityDetails,
+    locale,
     refresh: Boolean(options.refresh)
   });
   const returnedApiName = entityType === "unit"
@@ -4978,6 +5097,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const startedAt = Date.now();
   const displayInput = String(body?.input ?? "").trim();
   const quickTask = normalizeQuickTask(body?.quickTask);
+  const displayLocale = normalizeDisplayLocale(body?.locale ?? quickTask?.locale);
   const supplementalText = String(body?.supplementalText ?? "").normalize("NFKC").trim().slice(0, 1200);
   const input = quickTask ? quickTaskExecutionInput(quickTask) : displayInput;
   const conversationId = String(body?.conversationId ?? body?.conversation_id ?? "").trim() || "default";
@@ -5122,12 +5242,14 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         metrics: null
       };
       payload.seasonContext = publicSeasonContext;
+      payload.locale = displayLocale;
       if (quickTask) {
         payload.quickTask = {
           schemaVersion: quickTask.schemaVersion,
           id: quickTask.id,
           operation: quickTask.operation,
           requestId: quickTask.requestId,
+          locale: displayLocale,
           arguments: quickTask.arguments,
           executionMode: "structured",
           supplemental: supplemental ? {
@@ -5211,7 +5333,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   });
   const preferences = {
     ...completeSmallWindowPreferences(explicitPreferences),
-    ...entityCatalogPreferences(runtime, seasonContext)
+    ...entityCatalogPreferences(runtime, seasonContext),
+    displayLocale
   };
   if (body.refresh) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
@@ -5357,6 +5480,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   ) {
     const payload = await resolveQuickView(() => serializeEntityCatalog(catalog, requestRuntime, {
       entityType: requestedCatalogType,
+      locale: displayLocale,
       entityDetails
     }), ["unit-catalog", "trait-catalog"]);
     payload.meta = {
@@ -5382,6 +5506,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       preferences,
       compsData,
       entityDetails,
+      locale: displayLocale,
       resolvedUnit: quickTaskEntities?.unit ?? null,
       resolvedTrait: quickTaskEntities?.trait ?? null,
       refresh: Boolean(body.refresh)
@@ -6340,6 +6465,7 @@ function normalizeReactChatRequest(body = {}) {
     input,
     conversationId: String(body.conversationId ?? body.conversation_id ?? "default").trim() || "default",
     seasonContextId: String(body.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID),
+    locale: normalizeDisplayLocale(body.locale),
     startNewTask: body.startNewTask === true,
     messages: normalizeReactChatMessages(body.messages),
     taskAnchor: body.taskAnchor && typeof body.taskAnchor === "object"
@@ -6467,7 +6593,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     patchState: runtime.patchState,
     strategyVideoSearchService: runtime.strategyVideoSearchService,
     seasonContextId: seasonContext.id,
-    locale: runtime.semanticConfig?.locale ?? "zh-CN",
+    locale: request.locale,
     loadOfficialEntityDetails: (toolContext = {}) => loadOfficialEntityDetails(runtime, {
       signal: toolContext.signal
     }),
@@ -6483,7 +6609,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
           documentTypes: input.documentTypes,
           seasonContextId: seasonContext.id,
           patch: input.patch ?? seasonContext.currentPatch ?? seasonContext.effectivePatch,
-          locale: input.locale ?? runtime.semanticConfig?.locale ?? "zh-CN",
+          locale: input.locale ?? request.locale,
           topK: Math.max(1, Math.min(6, Number(input.topK ?? 4))),
           minimumScore: 0.1
         });
@@ -8259,6 +8385,7 @@ export function createSmallWindowHandler(options = {}) {
 
       if (req.method === "GET" && url.pathname === "/api/item-catalog-audit") {
         return sendJson(res, 200, await handleItemCatalogAuditRequest(runtime, {
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
           query: url.searchParams.get("query") ?? undefined,
           patch: url.searchParams.get("patch") ?? undefined,
           category: url.searchParams.get("category") ?? undefined,
@@ -8282,6 +8409,7 @@ export function createSmallWindowHandler(options = {}) {
           page: url.searchParams.get("page") ?? undefined,
           limit: url.searchParams.get("limit") ?? undefined,
           seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
+          locale: url.searchParams.get("locale") ?? undefined,
           refresh: url.searchParams.get("refresh") === "1"
         }));
       }
@@ -8291,6 +8419,7 @@ export function createSmallWindowHandler(options = {}) {
           entityType: url.searchParams.get("type"),
           apiName: url.searchParams.get("id"),
           seasonContextId: url.searchParams.get("seasonContextId") ?? undefined,
+          locale: url.searchParams.get("locale") ?? undefined,
           refresh: url.searchParams.get("refresh") === "1"
         }));
       }

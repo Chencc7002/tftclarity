@@ -1,3 +1,14 @@
+import {
+  deriveEnglishEntityName,
+  localizedEntityName,
+  localizedRoleLabel,
+  normalizeDisplayLocale
+} from "./display-locale.js";
+import {
+  traitDisplayOverrideByApiName,
+  unitDisplayOverrideByApiName
+} from "../data/entity-display-overrides.js";
+
 const ENTITY_TYPES = new Set(["unit", "trait"]);
 const DEFAULT_LIMIT = 200;
 const MAX_LIMIT = 200;
@@ -31,6 +42,21 @@ function publicSource(source) {
     season: source.season ?? null,
     updatedAt: source.updatedAt ?? null
   };
+}
+
+function localizedTraitNames(values, catalog, locale) {
+  return [...new Set((values ?? []).map((value) => {
+    const normalized = normalizedText(value);
+    const trait = (catalog?.traits ?? []).find((entry) => (
+      normalizedText(entry.zhName) === normalized
+      || normalizedText(entry.displayName) === normalized
+      || (entry.aliases ?? []).some((alias) => normalizedText(alias) === normalized)
+    ));
+    if (trait) return localizedEntityName(trait, locale, value);
+    return normalizeDisplayLocale(locale) === "en-US" && /\p{Script=Han}/u.test(String(value ?? ""))
+      ? null
+      : value;
+  }).filter(Boolean))];
 }
 
 function unitEntryScore(record) {
@@ -68,6 +94,7 @@ function collapseUnitRecords(records) {
 }
 
 function unitEntries(catalog, details, options = {}) {
+  const locale = normalizeDisplayLocale(options.locale);
   const query = normalizedText(options.query);
   const cost = options.cost === undefined || options.cost === null || options.cost === ""
     ? null
@@ -105,13 +132,26 @@ function unitEntries(catalog, details, options = {}) {
 
   return collapseUnitRecords(sourceUnits
     .map(({ unit, official, apiName, aliases }) => {
+      const displayOverride = unitDisplayOverrideByApiName.get(apiName);
+      const zhName = displayOverride?.zhName ?? unit.zhName ?? official?.name ?? unit.displayName ?? apiName;
+      const enName = displayOverride?.enName ?? deriveEnglishEntityName({ ...unit, aliases }, apiName);
+      const roleZh = localizedRoleLabel(official?.role, "zh-CN") || null;
+      const roleEn = localizedRoleLabel(official?.role, "en-US") || null;
+      const traitNamesZh = localizedTraitNames(official?.traitNames, catalog, "zh-CN");
+      const traitNamesEn = localizedTraitNames(official?.traitNames, catalog, "en-US");
       const entry = {
         entityType: "unit",
         apiName,
-        name: official?.name ?? unit.zhName ?? apiName,
+        name: locale === "en-US" ? enName : zhName,
+        zhName,
+        enName,
         cost: official?.cost ?? unit.cost ?? null,
-        role: official?.role ?? null,
-        traitNames: [...new Set(official?.traitNames ?? [])],
+        role: locale === "en-US" ? roleEn : roleZh,
+        roleZh,
+        roleEn,
+        traitNames: locale === "en-US" ? traitNamesEn : traitNamesZh,
+        traitNamesZh,
+        traitNamesEn,
         iconUrl: official?.iconUrl ?? options.assetResolver?.resolveUnit?.(apiName)?.iconUrl ?? null,
         hasDetails: Boolean(official),
         source: publicSource(official?.source)
@@ -138,6 +178,7 @@ function unitEntries(catalog, details, options = {}) {
 }
 
 function traitEntries(catalog, details, options = {}) {
+  const locale = normalizeDisplayLocale(options.locale);
   const query = normalizedText(options.query);
   const traitType = normalizedText(options.traitType ?? options.typeFilter);
   const byApiName = new Map();
@@ -161,10 +202,18 @@ function traitEntries(catalog, details, options = {}) {
     .map(([apiName, grouped]) => {
       const official = details?.traits?.get?.(apiName) ?? null;
       const catalogTrait = grouped.catalogTrait;
+      const displayOverride = traitDisplayOverrideByApiName.get(apiName);
+      const zhName = displayOverride?.zhName ?? catalogTrait.zhName ?? official?.name ?? catalogTrait.displayName ?? apiName;
+      const enName = displayOverride?.enName ?? deriveEnglishEntityName({
+        ...catalogTrait,
+        aliases: [...new Set([...(catalogTrait.aliases ?? []), ...grouped.aliases])]
+      }, apiName);
       const entry = {
         entityType: "trait",
         apiName,
-        name: official?.name ?? catalogTrait.zhName ?? catalogTrait.displayName ?? apiName,
+        name: locale === "en-US" ? enName : zhName,
+        zhName,
+        enName,
         traitType: official?.type ?? null,
         tierCounts: [...new Set((official?.levels ?? []).map((level) => Number(level.units)).filter(Number.isFinite))]
           .sort((left, right) => left - right),
