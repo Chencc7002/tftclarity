@@ -115,21 +115,51 @@ test("buildConclusionEvidence marks repeated items as low-sample core trends whe
 
 test("item-ranking evidence mirrors every candidate and detail displayed by the frontend", () => {
   const evidence = buildConclusionEvidence({ result: itemRankingResult(), catalog, input: "霞带什么转职？" });
-  assert.equal(evidence.recommendations.length, 5);
-  assert.deepEqual(evidence.recommendations.map((entry) => entry.evidenceId), ["item:1", "item:2", "item:3", "item:4", "item:5"]);
+  assert.equal(evidence.recommendations.length, 6);
+  assert.deepEqual(evidence.recommendations.map((entry) => entry.evidenceId), ["item:1", "item:2", "item:3", "item:4", "item:5", "item:6"]);
   assert.equal(evidence.recommendations[0].lowSample, true);
   assert.equal(evidence.recommendations[2].stable, true);
   assert.equal(evidence.recommendations[0].coverage, 0.002);
   assert.equal(evidence.recommendations[0].commonPairings.length, 3);
   assert.equal(evidence.recommendations[0].copyCounts[0].games, 51);
-  assert.equal(evidence.itemRankingContext.displayedCount, 5);
-  assert.deepEqual(evidence.itemRankingContext.lowSampleEvidenceIds, ["item:1", "item:2"]);
+  assert.equal(evidence.itemRankingContext.displayedCount, 6);
+  assert.deepEqual(evidence.itemRankingContext.lowSampleEvidenceIds, ["item:1", "item:2", "item:6"]);
   assert.deepEqual(evidence.itemRankingContext.stableEvidenceIds, ["item:3", "item:4", "item:5"]);
   assert.deepEqual(evidence.itemRankingContext.stableTopHalfEvidenceIds, ["item:3", "item:4"]);
   assert.deepEqual(evidence.itemRankingContext.stableBottomHalfEvidenceIds, ["item:5"]);
   assert.deepEqual(evidence.itemRankingContext.directAnalysisEvidenceIds, ["item:1", "item:4"]);
   assert.equal(evidence.generationRules.mustAnalyzeRepresentativeItemRankings, true);
   assert.equal(evidence.generationRules.mustDistinguishMetricRankFromReliability, true);
+});
+
+test("item-ranking evidence is capped at the same ten candidates shown by the frontend", () => {
+  const result = itemRankingResult();
+  result.itemRankings = Array.from({ length: 12 }, (_, index) => ({
+    ...structuredClone(result.itemRankings[index % result.itemRankings.length]),
+    apiName: `TFT_Test_Item_${index + 1}`
+  }));
+
+  const evidence = buildConclusionEvidence({ result, catalog, input: "霞的普通单装备排行" });
+  assert.equal(evidence.recommendations.length, 10);
+  assert.equal(evidence.recommendations.at(-1).evidenceId, "item:10");
+  assert.equal(evidence.itemRankingContext.displayedCount, 10);
+});
+
+test("mixed item-ranking evidence includes up to thirty frontend candidates", () => {
+  const result = itemRankingResult();
+  result.query.itemCategories = ["ordinary_completed", "artifact"];
+  result.itemRankingMethodology = {
+    methodology: "category_relative_sample_tier_then_performance_v1"
+  };
+  result.itemRankings = Array.from({ length: 35 }, (_, index) => ({
+    ...structuredClone(result.itemRankings[index % result.itemRankings.length]),
+    apiName: `TFT_Test_Mixed_Item_${index + 1}`
+  }));
+
+  const evidence = buildConclusionEvidence({ result, catalog, input: "霞的混合单装备排行" });
+  assert.equal(evidence.recommendations.length, 30);
+  assert.equal(evidence.recommendations.at(-1).evidenceId, "item:30");
+  assert.equal(evidence.itemRankingContext.displayedCount, 30);
 });
 
 test("item-ranking evidence exposes the special-item average-placement-only method", () => {

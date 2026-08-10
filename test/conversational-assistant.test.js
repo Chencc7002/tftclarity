@@ -53,7 +53,44 @@ test("single-item aggregation counts a double item build once and keeps copy-cou
   assert.equal(kraken.copyCounts.length, 1);
   assert.equal(kraken.copyCounts[0].copyCount, 2);
   assert.equal(kraken.copyCounts[0].stats.games, firstRowGames);
-  assert.equal(result.methodology, "presence_once_per_complete_build");
+  assert.equal(result.methodology, "sample_desc_with_shrunk_performance_v1");
+  assert.ok(result.rankings.every((entry) => Number.isFinite(entry.ranking.performanceScore)));
+  assert.deepEqual(
+    result.rankings.map((entry) => entry.stats.games),
+    [...result.rankings].map((entry) => entry.stats.games).sort((left, right) => right - left)
+  );
+});
+
+test("mixed item rankings compare category-relative sample tiers before performance", () => {
+  const definitions = [
+    ["ordinary-high", "ordinary_completed", 900],
+    ["ordinary-medium", "ordinary_completed", 90],
+    ["ordinary-low", "ordinary_completed", 9],
+    ["artifact-high", "artifact", 90],
+    ["artifact-medium", "artifact", 9],
+    ["artifact-low", "artifact", 1]
+  ];
+  const catalog = {
+    itemByApiName: new Map(definitions.map(([apiName, category]) => [apiName, { category }]))
+  };
+  const builds = definitions.map(([apiName, , games]) => ({
+    items: [apiName, "filler-a", "filler-b"],
+    raw: { placement_count: [games, 0, 0, 0, 0, 0, 0, 0] }
+  }));
+
+  const result = aggregateUnitItemRankings(builds, {
+    minSamples: 1,
+    itemCategories: ["ordinary_completed", "artifact"]
+  }, { catalog });
+
+  assert.equal(result.methodology, "category_relative_sample_tier_then_performance_v1");
+  assert.deepEqual(result.rankings.map((entry) => entry.ranking.sampleTier), [
+    "high", "high", "medium", "medium", "low", "low"
+  ]);
+  assert.deepEqual(
+    new Set(result.rankings.slice(0, 2).map((entry) => entry.category)),
+    new Set(["ordinary_completed", "artifact"])
+  );
 });
 
 test("single-item ranking requires a unit and returns structured results when supplied", async () => {

@@ -212,7 +212,7 @@ function inferIntent(input, details = {}) {
   }
   if (details.comparison?.requested) return "unit_item_comparison";
   if (details.performanceItem) return "unit_item_rankings";
-  if (details.itemCategories?.includes("emblem") && requestsCategoryRanking(normalized)) {
+  if (details.itemCategories?.length === 1 && details.itemCategories.includes("emblem") && requestsCategoryRanking(normalized)) {
     return "unit_emblem_rankings";
   }
   if ((details.itemCategories?.length ?? 0) > 0 && requestsCategoryRanking(normalized)) {
@@ -522,7 +522,8 @@ export function parseQuery(input, options = {}) {
     /(?:不要|别带|别用|不用|排除|剔除|去掉|换掉|避开|规避|不考虑|不想要|不需要).*?(?=但是|但|不过|然后|再|[,，。！？?；;]|$)/g,
     ""
   );
-  const emblemCategoryRankingRequested = itemCategories.includes("emblem")
+  const emblemCategoryRankingRequested = itemCategories.length === 1
+    && itemCategories.includes("emblem")
     && requestsCategoryRanking(normalizedInput);
   const genericEmblemActionRequested = /(?:加入|加上|带上|携带|锁定|要|用).{0,6}(?:纹章|转职)/
     .test(positiveEmblemScopeText);

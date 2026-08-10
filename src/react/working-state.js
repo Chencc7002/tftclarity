@@ -10,6 +10,7 @@ export class ReactWorkingState {
     this.budget = Object.freeze({ ...budget });
     this.decisions = [];
     this.observations = [];
+    this.transcript = [];
     this.toolCallCount = 0;
     this.consecutiveNoProgress = 0;
     this.maxObservedConsecutiveNoProgress = 0;
@@ -21,11 +22,15 @@ export class ReactWorkingState {
   }
 
   recordDecision(action) {
-    this.decisions.push(structuredClone(action));
+    const decision = structuredClone(action);
+    this.decisions.push(decision);
+    this.transcript.push({ type: "decision", value: decision });
   }
 
   recordObservation(observation, options = {}) {
-    this.observations.push(structuredClone(observation));
+    const recordedObservation = structuredClone(observation);
+    this.observations.push(recordedObservation);
+    this.transcript.push({ type: "observation", value: recordedObservation });
     if (options.toolCall === true) this.toolCallCount += 1;
     if (options.progress === true) {
       this.consecutiveNoProgress = 0;
@@ -37,6 +42,21 @@ export class ReactWorkingState {
         this.consecutiveNoProgress
       );
     }
+  }
+
+  recordRuntimeState() {
+    const runtimeState = {
+      iteration: this.decisions.length + 1,
+      decisionCount: this.decisions.length,
+      toolCallCount: this.toolCallCount,
+      remainingBudget: {
+        decisions: Math.max(0, Number(this.budget.maxDecisions ?? 0) - this.decisions.length),
+        toolCalls: null
+      },
+      warnings: [...this.warnings]
+    };
+    this.transcript.push({ type: "runtime_state", value: runtimeState });
+    return structuredClone(runtimeState);
   }
 
   recordDuplicateBlocked() {
@@ -72,6 +92,7 @@ export class ReactWorkingState {
       },
       observations: structuredClone(this.observations),
       evidence: ledger.snapshot().entries,
+      transcript: structuredClone(this.transcript),
       warnings: [...this.warnings]
     };
   }

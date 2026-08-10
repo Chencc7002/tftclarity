@@ -931,7 +931,7 @@ test("which-special-item wording keeps complete three-item aggregation", () => {
   }
 });
 
-test("radiant and artifact rankings use average placement only and do not let sample count change the order", () => {
+test("radiant and artifact rankings use sample order with shrinkage-adjusted performance labels", () => {
   const apiNames = [
     "TFT_Item_GuinsoosRageblade",
     "TFT_Item_InfinityEdge",
@@ -977,20 +977,20 @@ test("radiant and artifact rankings use average placement only and do not let sa
   const radiant = recommendFromRows("霞的光明装备排行", rows, { catalog });
   const artifact = recommendFromRows("霞的神器排行", rows, { catalog });
 
-  assert.equal(radiant.itemRankingMethodology.methodology, "special_item_outlier_cleaned_avg_placement_only");
+  assert.equal(radiant.itemRankingMethodology.methodology, "sample_desc_with_shrunk_performance_v1");
   assert.equal(radiant.itemRankingMethodology.sampleFloor.outlierFloor, 20);
-  assert.equal(radiant.itemRankings[0].apiName, "TFT5_Item_InfinityEdgeRadiant");
-  assert.ok(radiant.itemRankings[0].stats.games < radiant.itemRankings[1].stats.games);
-  assert.ok(radiant.itemRankings[0].stats.avgPlacement < radiant.itemRankings[1].stats.avgPlacement);
+  assert.equal(radiant.itemRankings[0].apiName, "TFT5_Item_GiantSlayerRadiant");
+  assert.ok(radiant.itemRankings[0].stats.games > radiant.itemRankings[1].stats.games);
+  assert.ok(Number.isFinite(radiant.itemRankings[0].ranking.performanceScore));
   assert.equal(radiant.itemRankingReferences[0].apiName, "TFT5_Item_GuinsoosRagebladeRadiant");
   assert.equal(radiant.itemRankingReferences[0].excludedReason, "special_item_outlier_sample");
-  assert.match(radiant.text, /仅按平均名次从低到高排列/);
+  assert.match(radiant.text, /按原始样本量降序展示/);
 
-  assert.equal(artifact.itemRankingMethodology.methodology, "special_item_outlier_cleaned_avg_placement_only");
+  assert.equal(artifact.itemRankingMethodology.methodology, "sample_desc_with_shrunk_performance_v1");
   assert.equal(artifact.itemRankingMethodology.sampleFloor.outlierFloor, 20);
-  assert.equal(artifact.itemRankings[0].apiName, "TFT4_Item_OrnnInfinityForce");
-  assert.ok(artifact.itemRankings[0].stats.games < artifact.itemRankings[1].stats.games);
-  assert.ok(artifact.itemRankings[0].stats.avgPlacement < artifact.itemRankings[1].stats.avgPlacement);
+  assert.equal(artifact.itemRankings[0].apiName, "TFT_Item_Artifact_Fishbones");
+  assert.ok(artifact.itemRankings[0].stats.games > artifact.itemRankings[1].stats.games);
+  assert.ok(Number.isFinite(artifact.itemRankings[0].ranking.performanceScore));
   assert.equal(artifact.itemRankingReferences[0].apiName, "TFT4_Item_OrnnDeathsDefiance");
   assert.equal(artifact.itemRankingReferences[0].excludedReason, "special_item_outlier_sample");
 

@@ -103,9 +103,9 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /queryTemplateKey: "quickTaskCarriersTemplate"/);
   assert.match(indexHtml, /id="quick-task-form"/);
   assert.match(indexHtml, /id="quick-task-fields"/);
-  assert.match(indexHtml, /id="quick-task-supplemental"/);
-  assert.match(appJs, /supplementalText/);
-  assert.match(i18n, /quickFieldSupplemental/);
+  assert.doesNotMatch(indexHtml, /quick-task-supplemental/);
+  assert.doesNotMatch(appJs, /quickTaskSupplemental/);
+  assert.doesNotMatch(i18n, /quickFieldSupplemental/);
   assert.match(appJs, /function openQuickTaskForm\(task\)/);
   assert.match(appJs, /function submitQuickTaskForm\(\)/);
   assert.match(appJs, /startNewTask: true/);
@@ -214,7 +214,7 @@ test("mobile special-item questions receive a query-specific chat conclusion", (
   assert.match(appJs, /function specialItemRankingConclusionText\(data\)/u);
   assert.match(appJs, /chatCoreConclusionText\(data\)/u);
   assert.match(i18n, /chatSpecialRankingWithItems/u);
-  assert.match(i18n, /低于同类最高样本 2%/u);
+  assert.match(i18n, /特殊装备按样本等级与表现分展示/u);
 });
 
 test("public UI exposes a visible, localized Riot fan-project notice", () => {
@@ -329,12 +329,14 @@ test("small-window cards render the sample-risk marker", () => {
   assert.match(styles, /\.risk/);
 });
 
-test("small-window defaults to an explained robust applicability recommendation", () => {
+test("small-window defaults to an explained performance-role recommendation", () => {
   assert.match(indexHtml, /value="robust_first"[^>]*selected/);
   assert.match(appJs, /sort: "robust_first"/);
-  assert.match(appJs, /card\.ranking\?\.method === "robust_applicability_v3"/);
+  assert.match(appJs, /card\.ranking\?\.method === "performance_role_v4"/);
   assert.match(appJs, /applicabilityRecommendation/);
-  assert.match(i18n, /普适推荐/);
+  assert.match(i18n, /主流方案/);
+  assert.match(i18n, /表现分/);
+  assert.match(styles, /\.ranking-insight-badges/);
   assert.match(styles, /\.ranking-rationale/);
 });
 
@@ -557,6 +559,14 @@ test("localized view state and historical clarification actions keep stable resp
 test("result templates cover recommendations, item rankings, comps, risks, and explicit states", () => {
   assert.match(appJs, /function renderRecommendationResult/);
   assert.match(appJs, /function renderItemRankings/);
+  assert.match(appJs, /const ITEM_RANKING_DISPLAY_LIMIT = 10/);
+  assert.match(appJs, /const MIXED_ITEM_RANKING_DISPLAY_LIMIT = 30/);
+  assert.match(appJs, /rankings\.slice\(0, itemRankingDisplayLimit\(data\)\)/);
+  assert.match(appJs, /data-item-ranking-mix-toggle/);
+  assert.match(appJs, /MIXED_ITEM_CATEGORY_QUERY_VALUE = "\\u666e\\u901a/);
+  assert.match(styles, /\.performance-tier-high/);
+  assert.match(styles, /\.performance-tier-low/);
+  assert.match(styles, /\.item-ranking-mode-control/);
   assert.match(appJs, /function renderCompRankings/);
   assert.match(appJs, /renderCompCards\(rising, "trend"\)/);
   assert.match(appJs, /data-comp-metric=/);

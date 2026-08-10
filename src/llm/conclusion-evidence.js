@@ -316,8 +316,20 @@ function officialUnitMechanics(query, entityDetails) {
   };
 }
 
+const ITEM_RANKING_EVIDENCE_LIMIT = 10;
+const MIXED_ITEM_RANKING_EVIDENCE_LIMIT = 30;
+
+function itemRankingIsMixed(result) {
+  return asArray(result?.query?.itemCategories).length > 1
+    || result?.itemRankingMethodology?.methodology === "category_relative_sample_tier_then_performance_v1"
+    || result?.itemRankingMethodology === "category_relative_sample_tier_then_performance_v1";
+}
+
 function buildItemRankings(result, catalog) {
-  return asArray(result?.itemRankings).slice(0, 5).map((entry, index) => {
+  const limit = itemRankingIsMixed(result)
+    ? MIXED_ITEM_RANKING_EVIDENCE_LIMIT
+    : ITEM_RANKING_EVIDENCE_LIMIT;
+  return asArray(result?.itemRankings).slice(0, limit).map((entry, index) => {
     const lowSample = Boolean(entry.lowSample || isLowSampleStats(entry.stats, result?.query));
     return {
       evidenceId: `item:${index + 1}`,
@@ -586,9 +598,13 @@ export function buildConclusionEvidence({
       methodology: clipped(
         result?.itemRankingMethodology?.methodology
           ?? result?.itemRankingMethodology
-          ?? "presence_once_per_complete_build",
+          ?? "sample_desc_with_shrunk_performance_v1",
         160
       ),
+      mixedCategoryRanking: result?.itemRankingMethodology?.methodology === "category_relative_sample_tier_then_performance_v1"
+        || result?.itemRankingMethodology === "category_relative_sample_tier_then_performance_v1",
+      // Legacy fixtures can still carry the old flag; current rankings use
+      // mixedCategoryRanking and dynamic sample/performance tiers.
       specialAveragePlacementOnly: result?.itemRankingMethodology?.methodology === "special_item_outlier_cleaned_avg_placement_only"
         || result?.itemRankingMethodology === "special_item_outlier_cleaned_avg_placement_only",
       outlierSampleFloor: Number(result?.itemRankingMethodology?.sampleFloor?.outlierFloor ?? 0),

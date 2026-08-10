@@ -559,9 +559,9 @@ function formatItemRankingText(aggregation, query, catalog) {
     return `没有单件装备达到样本阈值 ${query.minSamples}。`;
   }
   const stats = best.stats;
-  const rankingMethod = aggregation.methodology === "special_item_outlier_cleaned_avg_placement_only"
-    ? `排序：先剔除样本低于同类最高样本 2%（本次为 ${aggregation.sampleFloor.outlierFloor}）的极低样本离群项，再仅按平均名次从低到高排列；样本数只作参考，不参与剩余候选的名次计算。`
-    : "口径：按合法完整三件套是否包含该装备聚合；同一组合中的重复装备只计一次组合样本。";
+  const rankingMethod = aggregation.methodology === "category_relative_sample_tier_then_performance_v1"
+    ? "排序：混榜先比较各装备在自身类别内的动态样本等级，同等级再比较经贝叶斯收缩的表现分；类别获取条件不同，结果只作描述性参考。"
+    : "口径：按合法完整三件套是否包含该装备聚合；同一组合中的重复装备只计一次组合样本，并按原始样本量降序展示。表现分与标签用于解释，不改变该顺序。";
   return [
     `结论：${itemLabel(best.apiName, catalog)}在当前口径的单装备聚合中排名第一。`,
     `证据：前四率 ${(stats.top4Rate * 100).toFixed(1)}% / 登顶率 ${(stats.winRate * 100).toFixed(1)}% / 均名 ${stats.avgPlacement.toFixed(2)} / 样本 ${stats.games}。`,

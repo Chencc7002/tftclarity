@@ -66,6 +66,42 @@ test("entity catalog results persist the visible entity group and source filters
   assert.equal(metadata.totalCount, 2);
 });
 
+test("single-item rankings persist all ten visible result ids", () => {
+  const metadata = conversationResultStateFromResponse({
+    type: "unit_item_rankings",
+    query: { intent: "unit_item_rankings" },
+    itemRankings: Array.from({ length: 12 }, (_, index) => ({
+      apiName: `TFT_Test_Item_${index + 1}`
+    }))
+  });
+
+  assert.equal(metadata.shownIds.length, 10);
+  assert.equal(metadata.shownIds.at(-1), "TFT_Test_Item_10");
+  assert.equal(metadata.returnedCount, 10);
+  assert.equal(metadata.totalCount, 12);
+});
+
+test("mixed single-item rankings persist all thirty visible result ids", () => {
+  const metadata = conversationResultStateFromResponse({
+    type: "unit_item_rankings",
+    query: {
+      intent: "unit_item_rankings",
+      itemCategories: ["ordinary_completed", "artifact"]
+    },
+    itemRankingMethodology: {
+      methodology: "category_relative_sample_tier_then_performance_v1"
+    },
+    itemRankings: Array.from({ length: 35 }, (_, index) => ({
+      apiName: `TFT_Test_Mixed_Item_${index + 1}`
+    }))
+  });
+
+  assert.equal(metadata.shownIds.length, 30);
+  assert.equal(metadata.shownIds.at(-1), "TFT_Test_Mixed_Item_30");
+  assert.equal(metadata.returnedCount, 30);
+  assert.equal(metadata.totalCount, 35);
+});
+
 test("ConversationState.v2 normalizes bounded result metadata and validates its schema", () => {
   const shownIds = Array.from({ length: MAX_CONVERSATION_SHOWN_IDS + 20 }, (_, index) => `id-${index}`);
   const state = createConversationState({

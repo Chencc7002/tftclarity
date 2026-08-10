@@ -62,6 +62,7 @@ const state = {
   resultNavigation: [],
   feedbackByCard: {},
   explanationFeedback: null,
+  itemRankingCategoryBeforeMixed: "ordinary_completed",
   mobileView: "chat",
   conclusionStreamText: "",
   seasonContextId: "set17-live",
@@ -76,7 +77,6 @@ const quickTaskForm = document.querySelector("#quick-task-form");
 const quickTaskFormTitle = document.querySelector("#quick-task-form-title");
 const quickTaskFormClose = document.querySelector("#quick-task-form-close");
 const quickTaskFields = document.querySelector("#quick-task-fields");
-const quickTaskSupplemental = document.querySelector("#quick-task-supplemental");
 const refreshButton = document.querySelector("#refresh-button");
 const clearButton = document.querySelector("#clear-button");
 const stopButton = document.querySelector("#stop-button");
@@ -873,7 +873,6 @@ function closeQuickTaskForm({ focus = false } = {}) {
   activeQuickTask = null;
   quickTaskForm.hidden = true;
   quickTaskFields.replaceChildren();
-  quickTaskSupplemental.value = "";
   form.classList.remove("quick-task-form-active");
   queryInput.hidden = false;
   if (focus) queryInput.focus();
@@ -884,7 +883,6 @@ function openQuickTaskForm(task) {
   queryInput.value = "";
   queryInput.setCustomValidity("");
   queryInput.hidden = true;
-  quickTaskSupplemental.value = "";
   quickTaskFormTitle.textContent = t(task.titleKey);
   quickTaskFields.innerHTML = task.formFields.map((fieldName) => {
     const field = QUICK_TASK_FIELD_DEFINITIONS[fieldName];
@@ -939,7 +937,6 @@ async function submitQuickTaskForm() {
   const task = activeQuickTask;
   const submission = quickTaskQuery(task);
   if (!submission) return true;
-  const supplementalText = quickTaskSupplemental.value.trim();
   closeQuickTaskForm();
   queryInput.value = submission.query;
   await requestRecommendation(
@@ -947,8 +944,7 @@ async function submitQuickTaskForm() {
     submission.query,
     {
       startNewTask: true,
-      quickTask: structuredQuickTask(task, submission.values),
-      supplementalText
+      quickTask: structuredQuickTask(task, submission.values)
     }
   );
   return true;
@@ -2571,6 +2567,15 @@ const EQUIPMENT_CORE_RESULT_TYPES = new Set([
   "unit_best_3_items"
 ]);
 
+const ITEM_RANKING_DISPLAY_LIMIT = 10;
+const MIXED_ITEM_RANKING_DISPLAY_LIMIT = 30;
+
+function itemRankingDisplayLimit(data) {
+  return itemRankingIsMixed(data)
+    ? MIXED_ITEM_RANKING_DISPLAY_LIMIT
+    : ITEM_RANKING_DISPLAY_LIMIT;
+}
+
 function equipmentCoreConclusionText(data) {
   const summary = data?.coreItemSummary ?? data?.answer?.coreConclusion;
   if (!EQUIPMENT_CORE_RESULT_TYPES.has(data?.type) || Number(summary?.recommendationCount) < 2) return null;
@@ -2605,7 +2610,7 @@ function specialItemRankingConclusionText(data) {
     .map((category) => t(category === "radiant" ? "radiantCategoryName" : "artifactCategoryName"));
   const rankings = data.itemRankings ?? [];
   if (!rankings.length) return t("chatSpecialRankingEmpty", { category: categories.join(" / ") });
-  const displayedRankings = rankings.slice(0, 5);
+  const displayedRankings = rankings.slice(0, itemRankingDisplayLimit(data));
   const itemNames = displayedRankings.map((item) => localizedName(item)).filter(Boolean);
   const best = displayedRankings[0];
   return t("chatSpecialRankingWithItems", {
@@ -2717,6 +2722,82 @@ function reactModelConclusionHtml(data, summary) {
     ${conclusionRichTextHtml(answer || summary)}
   </section>`;
   return `${rejectedCard}${acceptedOrFallbackCard}`;
+}
+
+function rankingTierLabel(prefix, tier) {
+  const normalized = tier === "medium" ? "Medium"
+    : tier === "high" ? "High"
+      : tier === "low" ? "Low"
+        : "Unclassified";
+  return t(`${prefix}Tier${normalized}`);
+}
+
+function rankingInsightLabel(code) {
+  const keys = {
+    mainstream_best: "insightMainstreamBest",
+    mainstream_standard: "insightMainstreamStandard",
+    popular_underperformer: "insightPopularUnderperformer",
+    potential: "insightPotential",
+    situational: "insightSituational",
+    inefficient_alternative: "insightInefficientAlternative",
+    small_sample_highlight: "insightSmallSampleHighlight",
+    sparse_sample: "insightSparseSample"
+  };
+  return keys[code] ? t(keys[code]) : null;
+}
+
+function rankingInsightBadges(ranking) {
+  if (!ranking) return "";
+  const badges = [
+    { label: rankingTierLabel("sample", ranking.sampleTier), className: `sample-tier-${ranking.sampleTier ?? "unclassified"}` },
+    { label: rankingTierLabel("performance", ranking.performanceTier), className: `performance-tier-${ranking.performanceTier ?? "unclassified"}` },
+    { label: rankingInsightLabel(ranking.insightCode), className: "insight-tier" }
+  ].filter((badge) => badge.label);
+  return `<div class="ranking-insight-badges">${badges.map((badge) => `<span class="ranking-badge ${escapeHtml(badge.className)}">${escapeHtml(badge.label)}</span>`).join("")}</div>`;
+}
+
+const MIXED_ITEM_CATEGORY_QUERY_VALUE = "\u666e\u901a\u3001\u795e\u5668\u3001\u5149\u660e\u3001\u7eb9\u7ae0";
+
+function itemRankingIsMixed(data) {
+  return (data?.query?.itemCategories ?? []).length > 1
+    || data?.methodology?.methodology === "category_relative_sample_tier_then_performance_v1";
+}
+
+function itemCategoryQueryValue(category) {
+  return {
+    ordinary_completed: "\u666e\u901a",
+    artifact: "\u795e\u5668",
+    radiant: "\u5149\u660e",
+    emblem: "\u7eb9\u7ae0"
+  }[category] ?? "\u666e\u901a";
+}
+
+function itemRankingModeControl(data) {
+  const mixed = itemRankingIsMixed(data);
+  return `
+    <section class="item-ranking-mode-control" data-ranking-mode="${mixed ? "mixed" : "category"}">
+      <div><strong>${t(mixed ? "mixedRankingActive" : "categoryRankingActive")}</strong><small>${t("mixedRankingHint")}</small></div>
+      <button type="button" data-item-ranking-mix-toggle="${mixed ? "off" : "on"}" aria-pressed="${mixed ? "true" : "false"}">${t(mixed ? "disableMixedRanking" : "enableMixedRanking")}</button>
+    </section>
+  `;
+}
+
+async function toggleItemRankingMode(data, enableMixed) {
+  if (state.requestInFlight || !data?.query?.unit) return;
+  const categories = data.query.itemCategories ?? [];
+  if (!enableMixed && categories.length === 1) return;
+  if (enableMixed && categories.length === 1) state.itemRankingCategoryBeforeMixed = categories[0];
+  const category = enableMixed
+    ? MIXED_ITEM_CATEGORY_QUERY_VALUE
+    : itemCategoryQueryValue(state.itemRankingCategoryBeforeMixed);
+  const champion = data.query.unitName ?? data.unit?.name ?? data.query.unit;
+  const task = QUICK_TASKS.find((entry) => entry.id === "item-performance");
+  const values = { champion, itemCategory: category };
+  const query = t(task.queryTemplateKey, values);
+  queryInput.value = query;
+  await requestRecommendation(false, t(enableMixed ? "enableMixedRankingDisplay" : "disableMixedRankingDisplay", { unit: champion }), {
+    quickTask: structuredQuickTask(task, values)
+  });
 }
 
 function buildNarrativeWarningText(error) {
@@ -2890,10 +2971,14 @@ function renderItemRankings(data) {
     setResponseHtml(`${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text ?? t("noResult"), t("noResult"))}${conditionPanel(data)}${sourceAndRisk(data)}`);
     return;
   }
+  if (!itemRankingIsMixed(data) && data.query?.itemCategories?.length === 1) {
+    state.itemRankingCategoryBeforeMixed = data.query.itemCategories[0];
+  }
   setResponseHtml(`
     ${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text, t("itemRanking"))}
+    ${itemRankingModeControl(data)}
     <div class="item-ranking-list">
-      ${rankings.slice(0, 5).map((item, index) => `
+      ${rankings.slice(0, itemRankingDisplayLimit(data)).map((item, index) => `
         <article class="item-ranking-card">
           <div class="item-ranking-head">
             ${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}
@@ -2905,7 +2990,9 @@ function renderItemRankings(data) {
             ${metric(t("win"), `${formatNumber(item.stats.win)}%`)}
             ${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
             ${metric(t("samples"), formatNumber(item.stats.games))}
+            ${item.ranking?.performanceScore == null ? "" : metric(t("performanceScore"), formatNumber(item.ranking.performanceScore, { minimumFractionDigits: 1, maximumFractionDigits: 1 }))}
           </div>
+          ${rankingInsightBadges(item.ranking)}
           <div class="item-ranking-meta">${t("commonPairings")}：${item.commonPairings?.length ? item.commonPairings.map((pairing) => `${pairing.items.map((entry) => escapeHtml(localizedName(entry))).join(" + ")}（${formatNumber(pairing.games)}）`).join("；") : t("itemUnavailable")}</div>
           ${item.copyCounts?.some((copy) => copy.copyCount > 1) ? `<div class="item-ranking-meta">${t("duplicateItems")}：${item.copyCounts.map((copy) => `${copy.copyCount}× · ${formatNumber(copy.stats.games)} ${t("games")}`).join(" / ")}</div>` : ""}
         </article>
@@ -2966,23 +3053,32 @@ function renderItemCarrierRankings(data) {
 function recommendationCard(data, card, index) {
   const unitLabel = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? t("hero"));
   const comparedItem = card.items?.find((item) => item.compared);
+  const completion = (data.lockedItems?.length ?? 0) > 0;
+  const roleTitleKey = card.ranking?.method === "performance_role_v4" && !card.lowSample
+    ? card.ranking.recommendationRole === "mainstream"
+      ? completion ? "mainstreamCompletion" : "mainstreamBuild"
+      : card.ranking.recommendationRole === "best_performance_alternative"
+        ? completion ? "bestPerformanceCompletionAlternative" : "bestPerformanceAlternative"
+        : completion ? "highPerformanceCompletionAlternative" : "highPerformanceAlternative"
+    : null;
   const cardTitle = data.comparison
     ? `${card.winner ? t("best") : card.lowSample ? t("lowSample") : t("alternatives")} · ${localizedName(comparedItem, card.title)}`
-    : card.winner
+    : roleTitleKey ? t(roleTitleKey) : (card.winner
       ? data.query?.sort === "robust_first"
         ? t("applicabilityRecommendation")
         : t("bestRecommendation")
       : card.lowSample
         ? t("lowSample")
-        : `${t("alternatives")} ${index}`;
+        : `${t("alternatives")} ${index}`);
   const difference = card.difference
     ? `<div class="difference-note">${t("relativeRecommendation")}：${card.difference.removed?.length ? `${t("replace")} ${escapeHtml(card.difference.removed.join(" + "))} → ${escapeHtml(card.difference.added.join(" + "))}` : t("sameItems")}；${t("top4Short")} ${card.difference.top4Delta >= 0 ? "+" : ""}${formatNumber(card.difference.top4Delta)}pp，${t("samples")} ${card.difference.gamesDelta >= 0 ? "+" : ""}${formatNumber(card.difference.gamesDelta)}</div>`
     : "";
-  const rankingRationale = card.ranking?.method === "robust_applicability_v3"
+  const rankingRationale = card.ranking?.method === "performance_role_v4"
     ? `<div class="ranking-rationale${card.winner ? " primary" : ""}">
       <strong>${t(card.winner ? "applicabilityRecommendation" : "applicabilityScore")}</strong>
       <span>${t("applicabilityScoreValue", { score: formatNumber(card.ranking.score, { minimumFractionDigits: 1, maximumFractionDigits: 1 }) })}</span>
-      <span>${t("sampleCoverageValue", { value: formatNumber(card.ranking.coverageScore, { maximumFractionDigits: 0 }) })}</span>
+      <span>${rankingTierLabel("sample", card.ranking.sampleTier)}</span>
+      <span>${rankingTierLabel("performance", card.ranking.performanceTier)}</span>
       ${card.winner ? `<small>${t("applicabilityMethodShort")}</small>` : ""}
     </div>`
     : "";
@@ -4696,6 +4792,11 @@ async function handleResultClick(event) {
   if (compMetricButton && state.lastResult?.type === "comp_rankings") {
     state.compRankingMetric = compMetricButton.dataset.compMetric;
     renderCompRankings(state.lastResult);
+    return;
+  }
+  const itemRankingMixButton = event.target.closest("button[data-item-ranking-mix-toggle]");
+  if (itemRankingMixButton && ["unit_item_rankings", "unit_emblem_rankings"].includes(state.lastResult?.type)) {
+    await toggleItemRankingMode(state.lastResult, itemRankingMixButton.dataset.itemRankingMixToggle === "on");
     return;
   }
   const quickCategoryButton = event.target.closest("button[data-quick-category]");

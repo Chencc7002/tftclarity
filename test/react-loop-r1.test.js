@@ -181,6 +181,12 @@ test("R1-02 one static tool produces validated evidence and ordered events", asy
     events.filter((event) => ["decision", "tool_started", "tool_completed", "evidence_added", "answer", "termination"].includes(event.type)).map((event) => event.type),
     ["decision", "tool_started", "tool_completed", "evidence_added", "decision", "answer", "termination"]
   );
+  assert.deepEqual(
+    provider.requests[1].state.transcript.map((entry) => entry.type),
+    ["runtime_state", "decision", "observation", "runtime_state"]
+  );
+  assert.equal(provider.requests[1].state.transcript[2].value.evidenceId, "ev-1");
+  assert.equal(provider.requests[1].state.transcript[2].value.evidence.evidenceId, "ev-1");
 });
 
 test("R1-03 statistical answers require evidence with updatedAt", async () => {

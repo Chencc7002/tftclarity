@@ -111,6 +111,27 @@ test("item rankings activate sample risk only when a displayed item is low-sampl
   ]);
 });
 
+test("mixed item rankings expose up to thirty candidates to conclusion requirements", () => {
+  const result = {
+    type: "unit_item_rankings",
+    query: {
+      ...structuredClone(fixture.query),
+      intent: "unit_item_rankings",
+      itemCategories: ["ordinary_completed", "artifact"]
+    },
+    itemRankingMethodology: {
+      methodology: "category_relative_sample_tier_then_performance_v1"
+    },
+    itemRankings: Array.from({ length: 35 }, (_, index) => ({
+      apiName: `TFT_Test_Mixed_Item_${index + 1}`,
+      stats: { games: 1000, top4Rate: 0.5, winRate: 0.1, avgPlacement: 4 }
+    }))
+  };
+
+  const contract = contractFor(result);
+  assert.equal(contract.requirementContext.candidateCount, 30);
+});
+
 test("an incomplete requested comparison succeeds only as explicit insufficient evidence", async () => {
   const result = {
     type: "unit_item_comparison",

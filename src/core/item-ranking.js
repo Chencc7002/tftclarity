@@ -1,23 +1,12 @@
 import { calculatePlacementStats } from "./stats-calculator.js";
-import { compareRankedBuilds } from "./ranker.js";
+import { applyDynamicRankingTiers, scoreRobustBuilds } from "./ranker.js";
 
 const AVG_PLACEMENT_ONLY_CATEGORIES = new Set(["radiant", "artifact"]);
 export const SPECIAL_ITEM_RELATIVE_SAMPLE_RATIO = 0.02;
 
-function usesSpecialAveragePlacementRanking(requestedCategories) {
+function usesSpecialRelativeSampleFloor(requestedCategories) {
   return requestedCategories.size > 0
     && [...requestedCategories].every((category) => AVG_PLACEMENT_ONLY_CATEGORIES.has(category));
-}
-
-function compareAveragePlacementOnly(left, right) {
-  const leftPlacement = Number.isFinite(Number(left?.stats?.avgPlacement))
-    ? Number(left.stats.avgPlacement)
-    : Number.POSITIVE_INFINITY;
-  const rightPlacement = Number.isFinite(Number(right?.stats?.avgPlacement))
-    ? Number(right.stats.avgPlacement)
-    : Number.POSITIVE_INFINITY;
-  if (leftPlacement !== rightPlacement) return leftPlacement - rightPlacement;
-  return String(left.apiName).localeCompare(String(right.apiName));
 }
 
 function specialItemSampleFloor(rankings, configuredMinSamples) {
@@ -134,7 +123,10 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
 
   const minSamples = Number(query.minSamples ?? 100);
   const requestedCategories = new Set(query.itemCategories ?? []);
-  const averagePlacementOnly = usesSpecialAveragePlacementRanking(requestedCategories);
+  const usesRelativeSampleFloor = usesSpecialRelativeSampleFloor(requestedCategories);
+  const soleRequestedCategory = requestedCategories.size === 1
+    ? [...requestedCategories][0]
+    : null;
   const rankings = [...buckets.values()]
     .filter((bucket) => requestedCategories.size === 0
       || requestedCategories.has(options.catalog?.itemByApiName?.get(bucket.apiName)?.category))
@@ -142,6 +134,9 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
       const stats = calculatePlacementStats(bucket.placementCount);
       return {
         apiName: bucket.apiName,
+        category: options.catalog?.itemByApiName?.get(bucket.apiName)?.category
+          ?? soleRequestedCategory
+          ?? "unknown",
         stats,
         placementCount: bucket.placementCount,
         buildCount: bucket.buildCount,
@@ -163,34 +158,53 @@ export function aggregateUnitItemRankings(builds, query = {}, options = {}) {
       };
     });
 
-  const sampleFloor = averagePlacementOnly
+  const sampleFloor = usesRelativeSampleFloor
     ? specialItemSampleFloor(rankings, minSamples)
     : { referenceGames: null, relativeRatio: null, outlierFloor: 0, effectiveFloor: minSamples, applied: false };
   for (const entry of rankings) {
     entry.qualified = entry.stats.games >= sampleFloor.effectiveFloor;
     if (!entry.qualified) {
-      entry.excludedReason = averagePlacementOnly
+      entry.excludedReason = usesRelativeSampleFloor
         && entry.stats.games < sampleFloor.outlierFloor
         ? "special_item_outlier_sample"
         : "below_min_samples";
     }
   }
 
-  rankings.sort((left, right) => {
-    if (left.qualified !== right.qualified) return left.qualified ? -1 : 1;
-    if (averagePlacementOnly) return compareAveragePlacementOnly(left, right);
-    return compareRankedBuilds({ stats: left.stats }, { stats: right.stats }, query);
+  const qualified = rankings.filter((entry) => entry.qualified);
+  const scored = applyDynamicRankingTiers(
+    scoreRobustBuilds(qualified, query),
+    { sampleGroupKey: (entry) => entry.category }
+  );
+  const categories = new Set(scored.map((entry) => entry.category));
+  const mixedCategories = categories.size > 1;
+  const tierOrder = { high: 3, medium: 2, low: 1, unclassified: 0 };
+  scored.sort((left, right) => {
+    if (mixedCategories) {
+      const tierDelta = (tierOrder[right.ranking?.sampleTier] ?? 0)
+        - (tierOrder[left.ranking?.sampleTier] ?? 0);
+      if (tierDelta) return tierDelta;
+      const performanceDelta = Number(right.ranking?.performanceScore ?? 0)
+        - Number(left.ranking?.performanceScore ?? 0);
+      if (performanceDelta) return performanceDelta;
+      const percentileDelta = Number(right.ranking?.samplePercentile ?? -1)
+        - Number(left.ranking?.samplePercentile ?? -1);
+      if (percentileDelta) return percentileDelta;
+    }
+    return Number(right.stats.games) - Number(left.stats.games)
+      || Number(right.ranking?.performanceScore ?? 0) - Number(left.ranking?.performanceScore ?? 0)
+      || String(left.apiName).localeCompare(String(right.apiName));
   });
 
   return {
-    rankings: rankings.filter((entry) => entry.qualified),
+    rankings: scored,
     references: rankings.filter((entry) => !entry.qualified),
     totalGames,
     completeBuildCount: completeBuilds.length,
     coverageReliable: totalGames > 0,
     sampleFloor,
-    methodology: averagePlacementOnly
-      ? "special_item_outlier_cleaned_avg_placement_only"
-      : "presence_once_per_complete_build"
+    methodology: mixedCategories
+      ? "category_relative_sample_tier_then_performance_v1"
+      : "sample_desc_with_shrunk_performance_v1"
   };
 }

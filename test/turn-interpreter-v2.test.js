@@ -759,6 +759,53 @@ test("Turn Interpreter replaces an active task for an explicit self-contained qu
   assert.equal(response.turnDelta.explicitTaskFrame.goal, "comp_trends");
 });
 
+test("explicit rank modification keeps the active unit-build task despite a provider task switch", async () => {
+  const activeFrame = createTaskFrame({
+    action: "recommend",
+    goal: "unit_build_rankings",
+    subjects: [{
+      rawText: "剑圣",
+      expectedType: "champion",
+      resolvedId: "TFT17_MasterYi",
+      confidence: 1
+    }],
+    constraints: { rank: ["CHALLENGER", "GRANDMASTER", "MASTER", "DIAMOND", "EMERALD"] },
+    confidence: 1,
+    understandingStatus: "understood_and_supported"
+  });
+  const response = await interpretTurn({
+    currentMessage: "修改王者/宗师/大师/钻石",
+    conversationState: createConversationState({
+      activeTask: { taskFrame: activeFrame, legacyIntent: activeFrame.goal }
+    }),
+    domainPolicy: tftConversationPolicy,
+    semanticProvider: async () => ({
+      turnDelta: createTurnDelta({
+        dialogueAct: "start_task",
+        taskRelation: "new",
+        explicitTaskFrame: createTaskFrame({
+          action: "rank",
+          goal: "comp_rankings",
+          constraints: { rank: ["CHALLENGER", "GRANDMASTER", "MASTER"] },
+          confidence: 0.9,
+          understandingStatus: "understood_and_supported"
+        }),
+        confidence: 0.9
+      })
+    }),
+    entityLinking: false
+  });
+
+  assert.equal(response.turnDelta.taskRelation, "modify");
+  assert.equal(response.turnDelta.explicitTaskFrame, null);
+  assert.deepEqual(response.turnDelta.constraintOperations, [{
+    operation: "set",
+    field: "rank",
+    value: ["CHALLENGER", "GRANDMASTER", "MASTER", "DIAMOND"]
+  }]);
+  assert.equal(response.telemetry.providerFallback.reason, "explicit_rank_modification_policy");
+});
+
 test("explicit champion build wording starts the same deterministic task across seasons", async () => {
   const response = await interpretTurn({
     currentMessage: "查询阿狸当前版本最稳三件装备",

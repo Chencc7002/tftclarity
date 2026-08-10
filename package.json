@@ -50,6 +50,7 @@
     "backup:sqlite": "node scripts/backup-sqlite.mjs",
     "smoke:llm": "node scripts/smoke-llm.mjs",
     "smoke:react-chat:live": "node scripts/smoke-react-chat-live.mjs",
+    "benchmark:react-cache:ab:live": "node scripts/benchmark-react-cache-ab-live.mjs",
     "smoke:react-chat:h1:live": "node scripts/smoke-react-chat-h1-live.mjs",
     "smoke:conclusion-llm": "node scripts/smoke-conclusion-llm.mjs",
     "semantic:index": "node scripts/build-semantic-index.mjs",

@@ -1,6 +1,7 @@
 import { linkTaskFrameEntities } from "./entity-linker.js";
 import { normalizeContextualTurnDelta } from "./context-reducer.js";
 import { parseSemanticTask } from "./semantic-task-parser.js";
+import { parseRankFilter } from "../core/query-parser.js";
 import { createTaskFrame } from "./task-frame.js";
 import {
   createTurnDelta,
@@ -239,6 +240,22 @@ function actionOnlyBuildFollowupDelta(currentMessage, state, options = {}) {
       confidence: 1,
       understandingStatus: "understood_and_supported"
     }),
+    confidence: 1
+  });
+}
+
+function explicitRankModificationDelta(currentMessage, state) {
+  const input = String(currentMessage ?? "").trim();
+  if (!state?.activeTask?.taskFrame || state?.pendingClarification) return null;
+  if (!/^(?:修改|改成|改为|调整|只看|仅看|限定|段位(?:改成|改为|设为))/u.test(input)) return null;
+  // A turn that explicitly names a new query surface remains a task switch.
+  if (/(?:阵容|出装|装备|英雄|棋子|羁绊|神器|光明)/u.test(input)) return null;
+  const rank = parseRankFilter(input);
+  if (!rank?.length) return null;
+  return createTurnDelta({
+    dialogueAct: "modify",
+    taskRelation: "modify",
+    constraintOperations: [{ operation: "set", field: "rank", value: rank }],
     confidence: 1
   });
 }
@@ -936,6 +953,14 @@ export async function interpretTurn({
     providerFallback = {
       used: true,
       reason: "action_only_build_followup_policy"
+    };
+  }
+  const explicitRankDelta = explicitRankModificationDelta(semanticMessage, interpreterState);
+  if (explicitRankDelta) {
+    delta = explicitRankDelta;
+    providerFallback = {
+      used: true,
+      reason: "explicit_rank_modification_policy"
     };
   }
   delta = await linkTurnDeltaReferences(delta, options);

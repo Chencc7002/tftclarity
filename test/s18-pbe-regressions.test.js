@@ -314,7 +314,8 @@ test("chat routing keeps the champion in explicit Artifact rankings", async () =
   assert.equal(result.query.unit, "DA_18_Ahri");
   assert.equal(result.query.itemPolicy, "include_artifact");
   assert.deepEqual(result.query.itemCategories, ["artifact"]);
-  assert.equal(result.itemRankings[0]?.apiName, "DA_Artifact_TitanicHydra");
+  assert.equal(result.itemRankingMethodology.methodology, "sample_desc_with_shrunk_performance_v1");
+  assert.equal(result.itemRankings[0]?.apiName, "TFT4_Item_OrnnInfinityForce");
 });
 
 test("Set 18 Explorer keeps DA unit ids and maps MetaTFT lookup aliases onto the canonical unit", () => {

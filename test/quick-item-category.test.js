@@ -12,6 +12,7 @@ test("single-item ranking categories cover standard, Artifact, and Emblem inputs
   const ordinary = parseQuery("霞的普通单装备排行", { catalog });
   const artifact = parseQuery("霞的神器单装备排行", { catalog });
   const emblem = parseQuery("霞的纹章单装备排行", { catalog });
+  const mixed = parseQuery("霞的普通、神器、光明、纹章单装备排行", { catalog });
 
   assert.equal(ordinary.intent, "unit_item_rankings");
   assert.deepEqual(ordinary.itemCategories, ["ordinary_completed"]);
@@ -19,4 +20,7 @@ test("single-item ranking categories cover standard, Artifact, and Emblem inputs
   assert.deepEqual(artifact.itemCategories, ["artifact"]);
   assert.equal(emblem.intent, "unit_emblem_rankings");
   assert.deepEqual(emblem.itemCategories, ["emblem"]);
+  assert.equal(mixed.intent, "unit_item_rankings");
+  assert.deepEqual(mixed.itemCategories, ["ordinary_completed", "emblem", "artifact", "radiant"]);
+  assert.equal(mixed.itemPolicy, "include_special");
 });

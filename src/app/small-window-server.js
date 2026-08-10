@@ -148,6 +148,7 @@ import {
 
 const DEFAULT_HOST = "127.0.0.1";
 const DEFAULT_PORT = 17317;
+const PERFORMANCE_RANKING_METHOD = "performance_role_v4";
 export const DEFAULT_SMALL_WINDOW_REQUEST_TIMEOUT_MS = 2200;
 export const DEFAULT_COMP_RANKINGS_TIMEOUT_MS = 8000;
 export const DEFAULT_COMP_DETAIL_CACHE_TTL_MS = 5 * 60 * 1000;
@@ -362,7 +363,9 @@ function directParsedForQuickTask(task, input, catalog, preferences) {
   };
   return {
     ...parsed,
-    intent: task.id === "item-performance" && parsed.itemCategories?.includes("emblem")
+    intent: task.id === "item-performance"
+      && parsed.itemCategories?.length === 1
+      && parsed.itemCategories.includes("emblem")
       ? "unit_emblem_rankings"
       : task.definition.intent,
     ...(equipmentTask ? {
@@ -1538,6 +1541,7 @@ function serializeItemRanking(entry, catalog) {
   return {
     apiName: entry.apiName,
     name: itemName(entry.apiName, catalog),
+    category: entry.category ?? catalog.itemByApiName.get(entry.apiName)?.category ?? "unknown",
     iconUrl: ASSET_RESOLVER.resolveItem(entry.apiName).iconUrl,
     stats: {
       top4: percent(entry.stats.top4Rate),
@@ -1549,6 +1553,19 @@ function serializeItemRanking(entry, catalog) {
     coverageDenominatorGames: entry.coverageDenominatorGames,
     buildCount: entry.buildCount,
     excludedReason: entry.excludedReason ?? null,
+    ranking: entry.ranking?.method === PERFORMANCE_RANKING_METHOD
+      ? {
+        method: entry.ranking.method,
+        performanceScore: Number((entry.ranking.performanceScore * 100).toFixed(1)),
+        sampleTier: entry.ranking.sampleTier,
+        samplePercentile: Number.isFinite(entry.ranking.samplePercentile)
+          ? Number((entry.ranking.samplePercentile * 100).toFixed(1))
+          : null,
+        sampleGroup: entry.ranking.sampleGroup,
+        performanceTier: entry.ranking.performanceTier,
+        insightCode: entry.ranking.insightCode
+      }
+      : null,
     commonPairings: (entry.commonPairings ?? []).map((pairing) => ({
       games: pairing.games,
       items: pairing.items.map((apiName) => ({
@@ -2489,7 +2506,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       }
       : null;
     const best = itemRankings[0] ?? null;
-    const specialAveragePlacementOnly = result.itemRankingMethodology?.methodology === "special_item_outlier_cleaned_avg_placement_only";
+    const mixedCategoryRanking = result.itemRankingMethodology?.methodology === "category_relative_sample_tier_then_performance_v1";
     return {
       ok: true,
       type: result.type,
@@ -2505,9 +2522,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
           : `${compAnswerPrefix(query.comp)}${result.text}`),
         evidence: itemPerformance?.item?.stats ?? best?.stats ?? null,
         warnings: query.warnings ?? [],
-        methodology: specialAveragePlacementOnly
-          ? `先剔除样本低于同类最高样本 2%（本次为 ${result.itemRankingMethodology?.sampleFloor?.outlierFloor ?? 0}）的极低样本离群项；其余神器与光明装备仅按平均名次升序排列，样本数只作可信度参考，不参与排序`
-          : "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本"
+        methodology: mixedCategoryRanking
+          ? "混榜按装备类别内的动态样本等级排序，同等级按收缩后的表现分排序；类别获取条件不同，结果只表示携带后的描述性表现。"
+          : "按合法完整三件套是否包含该装备聚合；重复件只计一次组合样本，按样本量降序，并展示收缩后的表现分与动态标签。"
       },
       itemRankings,
       itemPerformance,
@@ -2543,7 +2560,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
   const cards = (result.rankedBuilds ?? []).slice(0, 3).map((build, index) => {
     const lowSample = comparison
       ? build.comparisonStable === false
-      : isLowSampleBuild(build, query);
+      : build.ranking?.method === PERFORMANCE_RANKING_METHOD
+        ? build.ranking.sampleTier === "low" || isLowSampleBuild(build, query)
+        : isLowSampleBuild(build, query);
     const comparedItemName = comparison ? itemName(build.comparisonOption, catalog) : null;
     const title = comparison
       ? comparison.winner === build.comparisonOption
@@ -2558,8 +2577,15 @@ function serializeRecommendation(result, catalog, meta = {}) {
             ? (hasLockedItems ? "普适补齐" : "普适推荐")
             : (hasLockedItems ? "推荐补齐" : "推荐")
           : `备选 ${index}`;
+    const roleTitle = !comparison && !lowSample && build.ranking?.method === PERFORMANCE_RANKING_METHOD
+      ? build.ranking.recommendationRole === "mainstream"
+        ? (hasLockedItems ? "主流补齐" : "主流方案")
+        : build.ranking.recommendationRole === "best_performance_alternative"
+          ? (hasLockedItems ? "表现最佳补齐备选" : "表现最佳备选")
+          : (hasLockedItems ? "高表现补齐备选" : "高表现备选")
+      : title;
     return {
-      title,
+      title: roleTitle,
       winner: comparison
         ? comparison.winner === build.comparisonOption
         : index === 0 && !lowSample,
@@ -2576,7 +2602,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
         avg: Number(build.stats.avgPlacement.toFixed(2)),
         games: build.stats.games
       },
-      ranking: build.ranking?.method === "robust_applicability_v3"
+      ranking: build.ranking?.method === PERFORMANCE_RANKING_METHOD
         ? {
           method: build.ranking.method,
           score: Number((build.ranking.score * 100).toFixed(1)),
@@ -2588,7 +2614,16 @@ function serializeRecommendation(result, catalog, meta = {}) {
           sampleLeadRatio: Number.isFinite(build.ranking.sampleLeadRatio)
             ? Number(build.ranking.sampleLeadRatio.toFixed(1))
             : null,
-          applicabilityBasis: build.ranking.applicabilityBasis
+          applicabilityBasis: build.ranking.applicabilityBasis,
+          recommendationRole: build.ranking.recommendationRole,
+          sampleTier: lowSample ? "low" : build.ranking.sampleTier,
+          samplePercentile: Number.isFinite(build.ranking.samplePercentile)
+            ? Number((build.ranking.samplePercentile * 100).toFixed(1))
+            : null,
+          performanceTier: build.ranking.performanceTier,
+          insightCode: lowSample
+            ? build.ranking.performanceTier === "high" ? "small_sample_highlight" : "sparse_sample"
+            : build.ranking.insightCode
         }
         : null,
       lowSample
@@ -2709,8 +2744,8 @@ function serializeRecommendation(result, catalog, meta = {}) {
         : `${compAnswerPrefix(query.comp)}${result.clarification?.question ?? result.text}`,
       evidence: cards[0]?.stats ?? null,
       warnings: query.warnings ?? [],
-      methodology: cards[0]?.ranking?.method === "robust_applicability_v3"
-        ? "稳健普适评分：前四率、吃鸡率和平均名次先做同查询样本的贝叶斯收缩校正，组成 90% 表现分；样本置信度按相对最大样本量的平方根连续计算，占 10%。前四率低于 50%或平均名次高于 4.5 的方案不获得样本加分。"
+      methodology: cards[0]?.ranking?.method === PERFORMANCE_RANKING_METHOD
+        ? "表现分由前四率、吃鸡率和平均名次经同查询候选池的贝叶斯收缩后计算；样本量不再直接加分，而用于动态样本等级和主流/备选角色选择。"
         : null,
       coreConclusion: coreItemSummary
     },
@@ -2902,6 +2937,10 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 
 export function createSmallWindowRuntime(options = {}) {
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options);
+  const explorerToolTimeoutMs = Math.max(
+    requestTimeouts.explorerTimeoutMs * 2 + 2_000,
+    requestTimeouts.compRankingsTimeoutMs
+  );
   const metaTFTOptions = options.metaTFTOptions ?? {};
   const compsOptions = options.compsOptions ?? {};
   const metaTFTClient = options.metaTFTClient ?? new MetaTFTClient({
@@ -2940,12 +2979,14 @@ export function createSmallWindowRuntime(options = {}) {
   const toolRegistry = options.toolRegistry ?? new ToolRegistry(createStructuredToolDefinitions({
     defaultTimeoutMs: requestTimeouts.compRankingsTimeoutMs,
     timeoutByTool: {
-      unit_builds: requestTimeouts.explorerTimeoutMs,
+      // MetaTFT may make one retry. The tool budget must cover both upstream
+      // attempts plus retry/backoff overhead instead of racing a single call.
+      unit_builds: explorerToolTimeoutMs,
       unit_builds_batch: Math.max(
         requestTimeouts.explorerTimeoutMs + 2_000,
         requestTimeouts.compRankingsTimeoutMs
       ),
-      unit_comp_candidates: requestTimeouts.explorerTimeoutMs,
+      unit_comp_candidates: explorerToolTimeoutMs,
       comps_rankings: requestTimeouts.compRankingsTimeoutMs,
       comps_trends: requestTimeouts.compRankingsTimeoutMs,
       comps_analysis: requestTimeouts.compRankingsTimeoutMs,
@@ -3481,9 +3522,9 @@ export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime
       return {
         optionId: `${apiName}:build:${optionHash}`,
         rank: index + 1,
-        role: index === 0
-          ? (firstIsStable ? "stable" : "best_available")
-          : "alternative",
+        role: build.ranking?.recommendationRole === "mainstream"
+          ? (firstIsStable ? "mainstream" : "best_available")
+          : build.ranking?.recommendationRole ?? "alternative",
         items,
         knowledgeSignals: evaluateBuildKnowledgeSignals(items),
         metrics: {
@@ -3493,10 +3534,10 @@ export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime
           winRate: build.stats?.winRate ?? null
         },
         ranking: {
-          strategy: "robust_applicability_v3",
-          score: Number(build.ranking?.score ?? 0),
+          strategy: PERFORMANCE_RANKING_METHOD,
+          score: Number(build.ranking?.performanceScore ?? build.ranking?.score ?? 0),
           reasonCodes: [
-            build.ranking?.generalRecommendation ? "coverage_adjusted_score" : "robust_score",
+            build.ranking?.recommendationRole ?? "performance_alternative",
             Number(build.stats?.games ?? 0) >= stableThreshold
               ? "stable_sample_floor_met"
               : "below_stable_sample_floor"
