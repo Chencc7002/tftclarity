@@ -30,6 +30,12 @@ function buildId(value) {
     ?? null;
 }
 
+function itemRankingIsMixed(result) {
+  return array(result?.query?.itemCategories).length > 1
+    || result?.itemRankingMethodology?.methodology === "category_relative_sample_tier_then_performance_v1"
+    || result?.itemRankingMethodology === "category_relative_sample_tier_then_performance_v1";
+}
+
 function toolNameFromResult(result) {
   return result?.executionPlan?.steps?.[0]?.tool
     ?? result?.executionTrace?.steps?.[0]?.tool
@@ -85,7 +91,10 @@ function unitResultMetadata(result) {
     : result.itemRankings?.length
       ? result.itemRankings
       : result.rankedBuilds;
-  const shownIds = uniqueIds(array(values).slice(0, 3).map((value) => (
+  const visibleLimit = result.itemRankings?.length
+    ? (itemRankingIsMixed(result) ? 30 : 10)
+    : 3;
+  const shownIds = uniqueIds(array(values).slice(0, visibleLimit).map((value) => (
     value?.apiName ?? value?.itemApiName ?? buildId(value)
   )));
   const totalCount = Array.isArray(values) ? values.length : shownIds.length;

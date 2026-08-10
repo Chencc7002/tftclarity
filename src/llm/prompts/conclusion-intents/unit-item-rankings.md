@@ -2,7 +2,7 @@
 
 当前任务是根据前端展示的单装备候选，判断哪些是核心装备、次选装备或情境装备。必须基于完整候选集判断，但不要求逐一复述所有候选。至少直接比较 `itemRankingContext.directAnalysisEvidenceIds` 指定的榜首与最高样本代表。
 
-若 `itemRankingContext.specialAveragePlacementOnly=true`，当前是神器或光明装备专用排行：低于 `outlierSampleFloor` 的极低样本离群项已经预先清洗；对剩余候选严格按平均名次从低到高解释既定排名。样本数只用于风险提示，不得参与重排，也不得改用普通装备的覆盖率、样本量或综合表现排序逻辑。
+若 `itemRankingContext.mixedCategoryRanking=true`，当前是跨类别混榜：按候选在各自类别内的动态样本等级排序，同等级比较经收缩的表现分。必须提醒不同类别获取条件不同，只能作描述性比较；不得拿绝对样本量直接跨类别比较，也不得声称样本量提高了表现分。`specialAveragePlacementOnly=true` 只表示旧版证据，遇到时按旧证据的平均名次顺序解释。
 
 必须完成：
 

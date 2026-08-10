@@ -411,10 +411,12 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   assert.equal(payload.run.status, "completed");
   assert.equal(payload.run.currentStage, "terminal");
   assert.equal(runtime.cacheStore.getQueryEvent(payload.queryId).runId, payload.run.runId);
-  assert.equal(payload.cards[0].title, "普适推荐");
-  assert.equal(payload.cards[0].ranking.method, "robust_applicability_v3");
+  assert.equal(payload.cards[0].title, "主流方案");
+  assert.equal(payload.cards[0].ranking.method, "performance_role_v4");
+  assert.equal(payload.cards[0].ranking.recommendationRole, "mainstream");
+  assert.equal(payload.cards[0].ranking.performanceScore, payload.cards[0].ranking.score);
   assert.equal(payload.cards[0].ranking.coverageScore <= 100, true);
-  assert.match(payload.answer.methodology, /贝叶斯收缩校正/);
+  assert.match(payload.answer.methodology, /样本量不再直接加分/);
   assert.deepEqual(payload.unit, {
     apiName: "TFT17_Xayah",
     name: "霞",
@@ -449,7 +451,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
   }, runtime);
 
   assert.equal(owned.statusCode, 200);
-  assert.equal(owned.payload.cards[0].title, "普适补齐");
+  assert.equal(owned.payload.cards[0].title, "主流补齐");
   assert.equal(owned.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
   assert.equal(owned.payload.commonCore.some((item) => item.name === "羊刀"), false);
   assert.equal(owned.payload.coreItemSummary.items.some((item) => item.name === "羊刀"), false);
@@ -464,7 +466,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
 
   assert.equal(localized.statusCode, 200);
   assert.equal(localized.payload.query.unitName, "霞");
-  assert.equal(localized.payload.cards[0].title, "普适补齐");
+  assert.equal(localized.payload.cards[0].title, "主流补齐");
   assert.equal(localized.payload.cards[0].items.find((item) => item.locked)?.name, "羊刀");
 });
 
@@ -1879,6 +1881,19 @@ test("unit_builds_batch tool timeout stays above its upstream Explorer timeout",
 
   assert.equal(runtime.metaTFTClient.timeoutMs, 8000);
   assert.equal(runtime.toolRegistry.get("unit_builds_batch").timeoutMs, 10000);
+});
+
+test("unit_builds tool timeout covers one Explorer retry instead of racing the first attempt", () => {
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    explorerTimeoutMs: 2200,
+    compRankingsTimeoutMs: 8000,
+    metaTFTClient: {},
+    compsClient: {}
+  });
+
+  assert.equal(runtime.toolRegistry.get("unit_builds").timeoutMs, 8000);
+  assert.equal(runtime.toolRegistry.get("unit_comp_candidates").timeoutMs, 8000);
 });
 
 test("async small-window runtime applies environment timeout overrides", async () => {
@@ -3297,7 +3312,7 @@ test("all PBE equipment shortcuts resolve form entities directly and use patch 1
   const tasks = [
     ["unit-build", "unit_build_rankings", { champion: "Ahri" }],
     ["unit-build-completion", "unit_build_completion", { champion: "Ahri", item1: "Test A" }],
-    ["item-performance", "unit_item_rankings", { champion: "Ahri", item: "Test A" }],
+    ["item-performance", "unit_item_rankings", { champion: "Ahri", itemCategory: "神器" }],
     ["item-comparison", "unit_item_comparison", { champion: "Ahri", item1: "Test A", item2: "Test B" }],
     ["special-items", "unit_item_rankings", { champion: "Ahri", specialCategory: "神器" }]
   ];

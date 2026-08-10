@@ -11,8 +11,17 @@ const ITEM_RANKING_INTENTS = new Set([
   "unit_emblem_rankings"
 ]);
 
+const ITEM_RANKING_CANDIDATE_LIMIT = 10;
+const MIXED_ITEM_RANKING_CANDIDATE_LIMIT = 30;
+
 function array(value) {
   return Array.isArray(value) ? value : [];
+}
+
+function itemRankingIsMixed(result) {
+  return array(result?.query?.itemCategories).length > 1
+    || result?.itemRankingMethodology?.methodology === "category_relative_sample_tier_then_performance_v1"
+    || result?.itemRankingMethodology === "category_relative_sample_tier_then_performance_v1";
 }
 
 export function isLowSampleStats(stats, query = {}) {
@@ -30,7 +39,12 @@ function comparisonEntries(result) {
 
 function candidatesFor(result, intent) {
   if (BUILD_INTENTS.has(intent)) return array(result?.rankedBuilds).slice(0, 3);
-  if (ITEM_RANKING_INTENTS.has(intent)) return array(result?.itemRankings).slice(0, 5);
+  if (ITEM_RANKING_INTENTS.has(intent)) {
+    const limit = itemRankingIsMixed(result)
+      ? MIXED_ITEM_RANKING_CANDIDATE_LIMIT
+      : ITEM_RANKING_CANDIDATE_LIMIT;
+    return array(result?.itemRankings).slice(0, limit);
+  }
   if (intent === "unit_item_comparison") return comparisonEntries(result);
   return [];
 }

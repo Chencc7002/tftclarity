@@ -1,10 +1,18 @@
 export const DEFAULT_STABLE_SAMPLE_FLOOR = 200;
-export const ROBUST_RANKING_VERSION = "robust_applicability_v3";
+export const ROBUST_RANKING_VERSION = "performance_role_v4";
 export const ROBUST_PRIOR_SAMPLE_FLOOR = 1000;
-export const ROBUST_COVERAGE_WEIGHT = 0.1;
-export const ROBUST_GENERAL_SAMPLE_FLOOR = 1000;
+// Kept as a compatibility export for downstream consumers. Sample coverage no
+// longer contributes points to the performance score in v4.
+export const ROBUST_COVERAGE_WEIGHT = 0;
+// Compatibility export only. Mainstream eligibility now comes from relative
+// sample tiers instead of an absolute sample-count floor.
+export const ROBUST_GENERAL_SAMPLE_FLOOR = 0;
 export const ROBUST_GENERAL_TOP4_FLOOR = 0.5;
 export const ROBUST_GENERAL_AVG_PLACEMENT_CEILING = 4.5;
+export const SAMPLE_TIER_HIGH_RATIO = 0.5;
+export const SAMPLE_TIER_MEDIUM_RATIO = 0.1;
+
+const TIER_ORDER = Object.freeze({ unclassified: 0, low: 1, medium: 2, high: 3 });
 
 export function stableSampleThreshold(query = {}) {
   const minSamples = Number(query.minSamples ?? query.min_samples ?? 100);
@@ -44,6 +52,146 @@ function shrinkMetric(value, games, baseline, priorSamples) {
   return (observed * games + baseline * priorSamples) / (games + priorSamples);
 }
 
+function performanceFromMetrics(metrics = {}) {
+  return (
+    clampRate(metrics.top4Rate) * 0.5
+    + clampRate(metrics.winRate) * 0.2
+    + placementQuality(metrics.avgPlacement) * 0.3
+  );
+}
+
+function dynamicClusterTiers(values, transform = (value) => value) {
+  const numeric = values.map((value) => Number(value));
+  const finite = numeric.filter(Number.isFinite);
+  const unique = [...new Set(finite)];
+  if (finite.length < 3 || unique.length < 3) return numeric.map(() => "unclassified");
+
+  const sorted = [...finite].sort((left, right) => left - right);
+  let centers = [sorted[0], sorted[Math.floor((sorted.length - 1) / 2)], sorted.at(-1)]
+    .map(transform);
+
+  for (let iteration = 0; iteration < 64; iteration += 1) {
+    const groups = [[], [], []];
+    for (const rawValue of numeric) {
+      if (!Number.isFinite(rawValue)) continue;
+      const value = transform(rawValue);
+      let selected = 0;
+      for (let index = 1; index < centers.length; index += 1) {
+        if (Math.abs(value - centers[index]) < Math.abs(value - centers[selected])) selected = index;
+      }
+      groups[selected].push(value);
+    }
+    const next = groups.map((group, index) => group.length
+      ? group.reduce((sum, value) => sum + value, 0) / group.length
+      : centers[index]);
+    if (next.every((value, index) => Math.abs(value - centers[index]) < 1e-10)) break;
+    centers = next;
+  }
+
+  const orderedCenters = centers
+    .map((value, index) => ({ value, index }))
+    .sort((left, right) => left.value - right.value);
+  const tierByCenter = new Map(orderedCenters.map((entry, index) => (
+    [entry.index, ["low", "medium", "high"][index]]
+  )));
+
+  return numeric.map((rawValue) => {
+    if (!Number.isFinite(rawValue)) return "unclassified";
+    const value = transform(rawValue);
+    let selected = 0;
+    for (let index = 1; index < centers.length; index += 1) {
+      if (Math.abs(value - centers[index]) < Math.abs(value - centers[selected])) selected = index;
+    }
+    return tierByCenter.get(selected) ?? "unclassified";
+  });
+}
+
+function percentileRanks(values) {
+  const numeric = values.map((value) => Number(value));
+  const sorted = numeric.filter(Number.isFinite).sort((left, right) => left - right);
+  if (sorted.length < 2) return numeric.map(() => null);
+  return numeric.map((value) => {
+    if (!Number.isFinite(value)) return null;
+    const lower = sorted.findIndex((candidate) => candidate >= value);
+    const upper = sorted.length - 1 - [...sorted].reverse().findIndex((candidate) => candidate <= value);
+    return ((lower + upper) / 2) / (sorted.length - 1);
+  });
+}
+
+function relativeSampleTiers(values) {
+  const numeric = values.map((value) => Number(value));
+  const maximum = Math.max(0, ...numeric.filter(Number.isFinite));
+  if (maximum <= 0) return numeric.map(() => "unclassified");
+  return numeric.map((value) => {
+    if (!Number.isFinite(value) || value <= 0) return "unclassified";
+    const ratio = value / maximum;
+    if (ratio >= SAMPLE_TIER_HIGH_RATIO) return "high";
+    if (ratio >= SAMPLE_TIER_MEDIUM_RATIO) return "medium";
+    return "low";
+  });
+}
+
+export function rankingInsightCode(sampleTier, performanceTier) {
+  if (sampleTier === "high" && performanceTier === "high") return "mainstream_best";
+  if (sampleTier === "high" && performanceTier === "medium") return "mainstream_standard";
+  if (sampleTier === "high" && performanceTier === "low") return "popular_underperformer";
+  if (sampleTier === "medium" && performanceTier === "high") return "potential";
+  if (sampleTier === "medium" && performanceTier === "medium") return "situational";
+  if (sampleTier === "medium" && performanceTier === "low") return "inefficient_alternative";
+  if (sampleTier === "low" && performanceTier === "high") return "small_sample_highlight";
+  if (sampleTier === "low") return "sparse_sample";
+  return "unclassified";
+}
+
+export function applyDynamicRankingTiers(records, options = {}) {
+  const candidates = [...(records ?? [])];
+  const groups = new Map();
+  candidates.forEach((record, index) => {
+    const key = options.sampleGroupKey?.(record) ?? "all";
+    const group = groups.get(key) ?? [];
+    group.push({ record, index });
+    groups.set(key, group);
+  });
+
+  const sampleMetadata = Array(candidates.length).fill(null);
+  for (const [groupKey, group] of groups) {
+    const games = group.map(({ record }) => Math.max(0, Number(record?.stats?.games ?? 0)));
+    const maximumGames = Math.max(0, ...games);
+    const tiers = relativeSampleTiers(games);
+    const percentiles = percentileRanks(games);
+    group.forEach(({ index }, groupIndex) => {
+      sampleMetadata[index] = {
+        sampleGroup: groupKey,
+        sampleTier: tiers[groupIndex],
+        sampleRatio: maximumGames > 0 ? games[groupIndex] / maximumGames : null,
+        samplePercentile: percentiles[groupIndex]
+      };
+    });
+  }
+
+  const performanceTiers = dynamicClusterTiers(candidates.map((record) => (
+    Number(record?.ranking?.performanceScore)
+  )));
+
+  return candidates.map((record, index) => {
+    const metadata = sampleMetadata[index] ?? {
+      sampleGroup: "all",
+      sampleTier: "unclassified",
+      samplePercentile: null
+    };
+    const performanceTier = performanceTiers[index];
+    return {
+      ...record,
+      ranking: {
+        ...record.ranking,
+        ...metadata,
+        performanceTier,
+        insightCode: rankingInsightCode(metadata.sampleTier, performanceTier)
+      }
+    };
+  });
+}
+
 export function scoreRobustBuilds(builds, query = {}) {
   const candidates = [...(builds ?? [])];
   if (candidates.length === 0) return [];
@@ -66,27 +214,16 @@ export function scoreRobustBuilds(builds, query = {}) {
       winRate: shrinkMetric(build?.stats?.winRate, games, baseline.winRate, priorSamples),
       avgPlacement: shrinkMetric(build?.stats?.avgPlacement, games, baseline.avgPlacement, priorSamples)
     };
-    const performanceScore = (
-      adjusted.top4Rate * 0.5
-      + adjusted.winRate * 0.2
-      + placementQuality(adjusted.avgPlacement) * 0.3
-    );
-    // Sampling precision grows with sqrt(n). Normalizing it to the largest
-    // candidate keeps sample coverage continuous without a ratio cliff.
+    const performanceScore = performanceFromMetrics(adjusted);
+    // Retained for diagnostics only; coverage no longer contributes points.
     const coverageScore = Math.sqrt(games / maxGames);
     const coverageEligible = (
-      games >= Math.max(ROBUST_GENERAL_SAMPLE_FLOOR, stableSampleThreshold(query))
-      && Number(build?.stats?.top4Rate) >= ROBUST_GENERAL_TOP4_FLOOR
+      Number(build?.stats?.top4Rate) >= ROBUST_GENERAL_TOP4_FLOOR
       && Number(build?.stats?.avgPlacement) <= ROBUST_GENERAL_AVG_PLACEMENT_CEILING
     );
-    const performanceContribution = performanceScore * (1 - ROBUST_COVERAGE_WEIGHT);
-    const coverageContribution = coverageEligible
-      ? coverageScore * ROBUST_COVERAGE_WEIGHT
-      : 0;
-    const baseScore = (
-      performanceContribution
-      + coverageContribution
-    );
+    const performanceContribution = performanceScore;
+    const coverageContribution = 0;
+    const baseScore = performanceScore;
 
     return {
       ...build,
@@ -107,39 +244,62 @@ export function scoreRobustBuilds(builds, query = {}) {
     };
   });
 
-  const performanceLeader = scored.reduce((best, build) => (
-    !best || build.ranking.performanceScore > best.ranking.performanceScore ? build : best
-  ), null);
-  const scoreLeader = scored.reduce((best, build) => (
-    !best || build.ranking.score > best.ranking.score ? build : best
-  ), null);
-  const coverageAdjustedWinner = Boolean(
-    scoreLeader
-    && performanceLeader
-    && scoreLeader.ranking.candidateIndex !== performanceLeader.ranking.candidateIndex
-    && scoreLeader.ranking.coverageEligible
-    && Number(scoreLeader.stats?.games ?? 0) > Number(performanceLeader.stats?.games ?? 0)
-  );
-  const sampleLeadRatio = coverageAdjustedWinner
-    ? Number(scoreLeader.stats?.games ?? 0) / Math.max(1, Number(performanceLeader.stats?.games ?? 0))
-    : null;
-
-  return scored.map((build) => {
-    const generalRecommendation = (
-      coverageAdjustedWinner
-      && build.ranking.candidateIndex === scoreLeader.ranking.candidateIndex
-    );
+  return applyDynamicRankingTiers(scored).map((build) => {
     const { candidateIndex, ...publicRanking } = build.ranking;
     return {
       ...build,
       ranking: {
         ...publicRanking,
-        generalRecommendation,
-        sampleLeadRatio: generalRecommendation ? sampleLeadRatio : null,
-        applicabilityBasis: generalRecommendation ? "coverage_adjusted_score" : "robust_score"
+        generalRecommendation: false,
+        sampleLeadRatio: null,
+        applicabilityBasis: "performance_score"
       }
     };
   });
+}
+
+function compareTier(left, right, field) {
+  return (TIER_ORDER[right?.ranking?.[field]] ?? 0) - (TIER_ORDER[left?.ranking?.[field]] ?? 0);
+}
+
+export function orderBuildRecommendations(builds) {
+  const candidates = [...(builds ?? [])];
+  if (candidates.length === 0) return [];
+  const viable = candidates.filter((build) => build.ranking?.coverageEligible !== false);
+  const source = viable.length ? viable : candidates;
+  const nonLowPerformance = source.filter((build) => build.ranking?.performanceTier !== "low");
+  const mainPool = nonLowPerformance.length ? nonLowPerformance : source;
+  const main = [...mainPool].sort((left, right) => (
+    compareTier(left, right, "sampleTier")
+    || Number(right?.stats?.games ?? 0) - Number(left?.stats?.games ?? 0)
+    || Number(right?.ranking?.performanceScore ?? 0) - Number(left?.ranking?.performanceScore ?? 0)
+  ))[0];
+  const remaining = candidates
+    .filter((build) => build !== main)
+    .sort((left, right) => (
+      Number(right?.ranking?.performanceScore ?? 0) - Number(left?.ranking?.performanceScore ?? 0)
+      || compareTier(left, right, "sampleTier")
+      || Number(right?.stats?.games ?? 0) - Number(left?.stats?.games ?? 0)
+    ));
+  const ordered = [main, ...remaining];
+  const strongestAlternative = remaining[0] ?? null;
+  const sampleLeadRatio = strongestAlternative
+    ? Number(main?.stats?.games ?? 0) / Math.max(1, Number(strongestAlternative?.stats?.games ?? 0))
+    : null;
+  return ordered.map((build, index) => ({
+    ...build,
+    ranking: {
+      ...build.ranking,
+      generalRecommendation: index === 0,
+      recommendationRole: index === 0
+        ? "mainstream"
+        : index === 1
+          ? "best_performance_alternative"
+          : "alternative",
+      sampleLeadRatio: index === 0 && Number.isFinite(sampleLeadRatio) ? sampleLeadRatio : null,
+      applicabilityBasis: index === 0 ? "sample_role_and_performance" : "performance_score"
+    }
+  }));
 }
 
 export function compareRankedBuilds(a, b, query = {}) {
@@ -173,6 +333,6 @@ export function rankBuilds(builds, query) {
   const rankedCandidates = query.sort === "robust_first"
     ? scoreRobustBuilds(eligible, query)
     : eligible;
-  return rankedCandidates
-    .sort((a, b) => compareRankedBuilds(a, b, query));
+  if (query.sort === "robust_first") return orderBuildRecommendations(rankedCandidates);
+  return rankedCandidates.sort((a, b) => compareRankedBuilds(a, b, query));
 }

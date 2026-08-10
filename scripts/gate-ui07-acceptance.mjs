@@ -34,7 +34,7 @@ check(options[0]?.role === "stable", "the first build option is not stable");
 check(options.slice(1).every((option) => option.role === "alternative"), "alternative roles are invalid");
 check(new Set(options.map((option) => option.optionId)).size === options.length, "option ids are not unique");
 check(new Set(options.map((option) => option.items.map((item) => item.apiName).sort().join("|"))).size === options.length, "duplicate item sets were returned");
-check(options.every((option) => option.ranking?.strategy === "robust_applicability_v3"), "non-deterministic ranking strategy detected");
+check(options.every((option) => option.ranking?.strategy === "performance_role_v4"), "non-deterministic ranking strategy detected");
 check(payload.narrative?.options?.length === expectedOptions, "per-option grounded narrative is incomplete");
 check(payload.narrative.options.every((entry, index) => entry.optionId === options[index].optionId), "narrative changed deterministic option order");
 const itemBatch = itemEvidenceEntries[0].value;
