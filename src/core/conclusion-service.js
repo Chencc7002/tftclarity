@@ -104,7 +104,9 @@ function isStale(result) {
 
 function hasEvidence(result, type) {
   if (type === "comp_rankings") return Object.values(result?.rankings ?? {}).some((records) => records?.length);
-  if (type === "comp_trends") return Boolean(result?.improving?.length);
+  if (type === "comp_trends") {
+    return Boolean(result?.rising?.length || result?.improving?.length || result?.falling?.length);
+  }
   if (type === "comp_analysis") return Boolean(result?.analysis?.target && result?.analysis?.evidencePack?.length);
   if (type === "unit_item_rankings" || type === "unit_emblem_rankings") {
     return Boolean(result?.itemRankings?.length)

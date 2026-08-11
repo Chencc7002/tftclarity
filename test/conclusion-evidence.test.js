@@ -232,7 +232,7 @@ test("buildConclusionEvidence has a separate comp-ranking evidence shape", () =>
   assert.equal(evidence.recommendations[0].units[0].name, "霞");
 });
 
-test("comp-ranking evidence includes every displayed metric card and improving card", () => {
+test("comp-ranking evidence includes every displayed metric card and both trend directions", () => {
   const comp = (compId, name, avgPlacementChange = null) => ({
     compId,
     name,
@@ -248,6 +248,7 @@ test("comp-ranking evidence includes every displayed metric card and improving c
       rankings: { top4Rate: [comp("comp-a", "阵容甲")], winRate: [comp("comp-b", "阵容乙")] },
       references: [],
       improving: [comp("comp-b", "阵容乙", -0.24)],
+      falling: [comp("comp-c", "阵容丙", 0.18)],
       source: {},
       warnings: [],
       cache: { query: { hit: false } }
@@ -256,10 +257,11 @@ test("comp-ranking evidence includes every displayed metric card and improving c
     input: "当前版本阵容趋势"
   });
 
-  assert.equal(evidence.recommendations.length, 2);
-  assert.deepEqual(evidence.recommendations[1].displayRanks.map((entry) => entry.section), ["ranking", "improving"]);
+  assert.equal(evidence.recommendations.length, 3);
+  assert.deepEqual(evidence.recommendations[1].displayRanks.map((entry) => entry.section), ["ranking", "rising"]);
   assert.equal(evidence.recommendations[1].trend.avgPlacementChange, -0.24);
-  assert.deepEqual(evidence.compRankingContext.directAnalysisEvidenceIds, ["comp:1", "comp:2"]);
+  assert.equal(evidence.recommendations[2].trend.direction, "falling");
+  assert.deepEqual(evidence.compRankingContext.directAnalysisEvidenceIds, ["comp:1", "comp:2", "comp:3"]);
 });
 
 test("buildConclusionEvidence summarizes only verified query-field changes from the previous turn", () => {

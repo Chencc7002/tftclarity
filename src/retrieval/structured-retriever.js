@@ -50,7 +50,7 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   comps_trends: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
+    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "direction", "strategy"])
   }),
   comps_analysis: Object.freeze({
     source: "metatft",

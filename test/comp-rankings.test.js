@@ -43,6 +43,10 @@ test("rule parser recognizes comp leaderboard questions without inventing a unit
   const strongest = parseQuery("当前版本最强阵容有哪些？");
   assert.equal(strongest.intent, "comp_rankings");
   assert.deepEqual(strongest.metrics, ["top4_rate", "win_share"]);
+
+  const weaker = parseQuery("今天有哪些阵容变弱了？");
+  assert.equal(weaker.intent, "comp_trends");
+  assert.equal(weaker.trendDirection, "falling");
   assert.equal(strongest.limit, 5);
   assert.equal(strongest.unit, undefined);
   assert.deepEqual(parseQuery("前四率最高的三个阵容").metrics, ["top4_rate"]);
@@ -328,6 +332,26 @@ test("trend view returns rising five, falling five, selection-rate top ten, and 
   assert.equal(result.rankings.popularity[0].stats.selectionRate, 0.8);
   assert.equal(result.rankings.popularity[0].contested, true);
   assert.ok(result.rankings.popularity.slice(1).every((comp) => comp.contested === false));
+});
+
+test("falling trend requests exclude rising and absolute-ranking candidates", () => {
+  const response = structuredClone(fixture);
+  response.compsData.results.data.comps = {
+    "409002": { "Average Placement Change": -0.31 },
+    "409003": { "Average Placement Change": 0.25 },
+    "409019": { "Average Placement Change": -0.14 },
+    "409092": { "Average Placement Change": 0.09 }
+  };
+
+  const result = buildCompRankings(response, {
+    query: query({ intent: "comp_trends", trendDirection: "falling" }),
+    catalog: createCatalog()
+  });
+
+  assert.deepEqual(result.rising, []);
+  assert.deepEqual(result.improving, []);
+  assert.deepEqual(ids(result.falling), ["409003", "409092"]);
+  assert.ok(Object.values(result.rankings).every((values) => values.length === 0));
 });
 
 test("popular comp view prepares 21 rows for each switchable ranking standard", () => {

@@ -45,6 +45,7 @@ export function compileTftToolArguments(tool, query = {}) {
       minSamples: query.minSamples,
       metrics: query.metrics,
       limit: query.limit,
+      direction: query.trendDirection,
       strategy: query.preferenceConditions?.strategy
     });
   }

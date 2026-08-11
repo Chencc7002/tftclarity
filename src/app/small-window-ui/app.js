@@ -4771,9 +4771,9 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
       controller.signal
     ));
     if (requestId !== state.requestSerial) return;
+    if (data.access) renderAccessStatus(data.access);
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     completeRecommendationProgress(recommendationProgress, data);
-    if (data.access) renderAccessStatus(data.access);
     renderResult(data);
     if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);

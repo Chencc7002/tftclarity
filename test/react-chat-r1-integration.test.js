@@ -50,6 +50,7 @@ test("independent react endpoint answers without entering recommendForInput", as
     "composition_tactical_details",
     "composition_replacement_evaluation",
     "composition_change_evaluation",
+    "comps_trends",
     "unit_details",
     "item_details",
     "item_details_batch",
@@ -118,6 +119,57 @@ test("react endpoint fails closed when no decision provider is configured", asyn
   assert.equal(payload.code, "react_chat_unavailable");
 });
 
+test("react endpoint reserves one AI use per request and returns refreshed access", async () => {
+  let reserveCalls = 0;
+  let providerCalls = 0;
+  const visitor = { scope: "quota-user", visitorHash: "visitor", ipHash: "ip" };
+  const accessService = {
+    config: { enabled: true },
+    async reserveLlmUse(receivedVisitor) {
+      assert.equal(receivedVisitor, visitor);
+      reserveCalls += 1;
+    },
+    async publicStatus(receivedVisitor) {
+      assert.equal(receivedVisitor, visitor);
+      return { anonymous: true, quota: { limit: 50, used: 1, remaining: 49 } };
+    }
+  };
+  const runtime = createSmallWindowRuntime({
+    reactDecisionProvider: async (request) => {
+      providerCalls += 1;
+      if (!request.state.evidence.length) {
+        return {
+          schemaVersion: "react-action.v1",
+          type: "call_tool",
+          tool: "unit_details",
+          arguments: { apiName: "TFT18_Xayah" },
+          purposeCode: "retrieve_entity_details"
+        };
+      }
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "霞的技能是羽刃。",
+        evidenceIds: [request.state.evidence[0].evidenceId],
+        reasonCode: "sufficient_evidence"
+      };
+    },
+    reactToolHandlers: {
+      unit_details: async () => ({ results: [{ apiName: "TFT18_Xayah" }] })
+    }
+  });
+
+  const { statusCode, payload } = await handleReactChatRequest({ input: "霞的技能是什么？" }, runtime, {
+    visitor,
+    accessService
+  });
+
+  assert.equal(statusCode, 200);
+  assert.equal(providerCalls, 2);
+  assert.equal(reserveCalls, 1);
+  assert.deepEqual(payload.access.quota, { limit: 50, used: 1, remaining: 49 });
+});
+
 test("TFT handler factory reports unavailable tools and enforces explicit coverage", () => {
   const runtime = createSmallWindowRuntime();
   const bundle = createTftToolHandlers({
@@ -153,6 +205,7 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
   assert.deepEqual(bundle.availableToolNames, [
     "entity_catalog_query",
     "comps_rankings",
+    "comps_trends",
     "composition_tactical_details",
     "composition_replacement_evaluation",
     "composition_change_evaluation",

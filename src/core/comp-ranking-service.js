@@ -226,6 +226,11 @@ export function buildCompRankings(response = {}, options = {}) {
       || right.stats.games - left.stats.games
       || left.pageOrder - right.pageOrder)
     .slice(0, 5);
+  const trendDirection = ["rising", "falling"].includes(query.trendDirection)
+    ? query.trendDirection
+    : null;
+  const visibleRising = trendDirection === "falling" ? [] : rising;
+  const visibleFalling = trendDirection === "rising" ? [] : falling;
   const references = comps
     .filter((comp) => comp.stats.games < minSamples)
     .sort((a, b) => b.stats.games - a.stats.games || a.pageOrder - b.pageOrder)
@@ -256,6 +261,9 @@ export function buildCompRankings(response = {}, options = {}) {
       .sort(metricComparator(metric))
       .slice(0, limit);
   }
+  if (query.intent === "comp_trends" && trendDirection) {
+    for (const key of Object.keys(rankings)) rankings[key] = [];
+  }
 
   return {
     type: query.intent === "comp_trends" ? "comp_trends" : "comp_rankings",
@@ -264,10 +272,10 @@ export function buildCompRankings(response = {}, options = {}) {
     // expose only the filtered rankings and references.
     candidates: comps,
     rankings,
-    rising,
-    falling,
+    rising: visibleRising,
+    falling: visibleFalling,
     // Keep the old key for downstream evidence and cached-result compatibility.
-    improving: rising,
+    improving: visibleRising,
     references,
     trend: response?.trend ?? {
       status: pageData.definitions.some((definition) => Number.isFinite(definition.avgPlacementChange))

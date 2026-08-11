@@ -3299,10 +3299,11 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
       recoverable: true
     });
   }
+  const intent = options.intent === "comp_trends" ? "comp_trends" : "comp_rankings";
   const rankings = buildCompRankings(createCompsPageSnapshot(compsData, compsStats), {
     catalog,
     query: {
-      intent: "comp_rankings",
+      intent,
       seasonContextId: seasonContext.id,
       patch,
       queue,
@@ -3310,9 +3311,25 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
       unit: toolInput.unit,
       minSamples: Math.max(0, Number(toolInput.minSamples ?? 0)),
       metrics: toolInput.metrics ?? ["top4_rate"],
-      limit
+      limit,
+      trendDirection: ["rising", "falling"].includes(toolInput.direction)
+        ? toolInput.direction
+        : null
     }
   });
+  if (intent === "comp_trends") {
+    return {
+      type: rankings.type,
+      requestedDirection: rankings.query.trendDirection,
+      query: rankings.query,
+      rising: rankings.rising,
+      falling: rankings.falling,
+      improving: rankings.improving,
+      rankings: rankings.rankings,
+      trend: rankings.trend,
+      source: rankings.source
+    };
+  }
   const details = options.details ?? await loadOfficialEntityDetails(runtime, {
     signal: options.signal
   });
@@ -6531,6 +6548,16 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         signal: toolContext.signal
       });
     };
+    handlers.comps_trends = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      return queryCompositionRankings(input, loaded.catalog, runtime, {
+        preferences,
+        seasonContext,
+        signal: toolContext.signal,
+        intent: "comp_trends"
+      });
+    };
     if (
       typeof runtime.compsClient?.getCompDetails === "function"
       && typeof runtime.compsClient?.getCompAugmentTiers === "function"
@@ -6684,10 +6711,30 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     : Object.keys(injectedHandlers).length
       ? createTftToolHandlers({ registry: runtime.toolRegistry, handlers: injectedHandlers })
       : await createDefaultReactToolHandlerBundle({ request, runtime, context });
+  let llmUseReserved = false;
+  const reserveLlmUseForRequest = async () => {
+    if (llmUseReserved || !context.accessService?.config?.enabled || !context.visitor) return;
+    await context.accessService.reserveLlmUse(context.visitor);
+    llmUseReserved = true;
+  };
+  const decisionProvider = quotaWrappedCallable(
+    runtime.reactDecisionProvider,
+    context.accessService,
+    context.visitor,
+    reserveLlmUseForRequest
+  );
+  const publicAccessStatus = async () => {
+    if (!context.accessService || !context.visitor) return null;
+    try {
+      return await context.accessService.publicStatus(context.visitor);
+    } catch {
+      return null;
+    }
+  };
   const agent = new ChatAgent({
     registry: runtime.toolRegistry,
     toolExecutor: runtime.toolExecutor,
-    decisionProvider: runtime.reactDecisionProvider,
+    decisionProvider,
     handlers: handlerBundle.handlers ?? handlerBundle,
     availableToolNames: handlerBundle.availableToolNames
       ?? Object.keys(handlerBundle.handlers ?? handlerBundle),
@@ -6732,6 +6779,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         result.warnings = [...new Set([...(result.warnings ?? []), "conversation_bridge_write_failed"])];
       }
     }
+    const access = await publicAccessStatus();
     return {
       statusCode: 200,
       payload: {
@@ -6747,18 +6795,23 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
             warning: bridgeContext.warning ?? null
           }
         } : {}),
-        unavailableTools: handlerBundle.unavailableTools ?? []
+        unavailableTools: handlerBundle.unavailableTools ?? [],
+        ...(access ? { access } : {})
       }
     };
   } catch (error) {
+    const access = await publicAccessStatus();
     return {
-      statusCode: ["run_cancelled", "run_timed_out"].includes(error?.code) ? 408 : 500,
+      statusCode: Number.isInteger(error?.statusCode)
+        ? error.statusCode
+        : ["run_cancelled", "run_timed_out"].includes(error?.code) ? 408 : 500,
       payload: {
         ok: false,
         type: "react_chat_error",
         code: String(error?.code ?? "react_chat_failed"),
         error: String(error?.publicMessage ?? error?.message ?? "ReAct chat failed").slice(0, 500),
-        run: error?.publicRun ?? null
+        run: error?.publicRun ?? null,
+        ...(access ? { access } : {})
       }
     };
   }
