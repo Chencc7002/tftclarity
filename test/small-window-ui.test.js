@@ -402,6 +402,7 @@ test("streamed Agent events remain visible as a real execution timeline", () => 
   assert.match(appJs, /events: \[\]/);
   assert.match(appJs, /appendRecommendationProgressEvent\(progress, event\)/);
   assert.match(appJs, /processingTrace = \{[\s\S]*events: progress\.events/);
+  assert.match(appJs, /data: event\.event\?\.data \?\? event\.event \?\? \{\}/);
   assert.match(styles, /\.agent-status-timeline/);
   assert.match(styles, /\.agent-status-event\.active/);
 });

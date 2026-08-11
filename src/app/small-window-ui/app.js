@@ -4501,7 +4501,7 @@ async function readRecommendationStream(response, target, progress, requestId, s
         schemaVersion: "recommendation-progress.v1",
         sequence: Number(event.event?.sequence ?? 0),
         phase,
-        data: event.event ?? {}
+        data: event.event?.data ?? event.event ?? {}
       });
       if (requestId === state.requestSerial) renderRecommendationProgress(target, progress);
       return;
