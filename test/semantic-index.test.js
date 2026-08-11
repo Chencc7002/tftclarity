@@ -193,6 +193,7 @@ test("semantic corpus contains versioned entity and curated intent documents wit
   }, { locale: "zh-CN" });
   assert.ok(documents.some((document) => document.id === "17.7:zh-CN:unit:TFT17_MasterYi"));
   assert.ok(documents.some((document) => document.documentType === "intent_sample" && document.intent === "unit_emblem_rankings"));
+  assert.equal(documents.filter((document) => document.documentType === "static_game_knowledge").length, 2);
   assert.equal(documents.some((document) => /statistics|realtime/iu.test(document.source)), false);
 });
 

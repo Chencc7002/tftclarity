@@ -54,7 +54,9 @@ async function loadCorpusInput(filePath, options = {}) {
         catalogCachePath,
         compsInputPath: await exists(defaultCompsPath) ? defaultCompsPath : null,
         patch: options.patch,
-        locale: options.locale
+        locale: options.locale,
+        seasonContextId: options.seasonContextId,
+        catalogKey: options.catalogKey
       });
     }
     if (options.allowSeedCatalog) return createCatalog({ patch: options.patch });
@@ -103,11 +105,18 @@ const args = argumentsFor(process.argv.slice(2));
 const filePath = resolve(String(args.db ?? process.env.TFT_AGENT_SEMANTIC_INDEX_PATH ?? ".cache/semantic-index.sqlite"));
 const requestedPatch = String(args.patch ?? process.env.TFT_AGENT_PATCH ?? "current");
 const requestedLocale = String(args.locale ?? process.env.TFT_AGENT_SEMANTIC_LOCALE ?? "zh-CN");
+const requestedSeasonContextId = String(
+  args.season
+  ?? process.env.TFT_AGENT_SEASON_CONTEXT_ID
+  ?? "set17-live"
+);
 let catalog = await loadCorpusInput(args.input, {
   catalogCachePath: args["catalog-cache"],
   compsInputPath: args["comps-input"],
   patch: requestedPatch,
   locale: requestedLocale,
+  seasonContextId: requestedSeasonContextId,
+  catalogKey: args["catalog-key"],
   allowSeedCatalog: args["allow-seed-catalog"] === true
 });
 catalog = await withOfficialStaticDescriptions(catalog, args);
@@ -121,6 +130,7 @@ if (requireEmbeddings && !config.configured) {
   throw new Error("Configure TFT_AGENT_EMBEDDING_MODE=on, endpoint, model and API key before building the vector index");
 }
 const documents = buildSemanticCorpus(catalog, {
+  seasonContextId: requestedSeasonContextId,
   patch,
   locale,
   includeHistorical: args["include-historical"] === true

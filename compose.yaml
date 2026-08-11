@@ -27,6 +27,7 @@ services:
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
+      embedding-model: { condition: service_completed_successfully }
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:17317/api/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 30s
@@ -91,6 +92,35 @@ services:
       timeout: 5s
       retries: 10
 
+  embedding:
+    image: ollama/ollama:0.32.5
+    restart: unless-stopped
+    environment:
+      OLLAMA_HOST: 0.0.0.0:11434
+      OLLAMA_KEEP_ALIVE: 24h
+    volumes: [ollama_models:/root/.ollama]
+    networks: [backend]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  embedding-model:
+    image: ollama/ollama:0.32.5
+    restart: "no"
+    command: ["pull", "bge-m3"]
+    environment:
+      OLLAMA_HOST: http://embedding:11434
+    networks: [backend]
+    depends_on:
+      embedding: { condition: service_healthy }
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+
   bilibili-mcp:
     build:
       context: .
@@ -134,5 +164,6 @@ volumes:
   postgres_data:
   redis_data:
   tft_semantic:
+  ollama_models:
   caddy_data:
   caddy_config:

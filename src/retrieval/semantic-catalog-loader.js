@@ -5,8 +5,10 @@ function compact(values) {
   return [...new Set((values ?? []).map((value) => String(value ?? "").trim()).filter(Boolean))];
 }
 
-function entryValue(collection, patch) {
-  const entry = collection?.[patch] ?? (patch === "current" ? collection?.current : null);
+function entryValue(collection, patch, catalogKey = null) {
+  const entry = (catalogKey ? collection?.[catalogKey] : null)
+    ?? collection?.[patch]
+    ?? (patch === "current" ? collection?.current : null);
   return entry?.value ?? entry ?? null;
 }
 
@@ -293,17 +295,30 @@ export function createStaticCompCatalog(compsResponse, catalog = {}, options = {
 
 export function catalogFromRuntimeCacheSnapshot(snapshot = {}, options = {}) {
   const patch = String(options.patch ?? "current");
-  const itemValue = entryValue(snapshot.itemCatalogs, patch);
-  const domainValue = entryValue(snapshot.domainCatalogs, patch);
+  const catalogKey = options.catalogKey ? String(options.catalogKey) : null;
+  const itemValue = entryValue(snapshot.itemCatalogs, patch, catalogKey);
+  const domainValue = entryValue(snapshot.domainCatalogs, patch, catalogKey);
   if (!itemValue && !domainValue) {
-    throw new Error(`Runtime catalog cache does not contain patch "${patch}"`);
+    throw new Error(catalogKey
+      ? `Runtime catalog cache does not contain key "${catalogKey}" or patch "${patch}"`
+      : `Runtime catalog cache does not contain patch "${patch}"`);
   }
   return {
+    seasonContextId: String(
+      options.seasonContextId
+      ?? domainValue?.seasonContextId
+      ?? itemValue?.seasonContextId
+      ?? "set17-live"
+    ),
     patch,
     locale: String(options.locale ?? "zh-CN"),
-    units: mergeEntities(domainValue?.units ?? [], "unit").filter(isPlayerUnit),
-    items: mergeEntities(itemValue?.items ?? [], "item"),
-    traits: mergeEntities(domainValue?.traits ?? [], "trait"),
+    units: mergeEntities(domainValue?.units ?? [], "unit")
+      .filter(isPlayerUnit)
+      .map((entity) => ({ ...entity, patch })),
+    items: mergeEntities(itemValue?.items ?? [], "item")
+      .map((entity) => ({ ...entity, patch })),
+    traits: mergeEntities(domainValue?.traits ?? [], "trait")
+      .map((entity) => ({ ...entity, patch })),
     comps: [],
     semanticCatalogSource: "runtime_catalog_cache"
   };
@@ -319,10 +334,17 @@ export async function loadCompleteSemanticCatalog({
   catalogCachePath,
   compsInputPath,
   patch = "current",
-  locale = "zh-CN"
+  locale = "zh-CN",
+  seasonContextId = "set17-live",
+  catalogKey = null
 } = {}) {
   if (!catalogCachePath) throw new TypeError("loadCompleteSemanticCatalog requires catalogCachePath");
-  const catalog = await loadRuntimeCatalogSnapshot(catalogCachePath, { patch, locale });
+  const catalog = await loadRuntimeCatalogSnapshot(catalogCachePath, {
+    patch,
+    locale,
+    seasonContextId,
+    catalogKey
+  });
   if (compsInputPath) {
     const compsResponse = JSON.parse(await readFile(compsInputPath, "utf8"));
     catalog.comps = createStaticCompCatalog(compsResponse, catalog, { patch });

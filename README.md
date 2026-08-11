@@ -2,7 +2,7 @@
 
 > 听得懂中文俗称，帮你快速得到结论，也说清楚结论从哪里来。
 
-[在线体验：https://tftclarity.cn/](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [架构与可信度](#架构与可信度) · [部署指南](docs/deploy-tencent-cloud-v1.md)
+[在线体验：https://tftclarity.cn/](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [架构与可信度](#架构与可信度) · [V2 部署指南](docs/deploy-v2.md) · [发布就绪状态](docs/r1-release-readiness.md)
 
 ![tftclarity 产品首页](docs/images/tftclarity-overview.png)
 
@@ -30,7 +30,7 @@ V2 当前重点：
 - 用户策略知识以不确定性规则接入检索和结果证据。例如重复帽子或杀人剑可以提示可能相关的强化符文，但不能反推玩家一定拥有该强化。
 - 当前开发验收不设置工具调用次数上限，保留总时限、决策次数、重复调用和无进展保护，用于观察模型边界与幻觉频率。
 
-V2 的架构、验收矩阵和阶段结论见 [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md) 与 [R1 验收报告](docs/r1-acceptance-report.md)。
+V2 Public Beta 包含 ReAct/Conversation Bridge、真实英雄路径、给定阵容换人评估、装备竞争检测和带约束重查；G4-B 装备分配优先级不在本次 Beta 承诺范围。唯一当前状态见 [R1 Release Readiness](docs/r1-release-readiness.md)，架构见 [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md)。本地 `bge-m3` 语义向量门槛已通过；Final Release Image Gate 仍被 real LLM provider、最终提交 SHA 固定和 production-like Browser Matrix 阻断，因此不能据此宣称 V2 已部署。
 
 ## 为什么使用 tftclarity？
 
@@ -135,9 +135,9 @@ HTTP API / Web 界面 / Windows 小窗口
 
 ### 数据与存储
 
-默认本地模式可使用 JSON 缓存；SQLite 模式用于持久化查询缓存、赛季目录、会话、偏好、反馈、语义索引、`current_stats` 快照和 OP.GG 增量对局。
+默认本地模式可使用 JSON 缓存；SQLite 模式用于单机开发与完整链路验证，可持久化查询缓存、赛季目录、会话、偏好、反馈、语义索引、`current_stats` 快照和 OP.GG 增量对局。
 
-SQLite 当前服务于单机开发、低成本部署和完整链路验证，并不代表最终生产数据架构。后续可在不改变 `TaskFrame → ExecutionPlan → ToolExecutor` 主链的前提下，将业务存储、缓存、对象文件和定时任务拆分到 PostgreSQL、Redis、对象存储与独立 Worker。
+V2 production Compose 已固定为 PostgreSQL 持久业务存储、Redis 临时状态/队列、独立 Worker、内部 Bilibili MCP sidecar，以及无宿主端口的本地 Ollama `bge-m3` embedding 服务。语义索引仍是挂载 volume 中的独立可重建 SQLite 文件，不是 production 主数据库；索引从同一份本地当前版本目录快照构建，知识正文不会发送给远程 embedding provider。
 
 ## 快速开始
 
@@ -192,7 +192,7 @@ Copy-Item .env.example .env
 | `TFT_AGENT_LLM_MODE` | 结构化自然语言解析策略 |
 | `TFT_AGENT_CONCLUSION_MODE` | 证据约束的数据解读 |
 | `TFT_AGENT_KNOWLEDGE_MODE` | 本地知识检索总开关 |
-| `TFT_AGENT_EMBEDDING_MODE` | 持久化语义向量索引 |
+| `TFT_AGENT_EMBEDDING_MODE` | 持久化语义向量索引；V2 Compose 默认使用内部 `bge-m3` |
 | `TFT_AGENT_COACH_MODE` | 攻略与统计混合的教练回答 |
 | `TFT_AGENT_REACT_CHAT_MODE` | 开启 V2 ReAct 普通聊天路径；本地验收使用 `on` |
 | `TFT_AGENT_CONVERSATION_BRIDGE_MODE` | 让 QuickTask 目的、条件和结果进入后续聊天上下文 |
@@ -321,6 +321,7 @@ npm run eval:agent
 
 阶段性 Agent 评估和验收结果见：
 
+- [R1 Release Readiness（唯一当前状态）](docs/r1-release-readiness.md)
 - [Agent 升级进度](docs/agent-upgrade-progress.md)
 - [Phase 6.6 架构收敛](docs/phase-6-6-architecture-convergence.md)
 - [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md)
@@ -329,13 +330,13 @@ npm run eval:agent
 
 ## V2 后续开发
 
-V2 后续工作以“先扩展能力和验收，再考虑部署”为原则：
+当前纯仓库范围已具备进入 Final Release Image Gate 的条件；上线状态和未承诺范围以 [R1 Release Readiness](docs/r1-release-readiness.md) 为准。后续功能工作包括：
 
 1. 完善 YouTube 与 Bilibili 视频字幕抽取、来源时间点、缓存降级和人工复核流程。
 2. 将用户策略知识从代码内规则继续演进为可维护、可审核、可版本化的知识库，并记录适用赛季与置信边界。
 3. 完善阵容、棋子、装备、站位、强化符文之间的多工具组合案例和长对话上下文继承。
 4. 建立模型边界与幻觉频率评估，记录原始自由文本、证据校验结果、失败原因和人工审核结论。
-5. 补齐真实数据、真实模型、小窗口交互和 CI 分层门禁；全部通过后再单独制定 V2 部署与回滚计划。
+5. 在 Public Beta 之后，以可验证的反事实证据推进 G4-B 装备分配优先级，不使用模型直觉替代证据。
 
 本分支的提交和推送不代表发布。除非另行执行并审核部署流程，否则不会更新 `tftclarity.cn` 的线上版本。
 
@@ -347,7 +348,8 @@ V2 后续工作以“先扩展能力和验收，再考虑部署”为原则：
 - [阵容排行数据来源](docs/comp-ranking-data-source.md)
 - [语义索引构建](docs/semantic-index-build.md)
 - [管理员赛季与数据运维](docs/admin-season-operations.md)
-- [腾讯云部署指南](docs/deploy-tencent-cloud-v1.md)
+- [V2 production 部署、恢复与回滚](docs/deploy-v2.md)
+- [V1 腾讯云部署指南（历史单机参考）](docs/deploy-tencent-cloud-v1.md)
 
 ## 数据来源与项目声明
 

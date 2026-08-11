@@ -102,6 +102,35 @@ test("runtime catalog snapshot produces complete deduplicated entity identity ca
   assert.ok(catalog.traits[0].aliases.includes("TFT17_DarkStar_2"));
 });
 
+test("runtime catalog snapshot can select a namespaced season cache independently from output patch", () => {
+  const live = runtimeSnapshot();
+  const snapshot = {
+    itemCatalogs: {
+      "season:set17-live|current": live.itemCatalogs.current,
+      "season:set18-pbe|current": { value: { seasonContextId: "set18-pbe", patch: "current", items: [] } }
+    },
+    domainCatalogs: {
+      "season:set17-live|current": live.domainCatalogs.current,
+      "season:set18-pbe|current": { value: { seasonContextId: "set18-pbe", patch: "current", units: [], traits: [] } }
+    }
+  };
+  snapshot.itemCatalogs["season:set17-live|current"].value.seasonContextId = "set17-live";
+  snapshot.domainCatalogs["season:set17-live|current"].value.seasonContextId = "set17-live";
+
+  const catalog = catalogFromRuntimeCacheSnapshot(snapshot, {
+    catalogKey: "season:set17-live|current",
+    seasonContextId: "set17-live",
+    patch: "17.8"
+  });
+
+  assert.equal(catalog.seasonContextId, "set17-live");
+  assert.equal(catalog.patch, "17.8");
+  assert.equal(catalog.units[0].apiName, "TFT17_MasterYi");
+  assert.equal(catalog.units[0].patch, "17.8");
+  assert.equal(catalog.items[0].apiName, "TFT_Item_GuinsoosRageblade");
+  assert.equal(catalog.items[0].patch, "17.8");
+});
+
 test("comp catalog keeps identity aliases but excludes realtime statistics", () => {
   const catalog = catalogFromRuntimeCacheSnapshot(runtimeSnapshot());
   const comps = createStaticCompCatalog(compsSnapshot(), catalog);

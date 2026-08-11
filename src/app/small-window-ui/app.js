@@ -2728,7 +2728,7 @@ function reactModelConclusionHtml(data, summary) {
     : "";
   const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}" data-chat-model-conclusion>
     <header>
-      <strong>${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
+      <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
       <small>${escapeHtml(t(systemFallback
         ? "systemConclusionFallback"
         : hasGroundingWarnings
