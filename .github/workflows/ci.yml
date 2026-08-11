@@ -36,7 +36,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: Prepare production test environment
-        run: cp .env.production.example .env.production
+        shell: bash
+        run: |
+          cp .env.production.example .env.production
+          sed -i 's/^TFT_AGENT_VISITOR_SECRET=.*/TFT_AGENT_VISITOR_SECRET=ci-only-visitor-secret-00000000000000000000/' .env.production
+          sed -i 's/^TFT_AGENT_ADMIN_TOKEN=.*/TFT_AGENT_ADMIN_TOKEN=ci-only-admin-token-000000000000000000000/' .env.production
       - name: Parse production Compose topology
         run: docker compose config
       - name: Build final images without cache
