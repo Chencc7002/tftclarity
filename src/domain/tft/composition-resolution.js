@@ -65,7 +65,11 @@ function serializeMember(unit, comp, catalog, details, memberIndex) {
   return {
     apiName: unit.apiName,
     name: unit.name,
+    iconUrl: official?.iconUrl ?? unit.iconUrl ?? null,
+    fallbackIconUrl: unit.fallbackIconUrl ?? null,
     targetStarLevel: unit.targetStarLevel ?? null,
+    avgStarLevel: unit.avgStarLevel ?? null,
+    core: Boolean(unit.core || build),
     relations: ["member_of_comp", ...(build ? ["itemized_core_candidate"] : [])],
     roleEvidence: {
       memberOfComp: "supported",
@@ -84,6 +88,11 @@ function serializeMember(unit, comp, catalog, details, memberIndex) {
       games: Number(build.games ?? 0),
       averagePlacement: build.avgPlacement ?? null,
       items: [...(build.items ?? [])],
+      displayItems: (build.items ?? []).map((apiName) => ({
+        apiName,
+        name: catalog?.itemByApiName?.get?.(apiName)?.zhName ?? apiName,
+        iconUrl: catalog?.itemByApiName?.get?.(apiName)?.iconUrl ?? null
+      })),
       evidencePath: `/members/${memberIndex}/itemizationEvidence`
     } : null
   };
@@ -119,12 +128,16 @@ function serializeComposition(comp, catalog, details) {
       totalCandidateCount: itemized.length,
       omittedCandidateCount: Math.max(0, itemized.length - selected.length)
     },
-    traits: (comp.traits ?? []).map((trait) => ({
-      apiName: trait.apiName,
-      filterId: trait.filterId,
-      name: trait.name,
-      tier: trait.tier
-    })),
+    traits: (comp.traits ?? []).map((trait) => {
+      const official = traitRecord(catalog, trait);
+      return {
+        apiName: trait.apiName,
+        filterId: trait.filterId,
+        name: trait.name,
+        tier: trait.tier,
+        iconUrl: official?.iconUrl ?? trait.iconUrl ?? null
+      };
+    }),
     stats: structuredClone(comp.stats ?? {}),
     source: structuredClone(comp.source ?? null)
   };

@@ -3322,6 +3322,7 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
     catalog,
     details
   });
+  resolution.query = structuredClone(rankings.query ?? {});
   for (const result of resolution.results ?? []) {
     const detailCompId = String(result.source?.clusterId ?? "");
     const detailClusterId = String(result.source?.dataClusterId ?? resolution.source?.clusterId ?? "");
@@ -3670,7 +3671,16 @@ export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime
         },
         ranking: {
           strategy: PERFORMANCE_RANKING_METHOD,
+          method: build.ranking?.method ?? PERFORMANCE_RANKING_METHOD,
           score: Number(build.ranking?.performanceScore ?? build.ranking?.score ?? 0),
+          performanceScore: Number(build.ranking?.performanceScore ?? build.ranking?.score ?? 0),
+          recommendationRole: build.ranking?.recommendationRole ?? "alternative",
+          sampleTier: build.ranking?.sampleTier ?? "unclassified",
+          samplePercentile: Number.isFinite(build.ranking?.samplePercentile)
+            ? Number(build.ranking.samplePercentile)
+            : null,
+          performanceTier: build.ranking?.performanceTier ?? "unclassified",
+          insightCode: build.ranking?.insightCode ?? "unclassified",
           reasonCodes: [
             build.ranking?.recommendationRole ?? "performance_alternative",
             Number(build.stats?.games ?? 0) >= stableThreshold

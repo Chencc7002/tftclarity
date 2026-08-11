@@ -3640,11 +3640,18 @@ function renderSemanticNativeResult(data) {
           candidate.optionId === option.optionId
         ));
         const requiresMechanism = Boolean(mechanismComparison?.selectedPairs?.length);
-        const roleLabel = option.role === "stable"
-          ? t("stableBuildOption")
-          : option.role === "best_available"
-            ? t("bestAvailableBuildOption")
-            : t("alternativeBuildOption", { value: Math.max(1, Number(option.rank ?? index + 1) - 1) });
+        const completion = lockedItems.size > 0;
+        const roleLabel = option.role === "mainstream"
+          ? t(completion ? "mainstreamCompletion" : "mainstreamBuild")
+          : option.role === "best_performance_alternative"
+            ? t(completion ? "bestPerformanceCompletionAlternative" : "bestPerformanceAlternative")
+            : option.role === "alternative"
+              ? t(completion ? "highPerformanceCompletionAlternative" : "highPerformanceAlternative")
+              : option.role === "stable"
+                ? t("stableBuildOption")
+                : option.role === "best_available"
+                  ? t("bestAvailableBuildOption")
+                  : t("alternativeBuildOption", { value: Math.max(1, Number(option.rank ?? index + 1) - 1) });
         const items = (option.items ?? []).map((item) => typeof item === "string"
           ? `<span class="item-pill">${escapeHtml(item)}</span>`
           : itemPill(item)).join("");
@@ -3695,8 +3702,9 @@ function renderSemanticNativeResult(data) {
               ${metric(t("top4"), metrics.top4Rate == null ? "-" : `${formatNumber(metrics.top4Rate * 100, { maximumFractionDigits: 1 })}%`)}
               ${metric(t("win"), metrics.winRate == null ? "-" : `${formatNumber(metrics.winRate * 100, { maximumFractionDigits: 1 })}%`)}
               ${metric(t("avg"), metrics.averagePlacement == null ? "-" : formatNumber(metrics.averagePlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
-              ${metric(t("recommendationScore"), option.ranking?.score == null ? "-" : formatNumber(option.ranking.score * 100, { maximumFractionDigits: 1 }))}
+              ${metric(t("performanceScore"), option.ranking?.performanceScore == null && option.ranking?.score == null ? "-" : formatNumber((option.ranking.performanceScore ?? option.ranking.score) * 100, { maximumFractionDigits: 1 }))}
             </div>
+            ${rankingInsightBadges(option.ranking)}
             ${mechanismDifference}
             ${knowledgeSignalHtml}
             ${explanationLists}
@@ -4293,8 +4301,35 @@ function createRecommendationProgressState() {
     active: "understanding",
     startedAt: Date.now(),
     completedAt: null,
+    events: [],
     clockTimer: null
   };
+}
+
+function recommendationProgressEvent(event) {
+  const data = event?.data ?? {};
+  return {
+    phase: String(event?.phase ?? "unknown"),
+    data: {
+      type: data.type ?? null,
+      tool: data.tool ?? null,
+      iteration: Number.isFinite(Number(data.iteration)) ? Number(data.iteration) : null,
+      stage: data.stage ?? null,
+      source: data.source ?? null,
+      resultType: data.resultType ?? null,
+      evidenceCount: Number.isFinite(Number(data.evidenceCount)) ? Number(data.evidenceCount) : null,
+      reasonCode: data.reasonCode ?? null,
+      terminationReason: data.terminationReason ?? null
+    }
+  };
+}
+
+function appendRecommendationProgressEvent(progress, event) {
+  const next = recommendationProgressEvent(event);
+  const previous = progress.events.at(-1);
+  if (previous && JSON.stringify(previous) === JSON.stringify(next)) return;
+  progress.events.push(next);
+  if (progress.events.length > 24) progress.events.splice(0, progress.events.length - 24);
 }
 
 function mergeRecommendationProgressData(current, incoming = {}) {
@@ -4312,6 +4347,7 @@ function mergeRecommendationProgressData(current, incoming = {}) {
 
 function applyRecommendationProgressState(progress, event) {
   const phase = String(event?.phase ?? "");
+  appendRecommendationProgressEvent(progress, event);
   progress.phase = phase;
   progress.data = mergeRecommendationProgressData(progress.data, event?.data ?? {});
   if (phase === "understanding.started" || phase === "request.accepted") {
@@ -4378,7 +4414,8 @@ function completeRecommendationProgress(progress, data) {
     startedAt: progress.startedAt,
     completedAt: progress.completedAt,
     phase: "complete",
-    completed: [...progress.completed]
+    completed: [...progress.completed],
+    events: progress.events.map((event) => structuredClone(event))
   };
 }
 
@@ -4432,6 +4469,7 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
 
 function hasRenderableNativeEvidence(payload) {
   const nativeTypes = new Set([
+    "composition_rankings",
     "entity_catalog_results",
     "unit_builds_batch_results",
     "trait_external_unit_statistics",
@@ -4518,6 +4556,46 @@ async function readRecommendationStream(response, target, progress, requestId, s
   return completion.payload;
 }
 
+function normalizeReactCompositionRankings(value) {
+  const metricMap = {
+    top4_rate: "top4Rate",
+    win_rate: "winRate",
+    win_share: "winShare",
+    avg_placement: "avgPlacement",
+    popularity: "popularity"
+  };
+  const metric = (value?.query?.metrics ?? []).map((entry) => metricMap[entry]).find(Boolean) ?? "top4Rate";
+  const comps = (value?.results ?? []).map((result) => ({
+    compId: result.compositionRef?.compId ?? null,
+    name: result.compositionRef?.name ?? result.compositionRef?.compId ?? "-",
+    patch: result.compositionRef?.patch ?? value?.query?.patch ?? "current",
+    lowSample: Boolean(result.lowSample),
+    units: (result.members ?? []).map((member) => ({
+      apiName: member.apiName,
+      name: member.name ?? member.apiName,
+      iconUrl: member.iconUrl ?? null,
+      fallbackIconUrl: member.fallbackIconUrl ?? null,
+      targetStarLevel: member.targetStarLevel ?? null,
+      avgStarLevel: member.avgStarLevel ?? null,
+      core: Boolean(member.core || member.relations?.includes?.("itemized_core_candidate")),
+      items: member.itemizationEvidence?.displayItems
+        ?? (member.itemizationEvidence?.items ?? []).map((apiName) => ({ apiName, name: apiName }))
+    })),
+    traits: result.traits ?? [],
+    stats: result.stats ?? {},
+    source: result.source ?? value.source ?? null
+  }));
+  return {
+    ...value,
+    ok: true,
+    type: "comp_rankings",
+    rankings: { [metric]: comps },
+    references: [],
+    query: value.query ?? {},
+    source: value.source ?? comps[0]?.source ?? null
+  };
+}
+
 function normalizeEndpointPayload(payload) {
   if (payload?.type !== "react_chat_result") return payload;
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
@@ -4525,6 +4603,7 @@ function normalizeEndpointPayload(payload) {
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
   const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
   const nativeResultTypes = new Set([
+    "composition_rankings",
     "entity_catalog_results",
     "unit_builds_batch_results",
     "trait_external_unit_statistics",
@@ -4535,16 +4614,19 @@ function normalizeEndpointPayload(payload) {
   const primaryValue = evidenceValues.find((value) => nativeResultTypes.has(value?.type))
     ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
     ?? null;
+  const displayValue = primaryValue?.type === "composition_rankings"
+    ? normalizeReactCompositionRankings(primaryValue)
+    : primaryValue;
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
   return {
-    ...(primaryValue ?? {}),
+    ...(displayValue ?? {}),
     ...payload,
-    ...(nativeResultTypes.has(primaryValue?.type) && primaryValue?.status
-      ? { status: primaryValue.status, runStatus: payload.status }
+    ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
+      ? { status: displayValue.status, runStatus: payload.status }
       : {}),
-    type: nativeResultTypes.has(primaryValue?.type) ? primaryValue.type : payload.type,
+    type: nativeResultTypes.has(primaryValue?.type) ? displayValue.type : payload.type,
     reactAnswer: answerText,
     text: answerText,
     assistantResponse: { text: answerText },

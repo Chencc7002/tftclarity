@@ -373,6 +373,8 @@ test("UI-07 renders deterministic build options independently from grounded narr
   assert.match(appJs, /build-narrative-technical/);
   assert.match(appJs, /build-model-summary/);
   assert.match(appJs, /maximumFractionDigits: 1/);
+  assert.match(appJs, /t\("performanceScore"\)/);
+  assert.match(appJs, /rankingInsightBadges\(option\.ranking\)/);
   assert.match(appJs, /t\("updated"\)/);
   assert.doesNotMatch(appJs, /buildNarrativeUnavailable/);
   assert.match(styles, /\.build-option-card/);
@@ -386,6 +388,22 @@ test("UI-07 renders deterministic build options independently from grounded narr
   assert.match(i18n, /Only \{value\} builds meet the current sample threshold/);
   assert.match(i18n, /基于装备机制推断/);
   assert.match(i18n, /缺少当前赛季装备机制证据/);
+});
+
+test("ReAct composition evidence is normalized into expandable comp cards", () => {
+  assert.match(appJs, /function normalizeReactCompositionRankings\(value\)/);
+  assert.match(appJs, /"composition_rankings"/);
+  assert.match(appJs, /type: "comp_rankings"/);
+  assert.match(appJs, /rankings: \{ \[metric\]: comps \}/);
+  assert.match(appJs, /<details class="comp-card"/);
+});
+
+test("streamed Agent events remain visible as a real execution timeline", () => {
+  assert.match(appJs, /events: \[\]/);
+  assert.match(appJs, /appendRecommendationProgressEvent\(progress, event\)/);
+  assert.match(appJs, /processingTrace = \{[\s\S]*events: progress\.events/);
+  assert.match(styles, /\.agent-status-timeline/);
+  assert.match(styles, /\.agent-status-event\.active/);
 });
 
 test("ReAct build metrics wrap inside their card instead of overflowing the result pane", () => {

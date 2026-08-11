@@ -487,6 +487,14 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .reasoning-trace[open] .reasoning-trace-chevron { transform: rotate(90deg); }
 .reasoning-trace-body { padding: 12px 1px 2px; display: grid; gap: 11px; }
 .reasoning-trace-body p { margin: 0; color: var(--text); font-size: 12px; line-height: 1.72; overflow-wrap: anywhere; }
+.agent-status-timeline { margin: 0; padding: 0; display: grid; gap: 9px; list-style: none; }
+.agent-status-event { min-width: 0; display: grid; grid-template-columns: 10px minmax(0, 1fr); align-items: start; gap: 8px; color: var(--muted); }
+.agent-status-event > span { width: 7px; height: 7px; margin-top: 7px; border: 1px solid color-mix(in srgb, var(--wallpaper-accent) 58%, #fff); border-radius: 50%; background: color-mix(in srgb, var(--wallpaper-accent) 16%, #fff); }
+.agent-status-event p { color: inherit; }
+.agent-status-event.active { color: var(--text); }
+.agent-status-event.active > span { background: var(--wallpaper-accent); box-shadow: 0 0 0 3px color-mix(in srgb, var(--wallpaper-accent) 15%, transparent); animation: agent-status-pulse 1.35s ease-in-out infinite; }
+.agent-status-event.phase-tool_failed, .agent-status-event.phase-error { color: var(--danger); }
+@keyframes agent-status-pulse { 50% { transform: scale(.72); opacity: .62; } }
 .chat-understanding-panel + .answer-summary,
 .chat-understanding-panel + .chat-model-conclusion,
 .chat-understanding-panel + .chat-core-conclusion { padding-top: 2px; }
