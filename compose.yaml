@@ -12,8 +12,18 @@ services:
       TFT_AGENT_EPHEMERAL_STORE: redis
       TFT_AGENT_STORAGE_ALLOW_MEMORY_FALLBACK: "false"
       TFT_AGENT_SEMANTIC_INDEX_PATH: /app/.cache/semantic-index.sqlite
+      BILIBILI_MCP_MODE: auto
+      BILIBILI_MCP_TRANSPORT: streamable_http
+      BILIBILI_MCP_ENDPOINT: http://bilibili-mcp:3000/mcp
+      BILIBILI_MCP_TIMEOUT_MS: "8000"
+      BILIBILI_SEARCH_RECALL_LIMIT: "10"
+      BILIBILI_DETAIL_CANDIDATE_LIMIT: "5"
+      BILIBILI_RESULT_LIMIT: "5"
+      BILIBILI_MIN_CURRENT_RESULTS: "3"
+      BILIBILI_PATCH_DISCOVERY_MODE: auto
     volumes: [tft_semantic:/app/.cache]
     expose: ["17317"]
+    networks: [edge, backend, bilibili_mcp]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -35,6 +45,7 @@ services:
       TFT_AGENT_PERSISTENT_STORE: postgres
       TFT_AGENT_EPHEMERAL_STORE: redis
       TFT_AGENT_STORAGE_ALLOW_MEMORY_FALLBACK: "false"
+    networks: [backend]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -49,6 +60,7 @@ services:
       TFT_AGENT_PERSISTENT_STORE: postgres
       TFT_AGENT_EPHEMERAL_STORE: redis
       TFT_AGENT_STORAGE_ALLOW_MEMORY_FALLBACK: "false"
+    networks: [backend]
     depends_on:
       postgres: { condition: service_healthy }
 
@@ -59,6 +71,7 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./deploy/postgres-init.sh:/docker-entrypoint-initdb.d/10-create-app-role.sh:ro
+    networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
       interval: 10s
@@ -71,11 +84,33 @@ services:
     env_file: [.env.production]
     command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
     volumes: [redis_data:/data]
+    networks: [backend]
     healthcheck:
       test: ["CMD-SHELL", "redis-cli -a \"$$REDIS_PASSWORD\" ping | grep PONG"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  bilibili-mcp:
+    build:
+      context: .
+      dockerfile: deploy/bilibili-mcp.Dockerfile
+    restart: unless-stopped
+    init: true
+    environment:
+      TRANSPORT: remote
+      PORT: "3000"
+    networks: [bilibili_mcp]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "node", "healthcheck.mjs"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
 
   caddy:
     image: caddy:2-alpine
@@ -86,8 +121,14 @@ services:
       - ./deploy/Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
+    networks: [edge]
     depends_on:
       app: { condition: service_healthy }
+
+networks:
+  edge:
+  backend:
+  bilibili_mcp:
 
 volumes:
   postgres_data:

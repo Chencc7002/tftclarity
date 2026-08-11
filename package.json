@@ -15,6 +15,8 @@
     "smoke:postgres": "node scripts/smoke-postgres.mjs",
     "smoke:redis": "node scripts/smoke-redis.mjs",
     "smoke:multi-instance": "node scripts/smoke-multi-instance.mjs",
+    "smoke:bilibili": "node scripts/smoke-bilibili-mcp.mjs",
+    "smoke:bilibili:mcp:compose": "node scripts/smoke-bilibili-mcp-compose.mjs",
     "window": "powershell -ExecutionPolicy Bypass -File scripts/start-small-window.ps1",
     "window:server": "powershell -ExecutionPolicy Bypass -File scripts/start-small-window.ps1 -NoBrowser",
     "test": "node --test",

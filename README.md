@@ -271,25 +271,39 @@ npm run youtube:acceptance
 
 本项目通过外部 [bilibili-mcp-js](https://github.com/34892002/bilibili-mcp-js) 提供只读攻略视频搜索。能力范围限定为云顶之弈与金铲铲之战；明确要求两个生态时会分别检索并分组，双端都适用的视频显示为“双端通用”。编程、影视、宠物等无关视频请求会在调用 MCP 前被拒绝。
 
+本地非 Docker 开发可单独启动上游服务：
+
 ```powershell
 git clone https://github.com/34892002/bilibili-mcp-js.git
 cd bilibili-mcp-js
 npm install
 $env:TRANSPORT="remote"
-$env:PORT="18888"
+$env:PORT="3000"
 npm start
 ```
 
 在 TFTAgent 的 `.env` 中配置：
 
 ```dotenv
-BILIBILI_MCP_ENDPOINT=http://127.0.0.1:18888/mcp
+BILIBILI_MCP_ENDPOINT=http://127.0.0.1:3000/mcp
 BILIBILI_PATCH_DISCOVERY_MODE=auto
 ```
 
+生产 Compose 会从固定上游 commit `3574a43f3b44b2cf726f3931ce753fa4e0ff4f25` 构建 `bilibili-mcp` sidecar，并把应用 endpoint 固定为 `http://bilibili-mcp:3000/mcp`。运行层只安装 [deploy/bilibili-mcp-runtime/package.json](deploy/bilibili-mcp-runtime/package.json) 中经过单独审计的最小依赖，不携带上游仅供示例使用的 LangChain 依赖。该 sidecar 只加入专用 `bilibili_mcp` Docker 网络，不声明 `ports` 或 `expose`；Caddy 只加入 `edge` 网络，PostgreSQL/Redis 只加入 `backend`，都不能直接访问 MCP。`app` 不依赖 MCP 健康状态启动，MCP 异常时由应用返回可见的失败原因，不会阻塞主服务；`worker` 与 `migrate` 也不注入 MCP endpoint。
+
+```bash
+docker compose config
+docker compose up -d --build bilibili-mcp app
+docker compose ps bilibili-mcp app
+docker compose exec -T app npm run smoke:bilibili:mcp:compose
+docker inspect "$(docker compose ps -q bilibili-mcp)" --format '{{json .NetworkSettings.Ports}}'
+```
+
+真实 smoke 必须在 `app` 容器内运行，它会完成 MCP 初始化、工具发现、真实搜索与视频详情调用。最后一条应输出 `{}`；若出现宿主机端口绑定，不应上线。CI 的 `bilibili-compose-runtime-gate` 还会验证实际网络、密钥隔离、MCP 停机时应用仍 ready，以及恢复后的再次调用。升级上游版本时只修改 [deploy/bilibili-mcp.Dockerfile](deploy/bilibili-mcp.Dockerfile) 中的完整 commit SHA，重新构建并执行该 Gate，不能直接跟随浮动 `main`。
+
 版本窗默认在线获取并缓存 6 小时：云顶读取 [Riot 官方 Game Updates](https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/)，金铲铲读取可配置的[更新公告索引](https://newgame.17173.com/game-newslist-4075117.html)。在线来源不可用时不会猜测版本，界面会显示“版本未标注”；生产环境也可用 `BILIBILI_TFT_PATCH_WINDOWS_JSON` 与 `BILIBILI_GOLDEN_SPATULA_PATCH_WINDOWS_JSON` 固定覆盖。视频发布日期来自 Bilibili 搜索/详情结果，组内始终按“当前版本、上一版本、未标注、较旧版本”排序，同一档内发布日期越新越靠前。
 
-外部 MCP 当前没有认证能力，只应监听 localhost 或受信内网。浏览器验收截图：
+外部 MCP 当前没有认证能力，只应监听 localhost 或 Compose 私有网络。不要为 `bilibili-mcp` 添加 `ports`，也不要把 `BILIBILI_MCP_ENDPOINT` 指向公网地址；公网请求必须经过 Caddy、应用限流与 TFT/金铲铲领域过滤。浏览器验收截图：
 
 - [双端分组、当前版本与最新优先](docs/images/bilibili-browser-dual-ecosystem.png)
 - [非云顶/金铲铲内容拦截](docs/images/bilibili-browser-domain-gate.png)
