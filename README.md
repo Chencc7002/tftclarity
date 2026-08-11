@@ -30,7 +30,7 @@ V2 当前重点：
 - 用户策略知识以不确定性规则接入检索和结果证据。例如重复帽子或杀人剑可以提示可能相关的强化符文，但不能反推玩家一定拥有该强化。
 - 当前开发验收不设置工具调用次数上限，保留总时限、决策次数、重复调用和无进展保护，用于观察模型边界与幻觉频率。
 
-V2 Public Beta 包含 ReAct/Conversation Bridge、真实英雄路径、给定阵容换人评估、装备竞争检测和带约束重查；G4-B 装备分配优先级不在本次 Beta 承诺范围。唯一当前状态见 [R1 Release Readiness](docs/r1-release-readiness.md)，架构见 [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md)。本地 `bge-m3` 语义向量门槛已通过；Final Release Image Gate 仍被 real LLM provider、最终提交 SHA 固定和 production-like Browser Matrix 阻断，因此不能据此宣称 V2 已部署。
+V2 Public Beta 包含 ReAct/Conversation Bridge、真实英雄路径、给定阵容换人评估、装备竞争检测和带约束重查；G4-B 装备分配优先级不在本次 Beta 承诺范围。唯一当前状态见 [R1 Release Readiness](docs/r1-release-readiness.md)，架构见 [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md)。本地 `bge-m3`、真实 LLM、真实模型 Browser、Caddy 安全头/XFF 和旧镜像 rollback 门槛均已通过；Final Release Image Gate 仍需固定最终 SHA/image，并在真实公网域名上完成可信 HTTPS 访问，因此不能据此宣称 V2 已对外部署。
 
 ## 为什么使用 tftclarity？
 

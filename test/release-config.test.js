@@ -25,6 +25,8 @@ test("V2 production template enables the public-beta runtime without committing 
   assert.match(productionEnv, /^TFT_AGENT_LLM_ENDPOINT=https:\/\/your-provider\.example\/v1\/chat\/completions$/mu);
   assert.match(productionEnv, /^TFT_AGENT_LLM_MODEL=your-model$/mu);
   assert.match(productionEnv, /^TFT_AGENT_LLM_API_KEY=replace-me$/mu);
+  assert.match(productionEnv, /^TFT_AGENT_LLM_TIMEOUT_MS=30000$/mu);
+  assert.match(productionEnv, /^TFT_AGENT_LLM_THINKING_MODE=disabled$/mu);
   assert.match(productionEnv, /^TFT_AGENT_EMBEDDING_MODE=on$/mu);
   assert.match(productionEnv, /^TFT_AGENT_EMBEDDING_PROVIDER=openai_compatible$/mu);
   assert.match(productionEnv, /^TFT_AGENT_EMBEDDING_ENDPOINT=http:\/\/embedding:11434\/v1$/mu);
@@ -107,7 +109,9 @@ test("one authoritative readiness document preserves the Public Beta scope bound
   assert.doesNotMatch(readiness, /Full R1 Product Functional Acceptance(?:\s|—|-)*PASS/u);
   assert.match(historicalR1, /状态入口已迁移/u);
   assert.match(historicalR1, /r1-release-readiness\.md/u);
-  assert.match(readiness, /decisionProviderMode=unavailable/u);
+  assert.match(readiness, /decisionProviderMode=real_model/u);
+  assert.match(readiness, /DOMAIN=localhost/u);
+  assert.match(readiness, /真实公网域名/u);
   assert.match(readiness, /semantic:audit[^\n]*healthy=true/u);
   assert.match(readiness, /missing_embedding=0/u);
   assert.match(readiness, /model=`bge-m3`/u);

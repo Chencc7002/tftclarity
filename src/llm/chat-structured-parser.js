@@ -121,6 +121,13 @@ export function resolveStructuredParserConfig(options = {}, env = process.env) {
     options.timeoutMs ?? env.TFT_AGENT_LLM_TIMEOUT_MS,
     DEFAULT_STRUCTURED_PARSER_TIMEOUT_MS
   );
+  const thinkingModeValue = options.thinkingMode ?? env.TFT_AGENT_LLM_THINKING_MODE;
+  const thinkingMode = thinkingModeValue == null || String(thinkingModeValue).trim() === ""
+    ? null
+    : String(thinkingModeValue).trim().toLowerCase();
+  if (thinkingMode && !["enabled", "disabled"].includes(thinkingMode)) {
+    throw new Error("TFT_AGENT_LLM_THINKING_MODE must be enabled or disabled");
+  }
   const missing = [];
   if (!endpoint) missing.push("TFT_AGENT_LLM_ENDPOINT");
   if (!model) missing.push("TFT_AGENT_LLM_MODEL");
@@ -138,7 +145,8 @@ export function resolveStructuredParserConfig(options = {}, env = process.env) {
     timeoutMs,
     temperature: Number(options.temperature ?? env.TFT_AGENT_LLM_TEMPERATURE ?? 0),
     maxTokens: Number(options.maxTokens ?? env.TFT_AGENT_LLM_MAX_TOKENS ?? 500),
-    includeResponseFormat: options.includeResponseFormat ?? env.TFT_AGENT_LLM_RESPONSE_FORMAT !== "0"
+    includeResponseFormat: options.includeResponseFormat ?? env.TFT_AGENT_LLM_RESPONSE_FORMAT !== "0",
+    ...(thinkingMode ? { thinkingMode } : {})
   };
 }
 
@@ -179,7 +187,8 @@ export function createChatStructuredParser(options = {}) {
         }
       ],
       temperature: options.temperature ?? 0,
-      max_tokens: options.maxTokens ?? 500
+      max_tokens: options.maxTokens ?? 500,
+      ...(options.thinkingMode ? { thinking: { type: options.thinkingMode } } : {})
     };
     if (options.includeResponseFormat !== false) {
       body.response_format = {

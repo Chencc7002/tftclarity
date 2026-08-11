@@ -21,7 +21,7 @@
 | Full R1 Composite Release | **NOT YET SIGNED** | G4-B 未纳入 Beta 不等于完整 R1 Product Functional Acceptance 已完成 |
 | V2 Public Beta Repository Readiness | **PASS** | 2026-08-11 完成第二批纯仓库复核；无剩余 repository blocker |
 | V2 Public Beta functional scope | **READY FOR FINAL RELEASE IMAGE GATE** | 纯仓库功能与发布材料已具备进入最终镜像验收的条件 |
-| Final Release Image Gate | **BLOCKED** | 2026-08-11 本地 Docker Gate 已执行；本地语义向量已通过，real LLM provider、最终提交 SHA 固定与 production-like Browser Matrix 尚未满足 |
+| Final Release Image Gate | **BLOCKED** | 2026-08-11 本地 Docker、embedding、real LLM、Browser、XFF 与 rollback Gate 已通过；只剩最终 SHA/image 固定和真实域名 HTTPS 公网入口 |
 
 Repository review 已批准：`ENTER FINAL RELEASE IMAGE GATE`，本地 Gate 已开始执行。在真实 Gate 完成前，不得把最终镜像门槛
 或完整 R1 产品功能验收标记为通过，也不得宣称 V2 已部署或 Public Beta 已对外发布。
@@ -99,12 +99,28 @@ G4-B evidence-driven allocation priority 明确延期。产品可以报告某些
 - 本地 embedding：`ollama/ollama:0.32.5` + `bge-m3` 已在仅内部 `backend` 网络启动，无宿主机端口绑定；真实 OpenAI-compatible embeddings 请求返回 1024 维向量。
 - 正式服本地目录快照已按 `season:set17-live|current` 读取并规范化为实际补丁 `17.8`；主索引 656 条，`bge-m3` 1024 维，`semantic:audit` 为 `healthy=true`、`issues=[]`、`missing_embedding=0`。
 - 应用重启后 `/api/runtime` 显示 semantic index enabled/persistent、model=`bge-m3`、endpoint configured；真实“剑圣 易大师 技能”检索以前两名召回 `TFT17_MasterYi`，retrieval mode 为 `embedding`。
+- real LLM 已通过仅存在于本机、被 Git 忽略的配置接入；`/api/runtime` 显示
+  `decisionProviderMode=real_model`、model=`deepseek-v4-flash`、`fixtureMode=false`。真实 `smoke:llm`
+  返回正确结构化 intent、unit 和 item。
+- DeepSeek V4 结构化 JSON 请求显式使用 non-thinking 模式，避免默认 thinking 只返回
+  `reasoning_content` 而缺少 `content`；相关聚焦测试 21 pass，0 fail。
+- 真实 ReAct live matrix：4/4 PASS；16 次模型请求，12 次首轮成功、4 次协议级重试、0 次请求失败；
+  direct answer、实体目录、四/五工具链与阵容成员统计均 completed。目录预热遇到 MetaTFT items 2.2 秒
+  超时后使用当日持久化目录，矩阵仍全量通过。
+- 本机 loopback Browser 实测真实模型 UI：中文 AI 风险披露可见；暗星详情查询 9 秒完成并显示
+  “AI 生成/真实工具证据”；后续“那暗星里四费棋子是谁？”正确继承上下文并回答卡尔玛。
+- 仓库正式 `deploy/Caddyfile` 在仅绑定 `127.0.0.1` 的隔离入口返回 HSTS、CSP、
+  `X-Content-Type-Options`、Referrer/Permissions Policy，且移除 `Server` 响应头。
+- XFF/IP 限流实测：同一代理来源前 30 个请求为 200，第 31 个开始为 429；随后更换伪造的
+  `X-Forwarded-For` 仍为 429，客户端不能借伪造头绕过 Caddy 后的 IP 限流。
+- 旧 commit `1d5cd823e1320bdd1e98d29e63dd52335d04ac74` 已在 detached worktree 重新构建为
+  `tftagent-app:rollback-1d5`，并在独立 loopback 端口启动；`/api/ready=200`，同一持久化
+  semantic index 仍 enabled、model=`bge-m3`。演练容器和临时 worktree 已清理，旧镜像标签保留。
 
 ### 当前 blocker
 
-1. `.env.production` 没有 real LLM endpoint/model/API key。`/api/runtime` 显示
-   `decisionProviderMode=unavailable`、`model=null`、`fixtureMode=true`，不满足 real model / fixture false 门槛。
-2. 当前运行镜像尚未绑定并记录本批次提交后的最终 release SHA/image digest；完成提交后仍需以最终 SHA 重建或核对镜像身份。
-3. 因候选仍缺 real provider，本轮没有启动公网 Caddy，也没有执行真实 HTTPS、X-Forwarded-For、real-model Browser Matrix 或旧 SHA/image 回滚演练。
+1. 当前新增修复仍需形成最终 release SHA，并从该 clean SHA 重建 app/worker/migrate 镜像、记录 digest。
+2. 本机 production 配置的 `DOMAIN=localhost`，当前 Browser 与 Caddy 验收均为 loopback；尚无真实公网域名、
+   可信 TLS 证书和外部 HTTPS 访问证据。正式公网 Caddy 未启动，因此不能把 loopback Gate 描述为已对外发布。
 
 在上述 blocker 消除并重跑最小矩阵前，Final Release Image Gate 保持 **BLOCKED**，不得对外发布。
