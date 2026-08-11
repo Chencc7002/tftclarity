@@ -7,6 +7,7 @@ COPY package.json package-lock.json ./
 RUN npm ci --omit=dev
 
 COPY src ./src
+COPY services ./services
 COPY scripts ./scripts
 COPY test/fixtures/conclusion-fixture.json ./test/fixtures/conclusion-fixture.json
 COPY README.md ./README.md

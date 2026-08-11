@@ -1,0 +1,15 @@
+{
+  "name": "tftclarity-bilibili-mcp-runtime",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "axios": "1.19.0",
+    "express": "5.2.1",
+    "tough-cookie": "6.0.2"
+  },
+  "overrides": {
+    "@hono/node-server": "2.1.0"
+  }
+}
