@@ -188,6 +188,10 @@ export function buildCompRankings(response = {}, options = {}) {
         && compSelectionRate >= CONTESTED_COMP_SELECTION_RATE,
       trend: {
         avgPlacementChange: visiblePlacementChange,
+        baselineAvgPlacement: Number.isFinite(visiblePlacementChange)
+          && Number.isFinite(row.stats.avgPlacement)
+          ? Number((row.stats.avgPlacement - visiblePlacementChange).toFixed(4))
+          : null,
         emergenceScore: emergingStrength(row.stats, visiblePlacementChange),
         source: trendAllowed ? definition.trendSource : null,
         comparedAt: trendAllowed ? definition.trendComparedAt : null,

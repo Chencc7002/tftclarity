@@ -351,6 +351,10 @@ test("falling trend requests exclude rising and absolute-ranking candidates", ()
   assert.deepEqual(result.rising, []);
   assert.deepEqual(result.improving, []);
   assert.deepEqual(ids(result.falling), ["409003", "409092"]);
+  assert.equal(
+    result.falling[0].trend.baselineAvgPlacement,
+    Number((result.falling[0].stats.avgPlacement - result.falling[0].trend.avgPlacementChange).toFixed(4))
+  );
   assert.ok(Object.values(result.rankings).every((values) => values.length === 0));
 });
 

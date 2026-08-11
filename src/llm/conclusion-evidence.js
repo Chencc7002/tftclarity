@@ -469,6 +469,7 @@ function buildCompRankings(result, options = {}) {
     if (Number.isFinite(comp?.trend?.avgPlacementChange)) {
       record.trend = {
         avgPlacementChange: comp.trend.avgPlacementChange,
+        baselineAvgPlacement: finite(comp.trend.baselineAvgPlacement),
         placementImprovement: Number((-comp.trend.avgPlacementChange).toFixed(4)),
         emergenceScore: finite(comp.trend.emergenceScore),
         improving: Boolean(comp.trend.improving),
