@@ -15,7 +15,15 @@ const sourceFingerprint = await new Promise((resolveHash, rejectHash) => {
 });
 const source = await SQLiteCacheStore.open({ filePath: sourcePath });
 const pool = createPostgresPool(resolveStorageConfig({ persistentStore: "postgres" }));
-const json = (value, fallback = null) => { try { return value == null ? fallback : JSON.parse(value); } catch { return fallback; } };
+const json = (value, fallback = null) => {
+  let parsed;
+  try {
+    parsed = value == null ? fallback : JSON.parse(value);
+  } catch {
+    parsed = fallback;
+  }
+  return parsed == null ? null : JSON.stringify(parsed);
+};
 const rows = (table) => source.database.prepare(`SELECT * FROM ${table}`).all();
 const context = (row) => ({ provider: row.source?.startsWith?.("riot") ? "riot" : "metatft", providerVersion: "metatft-live.v1", patch: row.patch || "current", fetchedAt: row.updated_at || new Date().toISOString() });
 const report = { schemaVersion: "sqlite_postgres_migration.v1", sourcePath: sourcePath.replace(process.cwd(), "."), sourceFingerprint, startedAt: new Date().toISOString(), tables: {} };

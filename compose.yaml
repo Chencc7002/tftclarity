@@ -51,6 +51,15 @@ services:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
 
+  opgg-collector:
+    build: .
+    restart: unless-stopped
+    command: ["npm", "run", "opgg:collect:watch"]
+    env_file: [.env.production]
+    volumes: [tft_semantic:/app/.cache]
+    depends_on:
+      app: { condition: service_healthy }
+
   migrate:
     build: .
     restart: "no"
@@ -83,7 +92,7 @@ services:
     image: redis:7.4-alpine
     restart: unless-stopped
     env_file: [.env.production]
-    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
+    command: ["sh", "-c", "exec redis-server --appendonly yes --maxmemory 128mb --maxmemory-policy noeviction --requirepass \"$$REDIS_PASSWORD\""]
     volumes: [redis_data:/data]
     networks: [backend]
     healthcheck:
