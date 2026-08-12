@@ -3465,16 +3465,13 @@ function renderStrategyVideoSearchResult(data) {
     unknown: "\u7248\u672c\u672a\u6807\u6ce8",
     tft_pc: "\u4e91\u9876\u4e4b\u5f08",
     golden_spatula: "\u91d1\u94f2\u94f2\u4e4b\u6218",
-    cross_ecosystem: "\u53cc\u7aef\u901a\u7528",
     author: "UP \u4e3b",
     published: "\u53d1\u5e03",
     publishedUnknown: "\u53d1\u5e03\u65e5\u671f\u672a\u77e5",
     views: "\u64ad\u653e",
-    detailUnavailable: "\u8be6\u60c5\u6682\u4e0d\u53ef\u7528",
     previousFallback: "\u542b\u4e0a\u4e00\u7248\u672c\u653b\u7565\u3002",
     olderFallback: "\u8f83\u65e7\u7248\u672c\u00b7\u4ec5\u4f9b\u53c2\u8003\u3002",
     unknownFallback: "\u7248\u672c\u672a\u6807\u6ce8\u00b7\u5df2\u6309\u53d1\u5e03\u65e5\u671f\u6392\u5e8f\u3002",
-    crossFallback: "\u542b\u53cc\u7aef\u901a\u7528\u653b\u7565\u3002",
     open: "\u6253\u5f00\u89c6\u9891"
   } : {
     title: "Bilibili strategy videos",
@@ -3487,22 +3484,19 @@ function renderStrategyVideoSearchResult(data) {
     unknown: "Patch not tagged",
     tft_pc: "Teamfight Tactics",
     golden_spatula: "Golden Spatula",
-    cross_ecosystem: "Works in both",
     author: "Creator",
     published: "Published",
     publishedUnknown: "Publish date unavailable",
     views: "Views",
-    detailUnavailable: "Details unavailable",
     previousFallback: "Includes previous-patch guides.",
     olderFallback: "Older patch · for reference.",
     unknownFallback: "Patch not tagged · sorted by publish date.",
-    crossFallback: "Includes guides for both games.",
     open: "Open video"
   };
   const fallbackText = (group) => group.fallbackType === "previous_patch" ? labels.previousFallback
     : group.fallbackType === "older_patch" ? labels.olderFallback
       : group.fallbackType === "unknown_patch" ? labels.unknownFallback
-        : group.fallbackType === "cross_ecosystem" ? labels.crossFallback : "";
+        : "";
   const groups = data.status === "unsupported_scope"
     ? []
     : Array.isArray(data.groups) && data.groups.length
@@ -3524,19 +3518,18 @@ function renderStrategyVideoSearchResult(data) {
         ${cover ? `<img class="strategy-video-cover" src="${escapeHtml(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
         <div class="strategy-video-body">
           <div class="card-head"><div>
-            <span class="ranking-badge strategy-video-ecosystem">${escapeHtml(labels[ecosystem] ?? ecosystem)}</span>
-            <span class="ranking-badge patch-time-badge">${escapeHtml(labels[video.patchTimeStatus] ?? labels.unknown)}</span>
+            ${ecosystem === "cross_ecosystem" ? "" : `<span class="ranking-badge strategy-video-ecosystem">${escapeHtml(labels[ecosystem] ?? ecosystem)}</span>`}
+            ${group.ecosystem === "cross_ecosystem" ? "" : `<span class="ranking-badge patch-time-badge">${escapeHtml(labels[video.patchTimeStatus] ?? labels.unknown)}</span>`}
             <div class="card-title">${escapeHtml(video.title)}</div>
           </div></div>
           ${metrics.length ? `<small>${metrics.map(escapeHtml).join(" · ")}</small>` : ""}
-          ${video.detailStatus === "unavailable" ? `<div class="risk-line">${escapeHtml(labels.detailUnavailable)}</div>` : ""}
           ${url ? `<a class="strategy-video-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(labels.open)} →</a>` : ""}
         </div>
       </article>`;
     }).join("");
-    const groupLabel = labels[group.ecosystem] ?? group.ecosystem ?? labels.title;
+    const groupLabel = group.ecosystem === "cross_ecosystem" ? "" : (labels[group.ecosystem] ?? group.ecosystem ?? labels.title);
     return `<section class="strategy-video-group" data-ecosystem="${escapeHtml(group.ecosystem ?? "unknown")}">
-      <h3>${escapeHtml(groupLabel)}</h3>
+      ${groupLabel ? `<h3>${escapeHtml(groupLabel)}</h3>` : ""}
       ${fallback ? `<div class="risk-line strategy-video-fallback">${escapeHtml(fallback)}</div>` : ""}
       ${cards ? `<div class="ranking-section strategy-video-grid">${cards}</div>` : `<div class="empty-state"><strong>${escapeHtml(group.status === "unavailable" ? labels.unavailable : labels.empty)}</strong></div>`}
     </section>`;

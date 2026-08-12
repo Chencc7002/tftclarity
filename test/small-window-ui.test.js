@@ -159,6 +159,13 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
 });
 
+test("Bilibili video cards omit cross-ecosystem labels and internal detail failures", () => {
+  assert.doesNotMatch(appJs, /双端通用|Works in both/u);
+  assert.doesNotMatch(appJs, /详情暂不可用|Details unavailable/u);
+  assert.doesNotMatch(appJs, /detailFailureCode|detailRestricted|detailTimeout|detailFallback/u);
+  assert.match(appJs, /group\.ecosystem === "cross_ecosystem" \? ""/u);
+});
+
 test("feature-flagged chat routing keeps quick tools on recommend and normal chat on ReAct", () => {
   assert.match(appJs, /state\.runtimeStatus\?\.routing\?\.reactChatEnabled/);
   assert.match(appJs, /state\.lastQuickTask \|\| !reactChatEnabled/);

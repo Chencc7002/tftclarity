@@ -269,7 +269,7 @@ npm run youtube:acceptance
 
 ### Bilibili 攻略视频 MCP
 
-本项目通过外部 [bilibili-mcp-js](https://github.com/34892002/bilibili-mcp-js) 提供只读攻略视频搜索。能力范围限定为云顶之弈与金铲铲之战；明确要求两个生态时会分别检索并分组，双端都适用的视频显示为“双端通用”。编程、影视、宠物等无关视频请求会在调用 MCP 前被拒绝。
+本项目通过外部 [bilibili-mcp-js](https://github.com/34892002/bilibili-mcp-js) 提供只读攻略视频搜索。能力范围限定为云顶之弈与金铲铲之战；明确要求两个生态时会分别检索并分组，跨端内容仍可参与召回，但前端不增加额外的跨端标签。编程、影视、宠物等无关视频请求会在调用 MCP 前被拒绝。
 
 本地非 Docker 开发可单独启动上游服务：
 
