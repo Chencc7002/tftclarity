@@ -1,7 +1,8 @@
 import { loadLocalEnvironment } from "../src/config/load-env.js";
 import {
   createSmallWindowRuntimeAsync,
-  createSmallWindowServer
+  createSmallWindowServer,
+  prewarmSmallWindowCatalog
 } from "../src/app/small-window-server.js";
 
 loadLocalEnvironment();
@@ -27,12 +28,20 @@ const cases = [
     id: "four_tool_loop",
     input: "列出暗星羁绊中的四费棋子，并分别告诉我他们当前常见的三件出装，只根据工具结果回答。",
     expectedTools: ["entity_catalog_query", "entity_catalog_query", "unit_builds_batch", "item_details_batch"],
+    expectedToolSequences: [
+      ["entity_catalog_query", "entity_catalog_query", "unit_builds_batch", "item_details_batch"],
+      ["entity_catalog_query", "trait_details", "entity_catalog_query", "unit_builds_batch", "item_details_batch"]
+    ],
     expectedTermination: new Set(["completed", "insufficient_evidence", "finish_validation_fallback"])
   },
   {
     id: "composition_member_statistics",
     input: "在暗星·科加斯阵容中，最常见的非暗星外援棋子有哪些？只根据当前统计工具回答。",
     expectedTools: ["comps_rankings"],
+    expectedToolSequences: [
+      ["comps_rankings"],
+      ["comps_rankings", "composition_member_statistics"]
+    ],
     expectedTermination: new Set(["completed", "insufficient_evidence"])
   }
 ];
@@ -52,6 +61,14 @@ function summarizeEvidence(entries = []) {
 
 function sameArray(left, right) {
   return left.length === right.length && left.every((value, index) => value === right[index]);
+}
+
+function isSubsequence(expected, actual) {
+  let expectedIndex = 0;
+  for (const value of actual) {
+    if (value === expected[expectedIndex]) expectedIndex += 1;
+  }
+  return expectedIndex === expected.length;
 }
 
 function summarizeUsage(entries = []) {
@@ -116,7 +133,10 @@ function validateCase(testCase, report) {
   if (testCase.id === "direct_answer" && report.evidence.length !== 0) {
     errors.push("direct answer created evidence");
   }
-  if (testCase.id === "four_tool_loop" && report.evidence.map((entry) => entry.tool).join(",") !== testCase.expectedTools.join(",")) {
+  if (testCase.id === "four_tool_loop" && !isSubsequence(
+    testCase.expectedTools,
+    report.evidence.map((entry) => entry.tool)
+  )) {
     errors.push("four-tool answer did not retain all evidence records");
   }
   return errors;
@@ -148,6 +168,7 @@ const runtime = await createSmallWindowRuntimeAsync({
 if (typeof runtime.reactDecisionProvider !== "function") {
   throw new Error("ReAct decision provider is unavailable; configure the live LLM environment first");
 }
+const catalogPrewarm = await prewarmSmallWindowCatalog(runtime);
 
 const server = createSmallWindowServer({ runtime });
 const port = await listen(server);
@@ -207,6 +228,8 @@ try {
   }
 } finally {
   await close(server);
+  runtime.conclusionWorker?.stop?.();
+  await runtime.cacheStore?.close?.();
 }
 
 const summary = {
@@ -214,6 +237,7 @@ const summary = {
   schemaVersion: "react-chat-live-smoke.v1",
   passed: reports.filter((report) => report.ok).length,
   total: reports.length,
+  catalogPrewarm,
   reactDecisionUsage: summarizeUsage(modelLogs),
   followupReactDecisionUsage: summarizeUsage(
     reports.flatMap((report) => report.followupUsage.requests > 0

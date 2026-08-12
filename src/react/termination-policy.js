@@ -149,6 +149,51 @@ function roundedNumericClaimIsSupported(token, entries) {
   ));
 }
 
+function isCompositionTrendEvidence(entry) {
+  return entry?.toolName === "comps_trends"
+    || entry?.type === "composition_trends"
+    || entry?.value?.type === "comp_trends";
+}
+
+function compositionTrendImprovementValues(value, output = []) {
+  if (Array.isArray(value)) {
+    for (const entry of value) compositionTrendImprovementValues(entry, output);
+    return output;
+  }
+  if (!value || typeof value !== "object") return output;
+  for (const [key, entry] of Object.entries(value)) {
+    if (
+      ["avgPlacementChange", "placementImprovement"].includes(key)
+      && typeof entry === "number"
+      && Number.isFinite(entry)
+    ) {
+      output.push(Math.abs(entry));
+      continue;
+    }
+    compositionTrendImprovementValues(entry, output);
+  }
+  return output;
+}
+
+function roundedCompositionTrendMagnitudeIsSupported(token, entries) {
+  if (token.endsWith("%")) return false;
+  const raw = token;
+  if (!raw.includes(".")) return false;
+  const claimed = Number(raw);
+  if (!Number.isFinite(claimed) || claimed < 0) return false;
+  const decimals = raw.split(".")[1]?.length ?? 0;
+  const tolerance = (0.5 * (10 ** -decimals)) + Number.EPSILON;
+  const values = entries
+    .filter(isCompositionTrendEvidence)
+    .flatMap((entry) => compositionTrendImprovementValues(entry.value));
+  return values.some((value) => Math.abs(value - claimed) <= tolerance);
+}
+
+function numericClaimIsSupported(token, entries) {
+  return roundedNumericClaimIsSupported(token, entries)
+    || roundedCompositionTrendMagnitudeIsSupported(token, entries);
+}
+
 function exactFields(value, allowed, label, errors) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     errors.push(`${label} must be an object`);
@@ -322,7 +367,7 @@ export function validateGroundedBuildNarrative(narrative, ledger, finishEvidence
     if (
       !source.includes(token)
       && !source.includes(normalized)
-      && !roundedNumericClaimIsSupported(token, citedEntries)
+      && !numericClaimIsSupported(token, citedEntries)
     ) {
       errors.push(`narrative statistic is not present in cited evidence: ${token}`);
     }
@@ -357,7 +402,7 @@ export function validateFinishAction(action, ledger) {
       if (
         !sourceText.includes(token)
         && !sourceText.includes(normalized)
-        && !roundedNumericClaimIsSupported(token, entries)
+        && !numericClaimIsSupported(token, entries)
       ) {
         errors.push(`answer statistic is not present in cited evidence: ${token}`);
       }

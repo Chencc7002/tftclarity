@@ -98,6 +98,13 @@ test("explicit popular and trend wording overrides generic model ranking default
   assert.equal(trend.trendRequested, true);
   assert.equal(trend.popularRequested, false);
 
+  const fallingTrend = resolvedTaskFrameToParsed(genericFrame, {
+    input: "今天有哪些阵容变弱了？"
+  });
+  assert.equal(fallingTrend.intent, "comp_trends");
+  assert.equal(fallingTrend.trendRequested, true);
+  assert.equal(fallingTrend.trendDirection, "falling");
+
   const trendWithAnalysisPlan = resolvedTaskFrameToParsed(createTaskFrame({
     action: "analyze",
     goal: "comp_trends",

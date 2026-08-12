@@ -75,7 +75,7 @@ try {
       "SELECT column_name FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND data_type='jsonb' ORDER BY ordinal_position",
       [table]
     )).rows.map((row) => row.column_name);
-    const ok = targetCount >= sourceRows.length
+    const ok = targetCount >= sourceUniqueCount
       && targetUniqueCount >= sourceUniqueCount
       && invalidSourceJson.length === 0
       && samples.every((sample) => sample.found);

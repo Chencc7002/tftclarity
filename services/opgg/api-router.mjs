@@ -16,11 +16,13 @@ import {
   backfillSignatures,
   backfillPatchLabels,
   listPools,
+  getPool,
   getPoolStats,
   listPlayerMatches,
   createPool,
   poolExists,
   registerPlayer,
+  removePlayerFromPool,
   getPoolPlayers,
   slugify,
   collectPlayer
@@ -74,21 +76,50 @@ function authorizedPoolId(requestedPoolId, scope) {
   return requested;
 }
 
+function accessiblePool(database, requestedPoolId, scope) {
+  const poolId = authorizedPoolId(requestedPoolId, scope);
+  if (!poolId) return null;
+  const pool = getPool(database, poolId);
+  if (!pool) return null;
+  if (pool.ownerType === "user" && pool.ownerId !== String(scope ?? "anonymous")) return null;
+  return pool;
+}
+
+function poolQueryOptions(pool, query) {
+  const requestedLimit = Number(query.get("per-player"));
+  return {
+    poolId: pool.id,
+    region: pool.region || (pool.environment === "pbe" ? "pbe" : "na"),
+    perPlayerLimit: Number.isFinite(requestedLimit) && requestedLimit > 0
+      ? Math.min(requestedLimit, 20)
+      : pool.environment === "pbe" ? 20 : 10
+  };
+}
+
 function canAccessPlayer(database, playerId, scope) {
   return Boolean(
     database
       .prepare(
         `SELECT 1
-         FROM pool_player
-         WHERE player_id = ?
-           AND (pool_id = ? OR (pool_id != ? AND pool_id NOT LIKE ?))
+         FROM pool_player pp
+         JOIN pool p ON p.id = pp.pool_id
+         WHERE pp.player_id = ?
+           AND (
+             pp.pool_id = ?
+             OR (
+               pp.pool_id != ?
+               AND pp.pool_id NOT LIKE ?
+               AND (p.owner_type = 'system' OR (p.owner_type = 'user' AND p.owner_id = ?))
+             )
+           )
          LIMIT 1`
       )
       .get(
         playerId,
         personalPoolId(scope),
         MY_REVIEW_POOL,
-        `${PERSONAL_POOL_PREFIX}%`
+        `${PERSONAL_POOL_PREFIX}%`,
+        String(scope ?? "anonymous")
       )
   );
 }
@@ -266,7 +297,10 @@ function createOpggApiRouter() {
         return sendJson(
           response,
           200,
-          listPools(database).filter((pool) => !isPersonalPool(pool.id))
+          listPools(database).filter((pool) =>
+            !isPersonalPool(pool.id) &&
+            (pool.ownerType !== "user" || pool.ownerId === String(scope ?? "anonymous"))
+          )
         );
       }
 
@@ -348,6 +382,18 @@ function createOpggApiRouter() {
         });
       }
 
+      const personalPlayerMatch = pathname.match(/^\/api\/opgg\/players\/([^/]+)$/u);
+      if (request.method === "DELETE" && personalPlayerMatch) {
+        const database = await getDatabase();
+        const playerId = decodeURIComponent(personalPlayerMatch[1]);
+        const exists = database.prepare(
+          `SELECT 1 FROM pool_player WHERE pool_id = ? AND player_id = ?`
+        ).get(myReviewPoolId, playerId);
+        if (!exists) return sendError(response, 404, "Player not found in your account list.");
+        removePlayerFromPool(database, myReviewPoolId, playerId, new Date().toISOString());
+        return sendJson(response, 200, { ok: true, playerId });
+      }
+
       if (pathname === "/api/opgg/teaching") {
         const database = await getDatabase();
         const playerId = query.get("player");
@@ -362,7 +408,7 @@ function createOpggApiRouter() {
         if (!meta) {
           return sendError(response, 404, `Player ${playerId} not found.`);
         }
-        const matches = listPlayerMatches(database, playerId, { limit: 50 })
+        const matches = listPlayerMatches(database, playerId, { limit: 50, region: meta.region })
           .map(localizeMatch);
         let review;
         if (matchId) {
@@ -413,35 +459,29 @@ function createOpggApiRouter() {
 
       if (pathname === "/api/opgg/trends") {
         const database = await getDatabase();
-        const poolId = authorizedPoolId(query.get("pool"), scope);
-        if (!poolId) {
+        const pool = accessiblePool(database, query.get("pool"), scope);
+        if (!pool) {
           return sendError(response, 404, "Pool not found.");
         }
-        const result = aggregatePool(database, {
-          poolId,
-          region: query.get("region") ?? "na",
-          perPlayerLimit: Number(query.get("per-player") ?? "10")
-        });
-        return sendJson(response, 200, localizeAggregate(result));
+        const result = localizeAggregate(aggregatePool(database, poolQueryOptions(pool, query)));
+        return sendJson(response, 200, { ...result, pool });
       }
 
       if (pathname === "/api/opgg/players") {
         const database = await getDatabase();
         const honors = await getHonors();
-        const poolId = authorizedPoolId(query.get("pool"), scope);
-        if (!poolId) {
+        const pool = accessiblePool(database, query.get("pool"), scope);
+        if (!pool) {
           return sendError(response, 404, "Pool not found.");
         }
-        const stats = getPoolStats(database, {
-          poolId,
-          region: query.get("region") ?? "na"
-        });
+        const stats = getPoolStats(database, { poolId: pool.id, region: pool.region });
         const players = stats.players.map((player) => ({
           ...player,
           summary: playerSummary(database, player.id)
         }));
         return sendJson(response, 200, {
           ...stats,
+          pool,
           players: players.map((player) => withHonors(honors, player))
         });
       }
@@ -457,7 +497,9 @@ function createOpggApiRouter() {
         if (!canAccessPlayer(database, playerId, scope)) {
           return sendError(response, 404, `Player ${playerId} not found.`);
         }
-        const allMatches = listPlayerMatches(database, playerId, { limit: 50 })
+        const meta = playerMeta(database, playerId);
+        if (!meta) return sendError(response, 404, `Player ${playerId} not found.`);
+        const allMatches = listPlayerMatches(database, playerId, { limit: 50, region: meta.region })
           .map(localizeMatch);
         const target = allMatches.find((match) => match.matchId === matchId);
         if (!target) {
@@ -472,7 +514,7 @@ function createOpggApiRouter() {
           review.facts.compFamilySignature
         );
         return sendJson(response, 200, {
-          player: withHonors(honors, playerMeta(database, playerId)),
+          player: withHonors(honors, meta),
           review
         });
       }
@@ -491,7 +533,7 @@ function createOpggApiRouter() {
         if (!meta) {
           return sendError(response, 404, `Player ${playerId} not found.`);
         }
-        const matches = listPlayerMatches(database, playerId, { limit: 50 })
+        const matches = listPlayerMatches(database, playerId, { limit: 50, region: meta.region })
           .map(localizeMatch);
         if (playerRoute[2] === "matches") {
           return sendJson(response, 200, {
@@ -500,7 +542,7 @@ function createOpggApiRouter() {
           });
         }
         const review = localizeReview(buildPlayerReview(matches, {
-          windowSize: Number(query.get("limit") ?? "10")
+          windowSize: Number(query.get("limit") ?? (meta.region === "pbe" ? "20" : "10"))
         }));
         return sendJson(response, 200, {
           player: withHonors(honors, meta),
@@ -515,21 +557,18 @@ function createOpggApiRouter() {
         if (!signature) {
           return sendError(response, 400, "Missing sig query parameter.");
         }
-        const poolId = authorizedPoolId(query.get("pool"), scope);
-        if (!poolId) {
+        const pool = accessiblePool(database, query.get("pool"), scope);
+        if (!pool) {
           return sendError(response, 404, "Pool not found.");
         }
-        const window = getPoolWindow(database, {
-          poolId,
-          region: query.get("region") ?? "na",
-          perPlayerLimit: Number(query.get("per-player") ?? "10")
-        });
+        const window = getPoolWindow(database, poolQueryOptions(pool, query));
         const cards = window.rows
           .filter((row) => row.compFamilySignature === signature)
           .map(localizeMatch)
           .map(matchCard);
         return sendJson(response, 200, {
-          poolId,
+          poolId: pool.id,
+          pool,
           signature,
           displaySignature: localizeSignature(signature),
           patch: window.patch,
@@ -545,9 +584,11 @@ function createOpggApiRouter() {
 }
 
 export {
+  accessiblePool,
   authorizedPoolId,
   canAccessPlayer,
   createOpggApiRouter,
   isPersonalPool,
-  personalPoolId
+  personalPoolId,
+  poolQueryOptions
 };

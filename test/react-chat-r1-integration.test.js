@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createDefaultReactToolHandlerBundle,
   createSmallWindowRuntime,
+  handleFeedbackRequest,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
@@ -50,6 +51,7 @@ test("independent react endpoint answers without entering recommendForInput", as
     "composition_tactical_details",
     "composition_replacement_evaluation",
     "composition_change_evaluation",
+    "comps_trends",
     "unit_details",
     "item_details",
     "item_details_batch",
@@ -58,6 +60,50 @@ test("independent react endpoint answers without entering recommendForInput", as
     "composition_member_statistics",
     "strategy_video_search"
   ]);
+});
+
+test("react answers persist a trusted feedback snapshot with validation context", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const visitor = { scope: "react-feedback-user" };
+  const runtime = createSmallWindowRuntime({
+    cacheStore,
+    reactDecisionProvider: async (request) => request.state.evidence.length
+      ? {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "17.9 最高伤害提高至 999。",
+        evidenceIds: [request.state.evidence[0].evidenceId],
+        reasonCode: "sufficient_evidence"
+      }
+      : {
+        schemaVersion: "react-action.v1",
+        type: "call_tool",
+        tool: "semantic_search",
+        arguments: { query: "17.9更新", documentTypes: ["patch_note"] },
+        purposeCode: "retrieve_supporting_knowledge"
+      },
+    reactToolHandlers: {
+      semantic_search: async () => ({
+        type: "semantic_search_results",
+        hits: [{ claim: "17.9 伤害获得调整" }],
+        updatedAt: "2026-08-12T00:00:00.000Z"
+      })
+    }
+  });
+  const { payload } = await handleReactChatRequest({ input: "总结17.9更新" }, runtime, { visitor });
+  assert.match(payload.queryId, /^[0-9a-f-]{36}$/u);
+  const queryEvent = await cacheStore.getQueryEvent(payload.queryId);
+  assert.equal(queryEvent.response.answerOrigin, "model_soft_validated_summary");
+
+  const feedback = await handleFeedbackRequest({
+    queryId: payload.queryId,
+    target: "explanation",
+    rating: "unhelpful",
+    reason: "explanation_incorrect"
+  }, runtime, { visitor });
+  assert.equal(feedback.feedback.payload.explanation, payload.answer);
+  assert.equal(feedback.feedback.payload.explanationContext.answerOrigin, "model_soft_validated_summary");
+  assert.ok(feedback.feedback.payload.explanationContext.validationWarnings.length > 0);
 });
 
 test("independent react endpoint executes a shared registered handler", async () => {
@@ -118,6 +164,57 @@ test("react endpoint fails closed when no decision provider is configured", asyn
   assert.equal(payload.code, "react_chat_unavailable");
 });
 
+test("react endpoint reserves one AI use per request and returns refreshed access", async () => {
+  let reserveCalls = 0;
+  let providerCalls = 0;
+  const visitor = { scope: "quota-user", visitorHash: "visitor", ipHash: "ip" };
+  const accessService = {
+    config: { enabled: true },
+    async reserveLlmUse(receivedVisitor) {
+      assert.equal(receivedVisitor, visitor);
+      reserveCalls += 1;
+    },
+    async publicStatus(receivedVisitor) {
+      assert.equal(receivedVisitor, visitor);
+      return { anonymous: true, quota: { limit: 50, used: 1, remaining: 49 } };
+    }
+  };
+  const runtime = createSmallWindowRuntime({
+    reactDecisionProvider: async (request) => {
+      providerCalls += 1;
+      if (!request.state.evidence.length) {
+        return {
+          schemaVersion: "react-action.v1",
+          type: "call_tool",
+          tool: "unit_details",
+          arguments: { apiName: "TFT18_Xayah" },
+          purposeCode: "retrieve_entity_details"
+        };
+      }
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "霞的技能是羽刃。",
+        evidenceIds: [request.state.evidence[0].evidenceId],
+        reasonCode: "sufficient_evidence"
+      };
+    },
+    reactToolHandlers: {
+      unit_details: async () => ({ results: [{ apiName: "TFT18_Xayah" }] })
+    }
+  });
+
+  const { statusCode, payload } = await handleReactChatRequest({ input: "霞的技能是什么？" }, runtime, {
+    visitor,
+    accessService
+  });
+
+  assert.equal(statusCode, 200);
+  assert.equal(providerCalls, 2);
+  assert.equal(reserveCalls, 1);
+  assert.deepEqual(payload.access.quota, { limit: 50, used: 1, remaining: 49 });
+});
+
 test("TFT handler factory reports unavailable tools and enforces explicit coverage", () => {
   const runtime = createSmallWindowRuntime();
   const bundle = createTftToolHandlers({
@@ -153,6 +250,7 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
   assert.deepEqual(bundle.availableToolNames, [
     "entity_catalog_query",
     "comps_rankings",
+    "comps_trends",
     "composition_tactical_details",
     "composition_replacement_evaluation",
     "composition_change_evaluation",

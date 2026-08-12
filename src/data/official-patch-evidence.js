@@ -1,6 +1,86 @@
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "17.9": Object.freeze({
+    version: "17.9",
+    title: "云顶之弈 17.9 版本更新公告",
+    summary: "“星穹神话”的最后一个专属版本，集中调整牧羊人、崔斯特、格温、米利欧及多名中高费英雄；Set 18“魔法森林”将在 8 月 26 日上线。",
+    publishedAt: "2026-08-11T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-17-9/",
+    changes: Object.freeze([
+      {
+        id: "17.9-shepherd-cadence-damage",
+        direction: "mixed",
+        entityType: "trait",
+        entityApiNames: ["TFT17_SummonTrait"],
+        summary: "牧羊人法力值由 0/50 调整为 0/40，每次施法获得的法强由 15 降至 10，召唤物护盾持续时间由 4 秒降至 3 秒；横扫和 7 牧羊人波次伤害提高。"
+      },
+      {
+        id: "17.9-twisted-fate-dice",
+        direction: "mixed",
+        entityType: "unit",
+        entityApiNames: ["TFT17_TwistedFate"],
+        summary: "崔斯特掷出 9 时必定获得金币，掷出 1 时会受到 15% 最大生命值真实伤害；技能最低伤害下调、最高伤害提高。"
+      },
+      {
+        id: "17.9-gwen-primary-damage",
+        direction: "mixed",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Gwen"],
+        summary: "格温触发律动所需阈值由 40% 提高至 50%，主目标伤害由 145/220/410 提高至 155/235/440 法强。"
+      },
+      {
+        id: "17.9-milio-extra-cast",
+        direction: "mixed",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Milio"],
+        summary: "米利欧获得 40% 概率对额外目标再次施法，同时主技能与弹射伤害下调。"
+      },
+      {
+        id: "17.9-lulu-medallion-gold",
+        direction: "buff",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Lulu"],
+        summary: "璐璐的徽章金币由 1/3/5 提高至 1/4/7。"
+      },
+      {
+        id: "17.9-maokai-attack-speed-nova",
+        direction: "buff",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Maokai"],
+        summary: "茂凯攻击速度由 0.6 提高至 0.7，NOVA 选择器的最大生命值伤害由 8% 提高至 12%。"
+      },
+      {
+        id: "17.9-rhaast-cast-damage",
+        direction: "buff",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Rhaast"],
+        summary: "拉亚斯特持续时间由 2 秒降至 1 秒，技能伤害由 120/180/300 攻击力提高至 400/600/1000 攻击力。"
+      },
+      {
+        id: "17.9-tahm-kench-oracle-gold",
+        direction: "buff",
+        entityType: "unit",
+        entityApiNames: ["TFT17_TahmKench"],
+        summary: "塔姆奇幻旅程的每回合金币提高。"
+      },
+      {
+        id: "17.9-zed-base-roster",
+        direction: "mixed",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Zed"],
+        summary: "“入侵者劫”强化符文被移除，劫加入基础英雄池；基础生命值由 1300 下调至 1100。"
+      },
+      {
+        id: "17.9-set-18-release",
+        direction: "new",
+        entityType: "mode",
+        entityApiNames: ["TFTSet18"],
+        summary: "Set 18“魔法森林”将在 8 月 26 日、17.9 版本结束时上线。"
+      }
+    ])
+  }),
   "17.8": Object.freeze({
     version: "17.8",
     title: "云顶之弈 17.8 版本更新公告",

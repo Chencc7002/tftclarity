@@ -153,6 +153,33 @@ test("completed chat trace collapses to processed duration and keeps its audit p
   assert.equal(formatProcessingDuration(14_256_000), "3h 57m 36s");
 });
 
+test("chat trace renders the real Agent tool and evidence event timeline", () => {
+  const html = renderUnderstandingPanel(firstTurnPayload(), {
+    locale: "zh-CN",
+    surface: "chat",
+    open: true,
+    traceState: {
+      phase: "evidence_added",
+      startedAt: 1_000,
+      events: [
+        { phase: "run_started", data: {} },
+        { phase: "decision", data: { type: "call_tool", tool: "comps_rankings", iteration: 1 } },
+        { phase: "tool_started", data: { tool: "comps_rankings" } },
+        { phase: "tool_completed", data: { tool: "comps_rankings" } },
+        { phase: "evidence_added", data: { tool: "comps_rankings" } }
+      ]
+    },
+    now: 4_500
+  });
+
+  assert.match(html, /class="agent-status-timeline"/);
+  assert.match(html, /第 1 轮：决定调用阵容排行数据/);
+  assert.match(html, /正在调用阵容排行数据/);
+  assert.match(html, /阵容排行数据调用完成/);
+  assert.match(html, /已验证并加入阵容排行数据证据/);
+  assert.doesNotMatch(html, /我正在识别你的目标、限制条件和上下文引用/);
+});
+
 test("multi-turn summary identifies the previous task, current delta, and preserved conditions", () => {
   const data = firstTurnPayload();
   data.conversation.delta = {

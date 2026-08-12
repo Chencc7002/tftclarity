@@ -2700,7 +2700,7 @@ function systemInteractionAnswerHtml(data) {
   </div>`;
 }
 
-function reactModelConclusionHtml(data, summary) {
+function reactModelConclusionHtml(data, summary, responseId = "") {
   const answer = typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "";
   if (!answer) return "";
   const systemFallback = data?.answerOrigin === "system_evidence_fallback";
@@ -2713,6 +2713,14 @@ function reactModelConclusionHtml(data, summary) {
   const limited = data?.terminationReason === "insufficient_evidence"
     || data?.terminationReason === "missing_required_evidence";
   const hasGroundingWarnings = Array.isArray(data?.narrativeWarnings) && data.narrativeWarnings.length > 0;
+  const softValidated = data?.answerOrigin === "model_soft_validated_summary";
+  const feedback = state.explanationFeedback;
+  const feedbackHtml = data?.queryId ? `<div class="result-feedback model-conclusion-feedback" data-explanation-feedback-group data-explanation-response-id="${escapeHtml(responseId)}">
+    <button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button>
+    <button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button>
+    <span class="feedback-status">${feedback ? t("recorded") : ""}</span>
+    ${feedbackReasonPicker("explanation")}
+  </div>` : "";
   const rejectedCard = rejectedModelAnswer
     ? `<section class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
       <header>
@@ -2726,16 +2734,18 @@ function reactModelConclusionHtml(data, summary) {
       </details>` : ""}
     </section>`
     : "";
-  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}" data-chat-model-conclusion>
+  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}${softValidated ? " soft-validated" : ""}" data-chat-model-conclusion>
     <header>
-      <strong>${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
+      <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
       <small>${escapeHtml(t(systemFallback
         ? "systemConclusionFallback"
         : hasGroundingWarnings
           ? "modelConclusionGroundingWarning"
+          : softValidated ? "modelConclusionPendingVerification"
           : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
     </header>
     ${conclusionRichTextHtml(answer || summary)}
+    ${feedbackHtml}
   </section>`;
   return `${rejectedCard}${acceptedOrFallbackCard}`;
 }
@@ -2873,7 +2883,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
-  const modelConclusion = reactModelConclusionHtml(data, summary);
+  const modelConclusion = reactModelConclusionHtml(data, summary, responseId);
   if (modelConclusion) {
     return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
@@ -3465,16 +3475,13 @@ function renderStrategyVideoSearchResult(data) {
     unknown: "\u7248\u672c\u672a\u6807\u6ce8",
     tft_pc: "\u4e91\u9876\u4e4b\u5f08",
     golden_spatula: "\u91d1\u94f2\u94f2\u4e4b\u6218",
-    cross_ecosystem: "\u53cc\u7aef\u901a\u7528",
     author: "UP \u4e3b",
     published: "\u53d1\u5e03",
     publishedUnknown: "\u53d1\u5e03\u65e5\u671f\u672a\u77e5",
     views: "\u64ad\u653e",
-    detailUnavailable: "\u8be6\u60c5\u6682\u4e0d\u53ef\u7528",
     previousFallback: "\u542b\u4e0a\u4e00\u7248\u672c\u653b\u7565\u3002",
     olderFallback: "\u8f83\u65e7\u7248\u672c\u00b7\u4ec5\u4f9b\u53c2\u8003\u3002",
     unknownFallback: "\u7248\u672c\u672a\u6807\u6ce8\u00b7\u5df2\u6309\u53d1\u5e03\u65e5\u671f\u6392\u5e8f\u3002",
-    crossFallback: "\u542b\u53cc\u7aef\u901a\u7528\u653b\u7565\u3002",
     open: "\u6253\u5f00\u89c6\u9891"
   } : {
     title: "Bilibili strategy videos",
@@ -3487,22 +3494,19 @@ function renderStrategyVideoSearchResult(data) {
     unknown: "Patch not tagged",
     tft_pc: "Teamfight Tactics",
     golden_spatula: "Golden Spatula",
-    cross_ecosystem: "Works in both",
     author: "Creator",
     published: "Published",
     publishedUnknown: "Publish date unavailable",
     views: "Views",
-    detailUnavailable: "Details unavailable",
     previousFallback: "Includes previous-patch guides.",
     olderFallback: "Older patch · for reference.",
     unknownFallback: "Patch not tagged · sorted by publish date.",
-    crossFallback: "Includes guides for both games.",
     open: "Open video"
   };
   const fallbackText = (group) => group.fallbackType === "previous_patch" ? labels.previousFallback
     : group.fallbackType === "older_patch" ? labels.olderFallback
       : group.fallbackType === "unknown_patch" ? labels.unknownFallback
-        : group.fallbackType === "cross_ecosystem" ? labels.crossFallback : "";
+        : "";
   const groups = data.status === "unsupported_scope"
     ? []
     : Array.isArray(data.groups) && data.groups.length
@@ -3524,19 +3528,18 @@ function renderStrategyVideoSearchResult(data) {
         ${cover ? `<img class="strategy-video-cover" src="${escapeHtml(cover)}" alt="" loading="lazy" referrerpolicy="no-referrer">` : ""}
         <div class="strategy-video-body">
           <div class="card-head"><div>
-            <span class="ranking-badge strategy-video-ecosystem">${escapeHtml(labels[ecosystem] ?? ecosystem)}</span>
-            <span class="ranking-badge patch-time-badge">${escapeHtml(labels[video.patchTimeStatus] ?? labels.unknown)}</span>
+            ${ecosystem === "cross_ecosystem" ? "" : `<span class="ranking-badge strategy-video-ecosystem">${escapeHtml(labels[ecosystem] ?? ecosystem)}</span>`}
+            ${group.ecosystem === "cross_ecosystem" ? "" : `<span class="ranking-badge patch-time-badge">${escapeHtml(labels[video.patchTimeStatus] ?? labels.unknown)}</span>`}
             <div class="card-title">${escapeHtml(video.title)}</div>
           </div></div>
           ${metrics.length ? `<small>${metrics.map(escapeHtml).join(" · ")}</small>` : ""}
-          ${video.detailStatus === "unavailable" ? `<div class="risk-line">${escapeHtml(labels.detailUnavailable)}</div>` : ""}
           ${url ? `<a class="strategy-video-link" href="${escapeHtml(url)}" target="_blank" rel="noopener noreferrer">${escapeHtml(labels.open)} →</a>` : ""}
         </div>
       </article>`;
     }).join("");
-    const groupLabel = labels[group.ecosystem] ?? group.ecosystem ?? labels.title;
+    const groupLabel = group.ecosystem === "cross_ecosystem" ? "" : (labels[group.ecosystem] ?? group.ecosystem ?? labels.title);
     return `<section class="strategy-video-group" data-ecosystem="${escapeHtml(group.ecosystem ?? "unknown")}">
-      <h3>${escapeHtml(groupLabel)}</h3>
+      ${groupLabel ? `<h3>${escapeHtml(groupLabel)}</h3>` : ""}
       ${fallback ? `<div class="risk-line strategy-video-fallback">${escapeHtml(fallback)}</div>` : ""}
       ${cards ? `<div class="ranking-section strategy-video-grid">${cards}</div>` : `<div class="empty-state"><strong>${escapeHtml(group.status === "unavailable" ? labels.unavailable : labels.empty)}</strong></div>`}
     </section>`;
@@ -3640,11 +3643,18 @@ function renderSemanticNativeResult(data) {
           candidate.optionId === option.optionId
         ));
         const requiresMechanism = Boolean(mechanismComparison?.selectedPairs?.length);
-        const roleLabel = option.role === "stable"
-          ? t("stableBuildOption")
-          : option.role === "best_available"
-            ? t("bestAvailableBuildOption")
-            : t("alternativeBuildOption", { value: Math.max(1, Number(option.rank ?? index + 1) - 1) });
+        const completion = lockedItems.size > 0;
+        const roleLabel = option.role === "mainstream"
+          ? t(completion ? "mainstreamCompletion" : "mainstreamBuild")
+          : option.role === "best_performance_alternative"
+            ? t(completion ? "bestPerformanceCompletionAlternative" : "bestPerformanceAlternative")
+            : option.role === "alternative"
+              ? t(completion ? "highPerformanceCompletionAlternative" : "highPerformanceAlternative")
+              : option.role === "stable"
+                ? t("stableBuildOption")
+                : option.role === "best_available"
+                  ? t("bestAvailableBuildOption")
+                  : t("alternativeBuildOption", { value: Math.max(1, Number(option.rank ?? index + 1) - 1) });
         const items = (option.items ?? []).map((item) => typeof item === "string"
           ? `<span class="item-pill">${escapeHtml(item)}</span>`
           : itemPill(item)).join("");
@@ -3695,8 +3705,9 @@ function renderSemanticNativeResult(data) {
               ${metric(t("top4"), metrics.top4Rate == null ? "-" : `${formatNumber(metrics.top4Rate * 100, { maximumFractionDigits: 1 })}%`)}
               ${metric(t("win"), metrics.winRate == null ? "-" : `${formatNumber(metrics.winRate * 100, { maximumFractionDigits: 1 })}%`)}
               ${metric(t("avg"), metrics.averagePlacement == null ? "-" : formatNumber(metrics.averagePlacement, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}
-              ${metric(t("recommendationScore"), option.ranking?.score == null ? "-" : formatNumber(option.ranking.score * 100, { maximumFractionDigits: 1 }))}
+              ${metric(t("performanceScore"), option.ranking?.performanceScore == null && option.ranking?.score == null ? "-" : formatNumber((option.ranking.performanceScore ?? option.ranking.score) * 100, { maximumFractionDigits: 1 }))}
             </div>
+            ${rankingInsightBadges(option.ranking)}
             ${mechanismDifference}
             ${knowledgeSignalHtml}
             ${explanationLists}
@@ -4254,14 +4265,16 @@ async function sendResultFeedback(sentiment, cardIndex, reason = null) {
   return payload;
 }
 
-async function sendExplanationFeedback(sentiment, reason = null) {
-  const conclusion = state.lastResult?.answer?.generatedConclusion;
-  if (!conclusion?.content || !state.lastResultId) throw new Error(t("feedbackUnavailable"));
+async function sendExplanationFeedback(sentiment, reason = null, sourceData = state.lastResult) {
+  const conclusion = sourceData?.answer?.generatedConclusion;
+  const reactAnswer = typeof sourceData?.reactAnswer === "string" ? sourceData.reactAnswer.trim() : "";
+  const queryId = sourceData?.queryId ?? null;
+  if ((!conclusion?.content && !reactAnswer) || !queryId) throw new Error(t("feedbackUnavailable"));
   const response = await fetch("/api/feedback", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      queryId: state.lastResultId,
+      queryId,
       target: "explanation",
       rating: sentiment === "good" ? "helpful" : "unhelpful",
       ...(reason ? { reason } : {})
@@ -4293,8 +4306,35 @@ function createRecommendationProgressState() {
     active: "understanding",
     startedAt: Date.now(),
     completedAt: null,
+    events: [],
     clockTimer: null
   };
+}
+
+function recommendationProgressEvent(event) {
+  const data = event?.data ?? {};
+  return {
+    phase: String(event?.phase ?? "unknown"),
+    data: {
+      type: data.type ?? null,
+      tool: data.tool ?? null,
+      iteration: Number.isFinite(Number(data.iteration)) ? Number(data.iteration) : null,
+      stage: data.stage ?? null,
+      source: data.source ?? null,
+      resultType: data.resultType ?? null,
+      evidenceCount: Number.isFinite(Number(data.evidenceCount)) ? Number(data.evidenceCount) : null,
+      reasonCode: data.reasonCode ?? null,
+      terminationReason: data.terminationReason ?? null
+    }
+  };
+}
+
+function appendRecommendationProgressEvent(progress, event) {
+  const next = recommendationProgressEvent(event);
+  const previous = progress.events.at(-1);
+  if (previous && JSON.stringify(previous) === JSON.stringify(next)) return;
+  progress.events.push(next);
+  if (progress.events.length > 24) progress.events.splice(0, progress.events.length - 24);
 }
 
 function mergeRecommendationProgressData(current, incoming = {}) {
@@ -4312,6 +4352,7 @@ function mergeRecommendationProgressData(current, incoming = {}) {
 
 function applyRecommendationProgressState(progress, event) {
   const phase = String(event?.phase ?? "");
+  appendRecommendationProgressEvent(progress, event);
   progress.phase = phase;
   progress.data = mergeRecommendationProgressData(progress.data, event?.data ?? {});
   if (phase === "understanding.started" || phase === "request.accepted") {
@@ -4378,7 +4419,8 @@ function completeRecommendationProgress(progress, data) {
     startedAt: progress.startedAt,
     completedAt: progress.completedAt,
     phase: "complete",
-    completed: [...progress.completed]
+    completed: [...progress.completed],
+    events: progress.events.map((event) => structuredClone(event))
   };
 }
 
@@ -4432,6 +4474,7 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
 
 function hasRenderableNativeEvidence(payload) {
   const nativeTypes = new Set([
+    "composition_rankings",
     "entity_catalog_results",
     "unit_builds_batch_results",
     "trait_external_unit_statistics",
@@ -4463,7 +4506,7 @@ async function readRecommendationStream(response, target, progress, requestId, s
         schemaVersion: "recommendation-progress.v1",
         sequence: Number(event.event?.sequence ?? 0),
         phase,
-        data: event.event ?? {}
+        data: event.event?.data ?? event.event ?? {}
       });
       if (requestId === state.requestSerial) renderRecommendationProgress(target, progress);
       return;
@@ -4518,6 +4561,46 @@ async function readRecommendationStream(response, target, progress, requestId, s
   return completion.payload;
 }
 
+function normalizeReactCompositionRankings(value) {
+  const metricMap = {
+    top4_rate: "top4Rate",
+    win_rate: "winRate",
+    win_share: "winShare",
+    avg_placement: "avgPlacement",
+    popularity: "popularity"
+  };
+  const metric = (value?.query?.metrics ?? []).map((entry) => metricMap[entry]).find(Boolean) ?? "top4Rate";
+  const comps = (value?.results ?? []).map((result) => ({
+    compId: result.compositionRef?.compId ?? null,
+    name: result.compositionRef?.name ?? result.compositionRef?.compId ?? "-",
+    patch: result.compositionRef?.patch ?? value?.query?.patch ?? "current",
+    lowSample: Boolean(result.lowSample),
+    units: (result.members ?? []).map((member) => ({
+      apiName: member.apiName,
+      name: member.name ?? member.apiName,
+      iconUrl: member.iconUrl ?? null,
+      fallbackIconUrl: member.fallbackIconUrl ?? null,
+      targetStarLevel: member.targetStarLevel ?? null,
+      avgStarLevel: member.avgStarLevel ?? null,
+      core: Boolean(member.core || member.relations?.includes?.("itemized_core_candidate")),
+      items: member.itemizationEvidence?.displayItems
+        ?? (member.itemizationEvidence?.items ?? []).map((apiName) => ({ apiName, name: apiName }))
+    })),
+    traits: result.traits ?? [],
+    stats: result.stats ?? {},
+    source: result.source ?? value.source ?? null
+  }));
+  return {
+    ...value,
+    ok: true,
+    type: "comp_rankings",
+    rankings: { [metric]: comps },
+    references: [],
+    query: value.query ?? {},
+    source: value.source ?? comps[0]?.source ?? null
+  };
+}
+
 function normalizeEndpointPayload(payload) {
   if (payload?.type !== "react_chat_result") return payload;
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
@@ -4525,6 +4608,7 @@ function normalizeEndpointPayload(payload) {
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
   const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
   const nativeResultTypes = new Set([
+    "composition_rankings",
     "entity_catalog_results",
     "unit_builds_batch_results",
     "trait_external_unit_statistics",
@@ -4535,16 +4619,19 @@ function normalizeEndpointPayload(payload) {
   const primaryValue = evidenceValues.find((value) => nativeResultTypes.has(value?.type))
     ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
     ?? null;
+  const displayValue = primaryValue?.type === "composition_rankings"
+    ? normalizeReactCompositionRankings(primaryValue)
+    : primaryValue;
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
   return {
-    ...(primaryValue ?? {}),
+    ...(displayValue ?? {}),
     ...payload,
-    ...(nativeResultTypes.has(primaryValue?.type) && primaryValue?.status
-      ? { status: primaryValue.status, runStatus: payload.status }
+    ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
+      ? { status: displayValue.status, runStatus: payload.status }
       : {}),
-    type: nativeResultTypes.has(primaryValue?.type) ? primaryValue.type : payload.type,
+    type: nativeResultTypes.has(primaryValue?.type) ? displayValue.type : payload.type,
     reactAnswer: answerText,
     text: answerText,
     assistantResponse: { text: answerText },
@@ -4689,9 +4776,9 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
       controller.signal
     ));
     if (requestId !== state.requestSerial) return;
+    if (data.access) renderAccessStatus(data.access);
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     completeRecommendationProgress(recommendationProgress, data);
-    if (data.access) renderAccessStatus(data.access);
     renderResult(data);
     if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
       void streamGeneratedConclusion(data, requestId);
@@ -4887,6 +4974,7 @@ const NATURAL_LANGUAGE_QUICK_TASK_RULES = [
   {
     id: "opgg-personal-review",
     patterns: [
+      /(?:\u5bf9\u5c40|\u6218\u5c40|\u6bd4\u8d5b).*(?:\u53ef\u89c6\u5316|\u68cb\u76d8|\u8be6\u60c5)|(?:\u53ef\u89c6\u5316|\u68cb\u76d8).*(?:\u5bf9\u5c40|\u6218\u5c40|\u6bd4\u8d5b)/iu,
       /(?:\u6211\u8981|\u6211\u60f3|\u5e2e\u6211|\u7ed9\u6211|\u8bf7|\u8fdb\u5165|\u6253\u5f00|\u67e5\u770b|\u5f00\u59cb|\u505a\u4e2a|\u505a\u4e00\u6b21)?(?:\u4e2a\u4eba|\u6211\u7684)?(?:\u6218\u7ee9|\u6218\u5c40|\u5bf9\u5c40|\u6e38\u620f)?\u590d\u76d8|\u590d\u76d8(?:\u4e00\u4e0b|\u6211\u7684\u6218\u7ee9|\u6211\u7684\u5bf9\u5c40)?/iu,
       /review\s*my\s*(?:matches|games)|match\s*review/iu
     ]
@@ -5049,7 +5137,8 @@ async function handleResultClick(event) {
     reasonSubmit.disabled = true;
     try {
       if (target === "explanation") {
-        await sendExplanationFeedback("bad", reason);
+        const responseRecord = state.responsesById.get(group?.dataset.explanationResponseId);
+        await sendExplanationFeedback("bad", reason, responseRecord?.data ?? state.lastResult);
         state.explanationFeedback = "bad";
         group?.querySelector('[data-explanation-feedback="bad"]')?.classList.add("selected");
       } else {
@@ -5085,7 +5174,8 @@ async function handleResultClick(event) {
     buttons.forEach((button) => { button.disabled = true; });
     try {
       const sentiment = explanationButton.dataset.explanationFeedback;
-      await sendExplanationFeedback(sentiment);
+      const responseRecord = state.responsesById.get(group?.dataset.explanationResponseId);
+      await sendExplanationFeedback(sentiment, null, responseRecord?.data ?? state.lastResult);
       state.explanationFeedback = sentiment;
       explanationButton.classList.add("selected");
       if (status) status.textContent = t("recorded");

@@ -17,6 +17,7 @@ const privacyHtml = ui("privacy.html");
 const termsHtml = ui("terms.html");
 const legalCss = ui("legal.css");
 const opggPanel = ui("opgg-panel.js");
+const opggStyles = ui("opgg-panel.css");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
@@ -139,9 +140,9 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.8"/);
-  assert.match(patchNotes, /publishedAt: "2026-07-28T18:00:00\.000Z"/);
-  assert.match(patchNotes, /teamfight-tactics-patch-17-8/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.9"/);
+  assert.match(patchNotes, /publishedAt: "2026-08-11T18:00:00\.000Z"/);
+  assert.match(patchNotes, /teamfight-tactics-patch-17-9/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
@@ -157,6 +158,13 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("Bilibili video cards omit cross-ecosystem labels and internal detail failures", () => {
+  assert.doesNotMatch(appJs, /双端通用|Works in both/u);
+  assert.doesNotMatch(appJs, /详情暂不可用|Details unavailable/u);
+  assert.doesNotMatch(appJs, /detailFailureCode|detailRestricted|detailTimeout|detailFallback/u);
+  assert.match(appJs, /group\.ecosystem === "cross_ecosystem" \? ""/u);
 });
 
 test("feature-flagged chat routing keeps quick tools on recommend and normal chat on ReAct", () => {
@@ -342,6 +350,59 @@ test("small-window defaults to an explained performance-role recommendation", ()
   assert.match(styles, /\.ranking-rationale/);
 });
 
+test("player pool UI supports 1-15 members, two pools, removal and comparison", () => {
+  assert.match(opggPanel, /最多 2 组，每组最多 15 个角色/u);
+  assert.match(opggPanel, /创建 Pool（需同时添加首个角色）/u);
+  assert.match(opggPanel, /personal-remove/u);
+  assert.match(opggPanel, /pool-remove-player/u);
+  assert.doesNotMatch(opggPanel, /pool-import-seed/u);
+  assert.doesNotMatch(opggPanel, /导入 pbeList/u);
+  assert.match(opggPanel, /pool-compare/u);
+  assert.match(opggPanel, /Pool 对比分析/u);
+  assert.match(opggPanel, /开始对比两组 Pool/u);
+  assert.match(opggPanel, /打开数据看板/u);
+  assert.match(opggPanel, /对局加权 \+ 玩家等权/u);
+  assert.match(opggPanel, /Pool 名称仅用于展示/u);
+  assert.match(opggPanel, /禁止生成优劣/u);
+  assert.match(opggPanel, /阵容偏好差异/u);
+  assert.match(opggPanel, /使用率 × 前四率效果矩阵/u);
+  assert.match(opggPanel, /opgg-compare-comp-card/u);
+  assert.match(opggPanel, /代表棋盘/u);
+  assert.match(opggPanel, /登顶率/u);
+  assert.match(opggStyles, /\.opgg-dumbbell-chart/u);
+  assert.match(opggStyles, /\.opgg-effect-matrix/u);
+  assert.match(opggStyles, /\.opgg-compare-comp-card/u);
+  assert.match(opggStyles, /\.opgg-pool-table/u);
+  assert.match(opggStyles, /\.opgg-remove-button/u);
+  assert.match(opggStyles, /\.opgg-pool-compare-entry/u);
+  assert.match(opggStyles, /\.opgg-dashboard-chart-grid/u);
+  assert.match(opggStyles, /\.opgg-single-usage-chart/u);
+  assert.match(opggPanel, /阵容热度 × 前四率/u);
+  assert.match(opggPanel, /阵容卡片/u);
+  assert.match(opggPanel, /点击展开完整指标和代表棋盘/u);
+});
+
+test("player pools expose share codes and one-click independent imports", () => {
+  assert.match(opggPanel, /用 Pool 码一键导入/u);
+  assert.match(opggPanel, /pool-import-code/u);
+  assert.match(opggPanel, /pool-share-code/u);
+  assert.match(opggPanel, /navigator\.clipboard\.writeText/u);
+  assert.match(opggPanel, /导入后可以独立增删/u);
+  assert.match(opggStyles, /\.opgg-pool-share-row/u);
+  assert.match(opggStyles, /\.opgg-pool-import-row/u);
+});
+
+test("soft-validated model summaries expose trusted explanation feedback controls", () => {
+  assert.match(appJs, /model_soft_validated_summary/);
+  assert.match(appJs, /modelConclusionPendingVerification/);
+  assert.match(appJs, /model-conclusion-feedback/);
+  assert.match(appJs, /data-explanation-response-id/);
+  assert.match(appJs, /responseRecord\?\.data \?\? state\.lastResult/);
+  assert.match(appJs, /data-explanation-feedback="good"/);
+  assert.match(appJs, /data-explanation-feedback="bad"/);
+  assert.match(styles, /\.chat-model-conclusion\.soft-validated/);
+});
+
 test("UI-07 renders deterministic build options independently from grounded narrative", () => {
   assert.match(appJs, /entry\.buildOptions/);
   assert.match(appJs, /grounded-build-narrative\.v1/);
@@ -373,6 +434,8 @@ test("UI-07 renders deterministic build options independently from grounded narr
   assert.match(appJs, /build-narrative-technical/);
   assert.match(appJs, /build-model-summary/);
   assert.match(appJs, /maximumFractionDigits: 1/);
+  assert.match(appJs, /t\("performanceScore"\)/);
+  assert.match(appJs, /rankingInsightBadges\(option\.ranking\)/);
   assert.match(appJs, /t\("updated"\)/);
   assert.doesNotMatch(appJs, /buildNarrativeUnavailable/);
   assert.match(styles, /\.build-option-card/);
@@ -386,6 +449,23 @@ test("UI-07 renders deterministic build options independently from grounded narr
   assert.match(i18n, /Only \{value\} builds meet the current sample threshold/);
   assert.match(i18n, /基于装备机制推断/);
   assert.match(i18n, /缺少当前赛季装备机制证据/);
+});
+
+test("ReAct composition evidence is normalized into expandable comp cards", () => {
+  assert.match(appJs, /function normalizeReactCompositionRankings\(value\)/);
+  assert.match(appJs, /"composition_rankings"/);
+  assert.match(appJs, /type: "comp_rankings"/);
+  assert.match(appJs, /rankings: \{ \[metric\]: comps \}/);
+  assert.match(appJs, /<details class="comp-card"/);
+});
+
+test("streamed Agent events remain visible as a real execution timeline", () => {
+  assert.match(appJs, /events: \[\]/);
+  assert.match(appJs, /appendRecommendationProgressEvent\(progress, event\)/);
+  assert.match(appJs, /processingTrace = \{[\s\S]*events: progress\.events/);
+  assert.match(appJs, /data: event\.event\?\.data \?\? event\.event \?\? \{\}/);
+  assert.match(styles, /\.agent-status-timeline/);
+  assert.match(styles, /\.agent-status-event\.active/);
 });
 
 test("ReAct build metrics wrap inside their card instead of overflowing the result pane", () => {

@@ -1,6 +1,68 @@
-export const CURRENT_PATCH_VERSION = "17.8";
+export const CURRENT_PATCH_VERSION = "17.9";
 
 const PATCH_NOTES = {
+  "17.9": {
+    version: "17.9",
+    publishedAt: "2026-08-11T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "17.9 版本更新",
+        summary: "这是“星穹神话”的最后一个专属版本：牧羊人、崔斯特、格温、米利欧等英雄获得调整，并为 8 月 26 日上线的 Set 18“魔法森林”做准备。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-17-9/",
+        highlights: [
+          {
+            title: "Set 18 上线时间",
+            body: "Set 18“魔法森林”将在 8 月 26 日、17.9 版本结束时上线；17.9 是“星穹神话”的最后一个专属版本。"
+          },
+          {
+            title: "牧羊人调整",
+            body: "牧羊人法力值由 0/50 调整为 0/40，每次施法获得的法强由 15 降至 10，召唤物护盾持续时间缩短；横扫与 7 牧羊人波次伤害提高。"
+          },
+          {
+            title: "低费英雄调整",
+            body: "崔斯特的骰子机制更极端：掷出 9 必定获得金币，掷出 1 会损失最大生命值；格温触发律动所需阈值提高，但主目标伤害增强；米利欧改为概率追加施法并下调基础伤害。"
+          },
+          {
+            title: "中高费英雄增强",
+            body: "璐璐的徽章金币提高，茂凯获得攻速与最大生命值伤害增强，拉亚斯特施法更快且技能伤害大幅提高，塔姆奇幻旅程的每回合金币增加。"
+          },
+          {
+            title: "劫进入基础卡池",
+            body: "“入侵者劫”强化符文被移除，劫加入基础英雄池；作为平衡，基础生命值由 1300 下调至 1100。"
+          }
+        ]
+      },
+      "en-US": {
+        title: "Patch 17.9",
+        summary: "The final dedicated Space Gods patch adjusts Shepherd, Twisted Fate, Gwen, Milio, and several late-game champions ahead of Enchanted Wilds on August 26.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-17-9/",
+        highlights: [
+          {
+            title: "Set 18 release",
+            body: "Enchanted Wilds goes live on August 26 at the end of Patch 17.9, making this the final dedicated Space Gods patch."
+          },
+          {
+            title: "Shepherd adjustments",
+            body: "Shepherd Mana changes from 0/50 to 0/40, AP per cast drops from 15 to 10, and summon shields expire sooner, while tail-sweep and seven-Shepherd wave damage increase."
+          },
+          {
+            title: "Low-cost champion changes",
+            body: "Twisted Fate's rolls gain sharper highs and lows, Gwen needs more groove but deals more primary-target damage, and Milio gains a chance to cast again at reduced base damage."
+          },
+          {
+            title: "Mid and high-cost buffs",
+            body: "Lulu grants more Medallion gold, Maokai gains Attack Speed and max-Health damage, Rhaast casts faster and hits harder, and Tahm Kench generates more Oracle gold each round."
+          },
+          {
+            title: "Zed joins the base roster",
+            body: "The Invader Zed Augment is removed and Zed joins the base champion pool, with base Health reduced from 1300 to 1100."
+          }
+        ]
+      }
+    }
+  },
   "17.8": {
     version: "17.8",
     publishedAt: "2026-07-28T18:00:00.000Z",

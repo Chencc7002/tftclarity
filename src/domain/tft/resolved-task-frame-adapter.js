@@ -1,4 +1,5 @@
 import { normalizeAlias } from "../../core/normalizer.js";
+import { isCompTrendRequest, parseCompTrendDirection } from "../../core/comp-trend-intent.js";
 
 export const TFT_RESOLVED_TASK_FRAME_ADAPTER_VERSION = "tft-resolved-task-frame-adapter.v1";
 
@@ -92,7 +93,8 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
     ? constraints.comp
     : null;
   const normalizedInput = normalizeAlias(options.input);
-  const explicitTrendRequest = /(?:阵容|版本|当前).{0,8}(?:趋势|上升|下降)|(?:趋势|上升|下降).{0,8}阵容/u.test(normalizedInput);
+  const explicitTrendRequest = isCompTrendRequest(normalizedInput);
+  const explicitTrendDirection = parseCompTrendDirection(normalizedInput);
   const explicitPopularRequest = /(?:热门阵容|阵容热门|最热门|热度|选择率)/u.test(normalizedInput);
   const explicitSingleItemRankingRequest = Boolean(unit) && (
     /(?:单件(?:装备)?|单装备|核心装备|核心装).{0,10}(?:排行|排名|榜|优先级|表现|最好|最强|怎么排|哪个好|哪个强)/u.test(normalizedInput)
@@ -192,7 +194,9 @@ export function resolvedTaskFrameToParsed(frame, options = {}) {
       trendRequested: false
     } : intent === "comp_trends" ? {
       popularRequested: false,
-      trendRequested: true
+      trendRequested: true,
+      trendDirection: explicitTrendDirection
+        ?? (constraints.trend === "down" ? "falling" : constraints.trend === "up" ? "rising" : null)
     } : {}),
     parser: {
       intentExplicit: true,

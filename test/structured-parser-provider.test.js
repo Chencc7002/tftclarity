@@ -52,6 +52,7 @@ test("chat structured parser posts the prompt contract and parses JSON responses
     endpoint: "https://llm.local/v1/chat/completions",
     model: "test-model",
     apiKey: "secret",
+    thinkingMode: "disabled",
     promptText: "Return strict JSON.",
     fetchImpl: async (url, init) => {
       calls.push({ url, init });
@@ -82,6 +83,7 @@ test("chat structured parser posts the prompt contract and parses JSON responses
   const body = JSON.parse(calls[0].init.body);
   assert.equal(body.model, "test-model");
   assert.equal(body.response_format.type, "json_object");
+  assert.deepEqual(body.thinking, { type: "disabled" });
   assert.equal(body.messages[0].role, "system");
   assert.match(body.messages[1].content, /羽毛女怎么带/);
   assert.match(body.messages[1].content, /already_parsed/);
@@ -103,7 +105,8 @@ test("structured parser config is disabled by default and validates enabled prov
     TFT_AGENT_LLM_ENDPOINT: "https://llm.local/v1/chat/completions",
     TFT_AGENT_LLM_MODEL: "test-model",
     TFT_AGENT_LLM_MODE: "always",
-    TFT_AGENT_LLM_TIMEOUT_MS: "2500"
+    TFT_AGENT_LLM_TIMEOUT_MS: "2500",
+    TFT_AGENT_LLM_THINKING_MODE: "disabled"
   }), {
     enabled: true,
     provider: "chat",
@@ -114,8 +117,16 @@ test("structured parser config is disabled by default and validates enabled prov
     timeoutMs: 2500,
     temperature: 0,
     maxTokens: 500,
-    includeResponseFormat: true
+    includeResponseFormat: true,
+    thinkingMode: "disabled"
   });
+
+  assert.throws(() => resolveStructuredParserConfig({}, {
+    TFT_AGENT_LLM_PROVIDER: "chat",
+    TFT_AGENT_LLM_ENDPOINT: "https://llm.local/v1/chat/completions",
+    TFT_AGENT_LLM_MODEL: "test-model",
+    TFT_AGENT_LLM_THINKING_MODE: "sometimes"
+  }), /TFT_AGENT_LLM_THINKING_MODE must be enabled or disabled/u);
 });
 
 test("OpenAI-compatible environment aliases infer chat configuration and normalize the endpoint", () => {

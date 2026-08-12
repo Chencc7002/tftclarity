@@ -100,12 +100,6 @@ function safeFailure(error) {
 }
 
 function patchFields(video, patch) {
-  if (video.ecosystem === "cross_ecosystem") {
-    return {
-      patchTimeStatus: "unknown",
-      patchTimeReason: "cross_ecosystem_patch_ambiguous"
-    };
-  }
   if (!patch.windowsConfigured) {
     return {
       patchTimeStatus: "unknown",
@@ -248,19 +242,23 @@ export class BilibiliStrategyVideoService {
       .slice(0, Math.min(this.config.detailLimit, preliminary.length));
     const detailRequested = new Set(detailCandidates.map((video) => video.videoId));
     const detailById = new Map();
+    const detailFailureById = new Map();
     const warnings = [...(search.warnings ?? []), ...(patchDiscoveryWarning ? [patchDiscoveryWarning] : [])];
     await Promise.all(detailCandidates.map(async (candidate) => {
       try {
         const result = await this.adapter.getVideoDetail({ videoId: candidate.videoId }, context);
         detailById.set(candidate.videoId, result.video);
         warnings.push(...(result.warnings ?? []));
-      } catch {
+      } catch (error) {
+        detailFailureById.set(candidate.videoId, String(error?.code ?? "bilibili_mcp_tool_error"));
         warnings.push(`detail_unavailable:${candidate.videoId}`);
       }
     }));
     const enriched = preliminary.map((candidate) => detailById.has(candidate.videoId)
       ? mergeDetail(candidate, detailById.get(candidate.videoId))
-      : candidate);
+      : detailFailureById.has(candidate.videoId)
+        ? { ...candidate, detailFailureCode: detailFailureById.get(candidate.videoId) }
+        : candidate);
     const reranked = sortRankedVideos(attachRankingSignals(enriched.map((video) => ({
       ...video,
       ...patchFields(video, patch)

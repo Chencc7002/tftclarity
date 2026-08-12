@@ -100,6 +100,7 @@ test("detail failure degrades to clickable search results and previous-patch fal
   assert.equal(result.fallbackType, "previous_patch");
   assert.equal(result.videos.length, 3);
   assert.ok(result.videos.every((entry) => entry.detailStatus === "unavailable"));
+  assert.ok(result.videos.every((entry) => entry.detailFailureCode === "bilibili_mcp_tool_error"));
   assert.ok(result.videos.every((entry) => entry.url.startsWith("https://")));
 });
 
@@ -229,6 +230,35 @@ test("single-ecosystem selection prefers exact ecosystem and uses cross videos o
   assert.equal(result.videos.length, 1);
   assert.equal(result.videos[0].videoId, "BVTFTEXACT01");
   assert.equal(result.videos[0].ecosystem, "tft_pc");
+});
+
+test("cross-ecosystem supplements use the requested ecosystem patch window", async () => {
+  const crossConfig = resolveBilibiliMcpConfig({
+    resultLimit: 1,
+    detailLimit: 0,
+    tftPatchWindows: [
+      { patchId: "18.3", startAt: "2026-08-05T00:00:00Z", endAt: "2026-08-19T00:00:00Z" }
+    ]
+  }, {});
+  const service = new BilibiliStrategyVideoService({
+    config: crossConfig,
+    adapter: {
+      async searchVideos() {
+        return {
+          toolName: "bilibili-search-summary",
+          warnings: [],
+          videos: [video("BVCROSS00003", "2026-08-10", {
+            title: "云顶之弈 金铲铲 霞阵容攻略",
+            tags: "云顶之弈 金铲铲之战 攻略"
+          })]
+        };
+      }
+    }
+  });
+  const result = await service.search({ query: "云顶之弈 霞阵容攻略", limit: 1 }, { currentPatch: "18.3" });
+  assert.equal(result.videos[0].ecosystem, "cross_ecosystem");
+  assert.equal(result.videos[0].patchTimeStatus, "current");
+  assert.equal(result.videos[0].patchTimeReason, null);
 });
 
 test("dual search displays a duplicated cross-ecosystem video only once", async () => {

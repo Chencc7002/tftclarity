@@ -137,6 +137,8 @@ test("production composition handler uses matching live definition/statistics cl
   );
   assert.equal(String(statsRequest.cluster_id), "409");
   assert.equal(result.resolution.status, "resolved");
+  assert.equal(result.type, "composition_rankings");
+  assert.equal(result.query.intent, "comp_rankings");
   assert.equal(result.results[0].compositionRef.compId, "cluster:409002");
   assert.deepEqual(result.results[0].tacticalDetailQueryPlan, {
     schemaVersion: "composition-tactical-detail-query.v1",
@@ -151,6 +153,8 @@ test("production composition handler uses matching live definition/statistics cl
     && member.relations.includes("itemized_core_candidate")
     && member.roleEvidence.primaryCarry === "unknown"
   )));
+  assert.ok(result.results[0].members.every((member) => Object.hasOwn(member, "iconUrl")));
+  assert.ok(result.results[0].traits.every((trait) => Object.hasOwn(trait, "iconUrl")));
 });
 
 test("default ReAct bundle never substitutes catalog compOptions for live comps_data", async () => {

@@ -3,6 +3,7 @@ import { digitValue, normalizeAlias, normalizeText, uniqueValues } from "./norma
 import { resolveEntities } from "./entity-resolver.js";
 import { resolveHighConfidenceEntityCandidates } from "./high-confidence-entity-resolver.js";
 import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
+import { isCompTrendRequest } from "./comp-trend-intent.js";
 import { isCompAnalysisInput, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
 import { normalizeTftSemanticInput } from "./semantic-input-normalizer.js";
@@ -236,7 +237,7 @@ function inferIntent(input, details = {}) {
   if (isCompAnalysisInput(normalized)) {
     return "comp_analysis";
   }
-  if (/(?:阵容|版本|当前).{0,8}(?:趋势|上升|提升)|(?:趋势|上升|提升).{0,8}阵容/u.test(normalized)) {
+  if (isCompTrendRequest(normalized)) {
     return "comp_trends";
   }
   if (
@@ -605,6 +606,7 @@ export function parseQuery(input, options = {}) {
     popularRequested: compQuery?.popularRequested,
     specialMode: compQuery?.specialMode,
     trendRequested: compQuery?.trendRequested,
+    trendDirection: compQuery?.trendDirection,
     preferenceRequested: compQuery?.preferenceRequested,
     preferenceConditions: compQuery?.preferenceConditions,
     analysis,

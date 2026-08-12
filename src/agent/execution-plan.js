@@ -316,7 +316,7 @@ function allowlistedArguments(tool, frame) {
         ? { unit: resolvedIds(entities, "champion")[0] }
         : {}),
       ...Object.fromEntries(
-        ["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"]
+        ["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "direction", "strategy"]
           .filter((key) => constraints[key] !== undefined && constraints[key] !== null)
           .map((key) => [key, structuredClone(constraints[key])])
       )

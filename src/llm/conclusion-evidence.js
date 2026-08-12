@@ -469,9 +469,11 @@ function buildCompRankings(result, options = {}) {
     if (Number.isFinite(comp?.trend?.avgPlacementChange)) {
       record.trend = {
         avgPlacementChange: comp.trend.avgPlacementChange,
+        baselineAvgPlacement: finite(comp.trend.baselineAvgPlacement),
         placementImprovement: Number((-comp.trend.avgPlacementChange).toFixed(4)),
         emergenceScore: finite(comp.trend.emergenceScore),
         improving: Boolean(comp.trend.improving),
+        direction: comp.trend.direction ?? (comp.trend.improving ? "rising" : "falling"),
         source: comp.trend.source ?? null,
         comparedAt: comp.trend.comparedAt ?? null
       };
@@ -485,7 +487,8 @@ function buildCompRankings(result, options = {}) {
     }
     asArray(result?.references).forEach((comp, index) => add({ ...comp, lowSample: true }, "reference", index + 1, "reference"));
   }
-  asArray(result?.improving).forEach((comp, index) => add(comp, "avgPlacementChange", index + 1, "improving"));
+  asArray(result?.rising ?? result?.improving).forEach((comp, index) => add(comp, "avgPlacementChange", index + 1, "rising"));
+  asArray(result?.falling).forEach((comp, index) => add(comp, "avgPlacementChange", index + 1, "falling"));
   return records;
 }
 
@@ -500,7 +503,8 @@ function buildCompRankingContext(result, recommendations) {
   const displayedCardCount = Object.values(result?.rankings ?? {})
     .reduce((count, comps) => count + asArray(comps).length, 0)
     + asArray(result?.references).length
-    + asArray(result?.improving).length;
+    + asArray(result?.rising ?? result?.improving).length
+    + asArray(result?.falling).length;
   return {
     displayedCardCount,
     displayedCandidateCount: recommendations.length,

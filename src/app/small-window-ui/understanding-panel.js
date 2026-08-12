@@ -656,6 +656,83 @@ function sentence(prefix, entries, locale) {
   return `${prefix}：${entries.join(separator)}${suffix}`;
 }
 
+const AGENT_TOOL_LABELS = Object.freeze({
+  comps_rankings: ["阵容排行数据", "composition rankings"],
+  comps_trends: ["阵容趋势数据", "composition trends"],
+  comps_analysis: ["阵容分析数据", "composition analysis"],
+  composition_tactical_details: ["阵容站位与强化符文", "composition positioning and augments"],
+  composition_change_evaluation: ["阵容变更评估", "composition change evaluation"],
+  composition_replacement_evaluation: ["阵容替换评估", "composition replacement evaluation"],
+  unit_builds: ["英雄出装数据", "champion build data"],
+  unit_builds_batch: ["英雄出装批量数据", "champion build batch data"],
+  item_carrier_rankings: ["装备携带者排行", "item carrier rankings"],
+  entity_catalog_query: ["当前赛季实体目录", "current-set entity catalog"],
+  unit_details: ["英雄详情", "champion details"],
+  item_details: ["装备详情", "item details"],
+  item_details_batch: ["装备机制批量详情", "item mechanic details"],
+  trait_details: ["羁绊详情", "trait details"],
+  semantic_search: ["本地知识索引", "local knowledge index"],
+  strategy_video_search: ["攻略视频来源", "strategy video sources"]
+});
+
+function agentToolLabel(tool, locale) {
+  const labels = AGENT_TOOL_LABELS[String(tool ?? "")];
+  return labels?.[localeIndex(locale)] ?? String(tool ?? "工具");
+}
+
+function agentStageLabel(stage, locale) {
+  const labels = {
+    resolving: ["解析任务", "resolving the task"],
+    planning: ["规划查询", "planning queries"],
+    retrieving: ["检索数据", "retrieving data"],
+    assembling_evidence: ["整理证据", "assembling evidence"],
+    generating_conclusion: ["生成结论", "generating the conclusion"],
+    validating: ["校验证据", "validating evidence"],
+    responding: ["组织回答", "preparing the answer"]
+  }[String(stage ?? "")];
+  return labels?.[localeIndex(locale)] ?? String(stage ?? "");
+}
+
+function agentTraceText(event, locale) {
+  const phase = String(event?.phase ?? "");
+  const data = event?.data ?? {};
+  const zh = localeIndex(locale) === 0;
+  const tool = agentToolLabel(data.tool, locale);
+  const iteration = Number.isFinite(Number(data.iteration)) ? Number(data.iteration) : null;
+  if (phase === "request.accepted") return zh ? "已接收请求" : "Request accepted";
+  if (phase === "run_started") return zh ? "Agent 已启动，正在判断下一步" : "Agent started and is choosing the next step";
+  if (phase === "understanding.started") return zh ? "正在解析问题与上下文" : "Parsing the question and context";
+  if (phase === "understanding.resolved") return zh ? "问题与上下文已解析" : "Question and context resolved";
+  if (phase === "plan.ready") return zh ? "查询计划已生成" : "Query plan prepared";
+  if (phase === "retrieval.started") return zh ? "正在检索数据与证据" : "Retrieving data and evidence";
+  if (phase === "retrieval.completed") {
+    return zh
+      ? `数据检索完成${data.evidenceCount === null ? "" : `，获得 ${data.evidenceCount} 条证据`}`
+      : `Retrieval completed${data.evidenceCount === null ? "" : ` with ${data.evidenceCount} evidence item(s)`}`;
+  }
+  if (phase === "answer.started") return zh ? "正在基于证据组织回答" : "Preparing an evidence-grounded answer";
+  if (phase === "stage_started") return zh ? `正在${agentStageLabel(data.stage, locale)}` : `Started ${agentStageLabel(data.stage, locale)}`;
+  if (phase === "stage_completed") return zh ? `${agentStageLabel(data.stage, locale)}完成` : `Completed ${agentStageLabel(data.stage, locale)}`;
+  if (phase === "decision") {
+    if (data.type === "call_tool") return zh
+      ? `${iteration ? `第 ${iteration} 轮：` : ""}决定调用${tool}`
+      : `${iteration ? `Step ${iteration}: ` : ""}decided to call ${tool}`;
+    if (data.type === "finish") return zh ? "证据已满足，准备生成最终回答" : "Evidence is sufficient; preparing the final answer";
+    if (data.type === "ask_user") return zh ? "需要补充信息后才能继续" : "More information is required to continue";
+    return zh ? "Agent 已完成一步决策" : "Agent completed a decision step";
+  }
+  if (phase === "tool_started") return zh ? `正在调用${tool}` : `Calling ${tool}`;
+  if (phase === "tool_completed") return zh ? `${tool}调用完成` : `${tool} completed`;
+  if (phase === "tool_failed") return zh ? `${tool}调用失败，Agent 正在调整` : `${tool} failed; the Agent is adjusting`;
+  if (phase === "evidence_added") return zh ? `已验证并加入${tool}证据` : `Validated and added evidence from ${tool}`;
+  if (phase === "evidence_promoted") return zh ? `已恢复上一轮的${tool}证据` : `Restored prior evidence from ${tool}`;
+  if (phase === "decision_rejected") return zh ? "本轮计划未通过校验，Agent 正在修正" : "The step failed validation; the Agent is correcting it";
+  if (phase === "answer") return zh ? "已生成有证据支持的回答" : "Generated an evidence-grounded answer";
+  if (phase === "termination") return zh ? "Agent 执行结束" : "Agent run finished";
+  if (phase === "error") return zh ? "Agent 遇到错误，正在尝试安全收尾" : "The Agent encountered an error and is wrapping up safely";
+  return "";
+}
+
 function renderChatUnderstandingTrace(data, summary, options, copy, locale) {
   const trace = options.traceState ?? {};
   const phase = String(trace.phase ?? "");
@@ -713,6 +790,16 @@ function renderChatUnderstandingTrace(data, summary, options, copy, locale) {
     paragraphs.push(sentence(copy.uncertaintyPrefix, summary.uncertainties, locale));
   }
   if (completed) paragraphs.push(copy.completedMessage);
+  const agentEvents = (trace.events ?? [])
+    .map((event) => ({ event, text: agentTraceText(event, locale) }))
+    .filter((entry) => entry.text);
+  const traceBody = agentEvents.length
+    ? `<ol class="agent-status-timeline">${agentEvents.map((entry, index) => {
+      const active = !completed && index === agentEvents.length - 1;
+      const phaseClass = String(entry.event?.phase ?? "unknown").replace(/[^a-z0-9_-]+/giu, "-");
+      return `<li class="agent-status-event phase-${escapeHtml(phaseClass)}${active ? " active" : ""}"${active ? ' aria-current="step"' : ""}><span aria-hidden="true"></span><p>${escapeHtml(entry.text)}</p></li>`;
+    }).join("")}</ol>`
+    : paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("");
 
   return `<details class="reasoning-trace chat-understanding-panel"${openAttribute}>
     <summary>
@@ -721,7 +808,7 @@ function renderChatUnderstandingTrace(data, summary, options, copy, locale) {
       <span class="reasoning-trace-chevron" aria-hidden="true">›</span>
     </summary>
     <div class="reasoning-trace-body" aria-live="polite">
-      ${paragraphs.map((paragraph) => `<p>${escapeHtml(paragraph)}</p>`).join("")}
+      ${traceBody}
     </div>
   </details>`;
 }

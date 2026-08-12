@@ -1,154 +1,156 @@
 # tftclarity
 
-> 听得懂中文俗称，帮你快速得到结论，也说清楚结论从哪里来。
+> 面向《云顶之弈》的对话式数据分析与复盘工具：听得懂中文俗称，能查询阵容和装备，也能管理玩家 Pool、分析近期对局，并说明结论来自哪里。
 
-[在线体验：https://tftclarity.cn/](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [架构与可信度](#架构与可信度) · [部署指南](docs/deploy-tencent-cloud-v1.md)
+[在线体验](https://tftclarity.cn/) · [快速开始](#快速开始) · [功能总览](#功能总览) · [玩家-pool](#玩家-pool) · [架构](#架构与可信度) · [V2 部署指南](docs/deploy-v2.md) · [发布就绪状态](docs/r1-release-readiness.md)
 
-![tftclarity 产品首页](docs/images/tftclarity-overview.png)
+tftclarity V2 Public Beta 已部署至 `tftclarity.cn`。当前版本将确定性统计、ReAct Agent、多轮上下文、MetaTFT/OP.GG 玩家数据、攻略知识和证据约束解读整合到同一个 Web 界面中。
 
-tftclarity 把“霞有羊刀后两件怎么补”“当前有哪些阵容正在上升”这类问题转换为受控的结构化查询，结合 MetaTFT 统计、版本快照、攻略知识和可选的 AI 解读，返回首选方案、备选方案、样本规模、风险提示与证据来源。
+Public Beta 当前承诺已落地的查询、近期对局、Pool 和证据链能力；G4-B 装备分配优先级不在本次 Beta 承诺范围，后续仍需基于可验证的反事实证据推进。
 
-项目可作为浏览器 Web 应用、本地 Windows 小窗口或公开服务运行。目前仍处于测试阶段，在线站点主要用于个人使用、功能验证和项目演示，不承诺长期可用性或稳定性。
+## 当前产品界面
 
-## V2 开发版状态
+### 玩家 Pool 管理
 
-当前 `codex/chatbot` 分支是 tftclarity **第二版开发基线**。V2 已完成独立 ReAct Agent、QuickTask 会话桥接、多工具组合查询、证据约束结论和可编辑查询条件等核心改造，但**本版本尚未部署**；上方在线地址仍运行上一版，不能用于判断 V2 的当前能力。
+每位访客最多管理 2 个 Pool，每组 1–15 个角色。Pool 支持独立增删、重命名和分享码导入；输入分享码会复制当下的成员快照，导入后的 Pool 可以独立维护，不会与原 Pool 共享编辑状态。
 
-### V2 界面预览
+![玩家 Pool 管理、分享码和双 Pool 对比入口](docs/images/tftclarity-pool-management.png)
 
-![V2 ReAct 查询：模型结论、查询条件与统计证据并排展示](docs/images/tftclarity-v2-react-overview.png)
+### 双 Pool 对比分析
 
-V2 会同时展示模型结论、可修改的查询条件和工具返回的证据。下图为“3 星佐伊出装”结果区：稳定方案、两套备选、核心装备、样本与关键指标保持在同一证据链中；重复帽子的强化符文关联只作为知识库中的可能原因提示，不会被写成确定事实。
+当账号下有两个 Pool 时，管理页会显示明确的“开始对比两组 Pool”入口。对比页同时展示平均名次、前四率、登顶率、有效对局、阵容偏好差异、热度与效果矩阵，以及可以展开查看完整指标和代表棋盘的阵容卡片。
 
-V2 当前重点：
-
-- 普通聊天由 ReAct Agent 根据问题动态选择工具，可连续执行英雄、装备、阵容、站位和知识检索等多步查询。
-- 快捷工具继续走确定性快速路径；工具目的、关键条件和结果会通过 Conversation Bridge 进入后续普通聊天上下文。
-- 出装查询保留并展示赛季、版本、模式、星级、段位、时间窗口、装备数量和样本门槛，用户可以点击条件继续修改。
-- 阵容支持加人、下人和换人后的确定性羁绊人数及档位重算；模型只负责解释结构变化，不自行编造羁绊统计。
-- 站位解释必须基于工具返回的棋盘位置和攻击距离，不能在文本中改写英雄所在排数。
-- 用户策略知识以不确定性规则接入检索和结果证据。例如重复帽子或杀人剑可以提示可能相关的强化符文，但不能反推玩家一定拥有该强化。
-- 当前开发验收不设置工具调用次数上限，保留总时限、决策次数、重复调用和无进展保护，用于观察模型边界与幻觉频率。
-
-V2 的架构、验收矩阵和阶段结论见 [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md) 与 [R1 验收报告](docs/r1-acceptance-report.md)。
-
-## 为什么使用 tftclarity？
-
-- **快速得到结论**：不必在完整榜单中反复筛选，系统直接给出首选方案、备选方案、关键指标和下一步建议。
-- **中文俗称支持**：可以直接说“羊刀、无尽、巨杀、石像鬼、挑战者转”，无需记住官方全名或 API 名称。
-- **自然语言连续追问**：支持在多轮对话中继承英雄、阵容、星级、装备和样本条件，也可以随时修改要求。
-- **结论可追溯**：同时展示样本规模、缓存新鲜度、风险提示和证据来源，低样本或数据不足时不会强行下结论。
+![双 Pool 数据可视化、阵容偏好与效果矩阵](docs/images/tftclarity-pool-comparison.png)
 
 ## 功能总览
 
-| 分类 | 已实现能力 |
+| 分类 | 当前能力 |
 | --- | --- |
-| 装备分析 | 英雄三件套、已有装备补全、单件评估、多装备对比、特殊装备识别、核心装备信号 |
-| 阵容决策 | 热门阵容排行、上升/下降趋势、阵容分析、指定阵容棋子出装、条件筛选与排序，以及加人、下人、换人后的确定性羁绊人数与档位重算 |
-| 资料百科 | 当前赛季英雄、装备、羁绊详情，中文/英文名称与常见俗称，当前版本公告 |
-| 智能复盘与资讯 | OP.GG 职业池趋势、个人近期对局复盘、职业选手教学、YouTube 攻略知识检索、可扩展用户策略知识 |
+| 对话式查询 | 中文自然语言、常见俗称、连续追问、条件继承与修改、无法唯一识别时的候选确认 |
+| 装备分析 | 英雄三件套、已有装备补全、单件评估、多装备对比、核心装备与竞争关系 |
+| 阵容决策 | 阵容排行与趋势、指定英雄、加人/下人/换人的确定性羁绊重算、可展开阵容卡片 |
+| 资料百科 | 当前赛季英雄、装备、羁绊详情，中英文名称、常见俗称和版本公告 |
+| 对局与复盘 | PBE/NA Riot ID、近期对局、终局棋盘、装备与羁绊、单局详情和 AI 复盘 |
+| 玩家 Pool | 最多 2 组、每组 1–15 人、添加/移出/重命名、分享码一键复制、独立管理 |
+| 数据看板 | 单 Pool 使用占比、热度 × 前四率气泡矩阵、均名/前四/登顶、代表棋盘 |
+| Pool 对比 | 两组 Pool 的总体指标、阵容偏好差异、效果矩阵和逐阵容可展开对比 |
+| 攻略知识 | YouTube 字幕知识、Bilibili 攻略搜索、版本窗排序和来源披露 |
+| Agent 执行 | ReAct 多工具组合、真实流式事件时间线、证据账本、失败原因和诚实降级 |
 
-### 中文俗称支持与连续追问
+## 典型使用方式
 
-不需要记住完整官方名称或 API 字段，可以直接使用“羊刀、无尽、巨杀、石像鬼、挑战者转”等常见说法，也支持简繁中文、部分拼音、英雄简称和旧称。
+### 自然语言查询
+
+不需要记住完整官方名称或 API 字段，可以直接输入：
 
 ```text
 霞已经有羊刀，剩下两件怎么补？
 
 查询这个阵容里三星贾克斯的出装，样本至少 500。
 
-推荐 3 套不卷、适合新手的九五阵容。
-
 当前版本有哪些阵容正在上升？
+
+把这个阵容的前排换成奥恩后，羁绊有什么变化？
 ```
 
-系统会解析英雄、星级、阵容、装备、段位、统计时间、样本门槛和排序目标，并在后续对话中继承或修改条件。实体无法唯一确定时会要求确认，不会静默猜测。
+系统会提取英雄、星级、阵容、装备、段位、时间窗口、样本门槛和排序目标。快捷任务走确定性低延迟路径；普通聊天可以由 ReAct Agent 连续调用多个只读工具，并把真实执行事件流式显示在界面中。
 
-### 快速得到结论
+### 对局可视化与复盘
 
-常规数据网站更适合浏览完整榜单和手动筛选原始数据；tftclarity 更关注从“提出问题”到“做出选择”的速度。结果不仅展示平均名次、前四率、登顶率、选择率和样本数，还会直接组织为：
+“战绩、Pool 与复盘 → 对局可视化与复盘”支持两条明确隔离的路径：
 
-![快速得到装备结论：首选、备选、指标与数据解读](docs/images/tftclarity-quick-answer.png)
+- PBE：个人查询使用 `PBE数字` 标签，例如 `Flancy#PBE2`；通过 MetaTFT Player Match MCP 返回最多 20 场近期终局数据。
+- NA：使用 `NA数字` 标签，例如 `Player#NA1`；沿用 OP.GG 正式服采集与本地增量事实库。
 
-- 首选方案与备选方案
-- 推荐理由和适用条件
-- 样本覆盖、缓存新鲜度与稳定性
-- 低样本、过期数据或无法判定时的风险提示
-- 统计、版本公告和攻略知识的证据来源
+两条路径不会互相回退。页面可展开近期对局、终局棋子、装备、羁绊和单局详情，也可以基于已取得的结构化证据生成复盘建议。外部来源没有提供的逐回合经济、搜牌路径或站位过程不会被伪造。
 
-AI 只在证据范围内解释数据，不能改写底层统计。生成内容必须通过证据 ID、实体、数字和风险边界校验；模型不可用或校验失败时，系统会返回确定性模板结果。
+## 玩家 Pool
 
-### 职业趋势与智能复盘
+### 创建与管理
 
-![tftclarity 职业阵容趋势](docs/images/tftclarity-pro-trends.png)
+1. 打开“战绩、Pool 与复盘 → 对局可视化与复盘”。
+2. 输入 Pool 名称、环境和首个 Riot ID，验证成功后创建。
+3. 在 Pool 卡片中继续添加或移出角色；每组最少 1 人、最多 15 人。
+4. 点击“打开数据看板”查看单 Pool 的阵容分布和表现。
 
-OP.GG 工作流支持职业选手池和个人关注池，能够增量采集近期对局、去重、按补丁隔离，并生成：
+Pool 名称只用于展示，不决定服务器、赛季或统计口径。环境、赛季、Provider、Patch 和有效样本会单独记录并展示。
 
-- 职业池阵容频率、选手覆盖、平均名次、前四率、登顶率与老八率
-- 代表棋盘、单位出场率和装备组合热度
-- 单个选手近期对局与风格复盘
-- 基于结构化证据的 AI 教学点评
+### 分享码
 
-职业池数据属于有限样本观察，不代表全服 Meta；样本不足时界面会弱化评级并明确标注。当前个人复盘不支持国服账号。OP.GG 单次接口返回量有限，因此正式复盘依赖本地定期增量积累。
+- 每个 Pool 可以生成一个 8 位分享码。
+- 其他访客输入分享码后，会得到成员名单的独立副本。
+- 比赛事实可以复用，成员关系不会共享；任一方增删角色都不影响另一方。
+- 导入仍受“每人最多 2 个 Pool、每组最多 15 人”的限制。
 
-### 赛季、界面与本地小窗口
+### 单 Pool 数据看板
 
-- 中文/英文界面、响应式桌面与移动布局
-- 赛季白名单、主题色、壁纸和快捷问题随赛季上下文切换
-- 不可用的 PBE/预览赛季不会回退到正式服数据
-- Windows 浏览器 App 小窗口、置顶定位与全局热键唤回
-- 查询理解过程、工具执行进度、证据和结果分区展示
-- 匿名访问隔离、使用额度、反馈记录和受保护的管理入口
+数据看板不再只是原始表格，当前包含：
+
+- 玩家覆盖、有效对局、平均名次、前四率与登顶率；
+- Top 10 阵容的对局加权占比与玩家等权占比；
+- “阵容热度 × 前四率”气泡矩阵，气泡大小表示样本量；
+- 可展开阵容卡片，展示均名、前四、登顶、玩家覆盖和代表终局棋盘；
+- 可选的完整指标表，便于核对精确值。
+
+### 两个 Pool 如何对比
+
+1. 创建第二个 Pool，或通过 Pool 码导入第二组成员。
+2. Pool 管理页顶部的“Pool 对比分析”会从 `1/2` 变成可操作状态。
+3. 点击“开始对比两组 Pool”。
+4. 查看总体表现、阵容偏好哑铃图、使用率 × 前四率效果矩阵和逐阵容详情。
+
+系统会先检查赛季、Patch 和样本覆盖。口径兼容且样本达到门槛时标记为 `FULL`；否则只并列展示观测事实，不生成“哪组更强”的结论。
+
+## 数据口径与可信度
+
+tftclarity 的核心原则是“统计由代码计算，模型只在证据范围内解释”。
+
+- 对局加权：每场对局权重相同，适合观察 Pool 中实际出现了多少次。
+- 玩家等权：先计算每位玩家内部的阵容占比，再在玩家之间平均，避免高频玩家支配整体结果。
+- 平均名次：越低越好。
+- 前四率：最终名次为 1–4 的对局比例。
+- 登顶率：最终名次为 1 的对局比例。
+- 样本门槛：样本不足、Patch 不齐或赛季不一致时，界面会降低结论强度并显示原因。
+
+MetaTFT、OP.GG 和攻略平台都属于外部数据源，接口变化、网络失败和缓存过期可能影响结果。Pool 是用户自行选择的有限样本，不代表整个服务器，也不能用于推导因果关系。
 
 ## 架构与可信度
 
 ```text
-用户输入
-  ↓
-Chat Router
-  ↓
-┌─────────────────────────────┬──────────────────────────────┐
-│ QuickTask 确定性快速路径     │ ReAct 普通聊天动态工具路径     │
-│ ExecutionPlan / ResultPolicy │ Decide → Tool → Observe 循环  │
-└─────────────────────────────┴──────────────────────────────┘
-                ↓ Conversation Bridge
-ToolRegistry / ToolExecutor / Evidence Ledger
-  ↓
-MetaTFT / current_stats / OP.GG / 攻略与版本知识
-  ↓
-EvidenceBundle / Grounded Narrative
-  ↓
-Termination Policy + 结论校验
-  ↓
-HTTP API / Web 界面 / Windows 小窗口
+用户输入 / 快捷任务
+        ↓
+┌──────────────────────────┬──────────────────────────┐
+│ QuickTask 确定性快速路径 │ ReAct Agent 多工具路径   │
+│ 解析 → 查询 → 结果策略    │ Decide → Tool → Observe │
+└──────────────────────────┴──────────────────────────┘
+        ↓ Conversation Bridge / Agent Event Stream
+Tool Registry → Tool Executor → Evidence Ledger
+        ↓
+MetaTFT / Player Match MCP / OP.GG / 版本与攻略知识
+        ↓
+确定性聚合、样本门槛、赛季与 Patch 校验
+        ↓
+EvidenceBundle → 证据约束解读 → Web UI
 ```
 
-核心设计原则：
+主要设计约束：
 
-- **确定性优先**：查询解析、过滤、聚合、指标计算和基础排序由代码完成。
-- **双路径执行**：快捷工具保留低延迟 ExecutionPlan；普通聊天由 ReAct 循环动态组合已注册的只读工具。
-- **受控执行**：工具必须来自注册目录并通过参数 Schema；开发验收阶段不限制调用次数，但仍受总时限、决策次数、重复调用、重试和无进展保护约束。
-- **证据约束**：模型不能提供 EvidenceBundle 中不存在的数字、实体或 API 名称。
-- **诚实降级**：缺少历史快照、样本过低、外部服务失败或模型输出不合格时，明确说明边界并返回可验证结果。
-- **赛季隔离**：会话、缓存、目录和查询都携带赛季上下文，跨赛季切换不会继承旧条件。
-- **来源分层**：MetaTFT 用于当前统计，官方公告用于版本事实，攻略内容只用于原因和条件性建议，职业池观察不冒充全服数据。
-
-### 数据与存储
-
-默认本地模式可使用 JSON 缓存；SQLite 模式用于持久化查询缓存、赛季目录、会话、偏好、反馈、语义索引、`current_stats` 快照和 OP.GG 增量对局。
-
-SQLite 当前服务于单机开发、低成本部署和完整链路验证，并不代表最终生产数据架构。后续可在不改变 `TaskFrame → ExecutionPlan → ToolExecutor` 主链的前提下，将业务存储、缓存、对象文件和定时任务拆分到 PostgreSQL、Redis、对象存储与独立 Worker。
+- 确定性优先：实体解析、过滤、聚合、排序、指标和羁绊重算由代码完成。
+- 工具白名单：Agent 只能调用注册目录中的只读工具，并受参数 Schema、超时、重复调用和无进展保护约束。
+- 证据约束：模型不能提供 EvidenceBundle 中不存在的数字、实体或来源。
+- 真实状态：前端保留 Agent 的实际执行事件，不用固定占位文案冒充处理进度。
+- 诚实降级：样本不足、来源失败或模型输出不合格时，返回可验证的确定性结果并说明边界。
+- 赛季隔离：会话、缓存、目录、Pool 统计和查询均携带赛季上下文。
 
 ## 快速开始
 
 ### 环境要求
 
 - Windows、macOS 或 Linux
-- Node.js 20 或更高版本（安全版 MCP 依赖的最低要求）
-- 推荐 Node.js 22.5+ 或 24：可直接使用 `node:sqlite`，也能运行 OP.GG 增量采集；生产 Docker 镜像固定为 Node 24
-- Node.js 20–21 如需 SQLite，必须成功安装可选依赖 `better-sqlite3`
+- Node.js 20+；推荐 Node.js 24
+- Node.js 20–21 使用 SQLite 时需要成功安装可选依赖 `better-sqlite3`
 
-### 安装与启动
+### 本地启动
 
 ```powershell
 git clone https://github.com/Chencc7002/tftclarity.git
@@ -157,7 +159,7 @@ npm install
 npm start
 ```
 
-打开 [http://127.0.0.1:17317/](http://127.0.0.1:17317/)，或检查服务状态：
+打开 [http://127.0.0.1:17317/](http://127.0.0.1:17317/)，健康检查：
 
 ```powershell
 Invoke-RestMethod http://127.0.0.1:17317/api/health
@@ -169,144 +171,82 @@ Windows 桌面小窗口：
 npm run window
 ```
 
-只启动服务、不自动打开浏览器：
+只启动服务，不自动打开浏览器：
 
 ```powershell
 npm run window:server
 ```
 
-启动器还支持端口、窗口尺寸、位置、置顶、浏览器路径和热键参数，详见 [Windows 小窗口启动器说明](docs/small-window-launcher.md)。
+启动器的窗口尺寸、位置、置顶、浏览器路径与全局热键参数见 [Windows 小窗口启动器说明](docs/small-window-launcher.md)。
 
-## 可选 AI 与检索配置
+## 配置
 
-基础数据查询不要求配置 LLM。需要增强自然语言解析、语义检索、证据约束解读、OP.GG 教学或 YouTube 攻略提取时：
+基础静态查询可以在没有 LLM 的情况下运行。需要 ReAct Agent、语义检索、证据约束解读、攻略知识或真实玩家数据时：
 
 ```powershell
 Copy-Item .env.example .env
 ```
 
-然后填写所使用的 OpenAI-compatible 服务配置。不要把真实 API Key、PUUID 或其他凭据提交到 Git。
+常用配置：
 
 | 配置 | 作用 |
 | --- | --- |
-| `TFT_AGENT_LLM_MODE` | 结构化自然语言解析策略 |
-| `TFT_AGENT_CONCLUSION_MODE` | 证据约束的数据解读 |
+| `TFT_AGENT_REACT_CHAT_MODE` | 开启普通聊天的 ReAct Agent 路径 |
+| `TFT_AGENT_CONVERSATION_BRIDGE_MODE` | 将快捷任务的目的、条件和结果传入后续聊天 |
+| `TFT_AGENT_CONCLUSION_MODE` | 开启证据约束的数据解读 |
 | `TFT_AGENT_KNOWLEDGE_MODE` | 本地知识检索总开关 |
-| `TFT_AGENT_EMBEDDING_MODE` | 持久化语义向量索引 |
-| `TFT_AGENT_COACH_MODE` | 攻略与统计混合的教练回答 |
-| `TFT_AGENT_REACT_CHAT_MODE` | 开启 V2 ReAct 普通聊天路径；本地验收使用 `on` |
-| `TFT_AGENT_CONVERSATION_BRIDGE_MODE` | 让 QuickTask 目的、条件和结果进入后续聊天上下文 |
-| `TFT_AGENT_OPGG_TEACHING_TIMEOUT_MS` | OP.GG AI 教学单次尝试超时 |
+| `TFT_AGENT_EMBEDDING_MODE` | 持久化语义向量检索；生产 Compose 使用本地 `bge-m3` |
+| `METATFT_PLAYER_MATCH_ENABLED` | 启用 MetaTFT Player Match MCP |
+| `METATFT_PBE_ENABLED` / `METATFT_NA_ENABLED` | 分别控制 PBE 与 NA 数据路径 |
 | `OPGG_PUUID_ENCRYPTION_KEY` | 可选的 PUUID 静态加密密钥；未配置时不落盘 PUUID |
-| `BILIBILI_MCP_ENDPOINT` | 外部 `bilibili-mcp-js` 的 Streamable HTTP `/mcp` 地址 |
-| `BILIBILI_PATCH_DISCOVERY_MODE` | 在线发现云顶与金铲铲当前/上一版本时间窗；默认 `auto` |
+| `BILIBILI_MCP_ENDPOINT` | 只读攻略视频 MCP 的内部地址 |
 
-完整配置和安全占位符见 [.env.example](.env.example)，公开部署示例见 [.env.production.example](.env.production.example)。
+完整配置和安全占位符见 [.env.example](.env.example)；公开部署模板见 [.env.production.example](.env.production.example)。不要提交真实 API Key、PUUID、Cookie 或数据库密码。
 
 ## 常用命令
-
-### 开发与验证
 
 | 命令 | 用途 |
 | --- | --- |
 | `npm start` | 启动本地 Web 服务 |
 | `npm run window` | 启动 Windows 桌面小窗口 |
-| `npm test` | 运行完整 Node 自动化测试 |
+| `npm test` | 运行 Node 自动化测试 |
 | `npm run smoke:small-window` | 验证本地 API 主流程 |
 | `npm run smoke:visual` | 运行多断点视觉冒烟测试 |
-| `npm run smoke:sqlite` | 验证 SQLite 持久化与重开缓存 |
-| `npm run smoke:metatft` | 验证真实 MetaTFT 数据链路 |
-| `npm run smoke:react-chat:live` | 验证真实模型 ReAct 多工具聊天链路 |
-| `npm run eval:agent` | 运行核心 Agent 离线评估 |
-
-涉及 MetaTFT、OP.GG、YouTube 或真实模型的命令会受到外部服务状态、网络和额度影响。
-
-### 数据与索引
-
-| 命令 | 用途 |
-| --- | --- |
-| `npm run stats:generate` | 生成 `current_stats` 快照 |
-| `npm run stats:daily` | 执行一次带锁、重试和告警的每日任务 |
-| `npm run stats:scheduler` | 启动 Node 常驻调度器 |
-| `npm run stats:schedule:windows` | 安装 Windows 每日计划任务 |
+| `npm run smoke:metatft` | 验证 MetaTFT 数据链路 |
+| `npm run smoke:metatft:player-mcp` | 验证玩家近期对局 MCP |
+| `npm run smoke:react-chat:live` | 验证真实模型 ReAct 多工具聊天 |
 | `npm run semantic:index` | 构建持久化语义索引 |
 | `npm run semantic:audit` | 审核语义索引状态 |
-| `npm run refresh:item-localization` | 刷新装备本地化数据 |
-| `npm run audit:aliases` | 审核英雄、羁绊和装备别名覆盖 |
-| `npm run audit:items` | 审核当前装备可用性规则 |
-| `npm run audit:item-patch` | 对比版本间装备目录变化 |
-| `npm run backup:sqlite` | 创建并校验 SQLite 备份 |
+| `npm run stats:daily` | 执行一次 current_stats 日任务 |
+| `npm run opgg:collect:watch` | 持续增量采集 OP.GG 玩家数据 |
+| `npm run eval:agent` | 运行核心 Agent 离线评估 |
 
-`current_stats` 的数据范围、保留精度、趋势阈值和告警方式均可在 `.env` 中配置。设计与验收记录见 [current_stats 架构和浏览器 E2E 报告](docs/current-stats-architecture-and-browser-e2e-report-2026-07-29.md)。
+真实 MetaTFT、OP.GG、Bilibili、YouTube 或模型测试会受到外部服务、网络和额度影响。
 
-### OP.GG 职业池与复盘
+## 生产部署
 
-```powershell
-# 采集默认职业池；定时模式每 60 分钟轮询一次
-npm run opgg:collect
-npm run opgg:collect:watch
+生产 Compose 使用以下组件：
 
-# 查看采集统计和职业池趋势
-npm run opgg:stats
-npm run opgg:trends
+整体存储与执行方式为 PostgreSQL 持久业务存储、Redis 临时状态/队列、独立 Worker，并把 embedding 与外部 MCP 放在不直接暴露宿主端口的内部网络中。
 
-# 查看单个选手的确定性复盘或 AI 教学
-npm run opgg:review -- --player broseph-lab
-npm run opgg:teaching -- --player broseph-lab
-```
-
-可使用 `--pool`、`--pool-create`、`--roster-add` 和 `--roster-remove` 管理自定义关注池。职业选手名单、荣誉资料与 PUUID 分离保存；真实 PUUID 不应写入仓库。
-
-### YouTube 攻略知识
-
-```powershell
-npm run youtube:import -- --url <URL>
-npm run smoke:youtube
-npm run youtube:acceptance
-```
-
-视频字幕由 Python 服务提取，Node 服务负责入库、检索、EvidenceBundle 和最终回答。未经人工审核的摘要会在 Schema、HTTP Evidence 和界面中标记“AI 生成 · 未经人工复核”，并保留原视频时间点链接。完整流程见 [YouTube 攻略知识与混合回答操作说明](docs/youtube-hybrid-operations.md)。
-
-### Bilibili 攻略视频 MCP
-
-本项目通过外部 [bilibili-mcp-js](https://github.com/34892002/bilibili-mcp-js) 提供只读攻略视频搜索。能力范围限定为云顶之弈与金铲铲之战；明确要求两个生态时会分别检索并分组，双端都适用的视频显示为“双端通用”。编程、影视、宠物等无关视频请求会在调用 MCP 前被拒绝。
-
-本地非 Docker 开发可单独启动上游服务：
-
-```powershell
-git clone https://github.com/34892002/bilibili-mcp-js.git
-cd bilibili-mcp-js
-npm install
-$env:TRANSPORT="remote"
-$env:PORT="3000"
-npm start
-```
-
-在 TFTAgent 的 `.env` 中配置：
-
-```dotenv
-BILIBILI_MCP_ENDPOINT=http://127.0.0.1:3000/mcp
-BILIBILI_PATCH_DISCOVERY_MODE=auto
-```
-
-生产 Compose 会从固定上游 commit `3574a43f3b44b2cf726f3931ce753fa4e0ff4f25` 构建 `bilibili-mcp` sidecar，并把应用 endpoint 固定为 `http://bilibili-mcp:3000/mcp`。运行层只安装 [deploy/bilibili-mcp-runtime/package.json](deploy/bilibili-mcp-runtime/package.json) 中经过单独审计的最小依赖，不携带上游仅供示例使用的 LangChain 依赖。该 sidecar 只加入专用 `bilibili_mcp` Docker 网络，不声明 `ports` 或 `expose`；Caddy 只加入 `edge` 网络，PostgreSQL/Redis 只加入 `backend`，都不能直接访问 MCP。`app` 不依赖 MCP 健康状态启动，MCP 异常时由应用返回可见的失败原因，不会阻塞主服务；`worker` 与 `migrate` 也不注入 MCP endpoint。
+- `app`：Web/API 服务；
+- `worker`：异步任务；
+- `postgres`：持久业务数据；
+- `redis`：临时状态与队列；
+- `embedding`：内部 Ollama `bge-m3`，不暴露宿主端口；
+- `metatft-player-mcp`：近期玩家对局工具；
+- `bilibili-mcp`：只读攻略视频工具；
+- `caddy`：HTTPS、反向代理和安全头。
 
 ```bash
-docker compose config
-docker compose up -d --build bilibili-mcp app
-docker compose ps bilibili-mcp app
-docker compose exec -T app npm run smoke:bilibili:mcp:compose
-docker inspect "$(docker compose ps -q bilibili-mcp)" --format '{{json .NetworkSettings.Ports}}'
+cp .env.production.example .env.production
+docker compose --env-file .env.production up -d --build
+docker compose --env-file .env.production ps
+curl -fsS https://your-domain.example/api/health
+curl -fsS https://your-domain.example/api/ready
 ```
 
-真实 smoke 必须在 `app` 容器内运行，它会完成 MCP 初始化、工具发现、真实搜索与视频详情调用。最后一条应输出 `{}`；若出现宿主机端口绑定，不应上线。CI 的 `bilibili-compose-runtime-gate` 还会验证实际网络、密钥隔离、MCP 停机时应用仍 ready，以及恢复后的再次调用。升级上游版本时只修改 [deploy/bilibili-mcp.Dockerfile](deploy/bilibili-mcp.Dockerfile) 中的完整 commit SHA，重新构建并执行该 Gate，不能直接跟随浮动 `main`。
-
-版本窗默认在线获取并缓存 6 小时：云顶读取 [Riot 官方 Game Updates](https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/)，金铲铲读取可配置的[更新公告索引](https://newgame.17173.com/game-newslist-4075117.html)。在线来源不可用时不会猜测版本，界面会显示“版本未标注”；生产环境也可用 `BILIBILI_TFT_PATCH_WINDOWS_JSON` 与 `BILIBILI_GOLDEN_SPATULA_PATCH_WINDOWS_JSON` 固定覆盖。视频发布日期来自 Bilibili 搜索/详情结果，组内始终按“当前版本、上一版本、未标注、较旧版本”排序，同一档内发布日期越新越靠前。
-
-外部 MCP 当前没有认证能力，只应监听 localhost 或 Compose 私有网络。不要为 `bilibili-mcp` 添加 `ports`，也不要把 `BILIBILI_MCP_ENDPOINT` 指向公网地址；公网请求必须经过 Caddy、应用限流与 TFT/金铲铲领域过滤。浏览器验收截图：
-
-- [双端分组、当前版本与最新优先](docs/images/bilibili-browser-dual-ecosystem.png)
-- [非云顶/金铲铲内容拦截](docs/images/bilibili-browser-domain-gate.png)
+数据库迁移、备份、健康检查、容量门槛、恢复和回滚步骤见 [V2 production 部署指南](docs/deploy-v2.md)。
 
 ## 测试与质量门槛
 
@@ -317,44 +257,27 @@ npm run smoke:comps
 npm run eval:agent
 ```
 
-测试覆盖自然语言解析、实体链接、多轮上下文、能力规划、工具安全、结果策略、阵容与装备统计、赛季隔离、缓存、SQLite、OP.GG 聚合与复盘、YouTube 知识、HTTP API、流式进度和前端交互。
-
-阶段性 Agent 评估和验收结果见：
-
-- [Agent 升级进度](docs/agent-upgrade-progress.md)
-- [Phase 6.6 架构收敛](docs/phase-6-6-architecture-convergence.md)
-- [R1 独立 ReAct 与 QuickTask Conversation Bridge](docs/react-chat-r1-architecture.md)
-- [受控失败学习闭环](docs/reports/phase-8a-controlled-failure-loop.md)
-- [MVP 验证矩阵](docs/mvp-verification-matrix.md)
-
-## V2 后续开发
-
-V2 后续工作以“先扩展能力和验收，再考虑部署”为原则：
-
-1. 完善 YouTube 与 Bilibili 视频字幕抽取、来源时间点、缓存降级和人工复核流程。
-2. 将用户策略知识从代码内规则继续演进为可维护、可审核、可版本化的知识库，并记录适用赛季与置信边界。
-3. 完善阵容、棋子、装备、站位、强化符文之间的多工具组合案例和长对话上下文继承。
-4. 建立模型边界与幻觉频率评估，记录原始自由文本、证据校验结果、失败原因和人工审核结论。
-5. 补齐真实数据、真实模型、小窗口交互和 CI 分层门禁；全部通过后再单独制定 V2 部署与回滚计划。
-
-本分支的提交和推送不代表发布。除非另行执行并审核部署流程，否则不会更新 `tftclarity.cn` 的线上版本。
+测试覆盖自然语言解析、实体链接、多轮上下文、能力规划、工具安全、结果策略、阵容与装备统计、赛季隔离、缓存、SQLite/PostgreSQL、玩家 Pool、分享码、Pool 对比、近期对局 MCP、攻略知识、流式事件和前端交互。
 
 ## 进一步阅读
 
+- [玩家 Pool 产品与统计口径](docs/player-pools.md)
+- [MetaTFT Player Match MCP](docs/metatft-player-match-mcp.md)
+- [R1 独立 ReAct 与 Conversation Bridge](docs/react-chat-r1-architecture.md)
 - [LLM 检索与证据流水线](docs/llm-retrieval-evidence-pipeline.md)
-- [LLM 与会话记忆架构](docs/memory-llm-architecture.md)
-- [Question Contract 与 ConclusionSpec Registry](docs/question-contract-conclusion-spec.md)
-- [阵容排行数据来源](docs/comp-ranking-data-source.md)
 - [语义索引构建](docs/semantic-index-build.md)
+- [攻略知识与混合回答](docs/youtube-hybrid-operations.md)
 - [管理员赛季与数据运维](docs/admin-season-operations.md)
-- [腾讯云部署指南](docs/deploy-tencent-cloud-v1.md)
+- [V2 production 部署、恢复与回滚](docs/deploy-v2.md)
+- [V1 腾讯云部署指南（历史单机参考）](docs/deploy-tencent-cloud-v1.md)
+- [Riot 法务与生产部署说明](docs/riot-legal-production-deploy.md)
 
 ## 数据来源与项目声明
 
-- MetaTFT 是非官方外部数据源，接口变化、网络失败或缓存过期可能影响实时查询。
-- OP.GG 职业池数据是小样本观察，不能替代全服统计，也不能推导稳定因果关系。
-- 官方版本公告只用于版本事实；攻略与 AI 摘要只用于原因、背景和条件性建议。
-- Bilibili 搜索与金铲铲公告索引属于第三方来源，可能受接口、页面结构、网络或限流影响；失败时保留明确原因且不伪造版本与视频。
-- `.probe/` 保存离线捕获样本，用于回归测试、目录审核和数据契约验证。
+- MetaTFT 用于当前统计和 PBE 玩家终局数据；它是非官方外部来源。
+- OP.GG 用于正式服玩家与职业池的增量观察；有限样本不代表全服 Meta。
+- Riot 官方公告只用于版本事实。
+- YouTube、Bilibili 和其他攻略内容只用于原因、背景与条件性建议，并保留来源披露。
+- `.probe/` 中的离线捕获样本只用于回归测试、目录审核和数据契约验证。
 
 tftclarity 是由玩家独立制作的非商业粉丝项目，与 Riot Games 不存在隶属、合作、赞助或认可关系。Riot Games、Teamfight Tactics 及相关角色、图像、名称和游戏资产归 Riot Games 或其权利人所有。

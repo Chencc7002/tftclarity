@@ -1,5 +1,6 @@
 import { normalizeSemanticDocument } from "./semantic-document-store.js";
 import { buildOfficialPatchSemanticDocuments } from "../knowledge/official-patch-knowledge.js";
+import { buildUserStrategySemanticDocuments } from "../knowledge/user-strategy-knowledge.js";
 
 export const INTENT_SEMANTIC_SAMPLES = Object.freeze({
   unit_build_rankings: ["这名棋子的三件套排行", "哪个完整出装最好", "推荐三件成装"],
@@ -130,6 +131,12 @@ export function buildSemanticCorpus(catalog = {}, options = {}) {
       seasonContextId: settings.seasonContextId,
       locale: settings.locale,
       versions: options.patchNoteVersions
+    }));
+  }
+  if (options.includeUserStrategyKnowledge !== false) {
+    documents.push(...buildUserStrategySemanticDocuments({
+      seasonContextId: settings.seasonContextId,
+      locale: settings.locale
     }));
   }
   return [...new Map(documents.map((document) => [document.id, document])).values()]

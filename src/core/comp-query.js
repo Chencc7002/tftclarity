@@ -1,5 +1,6 @@
 import { DEFAULT_QUERY_OPTIONS } from "../data/static-data.js";
 import { normalizeText } from "./normalizer.js";
+import { isCompTrendRequest, parseCompTrendDirection } from "./comp-trend-intent.js";
 import {
   isCompPreferenceInput,
   parseCompPreferenceConditions,
@@ -25,7 +26,7 @@ export function isCompRankingInput(input) {
   if (/(装备|三件套|怎么带|带什么)/.test(text)) return false;
   if (isCompPreferenceInput(text)) return true;
   if (/阵容/.test(text)) return true;
-  if (/(?:版本|当前).{0,8}(?:趋势|上升|提升)/.test(text)) return true;
+  if (isCompTrendRequest(text)) return true;
   return /(?:这|当前)?版本.{0,8}(?:玩什么|什么好玩|容易上分)/.test(text);
 }
 
@@ -108,6 +109,9 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     : null;
   const metrics = unique((parsed.metrics ?? []).filter((metric) => METRIC_SET.has(metric)));
   const trendRequested = Boolean(parsed.trendRequested);
+  const trendDirection = ["rising", "falling"].includes(parsed.trendDirection)
+    ? parsed.trendDirection
+    : null;
   const intent = parsed.intent === "comp_trends"
     ? "comp_trends"
     : parsed.intent === "comp_analysis"
@@ -144,6 +148,7 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
     specialMode: Boolean(parsed.specialMode),
     popularRequested,
     trendRequested,
+    trendDirection,
     preferenceRequested,
     preferenceConditions,
     analysisRequested: intent === "comp_analysis",
@@ -155,7 +160,7 @@ export function buildCompRankingQuery(parsed = {}, options = {}) {
 export function parseCompRankingQuery(input, options = {}) {
   const text = normalizeText(input);
   const preference = parseCompPreferenceConditions(text);
-  const trendRequested = /(?:阵容|版本|当前).{0,8}(?:趋势|上升|提升)|(?:趋势|上升|提升).{0,8}阵容/u.test(text);
+  const trendRequested = isCompTrendRequest(text);
   return buildCompRankingQuery({
     ...options,
     metrics: parseCompMetrics(text),
@@ -165,6 +170,7 @@ export function parseCompRankingQuery(input, options = {}) {
     rankFilter: parseRankFilter(text) ?? options.rankFilter,
     popularRequested: /热门阵容|阵容热门|热门/.test(text),
     trendRequested,
+    trendDirection: parseCompTrendDirection(text),
     preferenceRequested: preference.requested,
     preferenceConditions: preference.conditions,
     specialMode: /(专属强化|英雄强化|特殊玩法|赌狗|d牌|d卡|追三|reroll)/i.test(text)

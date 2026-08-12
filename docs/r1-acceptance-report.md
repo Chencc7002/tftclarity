@@ -1,5 +1,10 @@
 # ReAct Agent R1 验收报告（真实验收进行中）
 
+> **状态入口已迁移：** 本文是 2026-08-07 的历史 RA 验收记录，其中
+> `RA-02 through RA-05 pending` 不再代表当前 release status。后续 G3、G4-A、G5 与 G5-O
+> 的真实验收及 V2 Public Beta 当前边界统一见
+> [R1 Release Readiness](r1-release-readiness.md)。本文不得再作为独立发布签字入口。
+
 > 2026-08-07 复核：此前 UI-07D/E 的“通过”证据来自只对卡尔玛场景注入确定性决策和数据的 visual fixture。该证据只能证明契约回归，不能证明真实模型能够理解并处理任意英雄，因此不得用于产品功能验收。原 `R1 Product Functional Acceptance — PASSED` 结论已撤回。随后完成的真实修复与 RA-01 结果记录如下；R1 总体仍未签字。
 
 验收时间：2026-08-07（Asia/Shanghai）

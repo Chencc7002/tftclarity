@@ -24,6 +24,23 @@ export function normalizeGroundingMode(value) {
     : "strict";
 }
 
+const SUMMARY_REQUEST_SIGNAL = /(?:总结|概括|摘要|归纳|梳理|(?:版本|补丁).{0,8}(?:更新|改动)|summari[sz]e|summary|recap|patch\s*notes?)/iu;
+const SOFT_SUMMARY_VALIDATION_ERROR = /(?:answer statistic is not present in cited evidence|semantic knowledge evidence cannot support a current statistical or best-ranking claim|historical quick-tool evidence cannot support a current statistical or best-ranking claim)/iu;
+
+function canPublishSummaryWithValidationWarnings(request, action, validation, ledger) {
+  if (action?.reasonCode !== "sufficient_evidence" || !action.evidenceIds?.length) return false;
+  const userText = [
+    request?.input,
+    request?.question,
+    ...(Array.isArray(request?.messages) ? request.messages.map((message) => message?.content) : [])
+  ].map((value) => String(value ?? "")).join("\n");
+  if (!SUMMARY_REQUEST_SIGNAL.test(userText)) return false;
+  const entries = ledger.resolve(action.evidenceIds);
+  if (entries.length !== action.evidenceIds.length || entries.length === 0) return false;
+  return validation.errors.length > 0
+    && validation.errors.every((error) => SOFT_SUMMARY_VALIDATION_ERROR.test(String(error)));
+}
+
 function applyRequestBoundVideoScope(action, request = {}) {
   if (action?.type !== "call_tool" || action.tool !== "strategy_video_search") return action;
   const userText = [
@@ -1046,6 +1063,34 @@ export class ReactLoop {
             iteration: state.decisions.length,
             errors: finishValidation.errors
           });
+          if (canPublishSummaryWithValidationWarnings(request, action, finishValidation, ledger)) {
+            const warnings = finishValidation.errors.map(String);
+            modelConclusion.status = "accepted_with_validation_warnings";
+            state.warn("summary_validation_softened");
+            emit("answer", {
+              answer: action.answer,
+              evidenceIds: action.evidenceIds,
+              reasonCode: action.reasonCode,
+              narrativeAccepted: false,
+              systemFallback: false,
+              validationWarnings: warnings
+            });
+            return terminate("completed", {
+              status: "completed_with_warning",
+              answer: action.answer,
+              evidenceIds: action.evidenceIds,
+              narrativeWarnings: warnings,
+              groundingAudit: {
+                schemaVersion: "grounding-audit.v1",
+                mode: "summary_soft_validation",
+                narrativeAccepted: false,
+                qualitativeOutputPreserved: true,
+                violationCount: warnings.length,
+                violations: warnings
+              },
+              answerOrigin: "model_soft_validated_summary"
+            });
+          }
           if (action.reasonCode === "insufficient_evidence") {
             insufficientFinishRepairCount += 1;
             state.recordObservation({
