@@ -41,7 +41,7 @@ test("SeasonContext registry exposes only safe public records", () => {
   assert.equal(pbe.availability.available, true);
   assert.equal(live.theme.documentTitle, "TFTClarity｜云顶数据智答");
   assert.equal(live.theme.wallpaper.seasonId, "set-17");
-  assert.equal(live.theme.patchNoteVersion, "17.8");
+  assert.equal(live.theme.patchNoteVersion, "17.9");
   assert.equal(pbe.theme.wallpaper.defaultId, "set18-verdant-realm");
   assert.equal(pbe.theme.patchNoteVersion, null);
   assert.match(pbe.theme.riskNotice["en-US"], /data is available/i);

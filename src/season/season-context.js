@@ -17,8 +17,8 @@ const CONTEXTS = [
       providerVersion: "metatft-live.v1",
       queue: "1100",
       patchPolicy: "latest",
-      currentPatch: "17.8",
-      previousPatch: "17.7"
+      currentPatch: "17.9",
+      previousPatch: "17.8"
     },
     themeId: "set17",
     theme: {
@@ -40,7 +40,7 @@ const CONTEXTS = [
         density: 1,
         speed: 1
       },
-      patchNoteVersion: "17.8",
+      patchNoteVersion: "17.9",
       quickQuestions: {
         "zh-CN": ["推荐当前版本热门阵容", "当前版本阵容趋势"],
         "en-US": ["Recommend popular comps in the current patch", "Show current comp trends"]

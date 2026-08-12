@@ -162,6 +162,21 @@ test("17.8 official patch evidence associates champion and trait changes", () =>
   assert.equal(unrelated.length, 0);
 });
 
+test("17.9 official patch evidence associates Shepherd and champion changes", () => {
+  const related = associateOfficialPatchChanges({
+    units: [{ apiName: "TFT17_TwistedFate" }, { apiName: "TFT17_Maokai" }],
+    traits: [{ apiName: "TFT17_SummonTrait", filterId: "TFT17_SummonTrait_3" }]
+  }, "17.9");
+  const unrelated = associateOfficialPatchChanges({
+    units: [{ apiName: "TFT17_Nunu" }],
+    traits: [{ apiName: "TFT17_DarkStar", filterId: "TFT17_DarkStar_1" }]
+  }, "17.9");
+  assert.equal(related.some((entry) => entry.id === "17.9-shepherd-cadence-damage"), true);
+  assert.equal(related.some((entry) => entry.id === "17.9-twisted-fate-dice"), true);
+  assert.equal(related.some((entry) => entry.id === "17.9-maokai-attack-speed-nova"), true);
+  assert.equal(unrelated.length, 0);
+});
+
 test("recommendation flow resolves a named comp and exposes typed Evidence Pack sources", async () => {
   const result = await recommendForInput("努努阵容当前版本还能玩吗？", {
     catalog: catalog(),
