@@ -637,6 +637,10 @@ function poolCardHtml(pool) {
       <div class="opgg-card-head"><strong class="opgg-card-title">${esc(pool.name)}</strong><span class="opgg-pool-head-actions"><button type="button" class="opgg-pool-rename-button" data-opgg-action="pool-rename-start" data-pool="${esc(pool.id)}">重命名</button><span class="opgg-badge opgg-badge-muted">${pool.memberCount}/${pool.maxMembers}</span></span></div>
       <div class="opgg-pool-rename-row" data-pool-rename-form="${esc(pool.id)}" hidden><input data-pool-rename-input="${esc(pool.id)}" value="${esc(pool.name)}" maxlength="30" aria-label="新的 Pool 名称"><button type="button" class="opgg-primary-button" data-opgg-action="pool-rename-save" data-pool="${esc(pool.id)}">保存名称</button></div>
       <div class="opgg-match-sub">${esc(pool.environment)} · ${esc(pool.season)} · ${esc(pool.provider)}</div>
+      <div class="opgg-pool-share-row">
+        <span><small>Pool 码</small><strong data-pool-share-code="${esc(pool.id)}">${esc(pool.shareCode ?? "尚未生成")}</strong></span>
+        <button type="button" class="opgg-secondary-button" data-opgg-action="pool-share-code" data-pool="${esc(pool.id)}">${pool.shareCode ? "复制 Pool 码" : "生成 Pool 码"}</button>
+      </div>
       <ul class="opgg-pool-members">${players || "<li><span>当前分组暂无玩家</span></li>"}</ul>
       <div class="opgg-pool-add-row"><input data-pool-name="${esc(pool.id)}" placeholder="Riot 游戏名"><input data-pool-tag="${esc(pool.id)}" placeholder="Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-add-player" data-pool="${esc(pool.id)}">添加角色</button></div>
       <div class="opgg-toolbar"><button type="button" class="opgg-primary-button" data-opgg-action="pool-stats" data-pool="${esc(pool.id)}">查看小数据</button>${pool.environment === "pbe" ? `<button type="button" class="opgg-primary-button" data-opgg-action="pool-import-seed" data-pool="${esc(pool.id)}">导入 pbeList</button>` : ""}<button type="button" class="opgg-remove-button" data-opgg-action="pool-delete" data-pool="${esc(pool.id)}">删除 Pool</button></div>
@@ -651,6 +655,7 @@ async function renderPlayerPools() {
     const data = await api("/api/player-pools");
     const pools = data.pools ?? [];
     host.innerHTML = `
+      ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-import"><div class="opgg-card-body"><div class="opgg-section-title">用 Pool 码一键导入</div><div class="opgg-pool-import-row"><input id="opgg-pool-share-code" maxlength="8" autocomplete="off" placeholder="输入 8 位 Pool 码" aria-label="Pool 码"><button type="button" class="opgg-primary-button" data-opgg-action="pool-import-code">导入为我的 Pool</button></div><p class="opgg-form-hint">会复制当下的成员名单；导入后可以独立增删，不影响原 Pool。</p></div></div>` : ""}
       ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-create"><div class="opgg-card-body"><div class="opgg-section-title">创建 Pool（需同时添加首个角色）</div><div class="opgg-pool-create-row"><input id="opgg-pool-name" placeholder="自定义 Pool 名称"><select id="opgg-pool-environment"><option value="pbe">S18 PBE</option><option value="live">NA 正式服</option></select><input id="opgg-pool-initial-name" placeholder="首个角色游戏名"><input id="opgg-pool-initial-tag" placeholder="首个角色 Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-create">验证并创建</button></div></div></div>` : ""}
       <div class="opgg-grid">${pools.map(poolCardHtml).join("") || '<div class="opgg-empty">还没有 Pool。输入名称和首个角色，验证成功后创建。</div>'}</div>
       ${pools.length === 2 ? `<div class="opgg-toolbar opgg-pool-compare-bar"><button type="button" class="opgg-primary-button" data-opgg-action="pool-compare" data-left="${esc(pools[0].id)}" data-right="${esc(pools[1].id)}">对比 ${esc(pools[0].name)} 与 ${esc(pools[1].name)}</button></div>` : ""}`;
@@ -677,8 +682,34 @@ async function addPoolPlayer(poolId) {
   await renderPlayerPools();
 }
 
+async function importPoolByCode() {
+  const shareCode = el("opgg-pool-share-code")?.value.trim().toUpperCase();
+  if (!shareCode) return;
+  await api("/api/player-pools/import-code", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ shareCode })
+  });
+  await renderPlayerPools();
+}
+
+async function copyPoolShareCode(poolId) {
+  const result = await api(`/api/player-pools/${encodeURIComponent(poolId)}/share-code`, { method: "POST" });
+  const code = result.shareCode;
+  try {
+    await navigator.clipboard.writeText(code);
+  } catch {
+    window.prompt("复制这个 Pool 码", code);
+  }
+  await renderPlayerPools();
+  const codeEl = document.querySelector(`[data-pool-share-code="${CSS.escape(poolId)}"]`);
+  if (codeEl) codeEl.textContent = `${code}（已复制）`;
+}
+
 async function mutatePool(action, dataset) {
   if (action === "pool-create") return createPlayerPool();
+  if (action === "pool-import-code") return importPoolByCode();
+  if (action === "pool-share-code") return copyPoolShareCode(dataset.pool);
   if (action === "pool-add-player") return addPoolPlayer(dataset.pool);
   if (action === "pool-rename-start") {
     const row = document.querySelector(`[data-pool-rename-form="${CSS.escape(dataset.pool)}"]`);

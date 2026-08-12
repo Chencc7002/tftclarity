@@ -7,6 +7,8 @@ import {
   initSchema,
   createPool,
   renamePool,
+  setPoolShareCode,
+  getPoolByShareCode,
   deletePool,
   poolExists,
   listOwnedPools,
@@ -27,6 +29,8 @@ const MAX_POOLS_PER_OWNER = 2;
 const MAX_PLAYERS_PER_POOL = 15;
 const MIN_PLAYERS_PER_POOL = 1;
 const SEED_PATH = resolve(process.cwd(), "data", "pbe-player-pool-seed.json");
+const SHARE_CODE_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ";
+const SHARE_CODE_LENGTH = 8;
 
 function sendJson(response, status, value) {
   response.writeHead(status, {
@@ -51,11 +55,29 @@ function publicPool(pool, players = []) {
     region: pool.region,
     season: pool.season,
     provider: pool.provider,
+    shareCode: pool.shareCode ?? null,
     memberCount: pool.memberCount ?? players.length,
     maxMembers: MAX_PLAYERS_PER_POOL,
     createdAt: pool.createdAt,
     players
   };
+}
+
+function createUniqueShareCode(database) {
+  for (let attempt = 0; attempt < 20; attempt += 1) {
+    const bytes = Buffer.from(randomUUID().replaceAll("-", ""), "hex");
+    let code = "";
+    for (let index = 0; index < SHARE_CODE_LENGTH; index += 1) {
+      code += SHARE_CODE_ALPHABET[bytes[index] % SHARE_CODE_ALPHABET.length];
+    }
+    if (!getPoolByShareCode(database, code)) return code;
+  }
+  throw new Error("POOL_SHARE_CODE_GENERATION_FAILED");
+}
+
+function ensurePoolShareCode(database, pool) {
+  if (pool.shareCode) return pool;
+  return setPoolShareCode(database, pool.id, createUniqueShareCode(database));
 }
 
 function ownedPool(database, poolId, ownerId) {
@@ -315,8 +337,47 @@ function createPlayerPoolApiRouter(options = {}) {
           deletePool(database, pool.id);
           return sendJson(response, 422, { error: error.code ?? error.message ?? "INITIAL_PLAYER_VERIFICATION_FAILED" });
         }
-        const created = ownedPool(database, pool.id, ownerId);
+        const created = ensurePoolShareCode(database, ownedPool(database, pool.id, ownerId));
         return sendJson(response, 201, { pool: publicPool(created, getPoolPlayers(database, pool.id)) });
+      }
+      if (pathname === "/api/player-pools/import-code" && request.method === "POST") {
+        const body = await readJsonBody(request);
+        const shareCode = String(body.shareCode ?? "").trim().toUpperCase();
+        if (!shareCode) return sendJson(response, 400, { error: "POOL_SHARE_CODE_REQUIRED" });
+        const sourcePool = getPoolByShareCode(database, shareCode);
+        if (!sourcePool || sourcePool.ownerType !== "user") return sendJson(response, 404, { error: "POOL_SHARE_CODE_NOT_FOUND" });
+        const pools = listOwnedPools(database, ownerId);
+        if (pools.length >= MAX_POOLS_PER_OWNER) return sendJson(response, 409, { error: "POOL_LIMIT_REACHED" });
+        const sourcePlayers = getPoolPlayers(database, sourcePool.id, { activeOnly: false }).slice(0, MAX_PLAYERS_PER_POOL);
+        if (!sourcePlayers.length) return sendJson(response, 409, { error: "SOURCE_POOL_EMPTY" });
+        const requestedName = String(body.name ?? "").trim();
+        let name = requestedName || sourcePool.name;
+        if (pools.some((pool) => pool.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0)) {
+          name = `${sourcePool.name} 副本`;
+        }
+        if (name.length > 30) name = name.slice(0, 30);
+        if (pools.some((pool) => pool.name.localeCompare(name, undefined, { sensitivity: "accent" }) === 0)) {
+          return sendJson(response, 409, { error: "POOL_NAME_EXISTS" });
+        }
+        const importedPool = createPool(database, {
+          id: `player-pool-${randomUUID()}`,
+          name,
+          region: sourcePool.region,
+          environment: sourcePool.environment,
+          season: sourcePool.season,
+          provider: sourcePool.provider,
+          ownerType: "user",
+          ownerId,
+          visibility: "private"
+        });
+        for (const player of sourcePlayers) {
+          registerPlayer(database, { ...player, active: true }, importedPool.id, new Date().toISOString(), "share_code_import");
+        }
+        const created = ensurePoolShareCode(database, ownedPool(database, importedPool.id, ownerId));
+        return sendJson(response, 201, {
+          pool: publicPool(created, getPoolPlayers(database, importedPool.id, { activeOnly: false })),
+          importedFrom: shareCode
+        });
       }
       if (pathname === "/api/player-pools/compare" && request.method === "GET") {
         const ids = url.searchParams.getAll("pool");
@@ -400,6 +461,13 @@ function createPlayerPoolApiRouter(options = {}) {
         if (!pool) return sendJson(response, 404, { error: "POOL_NOT_FOUND" });
         return sendJson(response, 200, poolStats(database, pool));
       }
+      const shareCodeMatch = pathname.match(/^\/api\/player-pools\/([^/]+)\/share-code$/u);
+      if (shareCodeMatch && request.method === "POST") {
+        const pool = ownedPool(database, shareCodeMatch[1], ownerId);
+        if (!pool) return sendJson(response, 404, { error: "POOL_NOT_FOUND" });
+        const shared = ensurePoolShareCode(database, pool);
+        return sendJson(response, 200, { shareCode: shared.shareCode });
+      }
       const poolMatch = pathname.match(/^\/api\/player-pools\/([^/]+)$/u);
       if (poolMatch && request.method === "PATCH") {
         const pool = ownedPool(database, poolMatch[1], ownerId);
@@ -430,5 +498,6 @@ export {
   MIN_PLAYERS_PER_POOL,
   createPlayerPoolApiRouter,
   poolStats,
-  compareStats
+  compareStats,
+  createUniqueShareCode
 };

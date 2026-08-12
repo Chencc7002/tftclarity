@@ -5,13 +5,19 @@ import {
   MAX_PLAYERS_PER_POOL,
   MIN_PLAYERS_PER_POOL,
   poolStats,
-  compareStats
+  compareStats,
+  createUniqueShareCode
 } from "../services/player-pools/api-router.mjs";
 import {
   openDatabase,
   initSchema,
   createPool,
-  ingestExternalPlayerMatches
+  ingestExternalPlayerMatches,
+  setPoolShareCode,
+  getPoolByShareCode,
+  getPoolPlayers,
+  registerPlayer,
+  removePlayerFromPool
 } from "../services/opgg/collector.mjs";
 
 function match(id, placement, trait = "TFT18_Test") {
@@ -47,6 +53,47 @@ test("player pool product limits are frozen to two pools and one to fifteen memb
   assert.equal(MAX_POOLS_PER_OWNER, 2);
   assert.equal(MIN_PLAYERS_PER_POOL, 1);
   assert.equal(MAX_PLAYERS_PER_POOL, 15);
+});
+
+test("pool share codes are compact, unambiguous and resolve to the source pool", async () => {
+  const database = await openDatabase(":memory:");
+  initSchema(database);
+  createPool(database, {
+    id: "share-source",
+    name: "pbe高手",
+    region: "pbe",
+    environment: "pbe",
+    ownerType: "user",
+    ownerId: "owner-a"
+  });
+  const code = createUniqueShareCode(database);
+  assert.match(code, /^[23456789A-HJ-NP-Z]{8}$/u);
+  setPoolShareCode(database, "share-source", code);
+  assert.equal(getPoolByShareCode(database, code.toLowerCase()).id, "share-source");
+  database.close();
+});
+
+test("a pool-code import copies membership without sharing edit state", async () => {
+  const database = await openDatabase(":memory:");
+  initSchema(database);
+  createPool(database, { id: "source", name: "pbe高手", region: "pbe", ownerType: "user", ownerId: "owner-a" });
+  createPool(database, { id: "copy", name: "pbe高手 副本", region: "pbe", ownerType: "user", ownerId: "owner-b" });
+  registerPlayer(database, {
+    id: "shared-player-pbe-pbe",
+    displayName: "Shared Player#PBE",
+    gameName: "Shared Player",
+    tagLine: "PBE",
+    region: "pbe",
+    active: true
+  }, "source");
+  for (const player of getPoolPlayers(database, "source", { activeOnly: false })) {
+    registerPlayer(database, player, "copy", new Date().toISOString(), "share_code_import");
+  }
+  assert.equal(getPoolPlayers(database, "copy").length, 1);
+  removePlayerFromPool(database, "copy", "shared-player-pbe-pbe", new Date().toISOString());
+  assert.equal(getPoolPlayers(database, "copy", { activeOnly: false }).length, 0);
+  assert.equal(getPoolPlayers(database, "source", { activeOnly: false }).length, 1);
+  database.close();
 });
 
 test("pool stats expose match-weighted and player-balanced composition usage", async () => {

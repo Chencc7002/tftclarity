@@ -372,6 +372,16 @@ test("player pool UI supports 1-15 members, two pools, removal and comparison", 
   assert.match(opggStyles, /\.opgg-remove-button/u);
 });
 
+test("player pools expose share codes and one-click independent imports", () => {
+  assert.match(opggPanel, /用 Pool 码一键导入/u);
+  assert.match(opggPanel, /pool-import-code/u);
+  assert.match(opggPanel, /pool-share-code/u);
+  assert.match(opggPanel, /navigator\.clipboard\.writeText/u);
+  assert.match(opggPanel, /导入后可以独立增删/u);
+  assert.match(opggStyles, /\.opgg-pool-share-row/u);
+  assert.match(opggStyles, /\.opgg-pool-import-row/u);
+});
+
 test("soft-validated model summaries expose trusted explanation feedback controls", () => {
   assert.match(appJs, /model_soft_validated_summary/);
   assert.match(appJs, /modelConclusionPendingVerification/);

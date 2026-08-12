@@ -195,7 +195,13 @@ function initSchema(database) {
   ensureColumn(database, "pool", "visibility", "TEXT NOT NULL DEFAULT 'system'");
   ensureColumn(database, "pool", "pool_type", "TEXT NOT NULL DEFAULT 'managed'");
   ensureColumn(database, "pool", "patch_scope", "TEXT");
+  ensureColumn(database, "pool", "share_code", "TEXT");
   ensureColumn(database, "pool_player", "source", "TEXT NOT NULL DEFAULT 'manual'");
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_pool_share_code
+     ON pool(share_code)
+     WHERE share_code IS NOT NULL`
+  );
   database.prepare(
     `UPDATE tracked_player
      SET puuid_encrypted = NULL
@@ -979,7 +985,7 @@ function listPools(database) {
     .prepare(
       `SELECT p.id, p.name, p.region, p.created_at, p.owner_type, p.owner_id,
               p.environment, p.season, p.provider, p.visibility,
-              p.pool_type, p.patch_scope,
+              p.pool_type, p.patch_scope, p.share_code,
               COUNT(pm.player_id) AS member_count,
               SUM(CASE WHEN t.active = 1 THEN 1 ELSE 0 END) AS active_member_count
        FROM pool p
@@ -1001,6 +1007,7 @@ function listPools(database) {
       visibility: row.visibility,
       poolType: row.pool_type,
       patchScope: row.patch_scope,
+      shareCode: row.share_code,
       createdAt: row.created_at,
       memberCount: Number(row.member_count),
       activeMemberCount: Number(row.active_member_count ?? 0)
@@ -1072,6 +1079,7 @@ function getPool(database, poolId) {
     visibility: row.visibility,
     poolType: row.pool_type,
     patchScope: row.patch_scope,
+    shareCode: row.share_code,
     createdAt: row.created_at
   };
 }
@@ -1081,6 +1089,20 @@ function renamePool(database, poolId, name) {
   if (!normalized) throw new Error("Pool name is required.");
   const result = database.prepare(`UPDATE pool SET name = ? WHERE id = ?`).run(normalized, poolId);
   return Number(result.changes) > 0 ? getPool(database, poolId) : null;
+}
+
+function setPoolShareCode(database, poolId, shareCode) {
+  const normalized = String(shareCode ?? "").trim().toUpperCase();
+  if (!normalized) throw new Error("Pool share code is required.");
+  const result = database.prepare(`UPDATE pool SET share_code = ? WHERE id = ?`).run(normalized, poolId);
+  return Number(result.changes) > 0 ? getPool(database, poolId) : null;
+}
+
+function getPoolByShareCode(database, shareCode) {
+  const normalized = String(shareCode ?? "").trim().toUpperCase();
+  if (!normalized) return null;
+  const row = database.prepare(`SELECT id FROM pool WHERE share_code = ?`).get(normalized);
+  return row ? getPool(database, row.id) : null;
 }
 
 function deletePool(database, poolId) {
@@ -1485,6 +1507,8 @@ export {
   createPool,
   getPool,
   renamePool,
+  setPoolShareCode,
+  getPoolByShareCode,
   deletePool,
   poolExists,
   listPools,
