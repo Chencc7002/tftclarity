@@ -19,6 +19,10 @@ import {
   registerPlayer,
   removePlayerFromPool
 } from "../services/opgg/collector.mjs";
+import {
+  buildPoolComparisonAnalysisEvidence,
+  buildSinglePoolAnalysisEvidence
+} from "../services/player-pools/analysis-context.mjs";
 
 function match(id, placement, trait = "TFT18_Test") {
   return {
@@ -191,4 +195,45 @@ test("pool comparison uses the union of comps and exposes performance deltas", (
   assert.equal(shared.performanceComparable, true);
   assert.equal(result.summaryDifferences.top4DeltaPp, 5);
   assert.equal(result.compDifferences[1].left, null);
+});
+
+test("pool analysis evidence stays compact and preserves comparison safety", () => {
+  const stats = {
+    pool: { id: "pbe", name: "pbe高手" },
+    scope: { environment: "pbe", region: "pbe", season: "set18-pbe", patch: "18.1", provider: "metatft" },
+    coverage: { playerCount: 9, activePlayerCount: 9, matchCount: 180, uniqueMatchCount: 180, sampleTier: "normal" },
+    performance: { avgPlacement: 3.82, top4Rate: .62, winRate: .2 },
+    warnings: [],
+    compTrends: [{
+      compSignature: "set18|carry:DA_18_Ahri",
+      displaySignature: { traits: [], carry: { name: "阿狸" } },
+      playerMatchShare: .1,
+      playerBalancedUsageRate: .102,
+      observedAvgPlacement: 2.5,
+      observedTop4Rate: .833,
+      observedWinRate: .25,
+      playerMatchCount: 18,
+      playerCoverage: 7,
+      performanceComparable: true,
+      representativeUnits: [{ characterId: "DA_18_Ahri", displayName: "阿狸", tier: 2, items: [] }]
+    }]
+  };
+  const single = buildSinglePoolAnalysisEvidence(stats, { generatedAt: "2026-08-13T00:00:00.000Z" });
+  assert.equal(single.mode, "single_pool");
+  assert.equal(single.pool.compositions[0].label, "阿狸");
+  assert.equal(single.pool.compositions[0].top4Rate, .833);
+  assert.doesNotMatch(JSON.stringify(single), /iconUrl/u);
+
+  const comparison = buildPoolComparisonAnalysisEvidence({
+    compatibility: "DESCRIPTIVE_ONLY",
+    comparable: false,
+    reasons: ["SAMPLE_GATE_NOT_MET"],
+    statementPolicy: "仅并列展示；禁止生成优劣结论。",
+    pools: [stats, { ...stats, pool: { id: "other", name: "另一组" } }],
+    summaryDifferences: { top4DeltaPp: 0 },
+    compDifferences: []
+  });
+  assert.equal(comparison.mode, "pool_comparison");
+  assert.equal(comparison.comparable, false);
+  assert.match(comparison.statementPolicy, /禁止生成优劣/u);
 });

@@ -11,6 +11,7 @@
 }
 .opgg-page-title { margin: 0; color: var(--ink); font-size: 18px; font-weight: 900; letter-spacing: -.01em; }
 .opgg-page-sub { margin: 5px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.opgg-page-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
 
 .opgg-toolbar, .opgg-detail-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .opgg-toolbar select {

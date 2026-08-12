@@ -18,8 +18,18 @@ function traitBase(value) {
 
 function metaTFTUnitIconUrl(apiName) {
   const slug = String(apiName ?? "").trim().toLowerCase();
-  if (!/^tft\d+_[a-z0-9_]+$/u.test(slug)) return null;
+  // S18/PBE match payloads use DA_18_* ids and MetaTFT publishes those ids directly.
+  if (!/^(?:tft\d+|da)_[a-z0-9_]+$/u.test(slug)) return null;
   return `https://cdn.metatft.com/file/metatft/champions/${slug}.png`;
+}
+
+function metaTFTCanonicalUnitIconUrl(apiName) {
+  const value = String(apiName ?? "").trim();
+  let canonical = value.replace(/^DA_(\d+)_/u, "TFT$1_");
+  if (canonical === value) {
+    canonical = value.replace(/^DA_([A-Za-z]+)(\d+)(.*)$/u, "TFT$2_$1$3");
+  }
+  return canonical === value ? null : metaTFTUnitIconUrl(canonical);
 }
 
 function metaTFTDataIconUrl(entityType, apiName) {
@@ -59,7 +69,12 @@ export function createAssetResolver(options = {}) {
       : (entityType === "item" || entityType === "trait") && !manifestIconUrl
         ? normalizeAssetUrl(metaTFTDataIconUrl(entityType, lookup))
       : null;
+    const metaTFTFallbackIconUrl = entityType === "unit"
+      ? normalizeAssetUrl(metaTFTCanonicalUnitIconUrl(lookup))
+      : null;
     const iconUrl = metaTFTIconUrl ?? manifestIconUrl;
+    const fallbackIconUrl = [metaTFTFallbackIconUrl, manifestIconUrl]
+      .find((candidate) => candidate && candidate !== iconUrl) ?? null;
     return {
       entityType,
       apiName: entityType === "item" ? requested : lookup,
@@ -69,8 +84,8 @@ export function createAssetResolver(options = {}) {
       ...(entityType === "item" && lookup !== requested ? { assetApiName: lookup } : {}),
       ...(entityType === "trait" ? { filterId: requested } : {}),
       iconUrl,
-      ...(entityType === "unit" && manifestIconUrl && manifestIconUrl !== iconUrl
-        ? { fallbackIconUrl: manifestIconUrl }
+      ...(entityType === "unit" && fallbackIconUrl
+        ? { fallbackIconUrl }
         : {}),
       source: metaTFTIconUrl ? "MetaTFT CDN" : record?.source ?? manifest?.source ?? null,
       sourcePatch: record?.sourcePatch ?? manifest?.sourcePatch ?? null,

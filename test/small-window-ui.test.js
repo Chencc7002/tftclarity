@@ -179,6 +179,18 @@ test("feature-flagged chat routing keeps quick tools on recommend and normal cha
   assert.match(appJs, /event\.type === "diagnostic"/);
 });
 
+test("Pool dashboards can stream an AI explanation into chat without replacing the dashboard", () => {
+  assert.match(opggPanel, /data-opgg-action="pool-ai-explain"/);
+  assert.match(opggPanel, /tft:request-pool-analysis/);
+  assert.match(opggPanel, /kind: "single_pool"/);
+  assert.match(opggPanel, /kind: "pool_comparison"/);
+  assert.match(appJs, /analysisContext: state\.activeAnalysisContext/);
+  assert.match(appJs, /preserveResultPane/);
+  assert.match(appJs, /conclusionRichTextHtml\(answer\)/);
+  assert.match(appJs, /tft:request-pool-analysis/);
+  assert.match(opggStyles, /\.opgg-page-actions/);
+});
+
 test("OP.GG review views use the result pane and preserve navigation context", () => {
   assert.match(opggPanel, /const resultEl = el\("result-content"\)/u);
   assert.doesNotMatch(opggPanel, /const resultEl = el\("result"\)/u);

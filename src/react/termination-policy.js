@@ -416,7 +416,10 @@ export function validateFinishAction(action, ledger) {
     }
     if (
       entries.length > 0
-      && entries.every((entry) => entry.temporalStatus === "historical")
+      && entries.every((entry) => (
+        entry.temporalStatus === "historical"
+        && entry.metadata?.trustedServerRefresh !== true
+      ))
       && CURRENT_RANKING_SIGNAL.test(action.answer)
     ) {
       errors.push("historical quick-tool evidence cannot support a current statistical or best-ranking claim");

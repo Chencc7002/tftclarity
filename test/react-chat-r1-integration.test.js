@@ -62,6 +62,46 @@ test("independent react endpoint answers without entering recommendForInput", as
   ]);
 });
 
+test("active Pool dashboard evidence is promoted into the ReAct ledger", async () => {
+  let seenEvidence = [];
+  const runtime = createSmallWindowRuntime({
+    reactDecisionProvider: async (request) => {
+      seenEvidence = request.state.evidence;
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "当前 Pool 的热门阵容是阿狸。",
+        evidenceIds: [request.state.evidence[0].evidenceId],
+        reasonCode: "sufficient_evidence"
+      };
+    }
+  });
+  const trustedAnalysisContext = {
+    schemaVersion: "player-pool-analysis-evidence.v1",
+    mode: "single_pool",
+    generatedAt: "2026-08-13T00:00:00.000Z",
+    statementPolicy: "只描述当前玩家池。",
+    pool: {
+      id: "pool-a",
+      name: "pbe高手",
+      scope: { season: "set18-pbe", patch: "18.1" },
+      coverage: { matchCount: 180, activePlayerCount: 9 },
+      performance: { avgPlacement: 3.82, top4Rate: .62, winRate: .2 },
+      compositions: [{ label: "阿狸", matchWeightedUsageRate: .1, matchCount: 18 }]
+    }
+  };
+  const { payload } = await handleReactChatRequest({
+    input: "用新手能理解的话解读当前 Pool",
+    conversationId: "pool-analysis-test"
+  }, runtime, { trustedAnalysisContext });
+  assert.equal(payload.ok, true);
+  assert.equal(seenEvidence.length, 1);
+  assert.equal(seenEvidence[0].toolName, "player_pool_stats");
+  assert.equal(seenEvidence[0].source, "tftclarity_player_pool_dashboard");
+  assert.equal(seenEvidence[0].value.pool.name, "pbe高手");
+  assert.equal(payload.evidenceIds[0], seenEvidence[0].evidenceId);
+});
+
 test("react answers persist a trusted feedback snapshot with validation context", async () => {
   const cacheStore = new MemoryCacheStore();
   const visitor = { scope: "react-feedback-user" };

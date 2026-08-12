@@ -67,7 +67,8 @@ const state = {
   conclusionStreamText: "",
   seasonContextId: "set17-live",
   seasonContexts: [],
-  seasonContext: null
+  seasonContext: null,
+  activeAnalysisContext: null
 };
 
 const shellEl = document.querySelector("#app-shell");
@@ -4695,6 +4696,8 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   const quickTask = normalizedRequestOptions.quickTask ?? null;
   const supplementalText = String(normalizedRequestOptions.supplementalText ?? "").trim().slice(0, 1200);
   const reuseLastInput = refresh || normalizedRequestOptions.reuseLastInput === true;
+  const preserveResultPane = normalizedRequestOptions.preserveResultPane === true
+    || Boolean(state.activeAnalysisContext && !state.lastQuickTask);
   if (state.seasonContext?.themePreview && !state.seasonContext.selectable) {
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
     return;
@@ -4726,7 +4729,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   const controller = new AbortController();
   state.currentController = controller;
   setRequestRunning(true);
-  renderLoadingResult();
+  if (!preserveResultPane) renderLoadingResult();
   try {
     if (!state.runtimeStatus) await loadRuntimeStatus();
     const reactChatEnabled = Boolean(state.runtimeStatus?.routing?.reactChatEnabled);
@@ -4757,6 +4760,9 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
           ? { supplementalText: state.lastSupplementalText }
           : {}),
         ...(!state.lastQuickTask && reactChatEnabled ? { messages: reactChatMessages() } : {}),
+        ...(!state.lastQuickTask && state.activeAnalysisContext
+          ? { analysisContext: state.activeAnalysisContext }
+          : {}),
         preferences: {
           minSamples: state.minSamples,
           itemPolicy: state.itemPolicy,
@@ -4779,8 +4785,24 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     if (data.access) renderAccessStatus(data.access);
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
     completeRecommendationProgress(recommendationProgress, data);
-    renderResult(data);
-    if (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result") {
+    if (preserveResultPane) {
+      setDeveloperOutput(data);
+      if (activeResponseEl) {
+        const answer = String(
+          data.reactAnswer
+          ?? data.text
+          ?? data.assistantResponse?.text
+          ?? (typeof data.answer === "string" ? data.answer : data.answer?.summary)
+          ?? ""
+        ).trim();
+        activeResponseEl.innerHTML = answer
+          ? `<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
+          : `<div>${t("queryFailed")}</div>`;
+      }
+    } else {
+      renderResult(data);
+    }
+    if (!preserveResultPane && (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result")) {
       void streamGeneratedConclusion(data, requestId);
     }
     setStatusKey(
@@ -4932,8 +4954,22 @@ rankControl.addEventListener("change", () => {
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
   if (await submitQuickTaskForm()) return;
-  if (await routeNaturalLanguageQuickTask(queryInput.value)) return;
+  if (!state.activeAnalysisContext && await routeNaturalLanguageQuickTask(queryInput.value)) return;
   requestRecommendation(false);
+});
+
+window.addEventListener("tft:pool-analysis-context", (event) => {
+  state.activeAnalysisContext = event.detail ?? null;
+});
+
+window.addEventListener("tft:request-pool-analysis", async (event) => {
+  if (state.requestInFlight) return;
+  const detail = event.detail ?? {};
+  state.activeAnalysisContext = detail.context ?? state.activeAnalysisContext;
+  const input = String(detail.input ?? "").trim();
+  if (!input) return;
+  queryInput.value = input;
+  await requestRecommendation(false, input, { preserveResultPane: true });
 });
 
 queryInput.addEventListener("keydown", (event) => {

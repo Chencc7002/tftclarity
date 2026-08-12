@@ -16,6 +16,19 @@ let state = {
 };
 let teachingController = null;
 let directPlayer = null;
+let activePoolAnalysisContext = null;
+
+function publishPoolAnalysisContext(context = null) {
+  activePoolAnalysisContext = context;
+  window.dispatchEvent(new CustomEvent("tft:pool-analysis-context", { detail: context }));
+}
+
+function poolAnalysisButton(label = "AI 解读") {
+  return `<button type="button" class="opgg-ai-button opgg-ai-button-compact" data-opgg-action="pool-ai-explain">
+    <span class="opgg-ai-icon" aria-hidden="true">✦</span>
+    <span><strong>${esc(label)}</strong></span>
+  </button>`;
+}
 
 function el(id) {
   return document.querySelector(`#${id}`);
@@ -56,7 +69,7 @@ function imageHtml(url, alt, className, fallbackUrl = null) {
   if (!url) {
     return `<span class="${className} opgg-image-fallback" aria-label="${esc(alt)}">${esc(String(alt ?? "?").slice(0, 1) || "?")}</span>`;
   }
-  return `<img class="${className}" src="${esc(url)}" alt="${esc(alt)}" loading="lazy" decoding="async"${fallbackUrl ? ` data-fallback-src="${esc(fallbackUrl)}"` : ""}>`;
+  return `<img class="${className}" src="${esc(url)}" alt="${esc(alt)}" data-fallback-label="${esc(String(alt ?? "?").slice(0, 1) || "?")}" loading="lazy" decoding="async"${fallbackUrl ? ` data-fallback-src="${esc(fallbackUrl)}"` : ""}>`;
 }
 
 function normalizedItems(unit) {
@@ -542,6 +555,7 @@ async function renderMatch() {
 
 async function renderPersonal() {
   state.view = "personal";
+  publishPoolAnalysisContext(null);
   setResult("对局可视化与复盘", loadingHtml());
   try {
     const data = await api("/api/opgg/my-review");
@@ -743,6 +757,18 @@ async function mutatePool(action, dataset) {
   }
   if (action === "pool-stats") return renderPoolStats(dataset.pool);
   if (action === "pool-compare") return renderPoolCompare(dataset.left, dataset.right);
+  if (action === "pool-ai-explain") {
+    if (!activePoolAnalysisContext) return;
+    const comparison = activePoolAnalysisContext.kind === "pool_comparison";
+    window.dispatchEvent(new CustomEvent("tft:request-pool-analysis", {
+      detail: {
+        context: activePoolAnalysisContext,
+        input: comparison
+          ? "请用新手能理解的方式解读当前两个 Pool：先总结共同点，再从平均名次、前四率、登顶率、阵容使用偏好找出差异；指出热门强势和冷门潜力阵容，并明确样本限制。"
+          : "请用新手能理解的方式解读当前 Pool：总结高手最常玩的阵容、观测表现较好的阵容，以及使用较少但可能有潜力的阵容；给出入门推荐，并明确样本限制。"
+      }
+    }));
+  }
 }
 
 function poolTrendRows(stats) {
@@ -871,26 +897,30 @@ function singlePoolCompCard(comp, stats) {
 }
 
 async function renderPoolStats(poolId) {
+  state.view = "pool-stats";
+  state.pool = poolId;
   setResult("玩家 Pool 数据看板", loadingHtml());
   try {
     const stats = await api(`/api/player-pools/${encodeURIComponent(poolId)}/stats`);
     setResult(`${stats.pool.name} · 数据看板`, `${backLink("返回 Pool 管理", "personal")}
-      <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(stats.pool.name)}</h3><p class="opgg-page-sub">${esc(stats.scope.season)} · ${esc(stats.scope.patch ?? "暂无 Patch")} · 对局加权 + 玩家等权</p></div><span class="opgg-badge opgg-badge-muted">${esc(stats.coverage.sampleTier)}</span></div>
+      <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(stats.pool.name)}</h3><p class="opgg-page-sub">${esc(stats.scope.season)} · ${esc(stats.scope.patch ?? "暂无 Patch")} · 对局加权 + 玩家等权</p></div><div class="opgg-page-actions">${poolAnalysisButton()}<span class="opgg-badge opgg-badge-muted">${esc(stats.coverage.sampleTier)}</span></div></div>
       <div class="opgg-chips"><div class="opgg-chip"><b>玩家</b><span>${stats.coverage.activePlayerCount}/${stats.coverage.playerCount}</span></div><div class="opgg-chip"><b>对局</b><span>${stats.coverage.matchCount}</span></div><div class="opgg-chip"><b>平均名次</b><span>${stats.performance.avgPlacement ?? "-"}</span></div><div class="opgg-chip"><b>前四率</b><span>${pct1(stats.performance.top4Rate)}</span></div><div class="opgg-chip"><b>吃鸡率</b><span>${pct1(stats.performance.winRate)}</span></div></div>
       ${(stats.warnings ?? []).map((warning) => `<div class="opgg-notice">${esc(warning)}</div>`).join("")}
       <div class="opgg-dashboard-chart-grid">${singlePoolUsageChart(stats)}${singlePoolEffectMatrix(stats)}</div>
       <div class="opgg-section-title">阵容卡片 <small>点击展开完整指标和代表棋盘</small></div><div class="opgg-compare-comp-list">${(stats.compTrends ?? []).slice(0, 12).map((comp) => singlePoolCompCard(comp, stats)).join("")}</div>
       <details class="opgg-raw-table"><summary>查看完整指标表</summary><div class="opgg-pool-table-wrap"><table class="opgg-pool-table"><thead><tr><th>阵容</th><th>对局加权</th><th>玩家等权</th><th>均名次</th><th>前四</th><th>登顶</th><th>样本</th></tr></thead><tbody>${poolTrendRows(stats)}</tbody></table></div></details>`, stats);
+    publishPoolAnalysisContext({ schemaVersion: "player-pool-analysis-context.v1", kind: "single_pool", poolIds: [stats.pool.id] });
   } catch (error) { setResult("玩家 Pool 数据看板", errorHtml(error)); }
 }
 
 async function renderPoolCompare(leftId, rightId) {
+  state.view = "pool-compare";
   setResult("Pool 对比", loadingHtml());
   try {
     const result = await api(`/api/player-pools/compare?pool=${encodeURIComponent(leftId)}&pool=${encodeURIComponent(rightId)}`);
     const [left, right] = result.pools;
     setResult("Pool 对比", `${backLink("返回 Pool 管理", "personal")}
-      <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(left.pool.name)} vs ${esc(right.pool.name)}</h3><p class="opgg-page-sub">Pool 名称仅用于展示，兼容性来自实际赛季 / Patch / 样本覆盖</p></div><span class="opgg-badge ${result.comparable ? "opgg-badge-success" : "opgg-badge-warn"}">${esc(result.compatibility)}</span></div>
+      <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(left.pool.name)} vs ${esc(right.pool.name)}</h3><p class="opgg-page-sub">Pool 名称仅用于展示，兼容性来自实际赛季 / Patch / 样本覆盖</p></div><div class="opgg-page-actions">${poolAnalysisButton("AI 对比解读")}<span class="opgg-badge ${result.comparable ? "opgg-badge-success" : "opgg-badge-warn"}">${esc(result.compatibility)}</span></div></div>
       <div class="opgg-compare-scope"><div><strong class="opgg-pool-left">${esc(left.pool.name)}</strong><span>${left.coverage.matchCount} 场 · ${left.coverage.activePlayerCount}/${left.coverage.playerCount} 人 · ${esc(left.scope.patch ?? "无 Patch")}</span></div><div><strong class="opgg-pool-right">${esc(right.pool.name)}</strong><span>${right.coverage.matchCount} 场 · ${right.coverage.activePlayerCount}/${right.coverage.playerCount} 人 · ${esc(right.scope.patch ?? "无 Patch")}</span></div></div>
       <div class="opgg-compare-metric-grid">
         ${comparisonMetricCard("平均名次（越低越好）", left.pool.name, right.pool.name, left.performance.avgPlacement, right.performance.avgPlacement, "placement")}
@@ -902,6 +932,7 @@ async function renderPoolCompare(leftId, rightId) {
       <div class="opgg-compare-chart-grid">${compUsageDumbbells(result.compDifferences ?? [], left, right)}${compEffectMatrix(result.compDifferences ?? [], left, right)}</div>
       <div class="opgg-section-title">阵容逐项对比 <small>共 ${(result.compDifferences ?? []).length} 个阵容，点击卡片展开代表棋盘和完整指标</small></div>
       <div class="opgg-compare-comp-list">${(result.compDifferences ?? []).map((row) => comparisonCompCard(row, left, right)).join("")}</div>`, result);
+    publishPoolAnalysisContext({ schemaVersion: "player-pool-analysis-context.v1", kind: "pool_comparison", poolIds: [left.pool.id, right.pool.id] });
   } catch (error) { setResult("Pool 对比", errorHtml(error)); }
 }
 
@@ -1131,6 +1162,11 @@ function attachClickDelegation() {
       return;
     }
     image.classList.add("opgg-image-broken");
+    const replacement = document.createElement("span");
+    replacement.className = `${image.className} opgg-image-fallback`;
+    replacement.setAttribute("aria-label", image.alt || "图片不可用");
+    replacement.textContent = image.dataset.fallbackLabel || String(image.alt || "?").slice(0, 1) || "?";
+    image.replaceWith(replacement);
   }, true);
   resultEl.addEventListener("click", (event) => {
     const target = event.target.closest("[data-opgg-action]");
@@ -1143,12 +1179,14 @@ function attachClickDelegation() {
 }
 
 export function renderOpggTrends() {
+  publishPoolAnalysisContext(null);
   state = { view: "trends", pool: DEFAULT_POOL, sig: null, playerId: null, matchId: null };
   attachClickDelegation();
   renderTrends();
 }
 
 export function renderOpggPersonal() {
+  publishPoolAnalysisContext(null);
   state = { view: "personal", pool: PERSONAL_POOL, sig: null, playerId: null, matchId: null };
   attachClickDelegation();
   directPlayer = null;
@@ -1156,6 +1194,7 @@ export function renderOpggPersonal() {
 }
 
 export function renderOpggProTeaching() {
+  publishPoolAnalysisContext(null);
   state = { view: "players", pool: DEFAULT_POOL, sig: null, playerId: null, matchId: null };
   attachClickDelegation();
   renderPlayers();

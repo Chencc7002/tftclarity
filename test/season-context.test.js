@@ -125,6 +125,9 @@ test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17
   assert.equal(entry.catalog.itemByApiName.get("DA_JeweledGauntlet").category, "ordinary_completed");
   assert.equal(entry.catalog.itemByApiName.get("DA_JeweledGauntlet").zhName, "珠光护手");
   assert.match(resolver.resolveUnit("TFT18_Ahri").iconUrl, /champions\/tft18_ahri\.png$/);
+  assert.match(resolver.resolveUnit("DA_18_Ahri").iconUrl, /champions\/da_18_ahri\.png$/);
+  assert.match(resolver.resolveUnit("DA_18_Yorick").fallbackIconUrl, /champions\/tft18_yorick\.png$/);
+  assert.match(resolver.resolveUnit("DA_Karma18").iconUrl, /champions\/da_karma18\.png$/);
   assert.match(resolver.resolveItem("DA_JeweledGauntlet").iconUrl, /items\/da_jeweledgauntlet\.png$/);
   assert.match(resolver.resolveTrait("DA_Riftbeast18_3").iconUrl, /traits\/da_riftbeast18\.png$/);
   assert.ok(catalogStoreCalls.length >= 4);

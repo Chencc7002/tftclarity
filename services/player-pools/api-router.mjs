@@ -24,6 +24,10 @@ import { aggregatePool, getPoolWindow } from "../opgg/aggregator.mjs";
 import { localizeAggregate } from "../opgg/localization.mjs";
 import { createOpggClient } from "../opgg/mcp-client.mjs";
 import { createPlayerMatchMcpClient } from "../metatft-player/mcp-client.mjs";
+import {
+  buildPoolComparisonAnalysisEvidence,
+  buildSinglePoolAnalysisEvidence
+} from "./analysis-context.mjs";
 
 const MAX_POOLS_PER_OWNER = 2;
 const MAX_PLAYERS_PER_POOL = 15;
@@ -272,7 +276,7 @@ function createPlayerPoolApiRouter(options = {}) {
     return { player: entry, ingest, availableCount: history.availableCount };
   }
 
-  return async function playerPoolRouter(request, response, url, context = {}) {
+  const playerPoolRouter = async function playerPoolRouter(request, response, url, context = {}) {
     const ownerId = String(context.scope ?? "anonymous");
     const pathname = url.pathname;
     const database = await getDatabase();
@@ -490,6 +494,29 @@ function createPlayerPoolApiRouter(options = {}) {
       return sendJson(response, 500, { error: error.code ?? error.message ?? "PLAYER_POOL_ERROR" });
     }
   };
+
+  playerPoolRouter.resolveAnalysisContext = async function resolveAnalysisContext(descriptor = {}, context = {}) {
+    const ownerId = String(context.scope ?? "anonymous");
+    const database = await getDatabase();
+    const kind = descriptor.kind === "pool_comparison" ? "pool_comparison" : "single_pool";
+    const poolIds = Array.isArray(descriptor.poolIds)
+      ? descriptor.poolIds.map((id) => String(id ?? "").trim()).filter(Boolean)
+      : [];
+    const expectedCount = kind === "pool_comparison" ? 2 : 1;
+    if (poolIds.length !== expectedCount || poolIds.some((id) => id.length > 160)) {
+      throw Object.assign(new Error("INVALID_POOL_ANALYSIS_CONTEXT"), { statusCode: 400 });
+    }
+    const pools = poolIds.map((id) => ownedPool(database, id, ownerId));
+    if (pools.some((pool) => !pool)) {
+      throw Object.assign(new Error("POOL_NOT_FOUND"), { statusCode: 404 });
+    }
+    const stats = pools.map((pool) => poolStats(database, pool));
+    return kind === "pool_comparison"
+      ? buildPoolComparisonAnalysisEvidence(compareStats(stats[0], stats[1]))
+      : buildSinglePoolAnalysisEvidence(stats[0]);
+  };
+
+  return playerPoolRouter;
 }
 
 export {
