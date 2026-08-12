@@ -368,7 +368,13 @@
 .opgg-pool-share-row small { color: var(--muted); font-size: 8px; }
 .opgg-pool-share-row strong { color: var(--ink); font-size: 11px; letter-spacing: .1em; }
 .opgg-secondary-button { min-height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--wallpaper-accent); background: rgba(255,255,255,.96); font-size: 9px; font-weight: 800; }
-.opgg-pool-compare-bar { margin-top: 12px; justify-content: center; }
+.opgg-dashboard-button { gap: 6px; }
+.opgg-pool-compare-entry { margin: 12px 0; padding: 13px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.92); box-shadow: var(--shadow-soft); }
+.opgg-pool-compare-entry.ready { border-color: color-mix(in srgb, var(--wallpaper-accent) 42%, var(--line)); background: color-mix(in srgb, var(--wallpaper-accent) 4%, rgba(255,255,255,.94)); }
+.opgg-pool-compare-icon { width: 38px; height: 38px; display: grid; place-items: center; border-radius: 10px; color: #fff; background: linear-gradient(135deg, #2e73d2, #b14fc4); font-size: 20px; font-weight: 900; }
+.opgg-pool-compare-entry strong { color: var(--ink); font-size: 12px; }
+.opgg-pool-compare-entry p { margin: 3px 0 0; color: var(--muted); font-size: 9px; line-height: 1.5; }
+.opgg-compare-progress { min-width: 42px; padding: 7px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: var(--panel-soft); font-size: 10px; font-weight: 850; text-align: center; }
 .opgg-pool-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.92); }
 .opgg-pool-table { width: 100%; border-collapse: collapse; font-size: 10px; }
 .opgg-pool-table th, .opgg-pool-table td { padding: 8px 9px; border-bottom: 1px solid var(--line); text-align: left; white-space: nowrap; }
@@ -448,6 +454,7 @@
 .opgg-matrix-point:hover circle { opacity: 1; transform: scale(1.22); }
 .opgg-matrix-left circle { fill: #2e73d2; }
 .opgg-matrix-right circle { fill: #b14fc4; }
+.opgg-matrix-single circle { fill: #2f9a83; }
 .opgg-matrix-point text { fill: #536177; font-size: 8px; font-weight: 750; pointer-events: none; }
 .opgg-compare-comp-list { display: grid; gap: 8px; }
 .opgg-compare-comp-card {
@@ -475,6 +482,23 @@
 .opgg-compare-boards { margin-top: 10px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
 .opgg-compare-boards > div { min-width: 0; padding: 9px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.8); }
 .opgg-compare-boards strong { margin-bottom: 7px; display: block; color: var(--muted); font-size: 8px; }
+.opgg-dashboard-chart-grid { margin: 12px 0; display: grid; grid-template-columns: minmax(320px, .9fr) minmax(420px, 1.1fr); gap: 10px; }
+.opgg-single-chart-card { margin: 0; }
+.opgg-single-usage-chart { display: grid; gap: 8px; }
+.opgg-single-usage-row { display: grid; grid-template-columns: minmax(86px, .75fr) minmax(140px, 1.8fr) 72px; align-items: center; gap: 8px; }
+.opgg-single-usage-row > strong { overflow: hidden; color: var(--ink); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.opgg-single-usage-row > div { display: grid; gap: 2px; }
+.opgg-single-usage-row > div span { height: 5px; display: block; border-radius: 999px; }
+.opgg-single-bar-match { background: linear-gradient(90deg, #5aa6e8, #2e73d2); }
+.opgg-single-bar-player { background: linear-gradient(90deg, #d988df, #a947bd); }
+.opgg-single-usage-row > small { color: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; text-align: right; }
+.opgg-single-metric-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.opgg-single-metric-grid > div { padding: 9px; display: grid; gap: 3px; border: 1px solid var(--line); border-radius: 9px; background: rgba(255,255,255,.84); }
+.opgg-single-metric-grid small { color: var(--muted); font-size: 8px; }
+.opgg-single-metric-grid strong { color: var(--ink); font-size: 13px; }
+.opgg-raw-table { margin-top: 12px; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.88); }
+.opgg-raw-table > summary { padding: 11px 13px; color: var(--ink); cursor: pointer; font-size: 10px; font-weight: 850; }
+.opgg-raw-table .opgg-pool-table-wrap { border-width: 1px 0 0; border-radius: 0 0 10px 10px; }
 
 .opgg-conclusion-list { margin: 0; padding: 0; list-style: none; display: grid; gap: 6px; }
 .opgg-conclusion-list li { padding: 9px 11px; border-left: 3px solid var(--wallpaper-accent); border-radius: 0 8px 8px 0; background: var(--panel-soft); font-size: 11px; line-height: 1.55; }
@@ -529,6 +553,7 @@
 @media (max-width: 720px) {
   .opgg-compare-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .opgg-compare-chart-grid { grid-template-columns: 1fr; }
+  .opgg-dashboard-chart-grid { grid-template-columns: 1fr; }
   .opgg-compare-comp-card > summary { grid-template-columns: minmax(100px, 1fr) minmax(120px, 1.2fr); }
   .opgg-compare-comp-card > summary .opgg-compare-comp-usage { grid-column: 1 / -1; text-align: left; }
   .opgg-compare-boards { grid-template-columns: 1fr; }
@@ -536,6 +561,8 @@
   .opgg-pool-create-row input:first-child { grid-column: 1 / -1; }
   .opgg-pool-create-row button { grid-column: 1 / -1; }
   .opgg-pool-import-row { grid-template-columns: 1fr; }
+  .opgg-pool-compare-entry { grid-template-columns: auto minmax(0, 1fr); }
+  .opgg-pool-compare-entry > button, .opgg-pool-compare-entry > .opgg-compare-progress { grid-column: 1 / -1; }
   .opgg-grid { grid-template-columns: 1fr; }
   .opgg-page-head { align-items: stretch; }
   .opgg-toolbar { width: 100%; }
@@ -578,6 +605,8 @@
   .opgg-compare-comp-card > summary { grid-template-columns: 1fr; }
   .opgg-compare-comp-card > summary .opgg-board { order: 3; }
   .opgg-comp-metric-line { grid-template-columns: 72px 42px minmax(70px, 1fr) 42px; gap: 4px; }
+  .opgg-single-usage-row { grid-template-columns: 72px minmax(100px, 1fr) 62px; }
+  .opgg-single-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 
 @media (max-width: 440px) {

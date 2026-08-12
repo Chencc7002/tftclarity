@@ -355,8 +355,12 @@ test("player pool UI supports 1-15 members, two pools, removal and comparison", 
   assert.match(opggPanel, /创建 Pool（需同时添加首个角色）/u);
   assert.match(opggPanel, /personal-remove/u);
   assert.match(opggPanel, /pool-remove-player/u);
-  assert.match(opggPanel, /pool-import-seed/u);
+  assert.doesNotMatch(opggPanel, /pool-import-seed/u);
+  assert.doesNotMatch(opggPanel, /导入 pbeList/u);
   assert.match(opggPanel, /pool-compare/u);
+  assert.match(opggPanel, /Pool 对比分析/u);
+  assert.match(opggPanel, /开始对比两组 Pool/u);
+  assert.match(opggPanel, /打开数据看板/u);
   assert.match(opggPanel, /对局加权 \+ 玩家等权/u);
   assert.match(opggPanel, /Pool 名称仅用于展示/u);
   assert.match(opggPanel, /禁止生成优劣/u);
@@ -370,6 +374,12 @@ test("player pool UI supports 1-15 members, two pools, removal and comparison", 
   assert.match(opggStyles, /\.opgg-compare-comp-card/u);
   assert.match(opggStyles, /\.opgg-pool-table/u);
   assert.match(opggStyles, /\.opgg-remove-button/u);
+  assert.match(opggStyles, /\.opgg-pool-compare-entry/u);
+  assert.match(opggStyles, /\.opgg-dashboard-chart-grid/u);
+  assert.match(opggStyles, /\.opgg-single-usage-chart/u);
+  assert.match(opggPanel, /阵容热度 × 前四率/u);
+  assert.match(opggPanel, /阵容卡片/u);
+  assert.match(opggPanel, /点击展开完整指标和代表棋盘/u);
 });
 
 test("player pools expose share codes and one-click independent imports", () => {
