@@ -51,7 +51,7 @@ export const messages = {
     quickTaskTraitDetailsTitle: "羁绊资料", quickTaskTraitDetailsBody: "效果与激活层级", quickTaskTraitDetailsExample: "示例：查询指定羁绊的效果",
     quickTaskTraitCatalogTitle: "全部羁绊", quickTaskTraitCatalogBody: "浏览当前赛季羁绊并点击查看详情", quickTaskTraitCatalogExample: "当前赛季羁绊图鉴",
     quickTaskUpdatesTitle: "更新公告", quickTaskUpdatesBody: "查看当前版本要点与改动", quickTaskUpdatesExample: "来自已维护的版本公告",
-    quickTaskOpggPersonalTitle: "个人战绩复盘", quickTaskOpggPersonalBody: "输入 Riot ID 查看最近 10 场复盘", quickTaskOpggPersonalExample: "目前不支持国服哦",
+    quickTaskOpggPersonalTitle: "个人战绩复盘", quickTaskOpggPersonalBody: "输入 Riot ID 查看最近 10–20 场复盘", quickTaskOpggPersonalExample: "支持 PBE / NA 标签哦",
     quickTaskOpggTeachingTitle: "职业选手教学", quickTaskOpggTeachingBody: "看高手在玩什么、怎么玩", quickTaskOpggTeachingExample: "选手荣誉、对局要点与教学点评",
     quickTaskOpggTrendsTitle: "职业阵容趋势", quickTaskOpggTrendsBody: "NA 职业池阵容小数据", quickTaskOpggTrendsExample: "阵容频率、均名次与装备热度",
     quickTaskCompsPrompt: "推荐当前版本热门阵容", quickTaskTrendsPrompt: "查看当前版本阵容趋势",

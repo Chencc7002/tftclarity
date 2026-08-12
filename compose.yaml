@@ -21,9 +21,10 @@ services:
       BILIBILI_RESULT_LIMIT: "5"
       BILIBILI_MIN_CURRENT_RESULTS: "3"
       BILIBILI_PATCH_DISCOVERY_MODE: auto
+      METATFT_PLAYER_MATCH_MCP_ENDPOINT: http://metatft-player-mcp:3010/mcp
     volumes: [tft_semantic:/app/.cache]
     expose: ["17317"]
-    networks: [edge, backend, bilibili_mcp]
+    networks: [edge, backend, bilibili_mcp, player_match_mcp]
     depends_on:
       migrate: { condition: service_completed_successfully }
       redis: { condition: service_healthy }
@@ -151,6 +152,28 @@ services:
       retries: 3
       start_period: 20s
 
+  metatft-player-mcp:
+    build: .
+    restart: unless-stopped
+    init: true
+    command: ["npm", "run", "metatft:player-mcp:http"]
+    env_file: [.env.production]
+    environment:
+      NODE_ENV: production
+      HOST: 0.0.0.0
+      PORT: "3010"
+    networks: [player_match_mcp]
+    read_only: true
+    tmpfs: [/tmp]
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3010/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
   caddy:
     image: caddy:2-alpine
     restart: unless-stopped
@@ -168,6 +191,7 @@ networks:
   edge:
   backend:
   bilibili_mcp:
+  player_match_mcp:
 
 volumes:
   postgres_data:

@@ -7,6 +7,7 @@ import { loadLocalEnvironment } from "../config/load-env.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
+import { createPlayerMatchApiRouter } from "../../services/metatft-player/api-router.mjs";
 import {
   createBilibiliStrategyVideoService,
   resolveBilibiliMcpConfig
@@ -8369,6 +8370,7 @@ export function createSmallWindowHandler(options = {}) {
     ?? runtime.accessService
     ?? createAnonymousAccessService(runtime, { enabled: false }, {});
   const opggRouter = createOpggApiRouter();
+  const playerMatchRouter = createPlayerMatchApiRouter();
 
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -8437,6 +8439,10 @@ export function createSmallWindowHandler(options = {}) {
 
       if (url.pathname.startsWith("/api/opgg/")) {
         return opggRouter(req, res, url, { scope: visitor.scope });
+      }
+
+      if (url.pathname.startsWith("/api/player-matches/")) {
+        return playerMatchRouter(req, res, url, { scope: visitor.scope });
       }
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {

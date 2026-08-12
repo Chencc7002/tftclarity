@@ -15,6 +15,7 @@ let state = {
   matchId: null
 };
 let teachingController = null;
+let directPlayer = null;
 
 function el(id) {
   return document.querySelector(`#${id}`);
@@ -565,7 +566,7 @@ async function renderPersonal() {
         <div class="opgg-page-head">
           <div>
             <h3 class="opgg-page-title">个人战绩复盘</h3>
-            <p class="opgg-page-sub">添加你的 Riot ID，首次同步最近 3 场，之后本地持续累积</p>
+            <p class="opgg-page-sub">#PBE数字 查询 S18 PBE 最近 10–20 场；#NA数字 正式服继续使用 OP.GG</p>
           </div>
         </div>
         <div class="opgg-card opgg-account-form"><div class="opgg-card-body">
@@ -573,11 +574,10 @@ async function renderPersonal() {
           <div class="opgg-account-fields">
             <label><span>Riot ID 游戏名</span><input id="opgg-personal-name" placeholder="例如 chencc" autocomplete="off"></label>
             <label><span>Tag</span><input id="opgg-personal-tag" placeholder="例如 1215" autocomplete="off"></label>
-            <input type="hidden" id="opgg-personal-region" value="na">
-            <span class="opgg-region-chip"><small>服务器</small><strong>NA</strong></span>
+            <span class="opgg-region-chip"><small>自动识别</small><strong>PBE / NA</strong></span>
             <button type="button" class="opgg-primary-button" data-opgg-action="personal-add">添加并复盘</button>
           </div>
-          <p class="opgg-form-hint">当前仅支持 NA。首次同步最近 3 场，后续采集会持续累积到 10 场。</p>
+          <p class="opgg-form-hint">PBE 标签如 PBE2，直接从 MetaTFT MCP 返回最多 20 场；NA 标签如 NA1，保持原 OP.GG 正式服链路。两者不会互相回退。</p>
         </div></div>
         <div class="opgg-section-title">我的账号 <small>点击账号看详情，点击 AI 智能复盘直接生成分析</small></div>
         <div class="opgg-grid">${cards || '<div class="opgg-empty">还没有添加账号</div>'}</div>
@@ -592,22 +592,119 @@ async function renderPersonal() {
 async function addPersonalAccount() {
   const name = el("opgg-personal-name")?.value.trim();
   const tag = el("opgg-personal-tag")?.value.trim();
-  const region = el("opgg-personal-region")?.value ?? "na";
   if (!name || !tag) {
     setResult("个人战绩复盘", errorHtml(new Error("请输入 Riot ID 与 Tag，例如 chencc / 1215")));
     return;
   }
   setResult("个人战绩复盘", loadingHtml());
   try {
+    if (/^PBE[0-9]+$/i.test(tag)) {
+      directPlayer = { gameName: name, tagLine: tag.toUpperCase() };
+      return renderDirectPlayer();
+    }
+    if (!/^NA[0-9]+$/i.test(tag)) {
+      throw new Error("第一版仅支持 PBE数字 或 NA数字 标签，例如 PBE2、NA1");
+    }
     const data = await api("/api/opgg/players/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ gameName: name, tagLine: tag, region })
+      body: JSON.stringify({ gameName: name, tagLine: tag, region: "na" })
     });
     state.playerId = data.player.id;
     await renderPlayer();
   } catch (error) {
     setResult("个人战绩复盘", errorHtml(error));
+  }
+}
+
+function directPlayerKey() {
+  return `${directPlayer.gameName}#${directPlayer.tagLine}`;
+}
+
+function directUnitBoardHtml(units) {
+  return unitBoardHtml((units ?? []).map((unit) => ({
+    characterId: unit.characterId,
+    displayName: unit.characterId,
+    tier: unit.starLevel,
+    itemNames: unit.items ?? []
+  })));
+}
+
+async function renderDirectPlayer() {
+  state.view = "direct-player";
+  state.playerId = directPlayerKey();
+  setResult("S18 PBE 战绩", loadingHtml("正在从 MetaTFT MCP 获取最近 10–20 场…"));
+  try {
+    const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}?limit=20`);
+    const cards = (data.matches ?? []).map((match) => `
+      <details class="opgg-player-match-card opgg-direct-match-card">
+        <summary class="opgg-player-match-link">
+          <span class="opgg-match-summary">
+            <span class="opgg-placement-badge ${placementClass(match.placement)}">${match.placement ?? "?"}</span>
+            <span class="opgg-match-main"><strong>${fmtDate(match.playedAt)} · Lv${match.level ?? "-"}</strong><small>${esc(match.patch ?? "-")} · ${esc(match.matchId)}</small></span>
+          </span>
+          ${directUnitBoardHtml(match.units)}
+        </summary>
+        <div class="opgg-direct-match-expanded">
+          <div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.id ?? "未知羁绊")}</span>`).join("") || '<span class="opgg-badge opgg-badge-muted">无羁绊数据</span>'}</div>
+          <div class="opgg-match-sub">第 ${match.lastRound ?? "-"} 回合 · ${match.durationSeconds ?? "-"} 秒 · 缺失字段 ${match.missingFields?.length ?? 0}</div>
+          <div class="opgg-toolbar"><button type="button" class="opgg-primary-button" data-opgg-action="direct-match" data-match="${esc(match.matchId)}">展开完整单局</button><button type="button" class="opgg-ai-button opgg-ai-button-compact" data-opgg-action="direct-teaching" data-match="${esc(match.matchId)}"><span class="opgg-ai-icon">✦</span><span><strong>复盘此局</strong></span></button></div>
+        </div>
+      </details>`).join("");
+    setResult(
+      `${directPlayerKey()} · S18 PBE 战绩`,
+      `${backLink("返回个人复盘", "personal")}
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(directPlayerKey())}</h3><p class="opgg-page-sub">S18 PBE · MetaTFT · 返回 ${data.returnedCount}/${data.availableCount} 场</p></div><span class="opgg-badge opgg-badge-warn">测试服数据</span></div>
+       <div class="opgg-notice">数据来源 MetaTFT public profile；仅展示终局状态，不含逐回合经济、搜牌和站位。${esc((data.warnings ?? []).join("；"))}</div>
+       <div class="opgg-toolbar" style="margin-top:10px"><button type="button" class="opgg-ai-button" data-opgg-action="direct-teaching"><span class="opgg-ai-icon">✦</span><span><strong>AI 智能复盘</strong><small>基于最近 20 场终局证据</small></span></button></div>
+       <div class="opgg-section-title">最近对局 <small>点击卡片可展开摘要，再按需读取单局详情</small></div>
+       <div class="opgg-player-match-list">${cards || '<div class="opgg-empty">该玩家当前没有可用的 S18 PBE 对局</div>'}</div>`,
+      data
+    );
+  } catch (error) {
+    setResult("S18 PBE 战绩", `${backLink("返回个人复盘", "personal")}${errorHtml(error)}`);
+  }
+}
+
+async function renderDirectMatch() {
+  state.view = "direct-match";
+  setResult("S18 PBE 单局详情", loadingHtml("正在读取该局完整终局状态…"));
+  try {
+    const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}/matches/${encodeURIComponent(state.matchId)}`);
+    const match = data.match;
+    const units = (match.units ?? []).map((unit) => `
+      <div class="opgg-unit-card"><div class="opgg-unit-card-head"><div class="opgg-image-fallback opgg-unit-card-image">${esc(String(unit.characterId ?? "?").slice(0, 1))}</div><div><div class="opgg-unit-name">${esc(unit.characterId ?? "未知棋子")}</div><div class="opgg-unit-meta">${"★".repeat(Math.max(1, unit.starLevel ?? 1))}</div></div></div><div class="opgg-unit-items">${(unit.items ?? []).map((item) => `<span class="opgg-item-visual"><span>${esc(item)}</span></span>`).join("") || '<span class="opgg-unit-no-items">无装备</span>'}</div></div>`).join("");
+    setResult(
+      "S18 PBE 单局详情",
+      `${backLink("返回对局列表", "direct-player")}
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">第 ${match.placement ?? "?"} 名 · Lv${match.level ?? "-"}</h3><p class="opgg-page-sub">${esc(match.matchId)} · S18 PBE · MetaTFT</p></div><span class="opgg-badge opgg-badge-warn">终局数据</span></div>
+       <div class="opgg-chips"><div class="opgg-chip"><b>淘汰回合</b><span>${match.lastRound ?? "-"}</span></div><div class="opgg-chip"><b>淘汰玩家</b><span>${match.playersEliminated ?? "-"}</span></div><div class="opgg-chip"><b>对玩家伤害</b><span>${match.totalDamageToPlayers ?? "-"}</span></div><div class="opgg-chip"><b>参与者</b><span>${match.participantCount ?? "-"}</span></div></div>
+       <div class="opgg-section-title">终局棋子与装备</div><div class="opgg-units-grid">${units || '<div class="opgg-empty">无棋子数据</div>'}</div>
+       <div class="opgg-section-title">羁绊</div><div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.id ?? "未知羁绊")}</span>`).join("")}</div>
+       <div class="opgg-notice">来源：${esc(data.provenance?.provider)} / ${esc(data.provenance?.environment)} / ${esc(data.provenance?.season)}。缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}</div>`,
+      data
+    );
+  } catch (error) {
+    setResult("S18 PBE 单局详情", `${backLink("返回对局列表", "direct-player")}${errorHtml(error)}`);
+  }
+}
+
+async function renderDirectTeaching(matchId = null) {
+  state.view = "direct-teaching";
+  setResult("S18 PBE AI 复盘", loadingHtml("AI 正在读取 MetaTFT 终局证据并校验结论…"));
+  try {
+    const query = matchId ? `?match=${encodeURIComponent(matchId)}` : "";
+    const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}/teaching${query}`);
+    setResult(
+      "S18 PBE AI 复盘",
+      `${backLink(matchId ? "返回单局详情" : "返回对局列表", matchId ? "direct-match" : "direct-player")}
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(data.headline ?? "AI 智能复盘")}</h3><p class="opgg-page-sub">MetaTFT · S18 PBE · ${data.validated ? "证据校验通过" : "已降级"}</p></div></div>
+       <div class="opgg-card"><div class="opgg-card-body" style="white-space:pre-wrap;line-height:1.7">${esc(data.text ?? "")}</div></div>
+       <div class="opgg-notice">缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}。复盘不得推断逐回合经济、搜牌、过渡或站位。</div>`,
+      data
+    );
+  } catch (error) {
+    setResult("S18 PBE AI 复盘", `${backLink("返回对局列表", "direct-player")}${errorHtml(error)}`);
   }
 }
 
@@ -702,6 +799,13 @@ async function dispatch(action, dataset) {
     return renderMatch();
   }
   if (action === "personal-add") return addPersonalAccount();
+  if (action === "personal") return renderPersonal();
+  if (action === "direct-player") return renderDirectPlayer();
+  if (action === "direct-match") {
+    state.matchId = dataset.match ?? state.matchId;
+    return renderDirectMatch();
+  }
+  if (action === "direct-teaching") return renderDirectTeaching(dataset.match ?? null);
   if (action === "cancel-teaching") {
     state.playerId = dataset.player ?? state.playerId;
     return renderPlayer();
@@ -750,6 +854,7 @@ export function renderOpggTrends() {
 export function renderOpggPersonal() {
   state = { view: "personal", pool: PERSONAL_POOL, sig: null, playerId: null, matchId: null };
   attachClickDelegation();
+  directPlayer = null;
   renderPersonal();
 }
 

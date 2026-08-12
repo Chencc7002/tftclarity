@@ -252,6 +252,11 @@
 .opgg-match-main small, .opgg-match-sub { color: var(--muted); font-size: 9px; line-height: 1.4; }
 .opgg-match-id { font-size: 11px; font-weight: 800; overflow-wrap: anywhere; }
 .opgg-player-match-card { min-width: 0; overflow: hidden; }
+.opgg-direct-match-card > summary { cursor: pointer; list-style: none; }
+.opgg-direct-match-card > summary::-webkit-details-marker { display: none; }
+.opgg-direct-match-card[open] { border-color: color-mix(in srgb, var(--wallpaper-accent) 45%, var(--line)); }
+.opgg-direct-match-expanded { padding: 10px 12px 12px; display: grid; gap: 9px; border-top: 1px solid var(--line); background: var(--panel-soft); }
+.opgg-direct-match-expanded .opgg-primary-button { justify-self: start; }
 .opgg-player-match-link {
   min-width: 0;
   padding: 10px 12px 7px;
