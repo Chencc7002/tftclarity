@@ -558,7 +558,7 @@ async function renderPersonal() {
           </div>
           </div>
         </a>
-        <div class="opgg-personal-actions">${aiReviewButton(player.id)}</div>
+        <div class="opgg-personal-actions">${aiReviewButton(player.id)}<button type="button" class="opgg-remove-button" data-opgg-action="personal-remove" data-player="${esc(player.id)}">删除账号</button></div>
       </div>`).join("");
     setResult(
       "个人战绩复盘",
@@ -581,9 +581,12 @@ async function renderPersonal() {
         </div></div>
         <div class="opgg-section-title">我的账号 <small>点击账号看详情，点击 AI 智能复盘直接生成分析</small></div>
         <div class="opgg-grid">${cards || '<div class="opgg-empty">还没有添加账号</div>'}</div>
+        <div class="opgg-section-title">玩家 Pool <small>最多 2 组，每组最多 15 个角色；Pool 名称完全自定义</small></div>
+        <div id="opgg-player-pools">${loadingHtml("正在读取你的玩家 Pool…")}</div>
       `,
       { view: "personal" }
     );
+    await renderPlayerPools();
   } catch (error) {
     setResult("个人战绩复盘", errorHtml(error));
   }
@@ -615,6 +618,212 @@ async function addPersonalAccount() {
   } catch (error) {
     setResult("个人战绩复盘", errorHtml(error));
   }
+}
+
+async function removePersonalAccount(playerId) {
+  if (!window.confirm("确认从你的账号列表中删除该账号？历史统计数据不会被彻底删除。")) return;
+  await api(`/api/opgg/players/${encodeURIComponent(playerId)}`, { method: "DELETE" });
+  await renderPersonal();
+}
+
+function poolCardHtml(pool) {
+  const players = (pool.players ?? []).map((player) => `
+    <li><span>${esc(player.gameName)}#${esc(player.tagLine)}</span><button type="button" class="opgg-remove-button opgg-remove-button-compact" data-opgg-action="pool-remove-player" data-pool="${esc(pool.id)}" data-player="${esc(player.id)}">移出</button></li>`).join("");
+  return `<article class="opgg-card opgg-pool-card">
+    <div class="opgg-card-body">
+      <div class="opgg-card-head"><strong class="opgg-card-title">${esc(pool.name)}</strong><span class="opgg-badge opgg-badge-muted">${pool.memberCount}/${pool.maxMembers}</span></div>
+      <div class="opgg-match-sub">${esc(pool.environment)} · ${esc(pool.season)} · ${esc(pool.provider)}</div>
+      <ul class="opgg-pool-members">${players || "<li><span>当前分组暂无玩家</span></li>"}</ul>
+      <div class="opgg-pool-add-row"><input data-pool-name="${esc(pool.id)}" placeholder="Riot 游戏名"><input data-pool-tag="${esc(pool.id)}" placeholder="Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-add-player" data-pool="${esc(pool.id)}">添加角色</button></div>
+      <div class="opgg-toolbar"><button type="button" class="opgg-primary-button" data-opgg-action="pool-stats" data-pool="${esc(pool.id)}">查看小数据</button>${pool.environment === "pbe" ? `<button type="button" class="opgg-primary-button" data-opgg-action="pool-import-seed" data-pool="${esc(pool.id)}">导入 pbeList</button>` : ""}<button type="button" class="opgg-remove-button" data-opgg-action="pool-delete" data-pool="${esc(pool.id)}">删除 Pool</button></div>
+    </div>
+  </article>`;
+}
+
+async function renderPlayerPools() {
+  const host = el("opgg-player-pools");
+  if (!host) return;
+  try {
+    const data = await api("/api/player-pools");
+    const pools = data.pools ?? [];
+    host.innerHTML = `
+      ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-create"><div class="opgg-card-body"><div class="opgg-section-title">创建 Pool（需同时添加首个角色）</div><div class="opgg-pool-create-row"><input id="opgg-pool-name" placeholder="自定义 Pool 名称"><select id="opgg-pool-environment"><option value="pbe">S18 PBE</option><option value="live">NA 正式服</option></select><input id="opgg-pool-initial-name" placeholder="首个角色游戏名"><input id="opgg-pool-initial-tag" placeholder="首个角色 Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-create">验证并创建</button></div></div></div>` : ""}
+      <div class="opgg-grid">${pools.map(poolCardHtml).join("") || '<div class="opgg-empty">还没有 Pool。输入名称和首个角色，验证成功后创建。</div>'}</div>
+      ${pools.length === 2 ? `<div class="opgg-toolbar opgg-pool-compare-bar"><button type="button" class="opgg-primary-button" data-opgg-action="pool-compare" data-left="${esc(pools[0].id)}" data-right="${esc(pools[1].id)}">对比 ${esc(pools[0].name)} 与 ${esc(pools[1].name)}</button></div>` : ""}`;
+  } catch (error) {
+    host.innerHTML = errorHtml(error);
+  }
+}
+
+async function createPlayerPool() {
+  const name = el("opgg-pool-name")?.value.trim();
+  const environment = el("opgg-pool-environment")?.value;
+  const gameName = el("opgg-pool-initial-name")?.value.trim();
+  const tagLine = el("opgg-pool-initial-tag")?.value.trim();
+  if (!name || !gameName || !tagLine) return;
+  await api("/api/player-pools", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ name, environment, gameName, tagLine }) });
+  await renderPlayerPools();
+}
+
+async function addPoolPlayer(poolId) {
+  const name = document.querySelector(`[data-pool-name="${CSS.escape(poolId)}"]`)?.value.trim();
+  const tag = document.querySelector(`[data-pool-tag="${CSS.escape(poolId)}"]`)?.value.trim();
+  if (!name || !tag) return;
+  await api(`/api/player-pools/${encodeURIComponent(poolId)}/players`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({ gameName: name, tagLine: tag }) });
+  await renderPlayerPools();
+}
+
+async function mutatePool(action, dataset) {
+  if (action === "pool-create") return createPlayerPool();
+  if (action === "pool-add-player") return addPoolPlayer(dataset.pool);
+  if (action === "pool-remove-player") {
+    await api(`/api/player-pools/${encodeURIComponent(dataset.pool)}/players/${encodeURIComponent(dataset.player)}`, { method: "DELETE" });
+    return renderPlayerPools();
+  }
+  if (action === "pool-delete") {
+    if (!window.confirm("确认删除这个 Pool？只会删除分组关系，不会清除历史比赛事实。")) return;
+    await api(`/api/player-pools/${encodeURIComponent(dataset.pool)}`, { method: "DELETE" });
+    return renderPlayerPools();
+  }
+  if (action === "pool-import-seed") {
+    const result = await api(`/api/player-pools/${encodeURIComponent(dataset.pool)}/import-seed`, { method: "POST" });
+    await renderPlayerPools();
+    window.alert(`名单 ${result.supplied} 人：成功导入 ${result.imported}，未解析 ${result.unresolved}。`);
+    return;
+  }
+  if (action === "pool-stats") return renderPoolStats(dataset.pool);
+  if (action === "pool-compare") return renderPoolCompare(dataset.left, dataset.right);
+}
+
+function poolTrendRows(stats) {
+  return (stats.compTrends ?? []).slice(0, 10).map((comp) => `<tr><td>${esc(comp.compSignature)}</td><td>${pct1(comp.playerMatchShare)}</td><td>${pct1(comp.playerBalancedUsageRate)}</td><td>${comp.avgPlacement ?? "-"}</td><td>${pct1(comp.top4Rate)}</td><td>${comp.playerMatchCount}</td></tr>`).join("");
+}
+
+function observedCompMetric(comp, metric) {
+  if (!comp) return null;
+  const observedName = `observed${metric[0].toUpperCase()}${metric.slice(1)}`;
+  const value = comp[metric] ?? comp[observedName];
+  return Number.isFinite(Number(value)) ? Number(value) : null;
+}
+
+function poolCompLabel(comp, signature = "") {
+  if (comp?.displaySignature) return compLabel(comp);
+  const raw = String(signature).split("|").slice(1).join(" · ") || signature;
+  return raw.replace(/^(trait|carry|tank):/u, "").replace(/^TFT\d+_/u, "").replaceAll("_", " ") || "未命名阵容";
+}
+
+function metricText(value, kind = "number") {
+  if (!Number.isFinite(Number(value))) return "—";
+  if (kind === "percent") return pct1(Number(value));
+  if (kind === "placement") return Number(value).toFixed(2);
+  return String(value);
+}
+
+function metricWidth(value, kind, pairMax = 1) {
+  if (!Number.isFinite(Number(value))) return 0;
+  if (kind === "placement") return Math.max(0, Math.min(100, ((9 - Number(value)) / 8) * 100));
+  if (kind === "percent") return Math.max(0, Math.min(100, Number(value) * 100));
+  return Math.max(0, Math.min(100, Number(value) / Math.max(1, pairMax) * 100));
+}
+
+function comparisonMetricCard(label, leftName, rightName, leftValue, rightValue, kind = "number") {
+  const pairMax = Math.max(Number(leftValue) || 0, Number(rightValue) || 0, 1);
+  return `<article class="opgg-compare-metric-card">
+    <h4>${esc(label)}</h4>
+    <div class="opgg-compare-metric-value"><span class="opgg-pool-left">${esc(leftName)}</span><strong>${metricText(leftValue, kind)}</strong></div>
+    <div class="opgg-compare-bar-track"><i class="opgg-compare-bar-left" style="width:${metricWidth(leftValue, kind, pairMax)}%"></i></div>
+    <div class="opgg-compare-metric-value"><span class="opgg-pool-right">${esc(rightName)}</span><strong>${metricText(rightValue, kind)}</strong></div>
+    <div class="opgg-compare-bar-track"><i class="opgg-compare-bar-right" style="width:${metricWidth(rightValue, kind, pairMax)}%"></i></div>
+  </article>`;
+}
+
+function compUsageDumbbells(rows, left, right) {
+  const entries = rows.slice(0, 10);
+  const maxShare = Math.max(.01, ...entries.flatMap((row) => [row.left?.playerMatchShare ?? 0, row.right?.playerMatchShare ?? 0]));
+  return `<section class="opgg-compare-chart-card"><div class="opgg-compare-chart-head"><div><h4>阵容偏好差异</h4><p>对局加权使用占比；圆点距离越远，两个 Pool 的选择偏好差异越明显。</p></div><div class="opgg-chart-legend"><span class="opgg-pool-left">● ${esc(left.pool.name)}</span><span class="opgg-pool-right">● ${esc(right.pool.name)}</span></div></div>
+    <div class="opgg-dumbbell-chart">${entries.map((row) => {
+      const leftShare = row.left?.playerMatchShare ?? 0;
+      const rightShare = row.right?.playerMatchShare ?? 0;
+      const leftX = (leftShare / maxShare) * 100;
+      const rightX = (rightShare / maxShare) * 100;
+      const start = Math.min(leftX, rightX);
+      const width = Math.max(1, Math.abs(leftX - rightX));
+      return `<div class="opgg-dumbbell-row"><strong title="${esc(row.compSignature)}">${esc(poolCompLabel(row.left ?? row.right, row.compSignature))}</strong><div class="opgg-dumbbell-track"><i style="left:${start}%;width:${width}%"></i><span class="opgg-dumbbell-dot opgg-dumbbell-left" style="left:${leftX}%" title="${esc(left.pool.name)} ${pct1(leftShare)}"></span><span class="opgg-dumbbell-dot opgg-dumbbell-right" style="left:${rightX}%" title="${esc(right.pool.name)} ${pct1(rightShare)}"></span></div><small><span>${pct1(leftShare)}</span><span>${pct1(rightShare)}</span></small></div>`;
+    }).join("")}</div></section>`;
+}
+
+function compEffectMatrix(rows, left, right) {
+  const points = rows.flatMap((row) => [
+    row.left ? { comp: row.left, side: "left", pool: left.pool.name, signature: row.compSignature } : null,
+    row.right ? { comp: row.right, side: "right", pool: right.pool.name, signature: row.compSignature } : null
+  ]).filter((point) => point && observedCompMetric(point.comp, "top4Rate") !== null).sort((a, b) => b.comp.playerMatchShare - a.comp.playerMatchShare).slice(0, 14);
+  const maxShare = Math.max(.05, ...points.map((point) => point.comp.playerMatchShare ?? 0));
+  const circles = points.map((point, index) => {
+    const x = 70 + Math.sqrt(Math.min(1, (point.comp.playerMatchShare ?? 0) / maxShare)) * 600;
+    const y = 250 - observedCompMetric(point.comp, "top4Rate") * 190;
+    const label = poolCompLabel(point.comp, point.signature).slice(0, 8);
+    return `<g class="opgg-matrix-point opgg-matrix-${point.side}"><title>${esc(point.pool)} · ${esc(poolCompLabel(point.comp, point.signature))} · 使用 ${pct1(point.comp.playerMatchShare)} · 前四 ${pct1(observedCompMetric(point.comp, "top4Rate"))}</title><circle cx="${x}" cy="${y}" r="${Math.max(5, Math.min(11, 4 + Math.sqrt(point.comp.playerMatchCount ?? 1)))}"></circle>${index < 8 ? `<text x="${x + 9}" y="${y - 7}">${esc(label)}</text>` : ""}</g>`;
+  }).join("");
+  return `<section class="opgg-compare-chart-card"><div class="opgg-compare-chart-head"><div><h4>使用率 × 前四率效果矩阵</h4><p>右上：热门且高前四；左上：冷门但高效。气泡大小代表样本量，悬停可看精确值。</p></div><div class="opgg-chart-legend"><span class="opgg-pool-left">● ${esc(left.pool.name)}</span><span class="opgg-pool-right">● ${esc(right.pool.name)}</span></div></div>
+    <div class="opgg-matrix-wrap"><svg class="opgg-effect-matrix" viewBox="0 0 720 285" role="img" aria-label="阵容使用率和前四率效果矩阵"><line class="opgg-matrix-grid" x1="70" y1="155" x2="670" y2="155"></line><line class="opgg-matrix-grid" x1="370" y1="48" x2="370" y2="250"></line><text class="opgg-matrix-quadrant" x="82" y="68">冷门高效</text><text class="opgg-matrix-quadrant" x="580" y="68">热门强势</text><text class="opgg-matrix-axis-label" x="8" y="55">前四率高</text><text class="opgg-matrix-axis-label" x="8" y="250">前四率低</text><text class="opgg-matrix-axis-label" x="585" y="276">使用占比高 →</text>${circles}</svg></div></section>`;
+}
+
+function compMetricLine(label, leftValue, rightValue, kind = "percent") {
+  const max = Math.max(Number(leftValue) || 0, Number(rightValue) || 0, kind === "placement" ? 8 : .01);
+  return `<div class="opgg-comp-metric-line"><b>${esc(label)}</b><span>${metricText(leftValue, kind)}</span><div class="opgg-comp-pair-bars"><i class="opgg-compare-bar-left" style="width:${metricWidth(leftValue, kind, max)}%"></i><i class="opgg-compare-bar-right" style="width:${metricWidth(rightValue, kind, max)}%"></i></div><span>${metricText(rightValue, kind)}</span></div>`;
+}
+
+function comparisonCompCard(row, left, right) {
+  const leftComp = row.left;
+  const rightComp = row.right;
+  const representative = leftComp ?? rightComp;
+  const sampleTier = !leftComp || !rightComp ? "单侧阵容" : row.performanceComparable ? "可比较" : "仅观测对比";
+  return `<details class="opgg-compare-comp-card">
+    <summary><span class="opgg-compare-comp-title"><strong>${esc(poolCompLabel(representative, row.compSignature))}</strong><small>覆盖 ${leftComp?.playerCoverage ?? 0}/${left.coverage.activePlayerCount} vs ${rightComp?.playerCoverage ?? 0}/${right.coverage.activePlayerCount} 名玩家</small></span>${unitBoardHtml(representative?.representativeUnits, { compact: true })}<span class="opgg-compare-comp-usage"><b>${pct1(leftComp?.playerMatchShare)} ↔ ${pct1(rightComp?.playerMatchShare)}</b><small>${sampleTier} · 展开详情</small></span></summary>
+    <div class="opgg-compare-comp-expanded">
+      <div class="opgg-compare-side-head"><span class="opgg-pool-left">● ${esc(left.pool.name)}</span><span class="opgg-pool-right">● ${esc(right.pool.name)}</span></div>
+      ${compMetricLine("对局加权占比", leftComp?.playerMatchShare, rightComp?.playerMatchShare)}
+      ${compMetricLine("玩家等权占比", leftComp?.playerBalancedUsageRate, rightComp?.playerBalancedUsageRate)}
+      ${compMetricLine("平均名次", observedCompMetric(leftComp, "avgPlacement"), observedCompMetric(rightComp, "avgPlacement"), "placement")}
+      ${compMetricLine("前四率", observedCompMetric(leftComp, "top4Rate"), observedCompMetric(rightComp, "top4Rate"))}
+      ${compMetricLine("登顶率", observedCompMetric(leftComp, "winRate"), observedCompMetric(rightComp, "winRate"))}
+      ${compMetricLine("样本场次", leftComp?.playerMatchCount, rightComp?.playerMatchCount, "number")}
+      <div class="opgg-compare-boards"><div><strong>${esc(left.pool.name)} 代表棋盘</strong>${unitBoardHtml(leftComp?.representativeUnits, { showNames: true })}</div><div><strong>${esc(right.pool.name)} 代表棋盘</strong>${unitBoardHtml(rightComp?.representativeUnits, { showNames: true })}</div></div>
+    </div>
+  </details>`;
+}
+
+async function renderPoolStats(poolId) {
+  setResult("玩家 Pool 小数据", loadingHtml());
+  try {
+    const stats = await api(`/api/player-pools/${encodeURIComponent(poolId)}/stats`);
+    setResult(`${stats.pool.name} · 小数据`, `${backLink("返回 Pool 管理", "personal")}
+      <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(stats.pool.name)}</h3><p class="opgg-page-sub">${esc(stats.scope.season)} · ${esc(stats.scope.patch ?? "暂无 Patch")} · 对局加权 + 玩家等权</p></div><span class="opgg-badge opgg-badge-muted">${esc(stats.coverage.sampleTier)}</span></div>
+      <div class="opgg-chips"><div class="opgg-chip"><b>玩家</b><span>${stats.coverage.activePlayerCount}/${stats.coverage.playerCount}</span></div><div class="opgg-chip"><b>对局</b><span>${stats.coverage.matchCount}</span></div><div class="opgg-chip"><b>平均名次</b><span>${stats.performance.avgPlacement ?? "-"}</span></div><div class="opgg-chip"><b>前四率</b><span>${pct1(stats.performance.top4Rate)}</span></div><div class="opgg-chip"><b>吃鸡率</b><span>${pct1(stats.performance.winRate)}</span></div></div>
+      ${(stats.warnings ?? []).map((warning) => `<div class="opgg-notice">${esc(warning)}</div>`).join("")}
+      <div class="opgg-section-title">阵容 / 主羁绊趋势</div><div class="opgg-pool-table-wrap"><table class="opgg-pool-table"><thead><tr><th>阵容</th><th>对局加权</th><th>玩家等权</th><th>均名次</th><th>前四</th><th>样本</th></tr></thead><tbody>${poolTrendRows(stats)}</tbody></table></div>`, stats);
+  } catch (error) { setResult("玩家 Pool 小数据", errorHtml(error)); }
+}
+
+async function renderPoolCompare(leftId, rightId) {
+  setResult("Pool 对比", loadingHtml());
+  try {
+    const result = await api(`/api/player-pools/compare?pool=${encodeURIComponent(leftId)}&pool=${encodeURIComponent(rightId)}`);
+    const [left, right] = result.pools;
+    setResult("Pool 对比", `${backLink("返回 Pool 管理", "personal")}
+      <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(left.pool.name)} vs ${esc(right.pool.name)}</h3><p class="opgg-page-sub">Pool 名称仅用于展示，兼容性来自实际赛季 / Patch / 样本覆盖</p></div><span class="opgg-badge ${result.comparable ? "opgg-badge-success" : "opgg-badge-warn"}">${esc(result.compatibility)}</span></div>
+      <div class="opgg-compare-scope"><div><strong class="opgg-pool-left">${esc(left.pool.name)}</strong><span>${left.coverage.matchCount} 场 · ${left.coverage.activePlayerCount}/${left.coverage.playerCount} 人 · ${esc(left.scope.patch ?? "无 Patch")}</span></div><div><strong class="opgg-pool-right">${esc(right.pool.name)}</strong><span>${right.coverage.matchCount} 场 · ${right.coverage.activePlayerCount}/${right.coverage.playerCount} 人 · ${esc(right.scope.patch ?? "无 Patch")}</span></div></div>
+      <div class="opgg-compare-metric-grid">
+        ${comparisonMetricCard("平均名次（越低越好）", left.pool.name, right.pool.name, left.performance.avgPlacement, right.performance.avgPlacement, "placement")}
+        ${comparisonMetricCard("前四率", left.pool.name, right.pool.name, left.performance.top4Rate, right.performance.top4Rate, "percent")}
+        ${comparisonMetricCard("登顶率", left.pool.name, right.pool.name, left.performance.winRate, right.performance.winRate, "percent")}
+        ${comparisonMetricCard("有效对局", left.pool.name, right.pool.name, left.coverage.matchCount, right.coverage.matchCount)}
+      </div>
+      <div class="opgg-notice">${esc(result.statementPolicy)} 若赛季、Patch 或样本门槛不兼容，图表仍展示观测事实，但禁止生成优劣结论。</div>
+      <div class="opgg-compare-chart-grid">${compUsageDumbbells(result.compDifferences ?? [], left, right)}${compEffectMatrix(result.compDifferences ?? [], left, right)}</div>
+      <div class="opgg-section-title">阵容逐项对比 <small>共 ${(result.compDifferences ?? []).length} 个阵容，点击卡片展开代表棋盘和完整指标</small></div>
+      <div class="opgg-compare-comp-list">${(result.compDifferences ?? []).map((row) => comparisonCompCard(row, left, right)).join("")}</div>`, result);
+  } catch (error) { setResult("Pool 对比", errorHtml(error)); }
 }
 
 function directPlayerKey() {
@@ -799,6 +1008,15 @@ async function dispatch(action, dataset) {
     return renderMatch();
   }
   if (action === "personal-add") return addPersonalAccount();
+  if (action === "personal-remove") return removePersonalAccount(dataset.player);
+  if (action.startsWith("pool-")) {
+    try {
+      return await mutatePool(action, dataset);
+    } catch (error) {
+      setResult("玩家 Pool", `${backLink("返回 Pool 管理", "personal")}${errorHtml(error)}`);
+      return;
+    }
+  }
   if (action === "personal") return renderPersonal();
   if (action === "direct-player") return renderDirectPlayer();
   if (action === "direct-match") {

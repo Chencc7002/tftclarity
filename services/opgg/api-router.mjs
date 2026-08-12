@@ -21,6 +21,7 @@ import {
   createPool,
   poolExists,
   registerPlayer,
+  removePlayerFromPool,
   getPoolPlayers,
   slugify,
   collectPlayer
@@ -346,6 +347,18 @@ function createOpggApiRouter() {
           player: playerMeta(database, entry.id),
           collect
         });
+      }
+
+      const personalPlayerMatch = pathname.match(/^\/api\/opgg\/players\/([^/]+)$/u);
+      if (request.method === "DELETE" && personalPlayerMatch) {
+        const database = await getDatabase();
+        const playerId = decodeURIComponent(personalPlayerMatch[1]);
+        const exists = database.prepare(
+          `SELECT 1 FROM pool_player WHERE pool_id = ? AND player_id = ?`
+        ).get(myReviewPoolId, playerId);
+        if (!exists) return sendError(response, 404, "Player not found in your account list.");
+        removePlayerFromPool(database, myReviewPoolId, playerId, new Date().toISOString());
+        return sendJson(response, 200, { ok: true, playerId });
       }
 
       if (pathname === "/api/opgg/teaching") {

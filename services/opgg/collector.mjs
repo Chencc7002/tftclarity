@@ -187,6 +187,15 @@ function initSchema(database) {
   `);
 
   ensureColumn(database, "match_record", "patch_label", "TEXT");
+  ensureColumn(database, "pool", "owner_type", "TEXT NOT NULL DEFAULT 'system'");
+  ensureColumn(database, "pool", "owner_id", "TEXT");
+  ensureColumn(database, "pool", "environment", "TEXT NOT NULL DEFAULT 'live'");
+  ensureColumn(database, "pool", "season", "TEXT");
+  ensureColumn(database, "pool", "provider", "TEXT");
+  ensureColumn(database, "pool", "visibility", "TEXT NOT NULL DEFAULT 'system'");
+  ensureColumn(database, "pool", "pool_type", "TEXT NOT NULL DEFAULT 'managed'");
+  ensureColumn(database, "pool", "patch_scope", "TEXT");
+  ensureColumn(database, "pool_player", "source", "TEXT NOT NULL DEFAULT 'manual'");
   database.prepare(
     `UPDATE tracked_player
      SET puuid_encrypted = NULL
@@ -595,13 +604,14 @@ function upsertMatchRecord(database, fact, fetchedAt) {
       `INSERT INTO match_record (
          match_id, game_datetime, game_version, patch_label, set_number, queue_id,
          source, fetched_at
-       ) VALUES (?, ?, ?, ?, ?, ?, 'opgg', ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(match_id) DO UPDATE SET
          game_datetime = excluded.game_datetime,
          game_version = excluded.game_version,
          patch_label = excluded.patch_label,
          set_number = excluded.set_number,
          queue_id = excluded.queue_id,
+         source = excluded.source,
          fetched_at = excluded.fetched_at`
     )
     .run(
@@ -613,6 +623,7 @@ function upsertMatchRecord(database, fact, fetchedAt) {
       fact.queueId === null || fact.queueId === undefined
         ? null
         : String(fact.queueId),
+      fact.source ?? "opgg",
       fetchedAt
     );
 }
@@ -634,7 +645,7 @@ function upsertPlayerMatchFact(database, playerId, fact, seenAt) {
          players_eliminated, traits_json, units_json, augments_json,
          comp_family_signature, exact_board_signature, source,
          first_seen_at, last_seen_at
-       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'opgg', ?, ?)
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(player_id, match_id) DO UPDATE SET
          placement = excluded.placement,
          level = excluded.level,
@@ -646,6 +657,7 @@ function upsertPlayerMatchFact(database, playerId, fact, seenAt) {
          augments_json = excluded.augments_json,
          comp_family_signature = excluded.comp_family_signature,
          exact_board_signature = excluded.exact_board_signature,
+         source = excluded.source,
          last_seen_at = excluded.last_seen_at`
     )
     .run(
@@ -663,6 +675,7 @@ function upsertPlayerMatchFact(database, playerId, fact, seenAt) {
         : JSON.stringify(fact.augmentsJson),
       fact.compFamilySignature,
       fact.exactBoardSignature,
+      fact.source ?? "opgg",
       firstSeenAt ?? seenAt,
       seenAt
     );
@@ -916,14 +929,42 @@ function slugify(gameName, tagLine, region) {
 
 function createPool(
   database,
-  { id, name, region = "na", createdAt = new Date().toISOString() }
+  {
+    id,
+    name,
+    region = "na",
+    environment = region === "pbe" ? "pbe" : "live",
+    season = null,
+    provider = null,
+    ownerType = "system",
+    ownerId = null,
+    visibility = ownerType === "system" ? "system" : "private",
+    poolType = "managed",
+    patchScope = null,
+    createdAt = new Date().toISOString()
+  }
 ) {
   database
     .prepare(
-      `INSERT OR IGNORE INTO pool (id, name, region, created_at)
-       VALUES (?, ?, ?, ?)`
+      `INSERT OR IGNORE INTO pool (
+         id, name, region, created_at, owner_type, owner_id, environment,
+         season, provider, visibility, pool_type, patch_scope
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`
     )
-    .run(id, name, region, createdAt);
+    .run(
+      id,
+      name,
+      region,
+      createdAt,
+      ownerType,
+      ownerId,
+      environment,
+      season,
+      provider,
+      visibility,
+      poolType,
+      patchScope
+    );
   return database.prepare(`SELECT * FROM pool WHERE id = ?`).get(id);
 }
 
@@ -936,7 +977,9 @@ function poolExists(database, poolId) {
 function listPools(database) {
   return database
     .prepare(
-      `SELECT p.id, p.name, p.region, p.created_at,
+      `SELECT p.id, p.name, p.region, p.created_at, p.owner_type, p.owner_id,
+              p.environment, p.season, p.provider, p.visibility,
+              p.pool_type, p.patch_scope,
               COUNT(pm.player_id) AS member_count,
               SUM(CASE WHEN t.active = 1 THEN 1 ELSE 0 END) AS active_member_count
        FROM pool p
@@ -950,19 +993,27 @@ function listPools(database) {
       id: row.id,
       name: row.name,
       region: row.region,
+      ownerType: row.owner_type,
+      ownerId: row.owner_id,
+      environment: row.environment,
+      season: row.season,
+      provider: row.provider,
+      visibility: row.visibility,
+      poolType: row.pool_type,
+      patchScope: row.patch_scope,
       createdAt: row.created_at,
       memberCount: Number(row.member_count),
       activeMemberCount: Number(row.active_member_count ?? 0)
     }));
 }
 
-function addPlayerToPool(database, poolId, playerId, addedAt) {
+function addPlayerToPool(database, poolId, playerId, addedAt, source = "manual") {
   database
     .prepare(
-      `INSERT OR IGNORE INTO pool_player (pool_id, player_id, added_at)
-       VALUES (?, ?, ?)`
+      `INSERT OR IGNORE INTO pool_player (pool_id, player_id, added_at, source)
+       VALUES (?, ?, ?, ?)`
     )
-    .run(poolId, playerId, addedAt);
+    .run(poolId, playerId, addedAt, source);
   database
     .prepare(`UPDATE tracked_player SET active = 1, updated_at = ? WHERE id = ?`)
     .run(addedAt, playerId);
@@ -989,15 +1040,104 @@ function removePlayerFromPool(database, poolId, playerId, now) {
  * Pools are user-managed analysis sets; the registry is shared so match
  * data collected for one pool is reused by others.
  */
-function registerPlayer(database, entry, poolId, now = new Date().toISOString()) {
+function registerPlayer(
+  database,
+  entry,
+  poolId,
+  now = new Date().toISOString(),
+  source = "manual"
+) {
   if (!poolExists(database, poolId)) {
     throw new Error(`Pool not found: ${poolId}`);
   }
   upsertTrackedPlayer(database, entry, { now });
-  addPlayerToPool(database, poolId, entry.id, now);
+  addPlayerToPool(database, poolId, entry.id, now, source);
   return database
     .prepare(`SELECT * FROM tracked_player WHERE id = ?`)
     .get(entry.id);
+}
+
+function deletePool(database, poolId) {
+  database.prepare(`DELETE FROM pool_player WHERE pool_id = ?`).run(poolId);
+  const result = database.prepare(`DELETE FROM pool WHERE id = ?`).run(poolId);
+  return Number(result.changes) > 0;
+}
+
+function listOwnedPools(database, ownerId) {
+  return listPools(database).filter(
+    (pool) => pool.ownerType === "user" && pool.ownerId === ownerId
+  );
+}
+
+function countPoolPlayers(database, poolId) {
+  return Number(
+    database.prepare(`SELECT COUNT(*) AS n FROM pool_player WHERE pool_id = ?`).get(poolId)?.n ?? 0
+  );
+}
+
+/**
+ * Persist normalized match summaries from a non-OP.GG player provider so the
+ * existing pool trend aggregator can operate on the same sanitized facts.
+ */
+function ingestExternalPlayerMatches(
+  database,
+  entry,
+  matches,
+  { poolId, provider = "metatft", source = "manual", now = new Date().toISOString() } = {}
+) {
+  registerPlayer(database, entry, poolId, now, source);
+  let ingested = 0;
+  for (const match of matches ?? []) {
+    const setNumber = Number(String(match.set ?? "").match(/(\d+)/u)?.[1] ?? NaN);
+    const fact = {
+      matchId: String(match.matchId),
+      gameDatetime: match.playedAt ?? null,
+      gameVersion: match.patch ?? null,
+      patchLabel: match.patch ?? null,
+      setNumber: Number.isFinite(setNumber) ? setNumber : null,
+      queueId: match.queue?.id ?? null,
+      placement: match.placement ?? null,
+      level: match.level ?? null,
+      goldLeft: null,
+      lastRound: match.lastRound ?? null,
+      playersEliminated: null,
+      traits: (match.traits ?? []).map((trait) => ({
+        name: trait.id ?? trait.name ?? null,
+        numUnits: trait.units ?? trait.numUnits ?? null,
+        style: trait.style ?? 0,
+        tierCurrent: trait.tierCurrent ?? trait.tier_current ?? 0
+      })),
+      units: (match.units ?? []).map((unit) => ({
+        characterId: unit.characterId ?? null,
+        tier: unit.starLevel ?? unit.tier ?? 1,
+        itemNames: unit.items ?? unit.itemNames ?? []
+      })),
+      augments: match.augments ?? null,
+      source: provider
+    };
+    fact.traitsJson = JSON.stringify(fact.traits);
+    fact.unitsJson = JSON.stringify(fact.units);
+    fact.augmentsJson = fact.augments;
+    fact.compFamilySignature = buildCompFamilySignature({
+      traitsJson: JSON.stringify(fact.traits),
+      unitsJson: JSON.stringify(fact.units),
+      setNumber: fact.setNumber
+    });
+    fact.exactBoardSignature = buildExactBoardSignature({
+      traitsJson: JSON.stringify(fact.traits),
+      unitsJson: JSON.stringify(fact.units),
+      setNumber: fact.setNumber
+    });
+    upsertMatchRecord(database, fact, now);
+    upsertPlayerMatchFact(database, entry.id, fact, now);
+    ingested += 1;
+  }
+  database.prepare(
+    `UPDATE tracked_player
+     SET verified_at = ?, last_successful_poll_at = ?, updated_at = ?
+     WHERE id = ?`
+  ).run(now, now, now, entry.id);
+  return { playerId: entry.id, ingested };
 }
 
 function importRosterToPool(database, roster, poolId) {
@@ -1317,11 +1457,15 @@ export {
   decryptStoredPuuid,
   isEncryptedPuuid,
   createPool,
+  deletePool,
   poolExists,
   listPools,
+  listOwnedPools,
+  countPoolPlayers,
   addPlayerToPool,
   removePlayerFromPool,
   registerPlayer,
+  ingestExternalPlayerMatches,
   importRosterToPool,
   seedDefaultPool,
   getPoolPlayers,

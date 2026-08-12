@@ -58,9 +58,24 @@ function resolveRoutingContext(input, options = {}) {
     "NA_TAG_PATTERN"
   );
 
+  const explicitEnvironment = String(input?.environment ?? "")
+    .trim()
+    .toLowerCase();
+  const providerVerification = String(
+    input?.verificationMode ?? input?.verification_mode ?? ""
+  ).toLowerCase() === "provider";
   let environment;
   let platform;
-  if (pbePattern.test(tagLine)) {
+  if (providerVerification && explicitEnvironment) {
+    if (!["pbe", "live"].includes(explicitEnvironment)) {
+      throw new PlayerMatchError(
+        "ENVIRONMENT_MISMATCH",
+        `Environment ${explicitEnvironment} is not supported.`
+      );
+    }
+    environment = explicitEnvironment;
+    platform = explicitEnvironment === "pbe" ? "PBE1" : "NA1";
+  } else if (pbePattern.test(tagLine)) {
     environment = "pbe";
     platform = "PBE1";
   } else if (naPattern.test(tagLine)) {
@@ -78,9 +93,6 @@ function resolveRoutingContext(input, options = {}) {
     );
   }
 
-  const explicitEnvironment = String(input?.environment ?? "")
-    .trim()
-    .toLowerCase();
   if (explicitEnvironment && explicitEnvironment !== environment) {
     throw new PlayerMatchError(
       "ENVIRONMENT_MISMATCH",

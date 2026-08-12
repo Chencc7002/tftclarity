@@ -8,6 +8,7 @@ import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.j
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import { createPlayerMatchApiRouter } from "../../services/metatft-player/api-router.mjs";
+import { createPlayerPoolApiRouter } from "../../services/player-pools/api-router.mjs";
 import {
   createBilibiliStrategyVideoService,
   resolveBilibiliMcpConfig
@@ -8396,6 +8397,7 @@ export function createSmallWindowHandler(options = {}) {
     ?? createAnonymousAccessService(runtime, { enabled: false }, {});
   const opggRouter = createOpggApiRouter();
   const playerMatchRouter = createPlayerMatchApiRouter();
+  const playerPoolRouter = createPlayerPoolApiRouter();
 
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
@@ -8468,6 +8470,10 @@ export function createSmallWindowHandler(options = {}) {
 
       if (url.pathname.startsWith("/api/player-matches/")) {
         return playerMatchRouter(req, res, url, { scope: visitor.scope });
+      }
+
+      if (url.pathname.startsWith("/api/player-pools")) {
+        return playerPoolRouter(req, res, url, { scope: visitor.scope });
       }
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {

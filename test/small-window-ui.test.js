@@ -17,6 +17,7 @@ const privacyHtml = ui("privacy.html");
 const termsHtml = ui("terms.html");
 const legalCss = ui("legal.css");
 const opggPanel = ui("opgg-panel.js");
+const opggStyles = ui("opgg-panel.css");
 
 test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
@@ -347,6 +348,28 @@ test("small-window defaults to an explained performance-role recommendation", ()
   assert.match(i18n, /表现分/);
   assert.match(styles, /\.ranking-insight-badges/);
   assert.match(styles, /\.ranking-rationale/);
+});
+
+test("player pool UI supports 1-15 members, two pools, removal and comparison", () => {
+  assert.match(opggPanel, /最多 2 组，每组最多 15 个角色/u);
+  assert.match(opggPanel, /创建 Pool（需同时添加首个角色）/u);
+  assert.match(opggPanel, /personal-remove/u);
+  assert.match(opggPanel, /pool-remove-player/u);
+  assert.match(opggPanel, /pool-import-seed/u);
+  assert.match(opggPanel, /pool-compare/u);
+  assert.match(opggPanel, /对局加权 \+ 玩家等权/u);
+  assert.match(opggPanel, /Pool 名称仅用于展示/u);
+  assert.match(opggPanel, /禁止生成优劣/u);
+  assert.match(opggPanel, /阵容偏好差异/u);
+  assert.match(opggPanel, /使用率 × 前四率效果矩阵/u);
+  assert.match(opggPanel, /opgg-compare-comp-card/u);
+  assert.match(opggPanel, /代表棋盘/u);
+  assert.match(opggPanel, /登顶率/u);
+  assert.match(opggStyles, /\.opgg-dumbbell-chart/u);
+  assert.match(opggStyles, /\.opgg-effect-matrix/u);
+  assert.match(opggStyles, /\.opgg-compare-comp-card/u);
+  assert.match(opggStyles, /\.opgg-pool-table/u);
+  assert.match(opggStyles, /\.opgg-remove-button/u);
 });
 
 test("soft-validated model summaries expose trusted explanation feedback controls", () => {

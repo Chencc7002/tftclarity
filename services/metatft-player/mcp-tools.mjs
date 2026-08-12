@@ -9,6 +9,7 @@ const commonSchema = {
   environment: z.enum(["pbe", "live"]).optional(),
   season: z.string().optional().describe("Explicit season, e.g. set18-pbe or set17-live"),
   callerKey: z.string().max(128).optional().describe("Opaque caller scope for rate limiting")
+  ,verificationMode: z.enum(["provider"]).optional().describe("Admin pool import only: verify against the explicitly selected environment instead of routing by tag format")
 };
 
 function resultOf(work) {

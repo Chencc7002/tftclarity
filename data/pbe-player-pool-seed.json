@@ -1,0 +1,18 @@
+{
+  "name": "S18 PBE 观察池",
+  "environment": "pbe",
+  "season": "set18-pbe",
+  "players": [
+    { "gameName": "cycyds", "tagLine": "pbe" },
+    { "gameName": "LIGhtYgo", "tagLine": "PBE" },
+    { "gameName": "wasianiversonPBE", "tagLine": "pbe" },
+    { "gameName": "Dishsoap", "tagLine": "pbe" },
+    { "gameName": "Yageovo", "tagLine": "yage" },
+    { "gameName": "Lab 00 Broseph", "tagLine": "PBE" },
+    { "gameName": "mxwewuwhua", "tagLine": "kboze" },
+    { "gameName": "Lilbear", "tagLine": "Bear" },
+    { "gameName": "titletitletitle", "tagLine": "pbe" },
+    { "gameName": "斗鱼丶迅哥", "tagLine": "123" },
+    { "gameName": "koyui", "tagLine": "TFT" }
+  ]
+}

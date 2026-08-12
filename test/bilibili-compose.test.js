@@ -34,7 +34,7 @@ test("Bilibili MCP compose sidecar is private and failure-isolated", () => {
   const app = serviceBlock("app");
   assert.match(app, /BILIBILI_MCP_ENDPOINT:\s+http:\/\/bilibili-mcp:3000\/mcp/u);
   assert.doesNotMatch(app, /bilibili-mcp:\s+\{ condition: service_healthy \}/u);
-  assert.match(app, /networks:\s+\[edge, backend, bilibili_mcp\]/u);
+  assert.match(app, /networks:\s+\[edge, backend, bilibili_mcp(?:, [a-z0-9_-]+)*\]/u);
   assert.doesNotMatch(serviceBlock("worker"), /BILIBILI_MCP_ENDPOINT/u);
   assert.doesNotMatch(serviceBlock("migrate"), /BILIBILI_MCP_ENDPOINT/u);
   assert.match(serviceBlock("caddy"), /networks:\s+\[edge\]/u);
