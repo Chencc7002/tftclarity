@@ -349,6 +349,17 @@ test("small-window defaults to an explained performance-role recommendation", ()
   assert.match(styles, /\.ranking-rationale/);
 });
 
+test("soft-validated model summaries expose trusted explanation feedback controls", () => {
+  assert.match(appJs, /model_soft_validated_summary/);
+  assert.match(appJs, /modelConclusionPendingVerification/);
+  assert.match(appJs, /model-conclusion-feedback/);
+  assert.match(appJs, /data-explanation-response-id/);
+  assert.match(appJs, /responseRecord\?\.data \?\? state\.lastResult/);
+  assert.match(appJs, /data-explanation-feedback="good"/);
+  assert.match(appJs, /data-explanation-feedback="bad"/);
+  assert.match(styles, /\.chat-model-conclusion\.soft-validated/);
+});
+
 test("UI-07 renders deterministic build options independently from grounded narrative", () => {
   assert.match(appJs, /entry\.buildOptions/);
   assert.match(appJs, /grounded-build-narrative\.v1/);

@@ -616,6 +616,41 @@ test("semantic evidence alone cannot support current best-ranking claims", async
   assert.equal(result.terminationReason, "missing_required_evidence");
 });
 
+test("summary requests publish cited model output with validation warnings", async () => {
+  const { result } = await runCase({
+    input: "总结17.9更新",
+    provider: queueProvider([
+      call("semantic_search", { query: "17.9更新", documentTypes: ["patch_note"] }, "retrieve_supporting_knowledge"),
+      finish("技能最高伤害提高至 999。", ["ev-1"])
+    ]),
+    handlers: {
+      semantic_search: async () => evidence([{ claim: "技能伤害获得调整" }])
+    }
+  });
+  assert.equal(result.status, "completed_with_warning");
+  assert.equal(result.terminationReason, "completed");
+  assert.equal(result.answer, "技能最高伤害提高至 999。");
+  assert.equal(result.answerOrigin, "model_soft_validated_summary");
+  assert.equal(result.modelConclusion.status, "accepted_with_validation_warnings");
+  assert.ok(result.warnings.includes("summary_validation_softened"));
+});
+
+test("non-summary requests still reject the same unsupported model claim", async () => {
+  const { result } = await runCase({
+    input: "当前哪个阵容最好",
+    provider: queueProvider([
+      call("semantic_search", { query: "阵容", documentTypes: ["mechanism_knowledge"] }, "retrieve_supporting_knowledge"),
+      finish("当前最高胜率是 99%。", ["ev-1"])
+    ]),
+    handlers: {
+      semantic_search: async () => evidence([{ claim: "作者推荐这套阵容" }])
+    }
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.terminationReason, "missing_required_evidence");
+  assert.equal(result.answer, null);
+});
+
 test("semantic search retries must change scope and stop after two calls", async () => {
   let calls = 0;
   const unchanged = await runCase({
@@ -1306,6 +1341,53 @@ test("G3 finish validation rejects a blanket no-change claim when a breakpoint c
     answer: "The count changes from 2 to 1 and the breakpoint is deactivated."
   }, ledger);
   assert.equal(valid.valid, true);
+});
+
+test("finish validation accepts a rounded positive placement improvement from composition trend evidence", () => {
+  const entry = {
+    evidenceId: "ev-comp-trend",
+    toolName: "comps_trends",
+    type: "composition_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      rising: [{
+        name: "未来战士 · 潘森",
+        stats: { avgPlacement: 4 },
+        trend: {
+          baselineAvgPlacement: 4.8183,
+          avgPlacementChange: -0.8182999999999998,
+          direction: "rising",
+          improving: true
+        }
+      }]
+    }
+  };
+  const ledger = { resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [] };
+  const validation = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "未来战士 · 潘森的平均名次由 4.82 提升至 4.00，提升 0.82 名。"
+  }, ledger);
+  assert.equal(validation.valid, true, validation.errors.join("; "));
+});
+
+test("finish validation does not allow an absolute rounded delta for unrelated evidence", () => {
+  const entry = {
+    evidenceId: "ev-unrelated-delta",
+    toolName: "unit_builds_batch",
+    type: "unit_builds_batch_results",
+    temporalStatus: "current",
+    value: { avgPlacementChange: -0.8182999999999998 }
+  };
+  const ledger = { resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [] };
+  const validation = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "提升 0.82 名。"
+  }, ledger);
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.includes("answer statistic is not present in cited evidence: 0.82"));
 });
 
 test("G3 deterministic fallback renders breakpoint evidence without model prose", () => {

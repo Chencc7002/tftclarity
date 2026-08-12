@@ -2700,7 +2700,7 @@ function systemInteractionAnswerHtml(data) {
   </div>`;
 }
 
-function reactModelConclusionHtml(data, summary) {
+function reactModelConclusionHtml(data, summary, responseId = "") {
   const answer = typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "";
   if (!answer) return "";
   const systemFallback = data?.answerOrigin === "system_evidence_fallback";
@@ -2713,6 +2713,14 @@ function reactModelConclusionHtml(data, summary) {
   const limited = data?.terminationReason === "insufficient_evidence"
     || data?.terminationReason === "missing_required_evidence";
   const hasGroundingWarnings = Array.isArray(data?.narrativeWarnings) && data.narrativeWarnings.length > 0;
+  const softValidated = data?.answerOrigin === "model_soft_validated_summary";
+  const feedback = state.explanationFeedback;
+  const feedbackHtml = data?.queryId ? `<div class="result-feedback model-conclusion-feedback" data-explanation-feedback-group data-explanation-response-id="${escapeHtml(responseId)}">
+    <button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button>
+    <button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button>
+    <span class="feedback-status">${feedback ? t("recorded") : ""}</span>
+    ${feedbackReasonPicker("explanation")}
+  </div>` : "";
   const rejectedCard = rejectedModelAnswer
     ? `<section class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
       <header>
@@ -2726,16 +2734,18 @@ function reactModelConclusionHtml(data, summary) {
       </details>` : ""}
     </section>`
     : "";
-  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}" data-chat-model-conclusion>
+  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}${softValidated ? " soft-validated" : ""}" data-chat-model-conclusion>
     <header>
       <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
       <small>${escapeHtml(t(systemFallback
         ? "systemConclusionFallback"
         : hasGroundingWarnings
           ? "modelConclusionGroundingWarning"
+          : softValidated ? "modelConclusionPendingVerification"
           : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
     </header>
     ${conclusionRichTextHtml(answer || summary)}
+    ${feedbackHtml}
   </section>`;
   return `${rejectedCard}${acceptedOrFallbackCard}`;
 }
@@ -2873,7 +2883,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
       : data?.type === CompRankingResult.type
         ? t("currentCompRanking")
         : t("noResult"));
-  const modelConclusion = reactModelConclusionHtml(data, summary);
+  const modelConclusion = reactModelConclusionHtml(data, summary, responseId);
   if (modelConclusion) {
     return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
@@ -4255,14 +4265,16 @@ async function sendResultFeedback(sentiment, cardIndex, reason = null) {
   return payload;
 }
 
-async function sendExplanationFeedback(sentiment, reason = null) {
-  const conclusion = state.lastResult?.answer?.generatedConclusion;
-  if (!conclusion?.content || !state.lastResultId) throw new Error(t("feedbackUnavailable"));
+async function sendExplanationFeedback(sentiment, reason = null, sourceData = state.lastResult) {
+  const conclusion = sourceData?.answer?.generatedConclusion;
+  const reactAnswer = typeof sourceData?.reactAnswer === "string" ? sourceData.reactAnswer.trim() : "";
+  const queryId = sourceData?.queryId ?? null;
+  if ((!conclusion?.content && !reactAnswer) || !queryId) throw new Error(t("feedbackUnavailable"));
   const response = await fetch("/api/feedback", {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      queryId: state.lastResultId,
+      queryId,
       target: "explanation",
       rating: sentiment === "good" ? "helpful" : "unhelpful",
       ...(reason ? { reason } : {})
@@ -5124,7 +5136,8 @@ async function handleResultClick(event) {
     reasonSubmit.disabled = true;
     try {
       if (target === "explanation") {
-        await sendExplanationFeedback("bad", reason);
+        const responseRecord = state.responsesById.get(group?.dataset.explanationResponseId);
+        await sendExplanationFeedback("bad", reason, responseRecord?.data ?? state.lastResult);
         state.explanationFeedback = "bad";
         group?.querySelector('[data-explanation-feedback="bad"]')?.classList.add("selected");
       } else {
@@ -5160,7 +5173,8 @@ async function handleResultClick(event) {
     buttons.forEach((button) => { button.disabled = true; });
     try {
       const sentiment = explanationButton.dataset.explanationFeedback;
-      await sendExplanationFeedback(sentiment);
+      const responseRecord = state.responsesById.get(group?.dataset.explanationResponseId);
+      await sendExplanationFeedback(sentiment, null, responseRecord?.data ?? state.lastResult);
       state.explanationFeedback = sentiment;
       explanationButton.classList.add("selected");
       if (status) status.textContent = t("recorded");

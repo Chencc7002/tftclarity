@@ -383,6 +383,9 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .chat-model-conclusion.rejected { border-color: color-mix(in srgb, var(--danger) 34%, var(--line)); background: color-mix(in srgb, var(--danger) 6%, rgba(255,255,255,.95)); }
 .chat-model-conclusion.rejected header strong { color: var(--danger); }
 .chat-model-conclusion.rejected header small { color: color-mix(in srgb, var(--danger) 72%, var(--muted)); }
+.chat-model-conclusion.soft-validated { border-color: color-mix(in srgb, #d79026 46%, var(--line)); background: color-mix(in srgb, #f3b347 8%, rgba(255,255,255,.95)); }
+.chat-model-conclusion.soft-validated header small { color: #9a6417; }
+.model-conclusion-feedback { padding-top: 7px; border-top: 1px solid color-mix(in srgb, var(--line) 78%, transparent); }
 .model-conclusion-rejection-reasons { color: var(--muted); font-size: 9px; }
 .model-conclusion-rejection-reasons summary { cursor: pointer; font-weight: 750; }
 .model-conclusion-rejection-reasons ul { margin: 6px 0 0; padding-left: 17px; display: grid; gap: 4px; }

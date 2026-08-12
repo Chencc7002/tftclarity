@@ -6744,6 +6744,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     groundingMode: runtime.reactGroundingMode
   });
   try {
+    const startedAt = Date.now();
     const result = hydrateReactResultKnowledgeSignals(await agent.chat({
       ...request,
       bridgeContext,
@@ -6781,24 +6782,34 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     }
     const access = await publicAccessStatus();
+    const payload = {
+      ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
+      type: "react_chat_result",
+      ...result,
+      ...(bridgeContext ? {
+        conversationBridge: {
+          relation: bridgeContext.relation,
+          relationSource: "deterministic",
+          estimatedTokens: bridgeContext.estimatedTokens,
+          promotedEvidenceCount: bridgeContext.promotedEvidence?.length ?? 0,
+          warning: bridgeContext.warning ?? null
+        }
+      } : {}),
+      unavailableTools: handlerBundle.unavailableTools ?? [],
+      ...(access ? { access } : {})
+    };
+    if (payload.answer && payload.status !== "clarification_required") {
+      await persistQueryResponse(payload, runtime, {
+        scope: context.visitor?.scope ?? "local",
+        runId: result?.run?.runId ?? null,
+        conversationId: request.conversationId,
+        input: request.input,
+        startedAt
+      });
+    }
     return {
       statusCode: 200,
-      payload: {
-        ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
-        type: "react_chat_result",
-        ...result,
-        ...(bridgeContext ? {
-          conversationBridge: {
-            relation: bridgeContext.relation,
-            relationSource: "deterministic",
-            estimatedTokens: bridgeContext.estimatedTokens,
-            promotedEvidenceCount: bridgeContext.promotedEvidence?.length ?? 0,
-            warning: bridgeContext.warning ?? null
-          }
-        } : {}),
-        unavailableTools: handlerBundle.unavailableTools ?? [],
-        ...(access ? { access } : {})
-      }
+      payload
     };
   } catch (error) {
     const access = await publicAccessStatus();
@@ -7459,7 +7470,16 @@ async function handleTrustedFeedbackRequest(body, runtime, context = {}) {
     selected = response.cards?.[normalized.cardIndex] ?? null;
     if (!selected) throw feedbackHttpError("Recommendation card not found", 400);
   } else {
-    selected = response.answer?.generatedConclusion ?? null;
+    selected = response.answer?.generatedConclusion?.content
+      ? response.answer.generatedConclusion
+      : response.type === "react_chat_result" && typeof response.answer === "string"
+        ? {
+          content: response.answer,
+          answerOrigin: response.answerOrigin ?? null,
+          validationWarnings: response.modelConclusion?.validationErrors ?? response.narrativeWarnings ?? [],
+          evidenceIds: response.evidenceIds ?? []
+        }
+        : null;
     if (!selected?.content) throw feedbackHttpError("Explanation not found", 400);
   }
 
@@ -7474,6 +7494,11 @@ async function handleTrustedFeedbackRequest(body, runtime, context = {}) {
     query: queryEvent.query,
     recommendation: normalized.target === "recommendation" ? selected : null,
     explanation: normalized.target === "explanation" ? selected.content : null,
+    explanationContext: normalized.target === "explanation" ? {
+      answerOrigin: selected.answerOrigin ?? null,
+      validationWarnings: selected.validationWarnings ?? [],
+      evidenceIds: selected.evidenceIds ?? []
+    } : null,
     cache: {
       hit: queryEvent.cacheHit,
       stale: queryEvent.cacheStale

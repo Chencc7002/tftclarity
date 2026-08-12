@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   createDefaultReactToolHandlerBundle,
   createSmallWindowRuntime,
+  handleFeedbackRequest,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
@@ -59,6 +60,50 @@ test("independent react endpoint answers without entering recommendForInput", as
     "composition_member_statistics",
     "strategy_video_search"
   ]);
+});
+
+test("react answers persist a trusted feedback snapshot with validation context", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const visitor = { scope: "react-feedback-user" };
+  const runtime = createSmallWindowRuntime({
+    cacheStore,
+    reactDecisionProvider: async (request) => request.state.evidence.length
+      ? {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "17.9 最高伤害提高至 999。",
+        evidenceIds: [request.state.evidence[0].evidenceId],
+        reasonCode: "sufficient_evidence"
+      }
+      : {
+        schemaVersion: "react-action.v1",
+        type: "call_tool",
+        tool: "semantic_search",
+        arguments: { query: "17.9更新", documentTypes: ["patch_note"] },
+        purposeCode: "retrieve_supporting_knowledge"
+      },
+    reactToolHandlers: {
+      semantic_search: async () => ({
+        type: "semantic_search_results",
+        hits: [{ claim: "17.9 伤害获得调整" }],
+        updatedAt: "2026-08-12T00:00:00.000Z"
+      })
+    }
+  });
+  const { payload } = await handleReactChatRequest({ input: "总结17.9更新" }, runtime, { visitor });
+  assert.match(payload.queryId, /^[0-9a-f-]{36}$/u);
+  const queryEvent = await cacheStore.getQueryEvent(payload.queryId);
+  assert.equal(queryEvent.response.answerOrigin, "model_soft_validated_summary");
+
+  const feedback = await handleFeedbackRequest({
+    queryId: payload.queryId,
+    target: "explanation",
+    rating: "unhelpful",
+    reason: "explanation_incorrect"
+  }, runtime, { visitor });
+  assert.equal(feedback.feedback.payload.explanation, payload.answer);
+  assert.equal(feedback.feedback.payload.explanationContext.answerOrigin, "model_soft_validated_summary");
+  assert.ok(feedback.feedback.payload.explanationContext.validationWarnings.length > 0);
 });
 
 test("independent react endpoint executes a shared registered handler", async () => {
