@@ -233,7 +233,7 @@ function overviewChips(result) {
 
 async function renderTrends() {
   state.view = "trends";
-  setResult("NA 职业选手近期阵容趋势", loadingHtml());
+  setResult("玩家 Pool 阵容趋势", loadingHtml());
   try {
     const [pools, result] = await Promise.all([
       api("/api/opgg/pools"),
@@ -270,17 +270,19 @@ async function renderTrends() {
       <div class="opgg-analysis-item">
         <span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(analysisCompSummary(result, comp, metric))}</small>
       </div>`).join("")}</div>` : "";
+    const pool = result.pool ?? pools.find((entry) => entry.id === state.pool) ?? {};
+    const environmentLabel = pool.environment === "pbe" ? "S18 PBE · MetaTFT" : "NA 正式服 · OP.GG";
     setResult(
-      "NA 职业选手近期阵容趋势",
+      `${pool.name ?? "玩家 Pool"} · 阵容趋势`,
       `
         <div class="opgg-page-head">
           <div>
-            <h3 class="opgg-page-title">职业趋势</h3>
-            <p class="opgg-page-sub">每名选手最近 ${result.overview.perPlayerMatchWindow} 场 · 仅当前补丁 · 不描述为全服 Meta</p>
+            <h3 class="opgg-page-title">玩家 Pool 阵容趋势</h3>
+            <p class="opgg-page-sub">${esc(environmentLabel)} · 每名玩家最近 ${result.overview.perPlayerMatchWindow} 场 · 仅当前补丁</p>
           </div>
           <div class="opgg-toolbar">
             <select id="opgg-pool-select">${poolOptions}</select>
-            <a class="opgg-badge opgg-badge-indigo" href="#" data-opgg-action="players">选手与荣誉</a>
+            <a class="opgg-badge opgg-badge-indigo" href="#" data-opgg-action="players">成员与对局</a>
           </div>
         </div>
         ${overviewChips(result)}
@@ -288,8 +290,8 @@ async function renderTrends() {
         ${result.overview.availablePlayerMatches < result.overview.maximumPlayerMatches
           ? `<div class="opgg-notice">当前积累 ${result.overview.availablePlayerMatches}/${result.overview.maximumPlayerMatches} 条 player-match。评级、均名、前四、登顶与老八均为职业池小样本观察；少于 5 场的行已弱化显示，不代表全服强度。</div>`
           : ""}
-        <div class="opgg-section-title">阵容小数据 <small>点击行查看每一场的棋子与装备</small></div>
-        <div class="opgg-trend-table" role="table" aria-label="职业选手阵容小数据">
+        <div class="opgg-section-title">阵容小数据 <small>点击行进入对局可视化，展开每一场的棋子与装备</small></div>
+        <div class="opgg-trend-table" role="table" aria-label="玩家 Pool 阵容小数据">
           <div class="opgg-trend-header" role="row">
             <span role="columnheader">阵容</span><span role="columnheader">评级</span><span role="columnheader">场次</span><span role="columnheader">出场率</span><span role="columnheader">均名</span><span role="columnheader">前四率</span><span role="columnheader">登顶率</span><span role="columnheader">老八率</span>
           </div>
@@ -324,7 +326,7 @@ async function renderPlayers() {
           <div class="opgg-honor-tags">${(player.honors.tags ?? []).map((tag) => `<span class="opgg-badge opgg-badge-gold">${esc(tag)}</span>`).join("")}</div>`
         : `<div class="opgg-match-sub">暂无荣誉资料</div>`;
       return `
-        <div class="opgg-card opgg-card-link" data-opgg-action="player" data-player="${esc(player.id)}" style="cursor:pointer">
+        <div class="opgg-card opgg-card-link opgg-pro-player-card" data-opgg-action="player" data-player="${esc(player.id)}" style="cursor:pointer">
           <div class="opgg-card-body">
             <div class="opgg-card-head">
               <span class="opgg-card-title">${esc(player.displayName)}</span>
@@ -337,7 +339,7 @@ async function renderPlayers() {
               <div class="opgg-metric"><b>均名次</b><span>${player.summary?.avgPlacement ?? "-"}</span></div>
               <div class="opgg-metric"><b>前四率</b><span>${player.summary?.top4Rate != null ? Math.round(player.summary.top4Rate * 100) + "%" : "-"}</span></div>
             </div>
-            <div class="opgg-card-actions">${aiReviewButton(player.id, null, { compact: true })}</div>
+            <div class="opgg-card-actions"><button type="button" class="opgg-view-match-button" data-opgg-action="player" data-player="${esc(player.id)}">查看对局</button>${aiReviewButton(player.id, null, { compact: true })}</div>
           </div>
         </div>`;
     }).join("");
@@ -346,8 +348,8 @@ async function renderPlayers() {
       `${backLink("返回趋势", "trends")}
        <div class="opgg-page-head">
          <div>
-           <h3 class="opgg-page-title">选手与荣誉</h3>
-           <p class="opgg-page-sub">荣誉仅用于介绍，不参与聚合权重 · 个人复盘页与选手详情页同构</p>
+           <h3 class="opgg-page-title">成员、荣誉与对局</h3>
+           <p class="opgg-page-sub">查看对局进入棋盘可视化；AI 复盘只使用已采集的真实比赛证据</p>
          </div>
        </div>
        <div class="opgg-grid">${cards || '<div class="opgg-empty">暂无选手</div>'}</div>`,
@@ -475,6 +477,7 @@ async function renderMatch() {
       `/api/opgg/players/${encodeURIComponent(state.playerId)}/matches/${encodeURIComponent(state.matchId)}`
     );
     const facts = data.review.facts;
+    const matchSourceLabel = data.player?.region === "pbe" ? "MetaTFT" : "OP.GG";
     const units = (facts.units ?? []).map((unit) => {
       const stars = "★".repeat(Math.max(1, unit.tier ?? 1));
       const items = normalizedItems(unit).map((item) => `
@@ -522,7 +525,7 @@ async function renderMatch() {
          <div class="opgg-section-title" style="margin-top:0">阵容</div>
           ${signatureHtml(facts.compFamilySignature, facts.displaySignature)}
        </div></div>
-       <div class="opgg-section-title">终局棋子与装备 <small>OP.GG 数据源未返回站位坐标</small></div>
+       <div class="opgg-section-title">终局棋子与装备 <small>${matchSourceLabel} 数据源未返回站位坐标</small></div>
        <div class="opgg-notice">以下展示对局结束时的棋子、星级与装备；当前数据源不包含逐回合经济、搜牌和棋盘站位。</div>
        <div class="opgg-units-grid" style="margin-top:10px">${units || '<div class="opgg-empty">无棋子数据（早期淘汰或数据缺失）</div>'}</div>
        <div class="opgg-section-title">激活羁绊</div>
@@ -539,7 +542,7 @@ async function renderMatch() {
 
 async function renderPersonal() {
   state.view = "personal";
-  setResult("个人战绩复盘", loadingHtml());
+  setResult("对局可视化与复盘", loadingHtml());
   try {
     const data = await api("/api/opgg/my-review");
     const cards = (data.players ?? []).map((player) => `
@@ -561,12 +564,12 @@ async function renderPersonal() {
         <div class="opgg-personal-actions">${aiReviewButton(player.id)}<button type="button" class="opgg-remove-button" data-opgg-action="personal-remove" data-player="${esc(player.id)}">删除账号</button></div>
       </div>`).join("");
     setResult(
-      "个人战绩复盘",
+      "对局可视化与复盘",
       `
         <div class="opgg-page-head">
           <div>
-            <h3 class="opgg-page-title">个人战绩复盘</h3>
-            <p class="opgg-page-sub">#PBE数字 查询 S18 PBE 最近 10–20 场；#NA数字 正式服继续使用 OP.GG</p>
+            <h3 class="opgg-page-title">对局可视化与复盘</h3>
+            <p class="opgg-page-sub">添加 Riot ID 后点击账号，即可查看最近 10–20 场、展开单局终局棋盘并进行 AI 复盘</p>
           </div>
         </div>
         <div class="opgg-card opgg-account-form"><div class="opgg-card-body">
@@ -631,7 +634,8 @@ function poolCardHtml(pool) {
     <li><span>${esc(player.gameName)}#${esc(player.tagLine)}</span><button type="button" class="opgg-remove-button opgg-remove-button-compact" data-opgg-action="pool-remove-player" data-pool="${esc(pool.id)}" data-player="${esc(player.id)}">移出</button></li>`).join("");
   return `<article class="opgg-card opgg-pool-card">
     <div class="opgg-card-body">
-      <div class="opgg-card-head"><strong class="opgg-card-title">${esc(pool.name)}</strong><span class="opgg-badge opgg-badge-muted">${pool.memberCount}/${pool.maxMembers}</span></div>
+      <div class="opgg-card-head"><strong class="opgg-card-title">${esc(pool.name)}</strong><span class="opgg-pool-head-actions"><button type="button" class="opgg-pool-rename-button" data-opgg-action="pool-rename-start" data-pool="${esc(pool.id)}">重命名</button><span class="opgg-badge opgg-badge-muted">${pool.memberCount}/${pool.maxMembers}</span></span></div>
+      <div class="opgg-pool-rename-row" data-pool-rename-form="${esc(pool.id)}" hidden><input data-pool-rename-input="${esc(pool.id)}" value="${esc(pool.name)}" maxlength="30" aria-label="新的 Pool 名称"><button type="button" class="opgg-primary-button" data-opgg-action="pool-rename-save" data-pool="${esc(pool.id)}">保存名称</button></div>
       <div class="opgg-match-sub">${esc(pool.environment)} · ${esc(pool.season)} · ${esc(pool.provider)}</div>
       <ul class="opgg-pool-members">${players || "<li><span>当前分组暂无玩家</span></li>"}</ul>
       <div class="opgg-pool-add-row"><input data-pool-name="${esc(pool.id)}" placeholder="Riot 游戏名"><input data-pool-tag="${esc(pool.id)}" placeholder="Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-add-player" data-pool="${esc(pool.id)}">添加角色</button></div>
@@ -676,6 +680,23 @@ async function addPoolPlayer(poolId) {
 async function mutatePool(action, dataset) {
   if (action === "pool-create") return createPlayerPool();
   if (action === "pool-add-player") return addPoolPlayer(dataset.pool);
+  if (action === "pool-rename-start") {
+    const row = document.querySelector(`[data-pool-rename-form="${CSS.escape(dataset.pool)}"]`);
+    if (!row) return;
+    row.hidden = false;
+    row.querySelector("input")?.focus();
+    return;
+  }
+  if (action === "pool-rename-save") {
+    const name = document.querySelector(`[data-pool-rename-input="${CSS.escape(dataset.pool)}"]`)?.value.trim();
+    if (!name) return;
+    await api(`/api/player-pools/${encodeURIComponent(dataset.pool)}`, {
+      method: "PATCH",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ name })
+    });
+    return renderPlayerPools();
+  }
   if (action === "pool-remove-player") {
     await api(`/api/player-pools/${encodeURIComponent(dataset.pool)}/players/${encodeURIComponent(dataset.player)}`, { method: "DELETE" });
     return renderPlayerPools();

@@ -68,6 +68,40 @@
   display: flex;
   justify-content: flex-end;
 }
+.opgg-pro-player-card { display: flex; min-height: 100%; }
+.opgg-pro-player-card .opgg-card-body { width: 100%; display: flex; flex-direction: column; }
+.opgg-pro-player-card .opgg-honor-card { flex: 1 1 auto; }
+.opgg-pro-player-card .opgg-card-actions {
+  margin-top: auto;
+  padding: 12px 0 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 7px;
+}
+.opgg-pro-player-card .opgg-ai-button,
+.opgg-view-match-button { width: 100%; min-height: 34px; justify-content: center; box-shadow: none; }
+.opgg-view-match-button {
+  padding: 0 10px;
+  border: 1px solid color-mix(in srgb, var(--wallpaper-accent) 40%, var(--line));
+  border-radius: 8px;
+  color: color-mix(in srgb, var(--wallpaper-accent) 78%, var(--ink));
+  background: color-mix(in srgb, var(--wallpaper-accent) 7%, #fff);
+  font-size: 9px;
+  font-weight: 850;
+}
+.opgg-pool-head-actions { display: inline-flex; align-items: center; gap: 6px; }
+.opgg-pool-rename-button {
+  padding: 3px 7px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  color: var(--muted);
+  background: transparent;
+  font-size: 8px;
+  font-weight: 750;
+}
+.opgg-pool-rename-row { margin-top: 8px; display: grid; grid-template-columns: 1fr auto; gap: 7px; }
+.opgg-pool-rename-row[hidden] { display: none; }
+.opgg-pool-rename-row input { min-width: 0; }
 
 .opgg-metrics { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; margin-top: 9px; }
 .opgg-metric {

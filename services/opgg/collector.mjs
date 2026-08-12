@@ -1057,6 +1057,32 @@ function registerPlayer(
     .get(entry.id);
 }
 
+function getPool(database, poolId) {
+  const row = database.prepare(`SELECT * FROM pool WHERE id = ?`).get(poolId);
+  if (!row) return null;
+  return {
+    id: row.id,
+    name: row.name,
+    region: row.region,
+    ownerType: row.owner_type,
+    ownerId: row.owner_id,
+    environment: row.environment,
+    season: row.season,
+    provider: row.provider,
+    visibility: row.visibility,
+    poolType: row.pool_type,
+    patchScope: row.patch_scope,
+    createdAt: row.created_at
+  };
+}
+
+function renamePool(database, poolId, name) {
+  const normalized = String(name ?? "").trim();
+  if (!normalized) throw new Error("Pool name is required.");
+  const result = database.prepare(`UPDATE pool SET name = ? WHERE id = ?`).run(normalized, poolId);
+  return Number(result.changes) > 0 ? getPool(database, poolId) : null;
+}
+
 function deletePool(database, poolId) {
   database.prepare(`DELETE FROM pool_player WHERE pool_id = ?`).run(poolId);
   const result = database.prepare(`DELETE FROM pool WHERE id = ?`).run(poolId);
@@ -1457,6 +1483,8 @@ export {
   decryptStoredPuuid,
   isEncryptedPuuid,
   createPool,
+  getPool,
+  renamePool,
   deletePool,
   poolExists,
   listPools,

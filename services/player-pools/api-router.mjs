@@ -6,6 +6,7 @@ import {
   openDatabase,
   initSchema,
   createPool,
+  renamePool,
   deletePool,
   poolExists,
   listOwnedPools,
@@ -400,6 +401,16 @@ function createPlayerPoolApiRouter(options = {}) {
         return sendJson(response, 200, poolStats(database, pool));
       }
       const poolMatch = pathname.match(/^\/api\/player-pools\/([^/]+)$/u);
+      if (poolMatch && request.method === "PATCH") {
+        const pool = ownedPool(database, poolMatch[1], ownerId);
+        if (!pool) return sendJson(response, 404, { error: "POOL_NOT_FOUND" });
+        const body = await readJsonBody(request);
+        const name = String(body.name ?? "").trim();
+        if (!name) return sendJson(response, 400, { error: "POOL_NAME_REQUIRED" });
+        if (name.length > 30) return sendJson(response, 400, { error: "POOL_NAME_TOO_LONG" });
+        const renamed = renamePool(database, pool.id, name);
+        return sendJson(response, 200, { pool: publicPool(renamed, getPoolPlayers(database, pool.id, { activeOnly: false })) });
+      }
       if (poolMatch && request.method === "DELETE") {
         const pool = ownedPool(database, poolMatch[1], ownerId);
         if (!pool) return sendJson(response, 404, { error: "POOL_NOT_FOUND" });
