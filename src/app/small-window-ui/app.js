@@ -2178,6 +2178,24 @@ function comparisonReasonText(reason) {
   }[reason] ?? t("reasonInsufficientEvidence");
 }
 
+function comparisonItemDetail(entry) {
+  const detail = entry?.detail;
+  if (!detail) return "";
+  const recipe = detail.recipe ?? [];
+  const recipeHtml = recipe.length
+    ? `<div class="items">${recipe.map(itemPill).join('<span class="recipe-plus">+</span>')}</div>`
+    : `<div class="detail-muted">${escapeHtml(t("notCraftable"))}</div>`;
+  return `
+    <details class="comparison-item-detail">
+      <summary>${escapeHtml(t("itemDetails"))}</summary>
+      <strong class="detail-label">${escapeHtml(t("recipeRoute"))}</strong>
+      ${recipeHtml}
+      <strong class="detail-label">${escapeHtml(t("effectAndStats"))}</strong>
+      <div class="detail-effect">${escapeHtml(detail.effect ?? detail.description ?? t("missingOfficialItemDetails")).replace(/\n/g, "<br>")}</div>
+    </details>
+  `;
+}
+
 function renderItemComparison(data) {
   const comparison = data.comparison ?? {};
   const inputEntries = comparison.entries ?? data.results ?? [];
@@ -2223,6 +2241,7 @@ function renderItemComparison(data) {
               ${metric(t("metricSamples"), entry.stats?.games ?? 0)}
             </div>
             <div class="comparison-build"><b>${escapeHtml(t("commonFullBuild"))}</b><span>${escapeHtml(common)}</span></div>
+            ${comparisonItemDetail(entry)}
           </article>
         `;
       }).join("")}
@@ -2336,6 +2355,91 @@ function conditionChips(data) {
 
 function conditionPanel(data) {
   return `<section class="condition-panel"><header class="condition-panel-head"><h3>${t("conditions")}</h3><small>${t("conditionEditHint")}</small></header>${conditionChips(data)}<div class="source-legend" aria-label="${t("conditionSources")}"><span><i></i>${t("sourceCurrent")}</span><span><i></i>${t("sourceConversation")}</span><span><i></i>${t("sourcePreference")}</span><span><i></i>${t("sourceDefault")}</span></div></section>`;
+}
+
+function renderCompositionChangeEvaluation(data) {
+  const zh = getLocale().startsWith("zh");
+  const labels = zh ? {
+    title: "阵容变更评估",
+    add: "加入",
+    remove: "移除",
+    replace: "替换",
+    before: "变更前",
+    after: "变更后",
+    traitChanges: "羁绊变化",
+    activated: "激活",
+    advanced: "提升档位",
+    deactivated: "失效",
+    regressed: "降低档位",
+    increased: "人数增加",
+    decreased: "人数减少",
+    noDelta: "没有检测到羁绊人数变化。",
+    notStrength: "这里只评估阵容结构和羁绊变化，不代表变更后一定更强。",
+    invalid: "无法执行这次阵容变更",
+    members: "名成员"
+  } : {
+    title: "Composition change evaluation",
+    add: "Add",
+    remove: "Remove",
+    replace: "Replace",
+    before: "Before",
+    after: "After",
+    traitChanges: "Trait changes",
+    activated: "Activated",
+    advanced: "Advanced",
+    deactivated: "Deactivated",
+    regressed: "Regressed",
+    increased: "Count increased",
+    decreased: "Count decreased",
+    noDelta: "No trait-count change was detected.",
+    notStrength: "This evaluates structure and trait breakpoints, not whether the changed composition is stronger.",
+    invalid: "This composition change could not be evaluated",
+    members: " members"
+  };
+  const operation = data.operation ?? (data.type === "composition_replacement_evaluation" ? "replace" : "change");
+  const target = data.target?.name ?? data.target?.apiName ?? "";
+  const incoming = (data.incoming ?? data.replacement)?.name
+    ?? (data.incoming ?? data.replacement)?.apiName
+    ?? "";
+  const operationText = operation === "add"
+    ? `${labels.add} ${incoming}`
+    : operation === "remove"
+      ? `${labels.remove} ${target}`
+      : `${labels.replace} ${target}${target && incoming ? " → " : ""}${incoming}`;
+  const valid = data.status === "evaluated";
+  const beforeMembers = data.memberChange?.before ?? [];
+  const afterMembers = data.memberChange?.after ?? [];
+  const memberName = (member) => typeof member === "string"
+    ? member
+    : member?.name ?? member?.displayName ?? member?.apiName ?? "";
+  const deltaLabel = (change) => ({
+    activated: labels.activated,
+    advanced: labels.advanced,
+    deactivated: labels.deactivated,
+    regressed: labels.regressed,
+    count_increased: labels.increased,
+    count_decreased: labels.decreased
+  }[change] ?? change);
+  const deltaCards = (data.traitDeltas ?? []).map((delta) => {
+    const name = delta.traitRef?.name ?? delta.traitRef?.displayName ?? delta.traitRef?.apiName ?? delta.trait ?? "Trait";
+    const positive = ["activated", "advanced", "count_increased"].includes(delta.breakpointChange);
+    return `<article class="result-card composition-trait-delta ${positive ? "positive" : "negative"}">
+      <div class="card-head"><strong>${escapeHtml(name)}</strong><span>${escapeHtml(deltaLabel(delta.breakpointChange))}</span></div>
+      <div class="comparison-primary"><strong>${escapeHtml(`${delta.beforeCount ?? 0} → ${delta.afterCount ?? 0}`)}</strong></div>
+      <small>${escapeHtml(`${delta.beforeBreakpoint?.threshold ?? "-"} → ${delta.afterBreakpoint?.threshold ?? "-"}`)}</small>
+    </article>`;
+  }).join("");
+  setResponseHtml(`
+    ${resultHeader(labels.title, valid ? operationText : labels.invalid, data.status ?? "unknown")}
+    ${valid ? `<section class="composition-change-members">
+      <article class="result-card"><strong>${escapeHtml(labels.before)}</strong><small>${escapeHtml(`${beforeMembers.length}${labels.members}`)}</small><div class="entity-chips">${beforeMembers.map((member) => `<span>${escapeHtml(memberName(member))}</span>`).join("")}</div></article>
+      <article class="result-card"><strong>${escapeHtml(labels.after)}</strong><small>${escapeHtml(`${afterMembers.length}${labels.members}`)}</small><div class="entity-chips">${afterMembers.map((member) => `<span>${escapeHtml(memberName(member))}</span>`).join("")}</div></article>
+    </section>
+    <h2>${escapeHtml(labels.traitChanges)}</h2>
+    <section class="comparison-grid comparison-grid-two">${deltaCards || `<div class="empty-state"><strong>${escapeHtml(labels.noDelta)}</strong></div>`}</section>
+    <div class="risk-line">${escapeHtml(labels.notStrength)}</div>`
+      : `<section class="empty-state"><strong>${escapeHtml(data.failureReason ?? labels.invalid)}</strong></section>`}
+  `);
 }
 
 function sourceCacheLabel(value, fallbackCache) {
@@ -3056,9 +3160,22 @@ function renderItemRankings(data) {
 function renderItemCarrierRankings(data) {
   const carriers = data.carriers ?? [];
   const itemLabel = localizedName(data.item, data.query?.itemName ?? t("item"));
+  const detail = data.itemDetail ?? null;
+  const detailFacts = detail?.facts ?? {};
+  const detailRecipe = detailFacts.composition ?? [];
+  const detailHtml = detail ? `<article class="result-card item-detail-card carrier-item-detail" data-carrier-item-detail>
+    <div class="card-head"><div class="card-title-group">${assetThumb(data.item?.iconUrl, detail.displayName ?? itemLabel, "equipment-unit-icon")}<div class="card-title">${escapeHtml(detail.displayName ?? itemLabel)}</div></div><div class="detail-category">${escapeHtml(detailFacts.category ?? data.item?.category ?? "")}</div></div>
+    <strong class="detail-label">${escapeHtml(t("recipeRoute"))}</strong>
+    ${detailRecipe.length
+      ? `<div class="items">${detailRecipe.map((component) => itemPill(typeof component === "string" ? { apiName: component, name: component } : component)).join('<span class="recipe-plus">+</span>')}</div>`
+      : `<div class="detail-muted">${escapeHtml(t("notCraftable"))}</div>`}
+    <strong class="detail-label">${escapeHtml(t("effectAndStats"))}</strong>
+    <div class="detail-effect">${escapeHtml(detailFacts.effect ?? detailFacts.description ?? t("missingOfficialItemDetails")).replace(/\n/g, "<br>")}</div>
+  </article>` : "";
   if (!carriers.length) {
     setResponseHtml(`
       ${resultHeader(t("itemCarriers"), data.text ?? t("noPositiveCarriers"), t("noResult"))}
+      ${detailHtml}
       <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noPositiveCarriers"))}</strong></div>
       ${conditionPanel(data)}${sourceAndRisk(data)}
     `);
@@ -3066,6 +3183,7 @@ function renderItemCarrierRankings(data) {
   }
   setResponseHtml(`
     ${resultHeader(t("itemCarriers"), data.text, itemLabel)}
+    ${detailHtml}
     <div class="carrier-ranking-list">
       ${carriers.map((carrier, index) => `
         <article class="carrier-ranking-card">
@@ -3798,6 +3916,7 @@ function renderCurrentResult(data) {
   else if (data.type === "trait_details") renderTraitDetails(data);
   else if (data.type === "item_details") renderItemDetails(data);
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
+  else if (["composition_change_evaluation", "composition_replacement_evaluation"].includes(data.type)) renderCompositionChangeEvaluation(data);
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
@@ -4476,8 +4595,23 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
 function hasRenderableNativeEvidence(payload) {
   const nativeTypes = new Set([
     "composition_rankings",
+    "comp_rankings",
+    "comp_trends",
+    "comp_analysis",
     "entity_catalog_results",
+    "unit_build_rankings",
+    "unit_build_completion",
+    "unit_best_3_items",
+    "unit_item_rankings",
+    "unit_emblem_rankings",
+    "unit_item_comparison",
     "unit_builds_batch_results",
+    "item_carrier_rankings",
+    "unit_details",
+    "item_details",
+    "trait_details",
+    "composition_change_evaluation",
+    "composition_replacement_evaluation",
     "trait_external_unit_statistics",
     "composition_tactical_details",
     "strategy_video_search_results"
@@ -4602,6 +4736,60 @@ function normalizeReactCompositionRankings(value) {
   };
 }
 
+function normalizeReactOfficialDetail(value) {
+  const facts = value?.facts ?? {};
+  const source = value?.source ?? null;
+  if (value?.type === "item_details") {
+    return {
+      ...value,
+      item: {
+        apiName: value.apiName,
+        name: value.displayName ?? value.entityRef?.displayName ?? value.apiName,
+        category: facts.category ?? null,
+        effect: facts.effect ?? facts.description ?? null,
+        recipe: facts.composition ?? [],
+        stats: facts.stats ?? null,
+        source
+      }
+    };
+  }
+  if (value?.type === "unit_details") {
+    const stats = facts.stats ?? {};
+    return {
+      ...value,
+      unit: {
+        apiName: value.apiName,
+        name: value.displayName ?? value.entityRef?.displayName ?? value.apiName,
+        cost: facts.cost ?? null,
+        role: facts.role ?? null,
+        traitNames: facts.traits ?? [],
+        stats: {
+          ...stats,
+          mana: facts.mana ?? stats.mana ?? null,
+          attackRange: facts.range ?? stats.attackRange ?? null
+        },
+        ability: facts.ability ?? {},
+        source
+      },
+      recommendedItems: value.recommendedItems ?? []
+    };
+  }
+  if (value?.type === "trait_details") {
+    return {
+      ...value,
+      trait: {
+        apiName: value.apiName,
+        name: value.displayName ?? value.entityRef?.displayName ?? value.apiName,
+        description: facts.description ?? null,
+        levels: facts.effects ?? [],
+        members: facts.members ?? [],
+        source
+      }
+    };
+  }
+  return value;
+}
+
 function normalizeEndpointPayload(payload) {
   if (payload?.type !== "react_chat_result") return payload;
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
@@ -4610,33 +4798,95 @@ function normalizeEndpointPayload(payload) {
   const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
   const nativeResultTypes = new Set([
     "composition_rankings",
+    "comp_rankings",
+    "comp_trends",
+    "comp_analysis",
     "entity_catalog_results",
+    "unit_build_rankings",
+    "unit_build_completion",
+    "unit_best_3_items",
+    "unit_item_rankings",
+    "unit_emblem_rankings",
+    "unit_item_comparison",
     "unit_builds_batch_results",
+    "item_carrier_rankings",
+    "unit_details",
+    "item_details",
+    "trait_details",
+    "composition_change_evaluation",
+    "composition_replacement_evaluation",
     "trait_external_unit_statistics",
     "composition_tactical_details",
     "strategy_video_search_results"
   ]);
   const evidenceValues = [...evidence].reverse().map((entry) => entry?.value);
-  const primaryValue = evidenceValues.find((value) => nativeResultTypes.has(value?.type))
+  const primaryTypeOrder = [
+    "composition_change_evaluation", "composition_replacement_evaluation",
+    "item_carrier_rankings", "unit_item_comparison", "unit_item_rankings", "unit_emblem_rankings",
+    "unit_build_completion", "unit_build_rankings", "unit_best_3_items", "unit_builds_batch_results",
+    "composition_tactical_details", "comp_analysis", "comp_trends", "comp_rankings", "composition_rankings",
+    "trait_external_unit_statistics", "strategy_video_search_results",
+    "unit_details", "item_details", "trait_details", "entity_catalog_results"
+  ];
+  const primaryValue = primaryTypeOrder
+    .map((type) => evidenceValues.find((value) => value?.type === type))
+    .find(Boolean)
     ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
     ?? null;
-  const displayValue = primaryValue?.type === "composition_rankings"
-    ? normalizeReactCompositionRankings(primaryValue)
+  const officialDetailValue = primaryValue?.schemaVersion === "official-entity-detail.v1"
+    ? normalizeReactOfficialDetail(primaryValue)
     : primaryValue;
+  const displayValue = officialDetailValue?.type === "composition_rankings"
+    ? normalizeReactCompositionRankings(officialDetailValue)
+    : officialDetailValue;
+  const comparisonDetails = displayValue?.type === "unit_item_comparison"
+    ? new Map(evidenceValues
+      .filter((value) => value?.type === "item_details")
+      .map((value) => [String(value.apiName ?? ""), normalizeReactOfficialDetail(value)?.item]))
+    : null;
+  const hydratedDisplayValue = comparisonDetails?.size
+    ? {
+      ...displayValue,
+      comparison: {
+        ...(displayValue.comparison ?? {}),
+        entries: (displayValue.comparison?.entries ?? []).map((entry) => ({
+          ...entry,
+          detail: entry.detail ?? comparisonDetails.get(String(entry.apiName ?? "")) ?? null
+        })),
+        rankedEntries: (displayValue.comparison?.rankedEntries ?? []).map((entry) => ({
+          ...entry,
+          detail: entry.detail ?? comparisonDetails.get(String(entry.apiName ?? "")) ?? null
+        }))
+      }
+    }
+    : displayValue;
+  const carrierItemApiName = displayValue?.type === "item_carrier_rankings"
+    ? String(displayValue.item?.apiName ?? displayValue.item ?? displayValue.query?.item ?? "")
+    : "";
+  const itemDetail = carrierItemApiName
+    ? evidenceValues.find((value) => (
+      value?.type === "item_details"
+      && String(value.apiName ?? "") === carrierItemApiName
+    )) ?? null
+    : null;
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
   return {
-    ...(displayValue ?? {}),
+    ...(hydratedDisplayValue ?? {}),
     ...payload,
     ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
       ? { status: displayValue.status, runStatus: payload.status }
       : {}),
-    type: nativeResultTypes.has(primaryValue?.type) ? displayValue.type : payload.type,
+    type: nativeResultTypes.has(primaryValue?.type) ? hydratedDisplayValue.type : payload.type,
     reactAnswer: answerText,
     text: answerText,
     assistantResponse: { text: answerText },
-    answer: { summary: answerText },
+    answer: {
+      ...(displayValue?.answer && typeof displayValue.answer === "object" ? displayValue.answer : {}),
+      summary: answerText
+    },
+    ...(itemDetail ? { itemDetail } : {}),
     ...(semanticHits.length ? {
       knowledgeEvidence: semanticHits.map((hit) => ({
         evidenceId: hit.evidenceId,

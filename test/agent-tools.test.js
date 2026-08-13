@@ -212,3 +212,14 @@ test("structured tool definitions derive from the existing operation allowlist w
   assert.ok(definitions.every((entry) => entry.readOnly && entry.idempotent));
   assert.ok(definitions.every((entry) => entry.capabilities.length > 0));
 });
+
+test("natural-language equipment and composition-analysis tools expose their deterministic inputs", () => {
+  const definitions = new Map(createStructuredToolDefinitions().map((entry) => [entry.name, entry]));
+  const unitBuilds = definitions.get("unit_builds");
+  assert.ok(unitBuilds.inputSchema.properties.performanceItem);
+  assert.ok(unitBuilds.inputSchema.properties.itemCategories);
+  assert.ok(unitBuilds.inputSchema.properties.lockedItems);
+  assert.ok(unitBuilds.inputSchema.properties.comparisonItems);
+  const compAnalysis = definitions.get("comps_analysis");
+  assert.ok(compAnalysis.inputSchema.properties.mention);
+});

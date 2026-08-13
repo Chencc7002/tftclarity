@@ -6,7 +6,7 @@ const OPERATION_REGISTRY = Object.freeze({
     params: Object.freeze([
       "unit", "days", "patch", "queue", "rank", "starLevel", "itemCount", "traitFilters",
       "comp", "itemPolicy", "itemCategories",
-      "lockedItems", "excludedItems", "comparisonItems", "minSamples"
+      "lockedItems", "excludedItems", "comparisonItems", "performanceItem", "minSamples"
     ])
   }),
   unit_comp_candidates: Object.freeze({
@@ -54,7 +54,7 @@ const OPERATION_REGISTRY = Object.freeze({
   }),
   comps_analysis: Object.freeze({
     source: "metatft",
-    params: Object.freeze(["days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
+    params: Object.freeze(["mention", "days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])
   }),
   unit_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),
   item_details: Object.freeze({ source: "official_catalog", params: Object.freeze(["apiName"]) }),

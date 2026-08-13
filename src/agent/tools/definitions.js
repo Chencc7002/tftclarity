@@ -397,6 +397,11 @@ const PARAMETER_SCHEMAS = Object.freeze({
   lockedItems: { type: "array", items: { type: "string" } },
   excludedItems: { type: "array", items: { type: "string" } },
   comparisonItems: { type: "array", items: { type: "string" } },
+  performanceItem: { type: "string", minLength: 1, maxLength: 160 },
+  primaryMetric: {
+    type: "string",
+    enum: ["top4Rate", "winRate", "avgPlacement", "games"]
+  },
   constraints: {
     type: "object",
     additionalProperties: false,

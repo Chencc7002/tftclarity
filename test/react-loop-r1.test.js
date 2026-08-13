@@ -747,6 +747,79 @@ test("ambiguous exact alias resolution leads to ask_user without a details call"
   assert.equal(detailCalls, 0);
 });
 
+test("unit_builds rejects guessed entity ids and accepts exact catalog resolutions", async () => {
+  let buildCalls = 0;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        comparisonItems: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("unit_builds", { unit: "TFT18_Xayah", comparisonItems: ["TFT_Item_A", "TFT_Item_B"] }),
+    call("entity_catalog_query", { entityType: "unit", filters: { names: ["霞"] } }, "retrieve_entity_details"),
+    call("entity_catalog_query", { entityType: "item", filters: { names: ["羊刀", "无尽"] } }, "retrieve_entity_details"),
+    call("unit_builds", { unit: "TFT18_Xayah", comparisonItems: ["TFT_Item_A", "TFT_Item_B"] }),
+    finish("两件装备的确定性对比已完成。", ["ev-3"])
+  ]);
+  const { result, events } = await runCase({
+    input: "霞带羊刀还是无尽装备？",
+    provider,
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async (input) => ({
+        type: "entity_catalog_results",
+        entityType: input.entityType,
+        updatedAt: "2026-08-06T00:00:00.000Z",
+        resolution: {
+          requests: input.entityType === "unit"
+            ? [{ status: "resolved", candidates: [{ apiName: "TFT18_Xayah" }] }]
+            : [
+              { status: "resolved", candidates: [{ apiName: "TFT_Item_A" }] },
+              { status: "resolved", candidates: [{ apiName: "TFT_Item_B" }] }
+            ]
+        },
+        results: input.entityType === "unit"
+          ? [{ apiName: "TFT18_Xayah" }]
+          : [{ apiName: "TFT_Item_A" }, { apiName: "TFT_Item_B" }]
+      }),
+      unit_builds: async () => {
+        buildCalls += 1;
+        return {
+          type: "unit_item_comparison",
+          updatedAt: "2026-08-06T00:00:00.000Z",
+          comparison: { entries: [{ apiName: "TFT_Item_A" }, { apiName: "TFT_Item_B" }] }
+        };
+      }
+    }
+  });
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(buildCalls, 1);
+  assert.ok(events.some((event) => event.type === "decision_rejected" && event.data?.code === "ungrounded_unit_build_query"));
+});
+
 test("R1-09 a failed tool becomes an observation and a later tool can recover", async () => {
   let trendCalls = 0;
   const provider = queueProvider([

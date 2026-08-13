@@ -2755,7 +2755,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
     };
   });
 
-  const serializeComparisonEntry = (entry) => ({
+  const serializeComparisonEntry = (entry) => {
+    const officialDetail = itemDetails?.get?.(entry.apiName) ?? null;
+    return ({
     apiName: entry.apiName,
     name: itemName(entry.apiName, catalog),
     canonicalName: entry.canonicalName,
@@ -2783,12 +2785,23 @@ function serializeRecommendation(result, catalog, meta = {}) {
       apiName,
       name: itemName(apiName, catalog)
     })),
+    detail: {
+        status: officialDetail ? "found" : "not_found",
+        effect: officialDetail?.effect ?? officialDetail?.description ?? null,
+        recipe: (officialDetail?.recipe ?? []).map((component) => ({
+          ...component,
+          name: component.name ?? itemName(component.apiName, catalog)
+        })),
+        stats: officialDetail?.stats ?? null,
+        sourceUrl: officialDetail?.sourceUrl ?? null
+      },
     commonBuilds: (entry.commonBuilds ?? []).map((build) => ({
       items: build.items.map((apiName) => ({ apiName, name: itemName(apiName, catalog) })),
       placementCount: build.placementCount,
       stats: build.stats
     }))
-  });
+    });
+  };
   const coreFrequency = summarizeCoreItemFrequency(cards);
   const lockedItemSet = new Set(lockedItemApiNames);
   coreFrequency.items = coreFrequency.items.filter((entry) => !lockedItemSet.has(entry.apiName));
@@ -6664,6 +6677,114 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
   }
 
   if (typeof runtime.metaTFTClient?.getUnitBuilds === "function") {
+    handlers.unit_builds = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      const unitApiName = String(input.unit ?? "").trim();
+      const comparisonItems = [...new Set((input.comparisonItems ?? []).map(String))];
+      const lockedItems = [...new Set((input.lockedItems ?? []).map(String))];
+      const excludedItems = [...new Set((input.excludedItems ?? []).map(String))];
+      const itemCategories = [...new Set((input.itemCategories ?? []).map(String))];
+      const performanceItem = String(input.performanceItem ?? "").trim() || null;
+      const requestedPrimaryMetric = String(input.primaryMetric ?? "top4Rate");
+      const primaryMetric = ["top4Rate", "winRate", "avgPlacement", "games"]
+        .includes(requestedPrimaryMetric)
+        ? requestedPrimaryMetric
+        : "top4Rate";
+      const intent = comparisonItems.length >= 2
+        ? "unit_item_comparison"
+        : itemCategories.length || performanceItem
+          ? itemCategories.length === 1 && itemCategories[0] === "emblem"
+            ? "unit_emblem_rankings"
+            : "unit_item_rankings"
+          : lockedItems.length
+            ? "unit_build_completion"
+            : "unit_build_rankings";
+      const itemPolicy = String(input.itemPolicy ?? (
+        itemCategories.includes("artifact") ? "include_artifact"
+          : itemCategories.includes("radiant") ? "include_radiant"
+            : itemCategories.some((category) => category !== "ordinary_completed")
+              ? "include_special"
+              : "ordinary_only"
+      ));
+      const parsedInput = {
+        intent,
+        unit: unitApiName,
+        unitAlias: unitApiName,
+        traitFilters: [...(input.traitFilters ?? [])],
+        ownedItems: lockedItems,
+        lockedItems,
+        excludedItems,
+        comparisonItems,
+        comparisonMode: comparisonItems.length ? "exclusive_presence" : null,
+        primaryMetric: comparisonItems.length
+          ? primaryMetric
+          : undefined,
+        performanceItem,
+        itemPolicy,
+        itemCategories,
+        starLevel: input.starLevel,
+        itemCount: input.itemCount,
+        comp: input.comp,
+        days: input.days,
+        patch: input.patch,
+        queue: input.queue,
+        rankFilter: input.rank,
+        minSamples: input.minSamples,
+        parser: { intentExplicit: true }
+      };
+      const equipmentQueryKey = [
+        unitApiName,
+        intent,
+        ...comparisonItems,
+        ...lockedItems,
+        ...excludedItems,
+        performanceItem ?? "",
+        primaryMetric
+      ].filter(Boolean).join(" ");
+      const result = await runtime.recommendForInputImpl(`${equipmentQueryKey} equipment query`, {
+        catalog: loaded.catalog,
+        metaTFTClient: runtime.metaTFTClient,
+        compsClient: runtime.compsClient,
+        statsProvider: runtime.statsProvider,
+        compsData: loaded.compsData,
+        cacheStore: runtime.cacheStore,
+        preferences: {
+          ...preferences,
+          ...(input.days !== undefined ? { days: input.days } : {}),
+          ...(input.patch !== undefined ? { patch: input.patch } : {}),
+          ...(input.queue !== undefined ? { queue: input.queue } : {}),
+          ...(input.rank !== undefined ? { rankFilter: input.rank } : {}),
+          ...(input.minSamples !== undefined ? { minSamples: input.minSamples } : {})
+        },
+        resolvedParsedInput: parsedInput,
+        semanticShadow: false,
+        useStructuredParser: "never",
+        conversationStateV2Mode: "off",
+        useSession: false,
+        abortSignal: toolContext.signal
+      });
+      toolContext.signal?.throwIfAborted?.();
+      let itemDetails = runtime.officialItemDetails ?? null;
+      if (intent === "unit_item_comparison" && !itemDetails) {
+        try {
+          itemDetails = await loadOfficialItemDetails(runtime);
+        } catch {
+          itemDetails = null;
+        }
+      }
+      const serialized = serializeRecommendation(result, loaded.catalog, {
+        entityDetails: loaded.entityDetails,
+        itemDetails
+      });
+      return {
+        ...serialized,
+        updatedAt: serialized.source?.updatedAt
+          ?? result.source?.updatedAt
+          ?? result.cache?.query?.updatedAt
+          ?? new Date().toISOString()
+      };
+    };
     handlers.unit_builds_batch = async (input, toolContext = {}) => {
       toolContext.signal?.throwIfAborted?.();
       const loaded = await resources();
@@ -6672,6 +6793,125 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         seasonContext,
         signal: toolContext.signal
       });
+    };
+  }
+
+  if (
+    typeof runtime.recommendForInputImpl === "function"
+    && typeof runtime.compsClient?.getCompsData === "function"
+    && typeof runtime.compsClient?.getCompsStats === "function"
+  ) {
+    handlers.comps_analysis = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      const mention = String(input.mention ?? "").trim();
+      const analysisInput = mention ? `${mention}阵容分析` : "分析当前阵容环境";
+      const parsed = parseQuery(analysisInput, { catalog: loaded.catalog });
+      const result = await runtime.recommendForInputImpl(analysisInput, {
+        catalog: loaded.catalog,
+        metaTFTClient: runtime.metaTFTClient,
+        compsClient: runtime.compsClient,
+        statsProvider: runtime.statsProvider,
+        compsData: loaded.compsData,
+        cacheStore: runtime.cacheStore,
+        preferences: {
+          ...preferences,
+          ...(input.days !== undefined ? { days: input.days } : {}),
+          ...(input.patch !== undefined ? { patch: input.patch } : {}),
+          ...(input.queue !== undefined ? { queue: input.queue } : {}),
+          ...(input.rank !== undefined ? { rankFilter: input.rank } : {}),
+          ...(input.minSamples !== undefined ? { minSamples: input.minSamples } : {})
+        },
+        resolvedParsedInput: {
+          ...parsed,
+          intent: "comp_analysis",
+          days: input.days,
+          patch: input.patch,
+          queue: input.queue,
+          rankFilter: input.rank,
+          minSamples: input.minSamples,
+          limit: input.limit,
+          metrics: input.metrics,
+          parser: { ...(parsed.parser ?? {}), intentExplicit: true }
+        },
+        semanticShadow: false,
+        useStructuredParser: "never",
+        conversationStateV2Mode: "off",
+        useSession: false,
+        abortSignal: toolContext.signal
+      });
+      toolContext.signal?.throwIfAborted?.();
+      const serialized = serializeRecommendation(result, loaded.catalog, {
+        entityDetails: loaded.entityDetails,
+        itemDetails: runtime.officialItemDetails ?? null
+      });
+      return {
+        ...serialized,
+        updatedAt: serialized.source?.updatedAt
+          ?? result.source?.updatedAt
+          ?? result.cache?.query?.updatedAt
+          ?? new Date().toISOString()
+      };
+    };
+  }
+
+  if (
+    typeof runtime.recommendForInputImpl === "function"
+    && typeof runtime.metaTFTClient?.getItemCarrierBuilds === "function"
+    && (
+      seasonContext.environment === "pbe"
+      || typeof runtime.compsClient?.getUnitItemsProcessed === "function"
+    )
+  ) {
+    handlers.item_carrier_rankings = async (input, toolContext = {}) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      const itemApiName = String(input.item ?? "").trim();
+      const result = await runtime.recommendForInputImpl(`${itemApiName}适合谁`, {
+        catalog: loaded.catalog,
+        metaTFTClient: runtime.metaTFTClient,
+        compsClient: runtime.compsClient,
+        statsProvider: runtime.statsProvider,
+        compsData: loaded.compsData,
+        cacheStore: runtime.cacheStore,
+        preferences: {
+          ...preferences,
+          ...(input.days !== undefined ? { days: input.days } : {}),
+          ...(input.patch !== undefined ? { patch: input.patch } : {}),
+          ...(input.queue !== undefined ? { queue: input.queue } : {}),
+          ...(input.rank !== undefined ? { rankFilter: input.rank } : {}),
+          ...(input.minSamples !== undefined ? { minSamples: input.minSamples } : {})
+        },
+        resolvedParsedInput: {
+          intent: "item_carrier_rankings",
+          carrierItem: itemApiName,
+          item: itemApiName,
+          days: input.days,
+          patch: input.patch,
+          queue: input.queue,
+          rankFilter: input.rank,
+          minSamples: input.minSamples,
+          limit: input.limit,
+          sort: input.sort,
+          parser: { intentExplicit: true }
+        },
+        semanticShadow: false,
+        useStructuredParser: "never",
+        conversationStateV2Mode: "off",
+        useSession: false,
+        abortSignal: toolContext.signal
+      });
+      toolContext.signal?.throwIfAborted?.();
+      const serialized = serializeRecommendation(result, loaded.catalog, {
+        entityDetails: loaded.entityDetails
+      });
+      return {
+        ...serialized,
+        updatedAt: serialized.source?.updatedAt
+          ?? result.source?.updatedAt
+          ?? result.cache?.query?.updatedAt
+          ?? new Date().toISOString()
+      };
     };
   }
 

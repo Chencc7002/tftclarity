@@ -179,6 +179,31 @@ test("feature-flagged chat routing keeps quick tools on recommend and normal cha
   assert.match(appJs, /event\.type === "diagnostic"/);
 });
 
+test("natural-language item carrier evidence renders rankings with official item details", () => {
+  assert.match(appJs, /"item_carrier_rankings"/u);
+  assert.match(appJs, /data-carrier-item-detail/u);
+  assert.match(appJs, /value\?\.type === "item_details"/u);
+  assert.match(appJs, /itemDetail/u);
+});
+
+test("natural-language tools preserve deterministic equipment, detail, and composition-change result cards", () => {
+  assert.match(appJs, /"unit_item_rankings"/u);
+  assert.match(appJs, /"unit_item_comparison"/u);
+  assert.match(appJs, /"unit_details"/u);
+  assert.match(appJs, /"item_details"/u);
+  assert.match(appJs, /"trait_details"/u);
+  assert.match(appJs, /function normalizeReactOfficialDetail/u);
+  assert.match(appJs, /function renderCompositionChangeEvaluation/u);
+  assert.match(appJs, /"composition_change_evaluation"/u);
+  assert.match(styles, /\.composition-change-members/u);
+  assert.match(styles, /\.composition-trait-delta/u);
+  assert.match(appJs, /function comparisonItemDetail/u);
+  assert.match(appJs, /entry\?\.detail/u);
+  assert.match(appJs, /comparisonDetails/u);
+  assert.match(appJs, /hydratedDisplayValue/u);
+  assert.match(styles, /\.comparison-item-detail/u);
+});
+
 test("Pool dashboards can stream an AI explanation into chat without replacing the dashboard", () => {
   assert.match(opggPanel, /data-opgg-action="pool-ai-explain"/);
   assert.match(opggPanel, /tft:request-pool-analysis/);

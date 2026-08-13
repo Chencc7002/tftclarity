@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { validateToolEvidence } from "../agent/tool-evidence-validator.js";
 import { validateToolInput } from "../agent/tools/contracts.js";
 import { itemDetailsBatchMatchesPlan } from "../domain/tft/differentiating-item-selector.js";
+import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
 import { validateReactAction } from "./react-action.js";
 import { DuplicateCallGuard } from "./duplicate-call-guard.js";
 import { EvidenceLedger } from "./evidence-ledger.js";
@@ -303,6 +304,175 @@ function compositionTacticalNextActionAffordance(action, toolResult, request) {
       }
     }
   };
+}
+
+function resolvedCatalogItem(entries, apiName) {
+  return entries.some((entry) => (
+    entry.toolName === "entity_catalog_query"
+    && entry.value?.entityType === "item"
+    && (entry.value?.resolution?.requests ?? []).some((resolution) => (
+      resolution.status === "resolved"
+      && resolution.candidates?.length === 1
+      && String(resolution.candidates[0]?.apiName ?? "") === apiName
+    ))
+  ));
+}
+
+function resolvedCatalogEntity(entries, entityType, apiName) {
+  return entries.some((entry) => (
+    entry.toolName === "entity_catalog_query"
+    && entry.value?.entityType === entityType
+    && (entry.value?.resolution?.requests ?? []).some((resolution) => (
+      resolution.status === "resolved"
+      && resolution.candidates?.length === 1
+      && String(resolution.candidates[0]?.apiName ?? "") === apiName
+    ))
+  ));
+}
+
+function validateUnitBuildsAction(action, ledger, request = {}) {
+  if (action.tool !== "unit_builds") return { valid: true, errors: [] };
+  const question = String(request.input ?? request.question ?? "");
+  if (!/(?:\u88c5\u5907|\u51fa\u88c5|\u5355\u4ef6|\u795e\u5668|\u5149\u660e|\u7f8a\u5200|\u65e0\u5c3d|\u54ea\u4e2a\u597d|\u6bd4\u8f83|\bbuild\b|\bitem\b|equipment)/iu.test(question)) {
+    return { valid: true, errors: [] };
+  }
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const unitApiName = String(action.arguments?.unit ?? "");
+  const itemApiNames = [...new Set([
+    ...(action.arguments?.lockedItems ?? []),
+    ...(action.arguments?.excludedItems ?? []),
+    ...(action.arguments?.comparisonItems ?? []),
+    action.arguments?.performanceItem
+  ].map((value) => String(value ?? "").trim()).filter(Boolean))];
+  const errors = [];
+  if (!resolvedCatalogEntity(entries, "unit", unitApiName)) {
+    errors.push("unit_builds unit requires prior exact unit entity_catalog_query resolution");
+  }
+  for (const apiName of itemApiNames) {
+    if (!resolvedCatalogItem(entries, apiName)) {
+      errors.push(`unit_builds item requires prior exact item entity_catalog_query resolution: ${apiName}`);
+    }
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function validateItemCarrierAction(action, ledger) {
+  if (action.tool !== "item_carrier_rankings") return { valid: true, errors: [] };
+  const apiName = String(action.arguments?.item ?? "");
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const errors = [];
+  if (!resolvedCatalogItem(entries, apiName)) {
+    errors.push("item_carrier_rankings item requires prior exact item entity_catalog_query resolution");
+  }
+  return { valid: errors.length === 0, errors };
+}
+
+function itemCarrierNextActionAffordance(action, toolResult, addition, ledger) {
+  if (action.tool !== "item_carrier_rankings" || !addition?.added) return null;
+  const value = toolResult?.value ?? {};
+  const apiName = String(value.item?.apiName ?? value.item ?? value.query?.item ?? "").trim();
+  if (!apiName) return null;
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const hasDetails = entries.some((entry) => (
+    entry.toolName === "item_details"
+    && String(entry.value?.apiName ?? "") === apiName
+    && ["found", "partial"].includes(entry.value?.status)
+  ));
+  if (hasDetails) return null;
+  return {
+    schemaVersion: "react-next-action-affordance.v1",
+    resultStatus: "carrier_ranking_available",
+    recommendedAction: "call_tool",
+    callTool: {
+      tool: "item_details",
+      purposeCode: "retrieve_entity_details",
+      arguments: { apiName }
+    }
+  };
+}
+
+function requestsComparisonItemDetails(request = {}) {
+  const text = String(request.input ?? request.question ?? "");
+  return /(?:详情|说明|效果|属性|details?|effects?)/iu.test(text);
+}
+
+function comparisonItemApiNames(entry) {
+  return [...new Set((
+    entry?.value?.comparison?.entries
+    ?? entry?.value?.comparison?.rankedEntries
+    ?? []
+  ).map((item) => String(item?.apiName ?? "").trim()).filter(Boolean))];
+}
+
+function comparisonItemDetailsNextActionAffordance(action, _toolResult, addition, ledger, request) {
+  if (!addition?.added || !requestsComparisonItemDetails(request)) return null;
+  if (!["unit_builds", "item_details"].includes(action.tool)) return null;
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const comparisonEntry = [...entries].reverse().find((entry) => (
+    entry.toolName === "unit_builds"
+    && entry.value?.type === "unit_item_comparison"
+  ));
+  const apiNames = comparisonItemApiNames(comparisonEntry);
+  if (!apiNames.length) return null;
+  const detailed = new Set(entries.filter((entry) => (
+    entry.toolName === "item_details"
+    && ["found", "partial"].includes(entry.value?.status)
+  )).map((entry) => String(entry.value?.apiName ?? "")));
+  const apiName = apiNames.find((candidate) => !detailed.has(candidate));
+  if (!apiName) return null;
+  return {
+    schemaVersion: "react-next-action-affordance.v1",
+    resultStatus: "item_comparison_details_incomplete",
+    recommendedAction: "call_tool",
+    callTool: {
+      tool: "item_details",
+      purposeCode: "retrieve_entity_details",
+      arguments: { apiName }
+    }
+  };
+}
+
+function validateItemCarrierWorkflowFinish(request, action, ledger) {
+  if (!isItemCarrierRequest(request.input ?? request.question ?? "")) {
+    return { valid: true, errors: [] };
+  }
+  if (action.reasonCode === "insufficient_evidence") {
+    return { valid: true, errors: [] };
+  }
+  const cited = ledger.resolve(action.evidenceIds ?? []);
+  const carrierEntries = cited.filter((entry) => entry.toolName === "item_carrier_rankings");
+  const detailEntries = cited.filter((entry) => entry.toolName === "item_details");
+  const carrierItems = new Set(carrierEntries.map((entry) => String(
+    entry.value?.item?.apiName ?? entry.value?.item ?? entry.value?.query?.item ?? ""
+  )).filter(Boolean));
+  const matchingDetails = detailEntries.some((entry) => carrierItems.has(String(entry.value?.apiName ?? "")));
+  const errors = [];
+  if (!carrierEntries.length) errors.push("item carrier request requires cited item_carrier_rankings evidence");
+  if (!matchingDetails) errors.push("item carrier request requires cited matching item_details evidence");
+  return { valid: errors.length === 0, errors };
+}
+
+function validateComparisonItemDetailsFinish(request, action, ledger) {
+  if (!requestsComparisonItemDetails(request) || action.reasonCode === "insufficient_evidence") {
+    return { valid: true, errors: [] };
+  }
+  const cited = ledger.resolve(action.evidenceIds ?? []);
+  const comparisonEntry = cited.find((entry) => (
+    entry.toolName === "unit_builds"
+    && entry.value?.type === "unit_item_comparison"
+  ));
+  if (!comparisonEntry) {
+    return { valid: false, errors: ["item comparison details request requires cited unit_builds comparison evidence"] };
+  }
+  const apiNames = comparisonItemApiNames(comparisonEntry);
+  const detailApiNames = new Set(cited.filter((entry) => (
+    entry.toolName === "item_details"
+    && ["found", "partial"].includes(entry.value?.status)
+  )).map((entry) => String(entry.value?.apiName ?? "")));
+  const missing = apiNames.filter((apiName) => !detailApiNames.has(apiName));
+  return missing.length
+    ? { valid: false, errors: [`item comparison details request is missing cited item_details evidence: ${missing.join(", ")}`] }
+    : { valid: true, errors: [] };
 }
 
 function knownItemApiNames(entries) {
@@ -1055,6 +1225,54 @@ export class ReactLoop {
           status: "submitted",
           validationErrors: []
         };
+        const carrierFinishValidation = validateItemCarrierWorkflowFinish(request, action, ledger);
+        if (!carrierFinishValidation.valid) {
+          modelConclusion.status = "rejected";
+          modelConclusion.validationErrors = carrierFinishValidation.errors.map(String);
+          state.recordObservation({
+            type: "decision_rejected",
+            actionType: "finish",
+            reasonCode: action.reasonCode,
+            errors: carrierFinishValidation.errors,
+            repairInstruction: "Continue the item-carrier workflow: cite current item_carrier_rankings evidence and retrieve matching item_details before finishing."
+          }, { progress: false });
+          emit("decision_rejected", {
+            iteration: state.decisions.length,
+            code: "incomplete_item_carrier_workflow",
+            errors: carrierFinishValidation.errors,
+            repairable: true
+          });
+          if (state.consecutiveNoProgress >= budget.maxConsecutiveNoProgress) {
+            return terminateForNoProgress("incomplete_item_carrier_workflow");
+          }
+          continue;
+        }
+        const comparisonDetailFinishValidation = validateComparisonItemDetailsFinish(
+          request,
+          action,
+          ledger
+        );
+        if (!comparisonDetailFinishValidation.valid) {
+          modelConclusion.status = "rejected";
+          modelConclusion.validationErrors = comparisonDetailFinishValidation.errors.map(String);
+          state.recordObservation({
+            type: "decision_rejected",
+            actionType: "finish",
+            reasonCode: action.reasonCode,
+            errors: comparisonDetailFinishValidation.errors,
+            repairInstruction: "Continue the item-comparison workflow: retrieve and cite item_details for every compared item before finishing."
+          }, { progress: false });
+          emit("decision_rejected", {
+            iteration: state.decisions.length,
+            code: "incomplete_item_comparison_details",
+            errors: comparisonDetailFinishValidation.errors,
+            repairable: true
+          });
+          if (state.consecutiveNoProgress >= budget.maxConsecutiveNoProgress) {
+            return terminateForNoProgress("incomplete_item_comparison_details");
+          }
+          continue;
+        }
         const finishValidation = validateFinishAction(action, ledger);
         if (!finishValidation.valid) {
           modelConclusion.status = "rejected";
@@ -1271,6 +1489,46 @@ export class ReactLoop {
         }
         continue;
       }
+      const itemCarrierValidation = validateItemCarrierAction(action, ledger);
+      if (!itemCarrierValidation.valid) {
+        state.recordObservation({
+          type: "decision_rejected",
+          tool: action.tool,
+          errors: itemCarrierValidation.errors,
+          repairInstruction: "Resolve the named item with entity_catalog_query first, then copy its exact apiName into item_carrier_rankings."
+        }, { progress: false });
+        emit("decision_rejected", {
+          iteration: state.decisions.length,
+          code: "ungrounded_item_carrier_query",
+          tool: action.tool,
+          errors: itemCarrierValidation.errors,
+          repairable: true
+        });
+        if (state.consecutiveNoProgress >= budget.maxConsecutiveNoProgress) {
+          return terminateForNoProgress("ungrounded_item_carrier_query");
+        }
+        continue;
+      }
+      const unitBuildValidation = validateUnitBuildsAction(action, ledger, request);
+      if (!unitBuildValidation.valid) {
+        state.recordObservation({
+          type: "decision_rejected",
+          tool: action.tool,
+          errors: unitBuildValidation.errors,
+          repairInstruction: "Resolve the champion and every named item with entity_catalog_query, then copy their exact apiNames into unit_builds."
+        }, { progress: false });
+        emit("decision_rejected", {
+          iteration: state.decisions.length,
+          code: "ungrounded_unit_build_query",
+          tool: action.tool,
+          errors: unitBuildValidation.errors,
+          repairable: true
+        });
+        if (state.consecutiveNoProgress >= budget.maxConsecutiveNoProgress) {
+          return terminateForNoProgress("ungrounded_unit_build_query");
+        }
+        continue;
+      }
       const itemBatchValidation = validateItemDetailsBatchAction(action, ledger, request);
       if (!itemBatchValidation.valid) {
         state.recordObservation({
@@ -1472,7 +1730,14 @@ export class ReactLoop {
         toolResult,
         addition,
         ledger
-      );
+      ) ?? itemCarrierNextActionAffordance(action, toolResult, addition, ledger)
+        ?? comparisonItemDetailsNextActionAffordance(
+          action,
+          toolResult,
+          addition,
+          ledger,
+          request
+        );
       state.recordObservation({
         type: "tool_result",
         tool: action.tool,

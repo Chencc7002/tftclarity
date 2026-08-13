@@ -6,7 +6,7 @@ import {
   handleFeedbackRequest,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
-import { MemoryCacheStore } from "../src/index.js";
+import { MemoryCacheStore, createCatalog } from "../src/index.js";
 import {
   assertHandlerCoverage,
   createTftToolHandlers
@@ -46,12 +46,15 @@ test("independent react endpoint answers without entering recommendForInput", as
   assert.equal(payload.run.budget.maxToolCalls, null);
   assert.equal(legacyCalls, 0);
   assert.deepEqual(visibleTools, [
+    "unit_builds",
     "unit_builds_batch",
+    "item_carrier_rankings",
     "comps_rankings",
     "composition_tactical_details",
     "composition_replacement_evaluation",
     "composition_change_evaluation",
     "comps_trends",
+    "comps_analysis",
     "unit_details",
     "item_details",
     "item_details_batch",
@@ -60,6 +63,81 @@ test("independent react endpoint answers without entering recommendForInput", as
     "composition_member_statistics",
     "strategy_video_search"
   ]);
+});
+
+test("default react unit_builds handler preserves deterministic equipment intents", async () => {
+  const calls = [];
+  const unitApiName = "TFT18_Test";
+  const itemA = "TFT_Item_GuinsoosRageblade";
+  const itemB = "TFT_Item_InfinityEdge";
+  const catalog = createCatalog({
+    units: [{ apiName: unitApiName, zhName: "测试棋子", aliases: ["测试棋子"] }],
+    items: [
+      { apiName: itemA, zhName: "鬼索的狂暴之刃", category: "ordinary_completed", aliases: ["羊刀"] },
+      { apiName: itemB, zhName: "无尽之刃", category: "ordinary_completed", aliases: ["无尽"] }
+    ]
+  });
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    officialItemDetails: new Map(),
+    recommendForInputImpl: async (_input, options) => {
+      const query = options.resolvedParsedInput;
+      calls.push(query);
+      if (query.intent === "unit_item_rankings") {
+        return {
+          type: query.intent,
+          query,
+          text: "单件装备排行",
+          itemRankings: [{
+            apiName: itemA,
+            category: "ordinary_completed",
+            stats: { top4Rate: 0.6, winRate: 0.2, avgPlacement: 3.8, games: 100 },
+            commonPairings: [],
+            copyCounts: []
+          }],
+          source: { provider: "MetaTFT", updatedAt: "2026-08-13T00:00:00.000Z" }
+        };
+      }
+      return {
+        type: query.intent,
+        query,
+        text: "装备查询",
+        rankedBuilds: [],
+        source: { provider: "MetaTFT", updatedAt: "2026-08-13T00:00:00.000Z" }
+      };
+    }
+  });
+  const bundle = await createDefaultReactToolHandlerBundle({
+    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    runtime,
+    context: {}
+  });
+
+  const ranked = await bundle.handlers.unit_builds({
+    unit: unitApiName,
+    itemCategories: ["ordinary_completed"]
+  });
+  const completed = await bundle.handlers.unit_builds({
+    unit: unitApiName,
+    lockedItems: [itemA]
+  });
+  const compared = await bundle.handlers.unit_builds({
+    unit: unitApiName,
+    comparisonItems: [itemA, itemB],
+    primaryMetric: "performance"
+  });
+
+  assert.equal(ranked.type, "unit_item_rankings");
+  assert.equal(completed.type, "unit_build_completion");
+  assert.equal(compared.type, "unit_item_comparison");
+  assert.deepEqual(calls.map((entry) => entry.intent), [
+    "unit_item_rankings",
+    "unit_build_completion",
+    "unit_item_comparison"
+  ]);
+  assert.deepEqual(calls[1].lockedItems, [itemA]);
+  assert.deepEqual(calls[2].comparisonItems, [itemA, itemB]);
+  assert.equal(calls[2].primaryMetric, "top4Rate");
 });
 
 test("active Pool dashboard evidence is promoted into the ReAct ledger", async () => {
@@ -295,7 +373,10 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
     "composition_replacement_evaluation",
     "composition_change_evaluation",
     "composition_member_statistics",
+    "unit_builds",
     "unit_builds_batch",
+    "comps_analysis",
+    "item_carrier_rankings",
     "unit_details",
     "trait_details",
     "item_details",
@@ -307,6 +388,145 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
     [...bundle.availableToolNames].sort(),
     Object.keys(bundle.handlers).sort()
   );
+});
+
+test("default react item carrier handler reuses the deterministic ranking service", async () => {
+  let parsedInput = null;
+  const itemApiName = "TFT_Item_GuinsoosRageblade";
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog({
+      units: [{ apiName: "TFT18_Test", zhName: "测试棋子", aliases: ["测试棋子"] }],
+      items: [{ apiName: itemApiName, zhName: "鬼索的狂暴之刃", aliases: ["羊刀"] }]
+    }),
+    recommendForInputImpl: async (_input, options) => {
+      parsedInput = options.resolvedParsedInput;
+      return {
+        type: "item_carrier_rankings",
+        item: itemApiName,
+        query: { item: itemApiName },
+        carriers: [{
+          unitApiName: "TFT18_Test",
+          stats: { top4Rate: .6, winRate: .2, avgPlacement: 3.7, games: 120 },
+          baselineAvgPlacement: 4.2,
+          unitDelta: -.5,
+          placementUplift: .5,
+          builds: []
+        }],
+        text: "鬼索的狂暴之刃共找到 1 个正向提升携带者。",
+        source: { provider: "MetaTFT", updatedAt: "2026-08-13T00:00:00.000Z" },
+        warnings: []
+      };
+    }
+  });
+  const bundle = await createDefaultReactToolHandlerBundle({
+    request: { seasonContextId: "set17-live", locale: "zh-CN" },
+    runtime,
+    context: {}
+  });
+  const value = await bundle.handlers.item_carrier_rankings({ item: itemApiName });
+  assert.equal(parsedInput.intent, "item_carrier_rankings");
+  assert.equal(parsedInput.carrierItem, itemApiName);
+  assert.equal(value.type, "item_carrier_rankings");
+  assert.equal(value.item.apiName, itemApiName);
+  assert.equal(value.carriers[0].unit.apiName, "TFT18_Test");
+  assert.equal(value.updatedAt, "2026-08-13T00:00:00.000Z");
+});
+
+test("natural-language item carrier questions require rankings and matching item details", async () => {
+  let submittedPrematureFinish = false;
+  const runtime = createSmallWindowRuntime({
+    reactToolHandlers: {
+      entity_catalog_query: async () => ({
+        type: "entity_catalog_results",
+        source: "official_tft_catalog",
+        updatedAt: "2026-08-13T00:00:00.000Z",
+        entityType: "item",
+        resolution: {
+          requests: [{
+            status: "resolved",
+            candidates: [{ apiName: "TFT_Item_GuinsoosRageblade", name: "鬼索的狂暴之刃" }]
+          }]
+        },
+        results: [{ apiName: "TFT_Item_GuinsoosRageblade", name: "鬼索的狂暴之刃" }]
+      }),
+      item_carrier_rankings: async () => ({
+        type: "item_carrier_rankings",
+        source: { provider: "MetaTFT", updatedAt: "2026-08-13T00:00:00.000Z" },
+        updatedAt: "2026-08-13T00:00:00.000Z",
+        item: { apiName: "TFT_Item_GuinsoosRageblade", name: "鬼索的狂暴之刃" },
+        query: { item: "TFT_Item_GuinsoosRageblade" },
+        carriers: [{ unit: { apiName: "TFT18_Test", name: "测试棋子" }, stats: { games: 120 } }]
+      }),
+      item_details: async () => ({
+        schemaVersion: "official-entity-detail.v1",
+        type: "item_details",
+        status: "found",
+        entityType: "item",
+        apiName: "TFT_Item_GuinsoosRageblade",
+        displayName: "鬼索的狂暴之刃",
+        facts: { effect: "攻击会叠加攻速。", composition: [] },
+        source: { sourceType: "official_tft_catalog" },
+        updatedAt: "2026-08-13T00:00:00.000Z"
+      })
+    },
+    reactDecisionProvider: async (request) => {
+      const evidence = request.state.evidence;
+      const catalog = evidence.find((entry) => entry.toolName === "entity_catalog_query");
+      const carriers = evidence.find((entry) => entry.toolName === "item_carrier_rankings");
+      const details = evidence.find((entry) => entry.toolName === "item_details");
+      if (!catalog) return {
+        schemaVersion: "react-action.v1",
+        type: "call_tool",
+        tool: "entity_catalog_query",
+        arguments: { entityType: "item", filters: { names: ["羊刀"] } },
+        purposeCode: "retrieve_entity_details"
+      };
+      if (!carriers) return {
+        schemaVersion: "react-action.v1",
+        type: "call_tool",
+        tool: "item_carrier_rankings",
+        arguments: { item: "TFT_Item_GuinsoosRageblade" },
+        purposeCode: "retrieve_current_statistics"
+      };
+      if (!submittedPrematureFinish) {
+        submittedPrematureFinish = true;
+        return {
+          schemaVersion: "react-action.v1",
+          type: "finish",
+          answer: "已找到适合携带羊刀的棋子。",
+          evidenceIds: [carriers.evidenceId],
+          reasonCode: "sufficient_evidence"
+        };
+      }
+      if (!details) return {
+        schemaVersion: "react-action.v1",
+        type: "call_tool",
+        tool: "item_details",
+        arguments: { apiName: "TFT_Item_GuinsoosRageblade" },
+        purposeCode: "retrieve_entity_details"
+      };
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "羊刀应优先参考榜单中的正提升携带者；它的官方效果是攻击叠加攻速。",
+        evidenceIds: [carriers.evidenceId, details.evidenceId],
+        reasonCode: "sufficient_evidence"
+      };
+    }
+  });
+  const { statusCode, payload } = await handleReactChatRequest({
+    input: "羊刀适合谁？",
+    conversationId: "item-carrier-natural-language"
+  }, runtime);
+  assert.equal(statusCode, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(submittedPrematureFinish, true);
+  assert.deepEqual(payload.evidence.map((entry) => entry.toolName), [
+    "entity_catalog_query",
+    "item_carrier_rankings",
+    "item_details"
+  ]);
+  assert.deepEqual(payload.evidenceIds, [payload.evidence[1].evidenceId, payload.evidence[2].evidenceId]);
 });
 
 test("H1 factory handlers return bounded catalog and semantic evidence", async () => {

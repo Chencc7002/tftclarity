@@ -41,6 +41,11 @@ test("react decision provider sends bounded state and returns a validated action
   assert.equal(observedBody.response_format.type, "json_object");
   assert.match(observedBody.messages[0].content, /call_tool, ask_user, or finish/u);
   assert.match(observedBody.messages[0].content, /entity_catalog_query with entityType and filters\.names/u);
+  assert.match(observedBody.messages[0].content, /call unit_builds/u);
+  assert.match(observedBody.messages[0].content, /call item_details once for every compared item's exact resolved apiName/u);
+  assert.match(observedBody.messages[0].content, /single-item ranking/u);
+  assert.match(observedBody.messages[0].content, /comparisonItems/u);
+  assert.match(observedBody.messages[0].content, /call comps_analysis/u);
   assert.match(observedBody.messages[0].content, /call comps_rankings with the concise composition mention/u);
   assert.match(observedBody.messages[0].content, /itemized_core_candidate proves only/u);
   assert.match(observedBody.messages[0].content, /composition_replacement_evaluation/u);

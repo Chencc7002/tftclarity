@@ -1320,6 +1320,11 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .comparison-primary span { grid-column: 1 / -1; }
 .comparison-build { min-width: 0; display: grid; gap: 3px; font-size: 11px; }
 .comparison-build span { overflow-wrap: anywhere; }
+.comparison-item-detail { margin-top: 8px; border-top: 1px solid var(--border); padding-top: 7px; }
+.comparison-item-detail summary { cursor: pointer; color: var(--brand-dark); font-weight: 750; }
+.comparison-item-detail[open] { display: grid; gap: 6px; }
+.comparison-item-detail .items { flex-wrap: wrap; }
+.comparison-item-detail .detail-effect { font-size: 12px; line-height: 1.55; }
 .comparison-summary { margin: 9px 0; }
 
 .maintenance-entry { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
@@ -1836,6 +1841,39 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 
 @media (max-width: 560px) {
   .strategy-video-card {
+    grid-template-columns: 1fr;
+  }
+}
+
+.composition-change-members {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin: 14px 0 18px;
+}
+
+.composition-change-members .result-card {
+  min-width: 0;
+}
+
+.composition-change-members .entity-chips {
+  margin-top: 10px;
+}
+
+.composition-trait-delta {
+  border-left: 4px solid var(--border, #cbd9c7);
+}
+
+.composition-trait-delta.positive {
+  border-left-color: #2f9d69;
+}
+
+.composition-trait-delta.negative {
+  border-left-color: #d36b6b;
+}
+
+@media (max-width: 560px) {
+  .composition-change-members {
     grid-template-columns: 1fr;
   }
 }
