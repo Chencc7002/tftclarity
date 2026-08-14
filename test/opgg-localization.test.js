@@ -78,3 +78,17 @@ test("MetaTFT PBE match payloads localize DA units, items, traits, and assets", 
     ["翠神", "宝石骑士", "主宰"]
   );
 });
+
+test("MetaTFT summary trait tier suffixes still resolve to localized names", () => {
+  const localized = localizeMatch({
+    traits: [
+      { id: "DA_18_Inferno_1" },
+      { id: "DA_FloraFatalis18_2" }
+    ],
+    units: []
+  });
+  assert.deepEqual(
+    localized.traits.map((trait) => trait.displayName),
+    ["地狱火", "绝命花妖"]
+  );
+});

@@ -13,6 +13,7 @@ import {
   canAccessPlayer,
   isPersonalPool,
   personalPoolId,
+  registerPersonalAccount,
   poolQueryOptions
 } from "../services/opgg/api-router.mjs";
 
@@ -70,5 +71,25 @@ test("custom pool metadata drives PBE aggregation and stays owner scoped", async
   });
   assert.equal(accessiblePool(database, "pbe-experts", "scope-b"), null);
   assert.equal(renamePool(database, "pbe-experts", "pbe高手").name, "pbe高手");
+  database.close();
+});
+
+test("personal account registry persists PBE Riot IDs in the visitor pool", async () => {
+  const database = await openDatabase(":memory:");
+  initSchema(database);
+  const entry = registerPersonalAccount(database, {
+    poolId: "my-review-scope-pbe",
+    gameName: "chencc",
+    tagLine: "aug",
+    region: "pbe",
+    now: "2026-08-14T00:00:00.000Z"
+  });
+  assert.equal(entry.id, "chencc-aug-pbe");
+  assert.equal(entry.region, "pbe");
+  assert.equal(canAccessPlayer(database, entry.id, "scope-pbe"), true);
+  const linked = database.prepare(
+    "SELECT player_id FROM pool_player WHERE pool_id = ?"
+  ).all("my-review-scope-pbe");
+  assert.deepEqual(linked.map((row) => row.player_id), ["chencc-aug-pbe"]);
   database.close();
 });

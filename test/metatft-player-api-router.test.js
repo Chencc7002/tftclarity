@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { EventEmitter } from "node:events";
-import { createPlayerMatchApiRouter, parsePlayerId } from "../services/metatft-player/api-router.mjs";
+import {
+  buildReviewDashboard,
+  createPlayerMatchApiRouter,
+  parsePlayerId
+} from "../services/metatft-player/api-router.mjs";
 
 function responseCapture() {
   const response = new EventEmitter();
@@ -157,4 +161,39 @@ test("PBE teaching keeps MetaTFT provenance and missing-field evidence", async (
   assert.equal(response.body.provenance.provider, "metatft");
   assert.deepEqual(response.body.missingFields, ["augments"]);
   assert.equal(response.body.validated, true);
+  assert.equal(response.body.dashboard.matches.length, 1);
+  assert.equal(response.body.dashboard.stats.top4Rate, 1);
+});
+
+test("review dashboard aggregates repeated comps and keeps concise per-match points", () => {
+  const makeMatch = (matchId, placement) => ({
+    facts: {
+      matchId,
+      gameDatetime: "2026-08-14T00:00:00.000Z",
+      placement,
+      level: 8,
+      lastRound: 35,
+      traits: [{ name: "DA_18_Invoker_2", displayName: "神谕" }],
+      units: [{
+        characterId: "DA_18_Ahri",
+        displayName: "阿狸",
+        tier: 2,
+        items: [{ apiName: "DA_Item" }, { apiName: "DA_Item2" }, { apiName: "DA_Item3" }]
+      }]
+    },
+    conclusions: [{ conclusion: `该局进入前四（第${placement}名）。` }]
+  });
+  const dashboard = buildReviewDashboard({
+    windowSize: 20,
+    accumulatedMatches: 2,
+    stats: { avgPlacement: 2, top4Rate: 1 },
+    matches: [makeMatch("PBE1_1", 1), makeMatch("PBE1_2", 3)]
+  });
+  assert.equal(dashboard.comps.length, 1);
+  assert.equal(dashboard.comps[0].name, "神谕 / 阿狸");
+  assert.equal(dashboard.comps[0].games, 2);
+  assert.equal(dashboard.comps[0].avgPlacement, 2);
+  assert.equal(dashboard.comps[0].top4Rate, 1);
+  assert.equal(dashboard.comps[0].winRate, 0.5);
+  assert.equal(dashboard.matches[0].keyPoint, "该局进入前四（第1名）。");
 });

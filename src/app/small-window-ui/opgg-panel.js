@@ -559,24 +559,31 @@ async function renderPersonal() {
   setResult("对局可视化与复盘", loadingHtml());
   try {
     const data = await api("/api/opgg/my-review");
-    const cards = (data.players ?? []).map((player) => `
+    const cards = (data.players ?? []).map((player) => {
+      const isPbe = player.region === "pbe";
+      const accountData = `data-player="${esc(player.id)}" data-environment="${isPbe ? "pbe" : "live"}" data-game-name="${esc(player.gameName)}" data-tag-line="${esc(player.tagLine)}"`;
+      const reviewButton = isPbe
+        ? `<button type="button" class="opgg-ai-button" data-opgg-action="personal-direct-teaching" ${accountData}><span class="opgg-ai-icon" aria-hidden="true">✦</span><span><strong>AI 智能复盘</strong><small>读取 MetaTFT 最近 20 场</small></span></button>`
+        : aiReviewButton(player.id);
+      return `
       <div class="opgg-card opgg-personal-card">
-        <a class="opgg-card-link" href="#" data-opgg-action="player" data-player="${esc(player.id)}">
+        <a class="opgg-card-link" href="#" data-opgg-action="personal-player" ${accountData}>
           <div class="opgg-card-body">
           <div class="opgg-card-head">
             <span class="opgg-card-title">${esc(player.displayName)}</span>
-            <span class="opgg-badge opgg-badge-muted">${esc(player.region ?? "na")}</span>
+            <span class="opgg-badge opgg-badge-muted">${isPbe ? "PBE" : "NA"}</span>
           </div>
           <div class="opgg-match-sub">${esc(player.gameName)}#${esc(player.tagLine)}</div>
-          <div class="opgg-metrics" style="margin-top:9px">
+          ${isPbe ? '<div class="opgg-notice opgg-personal-live-note">对局与统计将在打开时从 MetaTFT 近实时读取</div>' : `<div class="opgg-metrics" style="margin-top:9px">
             <div class="opgg-metric"><b>已采集</b><span>${player.summary?.matchCount ?? 0} 场</span></div>
             <div class="opgg-metric"><b>均名次</b><span>${player.summary?.avgPlacement ?? "-"}</span></div>
             <div class="opgg-metric"><b>前四率</b><span>${player.summary?.top4Rate != null ? Math.round(player.summary.top4Rate * 100) + "%" : "-"}</span></div>
-          </div>
+          </div>`}
           </div>
         </a>
-        <div class="opgg-personal-actions">${aiReviewButton(player.id)}<button type="button" class="opgg-remove-button" data-opgg-action="personal-remove" data-player="${esc(player.id)}">删除账号</button></div>
-      </div>`).join("");
+        <div class="opgg-personal-actions">${reviewButton}<button type="button" class="opgg-remove-button" data-opgg-action="personal-remove" data-player="${esc(player.id)}">删除账号</button></div>
+      </div>`;
+    }).join("");
     setResult(
       "对局可视化与复盘",
       `
@@ -621,13 +628,14 @@ async function addPersonalAccount() {
   try {
     if (environment === "pbe") {
       directPlayer = { gameName: name, tagLine: tag, environment: "pbe" };
-      return renderDirectPlayer();
+      await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}?${directPlayerQuery({ limit: "20" })}`);
     }
     const data = await api("/api/opgg/players/register", {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ gameName: name, tagLine: tag, region: "na" })
+      body: JSON.stringify({ gameName: name, tagLine: tag, region: environment === "pbe" ? "pbe" : "na" })
     });
+    if (environment === "pbe") return renderDirectPlayer();
     state.playerId = data.player.id;
     await renderPlayer();
   } catch (error) {
@@ -1026,6 +1034,70 @@ async function renderDirectMatch() {
   }
 }
 
+function reviewPlacementChart(matches) {
+  const rows = matches ?? [];
+  if (!rows.length) return '<div class="opgg-empty">暂无可绘制的名次数据</div>';
+  const label = rows.map((match) => `第${match.placement ?? "?"}名`).join("、");
+  return `<div class="opgg-review-placement-chart" role="img" aria-label="最近对局名次：${esc(label)}">
+    ${rows.map((match, index) => {
+      const placement = Math.max(1, Math.min(8, Number(match.placement) || 8));
+      const height = Math.round(((9 - placement) / 8) * 72 + 18);
+      const tone = placement === 1 ? "win" : placement <= 4 ? "top4" : "bottom4";
+      return `<div class="opgg-review-placement-column" title="${esc(match.compName)} · 第${placement}名">
+        <span class="opgg-review-placement-value">${placement}</span>
+        <span class="opgg-review-placement-bar ${tone}" style="height:${height}%"></span>
+        <small>${index + 1}</small>
+      </div>`;
+    }).join("")}
+  </div><div class="opgg-review-chart-caption"><span>左侧为最新对局</span><span>柱越高，名次越好</span></div>`;
+}
+
+function reviewCompTable(comps) {
+  const rows = (comps ?? []).slice(0, 8);
+  if (!rows.length) return '<div class="opgg-empty">当前样本尚未识别出可聚合阵容</div>';
+  const maxGames = Math.max(...rows.map((comp) => Number(comp.games) || 0), 1);
+  return `<div class="opgg-review-comp-list">${rows.map((comp) => `
+    <div class="opgg-review-comp-row">
+      <div class="opgg-review-comp-head"><strong>${esc(comp.name)}</strong><span>${comp.games} 场 · ${pct1(comp.share)}</span></div>
+      <div class="opgg-review-comp-bar"><span style="width:${Math.max(4, Math.round((comp.games / maxGames) * 100))}%"></span></div>
+      <div class="opgg-review-comp-metrics"><span>均名 ${comp.avgPlacement ?? "-"}</span><span>前四 ${pct1(comp.top4Rate)}</span><span>登顶 ${pct1(comp.winRate)}</span></div>
+    </div>`).join("")}</div>`;
+}
+
+function reviewMatchList(matches) {
+  const rows = matches ?? [];
+  if (!rows.length) return '<div class="opgg-empty">暂无逐场复盘数据</div>';
+  return `<div class="opgg-review-match-list">${rows.map((match) => `
+    <details class="opgg-review-match-row">
+      <summary>
+        <span class="opgg-placement-badge ${placementClass(match.placement)}">${match.placement ?? "?"}</span>
+        <span class="opgg-review-match-main"><strong>${esc(match.compName)}</strong><small>${fmtDate(match.playedAt)} · Lv${match.level ?? "-"}</small></span>
+        <span class="opgg-review-match-point">${esc(match.keyPoint)}</span>
+      </summary>
+      <div class="opgg-review-match-detail">
+        ${unitBoardHtml(match.units ?? [], { showNames: true })}
+        <div class="opgg-match-sub">${esc(match.matchId ?? "")} · 第 ${match.lastRound ?? "-"} 回合结束</div>
+      </div>
+    </details>`).join("")}</div>`;
+}
+
+function directReviewDashboardHtml(dashboard) {
+  const stats = dashboard?.stats ?? {};
+  const sample = dashboard?.sample ?? {};
+  return `<div class="opgg-review-stats">
+      <div class="opgg-chip"><b>有效对局</b><span>${sample.accumulatedMatches ?? dashboard?.matches?.length ?? 0}/${sample.windowSize ?? 20}</span></div>
+      <div class="opgg-chip"><b>平均名次</b><span>${stats.avgPlacement ?? "-"}</span></div>
+      <div class="opgg-chip"><b>前四率</b><span>${pct1(stats.top4Rate)}</span></div>
+      <div class="opgg-chip"><b>登顶率</b><span>${pct1(stats.winRate)}</span></div>
+    </div>
+    <div class="opgg-review-dashboard-grid">
+      <section class="opgg-card"><div class="opgg-card-body"><div class="opgg-section-title" style="margin-top:0">近期名次走势 <small>1 为最好，8 为最低</small></div>${reviewPlacementChart(dashboard?.matches)}</div></section>
+      <section class="opgg-card"><div class="opgg-card-body"><div class="opgg-section-title" style="margin-top:0">阵容聚合表现 <small>按相同羁绊与核心聚合</small></div>${reviewCompTable(dashboard?.comps)}</div></section>
+    </div>
+    <div class="opgg-section-title">逐场阵容与要点 <small>默认只显示一句结论，展开可看终局棋盘</small></div>
+    ${reviewMatchList(dashboard?.matches)}`;
+}
+
 async function renderDirectTeaching(matchId = null) {
   state.view = "direct-teaching";
   setResult("S18 PBE AI 复盘", loadingHtml("AI 正在读取 MetaTFT 终局证据并校验结论…"));
@@ -1036,7 +1108,8 @@ async function renderDirectTeaching(matchId = null) {
       "S18 PBE AI 复盘",
       `${backLink(matchId ? "返回单局详情" : "返回对局列表", matchId ? "direct-match" : "direct-player")}
        <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(data.headline ?? "AI 智能复盘")}</h3><p class="opgg-page-sub">MetaTFT · S18 PBE · ${data.validated ? "证据校验通过" : "已降级"}</p></div></div>
-       <div class="opgg-card"><div class="opgg-card-body" style="white-space:pre-wrap;line-height:1.7">${esc(data.text ?? "")}</div></div>
+       ${directReviewDashboardHtml(data.dashboard)}
+       <details class="opgg-card opgg-review-narrative"><summary>查看 AI 完整文字解读</summary><div class="opgg-card-body">${esc(data.text ?? "")}</div></details>
        <div class="opgg-notice">缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}。复盘不得推断逐回合经济、搜牌、过渡或站位。</div>`,
       data
     );
@@ -1144,6 +1217,19 @@ async function dispatch(action, dataset) {
       setResult("玩家 Pool", `${backLink("返回 Pool 管理", "personal")}${errorHtml(error)}`);
       return;
     }
+  }
+  if (action === "personal-player") {
+    if (dataset.environment === "pbe") {
+      directPlayer = { gameName: dataset.gameName, tagLine: dataset.tagLine, environment: "pbe" };
+      return renderDirectPlayer();
+    }
+    directPlayer = null;
+    state.playerId = dataset.player;
+    return renderPlayer();
+  }
+  if (action === "personal-direct-teaching") {
+    directPlayer = { gameName: dataset.gameName, tagLine: dataset.tagLine, environment: "pbe" };
+    return renderDirectTeaching();
   }
   if (action === "personal") return renderPersonal();
   if (action === "direct-player") return renderDirectPlayer();

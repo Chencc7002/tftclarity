@@ -445,6 +445,20 @@ test("personal account region is explicit and Riot tags are not used as server p
   assert.doesNotMatch(opggPanel, /第一版仅支持 PBE数字 或 NA数字/u);
   assert.match(opggPanel, /directPlayerQuery/u);
   assert.match(opggPanel, /environment: directPlayer\.environment/u);
+  assert.match(opggPanel, /region: environment === "pbe" \? "pbe" : "na"/u);
+  assert.match(opggPanel, /data-opgg-action="personal-player"/u);
+  assert.match(opggPanel, /personal-direct-teaching/u);
+});
+
+test("PBE review renders summary metrics, placement chart, comp aggregation, and expandable matches", () => {
+  assert.match(opggPanel, /directReviewDashboardHtml/u);
+  assert.match(opggPanel, /近期名次走势/u);
+  assert.match(opggPanel, /阵容聚合表现/u);
+  assert.match(opggPanel, /逐场阵容与要点/u);
+  assert.match(opggPanel, /查看 AI 完整文字解读/u);
+  assert.match(opggStyles, /\.opgg-review-placement-chart/u);
+  assert.match(opggStyles, /\.opgg-review-comp-list/u);
+  assert.match(opggStyles, /\.opgg-review-match-row/u);
 });
 
 test("player pools expose share codes and one-click independent imports", () => {

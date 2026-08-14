@@ -541,6 +541,41 @@
 .opgg-back:focus-visible { outline: 2px solid var(--wallpaper-accent); outline-offset: 2px; }
 .opgg-back:active { transform: translateY(0); box-shadow: 0 2px 6px color-mix(in srgb, var(--wallpaper-accent) 8%, transparent); }
 
+.opgg-personal-live-note { margin-top: 9px; }
+.opgg-review-stats { margin-bottom: 12px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; }
+.opgg-review-stats .opgg-chip { min-height: 66px; }
+.opgg-review-dashboard-grid { display: grid; grid-template-columns: minmax(320px, .9fr) minmax(390px, 1.1fr); gap: 10px; }
+.opgg-review-dashboard-grid > .opgg-card { margin: 0; }
+.opgg-review-placement-chart { height: 176px; padding: 12px 8px 0; display: grid; grid-template-columns: repeat(20, minmax(9px, 1fr)); align-items: end; gap: 4px; border-bottom: 1px solid var(--line-strong); }
+.opgg-review-placement-column { min-width: 0; height: 100%; display: flex; flex-direction: column; align-items: center; justify-content: flex-end; gap: 3px; }
+.opgg-review-placement-value { color: var(--ink); font-size: 8px; font-weight: 850; font-variant-numeric: tabular-nums; }
+.opgg-review-placement-bar { width: min(15px, 86%); min-height: 16px; display: block; border-radius: 5px 5px 2px 2px; background: #c6ccd5; }
+.opgg-review-placement-bar.top4 { background: color-mix(in srgb, var(--wallpaper-accent) 76%, #63a8dc); }
+.opgg-review-placement-bar.win { background: #d8a83b; }
+.opgg-review-placement-column small { color: var(--muted); font-size: 7px; font-variant-numeric: tabular-nums; }
+.opgg-review-chart-caption { margin-top: 7px; display: flex; justify-content: space-between; gap: 8px; color: var(--muted); font-size: 8px; }
+.opgg-review-comp-list { display: grid; gap: 10px; }
+.opgg-review-comp-row { min-width: 0; display: grid; gap: 4px; }
+.opgg-review-comp-head, .opgg-review-comp-metrics { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.opgg-review-comp-head strong { min-width: 0; overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.opgg-review-comp-head > span, .opgg-review-comp-metrics { color: var(--muted); font-size: 8px; font-variant-numeric: tabular-nums; }
+.opgg-review-comp-bar { height: 6px; overflow: hidden; border-radius: 999px; background: color-mix(in srgb, var(--wallpaper-accent) 8%, var(--panel-soft)); }
+.opgg-review-comp-bar > span { height: 100%; display: block; border-radius: inherit; background: linear-gradient(90deg, var(--wallpaper-accent), var(--star-cyan)); }
+.opgg-review-match-list { display: grid; gap: 7px; }
+.opgg-review-match-row { overflow: hidden; border: 1px solid var(--line); border-radius: 10px; background: rgba(255,255,255,.9); }
+.opgg-review-match-row > summary { position: relative; min-height: 62px; padding: 9px 30px 9px 10px; display: grid; grid-template-columns: 38px minmax(150px, .8fr) minmax(220px, 1.4fr); align-items: center; gap: 10px; cursor: pointer; list-style: none; }
+.opgg-review-match-row > summary::-webkit-details-marker { display: none; }
+.opgg-review-match-row > summary::after { content: "⌄"; position: absolute; right: 11px; color: var(--muted); transition: transform .16s ease; }
+.opgg-review-match-row[open] > summary::after { transform: rotate(180deg); }
+.opgg-review-match-main { min-width: 0; display: grid; gap: 3px; }
+.opgg-review-match-main strong { overflow: hidden; color: var(--ink); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.opgg-review-match-main small { color: var(--muted); font-size: 8px; }
+.opgg-review-match-point { color: var(--ink); font-size: 9px; line-height: 1.45; }
+.opgg-review-match-detail { padding: 10px; border-top: 1px solid var(--line); background: var(--panel-soft); }
+.opgg-review-narrative { margin-top: 12px; }
+.opgg-review-narrative > summary { padding: 11px 13px; color: var(--ink); cursor: pointer; font-size: 10px; font-weight: 850; }
+.opgg-review-narrative .opgg-card-body { padding-top: 0; white-space: pre-wrap; line-height: 1.7; }
+
 .shell.wallpaper-enabled .opgg-card,
 .shell.wallpaper-enabled .opgg-player-match-card,
 .shell.wallpaper-enabled .opgg-match-board-card,
@@ -552,6 +587,9 @@
 }
 
 @media (max-width: 720px) {
+  .opgg-review-dashboard-grid { grid-template-columns: 1fr; }
+  .opgg-review-match-row > summary { grid-template-columns: 38px minmax(0, 1fr); }
+  .opgg-review-match-point { grid-column: 2; }
   .opgg-compare-metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .opgg-compare-chart-grid { grid-template-columns: 1fr; }
   .opgg-dashboard-chart-grid { grid-template-columns: 1fr; }
@@ -600,6 +638,8 @@
 }
 
 @media (max-width: 480px) {
+  .opgg-review-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .opgg-review-placement-chart { gap: 2px; }
   .opgg-compare-scope, .opgg-compare-metric-grid { grid-template-columns: 1fr; }
   .opgg-compare-chart-head { display: grid; }
   .opgg-dumbbell-row { grid-template-columns: 66px minmax(105px, 1fr) 62px; }

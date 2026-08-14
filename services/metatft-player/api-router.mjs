@@ -62,6 +62,104 @@ function statusForError(error) {
   return 502;
 }
 
+function reviewUnitItemCount(unit) {
+  if (Array.isArray(unit?.items)) return unit.items.filter(Boolean).length;
+  return Array.isArray(unit?.itemNames) ? unit.itemNames.filter(Boolean).length : 0;
+}
+
+function reviewCompProfile(entry) {
+  const facts = entry?.facts ?? {};
+  const units = Array.isArray(facts.units) ? facts.units : [];
+  const carry = [...units]
+    .filter((unit) => unit?.characterId || unit?.displayName)
+    .sort((left, right) =>
+      reviewUnitItemCount(right) - reviewUnitItemCount(left)
+      || Number(right?.tier ?? 0) - Number(left?.tier ?? 0)
+      || Number(right?.cost ?? 0) - Number(left?.cost ?? 0)
+    )[0] ?? null;
+  const traits = (facts.traits ?? [])
+    .filter((trait) => {
+      const rawName = String(trait?.name ?? "");
+      const activated = Number(trait?.style ?? 0) > 0 || /_[0-9]+$/u.test(rawName);
+      const nonUnique = !/UniqueTrait|Greenfather|ApexPredator|Emerald18/u.test(rawName);
+      return activated && nonUnique;
+    })
+    .sort((left, right) =>
+      Number(right?.numUnits ?? 0) - Number(left?.numUnits ?? 0)
+      || Number(right?.style ?? 0) - Number(left?.style ?? 0)
+    )
+    .slice(0, 2);
+  const carryName = carry?.displayName ?? carry?.characterId ?? "未识别核心";
+  const traitNames = traits.map((trait) => trait.displayName ?? trait.name).filter(Boolean);
+  const name = !carry
+    ? "未识别阵容"
+    : traitNames.length
+      ? `${traitNames.join(" · ")} / ${carryName}`
+      : `${carryName}核心`;
+  const key = `${traits.map((trait) => String(trait.name ?? trait.displayName).replace(/_[0-9]+$/u, "")).sort().join("+")}|${carry?.characterId ?? carryName}`;
+  const conclusions = (entry?.conclusions ?? []).map((item) => item?.conclusion).filter(Boolean);
+  const keyPoint = conclusions.find((line) => /装备|高人口|早期淘汰|不完整/u.test(line))
+    ?? conclusions.find((line) => !/近期平均名次/u.test(line))
+    ?? conclusions[0]
+    ?? `该局最终第${facts.placement ?? "?"}名。`;
+  return { key, name, carryName, keyPoint };
+}
+
+function buildReviewDashboard(review) {
+  const matches = (review?.matches ?? []).map((entry) => {
+    const facts = entry?.facts ?? {};
+    const profile = reviewCompProfile(entry);
+    return {
+      matchId: facts.matchId ?? null,
+      playedAt: facts.gameDatetime ?? null,
+      placement: facts.placement ?? null,
+      level: facts.level ?? null,
+      lastRound: facts.lastRound ?? null,
+      compKey: profile.key,
+      compName: profile.name,
+      carryName: profile.carryName,
+      keyPoint: profile.keyPoint,
+      units: facts.units ?? [],
+      traits: facts.traits ?? []
+    };
+  });
+  const placements = matches.map((match) => Number(match.placement)).filter(Number.isFinite);
+  const groups = new Map();
+  for (const match of matches) {
+    const group = groups.get(match.compKey) ?? { key: match.compKey, name: match.compName, placements: [] };
+    if (Number.isFinite(Number(match.placement))) group.placements.push(Number(match.placement));
+    groups.set(match.compKey, group);
+  }
+  const comps = [...groups.values()].map((group) => ({
+    key: group.key,
+    name: group.name,
+    games: group.placements.length,
+    share: matches.length ? group.placements.length / matches.length : 0,
+    avgPlacement: group.placements.length
+      ? Math.round((group.placements.reduce((sum, value) => sum + value, 0) / group.placements.length) * 100) / 100
+      : null,
+    top4Rate: group.placements.length
+      ? group.placements.filter((value) => value <= 4).length / group.placements.length
+      : null,
+    winRate: group.placements.length
+      ? group.placements.filter((value) => value === 1).length / group.placements.length
+      : null
+  })).sort((left, right) => right.games - left.games || (left.avgPlacement ?? 9) - (right.avgPlacement ?? 9));
+  return {
+    sample: {
+      accumulatedMatches: review?.accumulatedMatches ?? matches.length,
+      windowSize: review?.windowSize ?? matches.length,
+      sampleTier: review?.sampleTier ?? null
+    },
+    stats: {
+      ...(review?.stats ?? {}),
+      winRate: placements.length ? placements.filter((value) => value === 1).length / placements.length : null
+    },
+    comps,
+    matches
+  };
+}
+
 function createPlayerMatchApiRouter(options = {}) {
   const client = options.client ?? createPlayerMatchMcpClient(options);
 
@@ -89,7 +187,12 @@ function createPlayerMatchApiRouter(options = {}) {
           level: entry.level,
           lastRound: entry.lastRound,
           playersEliminated: null,
-          traits: entry.traits.map((trait) => ({ name: trait.id, displayName: trait.displayName })),
+          traits: entry.traits.map((trait) => ({
+            name: trait.id,
+            displayName: trait.displayName,
+            numUnits: trait.units,
+            style: trait.style
+          })),
           units: entry.units.map((unit) => ({
             characterId: unit.characterId,
             displayName: unit.displayName,
@@ -150,6 +253,7 @@ function createPlayerMatchApiRouter(options = {}) {
         });
         return sendJson(response, 200, {
           ...result,
+          dashboard: buildReviewDashboard(review),
           provenance: history.provenance,
           missingFields: evidence.missingFields
         });
@@ -194,4 +298,4 @@ function createPlayerMatchApiRouter(options = {}) {
   };
 }
 
-export { createPlayerMatchApiRouter, parsePlayerId, environmentForRequest };
+export { buildReviewDashboard, createPlayerMatchApiRouter, parsePlayerId, environmentForRequest };

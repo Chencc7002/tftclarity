@@ -194,6 +194,40 @@ function playerSummary(database, playerId) {
   };
 }
 
+function registerPersonalAccount(
+  database,
+  {
+    poolId,
+    gameName,
+    tagLine,
+    region,
+    now = new Date().toISOString()
+  }
+) {
+  const normalizedRegion = String(region ?? "na").trim().toLowerCase();
+  if (!["na", "pbe"].includes(normalizedRegion)) {
+    throw new Error("Only PBE and NA accounts are supported.");
+  }
+  if (!poolExists(database, poolId)) {
+    createPool(database, {
+      id: poolId,
+      name: "个人复盘",
+      region: "na",
+      environment: "live"
+    });
+  }
+  const entry = {
+    id: slugify(gameName, tagLine, normalizedRegion),
+    displayName: `${gameName}#${tagLine}`,
+    gameName,
+    tagLine,
+    region: normalizedRegion,
+    active: true
+  };
+  registerPlayer(database, entry, poolId, now);
+  return entry;
+}
+
 async function loadHonors() {
   try {
     const parsed = JSON.parse(await readFile(HONORS_PATH, "utf8"));
@@ -336,25 +370,25 @@ function createOpggApiRouter() {
         if (!gameName || !tagLine) {
           return sendError(response, 400, "gameName and tagLine are required.");
         }
-        if (region !== "na") {
-          return sendError(response, 400, "The MVP currently supports NA accounts only.");
+        if (!["na", "pbe"].includes(region)) {
+          return sendError(response, 400, "Only PBE and NA accounts are supported.");
         }
-        if (!poolExists(database, myReviewPoolId)) {
-          createPool(database, {
-            id: myReviewPoolId,
-            name: "个人复盘",
-            region
-          });
-        }
-        const entry = {
-          id: slugify(gameName, tagLine, region),
-          displayName: `${gameName}#${tagLine}`,
+        const entry = registerPersonalAccount(database, {
+          poolId: myReviewPoolId,
           gameName,
           tagLine,
-          region,
-          active: true
-        };
-        registerPlayer(database, entry, myReviewPoolId, new Date().toISOString());
+          region
+        });
+
+        if (region === "pbe") {
+          return sendJson(response, 200, {
+            player: playerMeta(database, entry.id),
+            collect: {
+              status: "skipped",
+              reason: "pbe_uses_metatft_live_lookup"
+            }
+          });
+        }
 
         const client = createOpggClient({
           clientName: "tftclarity-opgg-register",
@@ -590,5 +624,6 @@ export {
   createOpggApiRouter,
   isPersonalPool,
   personalPoolId,
+  registerPersonalAccount,
   poolQueryOptions
 };

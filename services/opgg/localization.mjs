@@ -34,14 +34,20 @@ function unitDisplayName(apiName) {
 }
 
 function traitDisplayName(apiName) {
-  const alternateApiName = String(apiName ?? "").replace(/^DA_18_(.+)$/u, "DA_$118");
-  return overrideName(
-    traitDisplayOverrideByApiName.get(apiName)
-      ?? traitAliasOverrideByApiName.get(apiName)
-      ?? traitDisplayOverrideByApiName.get(alternateApiName)
-      ?? traitAliasOverrideByApiName.get(alternateApiName),
-    apiName
-  );
+  const raw = String(apiName ?? "");
+  const withoutTierSuffix = raw.replace(/_[0-9]+$/u, "");
+  const candidates = [
+    raw,
+    withoutTierSuffix,
+    raw.replace(/^DA_18_(.+)$/u, "DA_$118"),
+    withoutTierSuffix.replace(/^DA_18_(.+)$/u, "DA_$118")
+  ];
+  for (const candidate of candidates) {
+    const entry = traitDisplayOverrideByApiName.get(candidate)
+      ?? traitAliasOverrideByApiName.get(candidate);
+    if (entry) return overrideName(entry, raw);
+  }
+  return readableFallback(raw);
 }
 
 const LEGACY_ITEM_API_NAMES = new Map([
