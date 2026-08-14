@@ -4,6 +4,10 @@ import {
 } from "../../src/data/domain-alias-overrides.js";
 import { itemAliasOverrideByApiName } from "../../src/data/item-alias-overrides.js";
 import { currentItemLocalizationByApiName } from "../../src/data/item-localization.js";
+import {
+  traitDisplayOverrideByApiName,
+  unitDisplayOverrideByApiName
+} from "../../src/data/entity-display-overrides.js";
 import { createAssetResolver } from "../../src/data/asset-resolver.js";
 
 const assetResolver = createAssetResolver();
@@ -23,26 +27,68 @@ function overrideName(entry, fallback) {
 }
 
 function unitDisplayName(apiName) {
-  return overrideName(unitAliasOverrideByApiName.get(apiName), apiName);
+  return overrideName(
+    unitDisplayOverrideByApiName.get(apiName) ?? unitAliasOverrideByApiName.get(apiName),
+    apiName
+  );
 }
 
 function traitDisplayName(apiName) {
-  return overrideName(traitAliasOverrideByApiName.get(apiName), apiName);
+  const alternateApiName = String(apiName ?? "").replace(/^DA_18_(.+)$/u, "DA_$118");
+  return overrideName(
+    traitDisplayOverrideByApiName.get(apiName)
+      ?? traitAliasOverrideByApiName.get(apiName)
+      ?? traitDisplayOverrideByApiName.get(alternateApiName)
+      ?? traitAliasOverrideByApiName.get(alternateApiName),
+    apiName
+  );
+}
+
+const LEGACY_ITEM_API_NAMES = new Map([
+  ["AdaptiveHelm", "TFT_Item_AdaptiveHelm"],
+  ["EdgeOfNight", "TFT_Item_GuardianAngel"],
+  ["Evenshroud", "TFT_Item_SpectralGauntlet"],
+  ["GiantSlayer", "TFT_Item_MadredsBloodrazor"],
+  ["Giantslayer", "TFT_Item_MadredsBloodrazor"],
+  ["HandOfJustice", "TFT_Item_UnstableConcoction"],
+  ["ProtectorsVow", "TFT_Item_FrozenHeart"],
+  ["StrikersFlail", "TFT_Item_PowerGauntlet"],
+  ["SunfireCape", "TFT_Item_RedBuff"]
+]);
+
+function canonicalItemApiName(apiName) {
+  const raw = String(apiName ?? "");
+  const suffix = raw
+    .replace(/^DA_Component_/u, "")
+    .replace(/^DA_/u, "");
+  const direct = `TFT_Item_${suffix}`;
+  if (itemAliasOverrideByApiName.has(direct) || currentItemLocalizationByApiName.has(direct)) {
+    return direct;
+  }
+  return LEGACY_ITEM_API_NAMES.get(suffix) ?? raw;
 }
 
 function itemDisplayName(apiName) {
   const override = itemAliasOverrideByApiName.get(apiName);
   if (override) return overrideName(override, apiName);
   const official = currentItemLocalizationByApiName.get(apiName);
-  return official?.zhName ?? official?.enName ?? readableFallback(apiName);
+  if (official) return official.zhName ?? official.enName ?? readableFallback(apiName);
+  const canonicalApiName = canonicalItemApiName(apiName);
+  const canonicalOverride = itemAliasOverrideByApiName.get(canonicalApiName);
+  if (canonicalOverride) return overrideName(canonicalOverride, apiName);
+  const canonicalOfficial = currentItemLocalizationByApiName.get(canonicalApiName);
+  return canonicalOfficial?.zhName ?? canonicalOfficial?.enName ?? readableFallback(apiName);
 }
 
-function localizeItem(apiName) {
+function localizeItem(value) {
+  const source = value && typeof value === "object" ? value : null;
+  const apiName = source?.apiName ?? source?.name ?? source?.id ?? value;
   const asset = assetResolver.resolveItem(apiName);
   return {
+    ...(source ?? {}),
     apiName,
     displayName: itemDisplayName(apiName),
-    iconUrl: asset.iconUrl,
+    iconUrl: source?.iconUrl ?? asset.iconUrl,
     assetFallback: asset.fallback
   };
 }
@@ -53,7 +99,8 @@ function localizeUnit(unit) {
     ? Number(unit.rarity)
     : null;
   const asset = assetResolver.resolveUnit(apiName);
-  const items = (unit?.itemNames ?? []).map(localizeItem);
+  const itemValues = unit?.itemNames ?? unit?.items ?? [];
+  const items = itemValues.map(localizeItem);
   return {
     ...unit,
     displayName: unitDisplayName(apiName),
@@ -101,7 +148,7 @@ function localizeMatch(match) {
     ...match,
     traits: (match?.traits ?? []).map((trait) => ({
       ...trait,
-      displayName: traitDisplayName(trait?.name)
+      displayName: traitDisplayName(trait?.name ?? trait?.id)
     })),
     units: (match?.units ?? []).map(localizeUnit),
     displaySignature: localizeSignature(match?.compFamilySignature)

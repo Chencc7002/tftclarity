@@ -1,5 +1,6 @@
 import { createPlayerMatchMcpClient } from "./mcp-client.mjs";
 import { buildMatchReview, buildPlayerReview } from "../opgg/review.mjs";
+import { localizeMatch } from "../opgg/localization.mjs";
 import {
   buildTeachingEvidence,
   generateTeaching,
@@ -78,7 +79,8 @@ function createPlayerMatchApiRouter(options = {}) {
       const environment = input.environment;
       try {
         const history = await client.callTool("list_matches", { ...input, limit: 20 });
-        const normalized = history.matches.map((entry) => ({
+        const localizedMatches = history.matches.map(localizeMatch);
+        const normalized = localizedMatches.map((entry) => ({
           playerId: `${player.gameName}#${player.tagLine}`,
           matchId: entry.matchId,
           gameDatetime: entry.playedAt,
@@ -87,8 +89,17 @@ function createPlayerMatchApiRouter(options = {}) {
           level: entry.level,
           lastRound: entry.lastRound,
           playersEliminated: null,
-          traits: entry.traits.map((trait) => ({ name: trait.id, displayName: trait.id })),
-          units: entry.units.map((unit) => ({ characterId: unit.characterId, tier: unit.starLevel, itemNames: unit.items }))
+          traits: entry.traits.map((trait) => ({ name: trait.id, displayName: trait.displayName })),
+          units: entry.units.map((unit) => ({
+            characterId: unit.characterId,
+            displayName: unit.displayName,
+            iconUrl: unit.iconUrl,
+            fallbackIconUrl: unit.fallbackIconUrl,
+            tier: unit.starLevel,
+            items: unit.items,
+            itemNames: unit.items.map((item) => item.apiName),
+            itemDisplayNames: unit.items.map((item) => item.displayName)
+          }))
         }));
         const requestedMatchId = url.searchParams.get("match");
         let review;
@@ -162,12 +173,18 @@ function createPlayerMatchApiRouter(options = {}) {
           ...input,
           matchId: decodeURIComponent(match[2])
         });
-        return sendJson(response, 200, result);
+        return sendJson(response, 200, {
+          ...result,
+          match: localizeMatch(result.match)
+        });
       }
       const requested = Number(url.searchParams.get("limit") ?? "20");
       const limit = [10, 15, 20].includes(requested) ? requested : 20;
       const result = await client.callTool("list_matches", { ...input, limit });
-      return sendJson(response, 200, result);
+      return sendJson(response, 200, {
+        ...result,
+        matches: (result.matches ?? []).map(localizeMatch)
+      });
     } catch (error) {
       return sendJson(response, statusForError(error), {
         error: error?.message ?? "Player match provider failed.",

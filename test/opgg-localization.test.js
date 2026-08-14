@@ -50,3 +50,31 @@ test("item localization uses the official catalog before API-token fallback", ()
   );
   assert.equal(itemDisplayName("TFT17_Item_UnknownCamelCase"), "Unknown Camel Case");
 });
+
+test("MetaTFT PBE match payloads localize DA units, items, traits, and assets", () => {
+  const localized = localizeMatch({
+    matchId: "PBE1_4532568219",
+    traits: [
+      { id: "DA_18_Greenfather" },
+      { id: "DA_18_Emerald" },
+      { id: "DA_18_Juggernaut" }
+    ],
+    units: [{
+      characterId: "DA_18_ElderDragon",
+      starLevel: 2,
+      items: ["DA_InfinityEdge", "DA_GiantSlayer", "DA_Component_RecurveBow"]
+    }]
+  });
+
+  assert.equal(localized.units[0].displayName, "远古巨龙");
+  assert.match(localized.units[0].iconUrl, /champions\/da_18_elderdragon\.png$/u);
+  assert.deepEqual(
+    localized.units[0].items.map((item) => item.displayName),
+    ["无尽之刃", "巨人杀手", "反曲之弓"]
+  );
+  assert.ok(localized.units[0].items.every((item) => item.iconUrl?.includes("/items/da_")));
+  assert.deepEqual(
+    localized.traits.map((trait) => trait.displayName),
+    ["翠神", "宝石骑士", "主宰"]
+  );
+});

@@ -84,6 +84,45 @@ test("match route expands only the selected match", async () => {
   assert.equal(calls[0].input.matchId, "PBE1_123");
 });
 
+test("PBE routes return localized match entities and image URLs", async () => {
+  const rawMatch = {
+    matchId: "PBE1_123",
+    traits: [{ id: "DA_18_Greenfather" }],
+    units: [{
+      characterId: "DA_18_ElderDragon",
+      starLevel: 2,
+      items: ["DA_InfinityEdge"]
+    }]
+  };
+  const router = createPlayerMatchApiRouter({
+    client: {
+      async callTool(name) {
+        return name === "get_match"
+          ? { match: rawMatch, provenance: { cacheStatus: "miss" } }
+          : { matches: [rawMatch], provenance: { cacheStatus: "miss" } };
+      }
+    }
+  });
+
+  const listResponse = responseCapture();
+  await router(
+    { method: "GET" },
+    listResponse,
+    new URL("http://localhost/api/player-matches/players/Flancy%23PBE2?limit=20")
+  );
+  assert.equal(listResponse.body.matches[0].units[0].displayName, "远古巨龙");
+  assert.equal(listResponse.body.matches[0].traits[0].displayName, "翠神");
+  assert.equal(listResponse.body.matches[0].units[0].items[0].displayName, "无尽之刃");
+
+  const detailResponse = responseCapture();
+  await router(
+    { method: "GET" },
+    detailResponse,
+    new URL("http://localhost/api/player-matches/players/Flancy%23PBE2/matches/PBE1_123")
+  );
+  assert.match(detailResponse.body.match.units[0].iconUrl, /^https:\/\//u);
+});
+
 test("PBE teaching keeps MetaTFT provenance and missing-field evidence", async () => {
   const router = createPlayerMatchApiRouter({
     client: {

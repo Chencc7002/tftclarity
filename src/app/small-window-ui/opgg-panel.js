@@ -946,9 +946,11 @@ function directPlayerQuery(extra = {}) {
 function directUnitBoardHtml(units) {
   return unitBoardHtml((units ?? []).map((unit) => ({
     characterId: unit.characterId,
-    displayName: unit.characterId,
+    displayName: unit.displayName ?? unit.characterId,
     tier: unit.starLevel,
-    itemNames: unit.items ?? []
+    iconUrl: unit.iconUrl,
+    fallbackIconUrl: unit.fallbackIconUrl,
+    items: unit.items ?? []
   })));
 }
 
@@ -968,7 +970,7 @@ async function renderDirectPlayer() {
           ${directUnitBoardHtml(match.units)}
         </summary>
         <div class="opgg-direct-match-expanded">
-          <div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.id ?? "未知羁绊")}</span>`).join("") || '<span class="opgg-badge opgg-badge-muted">无羁绊数据</span>'}</div>
+          <div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.id ?? "未知羁绊")}</span>`).join("") || '<span class="opgg-badge opgg-badge-muted">无羁绊数据</span>'}</div>
           <div class="opgg-match-sub">第 ${match.lastRound ?? "-"} 回合 · ${match.durationSeconds ?? "-"} 秒 · 缺失字段 ${match.missingFields?.length ?? 0}</div>
           <div class="opgg-toolbar"><button type="button" class="opgg-primary-button" data-opgg-action="direct-match" data-match="${esc(match.matchId)}">展开完整单局</button><button type="button" class="opgg-ai-button opgg-ai-button-compact" data-opgg-action="direct-teaching" data-match="${esc(match.matchId)}"><span class="opgg-ai-icon">✦</span><span><strong>复盘此局</strong></span></button></div>
         </div>
@@ -977,7 +979,7 @@ async function renderDirectPlayer() {
       `${directPlayerKey()} · S18 PBE 战绩`,
       `${backLink("返回个人复盘", "personal")}
        <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(directPlayerKey())}</h3><p class="opgg-page-sub">S18 PBE · MetaTFT · 返回 ${data.returnedCount}/${data.availableCount} 场</p></div><span class="opgg-badge opgg-badge-warn">测试服数据</span></div>
-       <div class="opgg-notice">数据来源 MetaTFT public profile；仅展示终局状态，不含逐回合经济、搜牌和站位。${esc((data.warnings ?? []).join("；"))}</div>
+       <div class="opgg-notice">数据来源 MetaTFT public profile；数据时间 ${fmtDate(data.provenance?.sourceFetchedAt)}，${data.provenance?.cacheStatus === "hit" ? "当前为 2 分钟内缓存" : "本次已向上游刷新"}。仅展示终局状态，不含逐回合经济、搜牌和站位。${esc((data.warnings ?? []).join("；"))}</div>
        <div class="opgg-toolbar" style="margin-top:10px"><button type="button" class="opgg-ai-button" data-opgg-action="direct-teaching"><span class="opgg-ai-icon">✦</span><span><strong>AI 智能复盘</strong><small>基于最近 20 场终局证据</small></span></button></div>
        <div class="opgg-section-title">最近对局 <small>点击卡片可展开摘要，再按需读取单局详情</small></div>
        <div class="opgg-player-match-list">${cards || '<div class="opgg-empty">该玩家当前没有可用的 S18 PBE 对局</div>'}</div>`,
@@ -994,16 +996,29 @@ async function renderDirectMatch() {
   try {
     const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}/matches/${encodeURIComponent(state.matchId)}?${directPlayerQuery()}`);
     const match = data.match;
-    const units = (match.units ?? []).map((unit) => `
-      <div class="opgg-unit-card"><div class="opgg-unit-card-head"><div class="opgg-image-fallback opgg-unit-card-image">${esc(String(unit.characterId ?? "?").slice(0, 1))}</div><div><div class="opgg-unit-name">${esc(unit.characterId ?? "未知棋子")}</div><div class="opgg-unit-meta">${"★".repeat(Math.max(1, unit.starLevel ?? 1))}</div></div></div><div class="opgg-unit-items">${(unit.items ?? []).map((item) => `<span class="opgg-item-visual"><span>${esc(item)}</span></span>`).join("") || '<span class="opgg-unit-no-items">无装备</span>'}</div></div>`).join("");
+    const units = (match.units ?? []).map((unit) => {
+      const name = unit.displayName ?? unit.characterId ?? "未知棋子";
+      const items = normalizedItems(unit).map((item) => `
+        <span class="opgg-item-visual" title="${esc(item.displayName ?? item.apiName)}">
+          ${imageHtml(item.iconUrl, item.displayName ?? item.apiName, "opgg-item-icon opgg-item-icon-large")}
+          <span>${esc(item.displayName ?? item.apiName)}</span>
+        </span>`).join("");
+      return `<div class="opgg-unit-card">
+        <div class="opgg-unit-card-head">
+          ${imageHtml(unit.iconUrl, name, "opgg-unit-card-image", unit.fallbackIconUrl)}
+          <div><div class="opgg-unit-name">${esc(name)}</div><div class="opgg-unit-meta">${"★".repeat(Math.max(1, unit.starLevel ?? 1))}</div></div>
+        </div>
+        <div class="opgg-unit-items">${items || '<span class="opgg-unit-no-items">无装备</span>'}</div>
+      </div>`;
+    }).join("");
     setResult(
       "S18 PBE 单局详情",
       `${backLink("返回对局列表", "direct-player")}
        <div class="opgg-page-head"><div><h3 class="opgg-page-title">第 ${match.placement ?? "?"} 名 · Lv${match.level ?? "-"}</h3><p class="opgg-page-sub">${esc(match.matchId)} · S18 PBE · MetaTFT</p></div><span class="opgg-badge opgg-badge-warn">终局数据</span></div>
        <div class="opgg-chips"><div class="opgg-chip"><b>淘汰回合</b><span>${match.lastRound ?? "-"}</span></div><div class="opgg-chip"><b>淘汰玩家</b><span>${match.playersEliminated ?? "-"}</span></div><div class="opgg-chip"><b>对玩家伤害</b><span>${match.totalDamageToPlayers ?? "-"}</span></div><div class="opgg-chip"><b>参与者</b><span>${match.participantCount ?? "-"}</span></div></div>
        <div class="opgg-section-title">终局棋子与装备</div><div class="opgg-units-grid">${units || '<div class="opgg-empty">无棋子数据</div>'}</div>
-       <div class="opgg-section-title">羁绊</div><div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.id ?? "未知羁绊")}</span>`).join("")}</div>
-       <div class="opgg-notice">来源：${esc(data.provenance?.provider)} / ${esc(data.provenance?.environment)} / ${esc(data.provenance?.season)}。缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}</div>`,
+       <div class="opgg-section-title">羁绊</div><div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.id ?? "未知羁绊")}</span>`).join("")}</div>
+       <div class="opgg-notice">来源：${esc(data.provenance?.provider)} / ${esc(data.provenance?.environment)} / ${esc(data.provenance?.season)}。数据时间：${fmtDate(data.provenance?.sourceFetchedAt)}（${data.provenance?.cacheStatus === "hit" ? "10 分钟内详情缓存" : "本次实时读取"}）。缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}</div>`,
       data
     );
   } catch (error) {

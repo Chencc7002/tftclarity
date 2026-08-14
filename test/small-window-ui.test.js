@@ -19,6 +19,16 @@ const legalCss = ui("legal.css");
 const opggPanel = ui("opgg-panel.js");
 const opggStyles = ui("opgg-panel.css");
 
+test("direct MetaTFT match views render localized entities, assets, and freshness", () => {
+  assert.match(opggPanel, /displayName: unit\.displayName \?\? unit\.characterId/);
+  assert.match(opggPanel, /iconUrl: unit\.iconUrl/);
+  assert.match(opggPanel, /imageHtml\(unit\.iconUrl, name, "opgg-unit-card-image", unit\.fallbackIconUrl\)/);
+  assert.match(opggPanel, /item\.displayName \?\? item\.apiName/);
+  assert.match(opggPanel, /trait\.displayName \?\? trait\.id/);
+  assert.match(opggPanel, /data\.provenance\?\.sourceFetchedAt/);
+  assert.doesNotMatch(opggPanel, /String\(unit\.characterId \?\? "\?"\)\.slice\(0, 1\)/);
+});
+
 test("desktop UI exposes the responsive AppShell structure", () => {
   assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
   assert.match(indexHtml, /<meta name="description" content="tftclarity 是面向云顶之弈的对话式数据助手/);
