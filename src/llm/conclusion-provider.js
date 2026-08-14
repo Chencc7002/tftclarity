@@ -96,6 +96,12 @@ function normalizeMode(value = "off") {
   throw new Error(`Unsupported conclusion mode: ${value}`);
 }
 
+function normalizeGroundingMode(value = "observe") {
+  const mode = String(value ?? "observe").trim().toLowerCase();
+  if (mode === "observe" || mode === "strict") return mode;
+  throw new Error(`Unsupported conclusion grounding mode: ${value}`);
+}
+
 function normalizeProvider(value = "off") {
   const provider = String(value ?? "off").trim().toLowerCase();
   if (["off", "none", "disabled", "false"].includes(provider)) return "off";
@@ -127,6 +133,9 @@ export function resolveConclusionProviderConfig(options = {}, env = process.env)
   return {
     enabled: mode !== "off" && provider !== "off" && missing.length === 0,
     mode,
+    groundingMode: normalizeGroundingMode(
+      options.groundingMode ?? env.TFT_AGENT_CONCLUSION_GROUNDING_MODE ?? "observe"
+    ),
     provider,
     endpoint,
     model: model ? String(model) : null,

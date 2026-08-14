@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
@@ -47,6 +48,8 @@ import {
 } from "../core/display-locale.js";
 import {
   ENTITY_DISPLAY_VERSION,
+  S18_PBE_TRAIT_DISPLAY_OVERRIDES,
+  S18_PBE_UNIT_DISPLAY_OVERRIDES,
   traitDisplayOverrideByApiName,
   unitDisplayOverrideByApiName
 } from "../data/entity-display-overrides.js";
@@ -747,6 +750,7 @@ export function resolveSmallWindowConclusionConfig(options = {}, env = process.e
     maxOutputTokens: options.conclusionMaxOutputTokens ?? options.conclusionGeneratorConfig?.maxOutputTokens,
     thinkingMode: options.conclusionThinkingMode ?? options.conclusionGeneratorConfig?.thinkingMode,
     mode: options.conclusionMode ?? options.conclusionGeneratorConfig?.mode,
+    groundingMode: options.conclusionGroundingMode ?? options.conclusionGeneratorConfig?.groundingMode,
     allowUnauthenticated: options.conclusionAllowUnauthenticated ?? options.conclusionGeneratorConfig?.allowUnauthenticated,
     onEvent: options.conclusionEvent ?? options.conclusionGeneratorConfig?.onEvent
   }, env);
@@ -759,6 +763,7 @@ function createSmallWindowConclusionGenerator(options = {}, env = process.env) {
       conclusionGeneratorConfig: {
         enabled: true,
         mode: "on",
+        groundingMode: "observe",
         provider: "injected",
         model: options.conclusionModel ?? options.conclusionProvider.model ?? "injected-model",
         promptVersion: "generate-conclusion.v1",
@@ -996,6 +1001,7 @@ function summarizeConclusionConfig(config = {}) {
     enabled: Boolean(config.enabled),
     provider: String(config.provider ?? "off"),
     mode: String(config.mode ?? "off"),
+    groundingMode: String(config.groundingMode ?? "strict"),
     endpointConfigured: Boolean(config.endpoint),
     apiKeyConfigured: Boolean(config.apiKey)
   };
@@ -3118,6 +3124,7 @@ export function createSmallWindowRuntime(options = {}) {
     ? {
       enabled: true,
       mode: "on",
+      groundingMode: "observe",
       provider: "injected",
       model: options.conclusionModel ?? options.conclusionProvider.model ?? "injected-model",
       promptVersion: "generate-conclusion.v1",
@@ -5156,12 +5163,13 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       // Streaming progress is observational and cannot change the request result.
     }
   };
-  let llmUseReserved = false;
-  const reserveLlmUseForRequest = async () => {
-    if (llmUseReserved) return;
-    await context.accessService.reserveLlmUse(context.visitor);
-    llmUseReserved = true;
-  };
+  const reserveLlmUseForRequest = createTransportRetryQuotaReservation({
+    body,
+    runtime,
+    accessService: context.accessService,
+    visitor: context.visitor,
+    signal: context.signal
+  });
   const requestRuntime = context.accessService?.config?.enabled
     ? {
       ...runtime,
@@ -6579,11 +6587,36 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     resourcesPromise ??= loadRuntimeCatalog(runtime, preferences);
     return resourcesPromise;
   };
+  const currentEntityDetails = async (toolContext = {}) => {
+    toolContext.signal?.throwIfAborted?.();
+    const loaded = await resources();
+    const details = loaded.entityDetails ?? await loadOfficialEntityDetails(runtime, {
+      signal: toolContext.signal
+    });
+    toolContext.signal?.throwIfAborted?.();
+    return details;
+  };
   const handlers = {};
 
   if (typeof runtime.fetchOfficialEntityDetails === "function") {
     handlers.entity_catalog_query = async (input, toolContext = {}) => {
       toolContext.signal?.throwIfAborted?.();
+      const requestedNames = Array.isArray(input?.filters?.names)
+        ? input.filters.names.map(String).filter(Boolean)
+        : [];
+      if (requestedNames.length) {
+        const immediateCatalog = immediateReactEntityCatalog(runtime, preferences);
+        const immediateResult = queryEntityCatalog({
+          catalog: immediateCatalog.catalog,
+          details: immediateCatalog.entityDetails,
+          input,
+          updatedAt: immediateCatalog.entityDetails?.meta?.updatedAt
+        });
+        const fullyResolved = immediateResult.resolution?.requests?.every((entry) => (
+          entry.status === "resolved" || entry.status === "ambiguous"
+        ));
+        if (fullyResolved) return immediateResult;
+      }
       const loaded = await resources();
       const details = loaded.entityDetails ?? await loadOfficialEntityDetails(runtime, {
         signal: toolContext.signal
@@ -6619,6 +6652,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
       return queryCompositionRankings(input, loaded.catalog, runtime, {
         preferences,
         seasonContext,
+        details: loaded.entityDetails,
         signal: toolContext.signal,
         intent: "comp_trends"
       });
@@ -6923,9 +6957,11 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     strategyVideoSearchService: runtime.strategyVideoSearchService,
     seasonContextId: seasonContext.id,
     locale: request.locale,
-    loadOfficialEntityDetails: (toolContext = {}) => loadOfficialEntityDetails(runtime, {
-      signal: toolContext.signal
-    }),
+    // Keep ReAct detail tools on the same season-scoped source used to resolve
+    // the entity. PBE units may exist in CommunityDragon before the live
+    // official catalog, so bypassing the loaded runtime catalog creates a
+    // false `not_found` after a successful entity resolution.
+    loadOfficialEntityDetails: currentEntityDetails,
     loadOfficialItemDetails: (toolContext = {}) => {
       toolContext.signal?.throwIfAborted?.();
       return loadOfficialItemDetails(runtime);
@@ -6947,8 +6983,203 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
   });
 }
 
+function mergeDisplayOverrides(records = [], overrides = []) {
+  const byApiName = new Map(records.map((record) => [record.apiName, record]));
+  for (const override of overrides) {
+    const current = byApiName.get(override.apiName) ?? {};
+    byApiName.set(override.apiName, {
+      ...current,
+      ...override,
+      aliases: [...new Set([
+        ...(current.aliases ?? []),
+        ...(override.aliases ?? []),
+        override.zhName,
+        override.enName
+      ].filter(Boolean))],
+      current: true
+    });
+  }
+  return [...byApiName.values()];
+}
+
+function immediateReactEntityCatalog(runtime, preferences = {}) {
+  if (runtime.catalog) {
+    return {
+      catalog: runtime.catalog,
+      entityDetails: runtime.officialEntityDetails ?? null
+    };
+  }
+  const key = runtimeCatalogKey(preferences);
+  const cached = runtime.catalogCache?.get?.(key);
+  if (cached?.catalog) return cached;
+  const base = createCatalog({ patch: preferences.patch ?? "current" });
+  return {
+    catalog: createCatalog({
+      patch: preferences.patch ?? "current",
+      units: mergeDisplayOverrides(base.units, S18_PBE_UNIT_DISPLAY_OVERRIDES),
+      traits: mergeDisplayOverrides(base.traits, S18_PBE_TRAIT_DISPLAY_OVERRIDES),
+      items: base.items
+    }),
+    entityDetails: runtime.officialEntityDetails ?? null
+  };
+}
+
+function broadUnitPlayGuidance(request, runtime) {
+  const input = String(request.input ?? "").trim();
+  const broadPlayPattern = /(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how\s+(?:do\s+i\s+)?play)/iu;
+  if (!broadPlayPattern.test(input)) return null;
+  if (/(?:装备|出装|阵容|搭配|攻略|视频|技能|羁绊|站位|运营|强化|海克斯|数据|胜率|item|build|comp|lineup|video|guide|skill|ability)/iu.test(input)) {
+    return null;
+  }
+  const requestedName = input
+    .replace(broadPlayPattern, "")
+    .replace(/(?:这个|这张|这个棋子|棋子|英雄|弈子)/gu, "")
+    .replace(/[\s？?！!。,.，]+/gu, "")
+    .trim();
+  if (!requestedName) return null;
+  const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  const immediate = immediateReactEntityCatalog(runtime, preferences);
+  const resolved = queryEntityCatalog({
+    catalog: immediate.catalog,
+    details: immediate.entityDetails,
+    input: {
+      entityType: "unit",
+      filters: { names: [requestedName] },
+      limit: 5
+    }
+  });
+  const resolution = resolved.resolution?.requests?.[0];
+  if (resolution?.status !== "resolved" || resolution.candidates.length !== 1) return null;
+  const candidate = resolution.candidates[0];
+  const displayName = candidate.name || requestedName;
+  const english = String(request.locale ?? "").toLowerCase().startsWith("en");
+  const prompt = english
+    ? `You can also continue with ${displayName} compositions or video guides.`
+    : `还想继续了解${displayName}？可以查看阵容搭配或视频攻略。`;
+  const suggestions = english
+    ? [`${displayName} compositions`, `${displayName} video guides`]
+    : [`${displayName}阵容搭配`, `${displayName}视频攻略`];
+  return {
+    prompt,
+    suggestions,
+    initialQuery: english ? `${displayName} recommended items` : `${displayName}推荐出装`,
+    entity: {
+      entityType: "unit",
+      apiName: candidate.apiName,
+      name: displayName,
+      matchedAlias: candidate.matchedAlias
+    }
+  };
+}
+
+function contextualUnitGuidance(request, runtime, playGuidance = null) {
+  const turnText = [
+    ...(request.messages ?? []).map((message) => message.content),
+    request.input
+  ].filter(Boolean).join("\n");
+  const compactTurnText = turnText.replace(/\s+/gu, "").toLowerCase();
+  let entity = playGuidance?.entity ?? null;
+  if (!entity) {
+    const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
+    const preferences = entityCatalogPreferences(runtime, seasonContext);
+    const immediate = immediateReactEntityCatalog(runtime, preferences);
+    const matches = immediate.catalog.units.flatMap((unit) => {
+      const aliases = [...new Set([
+        unit.zhName,
+        unit.enName,
+        unit.name,
+        ...(unit.aliases ?? [])
+      ].filter(Boolean))];
+      return aliases
+        .map((alias) => ({ unit, alias: String(alias).trim() }))
+        .filter(({ alias }) => alias.length >= 2 && compactTurnText.includes(alias.replace(/\s+/gu, "").toLowerCase()));
+    }).sort((left, right) => right.alias.length - left.alias.length);
+    const match = matches[0];
+    if (match) {
+      entity = {
+        entityType: "unit",
+        apiName: match.unit.apiName,
+        name: match.unit.zhName || match.unit.enName || match.alias,
+        matchedAlias: match.alias
+      };
+    }
+  }
+  if (!entity) return null;
+
+  const english = String(request.locale ?? "").toLowerCase().startsWith("en");
+  const covered = {
+    equipment: Boolean(playGuidance) || /(?:装备|出装|神装|推荐装|item|build)/iu.test(turnText),
+    composition: /(?:阵容|搭配|站位|羁绊|运营|海克斯|强化符文|comp|lineup|position|augment)/iu.test(turnText),
+    video: /(?:视频|教学视频|视频攻略|bilibili|guide\s*video|video\s*guide)/iu.test(turnText)
+  };
+  const actions = [];
+  if (!covered.equipment) {
+    actions.push({
+      id: "continue_with_equipment",
+      label: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
+      query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`
+    });
+  }
+  if (!covered.composition) {
+    actions.push({
+      id: "continue_with_compositions",
+      label: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`,
+      query: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`
+    });
+  }
+  if (!covered.video) {
+    actions.push({
+      id: "continue_with_video_guides",
+      label: english ? `${entity.name} video guides` : `${entity.name}视频攻略`,
+      query: english ? `${entity.name} video guides` : `${entity.name}视频攻略`
+    });
+  }
+  if (!actions.length) return null;
+
+  let prompt;
+  if (covered.equipment && covered.composition && !covered.video) {
+    prompt = english
+      ? `You have checked ${entity.name}'s items and compositions. Would you like a video guide next?`
+      : `已经看过${entity.name}的装备和阵容了，要不要继续查看视频攻略？`;
+  } else if (covered.equipment && !covered.composition) {
+    prompt = english
+      ? `You have checked ${entity.name}'s items. You can continue with compositions or video guides.`
+      : `已经看过${entity.name}的出装，还可以继续查看阵容搭配或视频攻略。`;
+  } else if (covered.composition && !covered.equipment) {
+    prompt = english
+      ? `You have checked ${entity.name}'s compositions. You can continue with items or video guides.`
+      : `已经看过${entity.name}的阵容，还可以补充出装数据或视频攻略。`;
+  } else {
+    prompt = english
+      ? `You can continue exploring ${entity.name} based on this conversation.`
+      : `根据当前对话，还可以继续补充${entity.name}的相关信息。`;
+  }
+  return {
+    reason: "contextual_unit_information_gap",
+    prompt,
+    actions: actions.slice(0, 2),
+    entity,
+    covered
+  };
+}
+
 export async function handleReactChatRequest(body, runtime, context = {}) {
-  const request = normalizeReactChatRequest(body);
+  const normalizedRequest = normalizeReactChatRequest(body);
+  const playGuidance = broadUnitPlayGuidance(normalizedRequest, runtime);
+  const request = playGuidance
+    ? {
+      ...normalizedRequest,
+      input: playGuidance.initialQuery,
+      messages: [
+        ...(normalizedRequest.messages ?? []),
+        {
+          role: "user",
+          content: `当前首答范围仅为“${playGuidance.initialQuery}”。本轮只完成当前版本的出装数据查询，工具范围限制为 entity_catalog_query、unit_builds 和必要的 item_details_batch。`
+        }
+      ]
+    }
+    : normalizedRequest;
   if (typeof runtime.reactDecisionProvider !== "function") {
     return {
       statusCode: 503,
@@ -7004,12 +7235,13 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     : Object.keys(injectedHandlers).length
       ? createTftToolHandlers({ registry: runtime.toolRegistry, handlers: injectedHandlers })
       : await createDefaultReactToolHandlerBundle({ request, runtime, context });
-  let llmUseReserved = false;
-  const reserveLlmUseForRequest = async () => {
-    if (llmUseReserved || !context.accessService?.config?.enabled || !context.visitor) return;
-    await context.accessService.reserveLlmUse(context.visitor);
-    llmUseReserved = true;
-  };
+  const reserveLlmUseForRequest = createTransportRetryQuotaReservation({
+    body,
+    runtime,
+    accessService: context.accessService,
+    visitor: context.visitor,
+    signal: context.signal
+  });
   const decisionProvider = quotaWrappedCallable(
     runtime.reactDecisionProvider,
     context.accessService,
@@ -7024,13 +7256,21 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       return null;
     }
   };
+  const availableToolNames = handlerBundle.availableToolNames
+    ?? Object.keys(handlerBundle.handlers ?? handlerBundle);
+  const scopedToolNames = playGuidance
+    ? availableToolNames.filter((name) => [
+      "entity_catalog_query",
+      "unit_builds",
+      "item_details_batch"
+    ].includes(name))
+    : availableToolNames;
   const agent = new ChatAgent({
     registry: runtime.toolRegistry,
     toolExecutor: runtime.toolExecutor,
     decisionProvider,
     handlers: handlerBundle.handlers ?? handlerBundle,
-    availableToolNames: handlerBundle.availableToolNames
-      ?? Object.keys(handlerBundle.handlers ?? handlerBundle),
+    availableToolNames: scopedToolNames,
     agentRuntime: runtime.agentRuntime,
     budget: runtime.reactChatBudget,
     groundingMode: runtime.reactGroundingMode
@@ -7047,6 +7287,26 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));
+    if (playGuidance) {
+      const unitBuildEvidence = result.evidence?.findLast?.((entry) => (
+        entry.toolName === "unit_builds"
+        && Array.isArray(entry.value?.cards)
+        && entry.value.cards.length > 0
+      ));
+      if (unitBuildEvidence) {
+        const value = unitBuildEvidence.value;
+        const unitName = value.unit?.name ?? value.query?.unitName ?? playGuidance.entity.name;
+        const cards = value.cards.slice(0, 3);
+        result.answer = `${unitName}当前可参考的出装：${cards.map((card) => {
+          const items = (card.items ?? []).map((item) => item.name ?? item.apiName).filter(Boolean).join("、");
+          const stats = card.stats ?? {};
+          return `${card.title ?? "方案"}：${items || "装备数据"}（场次 ${stats.games ?? "-"}，平均名次 ${stats.avg ?? "-"}，前四率 ${stats.top4 ?? "-"}，登顶率 ${stats.win ?? "-"}）`;
+        }).join("；")}。`;
+        result.answerOrigin = "system_equipment_summary";
+        result.evidenceIds = [unitBuildEvidence.evidenceId];
+        if (result.modelConclusion) result.modelConclusion.status = "superseded_by_scoped_summary";
+      }
+    }
     if (runtime.conversationBridgeStore) {
       try {
         if (result.status === "clarification_required") {
@@ -7074,10 +7334,12 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     }
     const access = await publicAccessStatus();
+    const contextualGuidance = contextualUnitGuidance(normalizedRequest, runtime, playGuidance);
     const payload = {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
       type: "react_chat_result",
       ...result,
+      ...(contextualGuidance ? { agentSuggestedActions: contextualGuidance } : {}),
       ...(bridgeContext ? {
         conversationBridge: {
           relation: bridgeContext.relation,

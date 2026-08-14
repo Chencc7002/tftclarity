@@ -700,6 +700,7 @@ function agentTraceText(event, locale) {
   const tool = agentToolLabel(data.tool, locale);
   const iteration = Number.isFinite(Number(data.iteration)) ? Number(data.iteration) : null;
   if (phase === "request.accepted") return zh ? "已接收请求" : "Request accepted";
+  if (phase === "transport.retrying") return zh ? "连接中断，正在自动恢复本次查询" : "Connection interrupted; automatically resuming this request";
   if (phase === "run_started") return zh ? "Agent 已启动，正在判断下一步" : "Agent started and is choosing the next step";
   if (phase === "understanding.started") return zh ? "正在解析问题与上下文" : "Parsing the question and context";
   if (phase === "understanding.resolved") return zh ? "问题与上下文已解析" : "Question and context resolved";

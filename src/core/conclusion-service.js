@@ -67,7 +67,52 @@ function envelope(status, options = {}) {
     ...(options.error ? { error: String(options.error) } : {}),
     ...(options.supportingEvidence?.length ? { supportingEvidence: options.supportingEvidence } : {}),
     ...(options.validationFeedback ? { validationFeedback: options.validationFeedback } : {}),
+    ...(options.validationErrors?.length ? { validationErrors: options.validationErrors } : {}),
+    ...(options.groundingMode ? { groundingMode: options.groundingMode } : {}),
     ...(options.diagnostics ? { diagnostics: options.diagnostics } : {})
+  };
+}
+
+function observedText(value) {
+  return typeof value === "string" ? value.trim() : "";
+}
+
+function observedStringList(value, limit = 12) {
+  return Array.isArray(value)
+    ? value.map(observedText).filter(Boolean).slice(0, limit)
+    : [];
+}
+
+function observedEntries(value, limit) {
+  if (!Array.isArray(value)) return [];
+  return value.slice(0, limit).map((entry) => ({
+    dimension: observedText(entry?.dimension),
+    evidenceIds: observedStringList(entry?.evidenceIds, 3),
+    text: observedText(entry?.text)
+  })).filter((entry) => entry.text);
+}
+
+function observedConclusionContent(raw, evidence) {
+  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return null;
+  const headline = observedText(raw.headline);
+  const summary = observedText(raw.summary);
+  if (!headline && !summary) return null;
+  const contract = evidence?.questionContract ?? null;
+  return {
+    schemaVersion: observedText(raw.schemaVersion) || (contract ? "llm_conclusion.v2" : "llm_conclusion.v1"),
+    ...(contract ? {
+      contractId: observedText(raw.contractId) || contract.contractId,
+      addressedDimensions: observedStringList(raw.addressedDimensions),
+      missingDimensions: observedStringList(raw.missingDimensions),
+      missingEvidence: observedStringList(raw.missingEvidence)
+    } : {}),
+    status: raw.status === "insufficient_evidence" ? "insufficient_evidence" : "ok",
+    headline,
+    summary,
+    reasons: observedEntries(raw.reasons, 8),
+    alternatives: observedEntries(raw.alternatives, 6),
+    nextAction: observedText(raw.nextAction),
+    riskNotice: observedText(raw.riskNotice) || null
   };
 }
 
@@ -266,6 +311,9 @@ export async function generateEvidenceBackedConclusion({
 } = {}) {
   const startedAt = Date.now();
   const model = config.model ?? provider?.model ?? null;
+  const groundingMode = String(config.groundingMode ?? "strict").trim().toLowerCase() === "observe"
+    ? "observe"
+    : "strict";
   if (!requestEnabled) return envelope("disabled", { model });
   if (!config.enabled || !provider) {
     const value = envelope("disabled", { reason: "provider_unavailable", model });
@@ -499,6 +547,40 @@ export async function generateEvidenceBackedConclusion({
       model
     });
     if (correctionPolicy === "reject" || version >= correctionLimit) break;
+  }
+
+  const observedContent = groundingMode === "observe"
+    ? observedConclusionContent(previousOutput, evidence)
+    : null;
+  if (observedContent) {
+    const validationErrors = (lastValidation?.issues ?? [])
+      .slice(0, maxValidationErrors)
+      .map((issue) => String(issue?.message ?? issue));
+    const value = envelope("observed", {
+      content: observedContent,
+      reason: "validation_observed",
+      model,
+      latencyMs: Date.now() - startedAt,
+      attempts,
+      corrections,
+      transportRetries,
+      supportingEvidence,
+      validationFeedback,
+      validationErrors,
+      groundingMode,
+      diagnostics
+    });
+    emit(config, {
+      type: "conclusion_observed",
+      status: value.status,
+      reason: value.reason,
+      validationErrors,
+      attempts,
+      corrections,
+      transportRetries,
+      model
+    });
+    return value;
   }
 
   const value = envelope("fallback", {

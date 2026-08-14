@@ -388,6 +388,14 @@ test("conclusion configuration and runtime status never expose endpoint or API k
   assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.endpointConfigured, true);
   assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.apiKeyConfigured, true);
   assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.thinkingMode, "disabled");
+  assert.equal(getSmallWindowRuntimeStatus(runtime).conclusionGenerator.groundingMode, "observe");
+
+  const injectedRuntime = createSmallWindowRuntime({
+    conclusionProvider: async () => ({}),
+    metaTFTClient: {},
+    compsClient: {}
+  });
+  assert.equal(getSmallWindowRuntimeStatus(injectedRuntime).conclusionGenerator.groundingMode, "observe");
 });
 
 test("explanation feedback uses an independent feedback type", async () => {

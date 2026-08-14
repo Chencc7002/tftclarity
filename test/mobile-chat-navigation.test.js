@@ -56,7 +56,7 @@ test("ReAct final free text is visibly labeled as the model conclusion in chat",
   const css = readUi("styles.css");
   const i18n = readUi("i18n.js");
 
-  assert.match(app, /function reactModelConclusionHtml\(data, summary\)/u);
+  assert.match(app, /function reactModelConclusionHtml\(data, summary, responseId = ""\)/u);
   assert.match(app, /typeof data\?\.reactAnswer === "string"/u);
   assert.match(app, /data-chat-model-conclusion/u);
   assert.match(app, /data\?\.answerOrigin === "system_evidence_fallback"/u);

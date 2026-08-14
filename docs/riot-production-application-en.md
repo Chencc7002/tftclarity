@@ -5,13 +5,13 @@
 > Public website: <https://tftclarity.cn/>  
 > Privacy Policy: <https://tftclarity.cn/privacy>  
 > Terms of Service: <https://tftclarity.cn/terms>  
-> Last reviewed: July 20, 2026
+> Last reviewed: August 13, 2026
 
 ## 1. Short product description
 
-tftclarity is a public, non-commercial Teamfight Tactics analytics and decision-support tool for Chinese-speaking players. It lets users ask natural-language questions using Chinese champion, item, trait, and composition names—including common nicknames—and turns those questions into deterministic structured queries.
+tftclarity is a public, non-commercial Teamfight Tactics analytics, match-review, and learning tool for Chinese-speaking players. It lets users ask natural-language questions using Chinese champion, item, trait, and composition names—including common nicknames—and turns those questions into deterministic structured queries. Users can also submit a PBE or NA Riot ID to inspect available recent matches and final boards, or organize selected players into small Player Pools for descriptive analysis and comparison.
 
-The product displays aggregated composition and champion-item statistics, sample sizes, multiple candidate choices, and explicit low-sample or stale-data warnings. Optional AI features explain validated evidence but cannot create, replace, or modify the underlying statistics.
+The product displays aggregated composition and champion-item statistics, recent-match evidence, Player Pool sample statistics, multiple candidate choices, and explicit low-sample or stale-data warnings. Optional AI features explain validated evidence but cannot create, replace, or modify the underlying statistics.
 
 tftclarity is intended for pre-game reference, post-game learning, and long-term patch understanding. It does not read the current game state, provide dynamic real-time instructions, scout opponents, identify hidden players, or create an unofficial MMR/ELO system.
 
@@ -31,7 +31,7 @@ tftclarity resolves the named entities and aliases, applies transparent filters,
 
 The core ranking and filtering path is deterministic. An LLM may be used for controlled natural-language parsing or to write a short explanation from a validated evidence package. LLM output is checked against the structured result and cannot change the numerical evidence.
 
-The current working prototype uses third-party aggregated MetaTFT statistics to demonstrate the complete product experience. Production API access will be used to build first-party aggregates from Riot-supported TFT match and league data and to migrate the product away from its current dependency.
+The current working product uses third-party MetaTFT data, OP.GG-backed player lookup, and official/public static TFT sources. Production API access will be used to replace third-party player and match retrieval where Riot-supported routes are available, build first-party aggregates from Riot match and league data, and implement Riot Sign On where Riot requires account authorization.
 
 ## 3. Player value and differentiation
 
@@ -41,6 +41,8 @@ The current working prototype uses third-party aggregated MetaTFT statistics to 
 - Visible samples, filters, data source, freshness, and risk warnings.
 - Deterministic statistics with optional evidence-grounded AI explanation.
 - Follow-up questions that preserve short-lived anonymous context.
+- Recent-match and final-board review from a Riot ID supplied by the visitor.
+- User-selected Player Pools with visible coverage, sample gates, share-code copying, and descriptive comparison.
 - A focused learning workflow rather than a live-game automation or scouting tool.
 
 ## 4. Intended users
@@ -52,8 +54,10 @@ The primary audience is Chinese-speaking Teamfight Tactics players who want to:
 - understand patch-level metagame trends;
 - compare champion item choices;
 - explore popular compositions without learning API names or English terminology.
+- review available recent matches and final boards;
+- organize a small, explicitly selected player sample and compare observed composition preferences.
 
-The product is public and can be used without an account. It does not currently use Riot Sign On.
+The product is public and can be used without a tftclarity account. It does not currently use Riot Sign On. A visitor may enter a Riot ID for themselves or another player; entering an ID does not prove account ownership. We are requesting Riot's review of this existing flow and RSO access for any flow Riot requires to be account-authorized.
 
 ## 5. Reviewer user flow
 
@@ -104,11 +108,33 @@ The product is public and can be used without an account. It does not currently 
 3. The settings panel contains the complete Riot disclaimer and links to Riot developer policy.
 4. Results identify the current data source and display freshness or cache warnings.
 
+### Flow F — Riot ID match review
+
+1. Open **Match history, Pools & review → Match visualization and review**.
+2. Enter a PBE or NA Riot game name and tag line.
+3. The backend resolves the requested player through the configured provider and returns up to 10–20 available recent matches.
+4. The user can expand a match to inspect placement, final units, items, traits, augments, and other provider-supported facts.
+5. Optional AI review receives only the structured evidence already retrieved and must not invent round-by-round economy, shop, positioning, or decision history that the provider did not return.
+
+**Player value:** supports post-game reflection using visible evidence rather than live-game prescriptions.
+
+### Flow G — Player Pools and comparison
+
+1. A visitor creates up to two Pools, each containing 1–15 Riot IDs, or copies a Pool member list with an eight-character share code.
+2. Each Pool displays match coverage, patch distribution, composition usage, average placement, Top 4 rate, win rate, and representative final boards for the selected sample.
+3. Two Pools can be compared only when the season, patch, player coverage, and match-count gates permit it.
+4. When the gates are not met, the product displays observations side by side and prohibits a stronger/weaker conclusion.
+
+**Player value:** lets a study group or analyst examine a bounded, user-selected sample without presenting it as server-wide strength, causation, or an unofficial rating.
+
 ## 6. Data sources: current and planned
 
-### Current working prototype
+### Current working product
 
 - Third-party aggregated MetaTFT statistics for composition and champion-item result demonstrations.
+- Third-party MetaTFT player-match retrieval for the current PBE recent-match flow.
+- OP.GG-backed player resolution and match retrieval for the current NA recent-match flow.
+- A server-side normalized fact store for Riot IDs, match summaries, final boards, Pool membership, coverage, and descriptive Pool statistics.
 - Official or public TFT static catalogs and assets for names, item details, and icons.
 - Local deterministic calculation, filtering, normalization, and validation.
 - Optional OpenAI-compatible provider for controlled parsing or evidence-grounded explanation.
@@ -117,14 +143,18 @@ The product is public and can be used without an account. It does not currently 
 
 - `tft-league-v1`: discover a permitted seed set of high-ranked players in supported regions.
 - `tft-match-v1`: retrieve match IDs and match details for offline aggregation.
+- `account-v1` and the applicable TFT account/profile endpoint: resolve submitted Riot IDs and support account-linked flows using the routes Riot approves for this product.
+- Riot Sign On: authenticate a player and restrict personal-history features to the authorized account if required by Riot's review.
 - Data Dragon/static TFT data: maintain versioned champion, item, trait, queue, and asset catalogs.
 
-Planned first-phase regions are **TW2, SG2, JP1, and KR**, subject to the final launch scope and Riot routing support. The product will not claim coverage of mainland China servers because the public Riot Developer API does not provide a mainland China platform route.
+The current third-party recent-match flows are limited to **PBE and NA**. The planned Riot-backed first phase is **NA1** plus supported Asian platforms such as **TW2, SG2, JP1, and KR**, subject to the endpoints, routing values, RSO scope, and launch regions Riot approves. The product will not claim coverage of mainland China servers because the public Riot Developer API does not provide a mainland China platform route.
 
 ## 7. Planned Riot aggregation architecture
 
 ```text
 Riot API
+→ submitted or RSO-authorized Riot account identity
+→ permitted personal match-history retrieval
 → permitted high-ranked player seeds
 → match ID collection
 → match detail collection
@@ -143,7 +173,7 @@ The Riot API key will be stored only in server-side environment variables or sec
 
 tftclarity:
 
-- provides static aggregate information available independently of a user’s current game state;
+- provides static aggregate information and post-game match facts that are independent of the current live game state;
 - is designed for pre-game preparation, post-game learning, and patch analysis;
 - presents multiple choices and preserves player decision-making;
 - does not inspect the League/TFT client or a live board;
@@ -153,9 +183,12 @@ tftclarity:
 - does not identify or analyze deliberately hidden players;
 - does not create an unofficial MMR or ELO;
 - does not support gambling or betting;
-- does not currently show stats for a specific player and therefore does not currently require RSO.
+- currently supports visitor-submitted Riot ID lookup and user-selected Player Pools through third-party providers;
+- does not treat a Riot ID submission as proof of account ownership;
+- requests Riot's review and RSO access so personal-history features can be restricted to the authenticated account wherever required;
+- will change, restrict, or remove non-owner player-history and Pool flows if Riot determines they are outside the approved use case.
 
-If account-linked personal history is added in the future, we will update the product registration, request the appropriate RSO access, obtain user authorization, and update the privacy disclosures before release.
+The product does not use player history for opponent scouting during a game, hidden-player identification, unofficial MMR/ELO, employment, credit, gambling, or other consequential profiling. Player Pools are bounded descriptive samples and are not server-wide rankings.
 
 ## 9. AI use and safeguards
 
@@ -169,10 +202,12 @@ The ranking, filtering, metrics, and eligibility rules are deterministic. AI out
 ## 10. Privacy and security summary
 
 - No product account is required.
-- No Riot account identifier, PUUID, or specific-player match history is currently requested.
+- Match-review and Player Pool features accept a Riot game name, tag line, and region. They process available player and recent-match facts.
+- PUUIDs returned by the current NA provider are stored only in encrypted form when a server-side encryption key is configured; otherwise they are not persisted.
+- Pool names, member Riot IDs, selected environment, ownership scope, optional share codes, and normalized match facts are stored server-side. A share code allows its recipient to copy the current member list into an independent Pool.
 - A signed anonymous `tft_visitor` cookie separates visitor scope and enforces public quotas.
 - Query snapshots are retained for up to 30 days for feedback integrity, quality investigation, and security.
-- Short-lived conversation context expires after approximately 30 minutes.
+- Structured records used for follow-up conversation context are retained for no longer than 7 days.
 - Optional feedback stores only the relevant query and normalized result context.
 - HTTPS, HTTP-only cookies, scoped identifiers, rate limits, server-side secrets, and access controls protect the service.
 - Privacy requests are handled at `tftclarity@outlook.com`.
@@ -189,15 +224,15 @@ tftclarity is an independent, non-commercial fan project and is not affiliated w
 
 ### What does your product do?
 
-tftclarity is a public TFT analytics and learning tool for Chinese-speaking players. It converts Chinese natural-language questions and community nicknames into deterministic queries for aggregate composition and champion-item statistics. It displays multiple choices, sample sizes, average placement, Top 4 rate, win rate, source freshness, and low-sample warnings. Optional AI features explain validated evidence but do not create or modify the statistics.
+tftclarity is a public TFT analytics, match-review, and learning tool for Chinese-speaking players. It converts Chinese natural-language questions and community nicknames into deterministic queries for composition and champion-item statistics. Visitors can also submit a PBE or NA Riot ID to inspect available recent matches and final boards, and organize selected players into small Player Pools with coverage and low-sample gates. Optional AI explains validated evidence but cannot create or modify the facts or statistics.
 
 ### How will you use the Riot API?
 
-We will use `tft-league-v1` to discover permitted high-ranked player seeds, `tft-match-v1` to retrieve match IDs and match details, and Data Dragon/static TFT data for versioned catalogs and assets. An offline server-side pipeline will rate-limit, retry, deduplicate, normalize, classify, and aggregate match data. Only aggregate, non-player-specific statistics will be exposed by the current product.
+We will use `tft-league-v1` for permitted ranked seeds, `tft-match-v1` for match IDs and match details, `account-v1` and the applicable TFT account/profile route for Riot ID resolution, and Data Dragon/static TFT data for versioned catalogs and assets. We also request RSO review for personal match-history access. The server-side pipeline will rate-limit, retry, deduplicate, normalize, classify, and aggregate match data. We will restrict personal-history flows to the authenticated account if Riot requires that boundary.
 
 ### What is your current data source?
 
-The working prototype currently uses third-party aggregated MetaTFT statistics to demonstrate the complete user experience. Production API access will be used to build first-party aggregates from Riot-supported TFT match and league data and to migrate the product away from its current dependency. Riot approval will not be treated as authorization to use an unrelated third-party dataset.
+The current working product uses third-party MetaTFT aggregate and PBE player-match data, OP.GG-backed NA player lookup and matches, and official/public static TFT sources. It stores normalized match facts for recent-match review and user-selected Player Pools. Production API access will be used to migrate supported account, match, league, and aggregate flows to Riot services. Riot approval will not be treated as authorization to use an unrelated third-party dataset.
 
 ### Does the product use real-time game data?
 
@@ -205,7 +240,7 @@ No. tftclarity does not read the current game state, inspect a live board, track
 
 ### Does the product require RSO?
 
-No, not for the current scope. The product does not display a specific player’s stats or match history and does not ask for a Riot account identifier. If account-linked personal history is added later, we will request the required RSO access and update the registration and privacy disclosures before launch.
+We request RSO review and access. The current product accepts a visitor-supplied Riot ID and displays available recent matches; it does not yet authenticate account ownership. We understand Riot's TFT policy identifies self-player statistics and personal match-history training tools as RSO use cases. We are prepared to restrict personal-history features to the authenticated account and to change or remove non-owner history and Pool flows if Riot requires that boundary. Please advise which current flows may remain public and which must be RSO-authorized.
 
 ### How is the API key protected?
 
@@ -222,6 +257,8 @@ Use these captions below the screenshots uploaded to the application:
 5. **Patch trend view** — “Patch-level aggregate trend information. Missing or insufficient history is labeled rather than inferred.”
 6. **Multi-turn refinement** — “A follow-up query that preserves short-lived context and shows the source of each applied condition.”
 7. **Legal and data transparency** — “The settings panel shows the full Riot disclaimer, policy links, runtime/data status, and public legal pages.”
+8. **Riot ID recent-match review** — “A visitor-supplied PBE or NA Riot ID resolved into available recent matches, expandable final-board evidence, and a post-game review boundary that does not invent unavailable round history.”
+9. **Player Pool dashboard and comparison** — “A bounded user-selected player sample with coverage, patch, match-count, composition usage, performance metrics, share-code behavior, and explicit descriptive-only gates.”
 
 ## 14. Reviewer test script
 
@@ -232,6 +269,8 @@ Use these captions below the screenshots uploaded to the application:
 5. Submit a follow-up item comparison while keeping the same champion context.
 6. Submit `当前版本热门阵容排行`.
 7. Open Settings and inspect the Riot disclaimer and legal links.
-8. Visit <https://tftclarity.cn/privacy> and <https://tftclarity.cn/terms>.
+8. Open **Match history, Pools & review**, enter a test PBE or NA Riot ID supplied in the review notes, and inspect an expandable recent match.
+9. Open the prepared review Pool, inspect its coverage and sample warnings, and—if two compatible Pools are prepared—open the comparison.
+10. Visit <https://tftclarity.cn/privacy> and <https://tftclarity.cn/terms>.
 
 The user interface is primarily Chinese because the target audience is Chinese-speaking TFT players. This document and the attached captions explain each reviewer step in English.

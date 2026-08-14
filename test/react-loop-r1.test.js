@@ -139,6 +139,7 @@ async function runCase(options = {}) {
   });
   const result = await loop.run({
     input: options.input ?? "test",
+    ...(Array.isArray(options.messages) ? { messages: options.messages } : {}),
     seasonContextId: options.seasonContextId ?? "set17-live"
   }, {
     ...context,
@@ -249,6 +250,36 @@ test("video search falls back deterministically when the decision provider is un
   assert.equal(result.status, "failed");
   assert.equal(result.terminationReason, "decision_provider_failed");
   assert.ok(result.warnings.includes("decision_provider_video_fallback"));
+});
+
+test("historical video messages never hijack a short current-turn follow-up", async () => {
+  let videoCalls = 0;
+  const provider = async () => { throw new Error("model unavailable"); };
+  const { result } = await runCase({
+    input: "上升的",
+    messages: [
+      { role: "user", content: "有视频攻略吗？" },
+      { role: "assistant", content: "找到了视频攻略。" }
+    ],
+    provider,
+    definitions: [definition("strategy_video_search", {
+      inputSchema: {
+        type: "object",
+        additionalProperties: false,
+        required: ["query"],
+        properties: { query: { type: "string" } }
+      }
+    })],
+    handlers: {
+      strategy_video_search: async () => {
+        videoCalls += 1;
+        return evidence([], { type: "strategy_video_search_results" });
+      }
+    }
+  });
+  assert.equal(videoCalls, 0);
+  assert.equal(result.terminationReason, "decision_provider_failed");
+  assert.ok(!result.warnings.includes("decision_provider_video_fallback"));
 });
 
 test("R1-03 statistical answers require evidence with updatedAt", async () => {
@@ -843,6 +874,70 @@ test("R1-09 a failed tool becomes an observation and a later tool can recover", 
   assert.equal(result.evidence.length, 1);
   assert.equal(trendCalls, 2);
   assert.equal(context.counters.retries, 1);
+});
+
+test("a failed fingerprint may be retried before the capability failure circuit opens", async () => {
+  let calls = 0;
+  const provider = queueProvider([
+    call("comps_rankings", { patch: "current" }),
+    call("comps_rankings", { patch: "current" }),
+    finish("第二次查询已返回可用证据。", ["ev-1"])
+  ]);
+  const { result } = await runCase({
+    provider,
+    handlers: {
+      comps_rankings: async () => {
+        calls += 1;
+        if (calls === 1) throw new Error("temporary timeout");
+        return evidence([{ comp: "A", games: 100 }]);
+      }
+    }
+  });
+  assert.equal(result.terminationReason, "completed");
+  assert.equal(calls, 2);
+});
+
+test("single-unit equipment evidence remains available when model prose is unrelated", async () => {
+  const provider = queueProvider([
+    call("unit_builds", { unit: "TFT18_Test" }),
+    finish("这是未经证据支持的视频结论。", ["ev-1"])
+  ]);
+  const { result } = await runCase({
+    provider,
+    handlers: {
+      unit_builds: async () => ({
+        type: "unit_build_rankings",
+        updatedAt: "2026-08-14T00:00:00.000Z",
+        unit: { apiName: "TFT18_Test", name: "测试棋子" },
+        cards: [{
+          title: "主流方案",
+          items: [{ name: "羊刀" }, { name: "法爆" }, { name: "科技枪" }],
+          stats: { games: 120, avg: 3.5, top4: "65%", win: "20%" }
+        }]
+      })
+    }
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.evidence[0].value.cards[0].items[0].name, "羊刀");
+});
+
+test("single-unit cards count as non-empty evidence without a results array", async () => {
+  const provider = queueProvider([
+    call("unit_builds", { unit: "TFT18_Test" }),
+    finish("测试棋子的主流方案已返回。", ["ev-1"])
+  ]);
+  const { result } = await runCase({
+    provider,
+    handlers: {
+      unit_builds: async () => ({
+        type: "unit_build_rankings",
+        updatedAt: "2026-08-14T00:00:00.000Z",
+        cards: [{ title: "主流方案", items: [{ name: "羊刀" }], stats: { games: 100 } }]
+      })
+    }
+  });
+  assert.equal(result.evidence.length, 1);
+  assert.equal(result.evidence[0].toolName, "unit_builds");
 });
 
 test("R1-10 unrecoverable evidence failure can finish with an explicit limitation", async () => {

@@ -1,6 +1,6 @@
 # Riot Production API 申请与数据架构评估
 
-> 更新日期：2026-07-20
+> 更新日期：2026-08-13
 >
 > 项目：tftclarity
 >
@@ -8,7 +8,7 @@
 
 ## 1. 结论摘要
 
-tftclarity 已经具备公开、可运行、可演示的产品原型，产品定位和主要用户流程也基本符合 Riot 对 TFT 第三方工具的方向要求。当前项目不是因为功能不足而无法申请，而是仍需补齐合规页面和 Riot 官方数据接入。
+tftclarity 已经具备公开、可运行、可演示的产品，当前范围不仅包括聚合阵容与装备统计，还包括用户输入 PBE/NA Riot ID 后的近期对局、终局棋盘、AI 复盘，以及玩家 Pool、分享码、数据看板与 Pool 对比。申请必须以这些现有能力为准，不能继续使用早期“无特定玩家数据、无需 RSO”的范围说明。
 
 现阶段建议目标为申请标准 **Production API Key**。Riot 的标准生产密钥初始限额为每个区域：
 
@@ -19,10 +19,10 @@ tftclarity 已经具备公开、可运行、可演示的产品原型，产品定
 
 截至本次评估，申请前最重要的工作是：
 
-1. 上线独立的 Privacy Policy 和 Terms of Service。
-2. 实现至少一条可演示的 Riot API 数据采集与聚合链路。
+1. 让 Privacy Policy、Terms of Service 和申请稿完整披露 Riot ID、近期对局、PUUID 处理、Pool、分享码和数据保留行为。
+2. 申请 Production Key，并主动请求 Riot 对现有个人历史/非本人公开历史/Pool 场景进行审核及启动 RSO 接入。
 3. 在提交申请后，按照 Riot 提供的验证字符串完成域名所有权验证。
-4. 明确首期支持区域及中国大陆服务器的数据边界。
+4. 明确 PBE/NA 现有来源、计划迁移区域及中国大陆服务器的数据边界。
 
 最终是否批准由 Riot Developer Relations 决定，本文只用于项目内部准备度评估。
 
@@ -71,18 +71,19 @@ tftclarity 面向中文 TFT 玩家，核心价值不是替代完整数据榜单�
 | --- | --- | --- |
 | 产品价值和差异化 | 中文俗称、自然语言查询、AI 数据总结、快速结论 | 已达标 |
 | 可运行原型 | 本地和公开 Web 版本均可运行 | 已达标 |
-| 用户流程 | 阵容、趋势、英雄装备、连续查询和返回导航完整 | 已达标 |
+| 用户流程 | 阵容、趋势、英雄装备、连续查询、Riot ID 近期对局、终局棋盘、复盘、Pool 与对比完整 | 已达标 |
 | 公开网站 | `https://tftclarity.cn/` 外网 GET 返回 HTTP 200 | 已达标 |
 | 自有正式域名和 HTTPS | 正式 `.cn` 域名、Caddy、HTTPS 和 HSTS 正常 | 已达标 |
 | Riot 法律声明 | 界面中已有 Riot 要求的英文声明 | 已达标 |
 | API Key 基础安全 | `.env` 未跟踪，服务端环境变量方案已存在 | 基本达标 |
-| 自动化测试 | 2026-07-20 执行 439 项：424 通过、15 跳过、0 失败 | 已达标 |
-| Privacy Policy | `https://tftclarity.cn/privacy` 公网 GET 返回 200，首页存在公开入口 | 已达标 |
-| Terms of Service | `https://tftclarity.cn/terms` 公网 GET 返回 200，首页存在公开入口 | 已达标 |
+| 自动化测试 | 2026-08-13 使用 Node 24 执行全量测试，存在本地缓存损坏及前端契约、语义路由、混合回答回归；法律与发布配置专项测试通过 | 待修复后复跑 |
+| Privacy Policy | 页面已存在；仓库版已更新 Riot ID、对局事实、PUUID、Pool/分享码与删除边界，仍需部署新版 | 待部署复核 |
+| Terms of Service | 页面已存在；仓库版已更新个人历史、Pool、无 RSO 现状与 Riot 审核边界，仍需部署新版 | 待部署复核 |
 | Riot 域名验证 | 需在提交 Production 申请并取得验证字符串后完成 | 待完成 |
 | Riot 官方 API 数据链路 | 核心实时统计仍来自 MetaTFT 非官方接口 | 未达标 |
 | Riot 限流与采集调度 | 尚无 Riot 专用限流器、采集 Worker 和统计仓库 | 未实现 |
 | Developer Portal 产品注册 | 无法从仓库确认 | 待人工完成 |
+| RSO | 当前产品尚未使用 RSO，但已经展示用户输入 Riot ID 的近期对局；需随 Production 申请请求 RSO 评审 | 申请阻断项 |
 | 中国大陆数据 | Riot 公共 API 没有中国大陆平台路由 | 必须声明边界 |
 
 ### 公开站点核验说明
@@ -101,11 +102,11 @@ GET https://tftclarity.cn/terms   → 200 text/html; charset=utf-8
 
 仓库中的 `.env.production.example` 仍使用 `tft.example.com` 作为安全占位符。评估公开部署状态时，应以正式站点为准，不能仅依据示例配置。
 
-## 5. 必须补充的合规页面
+## 5. 必须保持一致的合规页面
 
 ### Privacy Policy
 
-网站当前会设置匿名访客 Cookie，因此隐私政策至少应说明：
+网站当前会设置匿名访客 Cookie并处理 Riot ID、对局事实与 Pool，因此隐私政策至少应说明：
 
 - Cookie 名称、用途和有效期。
 - 是否保存查询内容、偏好、反馈、IP 和服务日志。
@@ -115,6 +116,10 @@ GET https://tftclarity.cn/terms   → 200 text/html; charset=utf-8
 - 用户如何申请查询、更正或删除数据。
 - 产品运营者的联系渠道。
 - 政策生效日期和更新方式。
+- Riot game name、tag line、region、近期对局和终局棋盘事实的用途与保留方式。
+- PUUID 仅在配置服务端加密密钥时加密落盘，否则不持久化。
+- Pool 成员、所有者匿名 scope、分享码及“知道分享码即可复制成员名单”的边界。
+- 删除 Pool 只删除分组关系，不自动删除可能被其他 Pool 复用的共享对局事实。
 
 ### Terms of Service
 
@@ -341,9 +346,10 @@ Riot Developer API 当前公开平台路由中没有中国大陆服务器。Prod
 - 数据用于赛前静态参考、赛后学习和长期版本理解。
 - 产品不读取当前对局状态，不侦察对手，不进行实时动态指挥。
 - API Key 仅保存在 HTTPS 后端。
-- 聚合统计不展示特定玩家身份，因此当前产品不需要 RSO。
-
-如果以后增加“用户登录后查看自己的对局历史”，需要在 Production 应用获批后另外申请 RSO。
+- 当前产品确实允许输入 PBE/NA Riot ID、展示特定玩家近期对局、终局棋盘和 Pool 小样本统计；不得再声称“没有特定玩家数据”。
+- 当前尚未接入 RSO，输入 Riot ID 不代表账号所有权；申请中应主动请求 RSO 评审。
+- Riot TFT 政策将 self player stats、个人比赛历史训练工具列为需要 RSO 的 Production 用例。获批后应按 Riot 指引使用 `/riot/account/v1/accounts/me` 识别登录用户。
+- 对“任意公开 Riot ID”“非本人对局”“Pool/分享码”是否可以保留，不做自我批准；在申请中请求 Riot 明确裁定，并承诺按裁定限制到本人、修改或移除。
 
 ## 12. 官方参考资料
 

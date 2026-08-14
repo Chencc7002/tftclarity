@@ -10,6 +10,7 @@ const appJs = read("src/app/small-window-ui/app.js");
 const styles = read("src/app/small-window-ui/styles.css");
 const i18n = read("src/app/small-window-ui/i18n.js");
 const privacyHtml = read("src/app/small-window-ui/privacy.html");
+const termsHtml = read("src/app/small-window-ui/terms.html");
 const deployV2 = read("docs/deploy-v2.md");
 const readiness = read("docs/r1-release-readiness.md");
 const historicalR1 = read("docs/r1-acceptance-report.md");
@@ -49,10 +50,23 @@ test("public chat visibly discloses AI output without relabeling the evidence fa
   assert.match(appJs, /t\(systemFallback \? "systemEvidenceConclusion" : "modelFinalConclusion"\)/u);
 });
 
-test("Privacy Policy matches the seven-day Conversation Bridge retention contract", () => {
-  assert.match(privacyHtml, /Effective and last updated: August 11, 2026/u);
+test("Privacy Policy matches player-data and Conversation Bridge retention contracts", () => {
+  assert.match(privacyHtml, /Effective and last updated: August 13, 2026/u);
   assert.match(privacyHtml, /structured Conversation Bridge records[^<]*retained for no longer than 7 days/u);
+  assert.match(privacyHtml, /Riot IDs, player profiles, and match facts/u);
+  assert.match(privacyHtml, /Anyone who receives a valid share code can copy the Pool's current member list/u);
+  assert.match(privacyHtml, /do not currently use Riot Sign On/u);
+  assert.doesNotMatch(privacyHtml, /We do not ask for a Riot ID/u);
   assert.doesNotMatch(privacyHtml, /Conversation context: about 30 minutes/u);
+});
+
+test("Terms disclose current Riot ID, Player Pool, and RSO review boundaries", () => {
+  assert.match(termsHtml, /Effective and last updated: August 13, 2026/u);
+  assert.match(termsHtml, /Riot IDs, match history, and account connection/u);
+  assert.match(termsHtml, /does not currently use Riot Sign On/u);
+  assert.match(termsHtml, /visitor may enter a Riot ID for themselves or another player/u);
+  assert.match(termsHtml, /applying for the appropriate Riot Production access and RSO review/u);
+  assert.doesNotMatch(termsHtml, /does not retrieve a specific user’s Riot account or match history/u);
 });
 
 test("Caddy keeps HSTS and serves the public beta with baseline security headers", () => {

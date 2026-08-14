@@ -16,6 +16,11 @@ import {
 } from "./understanding-panel.js";
 import { WallpaperController } from "./wallpaper-controller.js";
 import { conclusionDisplayText, conclusionRichTextHtml } from "./conclusion-rich-text.js";
+import {
+  STREAM_TRANSPORT_MAX_RETRIES,
+  shouldRetryStreamTransport,
+  streamIncompleteError
+} from "./stream-transport-retry.js";
 
 const COMP_UNIT_QUERY_MIN_SAMPLES = 500;
 const SEASON_CONTEXT_STORAGE_KEY = "tftagent.seasonContextId";
@@ -2178,6 +2183,17 @@ function comparisonReasonText(reason) {
   }[reason] ?? t("reasonInsufficientEvidence");
 }
 
+function renderAgentSuggestedActions(actions = [], responseId = "") {
+  if (!actions.length) return "";
+  return `
+    <div class="agent-suggested-actions" aria-label="${escapeHtml(t("nextAction"))}">
+      ${actions.map((action, index) => `
+        <button type="button" data-agent-action-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(action.label ?? action.query)}</button>
+      `).join("")}
+    </div>
+  `;
+}
+
 function comparisonItemDetail(entry) {
   const detail = entry?.detail;
   if (!detail) return "";
@@ -2510,13 +2526,22 @@ function generatedConclusionCard(data) {
       <p class="conclusion-stream-text" data-conclusion-stream>${escapeHtml(state.conclusionStreamText || t("conclusionStreaming"))}</p>
     </section>`;
   }
-  if (conclusion.status !== "generated" || !conclusion.content) {
+  const observed = conclusion.status === "observed";
+  if ((!observed && conclusion.status !== "generated") || !conclusion.content) {
     return `<section class="generated-conclusion fallback" data-conclusion-status="${escapeHtml(conclusion.status)}">
       <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${t("templateFallback")}</span></div>
       <p>${escapeHtml(data.answer?.summary ?? data.text ?? t("noResult"))}</p>
     </section>`;
   }
   const content = conclusion.content;
+  const validationErrors = Array.isArray(conclusion.validationErrors)
+    ? conclusion.validationErrors.filter(Boolean).map(String)
+    : [];
+  const observedWarning = observed ? `<details class="conclusion-validation-warning">
+    <summary>${escapeHtml(t("observedConclusion"))}</summary>
+    <p>${escapeHtml(t("observedConclusionNotice"))}</p>
+    ${validationErrors.length ? `<ul>${validationErrors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>` : ""}
+  </details>` : "";
   const missingDimensions = conclusionMissingDimensions(content);
   const reasons = (content.reasons ?? []).map((reason) => `<li>${escapeHtml(reason.text)}</li>`).join("");
   const alternatives = (content.alternatives ?? []).map((alternative) => `<li>${escapeHtml(alternative.text)}</li>`).join("");
@@ -2530,24 +2555,26 @@ function generatedConclusionCard(data) {
   const feedback = state.explanationFeedback;
   const equipmentSections = equipmentConclusionViewModel(data, content);
   if (equipmentSections) {
-    return `<section class="generated-conclusion equipment-conclusion" data-conclusion-status="generated">
-      <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
+    return `<section class="generated-conclusion equipment-conclusion${observed ? " observed" : ""}" data-conclusion-status="${observed ? "observed" : "generated"}">
+      <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${observed ? t("observedConclusion") : conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
       <div class="equipment-conclusion-sections">
         ${equipmentSections.map((section) => `<section class="conclusion-section ${section.key}"><h3>${escapeHtml(section.title)}</h3><p>${escapeHtml(section.text)}</p></section>`).join("")}
       </div>
       ${missingDimensions ? `<div class="conclusion-missing"><strong>${t("conclusionMissingDimensions")}</strong><span>${escapeHtml(missingDimensions)}</span></div>` : ""}
       ${supportingEvidence ? `<details class="conclusion-supporting-evidence"><summary>${t("staticEvidence")}</summary><ul>${supportingEvidence}</ul></details>` : ""}
+      ${observedWarning}
       <div class="conclusion-footer"><small>${escapeHtml(conclusion.model ?? "LLM")} · ${formatNumber(conclusion.latencyMs ?? 0)}ms</small><div class="result-feedback" data-explanation-feedback-group><button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button><button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button><span class="feedback-status">${feedback ? t("recorded") : ""}</span>${feedbackReasonPicker("explanation")}</div></div>
     </section>`;
   }
-  return `<section class="generated-conclusion" data-conclusion-status="generated">
-    <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
+  return `<section class="generated-conclusion${observed ? " observed" : ""}" data-conclusion-status="${observed ? "observed" : "generated"}">
+    <div class="conclusion-head"><strong>${t("dataInterpretation")}</strong><span>${observed ? t("observedConclusion") : conclusion.cached ? t("cachedConclusion") : t("generatedFromEvidence")}</span></div>
     <h3>${escapeHtml(content.headline)}</h3>
     <p>${escapeHtml(content.summary)}</p>
     ${missingDimensions ? `<div class="conclusion-missing"><strong>${t("conclusionMissingDimensions")}</strong><span>${escapeHtml(missingDimensions)}</span></div>` : ""}
     ${reasons ? `<ul>${reasons}</ul>` : ""}
     ${alternatives ? `<details><summary>${t("alternatives")}</summary><ul>${alternatives}</ul></details>` : ""}
     ${supportingEvidence ? `<details class="conclusion-supporting-evidence"><summary>${t("staticEvidence")}</summary><ul>${supportingEvidence}</ul></details>` : ""}
+    ${observedWarning}
     ${content.nextAction ? `<div class="conclusion-action"><strong>${t("nextAction")}</strong><span>${escapeHtml(content.nextAction)}</span></div>` : ""}
     ${content.riskNotice ? `<div class="conclusion-risk">${escapeHtml(content.riskNotice)}</div>` : ""}
     <div class="conclusion-footer"><small>${escapeHtml(conclusion.model ?? "LLM")} · ${formatNumber(conclusion.latencyMs ?? 0)}ms</small><div class="result-feedback" data-explanation-feedback-group><button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button><button type="button" class="feedback-button${feedback === "bad" ? " selected" : ""}" data-explanation-feedback="bad">${t("explanationNotHelpful")}</button><span class="feedback-status">${feedback ? t("recorded") : ""}</span>${feedbackReasonPicker("explanation")}</div></div>
@@ -2626,7 +2653,7 @@ function renderPatchNote(track = true) {
 function renderErrorResult(message, track = true, messageKey = null) {
   const displayMessage = messageKey ? t(messageKey) : message;
   if (track) state.resultView = { type: "error", message, messageKey };
-  setResponseHtml(`${resultHeader(t("error"), displayMessage, t("error"))}<div class="error-state"><div class="state-orbit" aria-hidden="true">!</div><strong>${escapeHtml(displayMessage)}</strong><div class="state-actions"><button type="button" data-retry-result>${t("retry")}</button><button type="button" data-refresh-result>${t("refresh")}</button></div></div>`);
+  setResponseHtml(`${resultHeader(t("error"), displayMessage, t("error"))}<div class="error-state compact"><div class="state-orbit" aria-hidden="true">!</div><span>${escapeHtml(t("networkRetryHint"))}</span><div class="state-actions"><button type="button" data-retry-result>${t("retry")}</button><button type="button" data-refresh-result>${t("refresh")}</button></div></div>`);
 }
 
 function resultKind(data) {
@@ -2778,7 +2805,7 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
   const conclusion = data?.answer?.generatedConclusion;
   const interpretation = conclusion?.status === "pending"
     ? state.conclusionStreamText || t("conclusionStreaming")
-    : conclusion?.status === "generated"
+    : conclusion?.status === "generated" || conclusion?.status === "observed"
       ? generatedConclusionText(conclusion, data)
       : "";
   return `<section class="chat-core-conclusion" data-chat-core-conclusion="${escapeHtml(responseId)}">
@@ -2974,10 +3001,13 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
     completed: true
   });
   const compactVideoSummary = strategyVideoChatSummary(data);
+  const followUpGuidance = data?.agentSuggestedActions?.actions?.length
+    ? `<div class="answer-follow-up"><span>${escapeHtml(data.agentSuggestedActions.prompt ?? "")}</span>${renderAgentSuggestedActions(data.agentSuggestedActions.actions, responseId)}</div>`
+    : "";
   if (compactVideoSummary) {
-    return `${understanding}<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div><button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+    return `${understanding}<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div>${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
-  if (data?.clarification?.needsClarification && !data?.assistantResponse?.text) {
+  if (data?.clarification?.needsClarification) {
     return `${understanding}<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
   }
   const summary = data?.assistantResponse?.text
@@ -2990,9 +3020,9 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
         : t("noResult"));
   const modelConclusion = reactModelConclusionHtml(data, summary, responseId);
   if (modelConclusion) {
-    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
-  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -3263,6 +3293,11 @@ function renderRecommendationResult(data) {
     return;
   }
   if (!data.cards?.length) {
+    const narrative = String(data.text ?? "").trim();
+    if (data.type === "react_chat_result" && narrative && narrative !== t("noResult")) {
+      setResponseHtml(`${resultHeader(t("recommendation"), narrative, t("recommendation"))}${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
+      return;
+    }
     setResponseHtml(`${resultHeader(t("noResult"), data.text ?? t("noResult"), t("noResult"))}<div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noResult"))}</strong>${data.query ? `<div class="summary">${summaryLines(data)}</div>` : ""}</div>${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
     return;
   }
@@ -4054,13 +4089,20 @@ async function streamGeneratedConclusion(data, requestId) {
   }
 }
 
+function requestErrorMessageKey(message) {
+  return /(?:load failed|failed to fetch|fetch failed|network\s*error|network request failed|err_connection_closed|connection closed|the network connection was lost)/iu.test(String(message ?? ""))
+    ? "networkInterrupted"
+    : null;
+}
+
 function renderError(message, messageKey = null) {
   state.lastResult = null;
   state.lastResultId = null;
-  const displayMessage = messageKey ? t(messageKey) : message;
+  const resolvedMessageKey = messageKey ?? requestErrorMessageKey(message);
+  const displayMessage = resolvedMessageKey ? t(resolvedMessageKey) : message;
   rawOutputEl.textContent = displayMessage;
-  renderErrorResult(message, true, messageKey);
-  if (activeResponseEl) activeResponseEl.innerHTML = `<div class="error-state">${escapeHtml(displayMessage)}</div>`;
+  renderErrorResult(message, true, resolvedMessageKey);
+  if (activeResponseEl) activeResponseEl.innerHTML = `<div class="chat-request-error"><strong>${escapeHtml(displayMessage)}</strong><span>${escapeHtml(t("networkRetryHint"))}</span></div>`;
 }
 
 function aliasMeta(alias) {
@@ -4672,7 +4714,7 @@ async function readRecommendationStream(response, target, progress, requestId, s
     abortError.name = "AbortError";
     throw abortError;
   }
-  if (!completion) throw new Error("recommendation stream ended before completion");
+  if (!completion) throw streamIncompleteError();
   if (Number(completion.statusCode ?? 200) >= 400 || !completion.payload?.ok) {
     if (hasRenderableNativeEvidence(completion.payload)) {
       const strategyEvidence = completion.payload.evidence
@@ -4792,6 +4834,18 @@ function normalizeReactOfficialDetail(value) {
 
 function normalizeEndpointPayload(payload) {
   if (payload?.type !== "react_chat_result") return payload;
+  const clarification = payload.status === "clarification_required"
+    ? {
+      needsClarification: true,
+      blocking: true,
+      question: String(payload.clarification?.question ?? payload.question ?? t("clarification")),
+      suggestions: Array.isArray(payload.clarification?.suggestions)
+        ? payload.clarification.suggestions
+        : [],
+      entityCandidates: payload.clarification?.entityCandidates ?? [],
+      ...(payload.clarification ?? {})
+    }
+    : payload.clarification;
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
     ? payload.answer
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
@@ -4875,6 +4929,7 @@ function normalizeEndpointPayload(payload) {
   return {
     ...(hydratedDisplayValue ?? {}),
     ...payload,
+    ...(clarification ? { clarification } : {}),
     ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
       ? { status: displayValue.status, runStatus: payload.status }
       : {}),
@@ -4989,48 +5044,74 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     const transportRequestId = state.lastQuickTask?.requestId
       ?? globalThis.crypto?.randomUUID?.()
       ?? `request-${Date.now()}-${requestId}`;
-    const response = await fetch(endpoint, {
-      method: "POST",
-      signal: controller.signal,
-      headers: {
-        "content-type": "application/json",
-        accept: "application/x-ndjson"
-      },
-      body: JSON.stringify({
-        input,
-        locale: getLocale(),
-        requestId: transportRequestId,
-        conversationId: state.conversationId,
-        seasonContextId: state.seasonContextId,
-        startNewTask: normalizedRequestOptions.startNewTask === true,
-        refresh,
-        deferConclusion: true,
-        ...(state.lastQuickTask ? { quickTask: state.lastQuickTask } : {}),
-        ...(state.lastQuickTask && state.lastSupplementalText
-          ? { supplementalText: state.lastSupplementalText }
-          : {}),
-        ...(!state.lastQuickTask && reactChatEnabled ? { messages: reactChatMessages() } : {}),
-        ...(!state.lastQuickTask && state.activeAnalysisContext
-          ? { analysisContext: state.activeAnalysisContext }
-          : {}),
-        preferences: {
-          minSamples: state.minSamples,
-          itemPolicy: state.itemPolicy,
-          sort: state.sort,
-          days: state.days,
-          structuredParserMode: state.structuredParserMode,
-          conclusionMode: state.conclusionMode,
-          rankFilter: state.rankFilter
+    const requestBody = {
+      input,
+      locale: getLocale(),
+      requestId: transportRequestId,
+      conversationId: state.conversationId,
+      seasonContextId: state.seasonContextId,
+      startNewTask: normalizedRequestOptions.startNewTask === true,
+      refresh,
+      deferConclusion: true,
+      ...(state.lastQuickTask ? { quickTask: state.lastQuickTask } : {}),
+      ...(state.lastQuickTask && state.lastSupplementalText
+        ? { supplementalText: state.lastSupplementalText }
+        : {}),
+      ...(!state.lastQuickTask && reactChatEnabled ? { messages: reactChatMessages() } : {}),
+      ...(!state.lastQuickTask && state.activeAnalysisContext
+        ? { analysisContext: state.activeAnalysisContext }
+        : {}),
+      preferences: {
+        minSamples: state.minSamples,
+        itemPolicy: state.itemPolicy,
+        sort: state.sort,
+        days: state.days,
+        structuredParserMode: state.structuredParserMode,
+        conclusionMode: state.conclusionMode,
+        rankFilter: state.rankFilter
+      }
+    };
+    let response = null;
+    let streamedPayload = null;
+    for (let attempt = 0; attempt <= STREAM_TRANSPORT_MAX_RETRIES; attempt += 1) {
+      try {
+        response = await fetch(endpoint, {
+          method: "POST",
+          signal: controller.signal,
+          headers: {
+            "content-type": "application/json",
+            accept: "application/x-ndjson"
+          },
+          body: JSON.stringify({
+            ...requestBody,
+            transportRetry: {
+              attempt,
+              retryOfRequestId: attempt > 0 ? transportRequestId : null
+            }
+          })
+        });
+        streamedPayload = await readRecommendationStream(
+          response,
+          assistantTarget,
+          recommendationProgress,
+          requestId,
+          controller.signal
+        );
+        break;
+      } catch (error) {
+        if (!shouldRetryStreamTransport({ error, attempt, signal: controller.signal })) throw error;
+        applyRecommendationProgressState(recommendationProgress, {
+          schemaVersion: "recommendation-progress.v1",
+          phase: "transport.retrying",
+          data: { attempt: attempt + 1 }
+        });
+        if (requestId === state.requestSerial) {
+          renderRecommendationProgress(assistantTarget, recommendationProgress);
+          setStatusKey("statusReconnecting", "loading");
         }
-      })
-    });
-    const data = normalizeEndpointPayload(await readRecommendationStream(
-      response,
-      assistantTarget,
-      recommendationProgress,
-      requestId,
-      controller.signal
-    ));
+      }
+    }
+    const data = normalizeEndpointPayload(streamedPayload);
     if (requestId !== state.requestSerial) return;
     if (data.access) renderAccessStatus(data.access);
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
@@ -5530,11 +5611,23 @@ async function handleResultClick(event) {
   }
 
   const suggestionButton = event.target.closest("button[data-suggestion-index]");
+  const agentActionButton = event.target.closest("button[data-agent-action-index]");
   const conditionButton = event.target.closest("button[data-condition-key]");
   if (conditionButton) {
     queryInput.value = t("editCondition", { value: conditionButton.textContent.split("·")[0].trim() });
     setMobileView("chat");
     queryInput.focus();
+    return;
+  }
+  if (agentActionButton) {
+    const responseRecord = state.responsesById.get(agentActionButton.dataset.responseId);
+    const actions = responseRecord?.data?.agentSuggestedActions?.actions ?? [];
+    const action = actions[Number(agentActionButton.dataset.agentActionIndex)];
+    if (!action?.query) return;
+    queryInput.value = action.query;
+    setMobileView("chat");
+    queryInput.focus();
+    await requestRecommendation(false);
     return;
   }
   if (!suggestionButton) return;
@@ -5543,7 +5636,9 @@ async function handleResultClick(event) {
   const suggestion = suggestions[Number(suggestionButton.dataset.suggestionIndex)];
   if (!suggestion) return;
   queryInput.value = suggestion;
+  setMobileView("chat");
   queryInput.focus();
+  await requestRecommendation(false);
 }
 
 resultEl.addEventListener("click", handleResultClick);

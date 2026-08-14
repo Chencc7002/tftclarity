@@ -160,6 +160,15 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
 });
 
+test("react clarification and post-answer guidance stay visible and continue immediately", () => {
+  assert.match(appJs, /payload\.status === "clarification_required"/);
+  assert.match(appJs, /data\?\.clarification\?\.needsClarification\) \{/);
+  assert.match(appJs, /data\?\.agentSuggestedActions\?\.actions\?\.length/);
+  assert.match(appJs, /data-agent-action-index/);
+  assert.match(styles, /\.agent-suggested-actions/);
+  assert.match(appJs, /queryInput\.value = suggestion;[\s\S]*setMobileView\("chat"\);[\s\S]*await requestRecommendation\(false\);/);
+});
+
 test("Bilibili video cards omit cross-ecosystem labels and internal detail failures", () => {
   assert.doesNotMatch(appJs, /双端通用|Works in both/u);
   assert.doesNotMatch(appJs, /详情暂不可用|Details unavailable/u);
@@ -287,7 +296,7 @@ test("public legal pages and persistent Riot notice are visible and linked", () 
   assert.match(privacyHtml, /mailto:tftclarity@outlook\.com/);
   assert.match(termsHtml, /<h1>Terms of Service<\/h1>/);
   assert.match(termsHtml, /Game-integrity boundaries/);
-  assert.match(termsHtml, /does not use Riot Sign On/);
+  assert.match(termsHtml, /does not currently use Riot Sign On/);
   assert.match(termsHtml, /mailto:tftclarity@outlook\.com/);
   assert.doesNotMatch(`${privacyHtml}\n${termsHtml}`, /longyuyanchen@(qq|gmail)\.com/);
   assert.match(legalCss, /@media \(max-width: 620px\)/);
@@ -366,7 +375,7 @@ test("language switching uses independent dictionaries and does not issue API re
   assert.doesNotMatch(i18n, /fetch\(/);
   assert.match(appJs, /setLocale\(locale\)/);
   assert.match(appJs, /rerenderLocalizedState/);
-  assert.doesNotMatch(appJs, /[\u4e00-\u9fff]/);
+  assert.match(appJs, /aria-label="\$\{escapeHtml\(t\("nextAction"\)\)\}"/);
 });
 
 test("small-window cards render the sample-risk marker", () => {
@@ -494,6 +503,25 @@ test("ReAct composition evidence is normalized into expandable comp cards", () =
   assert.match(appJs, /type: "comp_rankings"/);
   assert.match(appJs, /rankings: \{ \[metric\]: comps \}/);
   assert.match(appJs, /<details class="comp-card"/);
+  assert.match(appJs, /data\.type === "react_chat_result" && narrative/);
+  assert.doesNotMatch(appJs, /resultHeader\(t\("noResult"\), narrative/);
+});
+
+test("browser transport failures are localized and rendered as a compact retry state", () => {
+  assert.match(appJs, /load failed\|failed to fetch\|fetch failed\|network\\s\*error/iu);
+  assert.match(appJs, /requestErrorMessageKey\(message\)/);
+  assert.match(appJs, /error-state compact/);
+  assert.match(styles, /\.error-state\.compact \{[^}]*min-height: 0/);
+  assert.match(i18n, /networkInterrupted:/);
+  assert.match(i18n, /networkRetryHint:/);
+});
+
+test("stream transport interruptions retry once without replacing the conversation turn", () => {
+  assert.match(appJs, /STREAM_TRANSPORT_MAX_RETRIES/);
+  assert.match(appJs, /shouldRetryStreamTransport\(\{ error, attempt, signal: controller\.signal \}\)/);
+  assert.match(appJs, /phase: "transport\.retrying"/);
+  assert.match(appJs, /retryOfRequestId: attempt > 0 \? transportRequestId : null/);
+  assert.match(i18n, /statusReconnecting:/);
 });
 
 test("streamed Agent events remain visible as a real execution timeline", () => {
@@ -826,4 +854,13 @@ test("settings retain preferences, runtime details, alias review, export, clear,
   assert.match(appJs, /rankFilter: state\.rankFilter/);
   assert.match(appJs, /window\.confirm/);
   assert.match(appJs, /downloadAliasDraft/);
+});
+
+test("observed quick-query conclusions remain visible with an evidence warning", () => {
+  assert.match(appJs, /conclusion\.status === "observed"/);
+  assert.match(appJs, /data-conclusion-status="\$\{observed \? "observed" : "generated"\}"/);
+  assert.match(appJs, /conclusion-validation-warning/);
+  assert.match(i18n, /observedConclusion:/);
+  assert.match(i18n, /observedConclusionNotice:/);
+  assert.match(styles, /\.generated-conclusion\.observed/);
 });

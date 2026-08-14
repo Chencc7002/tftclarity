@@ -16,6 +16,7 @@ const port = Number(portArg?.slice("--port=".length) ?? 17329);
 const acceptanceMode = process.argv.includes("--acceptance");
 const karmaTwoOptionMode = process.argv.includes("--karma-two-options");
 const missingItemMechanicsMode = process.argv.includes("--missing-item-mechanics");
+const observedConclusionMode = process.argv.includes("--observed-conclusion");
 const NAVORI = "TFT_Item_Artifact_NavoriFlickerblades";
 const HYDRA = "TFT_Item_Artifact_TitanicHydra";
 const RAGEBLADE = "TFT_Item_GuinsoosRageblade";
@@ -198,7 +199,7 @@ const runtime = createSmallWindowRuntime({
       locked_item_compatibility: `已携带${lockedLabel || "装备"}只作为查询前置条件，不参与补齐装备的频次统计；补齐建议仅比较剩余装备槽位，并保留原始三件套数据供核对。`,
       sample_risk: "数据提醒：当前结果包含低样本候选，名次与胜率更容易波动；建议同时查看样本量，并在刷新数据后再次确认。"
     };
-    return {
+    const conclusion = {
       schemaVersion: "llm_conclusion.v2",
       contractId: evidence.questionContract.contractId,
       status: "ok",
@@ -218,6 +219,10 @@ const runtime = createSmallWindowRuntime({
       nextAction: "先按结构化结果行动，再参考候选组合表现。",
       riskNotice: lowSample ? "其中包含低样本结果，仅供参考。" : null
     };
+    if (observedConclusionMode) {
+      conclusion.summary = "观察模式测试：红霸符前四率为99.9%。";
+    }
+    return conclusion;
   },
   officialItemDetails: new Map([[STARGAZER_EMBLEM, {
     apiName: STARGAZER_EMBLEM,

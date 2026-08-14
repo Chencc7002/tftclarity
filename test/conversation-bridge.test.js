@@ -13,6 +13,7 @@ import {
   createQuickTaskSupplementalClassifierProvider,
   deterministicQuickTaskSupplementalClassification,
   estimateBridgeTokens,
+  isHistoryDependentInput,
   resolveConversationBridgeRelation,
   validateQuickTaskSupplementalClassification,
   verifyQuickToolSnapshot
@@ -96,6 +97,8 @@ test("bridge relation resolver covers the eight product relations", () => {
   };
   assert.equal(resolveConversationBridgeRelation("你好", {}), "none");
   assert.equal(resolveConversationBridgeRelation("继续详细说", bridge), "continue");
+  assert.equal(resolveConversationBridgeRelation("上升的", bridge), "continue");
+  assert.equal(isHistoryDependentInput("上升的"), true);
   assert.equal(resolveConversationBridgeRelation("改成只看两星", bridge), "modify");
   assert.equal(resolveConversationBridgeRelation("也查卡尔玛", bridge), "same_operation_new_subject");
   assert.equal(resolveConversationBridgeRelation("刚才那个为什么强", bridge), "return_to_previous");

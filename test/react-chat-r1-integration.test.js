@@ -390,6 +390,55 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
   );
 });
 
+test("PBE unit details reuse the season-scoped CommunityDragon catalog", async () => {
+  const rawOfficialDetails = {
+    meta: { updatedAt: "2026-08-13T00:00:00.000Z" },
+    units: new Map(),
+    traits: new Map()
+  };
+  const pbeDetails = {
+    meta: {
+      updatedAt: "2026-08-14T00:00:00.000Z",
+      sources: ["https://raw.communitydragon.org/pbe/"]
+    },
+    units: new Map([["DA_18_Warwick", {
+      apiName: "DA_18_Warwick",
+      name: "沃里克",
+      cost: 4,
+      traitNames: ["测试羁绊"],
+      ability: { name: "无尽兽性", description: "扑向目标并持续攻击。" },
+      stats: { mana: 40, attackRange: 1 }
+    }]]),
+    traits: new Map()
+  };
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    officialEntityDetails: rawOfficialDetails
+  });
+  runtime.catalogCache.set(
+    "set18-pbe:metatft-pbe.v1:current:PBE:TFTSet18:pbe:zh_cn",
+    {
+      catalog: createCatalog({
+        units: [{ apiName: "DA_18_Warwick", zhName: "沃里克", aliases: ["沃里克"] }]
+      }),
+      warning: null,
+      compsData: null,
+      entityDetails: pbeDetails
+    }
+  );
+
+  const bundle = await createDefaultReactToolHandlerBundle({
+    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    runtime,
+    context: {}
+  });
+  const detail = await bundle.handlers.unit_details({ apiName: "DA_18_Warwick" });
+  assert.equal(detail.status, "found");
+  assert.equal(detail.displayName, "沃里克");
+  assert.equal(detail.facts.ability.name, "无尽兽性");
+  assert.equal(detail.source.sourceType, "communitydragon");
+});
+
 test("default react item carrier handler reuses the deterministic ranking service", async () => {
   let parsedInput = null;
   const itemApiName = "TFT_Item_GuinsoosRageblade";

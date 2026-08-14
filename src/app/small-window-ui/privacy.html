@@ -24,14 +24,14 @@
       <div class="legal-hero">
         <p class="legal-eyebrow">Legal</p>
         <h1>Privacy Policy</h1>
-        <p class="legal-updated">Effective and last updated: August 11, 2026</p>
+        <p class="legal-updated">Effective and last updated: August 13, 2026</p>
       </div>
 
       <article class="legal-card">
         <section>
           <div class="legal-summary">
             <strong>Plain-language summary.</strong>
-            tftclarity can be used without an account. We do not ask for a Riot ID, do not use Riot Sign On, do not sell personal information, and do not use advertising trackers. We process anonymous technical identifiers, queries, settings, and optional feedback only to provide, protect, and improve the service.
+            tftclarity can be used without a tftclarity account. If you use match review or Player Pool features, you may submit a Riot ID to retrieve available player and match information. We do not currently use Riot Sign On, do not sell personal information, and do not use advertising trackers.
           </div>
           <p>This Privacy Policy explains how the independent tftclarity project (“tftclarity,” “we,” “us,” or “our”) handles information when you use <a href="https://tftclarity.cn/">tftclarity.cn</a> and its related web application (the “Service”). The Service is operated from the People’s Republic of China.</p>
         </section>
@@ -54,6 +54,16 @@
                 <td>Server-side query snapshots: up to 30 days. Query cache: about 5 minutes. Active conversation context is used for the current interaction; structured Conversation Bridge records used for follow-up questions are limited to recent records and retained for no longer than 7 days.</td>
               </tr>
               <tr>
+                <th>Riot IDs, player profiles, and match facts</th>
+                <td>For match review and Player Pool features, you may submit a Riot game name, tag line, and region for yourself or another player. We use them to resolve the requested profile and retrieve available recent match information, including match identifiers, timestamps, placement, final board, units, items, traits, augments, and derived composition signatures. Where an upstream provider returns a PUUID, it is stored only in encrypted form when a server-side encryption key is configured; otherwise it is not persisted.</td>
+                <td>Riot IDs, normalized match facts, and collection records may remain in the shared server-side fact store after a player is removed from a Pool so that previously collected public match facts can be reused and audited. They are deleted or de-identified when no longer reasonably needed, or following a valid request where applicable.</td>
+              </tr>
+              <tr>
+                <th>Player Pools and sharing</th>
+                <td>Pool names, member Riot IDs, selected environment, ownership scope, derived statistics, and an optional eight-character share code. Anyone who receives a valid share code can copy the Pool's current member list into an independent Pool.</td>
+                <td>Pool membership remains until you remove a member, delete the Pool, clear the associated visitor data, or ask us to delete it. Deleting a Pool removes that grouping but does not automatically erase shared match facts that may also support another Pool.</td>
+              </tr>
+              <tr>
                 <th>Preferences and local settings</th>
                 <td>Rank filters, sample thresholds, item scope, language, settings-panel state, and layout width. Some preferences are stored server-side under an anonymous scope; language and layout choices are stored in your browser’s local storage.</td>
                 <td>Until reset, cleared, or no longer needed.</td>
@@ -74,12 +84,12 @@
         </section>
 
         <section>
-          <h2>2. Information we do not request</h2>
+          <h2>2. Account connection and information we do not request</h2>
           <ul>
             <li>No tftclarity account is required.</li>
-            <li>We do not currently use Riot Sign On and do not ask for a Riot ID, PUUID, match history, or ranked profile belonging to a specific user.</li>
+            <li>We do not currently use Riot Sign On. Entering a Riot ID does not prove that the visitor owns or controls that Riot account.</li>
+            <li>Do not enter Riot account credentials. We never ask for a Riot password, authentication code, or API key.</li>
             <li>We do not collect payment information.</li>
-            <li>We do not intentionally identify, profile, or analyze individual players.</li>
             <li>We do not sell personal information or share it for cross-site behavioral advertising.</li>
           </ul>
         </section>
@@ -88,6 +98,8 @@
           <h2>3. How we use information</h2>
           <ul>
             <li>Provide natural-language TFT queries, aggregated statistics, and follow-up conversation context.</li>
+            <li>Resolve a submitted Riot ID, show available recent match history and final-board facts, and generate post-game review.</li>
+            <li>Create, manage, share, and compare user-selected Player Pools and their observed statistics.</li>
             <li>Remember your anonymous preferences and maintain fair usage limits.</li>
             <li>Generate structured parsing or evidence-grounded explanations when optional AI features are enabled.</li>
             <li>Investigate errors, prevent abuse, secure the Service, and improve data and answer quality.</li>
@@ -111,7 +123,7 @@
           <ul>
             <li><strong>Hosting and security providers</strong> process network and service logs to deliver and protect the site.</li>
             <li><strong>Configured OpenAI-compatible AI providers</strong> may receive the query and structured evidence required to parse or explain a result when an optional AI feature is enabled. The product remains usable with deterministic, non-AI fallbacks.</li>
-            <li><strong>TFT data providers</strong> receive structured game-data requests. The current prototype uses third-party aggregated MetaTFT statistics and official/static TFT sources. We do not intentionally send direct user identifiers with those requests.</li>
+            <li><strong>TFT data providers</strong> receive structured game-data requests. The current product uses third-party MetaTFT data, OP.GG-backed player lookup, and official or public static TFT sources. When you request a player or Pool feature, the relevant Riot ID, region, or provider identifier is sent to the provider required to resolve that player and retrieve match information.</li>
           </ul>
           <p>These providers may process information in other countries. We use only the minimum information reasonably needed for the feature and require providers to handle it under their own security and privacy obligations.</p>
         </section>
@@ -123,8 +135,8 @@
 
         <section>
           <h2>7. Your choices and rights</h2>
-          <p>You can clear browser storage through your browser, reset application preferences, clear the current conversation, stop submitting feedback, or stop using the Service. Depending on applicable law, you may request access, correction, deletion, restriction, or a copy of personal information associated with you.</p>
-          <p>Because the Service is anonymous, we may be unable to connect a record to you without additional details. When making a request, include the approximate date and time, the query or feedback concerned, and—only if you are comfortable doing so—the anonymous visitor cookie value shown in your browser’s developer tools. Do not post this information publicly.</p>
+          <p>You can clear browser storage through your browser, reset application preferences, clear the current conversation, remove a player from a Pool, delete a Pool, stop submitting feedback, or stop using the Service. Pool deletion removes the grouping; shared match facts require a separate deletion request. Depending on applicable law, you may request access, correction, deletion, restriction, or a copy of personal information associated with you.</p>
+          <p>Because the Service has no tftclarity login, we may be unable to connect a record to you without additional details. When making a request, include the approximate date and time, relevant Riot ID, Pool name or share code, and query or feedback concerned. If necessary, we may ask for the anonymous visitor identifier or reasonable proof that you are entitled to make the request. Do not post any of this information publicly.</p>
           <p>Send privacy requests to <a href="mailto:tftclarity@outlook.com">tftclarity@outlook.com</a>. We may ask for reasonable verification and will respond as required by applicable law.</p>
         </section>
 

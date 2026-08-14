@@ -93,6 +93,32 @@ test("conclusion service falls back on invalid output without changing the recom
   assert.deepEqual(result, before);
 });
 
+test("conclusion service observe mode preserves the best invalid interpretation with warnings", async () => {
+  const result = buildResult();
+  const before = structuredClone(result);
+  const conclusion = await generateEvidenceBackedConclusion({
+    result,
+    catalog,
+    input: "fixture item ranking query",
+    config: { ...config, groundingMode: "observe" },
+    provider: async ({ evidence }) => ({
+      ...output(evidence),
+      reasons: [{
+        dimension: "build_performance",
+        evidenceIds: ["build:1"],
+        text: "Top 4 rate is an unsupported 99.9%."
+      }]
+    })
+  });
+
+  assert.equal(conclusion.status, "observed");
+  assert.equal(conclusion.reason, "validation_observed");
+  assert.equal(conclusion.groundingMode, "observe");
+  assert.ok(conclusion.content?.headline);
+  assert.ok(conclusion.validationErrors?.length > 0);
+  assert.deepEqual(result, before);
+});
+
 test("conclusion service gives an ambiguous citation one corrective LLM attempt", async () => {
   const ambiguousResult = buildResult();
   ambiguousResult.rankedBuilds[1].stats.winRate = 0.183;

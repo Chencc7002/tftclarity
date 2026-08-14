@@ -90,7 +90,7 @@
 - 打开 `https://tftclarity.cn/terms`。
 - 截图包含页面标题、生效日期、摘要和导航。
 
-## 4. 可选录屏：75–90 秒
+## 4. 可选录屏：100–120 秒
 
 建议录制 1080p、30 fps、MP4/H.264，无需真人出镜。可以不录声音，后期加英文字幕；如果录声音，使用下面的英文旁白。
 
@@ -104,14 +104,18 @@
    输入一个保持上下文的比较问题，展示条件继承和证据边界。
 4. **45–60 秒：阵容排行或趋势**  
    查询热门阵容或打开趋势结果。
-5. **60–75 秒：设置中的 Riot 声明**  
+5. **60–82 秒：Riot ID 近期对局与终局棋盘**
+   使用审核专用的 PBE 或 NA Riot ID，展示近期对局列表并展开一场终局棋盘。画面不得出现凭据、PUUID、Cookie 或后台日志。
+6. **82–100 秒：玩家 Pool 数据看板**
+   打开已准备的 Pool，展示成员覆盖、样本量、阵容使用率、均名/前四/登顶率和低样本边界；如展示分享码，使用专门为审核准备、可立即轮换的码。
+7. **100–110 秒：设置中的 Riot 声明**
    打开设置，滚动到完整英文声明和政策链接。
-6. **75–90 秒：Privacy 与 Terms**  
+8. **110–120 秒：Privacy 与 Terms**
    分别打开两页，停留在标题、生效日期和摘要。
 
 ### 英文旁白
 
-> tftclarity is a public, non-commercial TFT analytics tool for Chinese-speaking players. It converts Chinese natural-language questions into deterministic queries for aggregate composition and champion-item statistics. Results show multiple choices, sample sizes, performance metrics, data freshness, and risk warnings. Optional AI explains validated evidence but cannot change the underlying numbers. The product supports short-lived follow-up context, but it does not read live game state, scout opponents, provide dynamic instructions, or create an unofficial player rating. The public footer and settings panel disclose that tftclarity is independent and not endorsed by Riot Games, and link to the Privacy Policy and Terms of Service.
+> tftclarity is a public, non-commercial TFT analytics, match-review, and learning tool for Chinese-speaking players. It converts Chinese natural-language questions into deterministic queries for composition and champion-item statistics. A visitor can also enter a PBE or NA Riot ID to inspect available recent matches and final boards, and organize selected players into small Player Pools with visible coverage and sample gates. Optional AI explains validated evidence but cannot change the underlying facts. The product does not read live game state, scout opponents during gameplay, provide dynamic instructions, or create an unofficial rating. It does not currently use Riot Sign On, and we are requesting Riot review and RSO access for the personal-history flows. The public footer and settings panel disclose that tftclarity is independent and not endorsed by Riot Games.
 
 ## 5. 文件整理
 
@@ -129,7 +133,9 @@ riot-production-application/
 │  ├─ 06-multi-turn-refinement.png
 │  ├─ 07-legal-and-data-transparency.png
 │  ├─ 08-privacy-policy.png
-│  └─ 09-terms-of-service.png
+│  ├─ 09-terms-of-service.png
+│  ├─ 10-riot-id-match-review.png
+│  └─ 11-player-pool-dashboard.png
 └─ tftclarity-review-walkthrough.mp4
 ```
 
@@ -138,7 +144,8 @@ riot-production-application/
 - [ ] 截图和录屏中的功能与申请文案完全一致。
 - [ ] 不声称已覆盖中国大陆服务器。
 - [ ] 不使用“实时指挥”“根据当前棋盘动态推荐”“侦察对手”等表述。
-- [ ] 清楚说明当前原型使用第三方 MetaTFT 聚合统计。
-- [ ] 清楚说明 Production API 用于建设 Riot 官方数据聚合并逐步迁移。
-- [ ] 页面和材料都说明当前不使用 RSO、不展示特定玩家数据。
+- [ ] 清楚说明当前产品使用 MetaTFT 聚合/PBE 对局数据、OP.GG-backed NA 查询及官方/公开静态来源。
+- [ ] 清楚说明 Production API 用于迁移账号、对局、联盟与聚合数据，并请求 RSO 评审。
+- [ ] 页面和材料都说明当前尚未使用 RSO，但确实处理用户输入的 Riot ID、特定玩家近期对局和 Player Pool。
+- [ ] 未声称 Riot 已允许任意非本人历史或 Pool；明确承诺按审核结论限制、修改或移除。
 - [ ] 所有公开链接在无痕窗口、手机网络下均可访问。

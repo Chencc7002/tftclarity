@@ -33,6 +33,7 @@ const DEPENDENT_REFERENCE_SIGNAL_ZH = /(?:这个|这套|它|其中|为什么|怎
 const MODIFY_SIGNAL_ZH = /(?:改成|换成|只看|不要|排除|加入|如果|假如|按照|筛选|改为)/u;
 const SAME_OPERATION_SIGNAL_ZH = /(?:也查|再查|换个(?:英雄|棋子|装备|羁绊|阵容)|同样|另一个)/u;
 const TFT_TASK_SIGNAL_ZH = /(?:英雄|棋子|装备|羁绊|阵容|出装|攻略|版本|胜率|云顶)/u;
+const ELLIPTICAL_FOLLOW_UP_SIGNAL = /^(?:上升(?:的|阵容)?|下降(?:的|阵容)?|上涨(?:的)?|下跌(?:的)?|前者|后者|第[一二三四五六七八九十\d]+个?)$/u;
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -268,11 +269,12 @@ export function verifyQuickToolSnapshot(record, snapshot, options = {}) {
 }
 
 export function isHistoryDependentInput(input) {
-  const value = String(input ?? "");
+  const value = sanitizeBridgeText(input, 8000);
   return DEPENDENT_REFERENCE_SIGNAL.test(value)
     || HISTORY_REFERENCE_SIGNAL.test(value)
     || DEPENDENT_REFERENCE_SIGNAL_ZH.test(value)
-    || HISTORY_REFERENCE_SIGNAL_ZH.test(value);
+    || HISTORY_REFERENCE_SIGNAL_ZH.test(value)
+    || ELLIPTICAL_FOLLOW_UP_SIGNAL.test(value);
 }
 
 export function isCurrentStatsInput(input) {
@@ -290,6 +292,7 @@ export function resolveConversationBridgeRelation(input, bridge = {}, options = 
   if (MODIFY_SIGNAL.test(text) || MODIFY_SIGNAL_ZH.test(text)) return "modify";
   if (SAME_OPERATION_SIGNAL.test(text) || SAME_OPERATION_SIGNAL_ZH.test(text)) return "same_operation_new_subject";
   if (DEPENDENT_REFERENCE_SIGNAL.test(text) || DEPENDENT_REFERENCE_SIGNAL_ZH.test(text)) return "continue";
+  if (ELLIPTICAL_FOLLOW_UP_SIGNAL.test(text)) return "continue";
   const active = records.find((record) => record.recordId === bridge.activeRecordId) ?? records.at(-1);
   const mentionsActiveArgument = Object.values(active?.normalizedArguments ?? {})
     .some((value) => value && text.includes(String(value)));

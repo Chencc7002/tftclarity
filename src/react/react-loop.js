@@ -42,13 +42,16 @@ function canPublishSummaryWithValidationWarnings(request, action, validation, le
     && validation.errors.every((error) => SOFT_SUMMARY_VALIDATION_ERROR.test(String(error)));
 }
 
+function currentTurnUserText(request = {}) {
+  return [request.input, request.question]
+    .map((value) => String(value ?? "").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
 function applyRequestBoundVideoScope(action, request = {}) {
   if (action?.type !== "call_tool" || action.tool !== "strategy_video_search") return action;
-  const userText = [
-    request.input,
-    request.question,
-    ...(Array.isArray(request.messages) ? request.messages.map((message) => message?.content) : [])
-  ].map((value) => String(value ?? "")).join("\n");
+  const userText = currentTurnUserText(request);
   const requestsTft = /(?:云顶之弈|teamfight\s*tactics|\btft\b)/iu.test(userText);
   const requestsGoldenSpatula = /(?:金铲铲(?:之战)?|golden\s*spatula)/iu.test(userText);
   if (!requestsTft || !requestsGoldenSpatula) return action;
@@ -61,11 +64,7 @@ function applyRequestBoundVideoScope(action, request = {}) {
 function deterministicStrategyVideoFallback(request, availableToolNames, ledger) {
   if (!availableToolNames.has("strategy_video_search")) return null;
   if (ledger.snapshot().entries.some((entry) => entry.temporalStatus !== "historical")) return null;
-  const userText = [
-    request.input,
-    request.question,
-    ...(Array.isArray(request.messages) ? request.messages.map((message) => message?.content) : [])
-  ].map((value) => String(value ?? "")).join("\n").trim();
+  const userText = currentTurnUserText(request);
   if (!/(?:\u89c6\u9891|\u653b\u7565|bilibili|\u54d4\u54e9\u54d4\u54e9|b\u7ad9)/iu.test(userText)) return null;
   const requestsTft = /(?:\u4e91\u9876\u4e4b\u5f08|teamfight\s*tactics|\btft\b)/iu.test(userText);
   const requestsGoldenSpatula = /(?:\u91d1\u94f2\u94f2(?:\u4e4b\u6218)?|golden\s*spatula)/iu.test(userText);
@@ -824,6 +823,29 @@ function buildAvailableEvidenceFallback(ledger) {
   };
 }
 
+function buildSingleUnitBuildFallback(ledger) {
+  const entries = ledger.snapshot().entries;
+  const entry = entries.findLast((candidate) => (
+    candidate.toolName === "unit_builds"
+    && candidate.temporalStatus !== "historical"
+    && Array.isArray(candidate.value?.cards)
+    && candidate.value.cards.length > 0
+  ));
+  if (!entry) return null;
+  const value = entry.value;
+  const unitName = value.unit?.name ?? value.query?.unitName ?? "该棋子";
+  const cards = value.cards.slice(0, 3);
+  const cardText = cards.map((card) => {
+    const items = (card.items ?? []).map((item) => item.name ?? item.apiName).filter(Boolean).join("、");
+    const stats = card.stats ?? {};
+    return `${card.title ?? "方案"}：${items || "装备数据"}（场次 ${stats.games ?? "-"}，平均名次 ${stats.avg ?? "-"}，前四率 ${stats.top4 ?? "-"}，登顶率 ${stats.win ?? "-"}）`;
+  }).join("；");
+  return {
+    answer: `${unitName}当前可参考的出装：${cardText}。`,
+    evidenceIds: [entry.evidenceId]
+  };
+}
+
 export function buildItemContentionFallback(ledger) {
   const entry = ledger.snapshot().entries.findLast((candidate) => (
     candidate.toolName === "unit_builds_batch"
@@ -937,6 +959,7 @@ export function buildCompositionReplacementFallback(ledger) {
 function buildRejectedNarrativeFallback(ledger) {
   return buildConstrainedBatchEvidenceFallback(ledger)
     ?? buildItemContentionFallback(ledger)
+    ?? buildSingleUnitBuildFallback(ledger)
     ?? buildAvailableEvidenceFallback(ledger)
     ?? {
     answer: "已获取可验证结果，但模型生成的部分说明超出当前证据范围，已隐藏。请以结果区的证据和确定性结果为准。",
@@ -1144,7 +1167,9 @@ export class ReactLoop {
           state.warn("decision_provider_video_fallback");
           provided = { action: deterministicVideoAction };
         } else {
-        const fallback = buildItemContentionFallback(ledger) ?? buildAvailableEvidenceFallback(ledger);
+        const fallback = buildItemContentionFallback(ledger)
+          ?? buildSingleUnitBuildFallback(ledger)
+          ?? buildAvailableEvidenceFallback(ledger);
         if (fallback) {
           state.warn("decision_provider_answer_fallback");
           emit("answer", {
@@ -1347,6 +1372,7 @@ export class ReactLoop {
             const fallback = buildCompositionReplacementFallback(ledger)
               ?? buildConstrainedBatchEvidenceFallback(ledger)
               ?? buildItemContentionFallback(ledger)
+              ?? buildSingleUnitBuildFallback(ledger)
               ?? buildAvailableEvidenceFallback(ledger);
             if (fallback) {
               sufficientFinishRepairCount += 1;
@@ -1653,8 +1679,6 @@ export class ReactLoop {
         });
         return terminateForNoProgress(callPolicy.code);
       }
-      duplicateGuard.record(action.tool, action.arguments);
-
       if ((failuresByCapability.get(action.tool) ?? 0) >= 2) {
         state.recordObservation({
           type: "decision_rejected",
@@ -1714,6 +1738,10 @@ export class ReactLoop {
         toolCallId: toolResult.toolCallId,
         attempts: toolResult.attempts
       });
+      // A failed or timed-out call did not produce reusable work. Record the
+      // fingerprint only after execution succeeds so the model can retry once
+      // under the existing per-capability failure circuit.
+      duplicateGuard.record(action.tool, action.arguments);
       const evidenceContract = {
         type: definition.evidenceType,
         source: definition.source,

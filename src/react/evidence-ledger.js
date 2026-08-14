@@ -24,6 +24,9 @@ function containsFacts(value) {
       value.itemContentionPlan.status
     )
   ) return true;
+  if (Array.isArray(value.cards) && value.cards.length > 0) return true;
+  if (Array.isArray(value.buildOptions) && value.buildOptions.length > 0) return true;
+  if (Array.isArray(value.rankedBuilds) && value.rankedBuilds.length > 0) return true;
   if (Array.isArray(value.results)) return value.results.length > 0;
   if (Array.isArray(value.items)) return value.items.length > 0;
   if (Array.isArray(value.hits)) return value.hits.length > 0;

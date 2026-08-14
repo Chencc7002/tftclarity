@@ -15,7 +15,7 @@ const i18n = read("i18n.js");
 test("result pane exposes query, statistics, and video evidence", () => {
   assert.match(html, /data-i18n="resultEyebrow">查询与证据</);
   assert.match(app, /data\?\.assistantResponse\?\.text/);
-  assert.match(app, /data\?\.clarification\?\.needsClarification && !data\?\.assistantResponse\?\.text/);
+  assert.match(app, /if \(data\?\.clarification\?\.needsClarification\)/);
   assert.match(app, /function renderKnowledgeEvidence/);
   assert.match(app, /record\.sourceTitle/);
   assert.match(app, /record\.publishedAt/);

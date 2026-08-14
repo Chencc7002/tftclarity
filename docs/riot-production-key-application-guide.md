@@ -1,6 +1,6 @@
 # tftclarity Riot Production Key 申请流程
 
-> 更新日期：2026-07-20
+> 更新日期：2026-08-13
 >
 > 产品站点：<https://tftclarity.cn/>
 >
@@ -12,7 +12,7 @@
 准备公开产品与合规页面
 → 登录 Riot Developer Portal
 → 注册公开 TFT 产品
-→ 填写并提交 Production Application
+→ 填写完整产品范围并请求 Production + RSO 评审
 → 部署 riot.txt 完成域名验证
 → 等待 Riot 审核并补充材料
 → 获得 Production Key
@@ -30,8 +30,9 @@ Personal Key 不是 Production Key 的强制前置步骤。登录 Portal 后自�
 - [x] 站点使用 HTTPS。
 - [x] Riot 指定的英文法律声明可见。
 - [x] 阵容、趋势、英雄装备、AI 数据解读和连续查询等主要用户流程可演示。
-- [x] Privacy Policy 已部署至 `https://tftclarity.cn/privacy`，公网 GET 返回 200。
-- [x] Terms of Service 已部署至 `https://tftclarity.cn/terms`，公网 GET 返回 200。
+- [x] PBE/NA Riot ID、近期对局、终局棋盘、复盘、玩家 Pool、分享码和 Pool 对比可演示。
+- [ ] 更新后的 Privacy Policy 已部署至 `https://tftclarity.cn/privacy`，并披露 Riot ID、对局事实、PUUID、Pool 与分享码。
+- [ ] 更新后的 Terms of Service 已部署至 `https://tftclarity.cn/terms`，并披露当前未使用 RSO 及 Riot 审核边界。
 - [x] 英文产品说明和用户流程说明已整理至 [Riot Production Application Package](riot-production-application-en.md)。
 - [x] 截图与录屏步骤已整理至 [Riot 审核截图与录屏清单](riot-review-capture-checklist.md)；待人工拍摄。
 
@@ -72,9 +73,9 @@ Personal Key 不是 Production Key 的强制前置步骤。登录 Portal 后自�
 | Website | `https://tftclarity.cn/` |
 | Game | Teamfight Tactics |
 | Target users | Chinese-speaking TFT players |
-| Product type | Public web analytics and decision-support tool |
-| Current data | Third-party aggregated statistics used by the working prototype |
-| Planned Riot data | Official match and league data used to build first-party aggregates |
+| Product type | Public web analytics, match-review, Player Pool, and learning tool |
+| Current data | MetaTFT aggregate/PBE match data, OP.GG-backed NA lookup/matches, official/public static sources, and a normalized server-side fact store |
+| Planned Riot data | Official account, match, league, and static data; RSO for personal-history flows as required by Riot |
 
 ### 产品用途
 
@@ -85,6 +86,8 @@ Personal Key 不是 Production Key 的强制前置步骤。登录 Portal 后自�
 - AI 只解读经过校验的数据，不改写底层统计。
 - 提供多个静态选择、样本量和风险边界。
 - 用于赛前静态参考、赛后学习和版本趋势理解。
+- 用户可输入 PBE/NA Riot ID 查看近期对局、终局棋盘并进行基于证据的赛后复盘。
+- 用户可建立最多两组、每组 1–15 人的 Pool，使用分享码复制成员名单，并在样本门槛约束下查看或比较观察结果。
 
 ### 计划使用的 Riot 接口
 
@@ -92,6 +95,8 @@ Personal Key 不是 Production Key 的强制前置步骤。登录 Portal 后自�
 
 - `tft-league-v1`：获取高段位玩家种子。
 - `tft-match-v1`：获取对局 ID 和对局详情。
+- `account-v1`：解析获批范围内的 Riot ID；RSO 流程使用 `/riot/account/v1/accounts/me` 识别已授权用户。
+- RSO：个人历史功能的账号授权；请 Riot 同时审核任意公开 Riot ID 与 Player Pool 是否允许保留。
 - Data Dragon：获取英雄、装备和羁绊等静态目录与资源。
 
 目标区域应根据实际首期范围填写，例如 TW2、SG2、JP1 或 KR。Riot 公开 API 没有中国大陆服务器路由，申请中不应承诺中国大陆对局覆盖。
@@ -105,12 +110,14 @@ Personal Key 不是 Production Key 的强制前置步骤。登录 Portal 后自�
 - 不侦察对手棋盘、阵容或下一步行为。
 - 不分析被隐藏或无法合理识别的玩家。
 - 不为玩家生成非官方 MMR 或 ELO。
+- 当前无 RSO，输入 Riot ID 不证明账号所有权。
+- 愿意根据 Riot 审核结论把个人历史限制为 RSO 登录本人，并修改或移除非本人历史/Pool 流程。
 
 ### 数据源说明
 
-不应隐瞒当前原型使用 MetaTFT 已处理聚合数据的事实。可说明：
+不应隐瞒当前产品使用 MetaTFT 聚合/PBE 对局数据和 OP.GG-backed NA 玩家数据的事实。可说明：
 
-> The current working prototype uses third-party aggregated statistics to demonstrate the complete user experience. Production API access will be used to build first-party aggregates from Riot-supported TFT match and league data and to migrate the product away from its current dependency.
+> The current working product uses third-party MetaTFT aggregate and PBE player-match data, OP.GG-backed NA player lookup and matches, and official/public static TFT sources. Production API access will be used to migrate supported account, match, league, and aggregate flows to Riot services. We also request RSO review for personal-history access and will apply the account-ownership boundary required by Riot.
 
 Riot 的产品批准不代表 Riot 授权使用 MetaTFT 数据。MetaTFT 接口的长期使用权和稳定性是独立风险，不应将其作为获批后的唯一生产数据方案。
 
@@ -226,6 +233,8 @@ Riot 将重点检查：
 - [ ] `tftclarity@outlook.com` 已配置并完成收信测试。
 - [x] 当前数据源和迁移计划已如实说明。
 - [x] 所需 Riot API 和目标区域已列出。
+- [x] 现有 Riot ID、近期对局、Pool 与分享码已如实写入申请稿。
+- [x] 已明确请求 RSO 评审，并未声称当前已经取得 RSO。
 - [x] 实时、对手侦察和隐藏玩家边界已声明。
 - [ ] Production Application 已提交。
 - [ ] `riot.txt` 已部署并完成验证。
