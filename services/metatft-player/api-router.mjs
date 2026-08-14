@@ -29,6 +29,25 @@ function environmentForTag(tagLine) {
   return /^PBE[0-9]+$/i.test(tagLine) ? "pbe" : "live";
 }
 
+function environmentForRequest(tagLine, query) {
+  const explicit = String(query.get("environment") ?? "").trim().toLowerCase();
+  if (!explicit) return { environment: environmentForTag(tagLine), explicit: false };
+  if (!["pbe", "live"].includes(explicit)) return null;
+  return { environment: explicit, explicit: true };
+}
+
+function playerInput(player, query, scope) {
+  const route = environmentForRequest(player.tagLine, query);
+  if (!route) return null;
+  return {
+    ...player,
+    environment: route.environment,
+    season: seasonFor(route.environment, query),
+    callerKey: scope ?? "anonymous",
+    ...(route.explicit ? { verificationMode: "provider" } : {})
+  };
+}
+
 function seasonFor(environment, query) {
   if (environment === "pbe") return "set18-pbe";
   return query.get("season") ?? process.env.METATFT_NA_DEFAULT_SEASON ?? "set17-live";
@@ -54,13 +73,9 @@ function createPlayerMatchApiRouter(options = {}) {
     if (teachingMatch) {
       const player = parsePlayerId(teachingMatch[1]);
       if (!player) return sendJson(response, 400, { error: "Riot ID must use gameName#tagLine." });
-      const environment = environmentForTag(player.tagLine);
-      const input = {
-        ...player,
-        environment,
-        season: seasonFor(environment, url.searchParams),
-        callerKey: context.scope ?? "anonymous"
-      };
+      const input = playerInput(player, url.searchParams, context.scope);
+      if (!input) return sendJson(response, 400, { error: "environment must be pbe or live." });
+      const environment = input.environment;
       try {
         const history = await client.callTool("list_matches", { ...input, limit: 20 });
         const normalized = history.matches.map((entry) => ({
@@ -139,13 +154,8 @@ function createPlayerMatchApiRouter(options = {}) {
     const player = parsePlayerId(match[1]);
     if (!player) return sendJson(response, 400, { error: "Riot ID must use gameName#tagLine." });
 
-    const environment = environmentForTag(player.tagLine);
-    const input = {
-      ...player,
-      environment,
-      season: seasonFor(environment, url.searchParams),
-      callerKey: context.scope ?? "anonymous"
-    };
+    const input = playerInput(player, url.searchParams, context.scope);
+    if (!input) return sendJson(response, 400, { error: "environment must be pbe or live." });
     try {
       if (match[2]) {
         const result = await client.callTool("get_match", {
@@ -167,4 +177,4 @@ function createPlayerMatchApiRouter(options = {}) {
   };
 }
 
-export { createPlayerMatchApiRouter, parsePlayerId };
+export { createPlayerMatchApiRouter, parsePlayerId, environmentForRequest };

@@ -41,6 +41,33 @@ test("PBE player route requests 10-20 MCP summaries with explicit set18-pbe", as
   });
 });
 
+test("explicit PBE selection accepts arbitrary Riot tags without prefix routing", async () => {
+  const calls = [];
+  const router = createPlayerMatchApiRouter({
+    client: { async callTool(name, input) { calls.push({ name, input }); return { returnedCount: 20, matches: [] }; } }
+  });
+  const response = responseCapture();
+  await router(
+    { method: "GET" },
+    response,
+    new URL("http://localhost/api/player-matches/players/chencc%23aug?environment=pbe&limit=20"),
+    { scope: "visitor-a" }
+  );
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls[0], {
+    name: "list_matches",
+    input: {
+      gameName: "chencc",
+      tagLine: "aug",
+      environment: "pbe",
+      season: "set18-pbe",
+      callerKey: "visitor-a",
+      verificationMode: "provider",
+      limit: 20
+    }
+  });
+});
+
 test("match route expands only the selected match", async () => {
   const calls = [];
   const router = createPlayerMatchApiRouter({

@@ -346,8 +346,8 @@
 .opgg-account-fields { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(80px, .5fr) 64px auto; align-items: end; gap: 8px; }
 .opgg-account-fields label { min-width: 0; display: grid; gap: 5px; }
 .opgg-account-fields label > span { color: var(--muted); font-size: 9px; font-weight: 700; }
-.opgg-account-fields input { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: rgba(255,255,255,.94); font-size: 11px; }
-.opgg-account-fields input:focus { border-color: var(--wallpaper-accent); background: #fff; }
+.opgg-account-fields input, .opgg-account-fields select { width: 100%; min-height: 36px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: rgba(255,255,255,.94); font-size: 11px; }
+.opgg-account-fields input:focus, .opgg-account-fields select:focus { border-color: var(--wallpaper-accent); background: #fff; }
 .opgg-region-chip { min-height: 36px; padding: 5px 8px; display: grid; align-content: center; border: 1px solid var(--line); border-radius: 9px; background: var(--panel-soft); text-align: center; }
 .opgg-region-chip small { color: var(--muted); font-size: 7px; }
 .opgg-region-chip strong { color: var(--ink); font-size: 10px; }

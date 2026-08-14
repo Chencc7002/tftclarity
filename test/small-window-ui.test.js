@@ -428,6 +428,15 @@ test("player pool UI supports 1-15 members, two pools, removal and comparison", 
   assert.match(opggPanel, /点击展开完整指标和代表棋盘/u);
 });
 
+test("personal account region is explicit and Riot tags are not used as server prefixes", () => {
+  assert.match(opggPanel, /id="opgg-personal-environment"/u);
+  assert.match(opggPanel, /<option value="pbe">PBE<\/option><option value="live">NA<\/option>/u);
+  assert.match(opggPanel, /directPlayer = \{ gameName: name, tagLine: tag, environment: "pbe" \}/u);
+  assert.doesNotMatch(opggPanel, /第一版仅支持 PBE数字 或 NA数字/u);
+  assert.match(opggPanel, /directPlayerQuery/u);
+  assert.match(opggPanel, /environment: directPlayer\.environment/u);
+});
+
 test("player pools expose share codes and one-click independent imports", () => {
   assert.match(opggPanel, /用 Pool 码一键导入/u);
   assert.match(opggPanel, /pool-import-code/u);
