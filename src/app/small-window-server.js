@@ -1037,9 +1037,22 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
   const cache = {
     type: String(cacheStoreInfo.type ?? "unknown"),
     persistent: Boolean(cacheStoreInfo.persistent),
-    pathConfigured: Boolean(cachePath)
+    pathConfigured: Boolean(cachePath),
+    operationalMode: runtime.cacheStore?.persistenceDisabled
+      ? "memory_fallback"
+      : cacheStoreInfo.persistent
+        ? "persistent"
+        : "memory"
   };
   if (cachePath) cache.cachePath = String(cachePath);
+  if (runtime.cacheStore?.loadDiagnostic) {
+    cache.recovery = {
+      status: runtime.cacheStore.loadDiagnostic.status,
+      reason: runtime.cacheStore.loadDiagnostic.reason,
+      persistence: runtime.cacheStore.loadDiagnostic.persistence,
+      detectedAt: runtime.cacheStore.loadDiagnostic.detectedAt
+    };
+  }
 
   return {
     processRole: runtime.processRole ?? "all",
@@ -1075,6 +1088,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
     routing: {
       reactChatMode: runtime.reactChatMode ?? "off",
       reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
+      reactTaskFrameControlV1: runtime.reactTaskFrameControlV1 === true,
+      reactTaskFrameShadowV1: runtime.reactTaskFrameShadowV1 === true,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
       conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
     },
@@ -3080,6 +3095,17 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 }
 
 export function createSmallWindowRuntime(options = {}) {
+  const runtimeEnv = options.env ?? process.env;
+  const reactTaskFrameShadowV1 = ["1", "true", "on", "enabled"].includes(String(
+    options.reactTaskFrameShadowV1
+      ?? runtimeEnv.TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1
+      ?? "off"
+  ).trim().toLowerCase());
+  const reactTaskFrameControlV1 = ["1", "true", "on", "enabled"].includes(String(
+    options.reactTaskFrameControlV1
+      ?? runtimeEnv.TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1
+      ?? "off"
+  ).trim().toLowerCase());
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options);
   const explorerToolTimeoutMs = Math.max(
     requestTimeouts.explorerTimeoutMs * 2 + 2_000,
@@ -3267,6 +3293,10 @@ export function createSmallWindowRuntime(options = {}) {
     toolExecutor,
     executionPlanExecutor,
     reactDecisionProvider: options.reactDecisionProvider ?? null,
+    reactTaskFrameShadowV1,
+    reactTaskFrameControlV1,
+    parseSemanticTask: options.parseSemanticTask ?? parseSemanticTask,
+    onReactTaskFrameShadow: options.onReactTaskFrameShadow ?? null,
     reactToolHandlers: options.reactToolHandlers ?? {},
     createReactToolHandlers: options.createReactToolHandlers ?? null,
     // Acceptance runs preserve qualitative model output so unsupported-claim
@@ -7024,6 +7054,161 @@ function immediateReactEntityCatalog(runtime, preferences = {}) {
   };
 }
 
+function immediateUnitMentions(request, runtime, text) {
+  const compactText = String(text ?? "").replace(/\s+/gu, "").toLowerCase();
+  if (!compactText) return [];
+  const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
+  const preferences = entityCatalogPreferences(runtime, seasonContext);
+  const immediate = immediateReactEntityCatalog(runtime, preferences);
+  const byApiName = new Map();
+  for (const unit of immediate.catalog.units) {
+    const aliases = [...new Set([
+      unit.zhName,
+      unit.enName,
+      unit.name,
+      ...(unit.aliases ?? [])
+    ].filter(Boolean))]
+      .map((alias) => String(alias).trim())
+      .filter((alias) => alias.length >= 2)
+      .sort((left, right) => right.length - left.length);
+    const matchedAlias = aliases.find((alias) => (
+      compactText.includes(alias.replace(/\s+/gu, "").toLowerCase())
+    ));
+    if (matchedAlias) byApiName.set(unit.apiName, { unit, alias: matchedAlias });
+  }
+  return [...byApiName.values()];
+}
+
+function ambiguousUnitPlayClarification(request, runtime) {
+  const input = String(request.input ?? "").trim();
+  if (!/(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how\s+(?:do\s+i\s+)?play)/iu.test(input)) return null;
+  if (!/(?:这个|那个|它|其|这张|那张|这个棋子|那个棋子|this|that|it)/iu.test(input)) return null;
+  if (immediateUnitMentions(request, runtime, input).length > 0) return null;
+
+  const sourceMessage = [...(request.messages ?? [])]
+    .reverse()
+    .map((message) => ({
+      content: String(message?.content ?? "").trim(),
+      mentions: immediateUnitMentions(request, runtime, message?.content)
+    }))
+    .find((message) => message.content && message.mentions.length > 0);
+  if (!sourceMessage || sourceMessage.mentions.length <= 1) return null;
+
+  const entityCandidates = sourceMessage.mentions.slice(0, 5).map(({ unit }) => ({
+    entityType: "unit",
+    apiName: unit.apiName,
+    name: unit.zhName || unit.enName || unit.name
+  }));
+  return {
+    question: "上一轮包含多个阵容或棋子，你具体想了解哪一个？",
+    missingFields: ["unit"],
+    suggestions: entityCandidates.map((candidate) => `${candidate.name}怎么玩`),
+    entityCandidates
+  };
+}
+
+async function emitReactTaskFrameShadow(runtime, event) {
+  if (typeof runtime.onReactTaskFrameShadow !== "function") return;
+  try {
+    await runtime.onReactTaskFrameShadow(event);
+  } catch {
+    // Shadow telemetry must never affect the production request path.
+  }
+}
+
+function createReactTaskFrameParse(request, runtime) {
+  let parsePromise = null;
+  return () => {
+    if (!parsePromise) {
+      parsePromise = Promise.resolve().then(() => {
+        const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
+        const preferences = entityCatalogPreferences(runtime, seasonContext);
+        const immediate = immediateReactEntityCatalog(runtime, preferences);
+        const parser = runtime.parseSemanticTask ?? parseSemanticTask;
+        return parser(request.input, {
+          provider: null,
+          catalog: immediate.catalog,
+          conversation: []
+        });
+      });
+    }
+    return parsePromise;
+  };
+}
+
+function isControlledUnitPlayTaskFrame(taskFrame) {
+  const entities = [
+    ...(taskFrame?.subjects ?? []),
+    ...(taskFrame?.candidates ?? []),
+    ...(taskFrame?.concepts ?? [])
+  ];
+  const resolvedSubjects = (taskFrame?.subjects ?? []).filter((subject) => (
+    subject?.expectedType === "champion" && Boolean(subject?.resolvedId)
+  ));
+  const resolvedEntities = entities.filter((entity) => Boolean(entity?.resolvedId));
+  const blockingAmbiguity = (taskFrame?.ambiguities ?? []).some((ambiguity) => (
+    ambiguity?.code === "missing_context_reference"
+    || ambiguity?.affectsResult === true
+    || ambiguity?.affectsToolSelection === true
+  ));
+  return taskFrame?.schemaVersion === "task-frame.v1"
+    && taskFrame?.domain === "tft"
+    && taskFrame?.action === "recommend"
+    && taskFrame?.goal === "recommend_unit_play"
+    && Array.isArray(taskFrame?.expectedOutput)
+    && taskFrame.expectedOutput.includes("unit_play_guidance")
+    && resolvedSubjects.length === 1
+    && resolvedEntities.length === 1
+    && !blockingAmbiguity;
+}
+
+function unitPlaySemanticAdvisory(taskFrame) {
+  const subject = taskFrame.subjects.find((entity) => (
+    entity?.expectedType === "champion" && entity?.resolvedId
+  ));
+  return {
+    action: "recommend",
+    goal: "recommend_unit_play",
+    subject: {
+      resolvedId: subject.resolvedId,
+      canonicalName: subject.canonicalName ?? subject.rawText ?? subject.resolvedId
+    },
+    expectedOutput: ["unit_play_guidance"]
+  };
+}
+
+async function observeReactTaskFrameShadow(runtime, getTaskFrameParse, options = {}) {
+  if (!runtime.reactTaskFrameShadowV1) return;
+  try {
+    const shadowParse = await getTaskFrameParse();
+    const shadowTaskFrame = shadowParse.taskFrame;
+    const missingContextReference = shadowTaskFrame.ambiguities.some((ambiguity) => (
+      ambiguity?.code === "missing_context_reference"
+    ));
+    await emitReactTaskFrameShadow(runtime, {
+      success: true,
+      action: shadowTaskFrame.action,
+      goal: shadowTaskFrame.goal,
+      expectedOutput: [...shadowTaskFrame.expectedOutput],
+      status: shadowTaskFrame.understandingStatus,
+      subjectResolvedIds: shadowTaskFrame.subjects
+        .map((subject) => subject.resolvedId)
+        .filter(Boolean),
+      ambiguityCount: shadowTaskFrame.ambiguities.length,
+      missingContextReference,
+      providerUsed: false,
+      legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched)
+    });
+  } catch (error) {
+    await emitReactTaskFrameShadow(runtime, {
+      success: false,
+      errorName: error?.name ?? "Error",
+      providerUsed: false,
+      legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched)
+    });
+  }
+}
+
 function broadUnitPlayGuidance(request, runtime) {
   const input = String(request.input ?? "").trim();
   const broadPlayPattern = /(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how\s+(?:do\s+i\s+)?play)/iu;
@@ -7031,28 +7216,10 @@ function broadUnitPlayGuidance(request, runtime) {
   if (/(?:装备|出装|阵容|搭配|攻略|视频|技能|羁绊|站位|运营|强化|海克斯|数据|胜率|item|build|comp|lineup|video|guide|skill|ability)/iu.test(input)) {
     return null;
   }
-  const requestedName = input
-    .replace(broadPlayPattern, "")
-    .replace(/(?:这个|这张|这个棋子|棋子|英雄|弈子)/gu, "")
-    .replace(/[\s？?！!。,.，]+/gu, "")
-    .trim();
-  if (!requestedName) return null;
-  const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
-  const preferences = entityCatalogPreferences(runtime, seasonContext);
-  const immediate = immediateReactEntityCatalog(runtime, preferences);
-  const resolved = queryEntityCatalog({
-    catalog: immediate.catalog,
-    details: immediate.entityDetails,
-    input: {
-      entityType: "unit",
-      filters: { names: [requestedName] },
-      limit: 5
-    }
-  });
-  const resolution = resolved.resolution?.requests?.[0];
-  if (resolution?.status !== "resolved" || resolution.candidates.length !== 1) return null;
-  const candidate = resolution.candidates[0];
-  const displayName = candidate.name || requestedName;
+  const currentMentions = immediateUnitMentions(request, runtime, input);
+  if (currentMentions.length !== 1) return null;
+  const { unit, alias: matchedAlias } = currentMentions[0];
+  const displayName = unit.zhName || unit.enName || unit.name || matchedAlias;
   const english = String(request.locale ?? "").toLowerCase().startsWith("en");
   const prompt = english
     ? `You can also continue with ${displayName} compositions or video guides.`
@@ -7066,37 +7233,20 @@ function broadUnitPlayGuidance(request, runtime) {
     initialQuery: english ? `${displayName} recommended items` : `${displayName}推荐出装`,
     entity: {
       entityType: "unit",
-      apiName: candidate.apiName,
+      apiName: unit.apiName,
       name: displayName,
-      matchedAlias: candidate.matchedAlias
+      matchedAlias
     }
   };
 }
 
 function contextualUnitGuidance(request, runtime, playGuidance = null) {
-  const turnText = [
-    ...(request.messages ?? []).map((message) => message.content),
-    request.input
-  ].filter(Boolean).join("\n");
-  const compactTurnText = turnText.replace(/\s+/gu, "").toLowerCase();
+  const input = String(request.input ?? "").trim();
   let entity = playGuidance?.entity ?? null;
   if (!entity) {
-    const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
-    const preferences = entityCatalogPreferences(runtime, seasonContext);
-    const immediate = immediateReactEntityCatalog(runtime, preferences);
-    const matches = immediate.catalog.units.flatMap((unit) => {
-      const aliases = [...new Set([
-        unit.zhName,
-        unit.enName,
-        unit.name,
-        ...(unit.aliases ?? [])
-      ].filter(Boolean))];
-      return aliases
-        .map((alias) => ({ unit, alias: String(alias).trim() }))
-        .filter(({ alias }) => alias.length >= 2 && compactTurnText.includes(alias.replace(/\s+/gu, "").toLowerCase()));
-    }).sort((left, right) => right.alias.length - left.alias.length);
-    const match = matches[0];
-    if (match) {
+    const currentMentions = immediateUnitMentions(request, runtime, input);
+    if (currentMentions.length === 1) {
+      const match = currentMentions[0];
       entity = {
         entityType: "unit",
         apiName: match.unit.apiName,
@@ -7106,6 +7256,15 @@ function contextualUnitGuidance(request, runtime, playGuidance = null) {
     }
   }
   if (!entity) return null;
+
+  const focusedHistory = (request.messages ?? [])
+    .map((message) => String(message?.content ?? "").trim())
+    .filter(Boolean)
+    .filter((content) => {
+      const mentions = immediateUnitMentions(request, runtime, content);
+      return mentions.length === 1 && mentions[0].unit.apiName === entity.apiName;
+    });
+  const turnText = [...focusedHistory, input].filter(Boolean).join("\n");
 
   const english = String(request.locale ?? "").toLowerCase().startsWith("en");
   const covered = {
@@ -7166,8 +7325,48 @@ function contextualUnitGuidance(request, runtime, playGuidance = null) {
 
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
+  const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
   const playGuidance = broadUnitPlayGuidance(normalizedRequest, runtime);
-  const request = playGuidance
+  const getTaskFrameParse = createReactTaskFrameParse(normalizedRequest, runtime);
+  let semanticAdvisory = null;
+  if (runtime.reactTaskFrameControlV1) {
+    try {
+      const controlParse = await getTaskFrameParse();
+      if (isControlledUnitPlayTaskFrame(controlParse?.taskFrame)) {
+        semanticAdvisory = unitPlaySemanticAdvisory(controlParse.taskFrame);
+      }
+    } catch {
+      // A control parse failure falls back to the complete legacy path below.
+    }
+  }
+  await observeReactTaskFrameShadow(runtime, getTaskFrameParse, {
+    legacyBroadUnitPlayMatched: Boolean(playGuidance)
+  });
+  if (ambiguousReference) {
+    return {
+      statusCode: 200,
+      payload: {
+        ok: true,
+        type: "react_chat_result",
+        status: "clarification_required",
+        terminationReason: "ambiguous_unit_reference",
+        question: ambiguousReference.question,
+        missingFields: ambiguousReference.missingFields,
+        clarification: {
+          needsClarification: true,
+          blocking: true,
+          ...ambiguousReference
+        }
+      }
+    };
+  }
+  const controlledUnitPlay = Boolean(semanticAdvisory);
+  const request = controlledUnitPlay
+    ? {
+      ...normalizedRequest,
+      semanticAdvisory
+    }
+    : playGuidance
     ? {
       ...normalizedRequest,
       input: playGuidance.initialQuery,
@@ -7258,7 +7457,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   };
   const availableToolNames = handlerBundle.availableToolNames
     ?? Object.keys(handlerBundle.handlers ?? handlerBundle);
-  const scopedToolNames = playGuidance
+  const scopedToolNames = playGuidance && !controlledUnitPlay
     ? availableToolNames.filter((name) => [
       "entity_catalog_query",
       "unit_builds",
@@ -7287,7 +7486,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));
-    if (playGuidance) {
+    if (playGuidance && !controlledUnitPlay) {
       const unitBuildEvidence = result.evidence?.findLast?.((entry) => (
         entry.toolName === "unit_builds"
         && Array.isArray(entry.value?.cards)
@@ -7334,7 +7533,11 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     }
     const access = await publicAccessStatus();
-    const contextualGuidance = contextualUnitGuidance(normalizedRequest, runtime, playGuidance);
+    const contextualGuidance = contextualUnitGuidance(
+      normalizedRequest,
+      runtime,
+      controlledUnitPlay ? null : playGuidance
+    );
     const payload = {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
       type: "react_chat_result",

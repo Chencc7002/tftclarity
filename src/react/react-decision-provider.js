@@ -1,6 +1,6 @@
 import { validateReactAction } from "./react-action.js";
 
-export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v4";
+export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v5";
 const MAX_DECISION_ATTEMPTS = 2;
 const REACT_STABLE_CONTEXT_SCHEMA_VERSION = "react-stable-context.v1";
 const REACT_RUN_CONTEXT_SCHEMA_VERSION = "react-run-context.v1";
@@ -128,6 +128,25 @@ function historicalEvidence(entries = []) {
   return entries.filter((entry) => entry?.temporalStatus === "historical");
 }
 
+function semanticGuidance(advisory) {
+  if (advisory?.goal !== "recommend_unit_play") return null;
+  const name = String(advisory.subject?.canonicalName ?? advisory.subject?.resolvedId ?? "the named unit");
+  const resolvedId = String(advisory.subject?.resolvedId ?? "unknown");
+  return [
+    "Semantic guidance for this turn:",
+    "- Task: recommend how to play the named unit broadly.",
+    `- Unit: ${name} (${resolvedId})`,
+    "- Expected answer: unit play guidance.",
+    "Treat this as semantic guidance, not an execution plan.",
+    "Keep the user's original question authoritative.",
+    "Choose tools autonomously based on the available evidence.",
+    "Do not reduce this broad request to equipment-only guidance.",
+    "For broad unit-play guidance, cover equipment, composition context, positioning, and when/how to play when supported.",
+    "If structured evidence for a facet is unavailable, do not invent statistics. Give a clearly qualified mechanism/general gameplay suggestion when possible; otherwise state that this facet lacks sufficient evidence.",
+    "Do not search for a video unless the user explicitly asks for one."
+  ].join("\n");
+}
+
 function decisionContract(cacheNamespace) {
   const namespace = String(cacheNamespace ?? "").trim().slice(0, 128);
   return namespace
@@ -169,6 +188,8 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
         messages: state.messages ?? [],
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
+        semanticAdvisory: state.semanticAdvisory ?? null,
+        semanticGuidance: semanticGuidance(state.semanticAdvisory),
         historicalEvidence: historicalEvidence(state.evidence)
       })
     }
@@ -210,7 +231,10 @@ function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNames
       role: "user",
       content: JSON.stringify({
         promptVersion: REACT_DECISION_PROMPT_VERSION,
-        state: legacyState,
+        state: {
+          ...legacyState,
+          semanticGuidance: semanticGuidance(legacyState.semanticAdvisory)
+        },
         toolCatalog: request.toolCatalog ?? [],
         ...(repairNote ? {
           repair: {

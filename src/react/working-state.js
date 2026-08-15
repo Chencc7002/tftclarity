@@ -7,6 +7,9 @@ export class ReactWorkingState {
     this.messages = Array.isArray(request.messages) ? structuredClone(request.messages) : [];
     this.taskAnchor = request.taskAnchor ? structuredClone(request.taskAnchor) : null;
     this.bridgeContext = request.bridgeContext ? structuredClone(request.bridgeContext.view ?? request.bridgeContext) : null;
+    this.semanticAdvisory = request.semanticAdvisory
+      ? structuredClone(request.semanticAdvisory)
+      : null;
     this.budget = Object.freeze({ ...budget });
     this.decisions = [];
     this.observations = [];
@@ -83,6 +86,7 @@ export class ReactWorkingState {
       messages: structuredClone(this.messages),
       taskAnchor: this.taskAnchor ? structuredClone(this.taskAnchor) : null,
       bridgeContext: this.bridgeContext ? structuredClone(this.bridgeContext) : null,
+      semanticAdvisory: this.semanticAdvisory ? structuredClone(this.semanticAdvisory) : null,
       iteration: this.decisions.length + 1,
       decisionCount: this.decisions.length,
       toolCallCount: this.toolCallCount,

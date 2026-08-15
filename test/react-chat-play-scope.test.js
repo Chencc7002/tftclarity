@@ -82,6 +82,77 @@ test("after items and composition, contextual guidance only asks whether to cont
   });
 });
 
+test("a named unit in the current turn overrides an unrelated multi-composition result", async () => {
+  let decisionState = null;
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    reactDecisionProvider: async (request) => {
+      decisionState = request.state;
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "阿狸优先参考当前出装数据。",
+        evidenceIds: [],
+        reasonCode: "direct_answer"
+      };
+    }
+  });
+
+  const { statusCode, payload } = await handleReactChatRequest({
+    input: "请问阿狸这个棋子我现在应该怎么玩呢？",
+    locale: "zh-CN",
+    seasonContextId: "set18-pbe",
+    messages: [
+      { role: "user", content: "简述今日上升的阵容" },
+      {
+        role: "assistant",
+        content: "今日上升阵容包括黑荆棘·沃里克、宿敌·卡兹克、召唤师·深红锋喙鸟和裁决使·芸阿娜。"
+      }
+    ]
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(decisionState.question, "阿狸推荐出装");
+  assert.equal(payload.agentSuggestedActions.entity.apiName, "DA_18_Ahri");
+  assert.deepEqual(payload.agentSuggestedActions.covered, {
+    equipment: true,
+    composition: false,
+    video: false
+  });
+  assert.deepEqual(payload.agentSuggestedActions.actions.map((action) => action.query), [
+    "阿狸阵容搭配", "阿狸视频攻略"
+  ]);
+  assert.doesNotMatch(JSON.stringify(payload.agentSuggestedActions), /沃里克|卡兹克|深红锋喙鸟|芸阿娜/u);
+});
+
+test("an ambiguous pronoun after a multi-composition result asks the user instead of guessing", async () => {
+  let decisionCalls = 0;
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    reactDecisionProvider: async () => {
+      decisionCalls += 1;
+      throw new Error("the agent must not guess an entity");
+    }
+  });
+
+  const { statusCode, payload } = await handleReactChatRequest({
+    input: "这个怎么玩？",
+    locale: "zh-CN",
+    seasonContextId: "set18-pbe",
+    messages: [
+      { role: "user", content: "简述今日上升的阵容" },
+      { role: "assistant", content: "上升阵容包括黑荆棘·沃里克、召唤师·深红锋喙鸟和裁决使·芸阿娜。" }
+    ]
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(decisionCalls, 0);
+  assert.equal(payload.status, "clarification_required");
+  assert.equal(payload.terminationReason, "ambiguous_unit_reference");
+  assert.match(payload.question, /具体想了解哪一个/u);
+  assert.ok(payload.clarification.entityCandidates.length > 1);
+});
+
 test("explicit champion guidance question continues into the agent", async () => {
   let decisionCalls = 0;
   const runtime = createSmallWindowRuntime({

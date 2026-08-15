@@ -593,6 +593,7 @@ test("ExecutionPlan and TFT query adapters keep entity arguments stable and uniq
   assert.deepEqual(compileTftToolArguments("comps_rankings", {
     unit: null,
     days: 3,
+    trendDirection: null,
     preferenceConditions: { strategy: "fast9" }
   }), {
     days: 3,

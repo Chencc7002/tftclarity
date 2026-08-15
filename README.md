@@ -209,6 +209,8 @@ Copy-Item .env.example .env
 | 配置 | 作用 |
 | --- | --- |
 | `TFT_AGENT_REACT_CHAT_MODE` | 开启普通聊天的 ReAct Agent 路径 |
+| `TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1` | 让宽泛英雄玩法问题使用受控 TaskFrame 语义建议 |
+| `TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1` | 记录 TaskFrame 影子解析观测，不改变最终回答 |
 | `TFT_AGENT_CONVERSATION_BRIDGE_MODE` | 将快捷任务的目的、条件和结果传入后续聊天 |
 | `TFT_AGENT_CONCLUSION_MODE` | 开启证据约束的数据解读 |
 | `TFT_AGENT_KNOWLEDGE_MODE` | 本地知识检索总开关 |

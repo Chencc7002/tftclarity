@@ -219,6 +219,63 @@ test("react decision provider keeps the stable contract and run context as an ap
   assert.equal(observation.value.evidence.evidenceId, "ev-1");
 });
 
+test("react decision provider renders bounded broad unit-play semantic guidance", async () => {
+  let body = null;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: JSON.stringify({
+              schemaVersion: "react-action.v1",
+              type: "finish",
+              answer: "装备、阵容、站位和运营建议。",
+              evidenceIds: [],
+              reasonCode: "direct_answer",
+              narrative: null
+            }) } }]
+          };
+        }
+      };
+    }
+  });
+  const semanticAdvisory = {
+    action: "recommend",
+    goal: "recommend_unit_play",
+    subject: {
+      resolvedId: "DA_18_Warwick",
+      canonicalName: "沃里克"
+    },
+    expectedOutput: ["unit_play_guidance"]
+  };
+
+  await provider({
+    state: {
+      question: "沃里克怎么玩？",
+      messages: [],
+      semanticAdvisory,
+      evidence: [],
+      transcript: []
+    },
+    toolCatalog: []
+  });
+
+  const runContext = JSON.parse(body.messages[2].content);
+  assert.deepEqual(runContext.semanticAdvisory, semanticAdvisory);
+  assert.match(runContext.semanticGuidance, /semantic guidance, not an execution plan/iu);
+  assert.match(runContext.semanticGuidance, /do not reduce this broad request to equipment-only guidance/iu);
+  assert.match(runContext.semanticGuidance, /composition context, positioning, and when\/how to play/iu);
+  assert.match(runContext.semanticGuidance, /do not invent statistics/iu);
+  assert.match(runContext.semanticGuidance, /do not search for a video unless the user explicitly asks/iu);
+  assert.doesNotMatch(runContext.semanticGuidance, /only use these three tools/iu);
+  assert.equal(Object.hasOwn(runContext.semanticAdvisory, "capabilityRequirements"), false);
+  assert.equal(Object.hasOwn(runContext, "taskFrame"), false);
+});
+
 test("react decision provider maps DeepSeek cache usage and labels request telemetry", async () => {
   const events = [];
   const provider = createReactDecisionProvider({

@@ -342,6 +342,8 @@ test("small-window runtime status exposes safe cache and LLM metadata", async ()
       model: "test-model",
       timeoutMs: 1500
     },
+    reactTaskFrameControlV1: true,
+    reactTaskFrameShadowV1: true,
     catalog: createCatalog(),
     fetchItems: false,
     metaTFTClient: {},
@@ -355,6 +357,7 @@ test("small-window runtime status exposes safe cache and LLM metadata", async ()
     type: "json",
     persistent: true,
     pathConfigured: true,
+    operationalMode: "persistent",
     cachePath: ".cache/small-window-cache.json"
   });
   assert.deepEqual(status.runtime.structuredParser, {
@@ -366,6 +369,8 @@ test("small-window runtime status exposes safe cache and LLM metadata", async ()
     model: "test-model",
     timeoutMs: 1500
   });
+  assert.equal(status.runtime.routing.reactTaskFrameControlV1, true);
+  assert.equal(status.runtime.routing.reactTaskFrameShadowV1, true);
   assert.deepEqual(status.runtime.requests, {
     explorerTimeoutMs: 2200,
     catalogTimeoutMs: 2200,

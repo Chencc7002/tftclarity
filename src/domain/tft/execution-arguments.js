@@ -45,8 +45,8 @@ export function compileTftToolArguments(tool, query = {}) {
       minSamples: query.minSamples,
       metrics: query.metrics,
       limit: query.limit,
-      direction: query.trendDirection,
-      strategy: query.preferenceConditions?.strategy
+      direction: query.trendDirection ?? undefined,
+      strategy: query.preferenceConditions?.strategy ?? undefined
     });
   }
   if (tool === "item_carrier_rankings") {

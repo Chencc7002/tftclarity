@@ -284,15 +284,15 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
   const missingFields = [];
   const explicitResolvedEntities = [...subjects, ...candidates, ...concepts]
     .filter((entity) => Boolean(entity?.resolvedId));
-  const deicticAlreadyGrounded = references.deictic
-    && (
-      explicitResolvedEntities.length >= 1
-      || (
-        current.action === "compare"
-        && candidates.filter((entity) => Boolean(entity?.resolvedId)).length >= 2
-      )
-    );
-  if (wantsContext && !prior && !deicticAlreadyGrounded) missingFields.push("conversation");
+  const contextAlreadyGrounded = (
+    (references.deictic || references.generic)
+    && explicitResolvedEntities.length >= 1
+  ) || (
+    references.deictic
+    && current.action === "compare"
+    && candidates.filter((entity) => Boolean(entity?.resolvedId)).length >= 2
+  );
+  if (wantsContext && !prior && !contextAlreadyGrounded) missingFields.push("conversation");
   if (references.plural && candidates.length < 2) missingFields.push("candidate_group");
   if (references.composition && concepts.every((entity) => entity.expectedType !== "composition")) {
     missingFields.push("composition");
@@ -302,7 +302,7 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
       ...ambiguities.filter((entry) => entry?.code !== "missing_context"),
       materialMissingContext("missing_context_reference", [...new Set(missingFields)])
     ];
-  } else if (resolvedReferences.length > 0) {
+  } else if (resolvedReferences.length > 0 || contextAlreadyGrounded) {
     ambiguities = ambiguities.filter((entry) => !["missing_context", "missing_context_reference"].includes(entry?.code));
   }
   if (
@@ -330,7 +330,8 @@ export function resolveTaskFrameContext(taskFrame, options = {}) {
     ambiguities,
     understandingStatus: missingFields.length > 0
       ? "understood_but_missing_context"
-      : understandingStatus === "understood_but_missing_context" && resolvedReferences.length > 0
+      : understandingStatus === "understood_but_missing_context"
+        && (resolvedReferences.length > 0 || contextAlreadyGrounded)
         ? "understood_and_supported"
         : understandingStatus === "ambiguous"
           && resolvedReferences.length > 0

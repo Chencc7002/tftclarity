@@ -19,6 +19,8 @@ const compose = read("compose.yaml");
 
 test("V2 production template enables the public-beta runtime without committing real secrets", () => {
   assert.match(productionEnv, /^TFT_AGENT_REACT_CHAT_MODE=on$/mu);
+  assert.match(productionEnv, /^TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1=on$/mu);
+  assert.match(productionEnv, /^TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1=on$/mu);
   assert.match(productionEnv, /^TFT_AGENT_CONVERSATION_BRIDGE_MODE=on$/mu);
   assert.match(productionEnv, /^TFT_AGENT_TRUST_PROXY=true$/mu);
   assert.match(productionEnv, /^TFT_AGENT_LLM_MODE=auto$/mu);

@@ -11,11 +11,11 @@ import {
   resolveSmallWindowSemanticConfig
 } from "../src/app/small-window-server.js";
 
-function videoEvidenceHit() {
+function videoEvidenceHit(patch = "17.9") {
   return {
     id: "youtube:abc123xyz00:item_priority:1",
     documentType: "video_guide",
-    patch: "17.8",
+    patch,
     locale: "zh-CN",
     metadata: {
       source: "youtube",
@@ -24,7 +24,7 @@ function videoEvidenceHit() {
       author: "测试频道",
       publishedAt: "2026-07-20",
       season: "set17-live",
-      patch: "17.8",
+      patch,
       timestampStart: 120,
       timestampEnd: 145,
       claimType: "creator_advice",
@@ -70,7 +70,7 @@ test("RAG HTTP response returns a grounded coach answer and source provenance", 
     semanticRetriever: {
       async search(query, options) {
         calls.push({ query, options });
-        return [videoEvidenceHit()];
+        return [videoEvidenceHit(options.patch)];
       }
     }
   });
