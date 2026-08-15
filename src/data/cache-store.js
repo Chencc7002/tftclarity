@@ -810,6 +810,8 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     this.filePath = options.filePath;
     this.loaded = false;
     this.writeQueue = Promise.resolve();
+    this.persistenceDisabled = false;
+    this.loadDiagnostic = null;
   }
 
   async _ensureLoaded() {
@@ -845,13 +847,28 @@ export class JsonFileCacheStore extends MemoryCacheStore {
       this.nextEntityAliasId = positiveInteger(data.nextEntityAliasId, this.entityAliases.length + 1);
       this.nextFeedbackEventId = positiveInteger(data.nextFeedbackEventId, this.feedbackEvents.length + 1);
     } catch (error) {
-      if (error.code !== "ENOENT") throw error;
+      if (error?.code === "ENOENT") {
+        // A missing file is the normal first-run state.
+      } else if (error instanceof SyntaxError) {
+        this.persistenceDisabled = true;
+        this.loadDiagnostic = {
+          status: "degraded",
+          reason: "invalid_json",
+          persistence: "memory_only",
+          detectedAt: new Date(this.now()).toISOString(),
+          detail: String(error.message ?? "Invalid JSON cache").slice(0, 200)
+        };
+      } else {
+        throw error;
+      }
     }
 
     this.loaded = true;
   }
 
   async _persist() {
+    if (this.persistenceDisabled) return;
+
     const payload = {
       version: 7,
       queryCache: serializeMap(this.queryCache),

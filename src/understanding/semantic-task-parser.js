@@ -549,6 +549,29 @@ function applyEntityCollectionSemantics(taskFrame, text) {
   });
 }
 
+const BROAD_UNIT_PLAY_PATTERN = /(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how\s+(?:do\s+i\s+)?play)/iu;
+const NARROW_UNIT_PLAY_FACET_PATTERN = /(?:装备|出装|给装|配装|阵容|搭配|站位|位置|视频|攻略|技能|属性|详情|效果|介绍|对比|比较|二选一|还是|为什么|为何|为啥|解释|什么意思|item|build|comp|lineup|position|video|guide|skill|ability|detail|compare|versus|why)/iu;
+
+function applyBroadUnitPlaySemantics(taskFrame, text) {
+  const frame = createTaskFrame(taskFrame);
+  if (!BROAD_UNIT_PLAY_PATTERN.test(text) || NARROW_UNIT_PLAY_FACET_PATTERN.test(text)) {
+    return frame;
+  }
+  const resolvedSubjects = frame.subjects.filter((entity) => (
+    entity?.expectedType === "champion" && entity?.resolvedId
+  ));
+  const resolvedEntities = [...frame.subjects, ...frame.candidates, ...frame.concepts]
+    .filter((entity) => Boolean(entity?.resolvedId));
+  if (resolvedSubjects.length !== 1 || resolvedEntities.length !== 1) return frame;
+  return createTaskFrame({
+    ...frame,
+    action: "recommend",
+    goal: "recommend_unit_play",
+    expectedOutput: ["unit_play_guidance"],
+    capabilityRequirements: []
+  });
+}
+
 async function callProviderWithinBudget(provider, request, maxLatencyMs) {
   let timeoutId;
   const providerPromise = Promise.resolve().then(() => provider(request));
@@ -622,10 +645,11 @@ export async function applyDeterministicTftSemantics(taskFrame, input, options =
   frame = applyCandidateGroupBuildSemantics(frame, text);
   frame = applyEntityCollectionSemantics(frame, text);
   frame = applyUnresolvedEntityPolicy(frame, input);
-  return createTaskFrame({
+  frame = createTaskFrame({
     ...frame,
     capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
   });
+  return applyBroadUnitPlaySemantics(frame, text);
 }
 
 export async function parseSemanticTask(input, options = {}) {
@@ -805,6 +829,7 @@ export async function parseSemanticTask(input, options = {}) {
     ...frame,
     capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
   });
+  frame = applyBroadUnitPlaySemantics(frame, text);
 
   const validation = validateTaskFrame(frame);
   if (!validation.valid) {

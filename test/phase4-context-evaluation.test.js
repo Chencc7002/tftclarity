@@ -97,6 +97,47 @@ test("phase 4 generic continuations inherit prior concepts and owned items", () 
   assert.equal(itemResolution.taskFrame.candidates[0].resolvedId, "hydra");
 });
 
+test("phase 4 treats a generic continuation with an explicit resolved entity as grounded", () => {
+  const current = createTaskFrame({
+    action: "analyze",
+    subjects: [{
+      rawText: "沃里克",
+      expectedType: "champion",
+      resolvedId: "DA_18_Warwick",
+      confidence: 1
+    }],
+    goal: "analyze_evidence",
+    ambiguities: [{ code: "missing_context", affectsResult: true }],
+    understandingStatus: "understood_but_missing_context"
+  });
+  const resolution = resolveTaskFrameContext(current, {
+    input: "沃里克怎么玩呢？",
+    conversation: []
+  });
+  assert.equal(resolution.resolved, true);
+  assert.deepEqual(resolution.missingFields, []);
+  assert.equal(resolution.taskFrame.understandingStatus, "understood_and_supported");
+  assert.equal(resolution.taskFrame.ambiguities.some((ambiguity) => (
+    ["missing_context", "missing_context_reference"].includes(ambiguity?.code)
+  )), false);
+});
+
+test("phase 4 still requires history for a true pronoun without an explicit entity", () => {
+  const resolution = resolveTaskFrameContext(createTaskFrame({
+    action: "unknown",
+    goal: "understand_request",
+    understandingStatus: "understood_and_supported"
+  }), {
+    input: "它呢？",
+    conversation: []
+  });
+  assert.equal(resolution.resolved, false);
+  assert.deepEqual(resolution.missingFields, ["conversation"]);
+  assert.equal(resolution.taskFrame.ambiguities.some((ambiguity) => (
+    ambiguity?.code === "missing_context_reference"
+  )), true);
+});
+
 test("phase 4 evaluation enforces reference and clarification gates", async () => {
   const report = await runPhase4Evaluation();
   assert.equal(report.passed, true);

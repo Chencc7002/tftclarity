@@ -37,8 +37,9 @@
 
 4. 替换模板中的所有 `CHANGE_ME`、`replace-me`、示例 endpoint/model 和域名；为每个
    PostgreSQL 角色、Redis、访客签名和管理入口生成不同 secret。不要打印或提交配置。
-5. 确认 V2 Beta 需要的 real model provider 已配置，且 ReAct、Conversation Bridge、
-   trust proxy 保持开启。`app` 必须仍是 Caddy 后唯一可信的内网 upstream。
+5. 确认 V2 Beta 需要的 real model provider 已配置，且 `TFT_AGENT_REACT_CHAT_MODE=on`、
+   `TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1=on`、Conversation Bridge 与 trust proxy 保持开启；
+   `TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1=on` 用于发布观测。`app` 必须仍是 Caddy 后唯一可信的内网 upstream。
 6. 记录发布身份：
 
    ```powershell

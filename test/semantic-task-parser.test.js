@@ -1,6 +1,15 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { createCatalog } from "../src/data/static-data.js";
 import { parseSemanticTask } from "../src/understanding/semantic-task-parser.js";
+
+const broadPlayCatalog = createCatalog({
+  units: [
+    { apiName: "DA_18_Warwick", zhName: "沃里克", aliases: ["沃里克", "warwick"] },
+    { apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸", "ahri"] }
+  ],
+  items: []
+});
 
 test("semantic parser produces compositional task semantics for item comparison", async () => {
   const parsed = await parseSemanticTask("霞的炼刀和巨九选哪个？", {
@@ -78,4 +87,48 @@ test("semantic parser records a controlled deterministic fallback after an inval
     used: true,
     reason: "invalid_response"
   });
+});
+
+test("semantic parser normalizes broad named-unit play questions to unit guidance", async () => {
+  for (const input of [
+    "沃里克怎么玩？",
+    "沃里克怎么玩呢？",
+    "那沃里克的话该怎么玩呢？"
+  ]) {
+    const parsed = await parseSemanticTask(input, {
+      provider: null,
+      catalog: broadPlayCatalog,
+      conversation: []
+    });
+    const frame = parsed.taskFrame;
+    assert.equal(frame.schemaVersion, "task-frame.v1", input);
+    assert.equal(frame.action, "recommend", input);
+    assert.equal(frame.goal, "recommend_unit_play", input);
+    assert.deepEqual(frame.expectedOutput, ["unit_play_guidance"], input);
+    assert.deepEqual(frame.capabilityRequirements, [], input);
+    assert.ok(frame.subjects.some((subject) => (
+      subject.resolvedId === "DA_18_Warwick"
+    )), input);
+    assert.equal(frame.ambiguities.some((ambiguity) => (
+      ambiguity?.code === "missing_context_reference"
+    )), false, input);
+  }
+});
+
+test("broad unit play normalization does not override explicit facets or multiple entities", async () => {
+  const cases = [
+    ["沃里克推荐什么装备？", "recommend_best_option"],
+    ["沃里克的视频攻略怎么玩？", "find_strategy_video"],
+    ["为什么沃里克强？", "explain_concept_or_entity"],
+    ["沃里克和阿狸怎么玩？", "analyze_evidence"]
+  ];
+  for (const [input, expectedGoal] of cases) {
+    const parsed = await parseSemanticTask(input, {
+      provider: null,
+      catalog: broadPlayCatalog,
+      conversation: []
+    });
+    assert.notEqual(parsed.taskFrame.goal, "recommend_unit_play", input);
+    assert.equal(parsed.taskFrame.goal, expectedGoal, input);
+  }
 });
