@@ -2715,6 +2715,10 @@ const EQUIPMENT_CORE_RESULT_TYPES = new Set([
   "unit_best_3_items"
 ]);
 
+const MOBILE_CHAT_CONCLUSION_STREAM_RESULT_TYPES = new Set([
+  "unit_item_comparison"
+]);
+
 const ITEM_RANKING_DISPLAY_LIMIT = 10;
 const MIXED_ITEM_RANKING_DISPLAY_LIMIT = 30;
 
@@ -2745,6 +2749,15 @@ function isSpecialItemRanking(data) {
 
 function isItemPerformance(data) {
   return data?.type === ItemRankingResult.type && Boolean(data?.itemPerformance);
+}
+
+function shouldStreamGeneratedConclusion(data) {
+  return EQUIPMENT_CORE_RESULT_TYPES.has(data?.type)
+    || MOBILE_CHAT_CONCLUSION_STREAM_RESULT_TYPES.has(data?.type)
+    || isSpecialItemRanking(data)
+    || isItemPerformance(data)
+    || !mobileLayoutQuery.matches
+    || state.mobileView === "result";
 }
 
 function itemPerformanceConclusionText(data) {
@@ -5133,7 +5146,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     } else {
       renderResult(data);
     }
-    if (!preserveResultPane && (EQUIPMENT_CORE_RESULT_TYPES.has(data.type) || isSpecialItemRanking(data) || isItemPerformance(data) || !mobileLayoutQuery.matches || state.mobileView === "result")) {
+    if (!preserveResultPane && shouldStreamGeneratedConclusion(data)) {
       void streamGeneratedConclusion(data, requestId);
     }
     setStatusKey(

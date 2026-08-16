@@ -43,7 +43,8 @@ test("mobile web requests fast results and consumes independent conclusion strea
   assert.match(app, /event\.type === "delta"/u);
   assert.match(app, /data-chat-core-conclusion/u);
   assert.match(app, /data-chat-conclusion-stream/u);
-  assert.match(app, /EQUIPMENT_CORE_RESULT_TYPES\.has\(data\.type\)[\s\S]*streamGeneratedConclusion/u);
+  assert.match(app, /MOBILE_CHAT_CONCLUSION_STREAM_RESULT_TYPES = new Set\(\[\s*"unit_item_comparison"/u);
+  assert.match(app, /shouldStreamGeneratedConclusion\(data\)[\s\S]*streamGeneratedConclusion/u);
   assert.match(app, /function specialItemRankingConclusionText\(data\)/u);
   assert.match(app, /isSpecialItemRanking\(data\)[\s\S]*streamGeneratedConclusion/u);
   assert.match(app, /chatSpecialRankingWithItems/u);

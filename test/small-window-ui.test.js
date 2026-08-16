@@ -581,6 +581,8 @@ test("small-window comparison cards distinguish winners and compared items", () 
 test("small-window renders dedicated responsive item comparison evidence", () => {
   assert.match(appJs, /data\.type === "unit_item_comparison"/);
   assert.match(appJs, /renderItemComparison/);
+  assert.match(appJs, /MOBILE_CHAT_CONCLUSION_STREAM_RESULT_TYPES = new Set\(\[\s*"unit_item_comparison"/u);
+  assert.match(appJs, /shouldStreamGeneratedConclusion\(data\)/u);
   assert.match(appJs, /comparison\.primaryMetric/);
   assert.match(appJs, /comparisonOverlap/);
   assert.match(appJs, /commonFullBuild/);
