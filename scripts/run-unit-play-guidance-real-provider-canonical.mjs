@@ -6,6 +6,8 @@ import {
   authorizeCanonicalRealProviderRun,
   PR1D_CANONICAL_AUTH_ENV,
   PR1D_CANONICAL_CREDENTIAL_ENV,
+  PR1D_CANONICAL_LIMITS,
+  PR1D_RECOVERY_AUTH_ENV,
   runCanonicalRealProviderExperiment
 } from "../src/experiments/unit-play-guidance-real-provider/canonical.js";
 import { runRealProviderPreflight } from "../src/experiments/unit-play-guidance-real-provider/preflight.js";
@@ -74,6 +76,8 @@ This is an offline real-provider acceptance artifact. It does not authorize prod
 | Planned / completed Agent runs | ${result.plan.plannedAgentRuns} / ${result.plan.completedAgentRuns} |
 | Provider HTTP requests | ${result.fuse.providerHttpRequests} |
 | Provider-reported total tokens | ${result.fuse.totalTokens} |
+| Pre-dispatch blocked calls | ${result.fuse.blockedBeforeDispatch} |
+| Reservation underflows | ${result.fuse.reservationUnderflows} |
 | Provider identity observations | ${result.providerIdentity.observations} |
 | Immutable identity unavailable | ${result.providerIdentity.immutableIdentityUnavailable} |
 
@@ -97,6 +101,7 @@ This is an offline real-provider acceptance artifact. It does not authorize prod
 - Completion parity: ${result.aggregate.reliability.completionParityPass ? "PASS" : "FAIL"}.
 - Global fuse: ${result.fuse.exhausted ? `OPEN (${result.fuse.exhaustedReason})` : "not reached"}.
 - Abort: ${result.abort ? `\`${result.abort.code}\` — ${result.abort.message}` : "none"}.
+- Recovery execution: fresh 180 runs; prior attempt samples imported: ${result.manifest.recovery.priorAttemptSamplesImported}.
 
 ## Next gate
 
@@ -105,8 +110,12 @@ Arm-blinded facet labels and adjudication remain required before the Value and S
 }
 
 const cliAuthorized = process.argv.slice(2).includes("--canonical-real-provider");
+const recoveryCliAuthorized = process.argv.slice(2).includes("--recovery-attempt-02");
 if (!cliAuthorized) {
   throw new Error("PR1D real-provider calls remain locked: pass --canonical-real-provider");
+}
+if (!recoveryCliAuthorized) {
+  throw new Error("PR1D attempt-02 calls remain locked: pass --recovery-attempt-02 after preflight review");
 }
 
 const [config, corpus, fixtures] = await Promise.all([
@@ -128,6 +137,8 @@ const preflight = await runRealProviderPreflight({
 const authorization = authorizeCanonicalRealProviderRun({
   cliAuthorized,
   environmentAuthorization: process.env[PR1D_CANONICAL_AUTH_ENV],
+  recoveryCliAuthorized,
+  recoveryEnvironmentAuthorization: process.env[PR1D_RECOVERY_AUTH_ENV],
   apiKey,
   endpoint: config.provider.endpoint,
   worktreeClean,
@@ -151,7 +162,15 @@ const authorizationManifest = {
   provider: config.provider,
   agent: config.agent,
   frozen: config.frozen,
-  limits: { totalTokenHardCap: 4_000_000, providerHttpRequestHardCap: 1_500, pairConcurrency: 1 },
+  limits: PR1D_CANONICAL_LIMITS,
+  recovery: {
+    sourceAttemptId: "canonical-eb6ba94-01",
+    sourceAttemptAcceptance: "failed",
+    sourceAttemptSecondaryAnalysis: "inconclusive",
+    executionMode: "fresh_full_180",
+    priorAttemptSamplesImported: 0,
+    capChangeReason: "empirical recovery after attempt-01 capacity exhaustion"
+  },
   pairOrderSha256: authorization.pairOrderSha256
 };
 await fs.writeFile(

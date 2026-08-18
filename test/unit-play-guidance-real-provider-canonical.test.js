@@ -5,10 +5,12 @@ import test from "node:test";
 
 import {
   authorizeCanonicalRealProviderRun,
+  buildCanonicalTokenReservation,
   createCanonicalRunFuse,
   PR1D_CANONICAL_PAIR_ORDER_SHA256,
   runCanonicalRealProviderExperiment
 } from "../src/experiments/unit-play-guidance-real-provider/canonical.js";
+import { numericStatisticalClaimAudit } from "../src/experiments/unit-play-guidance-control/harness.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const readJson = (relative) => fs.readFile(path.join(ROOT, relative), "utf8").then(JSON.parse);
@@ -22,6 +24,8 @@ function authorization(overrides = {}) {
   return authorizeCanonicalRealProviderRun({
     cliAuthorized: true,
     environmentAuthorization: "1",
+    recoveryCliAuthorized: true,
+    recoveryEnvironmentAuthorization: "1",
     apiKey: "test-only-not-persisted",
     endpoint: config.provider.endpoint,
     worktreeClean: true,
@@ -38,10 +42,14 @@ function parsedMessages(body) {
   }).filter(Boolean);
 }
 
-function fakeCanonicalFetch({ driftAtRequest = Number.POSITIVE_INFINITY } = {}) {
+function fakeCanonicalFetch({
+  driftAtRequest = Number.POSITIVE_INFINITY,
+  unsupportedNumericOnce = false
+} = {}) {
   let active = 0;
   let maxActive = 0;
   let requests = 0;
+  let unsafeFinishReturned = false;
   const fetchImpl = async (_url, options) => {
     active += 1;
     maxActive = Math.max(maxActive, active);
@@ -72,10 +80,14 @@ function fakeCanonicalFetch({ driftAtRequest = Number.POSITIVE_INFINITY } = {}) 
         action = { schemaVersion: "react-action.v1", type: "call_tool", tool: "comps_rankings", arguments: { unit, seasonContextId }, purposeCode: "retrieve_current_statistics" };
       } else {
         const evidenceIds = observations.map((entry) => entry.value?.evidence?.evidenceId).filter(Boolean);
+        const unsafe = unsupportedNumericOnce && !unsafeFinishReturned;
+        if (unsafe) unsafeFinishReturned = true;
         action = {
           schemaVersion: "react-action.v1",
           type: "finish",
-          answer: "当前证据已覆盖单位定位、装备逻辑和阵容语境；站位与选择时机只在证据明确时采用。",
+          answer: unsafe
+            ? "当前胜率 60%。"
+            : "当前证据已覆盖单位定位、装备逻辑和阵容语境；站位与选择时机只在证据明确时采用。",
           evidenceIds,
           reasonCode: "sufficient_evidence",
           narrative: null
@@ -107,6 +119,8 @@ test("real-provider unlock requires every explicit gate and never returns the cr
 
   assert.throws(() => authorization({ cliAuthorized: false }), /missing --canonical-real-provider/u);
   assert.throws(() => authorization({ environmentAuthorization: "0" }), /must equal 1/u);
+  assert.throws(() => authorization({ recoveryCliAuthorized: false }), /missing --recovery-attempt-02/u);
+  assert.throws(() => authorization({ recoveryEnvironmentAuthorization: "0" }), /PR1D_RECOVERY_PROVIDER_AUTHORIZED/u);
   assert.throws(() => authorization({ apiKey: "" }), /is not configured/u);
   assert.throws(() => authorization({ endpoint: "https://example.com/chat" }), /api\.deepseek\.com/u);
   assert.throws(() => authorization({ worktreeClean: false }), /worktree must be clean/u);
@@ -114,27 +128,79 @@ test("real-provider unlock requires every explicit gate and never returns the cr
   assert.throws(() => authorization({ pairOrderSha256: "drift" }), /pair order hash drifted/u);
 });
 
-test("global fuse freezes 4M tokens, 1500 HTTP requests, and pair concurrency 1", () => {
+test("recovery fuse freezes 10M tokens, 1800 HTTP requests, and pair concurrency 1", () => {
   const tokenFuse = createCanonicalRunFuse();
-  tokenFuse.beforeRequest();
-  tokenFuse.observePayload({ usage: { prompt_tokens: 3_999_999, completion_tokens: 1, total_tokens: 4_000_000 } });
+  tokenFuse.beforeRequest({ reservedTokens: 10_000_000 });
+  tokenFuse.observePayload(
+    { usage: { prompt_tokens: 9_999_999, completion_tokens: 1, total_tokens: 10_000_000 } },
+    { reservedTokens: 10_000_000 }
+  );
   assert.equal(tokenFuse.snapshot().exhaustedReason, "total_token_hard_cap");
-  assert.throws(() => tokenFuse.beforeRequest(), /token hard cap|fuse is open/iu);
+  assert.throws(() => tokenFuse.beforeRequest({ reservedTokens: 1 }), /fuse is open/iu);
 
   const requestFuse = createCanonicalRunFuse();
-  for (let index = 0; index < 1_500; index += 1) requestFuse.beforeRequest();
+  for (let index = 0; index < 1_800; index += 1) requestFuse.beforeRequest({ reservedTokens: 1 });
+  assert.throws(() => requestFuse.beforeRequest({ reservedTokens: 1 }), /HTTP-request hard cap/iu);
   assert.equal(requestFuse.snapshot().exhaustedReason, "provider_http_request_hard_cap");
-  assert.throws(() => requestFuse.beforeRequest(), /HTTP-request hard cap|fuse is open/iu);
   assert.deepEqual(requestFuse.snapshot().limits, {
-    totalTokenHardCap: 4_000_000,
-    providerHttpRequestHardCap: 1_500,
+    totalTokenHardCap: 10_000_000,
+    providerHttpRequestHardCap: 1_800,
     pairConcurrency: 1
   });
   assert.throws(() => createCanonicalRunFuse({
-    totalTokenHardCap: 4_000_001,
-    providerHttpRequestHardCap: 1_500,
+    totalTokenHardCap: 10_000_001,
+    providerHttpRequestHardCap: 1_800,
     pairConcurrency: 1
   }), /limits must remain frozen/u);
+});
+
+test("pre-dispatch reservation blocks near-cap initial and repair calls without dispatch", () => {
+  const initial = buildCanonicalTokenReservation({
+    body: JSON.stringify({ messages: [{ role: "user", content: "initial" }], max_tokens: 1_800 })
+  });
+  const repair = buildCanonicalTokenReservation({
+    body: JSON.stringify({ messages: [{ role: "user", content: "repair" }], max_tokens: 700 })
+  });
+  assert.ok(initial.reservedTokens > repair.reservedTokens);
+
+  for (const reservation of [initial, repair]) {
+    const fuse = createCanonicalRunFuse();
+    fuse.beforeRequest({ reservedTokens: 10_000_000 });
+    fuse.observePayload(
+      { usage: { total_tokens: 10_000_000 - reservation.reservedTokens + 1 } },
+      { reservedTokens: 10_000_000 }
+    );
+    const requestsBefore = fuse.snapshot().providerHttpRequests;
+    assert.throws(() => fuse.beforeRequest(reservation), /before dispatch/iu);
+    assert.equal(fuse.snapshot().providerHttpRequests, requestsBefore);
+    assert.equal(fuse.snapshot().blockedBeforeDispatch, 1);
+  }
+});
+
+test("reservation underflow is an execution-control failure", () => {
+  const fuse = createCanonicalRunFuse();
+  fuse.beforeRequest({ reservedTokens: 10 });
+  assert.throws(() => fuse.observePayload(
+    { usage: { total_tokens: 11 } },
+    { reservedTokens: 10 }
+  ), (error) => error?.code === "hard_cap_enforcement_failure");
+  assert.equal(fuse.snapshot().reservationUnderflows, 1);
+});
+
+test("numeric auditor ignores identifiers, accepts Evidence values, and detects unsupported statistics", () => {
+  const evidence = [{ evidenceId: "ev-1", value: { samples: 52_886 } }];
+  const audit = (answer) => numericStatisticalClaimAudit({
+    answer,
+    evidence,
+    groundingAudit: { violations: [] },
+    modelConclusion: { validationErrors: [] }
+  }, []);
+  assert.equal(audit("TFT18_Jinx、S18、item_123、evidence-42、https://example.test/18").authoritativeViolationCount, 0);
+  assert.equal(audit("样本为 52,886 场。").authoritativeViolationCount, 0);
+  assert.equal(audit("胜率 60%。").authoritativeViolationCount, 1);
+  const mixed = audit("TFT18_Jinx 的胜率 60%。");
+  assert.equal(mixed.authoritativeViolationCount, 1);
+  assert.equal(mixed.violations[0].raw, "60%");
 });
 
 test("fake transport executes the frozen 180-run plan sequentially and emits blinded artifacts", async () => {
@@ -181,6 +247,23 @@ test("Provider identity drift aborts the canonical attempt before a third HTTP r
   assert.equal(result.plan.completedAgentRuns, 0);
   assert.equal(result.fuse.providerHttpRequests, 2);
   assert.equal(fake.snapshot().requests, 2);
+});
+
+test("confirmed unsupported statistic aborts before the paired arm starts", async () => {
+  const fake = fakeCanonicalFetch({ unsupportedNumericOnce: true });
+  const { result } = await runCanonicalRealProviderExperiment({
+    config,
+    corpus,
+    fixtures,
+    authorization: authorization(),
+    apiKey: "test-only-not-persisted",
+    fetchImpl: fake.fetchImpl
+  });
+  assert.equal(result.status, "failed");
+  assert.equal(result.abort.code, "safety_violation");
+  assert.equal(result.plan.completedAgentRuns, 1);
+  assert.equal(result.runs[0].safety.inventedNumericStatistics, 1);
+  assert.equal(fake.snapshot().requests, result.fuse.providerHttpRequests);
 });
 
 test("candidate context drift is an immediate candidate_skill_failure before Provider HTTP", async () => {

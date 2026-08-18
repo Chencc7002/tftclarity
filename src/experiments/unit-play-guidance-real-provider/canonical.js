@@ -12,6 +12,7 @@ import {
   evidenceFacetAudit,
   frozenToolHandlers,
   nativeSucceeded,
+  numericStatisticalClaimAudit,
   safetyAudit,
   taskFrameFromCase,
   UNIT_PLAY_GUIDANCE_EXPERIMENT_AVAILABLE_TOOLS,
@@ -26,18 +27,24 @@ import {
   sha256
 } from "../unit-play-guidance-control/content.js";
 import { buildCanonicalRunPlan, createProviderIdentityTracker } from "./preflight.js";
+import {
+  buildCanonicalTokenReservation,
+  createCanonicalRunFuse,
+  isCanonicalImmediateAbortCode,
+  PR1D_ATTEMPT_01_DIAGNOSTIC,
+  PR1D_RECOVERY_LIMITS,
+  zeroToleranceSafetyViolations
+} from "./recovery.js";
 
-export const PR1D_CANONICAL_SCHEMA_VERSION = "unit-play-guidance-real-provider-canonical.v1";
-export const PR1D_CANONICAL_RUNTIME_VERSION = "unit-play-guidance-real-provider-canonical.v1";
+export const PR1D_CANONICAL_SCHEMA_VERSION = "unit-play-guidance-real-provider-canonical.v2";
+export const PR1D_CANONICAL_RUNTIME_VERSION = "unit-play-guidance-real-provider-canonical.v2";
 export const PR1D_CANONICAL_MODE = "canonical_real_provider";
 export const PR1D_CANONICAL_AUTH_ENV = "PR1D_REAL_PROVIDER_AUTHORIZED";
+export const PR1D_RECOVERY_AUTH_ENV = "PR1D_RECOVERY_PROVIDER_AUTHORIZED";
 export const PR1D_CANONICAL_CREDENTIAL_ENV = "OPENAI_API_KEY";
 export const PR1D_CANONICAL_PAIR_ORDER_SHA256 = "94dbd2bd32461e996b36ed28265b0a5baba76af7694ce02dd52fba441fdc826a";
-export const PR1D_CANONICAL_LIMITS = Object.freeze({
-  totalTokenHardCap: 4_000_000,
-  providerHttpRequestHardCap: 1_500,
-  pairConcurrency: 1
-});
+export const PR1D_CANONICAL_LIMITS = PR1D_RECOVERY_LIMITS;
+export { buildCanonicalTokenReservation, createCanonicalRunFuse } from "./recovery.js";
 
 function clone(value) {
   return structuredClone(value);
@@ -53,28 +60,6 @@ function percentile(values, ratio) {
   return sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * ratio) - 1)];
 }
 
-function normalizedProviderUsage(payload = {}) {
-  const usage = payload?.usage ?? {};
-  const cacheHit = Number(usage.prompt_cache_hit_tokens ?? 0);
-  const cacheMiss = Number(usage.prompt_cache_miss_tokens ?? 0);
-  const input = Number(usage.prompt_tokens ?? usage.input_tokens ?? (cacheHit + cacheMiss));
-  const output = Number(usage.completion_tokens ?? usage.output_tokens ?? 0);
-  const total = Number(usage.total_tokens ?? (input + output));
-  if (![input, output, total].every(Number.isFinite)) return null;
-  return {
-    cachedInputTokens: Math.max(0, Number(
-      usage.prompt_tokens_details?.cached_tokens
-      ?? usage.input_tokens_details?.cached_tokens
-      ?? usage.cached_input_tokens
-      ?? usage.prompt_cache_hit_tokens
-      ?? 0
-    )),
-    uncachedInputTokens: Math.max(0, usage.prompt_cache_miss_tokens == null ? input - cacheHit : cacheMiss),
-    outputTokens: Math.max(0, output),
-    totalTokens: Math.max(0, total)
-  };
-}
-
 function taggedError(message, code) {
   const error = new Error(message);
   error.code = code;
@@ -84,6 +69,8 @@ function taggedError(message, code) {
 export function authorizeCanonicalRealProviderRun({
   cliAuthorized,
   environmentAuthorization,
+  recoveryCliAuthorized,
+  recoveryEnvironmentAuthorization,
   apiKey,
   endpoint,
   worktreeClean,
@@ -94,6 +81,8 @@ export function authorizeCanonicalRealProviderRun({
   const failures = [];
   if (cliAuthorized !== true) failures.push("missing --canonical-real-provider");
   if (environmentAuthorization !== "1") failures.push(`${PR1D_CANONICAL_AUTH_ENV} must equal 1`);
+  if (recoveryCliAuthorized !== true) failures.push("missing --recovery-attempt-02");
+  if (recoveryEnvironmentAuthorization !== "1") failures.push(`${PR1D_RECOVERY_AUTH_ENV} must equal 1`);
   if (!String(apiKey ?? "").trim()) failures.push(`${PR1D_CANONICAL_CREDENTIAL_ENV} is not configured`);
   let credentialBindingConfirmedFor = null;
   try {
@@ -120,62 +109,6 @@ export function authorizeCanonicalRealProviderRun({
     implementationCommitSha: String(implementationCommitSha),
     pairOrderSha256
   });
-}
-
-export function createCanonicalRunFuse(limits = PR1D_CANONICAL_LIMITS) {
-  const frozenLimits = Object.freeze({
-    totalTokenHardCap: Number(limits.totalTokenHardCap),
-    providerHttpRequestHardCap: Number(limits.providerHttpRequestHardCap),
-    pairConcurrency: Number(limits.pairConcurrency)
-  });
-  if (frozenLimits.totalTokenHardCap !== 4_000_000
-    || frozenLimits.providerHttpRequestHardCap !== 1_500
-    || frozenLimits.pairConcurrency !== 1) {
-    throw taggedError("canonical global limits must remain frozen", "authorization_failed");
-  }
-  let providerHttpRequests = 0;
-  let totalTokens = 0;
-  let responsesWithUsage = 0;
-  let responsesWithoutUsage = 0;
-  let exhaustedReason = null;
-  return {
-    beforeRequest() {
-      if (exhaustedReason) throw taggedError(`canonical fuse is open: ${exhaustedReason}`, "budget_failure");
-      if (providerHttpRequests >= frozenLimits.providerHttpRequestHardCap) {
-        exhaustedReason = "provider_http_request_hard_cap";
-        throw taggedError("canonical Provider HTTP-request hard cap reached", "budget_failure");
-      }
-      if (totalTokens >= frozenLimits.totalTokenHardCap) {
-        exhaustedReason = "total_token_hard_cap";
-        throw taggedError("canonical actual total-token hard cap reached", "budget_failure");
-      }
-      providerHttpRequests += 1;
-      if (providerHttpRequests >= frozenLimits.providerHttpRequestHardCap) {
-        exhaustedReason = "provider_http_request_hard_cap";
-      }
-    },
-    observePayload(payload) {
-      const usage = normalizedProviderUsage(payload);
-      if (!usage) responsesWithoutUsage += 1;
-      else {
-        responsesWithUsage += 1;
-        totalTokens += usage.totalTokens;
-        if (totalTokens >= frozenLimits.totalTokenHardCap) exhaustedReason = "total_token_hard_cap";
-      }
-      return usage;
-    },
-    snapshot() {
-      return {
-        limits: clone(frozenLimits),
-        providerHttpRequests,
-        totalTokens,
-        responsesWithUsage,
-        responsesWithoutUsage,
-        exhausted: Boolean(exhaustedReason),
-        exhaustedReason
-      };
-    }
-  };
 }
 
 function sanitizedProviderLog(entry = {}) {
@@ -205,14 +138,16 @@ function telemetryTokenTotal(providerLogs) {
 
 function createGuardedFetch({ fetchImpl, fuse, identityTracker }) {
   return async (url, options) => {
-    fuse.beforeRequest();
+    const reservation = buildCanonicalTokenReservation(options);
+    fuse.beforeRequest(reservation);
     const response = await fetchImpl(url, options);
     if (response?.ok && typeof response.clone === "function") {
       try {
         const payload = await response.clone().json();
-        fuse.observePayload(payload);
+        fuse.observePayload(payload, reservation);
         identityTracker.observe(payload);
       } catch (error) {
+        if (error?.code) throw error;
         if (/provider identity drift/iu.test(String(error?.message ?? error))) {
           const drift = taggedError(String(error.message), "provider_identity_drift");
           throw drift;
@@ -324,6 +259,13 @@ async function runCanonicalArm({
   if (errorCodes.includes("provider_identity_drift")) {
     throw taggedError("provider identity drifted during the canonical run", "provider_identity_drift");
   }
+  for (const code of ["hard_cap_enforcement_failure", "budget_reservation_failure", "budget_failure"]) {
+    if (errorCodes.includes(code)) {
+      throw taggedError(`canonical Provider execution stopped: ${code}`, code);
+    }
+  }
+  const numericAudit = numericStatisticalClaimAudit(result, events);
+  const safety = safetyAudit(result, events);
   return {
     schemaVersion: "unit-play-guidance-real-provider-arm.v1",
     runIndex: pair.runIndex,
@@ -348,8 +290,9 @@ async function runCanonicalArm({
     },
     answerFacets: answerFacetAudit(result.answer, evalCase),
     evidenceFacets: evidenceFacetAudit(result, evalCase),
-    safety: safetyAudit(result, events),
-    normalProviderCompletion: nativeSucceeded({ result, safety: safetyAudit(result, events) })
+    numericAudit,
+    safety,
+    normalProviderCompletion: nativeSucceeded({ result, safety })
   };
 }
 
@@ -506,11 +449,18 @@ export async function runCanonicalRealProviderExperiment({
         });
         runs.push(run);
         await onCheckpoint?.({ type: "arm_completed", run: clone(run), fuse: fuse.snapshot() });
+        const safetyViolations = zeroToleranceSafetyViolations(run.safety);
+        if (safetyViolations.length) {
+          throw taggedError(
+            `canonical zero-tolerance safety violation: ${safetyViolations.map((entry) => `${entry.field}=${entry.count}`).join(", ")}`,
+            "safety_violation"
+          );
+        }
       } catch (error) {
         const code = String(error?.code ?? "runtime_failure");
         abort = { code, message: String(error?.message ?? error).slice(0, 500), pairId: pair.pairId, arm };
         await onCheckpoint?.({ type: "attempt_aborted", abort: clone(abort), fuse: fuse.snapshot() });
-        if (["candidate_skill_failure", "provider_identity_drift", "budget_failure"].includes(code)) break;
+        if (isCanonicalImmediateAbortCode(code)) break;
         throw error;
       }
       if (fuse.snapshot().exhausted) {
@@ -533,7 +483,12 @@ export async function runCanonicalRealProviderExperiment({
   const identity = identityTracker.snapshot();
   const fuseSnapshot = fuse.snapshot();
   const completedPlan = runs.length === config.execution.plannedAgentRuns;
-  const status = abort?.code === "candidate_skill_failure"
+  const failureCodes = new Set([
+    "candidate_skill_failure",
+    "hard_cap_enforcement_failure",
+    "safety_violation"
+  ]);
+  const status = failureCodes.has(abort?.code)
     ? "failed"
     : !completedPlan || abort || fuseSnapshot.responsesWithoutUsage > 0
       ? "inconclusive"
@@ -559,7 +514,12 @@ export async function runCanonicalRealProviderExperiment({
       credentialBindingConfirmedFor: authorization.credentialBindingConfirmedFor,
       authorization: { implementation: true, providerCalls: true },
       limits: clone(PR1D_CANONICAL_LIMITS),
-      frozen: clone(config.frozen)
+      frozen: clone(config.frozen),
+      recovery: {
+        sourceAttempt: clone(PR1D_ATTEMPT_01_DIAGNOSTIC),
+        executionMode: "fresh_full_180",
+        priorAttemptSamplesImported: 0
+      }
     },
     plan: {
       pairCount: plan.pairCount,

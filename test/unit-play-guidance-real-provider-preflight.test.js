@@ -91,6 +91,18 @@ test("zero-call preflight passes frozen routing, fallback, hashes, seam, and pla
   assert.equal(result.seam.localCaptureRequests, 2);
   assert.equal(result.seam.defaultMessagesByteIdentical, true);
   assert.equal(result.seam.onlyGuidanceDiffers, true);
+  assert.deepEqual(result.recovery.limits, {
+    totalTokenHardCap: 10_000_000,
+    providerHttpRequestHardCap: 1_800,
+    pairConcurrency: 1
+  });
+  assert.equal(result.recovery.priorAttemptSamplesImported, 0);
+  assert.ok(Object.values(result.recovery.numericAudit).every(Boolean));
+  assert.ok(Object.values(result.recovery.immediateAbort).every(Boolean));
+  assert.equal(result.recovery.reservation.attempt01KnownUsageCovered, true);
+  assert.equal(result.recovery.reservation.nearCapBlockedBeforeDispatch, true);
+  assert.equal(result.recovery.reservation.repairIndependentlyBlockedBeforeDispatch, true);
+  assert.equal(result.recovery.reservation.actualProviderHttpCalls, 0);
   assert.ok(Object.values(result.gates).every(Boolean));
   assert.deepEqual(result.deterministicChecks.routing, {
     positiveEligible: 30,

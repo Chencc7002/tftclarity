@@ -3,16 +3,27 @@ import { promises as fs } from "node:fs";
 import path from "node:path";
 
 import { createReactDecisionProvider, REACT_DECISION_PROMPT_VERSION } from "../../react/react-decision-provider.js";
-import { runUnitPlayGuidanceControlExperiment } from "../unit-play-guidance-control/harness.js";
+import {
+  numericStatisticalClaimAudit,
+  runUnitPlayGuidanceControlExperiment
+} from "../unit-play-guidance-control/harness.js";
 import {
   BASELINE_GUIDANCE_SHA256,
   CANDIDATE_SKILL_CONTENT_SHA256,
   stableJson
 } from "../unit-play-guidance-control/content.js";
+import {
+  buildCanonicalTokenReservation,
+  createCanonicalRunFuse,
+  isCanonicalImmediateAbortCode,
+  PR1D_ATTEMPT_01_DIAGNOSTIC,
+  PR1D_RECOVERY_LIMITS,
+  zeroToleranceSafetyViolations
+} from "./recovery.js";
 
-export const PR1D_PREFLIGHT_SCHEMA_VERSION = "unit-play-guidance-real-provider-preflight.v1";
-export const PR1D_MANIFEST_SCHEMA_VERSION = "unit-play-guidance-real-provider-manifest.v1";
-export const PR1D_PREFLIGHT_RUNTIME_VERSION = "unit-play-guidance-real-provider-preflight.v1";
+export const PR1D_PREFLIGHT_SCHEMA_VERSION = "unit-play-guidance-real-provider-preflight.v2";
+export const PR1D_MANIFEST_SCHEMA_VERSION = "unit-play-guidance-real-provider-manifest.v2";
+export const PR1D_PREFLIGHT_RUNTIME_VERSION = "unit-play-guidance-real-provider-preflight.v2";
 
 const IDENTITY_FIELDS = Object.freeze(["model", "version", "system_fingerprint"]);
 const AUTHORIZATION_HEADER_PATTERN = /"authorizationHeader"\s*:|\bbearer\s+[a-z0-9._~+\/-]+/iu;
@@ -235,7 +246,87 @@ function redactManifest(config, { apiKeyConfigured, implementationCommitSha }) {
     credential: { sourceEnv: "OPENAI_API_KEY", configured: Boolean(apiKeyConfigured) },
     cache: { namespace: config.provider.cacheNamespace, clientResponseCache: config.provider.clientResponseCache },
     frozen: clone(config.frozen),
+    limits: clone(PR1D_RECOVERY_LIMITS),
+    recovery: {
+      sourceAttempt: clone(PR1D_ATTEMPT_01_DIAGNOSTIC),
+      executionMode: "fresh_full_180",
+      priorAttemptSamplesImported: 0
+    },
     authorization: { implementation: true, providerCalls: false }
+  };
+}
+
+function recoveryPreflightChecks() {
+  const evidence = [{ evidenceId: "ev-1", value: { samples: 52_886, winRate: 0.52 } }];
+  const audit = (answer, entries = evidence, events = []) => numericStatisticalClaimAudit({
+    answer,
+    evidence: entries,
+    groundingAudit: { violations: [] },
+    modelConclusion: { validationErrors: [] }
+  }, events);
+  const identifierAudit = audit("TFT18_Jinx、S18、item_123、evidence-42 与 https://example.test/set/18 都是标识符。");
+  const supportedAudit = audit("样本为 52,886 场。");
+  const unsupportedAudit = audit("胜率 60%。");
+  const mixedAudit = audit("TFT18_Jinx 的胜率 60%。");
+
+  const initialReservation = buildCanonicalTokenReservation({
+    body: JSON.stringify({ messages: [{ role: "user", content: "preflight" }], max_tokens: 1_800 })
+  });
+  const repairReservation = buildCanonicalTokenReservation({
+    body: JSON.stringify({ messages: [{ role: "user", content: "repair" }], max_tokens: 700 })
+  });
+  const nearCapFuse = createCanonicalRunFuse();
+  nearCapFuse.beforeRequest({ reservedTokens: PR1D_RECOVERY_LIMITS.totalTokenHardCap });
+  nearCapFuse.observePayload({
+    usage: { total_tokens: PR1D_RECOVERY_LIMITS.totalTokenHardCap - initialReservation.reservedTokens + 1 }
+  }, { reservedTokens: PR1D_RECOVERY_LIMITS.totalTokenHardCap });
+  let nearCapDispatches = 0;
+  let nearCapBlocked = false;
+  try {
+    nearCapFuse.beforeRequest(initialReservation);
+    nearCapDispatches += 1;
+  } catch (error) {
+    nearCapBlocked = error?.code === "budget_failure";
+  }
+
+  const repairFuse = createCanonicalRunFuse();
+  repairFuse.beforeRequest({ reservedTokens: PR1D_RECOVERY_LIMITS.totalTokenHardCap });
+  repairFuse.observePayload({
+    usage: { total_tokens: PR1D_RECOVERY_LIMITS.totalTokenHardCap - repairReservation.reservedTokens + 1 }
+  }, { reservedTokens: PR1D_RECOVERY_LIMITS.totalTokenHardCap });
+  let repairDispatches = 0;
+  let repairBlocked = false;
+  try {
+    repairFuse.beforeRequest(repairReservation);
+    repairDispatches += 1;
+  } catch (error) {
+    repairBlocked = error?.code === "budget_failure";
+  }
+
+  const safetyViolations = zeroToleranceSafetyViolations({ inventedNumericStatistics: 1 });
+  return {
+    numericAudit: {
+      identifierFalsePositiveAbsent: identifierAudit.authoritativeViolationCount === 0,
+      supportedClaimAccepted: supportedAudit.authoritativeViolationCount === 0,
+      unsupportedClaimDetected: unsupportedAudit.authoritativeViolationCount > 0,
+      identifierPlusClaimOnlyDetectsClaim: mixedAudit.violations.filter((entry) => entry.type === "unsupported_numeric_statistical_claim").length === 1
+    },
+    immediateAbort: {
+      confirmedSafetyViolationRecognized: safetyViolations.length === 1
+        && isCanonicalImmediateAbortCode("safety_violation"),
+      candidateSkillFailureRecognized: isCanonicalImmediateAbortCode("candidate_skill_failure")
+    },
+    reservation: {
+      initialReservation,
+      repairReservation,
+      attempt01KnownUsageCovered: Math.min(initialReservation.reservedTokens, repairReservation.reservedTokens)
+        >= PR1D_ATTEMPT_01_DIAGNOSTIC.maxObservedRequestTokens,
+      nearCapBlockedBeforeDispatch: nearCapBlocked && nearCapDispatches === 0,
+      repairIndependentlyBlockedBeforeDispatch: repairBlocked && repairDispatches === 0,
+      actualProviderHttpCalls: 0
+    },
+    limits: clone(PR1D_RECOVERY_LIMITS),
+    priorAttemptSamplesImported: 0
   };
 }
 
@@ -266,6 +357,7 @@ export async function runRealProviderPreflight({
   const deterministic = await runUnitPlayGuidanceControlExperiment({ corpus, fixtures, includeCaseDetails: false });
   const seam = await verifyGuidanceRendererSeam(config);
   const productionAudit = await auditProductionImports(root);
+  const recovery = recoveryPreflightChecks();
   const manifest = redactManifest(config, { apiKeyConfigured, implementationCommitSha });
   const manifestSecretAudit = secretAudit(manifest);
   const hashes = {
@@ -305,6 +397,16 @@ export async function runRealProviderPreflight({
     noProductionExperimentImports: productionAudit.experimentImports.length === 0,
     productionRendererOptionAbsent: productionAudit.productionRendererReferences.length === 0
       && productionAudit.providerCallSites.every((site) => site.rendererOptionPresent === false),
+    recoveryNumericAuditor: Object.values(recovery.numericAudit).every(Boolean),
+    recoveryImmediateAbort: Object.values(recovery.immediateAbort).every(Boolean),
+    recoveryReservation: recovery.reservation.attempt01KnownUsageCovered
+      && recovery.reservation.nearCapBlockedBeforeDispatch
+      && recovery.reservation.repairIndependentlyBlockedBeforeDispatch
+      && recovery.reservation.actualProviderHttpCalls === 0,
+    recoveryLimits: recovery.limits.totalTokenHardCap === 10_000_000
+      && recovery.limits.providerHttpRequestHardCap === 1_800
+      && recovery.limits.pairConcurrency === 1,
+    freshRecoveryPopulation: recovery.priorAttemptSamplesImported === 0,
     secretRedaction: manifestSecretAudit.secretMaterialPersisted === 0
   };
   const passed = Object.values(gates).every(Boolean);
@@ -331,6 +433,7 @@ export async function runRealProviderPreflight({
     hashes,
     seam,
     productionAudit,
+    recovery,
     secretAudit: manifestSecretAudit,
     gates
   };

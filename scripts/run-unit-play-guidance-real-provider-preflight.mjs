@@ -8,9 +8,9 @@ const ROOT = path.resolve(import.meta.dirname, "..");
 const CONFIG_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-real-provider", "config.v1.json");
 const CORPUS_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-control", "corpus.v1.json");
 const FIXTURE_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-control", "tool-observations.v1.json");
-const DEFAULT_MANIFEST_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-real-provider", "run-manifest.v1.json");
-const DEFAULT_RESULT_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-real-provider", "preflight-result.v1.json");
-const DEFAULT_REPORT_PATH = path.join(ROOT, "docs", "unit-play-guidance-real-provider-preflight-report.md");
+const DEFAULT_MANIFEST_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-real-provider", "run-manifest.recovery.v2.json");
+const DEFAULT_RESULT_PATH = path.join(ROOT, "eval", "skills", "unit-play-guidance-real-provider", "preflight-result.recovery.v2.json");
+const DEFAULT_REPORT_PATH = path.join(ROOT, "docs", "unit-play-guidance-real-provider-recovery-preflight-report.md");
 
 function argValue(name, fallback) {
   const prefix = `--${name}=`;
@@ -64,6 +64,9 @@ This report does not establish real-model compliance, stability, tokens, latency
 | Planned complete Agent runs | ${result.plan.plannedAgentRuns} |
 | Actual real Provider HTTP calls | ${result.plan.actualProviderHttpCalls} |
 | Pair-order SHA-256 | \`${result.plan.orderSha256}\` |
+| Recovery token / HTTP hard caps | ${result.recovery.limits.totalTokenHardCap} / ${result.recovery.limits.providerHttpRequestHardCap} |
+| Pair concurrency | ${result.recovery.limits.pairConcurrency} |
+| Prior-attempt samples imported | ${result.recovery.priorAttemptSamplesImported} |
 
 ## Redacted Provider manifest
 
@@ -115,6 +118,18 @@ ${callSites}
 - Skill routing/completion model calls: ${result.deterministicChecks.routing.llmSkillRouterCalls + result.deterministicChecks.routing.addedRoutingOrCompletionModelCalls}.
 - Fault fallback to pinned A: ${result.deterministicChecks.fallback.fallbackToPinnedA}/${result.deterministicChecks.fallback.total}; wrong destination ${result.deterministicChecks.fallback.wrongDestination}.
 - Secret material persisted: ${result.secretAudit.secretMaterialPersisted}.
+
+## Recovery-control checks
+
+- Identifier false positives absent (\`TFT18_Jinx\`, \`S18\`, \`item_123\`, \`evidence-42\`, URL): ${status(result.recovery.numericAudit.identifierFalsePositiveAbsent)}.
+- Evidence-supported \`52,886 场\` accepted: ${status(result.recovery.numericAudit.supportedClaimAccepted)}.
+- Unsupported \`胜率 60%\` detected: ${status(result.recovery.numericAudit.unsupportedClaimDetected)}.
+- Identifier plus real numeric claim detects only the claim: ${status(result.recovery.numericAudit.identifierPlusClaimOnlyDetectsClaim)}.
+- Confirmed safety violation and Candidate failure are immediate-abort classes: ${status(Object.values(result.recovery.immediateAbort).every(Boolean))}.
+- Attempt-01 observed per-request usage is covered by the conservative reservation floor: ${status(result.recovery.reservation.attempt01KnownUsageCovered)}.
+- Near-cap initial request blocked before dispatch: ${status(result.recovery.reservation.nearCapBlockedBeforeDispatch)}.
+- Repair request independently blocked before dispatch: ${status(result.recovery.reservation.repairIndependentlyBlockedBeforeDispatch)}.
+- Recovery simulation actual Provider HTTP calls: ${result.recovery.reservation.actualProviderHttpCalls}.
 
 ## Gates
 
