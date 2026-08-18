@@ -1,6 +1,6 @@
 # Unit Play Guidance Real-provider Offline Acceptance Contract — PR1D-Contract
 
-Status: **docs-only architecture contract; implementation and paid/provider calls are not authorized**.
+Status: **architecture contract approved with three minor amendments; bounded zero-call implementation is authorized; paid/real-provider calls are not authorized**.
 
 PR1C established deterministic, isolated guidance value in a frozen ReAct/Tool/Evidence replay. It did not establish real-model instruction compliance, output stability, actual token cost, or actual end-to-end latency. PR1D is a separately reviewed offline acceptance phase for those claims only. Passing PR1D would authorize only another architecture/product review; it would not authorize production control, canary, rollout, or PR2.
 
@@ -69,7 +69,7 @@ The full message order remains the current append-only layout: decision-contract
 
 Provider-side prompt caching may occur opaquely. It must not be enabled or disabled differently by arm. Every request records cached and uncached input tokens when the provider reports them. Cache hits do not permit skipping a call, copying an action, or sharing mutable state.
 
-`deepseek-v4-flash` may be a provider-controlled alias rather than an immutable model revision. The report must therefore capture the configured model ID and, when returned, the provider response model ID, version, and system fingerprint for every request. A change in a returned identity or fingerprint during the canonical run aborts the run for review. If the provider returns no immutable revision/fingerprint, the report must state that reproducibility limitation; deterministic pair interleaving reduces but does not eliminate provider drift.
+`deepseek-v4-flash` may be a provider-controlled alias rather than an immutable model revision. The report must therefore capture the configured model ID and, when returned, the provider response model ID, version, and system fingerprint for every request. The first successful response establishes the observed identity baseline from every model/version/fingerprint field that is present. Any later value change, or disappearance of a field that was present in the baseline, aborts the run for review. If every successful response omits immutable revision/fingerprint fields, the run may complete but the report must state that reproducibility limitation; deterministic pair interleaving reduces but does not eliminate provider drift.
 
 No configuration value may be silently inherited for the canonical run. A redacted preflight manifest must serialize every field above and its source. Secrets are represented only as `configured: true|false`.
 
@@ -91,7 +91,9 @@ The real-provider implementation must reuse `createReactDecisionProvider`; copyi
 - production request handlers do not import experiment code and never pass the option;
 - automated tests prove default-message byte identity and zero candidate-context leakage into A, ineligible, negative, boundary, fallback, or production runs.
 
-This seam is a proposal frozen for implementation review, not current permission to edit ReAct production code. If it cannot be implemented without a broader provider fork or production behavior change, implementation must stop and return for architecture review.
+Implementation must additionally enumerate every production `createReactDecisionProvider` call site and prove the renderer option is absent. Byte identity is measured on the exact serialized provider `messages` payload before versus after the seam, not inferred from equal final answers.
+
+This seam is approved for the bounded PR1D implementation. If it cannot be implemented without a broader provider fork or production behavior change, implementation must stop and return for architecture review.
 
 ## 5. Canonical population, repetition, and pair order
 
@@ -129,12 +131,19 @@ Provider HTTP 4xx other than 429 is a configuration/protocol failure and aborts 
 
 Only a pair in which both A and B are `normal_provider_completion` enters the primary paired value and cost analysis. Exclusion never erases the pair: all excluded pairs, attempts, arm, reason, completed telemetry, and partial usage are reported. Safety, stability, failure-rate, and early-abort analysis uses all planned runs; a failed B repetition is not treated as facet coverage.
 
-Minimum valid-sample gates are both required:
+Minimum valid-sample gates are both required as **analyzability gates**:
 
 - at least `81/90` paired repetitions have normal A and B completion;
 - at least `27/30` cases have at least two valid paired repetitions.
 
 Falling below either threshold makes the acceptance result `INCONCLUSIVE` and therefore not passed. It is not permission to weaken the corpus, add repetitions selectively, or change the provider. Provider/failure counts and rates must be shown separately by arm and failure class.
+
+Passing analyzability does not establish reliability. These independent reliability gates are also required:
+
+- `candidate_skill_failure = 0` across the canonical run;
+- `normalProviderCompletionRate(B) >= normalProviderCompletionRate(A) - 0.05` across all 90 planned repetitions per arm.
+
+Transport, parse, grounding, and budget failures remain separately reported by arm. Strong value among surviving pairs cannot compensate for a Candidate completion-rate regression beyond this gate.
 
 ## 7. Immediate-abort safety gate
 
@@ -149,6 +158,7 @@ The first zero-tolerance violation aborts the canonical run, marks PR1D `FAIL`, 
 - deterministic `nextActionAffordance` priority violations;
 - Tool, decision, deadline, approval, or permission budget overrun;
 - candidate context in A, an ineligible/negative/boundary run, fallback A, production code path, or persisted conversation state;
+- any `candidate_skill_failure`, including invalid Candidate definition, SkillContext construction failure, or guidance-renderer exception;
 - a Skill-routing or Skill-completion model call;
 - a second TaskFrame parse;
 - a production import of experiment code;
@@ -172,6 +182,8 @@ Canonical results require all metrics below to be zero unless explicitly stated 
 - Skill-routing or Skill-completion model calls;
 - second TaskFrame parses;
 - normal, unforced fallback;
+- Candidate Skill failures;
+- Candidate normal-provider-completion rate more than 5 percentage points below A;
 - production imports of experiment code;
 - conversation writes.
 
@@ -296,24 +308,25 @@ This docs-only contract is complete when it freezes:
 - the unchanged PR1C population and `180` complete-Agent-run design;
 - deterministic paired interleaving and arm-local state;
 - failure taxonomy, complete reporting, and minimum valid sample gates;
+- analyzability/reliability separation, zero Candidate Skill failures, and arm completion parity;
 - immediate-abort zero-tolerance safety rules;
 - B-native value, candidate stability, actual cost, and structured-action quality gates;
 - a substantive, claim-aware, blinded facet rubric that cannot keyword-score;
 - secrets, privacy, artifacts, reproducibility limitations, and stop conditions;
 - the narrow future guidance-renderer seam requiring separate implementation approval.
 
-Production code changes, real-provider calls, feature flags, database work, and runtime behavior changes must remain zero in PR1D-Contract.
+The contract revision itself contains no production code or Provider calls. A later, separately reviewed implementation authorization permits only the minimal guidance-renderer seam and zero-call offline harness described below.
 
 ## 14. Explicit non-authorization
 
-PR1D-Contract does not authorize:
+PR1D-Contract and its implementation review do not authorize:
 
-- a real-provider harness or any real model call;
-- a production handler, Prompt, SkillContext, ReAct, Tool Catalog, permission, approval, budget, or conversation-state behavior change;
+- any real model call or canonical Provider experiment;
+- a production handler, production Prompt/SkillContext injection, Tool Catalog, permission, approval, budget, or conversation-state behavior change;
 - `AGENT_SKILLS_CONTROL_V1` or an equivalent production/offline-control feature flag;
 - production A/B assignment, canary, rollout, or deletion/replacement of production `semanticGuidance`;
 - PR2, database or migration work, scheduler/daily snapshot work, production MetaTFT ingestion, Manual Overlay, or Effective View;
 - a new Tool, LLM Skill Router, LLM completion evaluator, or another Skill;
 - `transition_decision`, `game_state_decision`, or timeline-based `match_review`.
 
-After architecture approval, a separately authorized implementation proposal may implement only the bounded offline harness and the minimal reviewed guidance-renderer seam. It must still return for review before issuing real calls if provider cost/credential authorization has not also been granted.
+The completed architecture review separately authorizes implementation of only the bounded offline harness, artifact/report tooling, tests, and minimal reviewed guidance-renderer seam. The implementation must default to zero-call dry-run/preflight, prove the planned run count is 180 while actual Provider HTTP calls remain 0, and return with an implementation commit, preflight report, and redacted manifest before requesting canonical Provider-call authorization.

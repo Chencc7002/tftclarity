@@ -2,7 +2,7 @@
 
 Status: frozen design contract for PR1A/PR1B. PR0 adds no runtime module, feature flag, route, prompt, tool, data source, or production behavior. PR1A, PR1B/PR1B.5, and the deterministic PR1C experiment are now closed; their completion does not revise these contracts or authorize production Skill control.
 
-The unit-play control boundary is frozen separately in `docs/unit-play-guidance-control-experiment-contract.md`, with the qualified deterministic result in `docs/unit-play-guidance-control-experiment-report.md`. The separately authorized next phase is currently limited to the docs-only `docs/unit-play-guidance-real-provider-offline-acceptance-contract.md`; it does not authorize a real-provider harness, real model calls, production control, or PR2.
+The unit-play control boundary is frozen separately in `docs/unit-play-guidance-control-experiment-contract.md`, with the qualified deterministic result in `docs/unit-play-guidance-control-experiment-report.md`. `docs/unit-play-guidance-real-provider-offline-acceptance-contract.md` is approved; its bounded zero-call harness and minimal Provider guidance-renderer seam are authorized for implementation. Real Provider calls, production control, and PR2 remain unauthorized.
 
 The handoff in `docs/tftclarity-agent-skills-architecture-development-handoff-v2.md` is the product baseline. This document records what the repository actually does today and narrows the next implementation to that reality.
 
