@@ -14,18 +14,18 @@ It does **not** establish real production-model instruction compliance, real-mod
 
 | Field | Value |
 | --- | --- |
-| Base commit SHA | `b4375d5443af50a4aaaab40b5db6576bd1e12008` |
-| Worktree | dirty (report includes uncommitted PR1C files) |
+| Base commit SHA | `03570d36740786b976c2b969c9762da84e126043` |
+| Worktree | clean |
 | Runtime | `unit-play-guidance-control-harness.v1` |
 | ReAct implementation | `src/react/react-loop.js` |
 | Provider | `deterministic_offline_experiment` |
 | Grounding | `strict` |
 | Corpus version | `unit-play-guidance-control-corpus.2026-08-18.v1` |
 | Corpus normalized SHA-256 | `49f74b710b3bb1bbad04c2aa9656752738b55ba80c22e0aa4f5bd3d68929ee7a` |
-| Corpus file SHA-256 | `010b0544dbdff33ca8554a8a6a9ff8fd14595144f27d7d02bfd8ea2f63af119d` |
+| Corpus file SHA-256 | `14e9e8635f7188cee62b68e54058d6a16e89c823ae0aaa1ebc656d44c6eb65c5` |
 | Fixture version | `unit-play-guidance-frozen-observations.2026-08-18.v1` |
 | Fixture normalized SHA-256 | `7c4ef33836284b0970fa241f1ba9151512e4b78a45f535a3f8464c99f5a1f338` |
-| Fixture file SHA-256 | `854840c5ce9a9e3dd7fb59a9f8219ee993afb93998ce9f4178c337ec32d1a2f6` |
+| Fixture file SHA-256 | `3c8adfc3f4eb3f2118ed11970eb1aa216177d798e9d4451f482f56d2f8e3ab64` |
 | Baseline guidance | `react-semantic-guidance.unit-play.v1` / `7a20b6a579e279cfbf5cbdd778de21ee757c1d4bb2c9d13b54df8d3ae0734123` |
 | Candidate content | `unit_play_guidance.experiment.v1` / `8a28b75dcb32909970aaf7b63681b6acf4ccf7d1ee440e300412363a01e5ccfc` |
 | Candidate rendered context hashes | `c0f5395e9266b65ecb50eccde93112eb964cd1cf3e1df9993d21b960eb2637f9` |
