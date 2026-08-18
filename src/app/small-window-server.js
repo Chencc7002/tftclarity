@@ -31,6 +31,14 @@ import { createTftControlledPlannerProvider } from "../agent/controlled-planner-
 import { ChatAgent } from "../chat/chat-agent.js";
 import { createReactDecisionProvider } from "../react/react-decision-provider.js";
 import {
+  SkillRegistry,
+  UNIT_PLAY_GUIDANCE_SKILL,
+  buildSkillContext,
+  matchSkill,
+  projectSkillProgress,
+  validateSkillCompletion
+} from "../skills/index.js";
+import {
   buildConversationBridgeContextView,
   isHistoryDependentInput
 } from "../conversation/conversation-bridge.js";
@@ -3106,6 +3114,11 @@ export function createSmallWindowRuntime(options = {}) {
       ?? runtimeEnv.TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1
       ?? "off"
   ).trim().toLowerCase());
+  const agentSkillsShadowV1 = ["1", "true", "on", "enabled"].includes(String(
+    options.agentSkillsShadowV1
+      ?? runtimeEnv.AGENT_SKILLS_SHADOW_V1
+      ?? "off"
+  ).trim().toLowerCase());
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options);
   const explorerToolTimeoutMs = Math.max(
     requestTimeouts.explorerTimeoutMs * 2 + 2_000,
@@ -3178,6 +3191,20 @@ export function createSmallWindowRuntime(options = {}) {
     }
   }));
   const toolExecutor = options.toolExecutor ?? new ToolExecutor({ registry: toolRegistry });
+  let skillRegistry = options.skillRegistry ?? null;
+  let agentSkillShadowDiagnostic = null;
+  if (agentSkillsShadowV1 && !skillRegistry) {
+    try {
+      skillRegistry = new SkillRegistry({
+        definitions: options.skillDefinitions ?? [UNIT_PLAY_GUIDANCE_SKILL],
+        toolRegistry
+      });
+    } catch {
+      // Static contract failure disables only the Skill shadow subsystem. It is
+      // fail-visible in runtime state while the production Agent stays healthy.
+      agentSkillShadowDiagnostic = "invalid_skill_definition";
+    }
+  }
   const executionPlanExecutor = options.executionPlanExecutor
     ?? new ExecutionPlanExecutor({
       registry: toolRegistry,
@@ -3295,8 +3322,13 @@ export function createSmallWindowRuntime(options = {}) {
     reactDecisionProvider: options.reactDecisionProvider ?? null,
     reactTaskFrameShadowV1,
     reactTaskFrameControlV1,
+    agentSkillsShadowV1,
+    skillRegistry,
+    agentSkillShadowOperational: agentSkillsShadowV1 && Boolean(skillRegistry),
+    agentSkillShadowDiagnostic,
     parseSemanticTask: options.parseSemanticTask ?? parseSemanticTask,
     onReactTaskFrameShadow: options.onReactTaskFrameShadow ?? null,
+    onAgentSkillShadow: options.onAgentSkillShadow ?? null,
     reactToolHandlers: options.reactToolHandlers ?? {},
     createReactToolHandlers: options.createReactToolHandlers ?? null,
     // Acceptance runs preserve qualitative model output so unsupported-claim
@@ -7209,6 +7241,93 @@ async function observeReactTaskFrameShadow(runtime, getTaskFrameParse, options =
   }
 }
 
+async function emitAgentSkillShadow(runtime, event) {
+  if (typeof runtime.onAgentSkillShadow !== "function") return;
+  try {
+    await runtime.onAgentSkillShadow(event);
+  } catch {
+    // Skill shadow observers are telemetry-only and cannot fail the request.
+  }
+}
+
+async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvailableTools, options = {}) {
+  if (!runtime.agentSkillsShadowV1) return;
+  const startedAt = Date.now();
+  if (!runtime.agentSkillShadowOperational || !runtime.skillRegistry) {
+    await emitAgentSkillShadow(runtime, {
+      schemaVersion: "agent-skill-shadow.v1",
+      success: false,
+      mode: "shadow",
+      selected: false,
+      errorName: "SkillInitializationError",
+      fallbackReason: "skill_subsystem_unavailable",
+      diagnostic: runtime.agentSkillShadowDiagnostic ?? "skill_registry_unavailable",
+      legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
+      matcherDurationMs: Math.max(0, Date.now() - startedAt),
+      llmCallsAdded: 0
+    });
+    return;
+  }
+  try {
+    const { taskFrame } = await getTaskFrameParse();
+    const selection = matchSkill(taskFrame, runtime.skillRegistry);
+    if (selection.status !== "selected") {
+      await emitAgentSkillShadow(runtime, {
+        schemaVersion: "agent-skill-shadow.v1",
+        success: true,
+        mode: "shadow",
+        selected: false,
+        selectionStatus: selection.status,
+        reasonCodes: [...selection.reasonCodes],
+        legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
+        taskFrameControlEligible: isControlledUnitPlayTaskFrame(taskFrame),
+        matcherDurationMs: Math.max(0, Date.now() - startedAt),
+        llmCallsAdded: 0
+      });
+      return;
+    }
+    const skill = runtime.skillRegistry.get(selection.selected.skillId);
+    const skillContext = buildSkillContext({ skill, selection, taskFrame, runtimeAvailableTools });
+    const progress = projectSkillProgress({ skill, context: skillContext, facetEvidence: {} });
+    const completion = validateSkillCompletion({ skill, progress });
+    await emitAgentSkillShadow(runtime, {
+      schemaVersion: "agent-skill-shadow.v1",
+      success: true,
+      mode: "shadow",
+      selected: true,
+      skillId: skill.id,
+      skillVersion: skill.version,
+      matchScore: selection.selected.score,
+      matchReasons: [...selection.selected.reasons],
+      selectionStatus: selection.status,
+      dataAvailability: Object.fromEntries(skillContext.dataAvailability.map((entry) => [entry.dependencyId, entry.status])),
+      requiredFacets: [...progress.requiredFacets],
+      coveredFacets: progress.coveredFacets.map(({ facetId }) => facetId),
+      missingFacets: [...progress.missingFacets],
+      unsupportedFacets: progress.unsupportedFacets.map(({ facetId }) => facetId),
+      completionStatus: completion.status,
+      effectiveTools: [...skillContext.toolPolicy.effectiveTools],
+      legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
+      taskFrameControlEligible: isControlledUnitPlayTaskFrame(taskFrame),
+      matcherDurationMs: Math.max(0, Date.now() - startedAt),
+      contextBytes: Buffer.byteLength(JSON.stringify(skillContext), "utf8"),
+      llmCallsAdded: 0
+    });
+  } catch (error) {
+    await emitAgentSkillShadow(runtime, {
+      schemaVersion: "agent-skill-shadow.v1",
+      success: false,
+      mode: "shadow",
+      selected: false,
+      errorName: error?.name ?? "Error",
+      fallbackReason: "skill_shadow_failed_open",
+      legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
+      matcherDurationMs: Math.max(0, Date.now() - startedAt),
+      llmCallsAdded: 0
+    });
+  }
+}
+
 function broadUnitPlayGuidance(request, runtime) {
   const input = String(request.input ?? "").trim();
   const broadPlayPattern = /(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how\s+(?:do\s+i\s+)?play)/iu;
@@ -7464,6 +7583,9 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       "item_details_batch"
     ].includes(name))
     : availableToolNames;
+  await observeAgentSkillShadow(runtime, getTaskFrameParse, scopedToolNames, {
+    legacyBroadUnitPlayMatched: Boolean(playGuidance)
+  });
   const agent = new ChatAgent({
     registry: runtime.toolRegistry,
     toolExecutor: runtime.toolExecutor,
