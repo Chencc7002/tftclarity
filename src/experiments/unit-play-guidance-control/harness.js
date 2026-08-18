@@ -19,7 +19,7 @@ export const EXPERIMENT_CORPUS_SCHEMA_VERSION = "unit-play-guidance-control-corp
 export const EXPERIMENT_FIXTURE_SCHEMA_VERSION = "unit-play-guidance-tool-fixtures.v1";
 export const EXPERIMENT_RUNTIME_VERSION = "unit-play-guidance-control-harness.v1";
 
-const AVAILABLE_TOOLS = Object.freeze([
+export const UNIT_PLAY_GUIDANCE_EXPERIMENT_AVAILABLE_TOOLS = Object.freeze([
   "entity_catalog_query",
   "unit_builds",
   "comps_rankings",
@@ -49,7 +49,7 @@ function mean(values) {
   return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : 0;
 }
 
-function taskFrameFromCase(entry) {
+export function taskFrameFromCase(entry) {
   const frame = entry.taskFrame ?? {};
   return migrateTaskFrame({
     schemaVersion: "task-frame.v1",
@@ -76,7 +76,7 @@ function taskFrameFromCase(entry) {
   });
 }
 
-function validateCorpus(corpus) {
+export function validateCorpus(corpus) {
   if (corpus?.schemaVersion !== EXPERIMENT_CORPUS_SCHEMA_VERSION) throw new TypeError("invalid experiment corpus schema");
   if (!corpus.frozenBeforeCandidateResults) throw new TypeError("corpus must be frozen before candidate results");
   if ((corpus.positive ?? []).length < 30) throw new TypeError("corpus requires at least 30 positive cases");
@@ -117,7 +117,7 @@ function validateCorpus(corpus) {
   return deepFreeze(clone(normalized));
 }
 
-function validateFixtures(fixtures) {
+export function validateFixtures(fixtures) {
   if (fixtures?.schemaVersion !== EXPERIMENT_FIXTURE_SCHEMA_VERSION) throw new TypeError("invalid experiment fixture schema");
   if (!fixtures.fixtureVersion || !fixtures.units || typeof fixtures.units !== "object") throw new TypeError("fixtures require a version and unit map");
   return deepFreeze(clone(fixtures));
@@ -152,7 +152,7 @@ function toolDefinition(name, inputSchema, capabilities = []) {
   };
 }
 
-function createRegistries() {
+export function createRegistries() {
   const string = { type: "string" };
   const definitions = [
     toolDefinition("entity_catalog_query", objectSchema({ unit: string, seasonContextId: string }, ["unit", "seasonContextId"]), [
@@ -181,7 +181,7 @@ function createRegistries() {
   return { toolRegistry, skillRegistry };
 }
 
-function frozenToolHandlers(evalCase, fixtures, armTelemetry) {
+export function frozenToolHandlers(evalCase, fixtures, armTelemetry) {
   const fixture = fixtures.units[evalCase.unitApiName];
   if (!fixture) throw new TypeError(`missing frozen Tool fixture for ${evalCase.unitApiName}`);
   const record = (tool, input, value) => {
@@ -314,7 +314,7 @@ function createDecisionProvider({ arm, evalCase, fixture, fault, telemetry, rend
   return provider;
 }
 
-function answerFacetAudit(answer, evalCase) {
+export function answerFacetAudit(answer, evalCase) {
   const text = String(answer ?? "");
   const supported = {
     unit_role: true,
@@ -337,7 +337,7 @@ function answerFacetAudit(answer, evalCase) {
   return { supported, covered, qualifiedUnavailable };
 }
 
-function evidenceFacetAudit(result, evalCase) {
+export function evidenceFacetAudit(result, evalCase) {
   const tools = new Set((result.evidence ?? []).map((entry) => entry.toolName));
   return {
     unit_role: tools.has("unit_builds"),
@@ -348,7 +348,7 @@ function evidenceFacetAudit(result, evalCase) {
   };
 }
 
-function safetyAudit(result, events) {
+export function safetyAudit(result, events) {
   const answer = String(result.answer ?? "");
   return {
     unauthorizedToolCalls: events.filter((event) => event.type === "decision_rejected" && event.data?.code === "tool_not_registered").length,
@@ -363,13 +363,13 @@ function safetyAudit(result, events) {
   };
 }
 
-function createRunContext(caseId, arm, events) {
+export function createRunContext(caseId, arm, events, { maxRetriesPerTool = 0 } = {}) {
   let evidenceIndex = 0;
   let toolCalls = 0;
   return {
     run: {
       runId: `${caseId}-${arm}`,
-      budget: { maxRetriesPerTool: 0 },
+      budget: { maxRetriesPerTool },
       assertActive() {},
       consumeToolCall() { toolCalls += 1; },
       consumeRetry() {},
@@ -408,7 +408,7 @@ async function runArm({ arm, evalCase, taskFrame, fixtures, toolRegistry, skillC
     toolExecutor: executor,
     decisionProvider: provider,
     handlers,
-    availableToolNames: AVAILABLE_TOOLS,
+    availableToolNames: UNIT_PLAY_GUIDANCE_EXPERIMENT_AVAILABLE_TOOLS,
     budget: { deadlineMs: 10_000, maxDecisions: fault === "budget_failure" && arm === "B" ? 1 : 12, maxRetriesPerTool: 0 },
     groundingMode: "strict",
     createId: () => `${evalCase.caseId}-${arm}-loop-${++idIndex}`,
@@ -445,13 +445,13 @@ async function runArm({ arm, evalCase, taskFrame, fixtures, toolRegistry, skillC
   };
 }
 
-function nativeSucceeded(armRun) {
+export function nativeSucceeded(armRun) {
   return ["completed", "completed_with_warning"].includes(armRun.result.status)
     && armRun.result.answerOrigin === "model"
     && Object.values(armRun.safety).every((value) => value === 0);
 }
 
-function assertTaskFramePredicate(taskFrame, predicate, caseId) {
+export function assertTaskFramePredicate(taskFrame, predicate, caseId) {
   const resolvedChampionCount = [...taskFrame.subjects, ...taskFrame.candidates, ...taskFrame.concepts]
     .filter((entry) => entry.expectedType === "champion" && entry.resolvedId).length;
   const actual = {
@@ -466,7 +466,7 @@ function assertTaskFramePredicate(taskFrame, predicate, caseId) {
   }
 }
 
-function verifyFrozenObservationParity(left, right) {
+export function verifyFrozenObservationParity(left, right) {
   const key = (entry) => `${entry.tool}:${stableJson(entry.input)}`;
   const leftMap = new Map(left.telemetry.fixtureAccesses.map((entry) => [key(entry), entry.valueHash]));
   const rightMap = new Map(right.telemetry.fixtureAccesses.map((entry) => [key(entry), entry.valueHash]));
@@ -492,7 +492,12 @@ async function pairedCase({ evalCase, fixtures, toolRegistry, skillRegistry, fau
     const baseline = await runArm({ arm: "A", evalCase, taskFrame, fixtures, toolRegistry, skillContext: null });
     return { caseId: evalCase.caseId, eligible, selection, parseCount, candidateNative: null, candidateEndToEnd: baseline, fallback: { triggered: true, reason: fault, destination: "A" } };
   }
-  const skillContext = buildSkillContext({ skill, selection, taskFrame, runtimeAvailableTools: AVAILABLE_TOOLS });
+  const skillContext = buildSkillContext({
+    skill,
+    selection,
+    taskFrame,
+    runtimeAvailableTools: UNIT_PLAY_GUIDANCE_EXPERIMENT_AVAILABLE_TOOLS
+  });
   if (fault === "skill_context_failure") {
     const baseline = await runArm({ arm: "A", evalCase, taskFrame, fixtures, toolRegistry, skillContext });
     return { caseId: evalCase.caseId, eligible, selection, parseCount, candidateNative: null, candidateEndToEnd: baseline, fallback: { triggered: true, reason: fault, destination: "A" } };
