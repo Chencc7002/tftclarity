@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
@@ -274,6 +275,131 @@ test("react decision provider renders bounded broad unit-play semantic guidance"
   assert.doesNotMatch(runContext.semanticGuidance, /only use these three tools/iu);
   assert.equal(Object.hasOwn(runContext.semanticAdvisory, "capabilityRequirements"), false);
   assert.equal(Object.hasOwn(runContext, "taskFrame"), false);
+});
+
+test("default guidance renderer preserves the pre-seam serialized messages byte-for-byte", async () => {
+  let body = null;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: JSON.stringify({
+              schemaVersion: "react-action.v1",
+              type: "finish",
+              answer: "ok",
+              evidenceIds: [],
+              reasonCode: "direct_answer",
+              narrative: null
+            }) } }]
+          };
+        }
+      };
+    }
+  });
+  await provider({
+    state: {
+      question: "沃里克怎么玩？",
+      messages: [],
+      seasonContextId: "set17-live",
+      taskAnchor: null,
+      bridgeContext: null,
+      semanticAdvisory: {
+        action: "recommend",
+        goal: "recommend_unit_play",
+        subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+        expectedOutput: ["unit_play_guidance"]
+      },
+      evidence: [],
+      transcript: []
+    },
+    toolCatalog: []
+  });
+  const hash = createHash("sha256").update(JSON.stringify(body.messages)).digest("hex");
+  assert.equal(hash, "45eb4dd0b17540e2aa5cb5284c42862da6336f8d3601c8af8ce71102e4007cb0");
+});
+
+test("custom guidance renderer replaces only the bounded professional guidance value", async () => {
+  const bodies = [];
+  const received = [];
+  const response = {
+    ok: true,
+    async json() {
+      return {
+        choices: [{ message: { content: JSON.stringify({
+          schemaVersion: "react-action.v1",
+          type: "finish",
+          answer: "ok",
+          evidenceIds: [],
+          reasonCode: "direct_answer",
+          narrative: null
+        }) } }]
+      };
+    }
+  };
+  const options = {
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, request) => {
+      bodies.push(JSON.parse(request.body));
+      return response;
+    }
+  };
+  const baseline = createReactDecisionProvider(options);
+  const candidate = createReactDecisionProvider({
+    ...options,
+    guidanceRenderer: (advisory) => {
+      received.push(advisory);
+      return "candidate-guidance-v1";
+    }
+  });
+  const semanticAdvisory = {
+    action: "recommend",
+    goal: "recommend_unit_play",
+    subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+    expectedOutput: ["unit_play_guidance"]
+  };
+  const request = {
+    state: { question: "沃里克怎么玩？", messages: [], semanticAdvisory, evidence: [], transcript: [] },
+    toolCatalog: []
+  };
+  await baseline(request);
+  await candidate(request);
+  assert.deepEqual(received, [semanticAdvisory]);
+  const baselineRunContext = JSON.parse(bodies[0].messages[2].content);
+  const candidateRunContext = JSON.parse(bodies[1].messages[2].content);
+  assert.notEqual(baselineRunContext.semanticGuidance, candidateRunContext.semanticGuidance);
+  assert.equal(candidateRunContext.semanticGuidance, "candidate-guidance-v1");
+  baselineRunContext.semanticGuidance = candidateRunContext.semanticGuidance;
+  assert.deepEqual(candidateRunContext, baselineRunContext);
+  assert.deepEqual(bodies[1].messages.filter((_, index) => index !== 2), bodies[0].messages.filter((_, index) => index !== 2));
+});
+
+test("guidance renderer option fails closed when it is not a function", () => {
+  assert.throws(() => createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    guidanceRenderer: "candidate"
+  }), /guidanceRenderer must be a function/u);
+});
+
+test("guidance renderer output fails closed before transport when it is not text", async () => {
+  let transportCalls = 0;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    guidanceRenderer: () => ({ instructions: [] }),
+    fetchImpl: async () => {
+      transportCalls += 1;
+      throw new Error("transport must not run");
+    }
+  });
+  await assert.rejects(() => provider({ state: { semanticAdvisory: {} }, toolCatalog: [] }), /must return a string or null/u);
+  assert.equal(transportCalls, 0);
 });
 
 test("react decision provider maps DeepSeek cache usage and labels request telemetry", async () => {

@@ -147,6 +147,15 @@ function semanticGuidance(advisory) {
   ].join("\n");
 }
 
+function renderGuidance(guidanceRenderer, advisory) {
+  const rendered = guidanceRenderer(advisory);
+  if (rendered == null) return null;
+  if (typeof rendered !== "string") {
+    throw new TypeError("react decision guidanceRenderer must return a string or null");
+  }
+  return rendered;
+}
+
 function decisionContract(cacheNamespace) {
   const namespace = String(cacheNamespace ?? "").trim().slice(0, 128);
   return namespace
@@ -167,7 +176,7 @@ function transcriptEventValue(event) {
   return value;
 }
 
-function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null) {
+function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance) {
   const state = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace) },
@@ -189,7 +198,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
         semanticAdvisory: state.semanticAdvisory ?? null,
-        semanticGuidance: semanticGuidance(state.semanticAdvisory),
+        semanticGuidance: renderGuidance(guidanceRenderer, state.semanticAdvisory),
         historicalEvidence: historicalEvidence(state.evidence)
       })
     }
@@ -223,7 +232,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   return messages;
 }
 
-function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null) {
+function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance) {
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace) },
@@ -233,7 +242,7 @@ function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNames
         promptVersion: REACT_DECISION_PROMPT_VERSION,
         state: {
           ...legacyState,
-          semanticGuidance: semanticGuidance(legacyState.semanticAdvisory)
+          semanticGuidance: renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
         },
         toolCatalog: request.toolCatalog ?? [],
         ...(repairNote ? {
@@ -288,6 +297,10 @@ export function createReactDecisionProvider(options = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("createReactDecisionProvider requires fetch or fetchImpl");
   }
+  const guidanceRenderer = options.guidanceRenderer ?? semanticGuidance;
+  if (typeof guidanceRenderer !== "function") {
+    throw new TypeError("createReactDecisionProvider guidanceRenderer must be a function");
+  }
 
   const provider = async function reactDecisionProvider(request = {}, context = {}) {
     const startedAt = performance.now();
@@ -310,8 +323,8 @@ export function createReactDecisionProvider(options = {}) {
       const configuredMaxTokens = Math.max(200, Math.min(2400, Number(options.maxTokens ?? 1800)));
       for (let attempt = 1; attempt <= MAX_DECISION_ATTEMPTS; attempt += 1) {
         const messages = options.messageLayout === "legacy_full_state"
-          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace)
-          : reactDecisionMessages(request, repairNote, options.cacheNamespace);
+          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer)
+          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer);
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {

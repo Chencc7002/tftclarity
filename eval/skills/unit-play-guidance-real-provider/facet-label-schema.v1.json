@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "unit-play-guidance-facet-label-schema.v1",
+  "blindedFields": ["arm", "repetition", "providerUsage", "candidateLabel"],
+  "facets": ["unit_role", "equipment_logic", "composition_context", "positioning", "when_to_play"],
+  "claimKinds": ["current_fact", "current_statistic", "source_recommendation", "official_mechanism", "maintained_rule", "general_heuristic", "model_inference"],
+  "label": {
+    "requiredFields": ["taskId", "caseId", "outputId", "facetId", "reviewerId", "substantive", "claimKind", "evidenceUseValid", "qualificationValid", "covered", "reasonCodes"],
+    "coveredRule": "substantive && evidenceUseValid && qualificationValid && facetSpecificPolicyValid",
+    "keywordPresenceSufficient": false,
+    "membershipImpliesCarryOrTank": false,
+    "preserveOriginalIndependentLabels": true,
+    "adjudicationRequiredOnDisagreement": true
+  }
+}
