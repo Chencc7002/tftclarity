@@ -8,7 +8,7 @@ Production behavior: **unchanged; this report does not authorize rollout**
 
 This PR1C result establishes a narrower claim: **in a frozen ReAct/Tool/Evidence environment using the deterministic experiment decision provider, version-pinned candidate Skill guidance increased target facet coverage without increasing Tool calls**.
 
-It does **not** establish real production-model instruction compliance, real-model output stability, actual provider token usage, actual provider latency, or production-control suitability. The 100 ms replay measurement is harness latency, and the token values are a shared deterministic estimator rather than provider billing telemetry. Those questions require a separately authorized real-provider offline acceptance phase.
+It does **not** establish real production-model instruction compliance, real-model output stability, actual provider token usage, actual provider latency, or production-control suitability. The 100 ms replay measurement is harness latency, and the token values are a shared deterministic estimator rather than provider billing telemetry. Those questions require a separately authorized real-provider offline acceptance phase. Product has authorized only its docs-only architecture contract in `docs/unit-play-guidance-real-provider-offline-acceptance-contract.md`; the real-provider harness and real calls remain unauthorized pending review.
 
 ## Reproducibility
 
@@ -163,4 +163,4 @@ Negative and boundary per-case routing outcomes are recorded in the machine resu
 
 ## Decision
 
-PR1C deterministic isolated/offline control experiment: **PASSED**. Offline Control Harness and deterministic Skill-value replay passed; real-model Skill control behavior remains **NOT YET TESTED**. This is evidence for product review only. It does not enable Skill control, alter the production request handler, replace semantic guidance, or authorize PR2/production rollout.
+PR1C deterministic isolated/offline control experiment: **PASSED / CLOSED**. Offline Control Harness and deterministic Skill-value replay passed; real-model Skill control behavior remains **NOT YET TESTED**. The next authorized work is PR1D-Contract documentation only. This is evidence for product review only. It does not enable Skill control, alter the production request handler, replace semantic guidance, authorize a real-provider harness/call, or authorize PR2/production rollout.
