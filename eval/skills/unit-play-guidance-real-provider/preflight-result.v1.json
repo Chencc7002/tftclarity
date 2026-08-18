@@ -1,0 +1,1052 @@
+{
+  "schemaVersion": "unit-play-guidance-real-provider-preflight.v1",
+  "status": "passed",
+  "runtimeVersion": "unit-play-guidance-real-provider-preflight.v1",
+  "manifest": {
+    "schemaVersion": "unit-play-guidance-real-provider-manifest.v1",
+    "experimentId": "unit-play-guidance-real-provider-offline.2026-08-18.v1",
+    "implementationCommitSha": "a8cd5b312551e25bbac8e770da50a93c7b2cbd82",
+    "mode": "dry_run_zero_provider_calls",
+    "provider": {
+      "runtimeProviderConfig": "chat",
+      "protocol": "openai-compatible-chat",
+      "endpointClass": "chat_completions",
+      "endpoint": "https://api.deepseek.com/chat/completions",
+      "model": "deepseek-v4-flash",
+      "implementation": "createReactDecisionProvider",
+      "providerKind": "react_decision_llm",
+      "decisionPromptVersion": "react-decision-contract.v5",
+      "messageLayout": "append_only",
+      "temperature": 0,
+      "topP": "omitted_provider_default",
+      "maxOutputTokens": 1800,
+      "repairMaxOutputTokens": 700,
+      "responseFormat": "json_object",
+      "thinkingMode": "disabled",
+      "timeoutMs": 25000,
+      "maxActionAttempts": 2,
+      "transportRetries": 0,
+      "cacheNamespace": null,
+      "clientResponseCache": false
+    },
+    "agent": {
+      "deadlineMs": 30000,
+      "maxDecisions": 24,
+      "maxRetriesPerTool": 1,
+      "groundingMode": "strict"
+    },
+    "credential": {
+      "sourceEnv": "OPENAI_API_KEY",
+      "configured": false
+    },
+    "cache": {
+      "namespace": null,
+      "clientResponseCache": false
+    },
+    "frozen": {
+      "corpusVersion": "unit-play-guidance-control-corpus.2026-08-18.v1",
+      "corpusNormalizedSha256": "49f74b710b3bb1bbad04c2aa9656752738b55ba80c22e0aa4f5bd3d68929ee7a",
+      "fixtureVersion": "unit-play-guidance-frozen-observations.2026-08-18.v1",
+      "fixtureNormalizedSha256": "7c4ef33836284b0970fa241f1ba9151512e4b78a45f535a3f8464c99f5a1f338",
+      "baselineGuidanceSha256": "7a20b6a579e279cfbf5cbdd778de21ee757c1d4bb2c9d13b54df8d3ae0734123",
+      "candidateContentSha256": "8a28b75dcb32909970aaf7b63681b6acf4ccf7d1ee440e300412363a01e5ccfc",
+      "candidateRenderedContextSha256": "c0f5395e9266b65ecb50eccde93112eb964cd1cf3e1df9993d21b960eb2637f9",
+      "defaultProviderMessagesSha256": "45eb4dd0b17540e2aa5cb5284c42862da6336f8d3601c8af8ce71102e4007cb0"
+    },
+    "authorization": {
+      "implementation": true,
+      "providerCalls": false
+    }
+  },
+  "plan": {
+    "pairCount": 90,
+    "plannedAgentRuns": 180,
+    "actualProviderHttpCalls": 0,
+    "orderSha256": "94dbd2bd32461e996b36ed28265b0a5baba76af7694ce02dd52fba441fdc826a",
+    "pairs": [
+      {
+        "pairIndex": 1,
+        "pairId": "pos-01:rep-1",
+        "caseId": "pos-01",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 2,
+        "pairId": "pos-01:rep-2",
+        "caseId": "pos-01",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 3,
+        "pairId": "pos-01:rep-3",
+        "caseId": "pos-01",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 4,
+        "pairId": "pos-02:rep-1",
+        "caseId": "pos-02",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 5,
+        "pairId": "pos-02:rep-2",
+        "caseId": "pos-02",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 6,
+        "pairId": "pos-02:rep-3",
+        "caseId": "pos-02",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 7,
+        "pairId": "pos-03:rep-1",
+        "caseId": "pos-03",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 8,
+        "pairId": "pos-03:rep-2",
+        "caseId": "pos-03",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 9,
+        "pairId": "pos-03:rep-3",
+        "caseId": "pos-03",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 10,
+        "pairId": "pos-04:rep-1",
+        "caseId": "pos-04",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 11,
+        "pairId": "pos-04:rep-2",
+        "caseId": "pos-04",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 12,
+        "pairId": "pos-04:rep-3",
+        "caseId": "pos-04",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 13,
+        "pairId": "pos-05:rep-1",
+        "caseId": "pos-05",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 14,
+        "pairId": "pos-05:rep-2",
+        "caseId": "pos-05",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 15,
+        "pairId": "pos-05:rep-3",
+        "caseId": "pos-05",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 16,
+        "pairId": "pos-06:rep-1",
+        "caseId": "pos-06",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 17,
+        "pairId": "pos-06:rep-2",
+        "caseId": "pos-06",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 18,
+        "pairId": "pos-06:rep-3",
+        "caseId": "pos-06",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 19,
+        "pairId": "pos-07:rep-1",
+        "caseId": "pos-07",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 20,
+        "pairId": "pos-07:rep-2",
+        "caseId": "pos-07",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 21,
+        "pairId": "pos-07:rep-3",
+        "caseId": "pos-07",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 22,
+        "pairId": "pos-08:rep-1",
+        "caseId": "pos-08",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 23,
+        "pairId": "pos-08:rep-2",
+        "caseId": "pos-08",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 24,
+        "pairId": "pos-08:rep-3",
+        "caseId": "pos-08",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 25,
+        "pairId": "pos-09:rep-1",
+        "caseId": "pos-09",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 26,
+        "pairId": "pos-09:rep-2",
+        "caseId": "pos-09",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 27,
+        "pairId": "pos-09:rep-3",
+        "caseId": "pos-09",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 28,
+        "pairId": "pos-10:rep-1",
+        "caseId": "pos-10",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 29,
+        "pairId": "pos-10:rep-2",
+        "caseId": "pos-10",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 30,
+        "pairId": "pos-10:rep-3",
+        "caseId": "pos-10",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 31,
+        "pairId": "pos-11:rep-1",
+        "caseId": "pos-11",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 32,
+        "pairId": "pos-11:rep-2",
+        "caseId": "pos-11",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 33,
+        "pairId": "pos-11:rep-3",
+        "caseId": "pos-11",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 34,
+        "pairId": "pos-12:rep-1",
+        "caseId": "pos-12",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 35,
+        "pairId": "pos-12:rep-2",
+        "caseId": "pos-12",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 36,
+        "pairId": "pos-12:rep-3",
+        "caseId": "pos-12",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 37,
+        "pairId": "pos-13:rep-1",
+        "caseId": "pos-13",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 38,
+        "pairId": "pos-13:rep-2",
+        "caseId": "pos-13",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 39,
+        "pairId": "pos-13:rep-3",
+        "caseId": "pos-13",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 40,
+        "pairId": "pos-14:rep-1",
+        "caseId": "pos-14",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 41,
+        "pairId": "pos-14:rep-2",
+        "caseId": "pos-14",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 42,
+        "pairId": "pos-14:rep-3",
+        "caseId": "pos-14",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 43,
+        "pairId": "pos-15:rep-1",
+        "caseId": "pos-15",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 44,
+        "pairId": "pos-15:rep-2",
+        "caseId": "pos-15",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 45,
+        "pairId": "pos-15:rep-3",
+        "caseId": "pos-15",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 46,
+        "pairId": "pos-16:rep-1",
+        "caseId": "pos-16",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 47,
+        "pairId": "pos-16:rep-2",
+        "caseId": "pos-16",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 48,
+        "pairId": "pos-16:rep-3",
+        "caseId": "pos-16",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 49,
+        "pairId": "pos-17:rep-1",
+        "caseId": "pos-17",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 50,
+        "pairId": "pos-17:rep-2",
+        "caseId": "pos-17",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 51,
+        "pairId": "pos-17:rep-3",
+        "caseId": "pos-17",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 52,
+        "pairId": "pos-18:rep-1",
+        "caseId": "pos-18",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 53,
+        "pairId": "pos-18:rep-2",
+        "caseId": "pos-18",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 54,
+        "pairId": "pos-18:rep-3",
+        "caseId": "pos-18",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 55,
+        "pairId": "pos-19:rep-1",
+        "caseId": "pos-19",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 56,
+        "pairId": "pos-19:rep-2",
+        "caseId": "pos-19",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 57,
+        "pairId": "pos-19:rep-3",
+        "caseId": "pos-19",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 58,
+        "pairId": "pos-20:rep-1",
+        "caseId": "pos-20",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 59,
+        "pairId": "pos-20:rep-2",
+        "caseId": "pos-20",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 60,
+        "pairId": "pos-20:rep-3",
+        "caseId": "pos-20",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 61,
+        "pairId": "pos-21:rep-1",
+        "caseId": "pos-21",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 62,
+        "pairId": "pos-21:rep-2",
+        "caseId": "pos-21",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 63,
+        "pairId": "pos-21:rep-3",
+        "caseId": "pos-21",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 64,
+        "pairId": "pos-22:rep-1",
+        "caseId": "pos-22",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 65,
+        "pairId": "pos-22:rep-2",
+        "caseId": "pos-22",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 66,
+        "pairId": "pos-22:rep-3",
+        "caseId": "pos-22",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 67,
+        "pairId": "pos-23:rep-1",
+        "caseId": "pos-23",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 68,
+        "pairId": "pos-23:rep-2",
+        "caseId": "pos-23",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 69,
+        "pairId": "pos-23:rep-3",
+        "caseId": "pos-23",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 70,
+        "pairId": "pos-24:rep-1",
+        "caseId": "pos-24",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 71,
+        "pairId": "pos-24:rep-2",
+        "caseId": "pos-24",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 72,
+        "pairId": "pos-24:rep-3",
+        "caseId": "pos-24",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 73,
+        "pairId": "pos-25:rep-1",
+        "caseId": "pos-25",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 74,
+        "pairId": "pos-25:rep-2",
+        "caseId": "pos-25",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 75,
+        "pairId": "pos-25:rep-3",
+        "caseId": "pos-25",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 76,
+        "pairId": "pos-26:rep-1",
+        "caseId": "pos-26",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 77,
+        "pairId": "pos-26:rep-2",
+        "caseId": "pos-26",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 78,
+        "pairId": "pos-26:rep-3",
+        "caseId": "pos-26",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 79,
+        "pairId": "pos-27:rep-1",
+        "caseId": "pos-27",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 80,
+        "pairId": "pos-27:rep-2",
+        "caseId": "pos-27",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 81,
+        "pairId": "pos-27:rep-3",
+        "caseId": "pos-27",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 82,
+        "pairId": "pos-28:rep-1",
+        "caseId": "pos-28",
+        "repetition": 1,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 83,
+        "pairId": "pos-28:rep-2",
+        "caseId": "pos-28",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 84,
+        "pairId": "pos-28:rep-3",
+        "caseId": "pos-28",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 85,
+        "pairId": "pos-29:rep-1",
+        "caseId": "pos-29",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 86,
+        "pairId": "pos-29:rep-2",
+        "caseId": "pos-29",
+        "repetition": 2,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 87,
+        "pairId": "pos-29:rep-3",
+        "caseId": "pos-29",
+        "repetition": 3,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 88,
+        "pairId": "pos-30:rep-1",
+        "caseId": "pos-30",
+        "repetition": 1,
+        "order": [
+          "B",
+          "A"
+        ]
+      },
+      {
+        "pairIndex": 89,
+        "pairId": "pos-30:rep-2",
+        "caseId": "pos-30",
+        "repetition": 2,
+        "order": [
+          "A",
+          "B"
+        ]
+      },
+      {
+        "pairIndex": 90,
+        "pairId": "pos-30:rep-3",
+        "caseId": "pos-30",
+        "repetition": 3,
+        "order": [
+          "A",
+          "B"
+        ]
+      }
+    ]
+  },
+  "deterministicChecks": {
+    "routing": {
+      "positiveEligible": 30,
+      "positiveTotal": 30,
+      "negativeFalseTakeover": 0,
+      "boundaryForcedTakeover": 0,
+      "secondTaskFrameParses": 0,
+      "llmSkillRouterCalls": 0,
+      "addedRoutingOrCompletionModelCalls": 0
+    },
+    "fallback": {
+      "total": 5,
+      "fallbackToPinnedA": 5,
+      "wrongDestination": 0
+    }
+  },
+  "hashes": {
+    "corpus": "49f74b710b3bb1bbad04c2aa9656752738b55ba80c22e0aa4f5bd3d68929ee7a",
+    "fixtures": "7c4ef33836284b0970fa241f1ba9151512e4b78a45f535a3f8464c99f5a1f338",
+    "baselineGuidance": "7a20b6a579e279cfbf5cbdd778de21ee757c1d4bb2c9d13b54df8d3ae0734123",
+    "candidateContent": "8a28b75dcb32909970aaf7b63681b6acf4ccf7d1ee440e300412363a01e5ccfc",
+    "candidateRenderedContexts": [
+      "c0f5395e9266b65ecb50eccde93112eb964cd1cf3e1df9993d21b960eb2637f9"
+    ]
+  },
+  "seam": {
+    "defaultMessagesSha256": "45eb4dd0b17540e2aa5cb5284c42862da6336f8d3601c8af8ce71102e4007cb0",
+    "pinnedDefaultMessagesSha256": "45eb4dd0b17540e2aa5cb5284c42862da6336f8d3601c8af8ce71102e4007cb0",
+    "defaultMessagesByteIdentical": true,
+    "onlyGuidanceDiffers": true,
+    "rendererAdvisoryCount": 1,
+    "candidateGuidance": "unit-play-guidance-candidate-preflight",
+    "localCaptureRequests": 2,
+    "actualProviderHttpCalls": 0,
+    "requestShape": {
+      "model": "deepseek-v4-flash",
+      "temperature": 0,
+      "maxTokens": 1800,
+      "responseFormat": "json_object",
+      "thinkingMode": "disabled",
+      "messageCount": 3
+    }
+  },
+  "productionAudit": {
+    "experimentImports": [],
+    "productionRendererReferences": [],
+    "providerCallSites": [
+      {
+        "file": "src/app/small-window-server.js",
+        "line": 4111,
+        "rendererOptionPresent": false
+      }
+    ]
+  },
+  "secretAudit": {
+    "authorizationHeaderPersisted": false,
+    "suspiciousSecretKeys": [],
+    "secretMaterialPersisted": 0
+  },
+  "gates": {
+    "implementationAuthorized": true,
+    "providerCallsNotAuthorized": true,
+    "zeroActualProviderHttpCalls": true,
+    "plannedAgentRuns": true,
+    "plannedPairs": true,
+    "routingPositive": true,
+    "routingNegative": true,
+    "routingBoundary": true,
+    "oneTaskFrameParse": true,
+    "noRoutingOrCompletionModelCalls": true,
+    "faultFallback": true,
+    "corpusHash": true,
+    "fixtureHash": true,
+    "baselineGuidanceHash": true,
+    "candidateContentHash": true,
+    "candidateRenderedContextHash": true,
+    "defaultMessagesByteIdentity": true,
+    "candidateOnlyGuidanceDiffers": true,
+    "providerRequestConfig": true,
+    "noProductionExperimentImports": true,
+    "productionRendererOptionAbsent": true,
+    "secretRedaction": true
+  }
+}
