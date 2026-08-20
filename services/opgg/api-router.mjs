@@ -16,6 +16,7 @@ import {
   backfillSignatures,
   backfillPatchLabels,
   listPools,
+  listOwnedPools,
   getPool,
   getPoolStats,
   listPlayerMatches,
@@ -25,9 +26,11 @@ import {
   removePlayerFromPool,
   getPoolPlayers,
   slugify,
-  collectPlayer
+  collectPlayer,
+  ingestExternalPlayerMatches
 } from "./collector.mjs";
 import { createOpggClient } from "./mcp-client.mjs";
+import { createPlayerMatchMcpClient } from "../metatft-player/mcp-client.mjs";
 import {
   aggregatePool,
   getPoolWindow
@@ -83,6 +86,36 @@ function accessiblePool(database, requestedPoolId, scope) {
   if (!pool) return null;
   if (pool.ownerType === "user" && pool.ownerId !== String(scope ?? "anonymous")) return null;
   return pool;
+}
+
+function refreshableAccounts(database, scope) {
+  const ownerId = String(scope ?? "anonymous");
+  const personalId = personalPoolId(scope);
+  const ownedPools = listOwnedPools(database, ownerId);
+  const sources = [
+    ...(poolExists(database, personalId) ? [{ id: personalId, kind: "personal" }] : []),
+    ...ownedPools.map((pool) => ({ id: pool.id, kind: "player_pool" }))
+  ];
+  const accounts = new Map();
+  const personalAccountIds = new Set();
+  const poolAccountIds = new Set();
+
+  for (const source of sources) {
+    for (const player of getPoolPlayers(database, source.id, { activeOnly: true })) {
+      const existing = accounts.get(player.id) ?? { ...player, poolIds: [] };
+      existing.poolIds.push(source.id);
+      accounts.set(player.id, existing);
+      if (source.kind === "personal") personalAccountIds.add(player.id);
+      else poolAccountIds.add(player.id);
+    }
+  }
+
+  return {
+    players: [...accounts.values()],
+    poolCount: ownedPools.length,
+    personalAccountCount: personalAccountIds.size,
+    poolAccountCount: poolAccountIds.size
+  };
 }
 
 function poolQueryOptions(pool, query) {
@@ -297,14 +330,17 @@ function buildSingleMatchReviewObject(target, others) {
   };
 }
 
-function createOpggApiRouter() {
+function createOpggApiRouter(options = {}) {
   let databasePromise = null;
   let honorsPromise = null;
+  const opggClientFactory = options.opggClientFactory ?? createOpggClient;
+  const playerMatchClientFactory = options.playerMatchClientFactory
+    ?? (() => options.playerMatchClient ?? createPlayerMatchMcpClient(options));
 
   function getDatabase() {
     if (!databasePromise) {
       databasePromise = (async () => {
-        const database = await openDatabase(DEFAULT_DB_PATH);
+        const database = options.database ?? await openDatabase(options.databasePath ?? DEFAULT_DB_PATH);
         initSchema(database);
         backfillSignatures(database);
         backfillPatchLabels(database);
@@ -346,7 +382,13 @@ function createOpggApiRouter() {
       if (pathname === "/api/opgg/my-review") {
         const database = await getDatabase();
         if (!poolExists(database, myReviewPoolId)) {
-          return sendJson(response, 200, { poolId: myReviewPoolId, players: [] });
+          const refreshScope = refreshableAccounts(database, scope);
+          return sendJson(response, 200, {
+            poolId: myReviewPoolId,
+            players: [],
+            refreshableAccountCount: refreshScope.players.length,
+            poolAccountCount: refreshScope.poolAccountCount
+          });
         }
         const players = getPoolPlayers(database, myReviewPoolId, {
           activeOnly: true
@@ -356,9 +398,109 @@ function createOpggApiRouter() {
           gameName: player.gameName,
           tagLine: player.tagLine,
           region: player.region,
+          lastSuccessfulPollAt: player.lastSuccessfulPollAt,
           summary: playerSummary(database, player.id)
         }));
-        return sendJson(response, 200, { poolId: myReviewPoolId, players });
+        const refreshScope = refreshableAccounts(database, scope);
+        return sendJson(response, 200, {
+          poolId: myReviewPoolId,
+          players,
+          refreshableAccountCount: refreshScope.players.length,
+          poolAccountCount: refreshScope.poolAccountCount
+        });
+      }
+
+      if (request.method === "POST" && pathname === "/api/opgg/my-review/refresh") {
+        const database = await getDatabase();
+        const refreshScope = refreshableAccounts(database, scope);
+        if (!refreshScope.players.length) {
+          return sendJson(response, 200, {
+            requestedCount: 0,
+            refreshedCount: 0,
+            failedCount: 0,
+            poolCount: refreshScope.poolCount,
+            personalAccountCount: refreshScope.personalAccountCount,
+            poolAccountCount: refreshScope.poolAccountCount,
+            results: []
+          });
+        }
+        const players = refreshScope.players;
+        const results = [];
+        let opggClient = null;
+        let playerMatchClient = null;
+        try {
+          for (const player of players) {
+            try {
+              if (player.region === "pbe") {
+                playerMatchClient ??= playerMatchClientFactory();
+                const history = await playerMatchClient.callTool("list_matches", {
+                  gameName: player.gameName,
+                  tagLine: player.tagLine,
+                  environment: "pbe",
+                  season: "set18-pbe",
+                  verificationMode: "provider",
+                  limit: 20,
+                  callerKey: String(scope ?? "anonymous")
+                });
+                const ingest = ingestExternalPlayerMatches(database, player, history.matches ?? [], {
+                  poolId: player.poolIds[0],
+                  provider: "metatft",
+                  source: "manual_refresh"
+                });
+                results.push({
+                  playerId: player.id,
+                  displayName: player.displayName,
+                  provider: "metatft",
+                  poolIds: player.poolIds,
+                  status: "ok",
+                  returnedCount: Number(history.returnedCount ?? history.matches?.length ?? 0),
+                  ingestedCount: ingest.ingested
+                });
+                continue;
+              }
+              if (!opggClient) {
+                opggClient = opggClientFactory({
+                  clientName: "tftclarity-opgg-personal-refresh",
+                  clientVersion: "0.1.0"
+                });
+                await opggClient.initialize();
+              }
+              const collect = await collectPlayer(opggClient, database, player, { forceResolve: true });
+              results.push({
+                playerId: player.id,
+                displayName: player.displayName,
+                provider: "opgg",
+                poolIds: player.poolIds,
+                status: collect.status,
+                returnedCount: collect.returnedCount,
+                newMatchCount: collect.newMatchCount,
+                ...(collect.status === "error" ? { error: collect.errorMessage ?? "collection failed" } : {})
+              });
+            } catch (error) {
+              results.push({
+                playerId: player.id,
+                displayName: player.displayName,
+                provider: player.region === "pbe" ? "metatft" : "opgg",
+                poolIds: player.poolIds,
+                status: "error",
+                error: String(error?.message ?? error)
+              });
+            }
+          }
+        } finally {
+          await opggClient?.terminate?.();
+          await playerMatchClient?.close?.();
+        }
+        const refreshedCount = results.filter((result) => result.status === "ok").length;
+        return sendJson(response, 200, {
+          requestedCount: players.length,
+          refreshedCount,
+          failedCount: players.length - refreshedCount,
+          poolCount: refreshScope.poolCount,
+          personalAccountCount: refreshScope.personalAccountCount,
+          poolAccountCount: refreshScope.poolAccountCount,
+          results
+        });
       }
 
       if (request.method === "POST" && pathname === "/api/opgg/players/register") {
@@ -390,7 +532,7 @@ function createOpggApiRouter() {
           });
         }
 
-        const client = createOpggClient({
+        const client = opggClientFactory({
           clientName: "tftclarity-opgg-register",
           clientVersion: "0.1.0"
         });

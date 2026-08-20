@@ -1,7 +1,24 @@
 #!/usr/bin/env node
+import { webcrypto } from "node:crypto";
 import { createServer } from "node:http";
-import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
-import { createPlayerMatchMcpServer } from "./mcp-tools.mjs";
+import { loadLocalEnvironment } from "../../src/config/load-env.js";
+
+// Node 18 can expose Web Crypto differently depending on how the process is
+// launched. The MCP stream transport uses the browser-compatible global when
+// assigning stream ids, so make that dependency explicit for the HTTP sidecar.
+if (!globalThis.crypto) {
+  Object.defineProperty(globalThis, "crypto", {
+    configurable: true,
+    value: webcrypto
+  });
+}
+
+loadLocalEnvironment();
+
+const [{ StreamableHTTPServerTransport }, { createPlayerMatchMcpServer }] = await Promise.all([
+  import("@modelcontextprotocol/sdk/server/streamableHttp.js"),
+  import("./mcp-tools.mjs")
+]);
 
 const host = process.env.HOST ?? "0.0.0.0";
 const port = Number(process.env.PORT ?? "3010");

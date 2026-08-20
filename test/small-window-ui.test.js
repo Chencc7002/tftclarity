@@ -1,6 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
+import { matrixLabels, spreadCoincidentMatrixPoints } from "../src/app/small-window-ui/opgg-panel.js";
 
 const ui = (name) => readFileSync(new URL(`../src/app/small-window-ui/${name}`, import.meta.url), "utf8");
 const indexHtml = ui("index.html");
@@ -27,6 +28,51 @@ test("direct MetaTFT match views render localized entities, assets, and freshnes
   assert.match(opggPanel, /trait\.displayName \?\? trait\.id/);
   assert.match(opggPanel, /data\.provenance\?\.sourceFetchedAt/);
   assert.doesNotMatch(opggPanel, /String\(unit\.characterId \?\? "\?"\)\.slice\(0, 1\)/);
+});
+
+test("match review refresh includes Pool accounts and matrix points expose touch details", () => {
+  assert.doesNotMatch(opggPanel, /data-opgg-action="personal-refresh"/u);
+  assert.match(indexHtml, /id="result-refresh-button"/u);
+  assert.match(opggPanel, /\/api\/opgg\/my-review\/refresh/u);
+  assert.match(opggPanel, /data\.refreshableAccountCount/u);
+  assert.match(opggPanel, /data\.refreshableAccountCount \?\? data\.players\?\.length/u);
+  assert.match(opggPanel, /new Set\(pools\.flatMap/u);
+  assert.match(opggPanel, /shellRefreshMode = "personal"/u);
+  assert.match(opggPanel, /event\.stopImmediatePropagation\(\)/u);
+  assert.match(opggPanel, /"更新对局"/u);
+  assert.match(opggPanel, /"更新中…"/u);
+  assert.doesNotMatch(opggPanel, /刷新全部账号（含 Pool）/u);
+  assert.match(opggPanel, /function accountRefreshBadge\(player, refreshResult = null, \{ showSuccess = false \} = \{\}\)/u);
+  assert.match(opggPanel, />本次未更新<\/span>/u);
+  assert.match(opggPanel, />未更新<\/span>/u);
+  assert.match(opggPanel, /showSuccess: true/u);
+  assert.match(opggPanel, /更新于 \$\{updatedAt\}/u);
+  assert.match(opggPanel, /player\.lastSuccessfulPollAt/u);
+  assert.match(opggStyles, /\.opgg-account-refresh-pending/u);
+  assert.match(opggStyles, /\.opgg-account-refresh-success/u);
+  assert.match(opggStyles, /\.opgg-personal-actions \{[^}]*display: grid[^}]*grid-template-columns: minmax\(0, 1fr\) 86px/u);
+  assert.match(opggStyles, /\.opgg-personal-actions \.opgg-ai-button[^}]*width: 100%/u);
+  assert.match(opggPanel, /刷新完成/u);
+  assert.match(opggPanel, /function matrixLabels\(points\)/u);
+  assert.match(opggPanel, /data-opgg-matrix-detail=/u);
+  assert.match(opggPanel, /tabindex="0" role="button"/u);
+  assert.match(opggPanel, /resultEl\.addEventListener\("pointerover"/u);
+  assert.match(opggPanel, /resultEl\.addEventListener\("focusin"/u);
+  assert.match(opggPanel, /\.includes\(event\.key\)/u);
+  assert.match(opggStyles, /\.opgg-matrix-detail/u);
+  assert.match(opggStyles, /\.opgg-matrix-label-line/u);
+  assert.match(opggStyles, /#result-refresh-button\.is-opgg-refreshing/u);
+  assert.doesNotMatch(opggStyles, /\.opgg-refresh-accounts-button/u);
+  const spread = spreadCoincidentMatrixPoints([
+    { x: 670, y: 100, radius: 8, shortLabel: "阵容甲" },
+    { x: 670, y: 100, radius: 8, shortLabel: "阵容乙" }
+  ]);
+  assert.notDeepEqual(spread.map((point) => [point.x, point.y]), [[670, 100], [670, 100]]);
+  const labels = matrixLabels(spread);
+  assert.notDeepEqual(
+    labels.map((point) => [point.labelX, point.labelY]),
+    [[labels[0].labelX, labels[0].labelY], [labels[0].labelX, labels[0].labelY]]
+  );
 });
 
 test("desktop UI exposes the responsive AppShell structure", () => {

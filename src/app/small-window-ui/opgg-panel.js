@@ -17,6 +17,9 @@ let state = {
 let teachingController = null;
 let directPlayer = null;
 let activePoolAnalysisContext = null;
+let shellRefreshMode = null;
+let shellRefreshAttached = false;
+let knownRefreshableAccountCount = 0;
 
 function publishPoolAnalysisContext(context = null) {
   activePoolAnalysisContext = context;
@@ -32,6 +35,45 @@ function poolAnalysisButton(label = "AI 解读") {
 
 function el(id) {
   return document.querySelector(`#${id}`);
+}
+
+function setShellRefreshLabel(button, label, description) {
+  const labelEl = button?.querySelector('[data-i18n="refresh"]') ?? button?.querySelector("span:last-child");
+  if (labelEl) labelEl.textContent = label;
+  if (button) {
+    button.title = description;
+    button.setAttribute("aria-label", description);
+  }
+}
+
+function resetShellRefresh() {
+  const button = el("result-refresh-button");
+  shellRefreshMode = null;
+  if (!button) return;
+  button.classList.remove("is-opgg-refreshing");
+  button.disabled = true;
+  setShellRefreshLabel(button, "刷新", "刷新数据");
+}
+
+function configurePersonalShellRefresh({ enabled, loading = false }) {
+  const button = el("result-refresh-button");
+  shellRefreshMode = "personal";
+  if (!button) return;
+  button.disabled = !enabled || loading;
+  button.classList.toggle("is-opgg-refreshing", loading);
+  setShellRefreshLabel(button, loading ? "更新中…" : "更新对局", loading ? "正在更新账号对局数据" : "更新所有账号对局数据");
+}
+
+function attachShellRefresh() {
+  const button = el("result-refresh-button");
+  if (!button || shellRefreshAttached) return;
+  button.addEventListener("click", (event) => {
+    if (shellRefreshMode !== "personal") return;
+    event.preventDefault();
+    event.stopImmediatePropagation();
+    refreshPersonalAccounts();
+  }, true);
+  shellRefreshAttached = true;
 }
 
 function esc(value) {
@@ -200,7 +242,7 @@ function setResult(title, html, raw) {
   const refreshButton = el("result-refresh-button");
   const rawOutputEl = el("raw-output");
   if (titleEl) titleEl.textContent = title;
-  if (refreshButton) refreshButton.disabled = true;
+  if (refreshButton) resetShellRefresh();
   if (rawOutputEl) {
     rawOutputEl.textContent = JSON.stringify(
       raw ?? { view: state.view, pool: state.pool },
@@ -553,14 +595,17 @@ async function renderMatch() {
   }
 }
 
-async function renderPersonal() {
+async function renderPersonal(refreshResult = null) {
   state.view = "personal";
   publishPoolAnalysisContext(null);
   setResult("对局可视化与复盘", loadingHtml());
+  if (refreshResult) configurePersonalShellRefresh({ enabled: true, loading: true });
   try {
     const data = await api("/api/opgg/my-review");
+    knownRefreshableAccountCount = Number(data.refreshableAccountCount ?? data.players?.length ?? 0);
     const cards = (data.players ?? []).map((player) => {
       const isPbe = player.region === "pbe";
+      const refreshBadge = accountRefreshBadge(player, refreshResult);
       const accountData = `data-player="${esc(player.id)}" data-environment="${isPbe ? "pbe" : "live"}" data-game-name="${esc(player.gameName)}" data-tag-line="${esc(player.tagLine)}"`;
       const reviewButton = isPbe
         ? `<button type="button" class="opgg-ai-button" data-opgg-action="personal-direct-teaching" ${accountData}><span class="opgg-ai-icon" aria-hidden="true">✦</span><span><strong>AI 智能复盘</strong><small>读取 MetaTFT 最近 20 场</small></span></button>`
@@ -571,7 +616,7 @@ async function renderPersonal() {
           <div class="opgg-card-body">
           <div class="opgg-card-head">
             <span class="opgg-card-title">${esc(player.displayName)}</span>
-            <span class="opgg-badge opgg-badge-muted">${isPbe ? "PBE" : "NA"}</span>
+            <span class="opgg-badge opgg-badge-muted">${isPbe ? "PBE" : "NA"}</span>${refreshBadge}
           </div>
           <div class="opgg-match-sub">${esc(player.gameName)}#${esc(player.tagLine)}</div>
           ${isPbe ? '<div class="opgg-notice opgg-personal-live-note">对局与统计将在打开时从 MetaTFT 近实时读取</div>' : `<div class="opgg-metrics" style="margin-top:9px">
@@ -593,6 +638,9 @@ async function renderPersonal() {
             <p class="opgg-page-sub">添加 Riot ID 后点击账号，即可查看最近 10–20 场、展开单局终局棋盘并进行 AI 复盘</p>
           </div>
         </div>
+        ${refreshResult ? `<div class="opgg-refresh-result ${refreshResult.failedCount ? "has-error" : "is-success"}" role="status">${refreshResult.error
+          ? `刷新失败：${esc(refreshResult.error)}`
+          : `刷新完成：${refreshResult.refreshedCount}/${refreshResult.requestedCount} 个账号成功${refreshResult.failedCount ? `，${refreshResult.failedCount} 个未刷新，可稍后重试` : ""}`}</div>` : ""}
         <div class="opgg-card opgg-account-form"><div class="opgg-card-body">
           <div class="opgg-section-title">添加账号</div>
           <div class="opgg-account-fields">
@@ -610,7 +658,8 @@ async function renderPersonal() {
       `,
       { view: "personal" }
     );
-    await renderPlayerPools();
+    configurePersonalShellRefresh({ enabled: knownRefreshableAccountCount > 0 });
+    await renderPlayerPools(refreshResult);
   } catch (error) {
     setResult("个人战绩复盘", errorHtml(error));
   }
@@ -643,15 +692,38 @@ async function addPersonalAccount() {
   }
 }
 
+async function refreshPersonalAccounts() {
+  configurePersonalShellRefresh({ enabled: true, loading: true });
+  try {
+    const result = await api("/api/opgg/my-review/refresh", { method: "POST" });
+    await renderPersonal(result);
+  } catch (error) {
+    await renderPersonal({ error: error?.message ?? error, requestedCount: 0, refreshedCount: 0, failedCount: 1 });
+  }
+}
+
 async function removePersonalAccount(playerId) {
   if (!window.confirm("确认从你的账号列表中删除该账号？历史统计数据不会被彻底删除。")) return;
   await api(`/api/opgg/players/${encodeURIComponent(playerId)}`, { method: "DELETE" });
   await renderPersonal();
 }
 
-function poolCardHtml(pool) {
+function accountRefreshBadge(player, refreshResult = null, { showSuccess = false } = {}) {
+  const result = refreshResult?.results?.find((entry) => entry.playerId === player.id);
+  if (result?.status === "error") {
+    return `<span class="opgg-badge opgg-badge-warn opgg-account-refresh-pending" title="${esc(result.error ?? "本次刷新失败")}">本次未更新</span>`;
+  }
+  if (!player.lastSuccessfulPollAt) {
+    return '<span class="opgg-badge opgg-badge-warn opgg-account-refresh-pending">未更新</span>';
+  }
+  if (!showSuccess) return "";
+  const updatedAt = fmtDate(player.lastSuccessfulPollAt);
+  return `<span class="opgg-badge opgg-badge-success opgg-account-refresh-success" title="最近成功更新：${esc(updatedAt)}">更新于 ${updatedAt}</span>`;
+}
+
+function poolCardHtml(pool, refreshResult = null) {
   const players = (pool.players ?? []).map((player) => `
-    <li><span>${esc(player.gameName)}#${esc(player.tagLine)}</span><button type="button" class="opgg-remove-button opgg-remove-button-compact" data-opgg-action="pool-remove-player" data-pool="${esc(pool.id)}" data-player="${esc(player.id)}">移出</button></li>`).join("");
+    <li><span class="opgg-pool-member-main"><span>${esc(player.gameName)}#${esc(player.tagLine)}</span>${accountRefreshBadge(player, refreshResult, { showSuccess: true })}</span><button type="button" class="opgg-remove-button opgg-remove-button-compact" data-opgg-action="pool-remove-player" data-pool="${esc(pool.id)}" data-player="${esc(player.id)}">移出</button></li>`).join("");
   return `<article class="opgg-card opgg-pool-card">
     <div class="opgg-card-body">
       <div class="opgg-card-head"><strong class="opgg-card-title">${esc(pool.name)}</strong><span class="opgg-pool-head-actions"><button type="button" class="opgg-pool-rename-button" data-opgg-action="pool-rename-start" data-pool="${esc(pool.id)}">重命名</button><span class="opgg-badge opgg-badge-muted">${pool.memberCount}/${pool.maxMembers}</span></span></div>
@@ -668,12 +740,16 @@ function poolCardHtml(pool) {
   </article>`;
 }
 
-async function renderPlayerPools() {
+async function renderPlayerPools(refreshResult = null) {
   const host = el("opgg-player-pools");
   if (!host) return;
   try {
     const data = await api("/api/player-pools");
     const pools = data.pools ?? [];
+    const poolAccountCount = new Set(pools.flatMap((pool) => (pool.players ?? []).map((player) => player.id))).size;
+    if (state.view === "personal" && shellRefreshMode === "personal") {
+      configurePersonalShellRefresh({ enabled: knownRefreshableAccountCount > 0 || poolAccountCount > 0 });
+    }
     host.innerHTML = `
       ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-import"><div class="opgg-card-body"><div class="opgg-section-title">用 Pool 码一键导入</div><div class="opgg-pool-import-row"><input id="opgg-pool-share-code" maxlength="8" autocomplete="off" placeholder="输入 8 位 Pool 码" aria-label="Pool 码"><button type="button" class="opgg-primary-button" data-opgg-action="pool-import-code">导入为我的 Pool</button></div><p class="opgg-form-hint">会复制当下的成员名单；导入后可以独立增删，不影响原 Pool。</p></div></div>` : ""}
       ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-create"><div class="opgg-card-body"><div class="opgg-section-title">创建 Pool（需同时添加首个角色）</div><div class="opgg-pool-create-row"><input id="opgg-pool-name" placeholder="自定义 Pool 名称"><select id="opgg-pool-environment"><option value="pbe">S18 PBE</option><option value="live">NA 正式服</option></select><input id="opgg-pool-initial-name" placeholder="首个角色游戏名"><input id="opgg-pool-initial-tag" placeholder="首个角色 Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-create">验证并创建</button></div></div></div>` : ""}
@@ -682,7 +758,7 @@ async function renderPlayerPools() {
         <div><strong>Pool 对比分析</strong><p>${pools.length === 2 ? `已选择 ${esc(pools[0].name)} 与 ${esc(pools[1].name)}，对比阵容偏好、平均名次、前四率和登顶率。` : pools.length === 1 ? `当前已有 ${esc(pools[0].name)}；再创建或用 Pool 码导入 1 个 Pool，即可在这里对比。` : "先创建或导入两个 Pool，即可比较两组玩家的阵容偏好与表现。"}</p></div>
         ${pools.length === 2 ? `<button type="button" class="opgg-primary-button" data-opgg-action="pool-compare" data-left="${esc(pools[0].id)}" data-right="${esc(pools[1].id)}">开始对比两组 Pool</button>` : `<span class="opgg-compare-progress">${pools.length}/2</span>`}
       </section>
-      <div class="opgg-grid">${pools.map(poolCardHtml).join("") || '<div class="opgg-empty">还没有 Pool。输入名称和首个角色，验证成功后创建。</div>'}</div>`;
+      <div class="opgg-grid">${pools.map((pool) => poolCardHtml(pool, refreshResult)).join("") || '<div class="opgg-empty">还没有 Pool。输入名称和首个角色，验证成功后创建。</div>'}</div>`;
   } catch (error) {
     host.innerHTML = errorHtml(error);
   }
@@ -808,6 +884,101 @@ function metricWidth(value, kind, pairMax = 1) {
   return Math.max(0, Math.min(100, Number(value) / Math.max(1, pairMax) * 100));
 }
 
+function matrixPointDetail(label, share, top4, avgPlacement = null, pool = null) {
+  return `${pool ? `${pool} · ` : ""}${label} · 使用 ${pct1(share)} · 前四 ${pct1(top4)}${avgPlacement === null ? "" : ` · 均名 ${metricText(avgPlacement, "placement")}`}`;
+}
+
+function matrixLabels(points) {
+  const occupied = [];
+  const bounds = { left: 72, right: 668, top: 42, bottom: 252 };
+  return points.map((point) => {
+    const width = Math.max(18, [...point.shortLabel].length * 8.5);
+    const height = 12;
+    const gap = point.radius + 4;
+    const candidates = [
+      { x: point.x + gap, y: point.y - 7 },
+      { x: point.x + gap, y: point.y + 13 },
+      { x: point.x - gap - width, y: point.y - 7 },
+      { x: point.x - gap - width, y: point.y + 13 },
+      { x: point.x - width / 2, y: point.y - gap - 3 },
+      { x: point.x - width / 2, y: point.y + gap + height },
+      { x: point.x + gap, y: point.y - 24 },
+      { x: point.x + gap, y: point.y + 29 },
+      { x: point.x - gap - width, y: point.y - 24 },
+      { x: point.x - gap - width, y: point.y + 29 }
+    ];
+    const scored = candidates.map((candidate, index) => {
+      const box = {
+        left: candidate.x - 1,
+        right: candidate.x + width + 1,
+        top: candidate.y - height + 1,
+        bottom: candidate.y + 2
+      };
+      const overflow = Math.max(0, bounds.left - box.left) + Math.max(0, box.right - bounds.right)
+        + Math.max(0, bounds.top - box.top) + Math.max(0, box.bottom - bounds.bottom);
+      const overlap = occupied.reduce((total, other) => total + Math.max(0, Math.min(box.right, other.right) - Math.max(box.left, other.left))
+        * Math.max(0, Math.min(box.bottom, other.bottom) - Math.max(box.top, other.top)), 0);
+      return { ...candidate, box, score: overlap * 100 + overflow * 1000 + index };
+    }).sort((left, right) => left.score - right.score)[0];
+    occupied.push(scored.box);
+    return { ...point, labelX: scored.x, labelY: scored.y };
+  });
+}
+
+function spreadCoincidentMatrixPoints(points) {
+  const groups = new Map();
+  for (const point of points) {
+    const key = `${point.x.toFixed(1)}:${point.y.toFixed(1)}`;
+    const group = groups.get(key) ?? [];
+    group.push(point);
+    groups.set(key, group);
+  }
+  const result = [];
+  for (const group of groups.values()) {
+    if (group.length === 1) {
+      result.push({ ...group[0], originX: group[0].x, originY: group[0].y });
+      continue;
+    }
+    const maxRadius = Math.max(...group.map((point) => point.radius));
+    const hitRadius = maxRadius + 6;
+    const ringRadius = (maxRadius + 7) / Math.max(.38, Math.sin(Math.PI / group.length));
+    const horizontalClearance = Math.min(group[0].x - 70, 670 - group[0].x);
+    const verticalClearance = Math.min(group[0].y - 42, 252 - group[0].y);
+    const startAngle = horizontalClearance < ringRadius + hitRadius && verticalClearance >= horizontalClearance
+      ? Math.PI / 2
+      : 0;
+    const raw = group.map((point, index) => ({
+      ...point,
+      originX: point.x,
+      originY: point.y,
+      x: point.x + Math.cos(startAngle + (Math.PI * 2 * index) / group.length) * ringRadius,
+      y: point.y + Math.sin(startAngle + (Math.PI * 2 * index) / group.length) * ringRadius
+    }));
+    const minX = Math.min(...raw.map((point) => point.x - hitRadius));
+    const maxX = Math.max(...raw.map((point) => point.x + hitRadius));
+    const minY = Math.min(...raw.map((point) => point.y - hitRadius));
+    const maxY = Math.max(...raw.map((point) => point.y + hitRadius));
+    const shiftX = minX < 70 ? 70 - minX : maxX > 670 ? 670 - maxX : 0;
+    const shiftY = minY < 42 ? 42 - minY : maxY > 252 ? 252 - maxY : 0;
+    result.push(...raw.map((point) => ({ ...point, x: point.x + shiftX, y: point.y + shiftY })));
+  }
+  return result;
+}
+
+function matrixPointHtml(point, className) {
+  const detail = matrixPointDetail(point.label, point.share, point.top4, point.avgPlacement, point.pool);
+  const lineX = point.labelX < point.x ? point.labelX + Math.max(18, [...point.shortLabel].length * 8.5) : point.labelX;
+  const lineY = point.labelY - 4;
+  const offsetLine = Math.abs(point.x - point.originX) > .1 || Math.abs(point.y - point.originY) > .1
+    ? `<line class="opgg-matrix-offset-line" x1="${point.originX}" y1="${point.originY}" x2="${point.x}" y2="${point.y}"></line>`
+    : "";
+  return `<g class="opgg-matrix-point ${className}" tabindex="0" role="button" aria-label="${esc(detail)}" data-opgg-matrix-detail="${esc(detail)}"><title>${esc(detail)}</title>${offsetLine}<line class="opgg-matrix-label-line" x1="${point.x}" y1="${point.y}" x2="${lineX}" y2="${lineY}"></line><circle class="opgg-matrix-hit" cx="${point.x}" cy="${point.y}" r="${point.radius + 6}"></circle><circle class="opgg-matrix-bubble" cx="${point.x}" cy="${point.y}" r="${point.radius}"></circle><text x="${point.labelX}" y="${point.labelY}">${esc(point.shortLabel)}</text></g>`;
+}
+
+function matrixDetailHtml() {
+  return '<div class="opgg-matrix-detail" role="status" aria-live="polite">鼠标悬停、键盘聚焦或触摸任意气泡，可查看完整阵容名称和精确值。</div>';
+}
+
 function comparisonMetricCard(label, leftName, rightName, leftValue, rightValue, kind = "number") {
   const pairMax = Math.max(Number(leftValue) || 0, Number(rightValue) || 0, 1);
   return `<article class="opgg-compare-metric-card">
@@ -840,14 +1011,15 @@ function compEffectMatrix(rows, left, right) {
     row.right ? { comp: row.right, side: "right", pool: right.pool.name, signature: row.compSignature } : null
   ]).filter((point) => point && observedCompMetric(point.comp, "top4Rate") !== null).sort((a, b) => b.comp.playerMatchShare - a.comp.playerMatchShare).slice(0, 14);
   const maxShare = Math.max(.05, ...points.map((point) => point.comp.playerMatchShare ?? 0));
-  const circles = points.map((point, index) => {
+  const laidOut = matrixLabels(spreadCoincidentMatrixPoints(points.map((point) => {
     const x = 70 + Math.sqrt(Math.min(1, (point.comp.playerMatchShare ?? 0) / maxShare)) * 600;
     const y = 250 - observedCompMetric(point.comp, "top4Rate") * 190;
-    const label = poolCompLabel(point.comp, point.signature).slice(0, 8);
-    return `<g class="opgg-matrix-point opgg-matrix-${point.side}"><title>${esc(point.pool)} · ${esc(poolCompLabel(point.comp, point.signature))} · 使用 ${pct1(point.comp.playerMatchShare)} · 前四 ${pct1(observedCompMetric(point.comp, "top4Rate"))}</title><circle cx="${x}" cy="${y}" r="${Math.max(5, Math.min(11, 4 + Math.sqrt(point.comp.playerMatchCount ?? 1)))}"></circle>${index < 8 ? `<text x="${x + 9}" y="${y - 7}">${esc(label)}</text>` : ""}</g>`;
-  }).join("");
-  return `<section class="opgg-compare-chart-card"><div class="opgg-compare-chart-head"><div><h4>使用率 × 前四率效果矩阵</h4><p>右上：热门且高前四；左上：冷门但高效。气泡大小代表样本量，悬停可看精确值。</p></div><div class="opgg-chart-legend"><span class="opgg-pool-left">● ${esc(left.pool.name)}</span><span class="opgg-pool-right">● ${esc(right.pool.name)}</span></div></div>
-    <div class="opgg-matrix-wrap"><svg class="opgg-effect-matrix" viewBox="0 0 720 285" role="img" aria-label="阵容使用率和前四率效果矩阵"><line class="opgg-matrix-grid" x1="70" y1="155" x2="670" y2="155"></line><line class="opgg-matrix-grid" x1="370" y1="48" x2="370" y2="250"></line><text class="opgg-matrix-quadrant" x="82" y="68">冷门高效</text><text class="opgg-matrix-quadrant" x="580" y="68">热门强势</text><text class="opgg-matrix-axis-label" x="8" y="55">前四率高</text><text class="opgg-matrix-axis-label" x="8" y="250">前四率低</text><text class="opgg-matrix-axis-label" x="585" y="276">使用占比高 →</text>${circles}</svg></div></section>`;
+    const label = poolCompLabel(point.comp, point.signature);
+    return { x, y, radius: Math.max(5, Math.min(11, 4 + Math.sqrt(point.comp.playerMatchCount ?? 1))), label, shortLabel: label.slice(0, 8), share: point.comp.playerMatchShare, top4: observedCompMetric(point.comp, "top4Rate"), avgPlacement: observedCompMetric(point.comp, "avgPlacement"), pool: point.pool, side: point.side };
+  })));
+  const circles = laidOut.map((point) => matrixPointHtml(point, `opgg-matrix-${point.side}`)).join("");
+  return `<section class="opgg-compare-chart-card"><div class="opgg-compare-chart-head"><div><h4>使用率 × 前四率效果矩阵</h4><p>右上：热门且高前四；左上：冷门但高效。气泡大小代表样本量，悬停、聚焦或触摸查看精确值。</p></div><div class="opgg-chart-legend"><span class="opgg-pool-left">● ${esc(left.pool.name)}</span><span class="opgg-pool-right">● ${esc(right.pool.name)}</span></div></div>
+    <div class="opgg-matrix-wrap"><svg class="opgg-effect-matrix" viewBox="0 0 720 285" role="group" aria-label="阵容使用率和前四率效果矩阵"><line class="opgg-matrix-grid" x1="70" y1="155" x2="670" y2="155"></line><line class="opgg-matrix-grid" x1="370" y1="48" x2="370" y2="250"></line><text class="opgg-matrix-quadrant" x="82" y="68">冷门高效</text><text class="opgg-matrix-quadrant" x="580" y="68">热门强势</text><text class="opgg-matrix-axis-label" x="8" y="55">前四率高</text><text class="opgg-matrix-axis-label" x="8" y="250">前四率低</text><text class="opgg-matrix-axis-label" x="585" y="276">使用占比高 →</text>${circles}</svg></div>${matrixDetailHtml()}</section>`;
 }
 
 function compMetricLine(label, leftValue, rightValue, kind = "percent") {
@@ -878,15 +1050,16 @@ function comparisonCompCard(row, left, right) {
 function singlePoolEffectMatrix(stats) {
   const points = (stats.compTrends ?? []).filter((comp) => observedCompMetric(comp, "top4Rate") !== null).slice(0, 16);
   const maxShare = Math.max(.05, ...points.map((comp) => comp.playerMatchShare ?? 0));
-  const circles = points.map((comp, index) => {
+  const laidOut = matrixLabels(spreadCoincidentMatrixPoints(points.map((comp) => {
     const share = comp.playerMatchShare ?? 0;
     const top4 = observedCompMetric(comp, "top4Rate") ?? 0;
     const x = 70 + Math.sqrt(Math.min(1, share / maxShare)) * 600;
     const y = 250 - top4 * 190;
-    const label = poolCompLabel(comp, comp.compSignature).slice(0, 8);
-    return `<g class="opgg-matrix-point opgg-matrix-single"><title>${esc(poolCompLabel(comp, comp.compSignature))} · 使用 ${pct1(share)} · 前四 ${pct1(top4)} · 均名 ${metricText(observedCompMetric(comp, "avgPlacement"), "placement")}</title><circle cx="${x}" cy="${y}" r="${Math.max(6, Math.min(13, 4 + Math.sqrt(comp.playerMatchCount ?? 1)))}"></circle>${index < 10 ? `<text x="${x + 9}" y="${y - 7}">${esc(label)}</text>` : ""}</g>`;
-  }).join("");
-  return `<section class="opgg-compare-chart-card opgg-single-chart-card"><div class="opgg-compare-chart-head"><div><h4>阵容热度 × 前四率</h4><p>越靠右使用越多，越靠上前四率越高；气泡大小代表样本量。悬停查看精确值。</p></div></div><div class="opgg-matrix-wrap"><svg class="opgg-effect-matrix" viewBox="0 0 720 285" role="img" aria-label="单 Pool 阵容热度和前四率矩阵"><line class="opgg-matrix-grid" x1="70" y1="155" x2="670" y2="155"></line><line class="opgg-matrix-grid" x1="370" y1="48" x2="370" y2="250"></line><text class="opgg-matrix-quadrant" x="82" y="68">冷门高效</text><text class="opgg-matrix-quadrant" x="580" y="68">热门强势</text><text class="opgg-matrix-axis-label" x="8" y="55">前四率高</text><text class="opgg-matrix-axis-label" x="8" y="250">前四率低</text><text class="opgg-matrix-axis-label" x="585" y="276">使用占比高 →</text>${circles}</svg></div></section>`;
+    const label = poolCompLabel(comp, comp.compSignature);
+    return { x, y, radius: Math.max(6, Math.min(13, 4 + Math.sqrt(comp.playerMatchCount ?? 1))), label, shortLabel: label.slice(0, 8), share, top4, avgPlacement: observedCompMetric(comp, "avgPlacement"), pool: null };
+  })));
+  const circles = laidOut.map((point) => matrixPointHtml(point, "opgg-matrix-single")).join("");
+  return `<section class="opgg-compare-chart-card opgg-single-chart-card"><div class="opgg-compare-chart-head"><div><h4>阵容热度 × 前四率</h4><p>越靠右使用越多，越靠上前四率越高；气泡大小代表样本量。悬停、聚焦或触摸查看精确值。</p></div></div><div class="opgg-matrix-wrap"><svg class="opgg-effect-matrix" viewBox="0 0 720 285" role="group" aria-label="单 Pool 阵容热度和前四率矩阵"><line class="opgg-matrix-grid" x1="70" y1="155" x2="670" y2="155"></line><line class="opgg-matrix-grid" x1="370" y1="48" x2="370" y2="250"></line><text class="opgg-matrix-quadrant" x="82" y="68">冷门高效</text><text class="opgg-matrix-quadrant" x="580" y="68">热门强势</text><text class="opgg-matrix-axis-label" x="8" y="55">前四率高</text><text class="opgg-matrix-axis-label" x="8" y="250">前四率低</text><text class="opgg-matrix-axis-label" x="585" y="276">使用占比高 →</text>${circles}</svg></div>${matrixDetailHtml()}</section>`;
 }
 
 function singlePoolUsageChart(stats) {
@@ -1251,6 +1424,7 @@ async function dispatch(action, dataset) {
 }
 
 function attachClickDelegation() {
+  attachShellRefresh();
   const resultEl = el("result-content");
   if (!resultEl || resultEl.dataset.opggBound) {
     return;
@@ -1272,7 +1446,34 @@ function attachClickDelegation() {
     replacement.textContent = image.dataset.fallbackLabel || String(image.alt || "?").slice(0, 1) || "?";
     image.replaceWith(replacement);
   }, true);
+  const showMatrixDetail = (point) => {
+    if (!point) return;
+    const card = point.closest(".opgg-compare-chart-card");
+    card?.querySelectorAll(".opgg-matrix-point.is-active").forEach((entry) => entry.classList.remove("is-active"));
+    point.classList.add("is-active");
+    const detail = card?.querySelector(".opgg-matrix-detail");
+    if (detail) detail.textContent = point.dataset.opggMatrixDetail;
+  };
+  resultEl.addEventListener("pointerover", (event) => {
+    showMatrixDetail(event.target.closest?.("[data-opgg-matrix-detail]"));
+  });
+  resultEl.addEventListener("focusin", (event) => {
+    showMatrixDetail(event.target.closest?.("[data-opgg-matrix-detail]"));
+  });
+  resultEl.addEventListener("keydown", (event) => {
+    if (!["Enter", " "].includes(event.key)) return;
+    const point = event.target.closest?.("[data-opgg-matrix-detail]");
+    if (!point) return;
+    event.preventDefault();
+    showMatrixDetail(point);
+  });
   resultEl.addEventListener("click", (event) => {
+    const matrixPoint = event.target.closest?.("[data-opgg-matrix-detail]");
+    if (matrixPoint) {
+      event.preventDefault();
+      showMatrixDetail(matrixPoint);
+      return;
+    }
     const target = event.target.closest("[data-opgg-action]");
     if (!target) {
       return;
@@ -1307,4 +1508,7 @@ export function renderOpggProTeaching() {
 export function cancelOpggRequests() {
   teachingController?.abort();
   teachingController = null;
+  resetShellRefresh();
 }
+
+export { matrixLabels, spreadCoincidentMatrixPoints };

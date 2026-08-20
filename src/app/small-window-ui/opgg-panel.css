@@ -356,9 +356,14 @@
 .opgg-remove-button { min-height: 32px; padding: 0 10px; border: 1px solid #efc7c7; border-radius: 8px; color: #a13d3d; background: #fff7f7; font-size: 9px; font-weight: 800; }
 .opgg-remove-button:hover { border-color: #d98d8d; background: #fff0f0; }
 .opgg-remove-button-compact { min-height: 26px; padding: 0 7px; }
-.opgg-personal-actions { gap: 7px; }
+.opgg-personal-actions { gap: 7px; display: grid; grid-template-columns: minmax(0, 1fr) 86px; }
+.opgg-personal-actions .opgg-ai-button, .opgg-personal-actions .opgg-remove-button { width: 100%; }
 .opgg-pool-members { margin: 10px 0; padding: 0; display: grid; gap: 6px; list-style: none; }
 .opgg-pool-members li { min-height: 32px; padding: 4px 5px 4px 9px; display: flex; align-items: center; justify-content: space-between; gap: 8px; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--panel-soft); font-size: 10px; }
+.opgg-pool-member-main { min-width: 0; display: grid; align-items: center; justify-items: start; gap: 3px; }
+.opgg-pool-member-main > span:first-child { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.opgg-account-refresh-pending { flex: 0 0 auto; padding: 2px 5px; font-size: 8px; line-height: 1.1; }
+.opgg-account-refresh-success { padding: 2px 5px; font-size: 8px; line-height: 1.1; white-space: nowrap; }
 .opgg-pool-add-row, .opgg-pool-create-row { margin: 9px 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(78px, .55fr) auto; gap: 7px; }
 .opgg-pool-create-row { grid-template-columns: minmax(120px, 1fr) auto minmax(120px, 1fr) minmax(80px, .6fr) auto; }
 .opgg-pool-import-row { margin-top: 9px; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 7px; }
@@ -369,6 +374,10 @@
 .opgg-pool-share-row small { color: var(--muted); font-size: 8px; }
 .opgg-pool-share-row strong { color: var(--ink); font-size: 11px; letter-spacing: .1em; }
 .opgg-secondary-button { min-height: 32px; padding: 0 10px; border: 1px solid var(--line-strong); border-radius: 8px; color: var(--wallpaper-accent); background: rgba(255,255,255,.96); font-size: 9px; font-weight: 800; }
+#result-refresh-button.is-opgg-refreshing > span:first-child { animation: opgg-refresh-spin .8s linear infinite; }
+.opgg-refresh-result { margin-bottom: 12px; padding: 9px 11px; border: 1px solid color-mix(in srgb, #2f9a83 38%, var(--line)); border-radius: 9px; color: #287866; background: color-mix(in srgb, #2f9a83 6%, rgba(255,255,255,.92)); font-size: 9px; font-weight: 750; }
+.opgg-refresh-result.has-error { border-color: color-mix(in srgb, #bd5a52 42%, var(--line)); color: #9a423c; background: color-mix(in srgb, #bd5a52 6%, rgba(255,255,255,.92)); }
+@keyframes opgg-refresh-spin { to { transform: rotate(360deg); } }
 .opgg-dashboard-button { gap: 6px; }
 .opgg-pool-compare-entry { margin: 12px 0; padding: 13px 14px; display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: 12px; border: 1px solid var(--line); border-radius: 12px; background: rgba(255,255,255,.92); box-shadow: var(--shadow-soft); }
 .opgg-pool-compare-entry.ready { border-color: color-mix(in srgb, var(--wallpaper-accent) 42%, var(--line)); background: color-mix(in srgb, var(--wallpaper-accent) 4%, rgba(255,255,255,.94)); }
@@ -451,12 +460,19 @@
 .opgg-matrix-grid { stroke: #b8c1cf; stroke-width: 1; stroke-dasharray: 4 5; }
 .opgg-matrix-quadrant { fill: #8793a4; font-size: 11px; font-weight: 750; }
 .opgg-matrix-axis-label { fill: #8793a4; font-size: 9px; }
-.opgg-matrix-point circle { stroke: #fff; stroke-width: 2; opacity: .82; transition: opacity .16s ease, transform .16s ease; transform-box: fill-box; transform-origin: center; }
-.opgg-matrix-point:hover circle { opacity: 1; transform: scale(1.22); }
-.opgg-matrix-left circle { fill: #2e73d2; }
-.opgg-matrix-right circle { fill: #b14fc4; }
-.opgg-matrix-single circle { fill: #2f9a83; }
-.opgg-matrix-point text { fill: #536177; font-size: 8px; font-weight: 750; pointer-events: none; }
+.opgg-matrix-point { cursor: pointer; outline: none; }
+.opgg-matrix-bubble { stroke: #fff; stroke-width: 2; opacity: .82; transition: opacity .16s ease, transform .16s ease; transform-box: fill-box; transform-origin: center; }
+.opgg-matrix-point:hover .opgg-matrix-bubble, .opgg-matrix-point:focus .opgg-matrix-bubble, .opgg-matrix-point.is-active .opgg-matrix-bubble { opacity: 1; transform: scale(1.22); }
+.opgg-matrix-point:focus .opgg-matrix-bubble { stroke: var(--ink); stroke-width: 2.5; }
+.opgg-matrix-left .opgg-matrix-bubble { fill: #2e73d2; }
+.opgg-matrix-right .opgg-matrix-bubble { fill: #b14fc4; }
+.opgg-matrix-single .opgg-matrix-bubble { fill: #2f9a83; }
+.opgg-matrix-hit { fill: transparent !important; stroke: none; pointer-events: all; }
+.opgg-matrix-label-line { stroke: #9ba6b5; stroke-width: .7; opacity: .58; pointer-events: none; }
+.opgg-matrix-offset-line { stroke: #9ba6b5; stroke-width: .8; stroke-dasharray: 2 2; opacity: .72; pointer-events: none; }
+.opgg-matrix-point text { fill: #536177; font-size: 8px; font-weight: 750; pointer-events: visiblePainted; }
+.opgg-matrix-point:hover text, .opgg-matrix-point:focus text, .opgg-matrix-point.is-active text { fill: var(--ink); }
+.opgg-matrix-detail { min-height: 34px; margin-top: 5px; padding: 8px 10px; display: flex; align-items: center; border: 1px solid var(--line); border-radius: 8px; color: var(--ink); background: var(--panel-soft); font-size: 9px; font-weight: 720; line-height: 1.45; }
 .opgg-compare-comp-list { display: grid; gap: 8px; }
 .opgg-compare-comp-card {
   overflow: hidden;
