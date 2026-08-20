@@ -30,6 +30,15 @@ function responseCapture() {
   };
 }
 
+function jsonRequest(method, body) {
+  return {
+    method,
+    async *[Symbol.asyncIterator]() {
+      yield Buffer.from(JSON.stringify(body));
+    }
+  };
+}
+
 test("personal review pools are isolated by visitor scope", async () => {
   assert.equal(personalPoolId(null), "my-review");
   assert.equal(personalPoolId("scope-a"), "my-review-scope-a");
@@ -107,6 +116,53 @@ test("personal account registry persists PBE Riot IDs in the visitor pool", asyn
   database.close();
 });
 
+test("NA account registration uses MetaTFT live history instead of OP.GG", async () => {
+  const database = await openDatabase(":memory:");
+  initSchema(database);
+  let closed = 0;
+  const router = createOpggApiRouter({
+    database,
+    playerMatchClient: {
+      async callTool(name, input) {
+        assert.equal(name, "list_matches");
+        assert.deepEqual(
+          { environment: input.environment, season: input.season, verificationMode: input.verificationMode },
+          { environment: "live", season: "set17-live", verificationMode: "provider" }
+        );
+        return {
+          returnedCount: 1,
+          matches: [{
+            matchId: "NA1_REGISTER",
+            playedAt: "2026-08-20T00:00:00.000Z",
+            placement: 3,
+            level: 8,
+            set: "TFTSet17",
+            patch: "17.9",
+            queue: { id: 1100 },
+            lastRound: 32,
+            traits: [],
+            units: []
+          }]
+        };
+      },
+      async close() { closed += 1; }
+    }
+  });
+  const response = responseCapture();
+  await router(
+    jsonRequest("POST", { gameName: "NaUser", tagLine: "1215", region: "na" }),
+    response,
+    new URL("http://localhost/api/opgg/players/register"),
+    { scope: "scope-na" }
+  );
+  assert.equal(response.status, 200);
+  assert.equal(response.body.collect.provider, "metatft");
+  assert.equal(response.body.collect.returnedCount, 1);
+  assert.equal(closed, 1);
+  assert.equal(database.prepare("SELECT COUNT(*) AS n FROM player_match_fact").get().n, 1);
+  database.close();
+});
+
 test("refresh updates personal accounts and every owned Pool member without crossing owners", async () => {
   const database = await openDatabase(":memory:");
   initSchema(database);
@@ -146,45 +202,27 @@ test("refresh updates personal accounts and every owned Pool member without cros
     region: "pbe",
     active: true
   }, "other-owner-pool");
-  const puuid = "a".repeat(78);
-  let opggInitialized = 0;
-  let opggTerminated = 0;
-  let pbeClosed = 0;
-  let pbeCalls = 0;
-  const opggMatch = {
-    metadata: { matchId: "NA1_REFRESH", participants: [] },
-    info: { matchId: "NA1_REFRESH", gameDatetime: 1_776_000_000_000, queueId: 1100, tftSetNumber: 17, gameVersion: "17.9" },
-    summary: { placement: 3, level: 8, lastRound: 32, playersEliminated: 2, traits: [], units: [] }
-  };
+  let playerMatchClosed = 0;
+  let playerMatchCalls = 0;
+  const observedRoutes = [];
   const router = createOpggApiRouter({
     database,
-    opggClientFactory: () => ({
-      async initialize() { opggInitialized += 1; },
-      async terminate() { opggTerminated += 1; },
-      async callTool(name, input) {
-        if (name === "lol_get_summoner_profile") {
-          return { result: { content: [{ type: "text", text: `LolGetSummonerProfile(Data(Summoner("${puuid}","${input.game_name}","${input.tag_line}")))` }] } };
-        }
-        if (name === "tft_get_play_style") {
-          return { result: { content: [{ type: "text", text: JSON.stringify({ items: { data: [opggMatch] }, play_style_comments: [], action: [] }) }] } };
-        }
-        throw new Error(`unexpected tool ${name}`);
-      }
-    }),
     playerMatchClient: {
       async callTool(name, input) {
         assert.equal(name, "list_matches");
         assert.equal(input.callerKey, "refresh-owner");
-        pbeCalls += 1;
+        playerMatchCalls += 1;
+        observedRoutes.push({ gameName: input.gameName, environment: input.environment, season: input.season });
+        const isPbe = input.environment === "pbe";
         return {
           returnedCount: 1,
           matches: [{
-            matchId: `PBE1_REFRESH_${input.gameName}`,
+            matchId: `${isPbe ? "PBE1" : "NA1"}_REFRESH_${input.gameName}`,
             playedAt: "2026-08-20T00:00:00.000Z",
             placement: 2,
             level: 9,
-            set: "TFTSet18",
-            patch: "18.2",
+            set: isPbe ? "TFTSet18" : "TFTSet17",
+            patch: isPbe ? "18.2" : "17.9",
             queue: { id: 1100 },
             lastRound: 35,
             traits: [],
@@ -192,7 +230,7 @@ test("refresh updates personal accounts and every owned Pool member without cros
           }]
         };
       },
-      async close() { pbeClosed += 1; }
+      async close() { playerMatchClosed += 1; }
     }
   });
   const listing = responseCapture();
@@ -218,12 +256,15 @@ test("refresh updates personal accounts and every owned Pool member without cros
   assert.equal(response.body.poolCount, 1);
   assert.equal(response.body.personalAccountCount, 2);
   assert.equal(response.body.poolAccountCount, 2);
-  assert.deepEqual(response.body.results.map((result) => result.provider).sort(), ["metatft", "metatft", "opgg"]);
+  assert.deepEqual(response.body.results.map((result) => result.provider), ["metatft", "metatft", "metatft"]);
   assert.equal(response.body.results.some((result) => result.displayName === "ForeignUser#aug"), false);
-  assert.equal(opggInitialized, 1);
-  assert.equal(opggTerminated, 1);
-  assert.equal(pbeClosed, 1);
-  assert.equal(pbeCalls, 2);
+  assert.equal(playerMatchClosed, 1);
+  assert.equal(playerMatchCalls, 3);
+  assert.deepEqual(observedRoutes.toSorted((a, b) => a.gameName.localeCompare(b.gameName)), [
+    { gameName: "NaUser", environment: "live", season: "set17-live" },
+    { gameName: "PbeUser", environment: "pbe", season: "set18-pbe" },
+    { gameName: "PoolUser", environment: "pbe", season: "set18-pbe" }
+  ]);
   assert.equal(database.prepare("SELECT COUNT(*) AS n FROM player_match_fact").get().n, 3);
   const repeated = responseCapture();
   await router(
@@ -234,9 +275,7 @@ test("refresh updates personal accounts and every owned Pool member without cros
   );
   assert.equal(repeated.body.refreshedCount, 3);
   assert.equal(database.prepare("SELECT COUNT(*) AS n FROM player_match_fact").get().n, 3);
-  assert.equal(opggInitialized, 2);
-  assert.equal(opggTerminated, 2);
-  assert.equal(pbeClosed, 2);
-  assert.equal(pbeCalls, 4);
+  assert.equal(playerMatchClosed, 2);
+  assert.equal(playerMatchCalls, 6);
   database.close();
 });
