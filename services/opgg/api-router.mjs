@@ -26,10 +26,8 @@ import {
   removePlayerFromPool,
   getPoolPlayers,
   slugify,
-  collectPlayer,
   ingestExternalPlayerMatches
 } from "./collector.mjs";
-import { createOpggClient } from "./mcp-client.mjs";
 import { createPlayerMatchMcpClient } from "../metatft-player/mcp-client.mjs";
 import {
   aggregatePool,
@@ -115,6 +113,30 @@ function refreshableAccounts(database, scope) {
     poolCount: ownedPools.length,
     personalAccountCount: personalAccountIds.size,
     poolAccountCount: poolAccountIds.size
+  };
+}
+
+async function collectPlayerFromMetaTft(client, database, player, options = {}) {
+  const isPbe = player.region === "pbe";
+  const history = await client.callTool("list_matches", {
+    gameName: player.gameName,
+    tagLine: player.tagLine,
+    environment: isPbe ? "pbe" : "live",
+    season: isPbe ? "set18-pbe" : "set17-live",
+    verificationMode: "provider",
+    limit: 20,
+    callerKey: String(options.scope ?? "anonymous")
+  });
+  const ingest = ingestExternalPlayerMatches(database, player, history.matches ?? [], {
+    poolId: options.poolId,
+    provider: "metatft",
+    source: options.source ?? "manual_refresh"
+  });
+  return {
+    status: "ok",
+    provider: "metatft",
+    returnedCount: Number(history.returnedCount ?? history.matches?.length ?? 0),
+    ingestedCount: ingest.ingested
   };
 }
 
@@ -333,7 +355,6 @@ function buildSingleMatchReviewObject(target, others) {
 function createOpggApiRouter(options = {}) {
   let databasePromise = null;
   let honorsPromise = null;
-  const opggClientFactory = options.opggClientFactory ?? createOpggClient;
   const playerMatchClientFactory = options.playerMatchClientFactory
     ?? (() => options.playerMatchClient ?? createPlayerMatchMcpClient(options));
 
@@ -426,61 +447,28 @@ function createOpggApiRouter(options = {}) {
         }
         const players = refreshScope.players;
         const results = [];
-        let opggClient = null;
         let playerMatchClient = null;
         try {
           for (const player of players) {
             try {
-              if (player.region === "pbe") {
-                playerMatchClient ??= playerMatchClientFactory();
-                const history = await playerMatchClient.callTool("list_matches", {
-                  gameName: player.gameName,
-                  tagLine: player.tagLine,
-                  environment: "pbe",
-                  season: "set18-pbe",
-                  verificationMode: "provider",
-                  limit: 20,
-                  callerKey: String(scope ?? "anonymous")
-                });
-                const ingest = ingestExternalPlayerMatches(database, player, history.matches ?? [], {
-                  poolId: player.poolIds[0],
-                  provider: "metatft",
-                  source: "manual_refresh"
-                });
-                results.push({
-                  playerId: player.id,
-                  displayName: player.displayName,
-                  provider: "metatft",
-                  poolIds: player.poolIds,
-                  status: "ok",
-                  returnedCount: Number(history.returnedCount ?? history.matches?.length ?? 0),
-                  ingestedCount: ingest.ingested
-                });
-                continue;
-              }
-              if (!opggClient) {
-                opggClient = opggClientFactory({
-                  clientName: "tftclarity-opgg-personal-refresh",
-                  clientVersion: "0.1.0"
-                });
-                await opggClient.initialize();
-              }
-              const collect = await collectPlayer(opggClient, database, player, { forceResolve: true });
+              playerMatchClient ??= playerMatchClientFactory();
+              const collect = await collectPlayerFromMetaTft(playerMatchClient, database, player, {
+                poolId: player.poolIds[0],
+                scope,
+                source: "manual_refresh"
+              });
               results.push({
                 playerId: player.id,
                 displayName: player.displayName,
-                provider: "opgg",
+                provider: "metatft",
                 poolIds: player.poolIds,
-                status: collect.status,
-                returnedCount: collect.returnedCount,
-                newMatchCount: collect.newMatchCount,
-                ...(collect.status === "error" ? { error: collect.errorMessage ?? "collection failed" } : {})
+                ...collect
               });
             } catch (error) {
               results.push({
                 playerId: player.id,
                 displayName: player.displayName,
-                provider: player.region === "pbe" ? "metatft" : "opgg",
+                provider: "metatft",
                 poolIds: player.poolIds,
                 status: "error",
                 error: String(error?.message ?? error)
@@ -488,7 +476,6 @@ function createOpggApiRouter(options = {}) {
             }
           }
         } finally {
-          await opggClient?.terminate?.();
           await playerMatchClient?.close?.();
         }
         const refreshedCount = results.filter((result) => result.status === "ok").length;
@@ -522,35 +509,22 @@ function createOpggApiRouter(options = {}) {
           region
         });
 
-        if (region === "pbe") {
-          return sendJson(response, 200, {
-            player: playerMeta(database, entry.id),
-            collect: {
-              status: "skipped",
-              reason: "pbe_uses_metatft_live_lookup"
-            }
-          });
-        }
-
-        const client = opggClientFactory({
-          clientName: "tftclarity-opgg-register",
-          clientVersion: "0.1.0"
-        });
+        const client = playerMatchClientFactory();
         let collect;
         try {
-          await client.initialize();
-          collect = await collectPlayer(client, database, entry, {
-            forceResolve: true
+          collect = await collectPlayerFromMetaTft(client, database, entry, {
+            poolId: myReviewPoolId,
+            scope,
+            source: "account_registration"
           });
-        } finally {
-          await client.terminate();
-        }
-        if (collect.status === "error") {
+        } catch (error) {
           return sendJson(response, 502, {
             ok: false,
-            error: collect.errorMessage ?? "collection failed",
-            collect
+            error: String(error?.message ?? error),
+            collect: { status: "error", provider: "metatft" }
           });
+        } finally {
+          await client.close?.();
         }
         return sendJson(response, 200, {
           player: playerMeta(database, entry.id),

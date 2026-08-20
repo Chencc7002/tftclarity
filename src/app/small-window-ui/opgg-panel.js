@@ -677,7 +677,6 @@ async function addPersonalAccount() {
   try {
     if (environment === "pbe") {
       directPlayer = { gameName: name, tagLine: tag, environment: "pbe" };
-      await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}?${directPlayerQuery({ limit: "20" })}`);
     }
     const data = await api("/api/opgg/players/register", {
       method: "POST",
