@@ -3196,6 +3196,61 @@ test("Set 17 Artifact carrier quick task resolves 巨九 through the real struct
   assert.equal(chatResponse.payload.query.item, hydra);
 });
 
+test("Set 18 single-item carrier quick task resolves Flora Fatalis emblem aliases", async () => {
+  const emblem = "DA_18_EmblemFloraFatalis";
+  const catalog = createCatalog({
+    units: [{ apiName: "DA_18_Ahri", zhName: "阿狸", aliases: ["阿狸", "Ahri"], current: true }],
+    traits: [],
+    items: buildItemCatalogFromItemsResponse({
+      data: [
+        { items: emblem },
+        { items: "DA_18_EmblemFloraFatalisAugment" }
+      ]
+    }, { includeSeeds: false })
+  });
+  const carrierResponse = {
+    units: [{ unit: "DA_18_Ahri", places: [120, 100, 80, 60, 40, 20, 10, 10] }],
+    units_overall: [{ unit: "DA_18_Ahri", places: [200, 180, 160, 140, 120, 100, 80, 60] }]
+  };
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {},
+    compsClient: {},
+    conversationStateV2Mode: "on",
+    recommendForInputImpl: (input, options) => recommendForInput(input, {
+      ...options,
+      itemCarrierResponse: {
+        source: "fixture",
+        updatedAt: "2026-08-21T00:00:00.000Z",
+        buildResponse: carrierResponse,
+        baselineResponse: carrierResponse
+      }
+    })
+  });
+
+  for (const alias of ["绝命花妖纹章", "花妖纹章"]) {
+    const response = await handleRecommendRequest({
+      input: `${alias}最适合哪些英雄携带`,
+      seasonContextId: "set18-pbe",
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id: "item-carriers",
+        operation: "item_carrier_rankings",
+        arguments: { item: alias }
+      }
+    }, runtime);
+
+    assert.equal(response.statusCode, 200, alias);
+    assert.equal(response.payload.type, "item_carrier_rankings", alias);
+    assert.equal(response.payload.query.item, emblem, alias);
+    assert.equal(response.payload.item.apiName, emblem, alias);
+    assert.ok(response.payload.carriers.length > 0, alias);
+    assert.equal(response.payload.quickTask.executionMode, "structured", alias);
+  }
+});
+
 test("PBE catalog resolves 巨九 from the current set lookup when /items is empty", async () => {
   const hydra = "DA_Artifact_TitanicHydra";
   const runtime = createSmallWindowRuntime({
