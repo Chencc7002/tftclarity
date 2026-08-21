@@ -259,6 +259,103 @@ test("Set 18 PBE emblems prefer the latest Chinese names and retain old query al
   assert.equal(refreshed[0].aliases.includes("Flora Fatalis Emblem"), false);
 });
 
+test("Set 18 PBE item carrier aliases keep Red Buff separate from Sunfire Cape", () => {
+  const cases = [
+    ["DA_RedBuff", "红霸符"],
+    ["DA_SunfireCape", "日炎斗篷"],
+    ["DA_RedBuffRadiant", "光明版红霸符"],
+    ["DA_SunfireCape_Radiant", "光明版日炎斗篷"]
+  ];
+  const items = buildItemCatalogFromItemsResponse({
+    data: cases.map(([apiName]) => ({ items: apiName }))
+  }, {
+    includeSeeds: false,
+    itemLookupByApiName: new Map(cases.map(([apiName, name]) => [apiName, { apiName, name }]))
+  });
+  const catalog = createCatalog({ units: [], traits: [], items });
+
+  for (const [alias, expected] of [
+    ["日炎", "DA_SunfireCape"],
+    ["日炎斗篷", "DA_SunfireCape"],
+    ["红霸符", "DA_RedBuff"],
+    ["红buff", "DA_RedBuff"],
+    ["光明日炎", "DA_SunfireCape_Radiant"],
+    ["光明版日炎斗篷", "DA_SunfireCape_Radiant"],
+    ["光明版红霸符", "DA_RedBuffRadiant"],
+    ["光明红buff", "DA_RedBuffRadiant"]
+  ]) {
+    assert.equal(planQuery(`${alias}适合谁带`, { catalog }).parsed.carrierItem, expected, alias);
+  }
+
+  const redBuff = items.find((item) => item.apiName === "DA_RedBuff");
+  const radiantRedBuff = items.find((item) => item.apiName === "DA_RedBuffRadiant");
+  for (const alias of ["日炎", "日炎斗篷", "sunfire", "sunfire cape"]) {
+    assert.equal(redBuff.aliases.includes(alias), false, alias);
+  }
+  for (const alias of ["光明日炎", "光日炎", "光明日炎斗篷", "光日炎斗篷"]) {
+    assert.equal(radiantRedBuff.aliases.includes(alias), false, alias);
+  }
+
+  const set17Catalog = createCatalog({
+    units: [],
+    traits: [],
+    items: buildItemCatalogFromItemsResponse({
+      data: [
+        { items: "TFT_Item_RedBuff" },
+        { items: "TFT_Item_RapidFireCannon" }
+      ]
+    }, { includeSeeds: false })
+  });
+  assert.equal(
+    planQuery("日炎适合谁带", { catalog: set17Catalog }).parsed.carrierItem,
+    "TFT_Item_RedBuff"
+  );
+  assert.equal(
+    planQuery("红霸符适合谁带", { catalog: set17Catalog }).parsed.carrierItem,
+    "TFT_Item_RapidFireCannon"
+  );
+});
+
+test("Set 18 PBE item carrier aliases cover every emblem 转 shorthand", () => {
+  const cases = [
+    ["DA_18_EmblemBlackthorn", "黑荆棘纹章"],
+    ["DA_18_EmblemBlossom", "灵魂莲华纹章"],
+    ["DA_18_EmblemBrawler", "斗士纹章"],
+    ["DA_18_EmblemCoven", "魔女纹章"],
+    ["DA_18_EmblemDefender", "护卫纹章"],
+    ["DA_18_EmblemElderwood", "永恒之森纹章"],
+    ["DA_18_EmblemExecutioner", "裁决使纹章"],
+    ["DA_18_EmblemFae", "花仙子纹章"],
+    ["DA_18_EmblemFloraFatalis", "绝命花妖纹章"],
+    ["DA_18_EmblemFloraFatalisAugment", "强化版绝命花妖纹章"],
+    ["DA_18_EmblemHunter", "猎人纹章"],
+    ["DA_18_EmblemInferno", "地狱火纹章"],
+    ["DA_18_EmblemInvoker", "神谕纹章"],
+    ["DA_18_EmblemJuggernaut", "主宰纹章"],
+    ["DA_18_EmblemLunar", "月蚀骑士纹章"],
+    ["DA_18_EmblemPrimal", "野兽之灵纹章"],
+    ["DA_18_EmblemRapidfire", "迅捷射手纹章"],
+    ["DA_18_EmblemSlayer", "狂战士纹章"],
+    ["DA_18_EmblemSpellweaver", "法师纹章"],
+    ["DA_18_EmblemSprykin", "约德尔人纹章"],
+    ["DA_18_EmblemVanguard", "重装战士纹章"]
+  ];
+  const items = buildItemCatalogFromItemsResponse({
+    data: cases.map(([apiName]) => ({ items: apiName }))
+  }, {
+    includeSeeds: false,
+    itemLookupByApiName: new Map(cases.map(([apiName, name]) => [apiName, { apiName, name }]))
+  });
+  const catalog = createCatalog({ units: [], traits: [], items });
+
+  for (const [apiName, emblemName] of cases) {
+    const traitName = emblemName.replace(/纹章$/, "");
+    for (const alias of [`${traitName}转`, `${traitName}转职`]) {
+      assert.equal(planQuery(`${alias}适合谁带`, { catalog }).parsed.carrierItem, apiName, alias);
+    }
+  }
+});
+
 test("Set 18 PBE untranslated special items use verified Chinese client names", () => {
   const cases = [
     ["DA_Artifact_ForbiddenIdol", "Forbidden Idol", "禁忌雕像"],

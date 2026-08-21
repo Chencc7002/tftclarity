@@ -1,6 +1,32 @@
-export const ITEM_DISPLAY_VERSION = "s18-pbe-items-zh-2026-08-10";
+export const ITEM_DISPLAY_VERSION = "s18-pbe-items-zh-2026-08-21";
 
 export const ITEM_ALIAS_OVERRIDES = [
+  {
+    apiName: "DA_RedBuff",
+    zhName: "红霸符",
+    shortName: "红霸符",
+    preferredDisplayName: "红霸符",
+    aliases: ["红buff", "红霸符", "redbuff", "red buff"],
+    excludedAliases: ["日炎", "日炎斗篷", "sunfire", "sunfire cape"],
+    suppressDerivedAliases: true,
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_s18_item_identity",
+    season: "TFT18"
+  },
+  {
+    apiName: "DA_RedBuffRadiant",
+    zhName: "光明版红霸符",
+    shortName: "光明红霸符",
+    preferredDisplayName: "光明版红霸符",
+    aliases: ["光明红buff", "光红buff", "光明红霸符", "光红霸符", "radiant red buff"],
+    excludedAliases: ["光明日炎", "光日炎", "光明日炎斗篷", "光日炎斗篷"],
+    suppressDerivedAliases: true,
+    preferZhName: true,
+    confidence: 1,
+    source: "manual_s18_item_identity",
+    season: "TFT18"
+  },
   {
     apiName: "DA_18_EmblemBlossom",
     zhName: "灵魂莲华纹章",
