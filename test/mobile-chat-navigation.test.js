@@ -84,6 +84,10 @@ test("model conclusions render safe rich text without exposing Markdown markers"
   assert.match(formatter, /assistant-rich-text__section-title/u);
   assert.match(formatter, /assistant-rich-text__summary/u);
   assert.match(formatter, /assistant-rich-text__emphasis/u);
+  assert.match(formatter, /ASSISTANT_OUTPUT_SCHEMA_VERSION = "assistant-output\.v1"/u);
+  assert.match(formatter, /data-assistant-output-schema/u);
+  assert.match(formatter, /autoStructuredConclusionText/u);
+  assert.match(app, /class="answer-summary">\$\{conclusionRichTextHtml\(summary\)\}/u);
   assert.doesNotMatch(formatter, /\.innerHTML\s*=/u);
   assert.match(css, /\.assistant-rich-text__section-title \{/u);
   assert.match(css, /\.assistant-rich-text__summary \{/u);

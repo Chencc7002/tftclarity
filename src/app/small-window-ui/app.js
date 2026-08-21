@@ -3035,7 +3035,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
   if (modelConclusion) {
     return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
-  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${escapeHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {

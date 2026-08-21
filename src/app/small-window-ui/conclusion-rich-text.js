@@ -1,5 +1,8 @@
-const SUMMARY_LABEL_PATTERN = /^(变化汇总|关键变化|核心结论|最终结论|结论|总结|建议)\s*[：:]?\s*(.*)$/u;
+export const ASSISTANT_OUTPUT_SCHEMA_VERSION = "assistant-output.v1";
+
+const SUMMARY_LABEL_PATTERN = /^(变化汇总|关键变化|核心结论|最终结论|结论|总结|建议|summary|conclusion|recommendation|key points?|key changes?)\s*[：:]?\s*(.*)$/iu;
 const IMPORTANT_TOKEN_PATTERN = /(从\s*\d+(?:\.\d+)?\s*(?:人|档|个)?\s*(?:增至|降至|变为)\s*\d+(?:\.\d+)?\s*(?:人|档|个)?|\d+(?:\.\d+)?\s*(?:人|档|个)?\s*(?:→|->|到)\s*\d+(?:\.\d+)?\s*(?:人|档|个)?|[+＋]\s*\d+(?:\.\d+)?|档位未变|人数不变|未达到|未激活|已激活|未升档|已升档|未触发|已触发|无变化|不变|升档|降档)/gu;
+const AUTO_STRUCTURE_MIN_LENGTH = 88;
 
 function escapeHtml(value) {
   return String(value ?? "")
@@ -38,6 +41,57 @@ function inlineConclusionHtml(value) {
 function summaryLineParts(line) {
   const normalized = line.trim().replace(/^\*\*/, "").replace(/\*\*(?=\s*[：:]?)/u, "");
   return normalized.match(SUMMARY_LABEL_PATTERN);
+}
+
+function sentenceSegments(value) {
+  const text = String(value ?? "").trim();
+  const segments = [];
+  let current = "";
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    const next = text[index + 1] ?? "";
+    current += character;
+    const strongBoundary = /[。！？；]/u.test(character);
+    const spacedBoundary = /[.!?;]/u.test(character) && (!next || /\s/u.test(next));
+    if (!strongBoundary && !spacedBoundary) continue;
+    if (current.trim()) segments.push(current.trim());
+    current = "";
+  }
+  if (current.trim()) segments.push(current.trim());
+  return segments;
+}
+
+function hasExplicitLineStructure(value) {
+  return String(value ?? "").split(/\r?\n/u).some((rawLine) => {
+    const line = rawLine.trim();
+    return /^#{1,3}\s+/u.test(line)
+      || /^(?:[-•]|\*)\s+/u.test(line)
+      || /^\d+[.)、]\s*/u.test(line)
+      || Boolean(summaryLineParts(line));
+  });
+}
+
+function autoStructuredConclusionText(value) {
+  const text = String(value ?? "").replace(/\r\n?/gu, "\n").trim();
+  const nonEmptyLines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  if (nonEmptyLines.length !== 1) return text;
+
+  const line = nonEmptyLines[0];
+  const explicitSummary = summaryLineParts(line);
+  const summaryLabel = explicitSummary?.[1] ?? (/\p{Script=Han}/u.test(line) ? "结论" : "Summary");
+  const body = explicitSummary?.[2] ?? line;
+  const segments = sentenceSegments(body);
+  const shouldStructure = explicitSummary
+    ? segments.length >= 2
+    : !hasExplicitLineStructure(line)
+      && (segments.length >= 3 || (line.length >= AUTO_STRUCTURE_MIN_LENGTH && segments.length >= 2));
+  if (!shouldStructure) return text;
+
+  return [
+    `${summaryLabel}：${segments[0]}`,
+    "",
+    ...segments.slice(1).map((segment) => `- ${segment}`)
+  ].join("\n");
 }
 
 function cleanInternalPositionIds(value) {
@@ -96,7 +150,8 @@ export function conclusionDisplayText(value) {
 }
 
 export function conclusionRichTextHtml(value) {
-  const lines = conclusionDisplayText(value).replace(/\r\n?/gu, "\n").split("\n");
+  const displayText = conclusionDisplayText(value);
+  const lines = autoStructuredConclusionText(displayText).split("\n");
   const blocks = [];
   let listItems = [];
   let listType = "ul";
@@ -152,5 +207,5 @@ export function conclusionRichTextHtml(value) {
   }
 
   flushList();
-  return `<div class="assistant-rich-text">${blocks.join("")}</div>`;
+  return `<div class="assistant-rich-text" data-assistant-output-schema="${ASSISTANT_OUTPUT_SCHEMA_VERSION}">${blocks.join("")}</div>`;
 }
