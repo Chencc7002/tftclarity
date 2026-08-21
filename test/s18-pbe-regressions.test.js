@@ -5,7 +5,7 @@ import {
   buildCommunityDragonEntityDetails,
   fetchCommunityDragonEntityDetails
 } from "../src/data/communitydragon-entity-details.js";
-import { buildItemCatalogFromItemsResponse } from "../src/data/item-catalog.js";
+import { buildItemCatalogFromItemsResponse, mergeCatalogItems } from "../src/data/item-catalog.js";
 import {
   buildTraitCatalogFromExplorerRows,
   buildUnitCatalogFromExplorerRows,
@@ -200,7 +200,7 @@ test("Set 18 PBE emblems prefer the latest Chinese names and retain old query al
     ["DA_18_EmblemVanguard", "前卫纹章", "重装战士纹章"],
     ["DA_18_EmblemBlossom", "Blossom Emblem", "灵魂莲华纹章"],
     ["DA_18_EmblemFloraFatalis", "Flora Fatalis Emblem", "绝命花妖纹章"],
-    ["DA_18_EmblemFloraFatalisAugment", "Flora Fatalis Emblem", "绝命花妖纹章"],
+    ["DA_18_EmblemFloraFatalisAugment", "Flora Fatalis Emblem", "强化版绝命花妖纹章"],
     ["DA_18_EmblemJuggernaut", "Juggernaut Emblem", "主宰纹章"],
     ["DA_18_EmblemPrimal", "Primal Emblem", "野兽之灵纹章"]
   ];
@@ -216,7 +216,10 @@ test("Set 18 PBE emblems prefer the latest Chinese names and retain old query al
     const item = items.find((entry) => entry.apiName === apiName);
     assert.equal(item?.zhName, latestName);
     assert.equal(item?.preferredDisplayName, latestName);
-    assert.equal(item?.aliases.includes(staleName), true);
+    assert.equal(
+      item?.aliases.includes(staleName),
+      apiName !== "DA_18_EmblemFloraFatalisAugment"
+    );
   }
 
 
@@ -231,6 +234,29 @@ test("Set 18 PBE emblems prefer the latest Chinese names and retain old query al
   assert.deepEqual(planQuery("阿狸已有猎手纹章怎么出装", { catalog }).query.ownedItems, [
     "DA_18_EmblemHunter"
   ]);
+  for (const alias of ["绝命花妖纹章", "花妖纹章", "绝命花妖转", "花妖转"]) {
+    assert.equal(
+      planQuery(`${alias}适合谁带`, { catalog }).parsed.carrierItem,
+      "DA_18_EmblemFloraFatalis",
+      alias
+    );
+  }
+  assert.equal(
+    planQuery("强化版绝命花妖纹章适合谁带", { catalog }).parsed.carrierItem,
+    "DA_18_EmblemFloraFatalisAugment"
+  );
+
+  const refreshed = mergeCatalogItems([{
+    apiName: "DA_18_EmblemFloraFatalisAugment",
+    zhName: "绝命花妖纹章",
+    shortName: "绝命花妖纹章",
+    aliases: ["绝命花妖纹章", "Flora Fatalis Emblem"],
+    current: true,
+    obtainable: true
+  }], items.filter((item) => item.apiName === "DA_18_EmblemFloraFatalisAugment"));
+  assert.equal(refreshed[0].zhName, "强化版绝命花妖纹章");
+  assert.equal(refreshed[0].aliases.includes("绝命花妖纹章"), false);
+  assert.equal(refreshed[0].aliases.includes("Flora Fatalis Emblem"), false);
 });
 
 test("Set 18 PBE untranslated special items use verified Chinese client names", () => {

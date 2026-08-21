@@ -101,6 +101,15 @@ function compact(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
+function filterExcludedAliases(aliases, override) {
+  const excluded = new Set((override?.excludedAliases ?? [])
+    .map((value) => String(value).normalize("NFKC").trim().toLowerCase())
+    .filter(Boolean));
+  return compact(aliases).filter((alias) => (
+    !excluded.has(String(alias).normalize("NFKC").trim().toLowerCase())
+  ));
+}
+
 function containsHan(value) {
   return /[\u3400-\u9fff]/u.test(String(value ?? ""));
 }
@@ -439,7 +448,7 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
     displayName: preferredOverrideName ?? lookupName ?? null,
     preferredDisplayName: override?.preferredDisplayName ?? seed?.preferredDisplayName ?? null,
     supersededBy: seed?.supersededBy ?? null,
-    aliases: compact([
+    aliases: filterExcludedAliases([
       override?.zhName,
       override?.shortName,
       seed?.zhName,
@@ -453,7 +462,7 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
       apiName,
       canonicalApiName,
       token
-    ]),
+    ], override),
     category,
     current,
     obtainable,
@@ -516,11 +525,15 @@ export function mergeCatalogItems(baseItems, generatedItems, options = {}) {
   for (const item of generatedItems ?? []) {
     const existing = merged.get(item.apiName);
     const incomingManualAlias = String(item.source ?? "").includes("alias_override") && Boolean(item.shortName);
+    const override = itemAliasOverrideByApiName.get(item.apiName);
     merged.set(item.apiName, existing ? {
       ...item,
-      zhName: existing.zhName ?? item.zhName,
+      zhName: incomingManualAlias ? item.zhName : existing.zhName ?? item.zhName,
       shortName: incomingManualAlias ? item.shortName : existing.shortName ?? item.shortName,
-      aliases: compact([...(existing.aliases ?? []), ...(item.aliases ?? [])])
+      aliases: filterExcludedAliases(
+        [...(existing.aliases ?? []), ...(item.aliases ?? [])],
+        override
+      )
     } : item);
   }
   return [...merged.values()]
