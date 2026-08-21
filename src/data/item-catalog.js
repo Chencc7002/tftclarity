@@ -192,6 +192,27 @@ function deriveEmblemAlias(apiName) {
   };
 }
 
+function deriveSet18DaEmblemAlias(apiName, localizedName) {
+  if (!/^DA_18_Emblem/i.test(String(apiName ?? ""))) return null;
+  const emblemName = String(localizedName ?? "").trim();
+  if (!emblemName.endsWith("纹章")) return null;
+
+  const traitName = emblemName.slice(0, -"纹章".length);
+  if (!traitName) return null;
+  return {
+    shortName: emblemName,
+    aliases: [
+      emblemName,
+      `${traitName}转`,
+      `${traitName}转职`,
+      `${traitName}徽章`,
+      apiToken(apiName)
+    ],
+    source: "derived_s18_da_emblem_alias",
+    confidence: 0.9
+  };
+}
+
 function deriveRadiantAlias(apiName) {
   const token = apiToken(apiName);
   if (!/Radiant$/i.test(token)) return null;
@@ -348,8 +369,11 @@ function deriveSetSpecialAlias(apiName) {
   return deriveAnimaSquadAlias(apiName) ?? derivePsyOpsAlias(apiName) ?? deriveEkkoOfferingAlias(apiName);
 }
 
-function deriveItemAlias(apiName, category) {
-  if (category === "emblem") return deriveEmblemAlias(apiName);
+function deriveItemAlias(apiName, category, options = {}) {
+  if (category === "emblem") {
+    return deriveEmblemAlias(apiName)
+      ?? deriveSet18DaEmblemAlias(apiName, options.localizedName);
+  }
   if (category === "radiant") return deriveRadiantAlias(apiName);
   if (category === "artifact") return deriveHeroArtifactAlias(apiName) ?? deriveGenericArtifactAlias(apiName);
   if (category === "set_special") return deriveSetSpecialAlias(apiName);
@@ -431,11 +455,16 @@ function itemFromApiName(apiName, options = {}, dynamicSource = null) {
     ?? seed?.obtainable
     ?? (category !== "removed_or_legacy" && category !== "unknown");
   const token = apiToken(apiName);
+  const preferredOverrideName = override?.preferZhName ? override.zhName : null;
   const derived = override?.suppressDerivedAliases
     ? null
-    : deriveItemAlias(apiName, category);
-  const preferredOverrideName = override?.preferZhName ? override.zhName : null;
-
+    : deriveItemAlias(apiName, category, {
+      localizedName: preferredOverrideName
+        ?? lookupName
+        ?? override?.zhName
+        ?? seed?.zhName
+        ?? null
+    });
   const localized = applyOfficialItemLocalization({
     apiName,
     zhName: preferredOverrideName
