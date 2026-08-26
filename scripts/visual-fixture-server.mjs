@@ -14,6 +14,7 @@ const portArg = process.argv.find((value) => value.startsWith("--port="));
 const bridgeArg = process.argv.find((value) => value.startsWith("--bridge="));
 const port = Number(portArg?.slice("--port=".length) ?? 17329);
 const acceptanceMode = process.argv.includes("--acceptance");
+const compositionGroupsMode = process.argv.includes("--composition-groups");
 const karmaTwoOptionMode = process.argv.includes("--karma-two-options");
 const missingItemMechanicsMode = process.argv.includes("--missing-item-mechanics");
 const observedConclusionMode = process.argv.includes("--observed-conclusion");
@@ -298,6 +299,34 @@ const runtime = createSmallWindowRuntime({
       return compPageFixture.compsStats;
     }
   },
+  ...(compositionGroupsMode ? {
+    // Browser regression for multiple real registered tool results in one turn.
+    // Fixture-only decisions; production routing and prompts are unchanged.
+    acceptanceMode: true,
+    reactChatMode: "on",
+    reactDecisionProvider: async (request) => {
+      const evidence = request.state?.evidence ?? [];
+      const order = /反序/u.test(request.state?.question ?? "")
+        ? ["falling", "rising"] : ["rising", "falling"];
+      const steps = [
+        ...order.map((direction) => ({ tool: "comps_trends", arguments: { direction } })),
+        { tool: "comps_rankings", arguments: { metrics: ["top4_rate"], limit: 1 } }
+      ];
+      const step = steps[evidence.length];
+      if (step) return {
+        schemaVersion: "react-action.v1", type: "call_tool", ...step,
+        purposeCode: "retrieve_current_statistics"
+      };
+      const rising = evidence.find((entry) => entry.value?.query?.trendDirection === "rising")?.value.rising ?? [];
+      const falling = evidence.find((entry) => entry.value?.query?.trendDirection === "falling")?.value.falling ?? [];
+      const top4 = evidence.find((entry) => entry.value?.type === "composition_rankings")?.value.results ?? [];
+      return {
+        schemaVersion: "react-action.v1", type: "finish", reasonCode: "sufficient_evidence",
+        evidenceIds: evidence.map((entry) => entry.evidenceId),
+        answer: `以下为固定样本的浏览器验收结果。\n\n## 上升阵容\n${rising.map((comp) => `- ${comp.name}`).join("\n")}\n\n## 下降阵容\n${falling.map((comp) => `- ${comp.name}`).join("\n")}\n\n## 前四率最高\n${top4.map((comp) => `- ${comp.compositionRef.name}`).join("\n")}`
+      };
+    }
+  } : {}),
   ...(acceptanceMode ? {
     acceptanceMode: true,
     reactChatMode: "on",

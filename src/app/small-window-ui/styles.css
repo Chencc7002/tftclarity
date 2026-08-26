@@ -743,6 +743,8 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .comp-analysis-answer ul { padding-left: 18px; }
 .comp-warning, .comp-footnote { margin-bottom: 9px; padding: 9px 11px; color: var(--muted); font-size: 11px; line-height: 1.5; overflow-wrap: anywhere; }
 .comp-warning { color: #985b12; border-color: #efd8ad; background: #fff8ed; }
+.composition-result-groups { min-width: 0; display: grid; gap: 20px; }
+.composition-result-group { min-width: 0; }
 .ranking-section { min-width: 0; display: grid; gap: 8px; margin: 14px 0; }
 .ranking-section h2 { margin: 0 2px; font-size: 13px; }
 .build-narrative-warning { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--danger) 34%, var(--line)); border-radius: 11px; color: var(--ink); background: color-mix(in srgb, var(--danger) 6%, rgba(255,255,255,.9)); }

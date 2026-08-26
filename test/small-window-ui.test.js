@@ -1,6 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
+import vm from "node:vm";
+import { collectCompositionResultGroups } from "../src/app/small-window-ui/composition-result-groups.js";
 import { matrixLabels, spreadCoincidentMatrixPoints } from "../src/app/small-window-ui/opgg-panel.js";
 
 const ui = (name) => readFileSync(new URL(`../src/app/small-window-ui/${name}`, import.meta.url), "utf8");
@@ -586,6 +588,136 @@ test("ReAct composition evidence is normalized into expandable comp cards", () =
   assert.doesNotMatch(appJs, /resultHeader\(t\("noResult"\), narrative/);
 });
 
+function compositionResultHarness() {
+  const cards = [];
+  let html = "";
+  let renders = 0;
+  const context = vm.createContext({
+    collectCompositionResultGroups,
+    conclusionDisplayText: (value) => value,
+    t: (key) => key,
+    escapeHtml: (value) => String(value ?? "").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
+    compRankLabel: (value) => (value ?? []).join(","),
+    compUpdatedLabel: (value) => value ?? "",
+    compMetricLabel: (value) => value,
+    renderCompPreferenceSummary: () => "",
+    renderCompTrendNotice: () => "",
+    sourceAndRisk: (data) => `<footer>${data.source?.updatedAt ?? ""}</footer>`,
+    queueOpenCompDetailLoads: () => {},
+    renderCompCard: (comp, metric, open) => {
+      cards.push({ id: comp.compId, metric, open });
+      return `<article>${comp.compId}</article>`;
+    },
+    setResponseHtml: (value) => { html = value; renders += 1; },
+    state: {}
+  });
+  // Execute the production adapter and renderer, rather than restating their
+  // selection logic in tests. Stub only DOM writes and individual card markup.
+  vm.runInContext(appJs.slice(appJs.indexOf("function normalizeReactCompositionRankings("),
+    appJs.indexOf("function reactChatMessages(")), context);
+  vm.runInContext(appJs.slice(appJs.indexOf("function renderCompRankings("),
+    appJs.indexOf("function feedbackActions(")), context);
+  return {
+    render(payload) {
+      cards.length = 0;
+      renders = 0;
+      const data = context.normalizeEndpointPayload(payload);
+      context.renderCompRankings(data);
+      return { data, cards: [...cards], html, renders };
+    }
+  };
+}
+
+function compositionEvidenceFixture() {
+  const rows = (prefix, count) => Array.from({ length: count }, (_, index) => ({ compId: `${prefix}-${index}`, stats: {} }));
+  const trend = (direction) => ({
+    evidenceId: `ev-${direction}`, toolName: "comps_trends",
+    value: {
+      type: "comp_trends", query: { trendDirection: direction, days: 3 },
+      rising: direction === "rising" ? rows("up", 5) : [],
+      falling: direction === "falling" ? rows("down", 5) : [],
+      rankings: {}, source: { updatedAt: `${direction}-source` }
+    }
+  });
+  return [trend("rising"), trend("falling"), {
+    evidenceId: "ev-top4", toolName: "comps_rankings",
+    value: {
+      type: "composition_rankings", query: { metrics: ["top4_rate"], days: 1 },
+      results: [{ compositionRef: { compId: "top4-0", name: "Top4" }, members: [], stats: { top4Rate: 0.65 } }],
+      source: { updatedAt: "top4-source" }
+    }
+  }];
+}
+
+function compositionPayload(evidence) {
+  return { ok: true, type: "react_chat_result", status: "completed", answer: "上升、下降和前四率榜单。",
+    evidenceIds: evidence.map((entry) => entry.evidenceId), evidence };
+}
+
+test("ReAct renders every cited trend/ranking group regardless of tool completion order", () => {
+  const evidence = compositionEvidenceFixture();
+  const before = structuredClone(evidence);
+  for (const order of [[0, 1, 2], [0, 2, 1], [1, 0, 2], [1, 2, 0], [2, 0, 1], [2, 1, 0]]) {
+    const payload = compositionPayload(order.map((index) => evidence[index]));
+    const { data, cards, html, renders } = compositionResultHarness().render(payload);
+    assert.equal(data.compositionResultGroups.length, 3);
+    assert.equal(data.reactAnswer, payload.answer);
+    assert.equal(data.evidence, payload.evidence);
+    assert.equal(cards.filter((card) => card.metric === "trend").length, 5);
+    assert.equal(cards.filter((card) => card.metric === "trendDown").length, 5);
+    assert.deepEqual(cards.filter((card) => card.metric === "top4Rate").map((card) => card.id), ["top4-0"]);
+    assert.equal(cards.filter((card) => card.open).length, 1);
+    assert.equal(renders, 1, "groups must not overwrite each other's DOM");
+    for (const entry of evidence) assert.ok(html.includes(entry.value.source.updatedAt));
+    const top4 = data.compositionResultGroups.find((group) => group.evidenceId === "ev-top4").result;
+    assert.equal(top4.query.days, 1);
+    assert.equal(top4.rankings.top4Rate[0].stats.top4Rate, 0.65);
+  }
+  assert.deepEqual(evidence, before, "presentation must not mutate tool evidence");
+});
+
+test("ReAct grouped results exclude uncited and historical evidence and preserve separate ranking scopes", () => {
+  const evidence = compositionEvidenceFixture();
+  const extraRanking = structuredClone(evidence[2]);
+  extraRanking.evidenceId = "ev-top4-other-scope";
+  extraRanking.value.query.days = 7;
+  extraRanking.value.results[0].compositionRef.compId = "top4-other";
+  const historical = { ...evidence[0], evidenceId: "ev-history", temporalStatus: "historical" };
+  const uncited = { ...evidence[1], evidenceId: "ev-uncited" };
+  const payload = compositionPayload([...evidence, extraRanking, historical]);
+  payload.evidence.push(uncited);
+  const { data, cards, html } = compositionResultHarness().render(payload);
+  assert.deepEqual(Array.from(data.compositionResultGroups, (group) => group.evidenceId),
+    [...evidence, extraRanking].map((entry) => entry.evidenceId));
+  assert.deepEqual(cards.filter((card) => card.metric === "top4Rate").map((card) => card.id), ["top4-0", "top4-other"]);
+  assert.doesNotMatch(html, /ev-history|ev-uncited/);
+});
+
+test("single results and Quick Task keep the legacy view; trend views retain additional rankings once", () => {
+  const evidence = compositionEvidenceFixture();
+  const one = compositionResultHarness().render(compositionPayload([evidence[1]]));
+  assert.equal(one.data.compositionResultGroups, undefined);
+  assert.equal(one.cards.length, 5);
+  const quick = { ...evidence[0].value, rankings: { top4Rate: [{ compId: "best" }], popularity: [{ compId: "popular" }] } };
+  const { data, cards } = compositionResultHarness().render(quick);
+  assert.equal(data, quick);
+  assert.equal(cards.filter((card) => card.metric === "trend").length, 5);
+  assert.deepEqual(cards.filter((card) => card.metric === "top4Rate").map((card) => card.id), ["best"]);
+  assert.deepEqual(cards.filter((card) => card.metric === "popularity").map((card) => card.id), ["popular"]);
+});
+
+test("partial and empty composition groups stay visible without inventing rows", () => {
+  const evidence = compositionEvidenceFixture();
+  evidence[1].value.falling = [];
+  evidence[1].value.warnings = ["trend unavailable"];
+  const payload = { ...compositionPayload(evidence), status: "completed_with_warning", evidenceIds: [] };
+  const { data, cards, html } = compositionResultHarness().render(payload);
+  assert.equal(data.compositionResultGroups.length, 3);
+  assert.equal(cards.length, 6);
+  assert.match(html, /noCompData/);
+  assert.match(html, /trend unavailable/);
+});
+
 test("browser transport failures are localized and rendered as a compact retry state", () => {
   assert.match(appJs, /load failed\|failed to fetch\|fetch failed\|network\\s\*error/iu);
   assert.match(appJs, /requestErrorMessageKey\(message\)/);
@@ -876,7 +1008,7 @@ test("comp cards lazy-load verified formation and augment details", () => {
   assert.deepEqual([1, 7, 8, 22, 28].map(metaTftVisualCell), [21, 27, 14, 0, 6]);
   assert.match(appJs, /Array\.from\(\{ length: 28 \}/);
   assert.match(appJs, /resultContentEl\.addEventListener\("toggle"/);
-  assert.match(appJs, /let firstCompCard = true/);
+  assert.match(appJs, /let firstCompCard = initiallyOpen/);
   assert.match(appJs, /const initiallyOpen = firstCompCard/);
   assert.match(appJs, /compDetailRequests: new Map\(\)/);
   assert.match(appJs, /function clearCompDetailState/);
