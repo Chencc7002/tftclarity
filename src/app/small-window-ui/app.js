@@ -2,6 +2,7 @@ import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
+import { createQuickToolLibrary } from "./quick-tool-library.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
 import {
@@ -792,6 +793,11 @@ const QUICK_TASKS = [
   }
 ];
 
+const quickToolLibrary = createQuickToolLibrary({
+  tasks: quickTasksForSeason, categories: QUICK_TASK_CATEGORIES, t, escapeHtml,
+  launch: launchQuickTask, isRunning: () => state.requestInFlight
+});
+
 function quickTasksForSeason() {
   const configured = localizedThemeValue(state.seasonContext?.theme?.quickQuestions, []);
   const configuredIndexes = new Map([
@@ -806,62 +812,8 @@ function quickTasksForSeason() {
   });
 }
 
-function quickTaskCardHtml(task) {
-  const isInteractive = task.query || task.queryKey || task.view || task.formFields;
-  const action = isInteractive
-    ? ` data-quick-task="${escapeHtml(task.id)}"`
-    : " disabled";
-  return `
-    <button type="button" class="quick-task-card${isInteractive ? "" : " is-planned"}"${action}>
-      <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${task.icon}</svg></span>
-      <span class="quick-task-copy">
-        <strong data-i18n="${task.titleKey}">${escapeHtml(t(task.titleKey))}</strong>
-        <small data-i18n="${task.bodyKey}">${escapeHtml(t(task.bodyKey))}</small>
-        <span class="quick-task-example" data-i18n="${task.exampleKey}">${escapeHtml(t(task.exampleKey))}</span>
-      </span>
-      <span class="quick-task-arrow" aria-hidden="true">→</span>
-    </button>
-  `;
-}
-
 function quickTasksHtml() {
-  const tasks = quickTasksForSeason();
-  const categoryCards = QUICK_TASK_CATEGORIES.map((category) => `
-    <button type="button" class="quick-category-card" data-quick-category="${escapeHtml(category.id)}" aria-expanded="false" aria-controls="quick-category-panel-${escapeHtml(category.id)}">
-      <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${category.icon}</svg></span>
-      <span class="quick-category-copy">
-        <strong data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
-        <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
-      </span>
-      <span class="quick-category-count" data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
-      <span class="quick-category-chevron" aria-hidden="true">⌄</span>
-    </button>
-  `).join("");
-  const panels = QUICK_TASK_CATEGORIES.map((category) => {
-    const categoryTasks = tasks.filter((task) => task.category === category.id);
-    return `
-      <section class="quick-task-panel" id="quick-category-panel-${escapeHtml(category.id)}" data-quick-category-panel="${escapeHtml(category.id)}" aria-labelledby="quick-category-title-${escapeHtml(category.id)}" hidden>
-        <header class="quick-task-panel-heading">
-          <div>
-            <strong id="quick-category-title-${escapeHtml(category.id)}" data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
-            <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
-          </div>
-          <span data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
-        </header>
-        <div class="quick-task-list">${categoryTasks.map(quickTaskCardHtml).join("")}</div>
-      </section>
-    `;
-  }).join("");
-  return `
-    <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="${escapeHtml(t("quickTasksLabel"))}">
-      <div class="quick-tasks-heading">
-        <strong data-i18n="quickTasksTitle">${escapeHtml(t("quickTasksTitle"))}</strong>
-        <span data-i18n="quickTasksHint">${escapeHtml(t("quickTasksHint"))}</span>
-      </div>
-      <div class="quick-category-grid">${categoryCards}</div>
-      ${panels}
-    </section>
-  `;
+  return quickToolLibrary.welcomeHtml();
 }
 
 const QUICK_TASK_FIELD_DEFINITIONS = {
@@ -956,30 +908,6 @@ async function submitQuickTaskForm() {
     }
   );
   return true;
-}
-
-function collapseQuickTaskCategories(section) {
-  if (!section) return;
-  for (const button of section.querySelectorAll("[data-quick-category]")) {
-    button.setAttribute("aria-expanded", "false");
-  }
-  for (const panel of section.querySelectorAll("[data-quick-category-panel]")) {
-    panel.hidden = true;
-  }
-}
-
-function toggleQuickTaskCategory(button) {
-  const section = button.closest(".quick-tasks");
-  if (!section) return;
-  const category = button.dataset.quickCategory;
-  const shouldExpand = button.getAttribute("aria-expanded") !== "true";
-  collapseQuickTaskCategories(section);
-  if (!shouldExpand) return;
-  const panel = [...section.querySelectorAll("[data-quick-category-panel]")]
-    .find((entry) => entry.dataset.quickCategoryPanel === category);
-  if (!panel) return;
-  button.setAttribute("aria-expanded", "true");
-  panel.hidden = false;
 }
 
 function welcomeConversationHtml(messageKey = "newConversation") {
@@ -3130,6 +3058,7 @@ function activateResponseResult(record) {
 
 function rerenderLocalizedState() {
   applyI18n();
+  quickToolLibrary.refreshLocale();
   if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
@@ -5018,7 +4947,7 @@ function setRequestRunning(running) {
   refreshButton.disabled = running || !state.lastInput;
   resultRefreshButton.disabled = running || !state.lastInput;
   form.querySelector("button[type=submit]").disabled = running;
-  for (const button of resultEl.querySelectorAll("[data-quick-task]")) button.disabled = running;
+  for (const button of document.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
 }
@@ -5144,6 +5073,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     if (requestId !== state.requestSerial) return;
     if (data.access) renderAccessStatus(data.access);
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    if (!reuseLastInput && quickTask && !data.clarification?.needsClarification) quickToolLibrary.recordUse(quickTask.id);
     completeRecommendationProgress(recommendationProgress, data);
     if (preserveResultPane) {
       setDeveloperOutput(data);
@@ -5404,8 +5334,6 @@ async function launchQuickTask(quickTaskTarget) {
     ? quickTaskTarget
     : quickTaskTarget.dataset.quickTask;
   cancelOpggRequests();
-  // Keep the selected category expanded while its result is open, so
-  // returning to the conversation restores the same quick-entry context.
   const baseQuickTask = QUICK_TASKS.find((task) => task.id === taskId);
   const quickTask = quickTasksForSeason().find((task) => task.id === taskId) ?? baseQuickTask;
   if (!quickTask) return;
@@ -5414,6 +5342,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderPatchNote();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5421,6 +5350,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderOpggTrends();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5428,6 +5358,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderOpggPersonal();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5435,6 +5366,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderOpggProTeaching();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5492,11 +5424,6 @@ async function handleResultClick(event) {
   const itemRankingMixButton = event.target.closest("button[data-item-ranking-mix-toggle]");
   if (itemRankingMixButton && ["unit_item_rankings", "unit_emblem_rankings"].includes(state.lastResult?.type)) {
     await toggleItemRankingMode(state.lastResult, itemRankingMixButton.dataset.itemRankingMixToggle === "on");
-    return;
-  }
-  const quickCategoryButton = event.target.closest("button[data-quick-category]");
-  if (quickCategoryButton) {
-    toggleQuickTaskCategory(quickCategoryButton);
     return;
   }
   const quickTaskButton = event.target.closest("button[data-quick-task]");
@@ -5737,6 +5664,7 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   rawOutputEl.textContent = "";
   closeQuickTaskForm();
   composer.clear();
+  quickToolLibrary.reset();
   resultEl.innerHTML = welcomeConversationHtml();
   renderEmptyResult();
   setMobileView("chat", { replaceHistory: true });

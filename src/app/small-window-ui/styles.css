@@ -409,7 +409,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .quick-task-field input { width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: rgba(255,255,255,.94); font-size: 11px; }
 .quick-task-field input:focus { border-color: var(--wallpaper-accent); background: #fff; }
 .quick-task-form-hint { color: var(--muted); font-size: 8px; line-height: 1.45; }
-.composer.quick-task-form-active > #query-input { display: none; }
+.composer.quick-task-form-active #query-input { display: none; }
 .composer textarea { width: 100%; min-height: 52px; max-height: 112px; resize: none; padding: 10px 11px; border: 1px solid var(--line-strong); border-radius: 11px; color: var(--ink); background: #fbfcfe; line-height: 1.45; }
 .composer textarea:focus { border-color: var(--star-cyan); background: #fff; }
 .ai-generated-disclaimer { min-width: 0; margin: 0; display: flex; align-items: flex-start; gap: 6px; color: var(--muted); font-size: 9px; line-height: 1.45; }
