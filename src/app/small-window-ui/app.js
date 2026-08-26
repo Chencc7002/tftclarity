@@ -1,6 +1,7 @@
 import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
+import { collectCompositionResultGroups } from "./composition-result-groups.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
 import {
@@ -1711,16 +1712,29 @@ function renderCompRankings(data) {
     renderCompAnalysis(data);
     return;
   }
+  const groups = data.compositionResultGroups ?? [];
+  setResponseHtml(groups.length > 1
+    ? `<div class="composition-result-groups" data-schema-version="composition-result-groups.v1">${groups.map((group, index) => `
+      <section class="composition-result-group" data-evidence-id="${escapeHtml(group.evidenceId)}">
+        ${compRankingsHtml(group.result, { initiallyOpen: index === 0, grouped: true })}
+      </section>`).join("")}</div>`
+    : compRankingsHtml(data));
+  queueOpenCompDetailLoads();
+}
+
+function compRankingsHtml(data, { initiallyOpen = true, grouped = false } = {}) {
   const references = data.references ?? [];
   const isTrendView = data.type === "comp_trends";
   const rising = data.rising ?? data.improving ?? [];
   const falling = data.falling ?? [];
   const popularity = data.rankings?.popularity ?? [];
-  const isPopularView = !isTrendView && Boolean(data.query?.popularRequested);
+  const isPopularView = !grouped && !isTrendView && Boolean(data.query?.popularRequested);
   let sections;
   let metricSwitch = "";
   if (isTrendView) {
-    sections = [];
+    // Popularity already has its own trend section; retain other returned rankings.
+    sections = Object.entries(data.rankings ?? {})
+      .filter(([key, comps]) => key !== "popularity" && comps?.length);
   } else if (isPopularView) {
     const availableMetrics = ["avgPlacement", "top4Rate", "winRate", "popularity"]
       .filter((metric) => data.rankings?.[metric]?.length);
@@ -1740,7 +1754,7 @@ function renderCompRankings(data) {
   const stale = data.cache?.query?.stale ? t("staleCache") : data.cache?.query?.hit ? t("localCache") : t("live");
   const hasTrendData = rising.length || falling.length || popularity.length;
   if (!sections.length && !references.length && !hasTrendData) {
-    setResponseHtml(`
+    return `
       <div class="empty-state">
         <div>${t("noCompData")}</div>
         <small>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${t("rank")} ${escapeHtml(compRankLabel(data.query?.rankFilter))}</small>
@@ -1749,16 +1763,15 @@ function renderCompRankings(data) {
       ${renderCompPreferenceSummary(data)}
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
       ${renderCompTrendNotice(data, [])}
-      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
-    return;
+      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`;
   }
-  let firstCompCard = true;
+  let firstCompCard = initiallyOpen;
   const renderCompCards = (comps, metricKey) => (comps ?? []).map((comp) => {
     const initiallyOpen = firstCompCard;
     firstCompCard = false;
     return renderCompCard(comp, metricKey, initiallyOpen);
   }).join("");
-  setResponseHtml(`
+  return `
     <div class="comp-overview">
       <strong>${t(isTrendView ? "currentCompTrends" : "currentCompRanking")}</strong>
       <span>${t("daysRecent", { value: escapeHtml(data.query?.days ?? 3) })} · ${t("samplesAtLeast", { value: escapeHtml(data.query?.minSamples ?? 500) })} · ${escapeHtml(stale)}</span>
@@ -1773,8 +1786,7 @@ function renderCompRankings(data) {
     ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${renderCompCards(popularity, "popularity")}</section>` : ""}
     ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${renderCompCards(comps, key)}</section>`).join("")}
     ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${renderCompCards(references, "popularity")}</section>` : ""}
-    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`);
-  queueOpenCompDetailLoads();
+    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`;
 }
 
 function feedbackActions(cardIndex) {
@@ -4939,9 +4951,13 @@ function normalizeEndpointPayload(payload) {
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
+  const compositionResultGroups = ["comp_trends", "comp_rankings"].includes(displayValue?.type)
+    ? collectCompositionResultGroups(payload, normalizeReactCompositionRankings)
+    : [];
   return {
     ...(hydratedDisplayValue ?? {}),
     ...payload,
+    ...(compositionResultGroups.length > 1 ? { compositionResultGroups } : {}),
     ...(clarification ? { clarification } : {}),
     ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
       ? { status: displayValue.status, runStatus: payload.status }
