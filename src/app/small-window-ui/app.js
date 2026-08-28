@@ -72,7 +72,7 @@ const state = {
   itemRankingCategoryBeforeMixed: "ordinary_completed",
   mobileView: "chat",
   conclusionStreamText: "",
-  seasonContextId: "set17-live",
+  seasonContextId: "set18-live",
   seasonContexts: [],
   seasonContext: null,
   activeAnalysisContext: null
@@ -563,7 +563,7 @@ async function loadSeasonContexts() {
     if (!preferred) throw new Error(t("seasonLoadFailed"));
     await selectSeasonContext(preferred.id, { reset: false, announce: false });
   } catch (error) {
-    state.seasonContextId = "set17-live";
+    state.seasonContextId = "set18-live";
     setStatus(error.message || t("seasonLoadFailed"), "error");
   }
 }

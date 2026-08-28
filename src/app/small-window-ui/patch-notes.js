@@ -1,6 +1,68 @@
-export const CURRENT_PATCH_VERSION = "17.9";
+export const CURRENT_PATCH_VERSION = "18.1";
 
 const PATCH_NOTES = {
+  "18.1": {
+    version: "18.1",
+    publishedAt: "2026-08-25T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "18.1 版本更新",
+        summary: "S18“魔法森林”正式上线：灵火成为全新赛季机制，选秀回归，目标选择、PvE 战利品、开局奇遇、强化符文与神器系统同步更新。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-1/",
+        highlights: [
+          {
+            title: "S18 正式上线",
+            body: "“魔法森林”随 18.1 版本正式开放，并完成从 Hextech 到 Unreal 引擎的迁移。官方同时说明，S17“星穹神话”还会继续开放数个版本。"
+          },
+          {
+            title: "全新灵火机制",
+            body: "灵火分为英雄、战斗、其他、商店、金币/经验、风险和装备七类，只能在备战阶段购买，每隔一个商店出现一次；第 5 阶段后每隔一个灵火必为战斗类。"
+          },
+          {
+            title: "选秀与战斗规则",
+            body: "选秀正式回归，并可能出现更多或更高费用的英雄。单位从控制效果恢复后不再强制切换目标；4-7 及之后 PvE 回合漏捡的战利品会延续到下一次 PvE。"
+          },
+          {
+            title: "奇遇与强化符文轮换",
+            body: "新增成装铁砧开局、刷新订阅和装备锻造场，移除三种高波动开局奇遇；大量强化符文被移除、回归或重做。"
+          },
+          {
+            title: "装备与 S17 并行更新",
+            body: "禁忌雕像与魔蕴两件神器回归，死亡之蔑、破舰者和狙击手的专注被移除，多件光明装备和神器调整；S17 崔斯特与米利欧获得小幅平衡改动。"
+          }
+        ]
+      },
+      "en-US": {
+        title: "Patch 18.1",
+        summary: "Enchanted Wilds launches with the new Wisp mechanic, the return of Carousel, targeting and PvE loot updates, and major Augment and Artifact rotations.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-1/",
+        highlights: [
+          {
+            title: "Set 18 launches",
+            body: "Enchanted Wilds goes live in Patch 18.1 alongside TFT's move from Hextech to Unreal. Riot also confirms that Set 17 Space Gods remains playable for several more patches."
+          },
+          {
+            title: "New Wisp mechanic",
+            body: "Wisps come in seven categories, can only be purchased during planning, appear in every other shop, and become increasingly combat-focused after Stage 5."
+          },
+          {
+            title: "Carousel and combat rules",
+            body: "Carousel returns and may offer more or higher-cost champions. Units no longer retarget after crowd control, and missed late-game PvE loot can carry into the next PvE round."
+          },
+          {
+            title: "Encounter and Augment rotation",
+            body: "Three lower-variance Opening Encounters are added while three high-impact ones are removed. A large group of Augments is removed, returned, or adjusted."
+          },
+          {
+            title: "Items and parallel Set 17 update",
+            body: "Forbidden Idol and Manazane return, three Artifacts are removed, and many Radiant and Artifact items are tuned. Set 17 Twisted Fate and Milio receive small balance changes."
+          }
+        ]
+      }
+    }
+  },
   "17.9": {
     version: "17.9",
     publishedAt: "2026-08-11T18:00:00.000Z",

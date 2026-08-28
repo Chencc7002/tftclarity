@@ -22,7 +22,7 @@ function callContaining(pool, pattern) {
 }
 
 const pbeContext = {
-  seasonContextId: "set18-pbe",
+  seasonContextId: "set18-live",
   provider: "metatft",
   providerVersion: "metatft-pbe.v1",
   queue: "PBE",
@@ -65,13 +65,13 @@ test("PostgresStore serializes catalog JSONB and deletes stale ids transactional
   assert.equal(traitInsert.params[13], JSON.stringify(trait));
 
   assert.deepEqual(callContaining(pool, /DELETE FROM item_catalog/u).params, [
-    "set18-pbe", "metatft", "current", ["DA_JeweledGauntlet"]
+    "set18-live", "metatft", "current", ["DA_JeweledGauntlet"]
   ]);
   assert.deepEqual(callContaining(pool, /DELETE FROM units/u).params, [
-    "set18-pbe", "metatft", "current", ["DA_Nidalee18_AP"]
+    "set18-live", "metatft", "current", ["DA_Nidalee18_AP"]
   ]);
   assert.deepEqual(callContaining(pool, /DELETE FROM traits/u).params, [
-    "set18-pbe", "metatft", "current", ["DA_Primal18"]
+    "set18-live", "metatft", "current", ["DA_Primal18"]
   ]);
 });
 
@@ -86,6 +86,6 @@ test("PostgresStore reads catalogs within the requested provider version", async
   assert.equal(selects.length, 3);
   for (const call of selects) {
     assert.match(call.sql, /provider_version=\$3/u);
-    assert.deepEqual(call.params, ["set18-pbe", "metatft", "metatft-pbe.v1", "current"]);
+    assert.deepEqual(call.params, ["set18-live", "metatft", "metatft-pbe.v1", "current"]);
   }
 });

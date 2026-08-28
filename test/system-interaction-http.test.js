@@ -150,7 +150,7 @@ test("HTTP /api/recommend returns every deterministic system interaction without
       assert.equal("evidenceBundle" in payload, false, input);
       assert.equal("knowledgeEvidence" in payload, false, input);
       assert.equal(payload.run.toolCallCount, 0, input);
-      assert.equal(payload.seasonContext.id, "set17-live", input);
+      assert.equal(payload.seasonContext.id, "set18-live", input);
     }
     assert.deepEqual(calls, {
       metatft: 0,

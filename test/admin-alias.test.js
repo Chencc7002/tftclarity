@@ -270,7 +270,7 @@ test("legacy entity-memory clearing is season-scoped and audited", async () => {
     enabled: false
   });
   app.cacheStore.addEntityAlias({
-    seasonContextId: "set18-pbe",
+    seasonContextId: "set18-live",
     alias: "候选二",
     entityType: "unit",
     apiName: "TFT18_Test",
@@ -279,16 +279,16 @@ test("legacy entity-memory clearing is season-scoped and audited", async () => {
   app.cacheStore.addFeedbackEvent("correction", { seasonContextId: "set17-live" }, {
     seasonContextId: "set17-live"
   });
-  app.cacheStore.addFeedbackEvent("correction", { seasonContextId: "set18-pbe" }, {
-    seasonContextId: "set18-pbe"
+  app.cacheStore.addFeedbackEvent("correction", { seasonContextId: "set18-live" }, {
+    seasonContextId: "set18-live"
   });
 
   const cleared = await handleEntityMemoryClearRequest(app, { seasonContextId: "set17-live" });
   assert.deepEqual(cleared.cleared, { candidateAliases: 1, feedbackEvents: 1 });
   assert.equal(app.cacheStore.listEntityAliases({ seasonContextId: "set17-live" }).length, 0);
-  assert.equal(app.cacheStore.listEntityAliases({ seasonContextId: "set18-pbe" }).length, 1);
+  assert.equal(app.cacheStore.listEntityAliases({ seasonContextId: "set18-live" }).length, 1);
   assert.equal(app.cacheStore.listFeedbackEvents({ seasonContextId: "set17-live" }).length, 0);
-  assert.equal(app.cacheStore.listFeedbackEvents({ seasonContextId: "set18-pbe" }).length, 1);
+  assert.equal(app.cacheStore.listFeedbackEvents({ seasonContextId: "set18-live" }).length, 1);
   assert.equal(app.cacheStore.listAdminAudits({ seasonContextId: "set17-live" })[0].entityType, "entity_memory");
 });
 

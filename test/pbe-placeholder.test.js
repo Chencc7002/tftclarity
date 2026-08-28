@@ -35,15 +35,16 @@ test("PBE provider placeholder reports health without attempting or falling back
   }
 });
 
-test("public PBE health reports the runtime-managed Set 18 provider as ready", () => {
-  const pbe = createSeasonContextService().listPublic()
-    .find((context) => context.id === "set18-pbe");
+test("public season registry removes PBE and reports Set 18 live as ready", () => {
+  const contexts = createSeasonContextService().listPublic();
+  const live = contexts.find((context) => context.id === "set18-live");
 
-  assert.equal(pbe.selectable, true);
-  assert.equal(pbe.availability.available, true);
-  assert.equal(pbe.availability.health.status, "ready");
-  assert.equal(pbe.availability.health.lastSuccessfulSyncAt, null);
-  assert.equal(pbe.availability.health.catalogStatus, "runtime_managed");
+  assert.equal(contexts.some((context) => context.id === "set18-pbe"), false);
+  assert.equal(live.selectable, true);
+  assert.equal(live.availability.available, true);
+  assert.equal(live.availability.health.status, "ready");
+  assert.equal(live.availability.health.lastSuccessfulSyncAt, null);
+  assert.equal(live.availability.health.catalogStatus, "runtime_managed");
 });
 
 test("PBE to Live content promotion is review-only and excludes facts and caches", () => {

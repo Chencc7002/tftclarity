@@ -38,7 +38,7 @@ test("ReAct TaskFrame shadow is disabled by default", async () => {
   const { statusCode, payload } = await handleReactChatRequest({
     input: "芸阿娜阵容搭配",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(statusCode, 200);
@@ -101,7 +101,7 @@ test("control off preserves the complete legacy broad-play path", async () => {
   const { payload } = await handleReactChatRequest({
     input: "沃里克怎么玩？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(payload.status, "completed");
@@ -137,7 +137,7 @@ test("control on sends the original broad-play request and bounded advisory to n
   const { statusCode, payload } = await handleReactChatRequest({
     input: "沃里克怎么玩？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(statusCode, 200);
@@ -205,7 +205,7 @@ test("ReAct shadow parses the original broad-play input without changing product
   const { statusCode, payload } = await handleReactChatRequest({
     input: "沃里克怎么玩呢？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(statusCode, 200);
@@ -248,7 +248,7 @@ test("ReAct shadow parser failures fail open and keep the legacy request path", 
   const { statusCode, payload } = await handleReactChatRequest({
     input: "沃里克怎么玩呢？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(statusCode, 200);
@@ -280,7 +280,7 @@ test("control parse failure and invalid frames both fall back to the full legacy
     const { statusCode, payload } = await handleReactChatRequest({
       input: "沃里克怎么玩？",
       locale: "zh-CN",
-      seasonContextId: "set18-pbe"
+      seasonContextId: "set18-live"
     }, runtime);
 
     assert.equal(statusCode, 200);
@@ -325,7 +325,7 @@ test("shadow and control share one deterministic parse and never call semantic p
   const { payload } = await handleReactChatRequest({
     input: "沃里克怎么玩呢？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(payload.status, "completed");
@@ -355,7 +355,7 @@ test("control rejects narrow, multi-entity, and ambiguous TaskFrames", async () 
     const { payload } = await handleReactChatRequest({
       input,
       locale: "zh-CN",
-      seasonContextId: "set18-pbe"
+      seasonContextId: "set18-live"
     }, runtime);
     assert.equal(payload.status, "completed", input);
     assert.equal(decisionState.semanticAdvisory, null, input);
@@ -394,7 +394,7 @@ test("control rejects narrow, multi-entity, and ambiguous TaskFrames", async () 
   await handleReactChatRequest({
     input: "沃里克怎么玩？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, ambiguousRuntime);
   assert.equal(ambiguousState.question, "沃里克推荐出装");
   assert.equal(ambiguousState.semanticAdvisory, null);

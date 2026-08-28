@@ -455,6 +455,13 @@ function validateComparisonItemDetailsFinish(request, action, ledger) {
   if (!requestsComparisonItemDetails(request) || action.reasonCode === "insufficient_evidence") {
     return { valid: true, errors: [] };
   }
+  const currentEntries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const hasComparisonWorkflow = currentEntries.some((entry) => (
+    entry.toolName === "unit_builds"
+    && entry.value?.type === "unit_item_comparison"
+  ));
+  if (!hasComparisonWorkflow) return { valid: true, errors: [] };
+
   const cited = ledger.resolve(action.evidenceIds ?? []);
   const comparisonEntry = cited.find((entry) => (
     entry.toolName === "unit_builds"

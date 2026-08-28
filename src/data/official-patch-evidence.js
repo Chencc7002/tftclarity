@@ -1,6 +1,72 @@
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.1": Object.freeze({
+    version: "18.1",
+    title: "云顶之弈 18.1 版本更新公告",
+    summary: "Set 18“魔法森林”正式上线，带来灵火机制、选秀回归、目标选择与 PvE 战利品规则更新，并完成大规模强化符文和神器轮换；S17 将继续并行开放数个版本。",
+    publishedAt: "2026-08-25T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-1/",
+    changes: Object.freeze([
+      {
+        id: "18.1-enchanted-wilds-release",
+        direction: "new",
+        entityType: "mode",
+        entityApiNames: ["TFTSet18"],
+        summary: "Set 18“魔法森林”随 18.1 版本正式上线，并从 Hextech 引擎迁移至 Unreal 引擎。"
+      },
+      {
+        id: "18.1-wisps",
+        direction: "new",
+        entityType: "system",
+        entityApiNames: ["TFTSet18_Wisps"],
+        summary: "新增灵火机制：灵火分为英雄、战斗、其他、商店、金币/经验、风险和装备七类，只能在备战阶段购买，每隔一个商店出现一次；第 5 阶段后每隔一个灵火必为战斗类。"
+      },
+      {
+        id: "18.1-carousel-targeting-loot",
+        direction: "mixed",
+        entityType: "system",
+        entityApiNames: ["TFT_Carousel", "TFT_Targeting", "TFT_PveLoot"],
+        summary: "选秀回归且可能出现更多或更高费用的英雄；单位从控制效果恢复后不再强制切换目标，4-7 及之后 PvE 回合漏捡的战利品可延续到下一次 PvE。"
+      },
+      {
+        id: "18.1-opening-encounters",
+        direction: "mixed",
+        entityType: "system",
+        entityApiNames: ["TFT_OpeningEncounter"],
+        summary: "新增成装铁砧开局、刷新订阅和装备锻造场三种开局奇遇，并移除战利品订阅、神器铁砧和刷新开局。"
+      },
+      {
+        id: "18.1-augment-rotation",
+        direction: "mixed",
+        entityType: "augment",
+        entityApiNames: [],
+        summary: "强化符文完成大规模轮换，并调整潘朵拉的备战席、生日团聚、顶级配置、治疗法球等多项效果与数值。"
+      },
+      {
+        id: "18.1-artifact-rotation",
+        direction: "mixed",
+        entityType: "item",
+        entityApiNames: ["DA_Artifact_ForbiddenIdol", "DA_Artifact_Manazane"],
+        summary: "禁忌雕像与魔蕴回归；死亡之蔑、破舰者和狙击手的专注被移除，多件神器获得数值或机制调整。"
+      },
+      {
+        id: "18.1-twisted-fate-pve",
+        direction: "buff",
+        entityType: "unit",
+        entityApiNames: ["TFT17_TwistedFate"],
+        summary: "S17 崔斯特在 1-2 回合的最低骰点改为 5，降低输给 PvE 的极端情况。"
+      },
+      {
+        id: "18.1-milio-mana",
+        direction: "nerf",
+        entityType: "unit",
+        entityApiNames: ["TFT17_Milio"],
+        summary: "S17 米利欧最大法力值由 30 提高至 40。"
+      }
+    ])
+  }),
   "17.9": Object.freeze({
     version: "17.9",
     title: "云顶之弈 17.9 版本更新公告",

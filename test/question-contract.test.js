@@ -61,7 +61,7 @@ test("Question Contract isolates new questions, seasons, principals and conversa
   const base = build();
   for (const candidate of [
     build({ input: "霞三件套是什么？" }),
-    build({ seasonContextId: "set18-pbe" }),
+    build({ seasonContextId: "set18-live" }),
     build({ principalId: "user-b" }),
     build({ conversationId: "conversation-b" })
   ]) assert.notEqual(candidate.contractId, base.contractId);

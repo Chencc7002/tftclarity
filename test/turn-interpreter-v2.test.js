@@ -28,8 +28,8 @@ test("explicit champion Artifact rankings override a malformed provider frame", 
   });
   const response = await interpretTurn({
     currentMessage: "阿狸神器排行",
-    conversationState: createConversationState({ seasonContextId: "set18-pbe" }),
-    seasonContextId: "set18-pbe",
+    conversationState: createConversationState({ seasonContextId: "set18-live" }),
+    seasonContextId: "set18-live",
     catalog,
     domainPolicy: tftConversationPolicy,
     semanticProvider: async () => {

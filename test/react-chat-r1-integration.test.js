@@ -108,7 +108,7 @@ test("default react unit_builds handler preserves deterministic equipment intent
     }
   });
   const bundle = await createDefaultReactToolHandlerBundle({
-    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    request: { seasonContextId: "set18-live", locale: "zh-CN" },
     runtime,
     context: {}
   });
@@ -162,7 +162,7 @@ test("active Pool dashboard evidence is promoted into the ReAct ledger", async (
     pool: {
       id: "pool-a",
       name: "pbe高手",
-      scope: { season: "set18-pbe", patch: "18.1" },
+      scope: { season: "set18-live", patch: "18.1" },
       coverage: { matchCount: 180, activePlayerCount: 9 },
       performance: { avgPlacement: 3.82, top4Rate: .62, winRate: .2 },
       compositions: [{ label: "阿狸", matchWeightedUsageRate: .1, matchCount: 18 }]
@@ -390,7 +390,7 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
   );
 });
 
-test("PBE unit details reuse the season-scoped CommunityDragon catalog", async () => {
+test("Set 18 live unit details reuse the season-scoped catalog", async () => {
   const rawOfficialDetails = {
     meta: { updatedAt: "2026-08-13T00:00:00.000Z" },
     units: new Map(),
@@ -416,7 +416,7 @@ test("PBE unit details reuse the season-scoped CommunityDragon catalog", async (
     officialEntityDetails: rawOfficialDetails
   });
   runtime.catalogCache.set(
-    "set18-pbe:metatft-pbe.v1:current:PBE:TFTSet18:pbe:zh_cn",
+    "set18-live:metatft-live.v1:current:1100:TFTSet18:latest:zh_cn",
     {
       catalog: createCatalog({
         units: [{ apiName: "DA_18_Warwick", zhName: "沃里克", aliases: ["沃里克"] }]
@@ -428,7 +428,7 @@ test("PBE unit details reuse the season-scoped CommunityDragon catalog", async (
   );
 
   const bundle = await createDefaultReactToolHandlerBundle({
-    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    request: { seasonContextId: "set18-live", locale: "zh-CN" },
     runtime,
     context: {}
   });

@@ -37,21 +37,20 @@
 ## SeasonContext 运维边界
 
 - 普通用户只提交稳定的 `seasonContextId`；`patch`、`queue`、provider 和 URL 始终由服务端注册表决定。
-- 当前默认空间仍是 `set17-live`。`set18-pbe` 已开放选择和查询，固定使用 `queue=PBE`、`TFTSet18_pbe_zh_cn` lookup，并与 Set 17 缓存和目录严格隔离。
+- 当前默认空间为 `set18-live`，固定使用正式服 `queue=1100`、`TFTSet18` 与 `latest/zh_cn` lookup。`set17-live` 继续可选；公开注册表不再包含 `set18-pbe`。
 - 跨赛季切换必须使用全新会话。浏览器会按旧赛季清理原 `conversationId`，后续每个查询携带新赛季 ID。
 - 缓存、目录、别名、语义文档、趋势快照、Profile 与绑定都必须带 `season_context_id`；禁止直接复制 provider 事实或查询缓存。
 - `buildSeasonContentPromotionPlan` 目前仅生成 `design_only` 的 PBE→Live 审核计划，不执行写入。真实提升流程必须在受保护管理端中增加显式审批、逐项预览和审计后才能开放。
 
-## PBE 上线状态
+## S18 正式服上线状态
 
-`set18-pbe.selectable` 已于 2026-08-02 开放。上线验证覆盖：
+`set18-live` 已于 2026-08-27 切为默认空间，`set18-pbe` 同时从公开注册表删除。上线验证覆盖：
 
-1. MetaTFT Explorer 的 `items`、`units_unique`、`traits`、`unit_builds` 在 `queue=PBE` 下返回 Set 18 数据。
-2. `/tft-comps-api/comps_data` 与 `/comps_stats` 在 `queue=PBE` 下返回 `tft_set=TFTSet18`，且 cluster 身份一致。
-3. `https://data.metatft.com/lookups/TFTSet18_pbe_zh_cn.json` 提供 Set 18 英雄、羁绊和装备的简中 lookup。
-4. PBE 目录禁用 Set 17 静态 seed 回退；远端不可用时只允许使用同一 `season_context_id` 的持久化目录。
-5. Set 18 主题、小屏交互和 PBE 数据波动提示保持启用。
+1. Riot 18.1 官方公告确认 S18“魔法森林”正式上线，并说明 S17 仍会并行开放数个版本。
+2. MetaTFT 正式服 Explorer 的 `units_unique`、`traits`、`unit_builds` 与阵容统计返回 Set 18 数据，65 个商店英雄均能在正式服统计中找到。
+3. `https://data.metatft.com/lookups/TFTSet18_latest_zh_cn.json` 提供 81 条英雄记录（65 个商店英雄）、36 个羁绊、149 件装备、259 个强化符文、372 个灵火和 20 个开局奇遇。
+4. 切换时 `latest/zh_cn` 与最后一版 `pbe/zh_cn` lookup 内容哈希一致，未发现提升时的目录漂移。
+5. S18 正式服目录禁用 Set 17 静态 seed 回退；旧 SQLite 无赛季字段的数据仍归入 `set17-live`，避免默认赛季变化造成历史缓存污染。
+6. 腾讯装备快照仍声明 `2026.S17` / `16.15`，因此不用于刷新 S18 本地化；S18 继续使用明确绑定 `TFTSet18` 的正式服 lookup。
 
-PBE 内容仍可能高频调整。每次版本切换后应运行全量测试、SQLite smoke、small-window/comp/MetaTFT/visual smoke 及目录 audit；如 MetaTFT 契约变化，应把 `set18-pbe` 临时标记为不可用，而不是回退 Set 17 数据。
-
-任一目录为空、健康检查失败或来源不可验证时，应继续返回 `unavailable`，不得以 Set 17 数据兜底。
+每次版本切换后应运行全量测试、SQLite smoke、small-window/comp/MetaTFT/visual smoke 及目录 audit。任一 S18 目录为空、健康检查失败或来源不可验证时，应返回 `unavailable`，不得以 Set 17 数据兜底。

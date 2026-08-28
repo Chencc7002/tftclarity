@@ -190,6 +190,23 @@ test("R1-02 one static tool produces validated evidence and ordered events", asy
   assert.equal(provider.requests[1].state.transcript[2].value.evidence.evidenceId, "ev-1");
 });
 
+test("unit detail requests with 属性 do not enter the item-comparison completion guard", async () => {
+  const provider = queueProvider([
+    call("unit_details", { apiName: "TFT18_Ahri" }, "retrieve_entity_details"),
+    finish("阿狸资料已返回。", ["ev-1"])
+  ]);
+  const { result, events } = await runCase({
+    input: "查询阿狸的技能、费用、属性和羁绊资料",
+    provider,
+    handlers: {
+      unit_details: async () => evidence([{ apiName: "TFT18_Ahri", spell: "灵魄炸弹" }])
+    }
+  });
+
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(events.some((event) => event.data?.code === "incomplete_item_comparison_details"), false);
+});
+
 test("explicit TFT and Golden Spatula request binds one video call to both ecosystems", async () => {
   let observedInput = null;
   const provider = queueProvider([

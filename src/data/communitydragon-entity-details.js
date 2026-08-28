@@ -2,6 +2,25 @@ export const COMMUNITYDRAGON_PBE_TEAMPLANNER_URL =
   "https://raw.communitydragon.org/pbe/plugins/rcp-be-lol-game-data/global/zh_cn/v1/tftchampions-teamplanner.json";
 export const COMMUNITYDRAGON_PBE_TRAITS_URL =
   "https://raw.communitydragon.org/pbe/plugins/rcp-be-lol-game-data/global/zh_cn/v1/tfttraits.json";
+export const COMMUNITYDRAGON_LIVE_TEAMPLANNER_URL =
+  "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/zh_cn/v1/tftchampions-teamplanner.json";
+export const COMMUNITYDRAGON_LIVE_TRAITS_URL =
+  "https://raw.communitydragon.org/latest/plugins/rcp-be-lol-game-data/global/zh_cn/v1/tfttraits.json";
+
+function sourceUrls(options = {}) {
+  const channel = options.channel === "latest" ? "latest" : "pbe";
+  return channel === "latest"
+    ? {
+        channel,
+        teamplanner: COMMUNITYDRAGON_LIVE_TEAMPLANNER_URL,
+        traits: COMMUNITYDRAGON_LIVE_TRAITS_URL
+      }
+    : {
+        channel,
+        teamplanner: COMMUNITYDRAGON_PBE_TEAMPLANNER_URL,
+        traits: COMMUNITYDRAGON_PBE_TRAITS_URL
+      };
+}
 
 function finite(value) {
   const number = Number(value);
@@ -12,14 +31,14 @@ function compact(values) {
   return [...new Set(values.filter(Boolean))];
 }
 
-function communityDragonAssetUrl(value) {
+function communityDragonAssetUrl(value, channel = "pbe") {
   const path = String(value ?? "").trim();
   if (!path) return null;
   const relative = path
     .replace(/^\/lol-game-data\/assets\//i, "")
     .replace(/^\/+/, "")
     .toLowerCase();
-  return `https://raw.communitydragon.org/pbe/plugins/rcp-be-lol-game-data/global/default/${relative}`;
+  return `https://raw.communitydragon.org/${channel}/plugins/rcp-be-lol-game-data/global/default/${relative}`;
 }
 
 function lookupUnit(apiName, rows = []) {
@@ -102,12 +121,13 @@ function renderLookupText(value, lookup) {
 }
 
 function sourceRecord(options = {}) {
+  const urls = sourceUrls(options);
   return {
-    version: options.version ?? "PBE current",
+    version: options.version ?? (urls.channel === "latest" ? "Live current" : "PBE current"),
     season: options.tftSet ?? "TFTSet18",
     updatedAt: options.updatedAt ?? null,
-    url: COMMUNITYDRAGON_PBE_TEAMPLANNER_URL,
-    sources: [COMMUNITYDRAGON_PBE_TEAMPLANNER_URL, COMMUNITYDRAGON_PBE_TRAITS_URL]
+    url: urls.teamplanner,
+    sources: [urls.teamplanner, urls.traits]
   };
 }
 
@@ -155,7 +175,7 @@ export function buildCommunityDragonEntityDetails(payloads = {}, options = {}) {
         scalingReferences: [],
         numericFormulaComplete: true
       },
-      iconUrl: communityDragonAssetUrl(row.squareIconPath ?? row.squareSplashIconPath),
+      iconUrl: communityDragonAssetUrl(row.squareIconPath ?? row.squareSplashIconPath, sourceUrls(options).channel),
       source
     });
   }
@@ -190,8 +210,8 @@ export function buildCommunityDragonEntityDetails(payloads = {}, options = {}) {
       type: null,
       description,
       levels,
-      iconUrl: communityDragonAssetUrl(row.icon_path),
-      source: { ...source, url: COMMUNITYDRAGON_PBE_TRAITS_URL }
+      iconUrl: communityDragonAssetUrl(row.icon_path, sourceUrls(options).channel),
+      source: { ...source, url: source.sources[1] }
     });
   }
 
@@ -208,10 +228,11 @@ export async function fetchCommunityDragonEntityDetails(options = {}) {
   const timeoutMs = Math.max(1000, Number(options.timeoutMs ?? 15000));
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  const urls = sourceUrls(options);
   try {
     const [teamplannerResponse, traitsResponse, lookup] = await Promise.all([
-      fetchImpl(options.teamplannerUrl ?? COMMUNITYDRAGON_PBE_TEAMPLANNER_URL, { signal: controller.signal }),
-      fetchImpl(options.traitsUrl ?? COMMUNITYDRAGON_PBE_TRAITS_URL, { signal: controller.signal }),
+      fetchImpl(options.teamplannerUrl ?? urls.teamplanner, { signal: controller.signal }),
+      fetchImpl(options.traitsUrl ?? urls.traits, { signal: controller.signal }),
       Promise.resolve(options.lookupPromise ?? options.lookup ?? null)
     ]);
     for (const response of [teamplannerResponse, traitsResponse]) {

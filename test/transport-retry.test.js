@@ -36,7 +36,7 @@ test("a disconnected request can reuse its quota reservation for exactly one tra
     input: "沃里克怎么玩？",
     requestId: "transport-request-1",
     conversationId: "conversation-1",
-    seasonContextId: "set18-pbe",
+    seasonContextId: "set18-live",
     transportRetry: { attempt: 0, retryOfRequestId: null }
   };
   const reserveOriginal = createTransportRetryQuotaReservation({

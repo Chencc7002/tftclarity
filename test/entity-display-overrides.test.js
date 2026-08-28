@@ -1,8 +1,8 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  S18_PBE_TRAIT_DISPLAY_OVERRIDES,
-  S18_PBE_UNIT_DISPLAY_OVERRIDES,
+  S18_TRAIT_DISPLAY_OVERRIDES,
+  S18_UNIT_DISPLAY_OVERRIDES,
   traitDisplayOverrideByApiName,
   unitDisplayOverrideByApiName
 } from "../src/data/entity-display-overrides.js";
@@ -13,26 +13,26 @@ import {
   mergeCatalogUnits
 } from "../src/data/domain-catalog.js";
 
-test("S18 PBE bilingual display overrides cover the complete current roster", () => {
-  assert.equal(S18_PBE_UNIT_DISPLAY_OVERRIDES.length, 65);
-  assert.equal(S18_PBE_TRAIT_DISPLAY_OVERRIDES.length, 36);
+test("S18 live bilingual display overrides cover the complete current roster", () => {
+  assert.equal(S18_UNIT_DISPLAY_OVERRIDES.length, 65);
+  assert.equal(S18_TRAIT_DISPLAY_OVERRIDES.length, 36);
   assert.equal(unitDisplayOverrideByApiName.size, 65);
   assert.equal(traitDisplayOverrideByApiName.size, 36);
 
-  for (const entry of [...S18_PBE_UNIT_DISPLAY_OVERRIDES, ...S18_PBE_TRAIT_DISPLAY_OVERRIDES]) {
+  for (const entry of [...S18_UNIT_DISPLAY_OVERRIDES, ...S18_TRAIT_DISPLAY_OVERRIDES]) {
     assert.match(entry.zhName, /\p{Script=Han}/u, entry.apiName);
     assert.doesNotMatch(entry.enName, /\p{Script=Han}/u, entry.apiName);
     assert.doesNotMatch(entry.zhName, /…/u, entry.apiName);
   }
 });
 
-test("S18 PBE display overrides remove internal form and unique-trait tokens", () => {
+test("S18 live display overrides remove internal form and unique-trait tokens", () => {
   assert.deepEqual(unitDisplayOverrideByApiName.get("DA_18_Elise"), {
     apiName: "DA_18_Elise",
     zhName: "伊莉丝",
     enName: "Elise",
     aliases: ["伊莉丝", "Elise"],
-    source: "communitydragon_pbe_2026_08_10_bilingual"
+    source: "metatft_live_2026_08_27_bilingual"
   });
   assert.equal(unitDisplayOverrideByApiName.get("DA_Nidalee18_AP").enName, "Nidalee");
   assert.equal(unitDisplayOverrideByApiName.get("DA_18_GnarSmall").enName, "Gnar");
@@ -41,7 +41,7 @@ test("S18 PBE display overrides remove internal form and unique-trait tokens", (
   assert.equal(traitDisplayOverrideByApiName.get("DA_18_Sprykin").zhName, "约德尔人");
 });
 
-test("S18 PBE generated and persisted catalogs retain curated bilingual names", () => {
+test("S18 live generated and persisted catalogs retain curated bilingual names", () => {
   const generatedUnits = buildUnitCatalogFromExplorerRows({
     data: [
       { units_unique: "DA_18_Elise-1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },

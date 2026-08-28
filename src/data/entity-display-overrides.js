@@ -1,5 +1,5 @@
-const S18_PBE_SOURCE = "communitydragon_pbe_2026_08_10_bilingual";
-export const ENTITY_DISPLAY_VERSION = "s18-pbe-bilingual-2026-08-10";
+const S18_LIVE_SOURCE = "metatft_live_2026_08_27_bilingual";
+export const ENTITY_DISPLAY_VERSION = "s18-live-bilingual-2026-08-27";
 
 function displayOverride(apiName, zhName, enName) {
   return Object.freeze({
@@ -7,11 +7,11 @@ function displayOverride(apiName, zhName, enName) {
     zhName,
     enName,
     aliases: Object.freeze([zhName, enName]),
-    source: S18_PBE_SOURCE
+    source: S18_LIVE_SOURCE
   });
 }
 
-export const S18_PBE_UNIT_DISPLAY_OVERRIDES = Object.freeze([
+export const S18_UNIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_Akali_AD", "阿卡丽", "Akali"),
   displayOverride("DA_18_Ornn", "奥恩", "Ornn"),
   displayOverride("DA_18_Sentry", "苍蓝哨戒", "Pebbles"),
@@ -79,7 +79,7 @@ export const S18_PBE_UNIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_ElderDragon", "远古巨龙", "Elder Dragon")
 ]);
 
-export const S18_PBE_TRAIT_DISPLAY_OVERRIDES = Object.freeze([
+export const S18_TRAIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_Executioner", "裁决使", "Executioner"),
   displayOverride("DA_18_Greenfather", "翠神", "Greenfather"),
   displayOverride("DA_18_LuxUniqueTrait", "大元素使", "Avatar"),
@@ -119,9 +119,9 @@ export const S18_PBE_TRAIT_DISPLAY_OVERRIDES = Object.freeze([
 ]);
 
 export const unitDisplayOverrideByApiName = new Map(
-  S18_PBE_UNIT_DISPLAY_OVERRIDES.map((entry) => [entry.apiName, entry])
+  S18_UNIT_DISPLAY_OVERRIDES.map((entry) => [entry.apiName, entry])
 );
 
 export const traitDisplayOverrideByApiName = new Map(
-  S18_PBE_TRAIT_DISPLAY_OVERRIDES.map((entry) => [entry.apiName, entry])
+  S18_TRAIT_DISPLAY_OVERRIDES.map((entry) => [entry.apiName, entry])
 );

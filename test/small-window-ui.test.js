@@ -203,9 +203,9 @@ test("welcome recommendations and searchable tool library reuse deterministic qu
   assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.9"/);
-  assert.match(patchNotes, /publishedAt: "2026-08-11T18:00:00\.000Z"/);
-  assert.match(patchNotes, /teamfight-tactics-patch-17-9/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "18\.1"/);
+  assert.match(patchNotes, /publishedAt: "2026-08-25T18:00:00\.000Z"/);
+  assert.match(patchNotes, /teamfight-tactics-patch-18-1/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);

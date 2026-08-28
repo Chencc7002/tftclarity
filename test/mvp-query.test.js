@@ -1413,7 +1413,7 @@ test("answers current-patch historical item aliases through the normal data path
   assert.equal(result.plan.endpoint, "unit_builds");
   assert.equal(explorerCalls, 1);
   assert.equal(compsCalls, 0);
-  assert.equal(cacheStore.getSessionState(SESSION_LAST_QUERY_KEY).value.query.unit, "TFT17_Xayah");
+  assert.equal(cacheStore.getSessionState(SESSION_LAST_QUERY_KEY, { seasonContextId: "set17-live" }).value.query.unit, "TFT17_Xayah");
 });
 
 test("synchronous recommendation treats the historical Runaan name as current Kraken", () => {

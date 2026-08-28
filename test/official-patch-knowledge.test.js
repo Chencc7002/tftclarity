@@ -18,18 +18,19 @@ import {
   handleRecommendRequest
 } from "../src/app/small-window-server.js";
 
-test("17.9 official patch announcement is a valid, source-linked knowledge document", () => {
-  const documents = buildOfficialPatchKnowledgeDocuments({ versions: ["17.9"] });
+test("18.1 official patch announcement is a valid, source-linked knowledge document", () => {
+  const documents = buildOfficialPatchKnowledgeDocuments({ versions: ["18.1"] });
   assert.equal(documents.length, 1);
   const [document] = documents;
   assert.equal(validateKnowledgeDocument(document, { normalize: false }).valid, true);
   assert.equal(document.documentType, "patch_note");
-  assert.equal(document.metadata.patch, "17.9");
+  assert.equal(document.metadata.patch, "18.1");
   assert.equal(document.metadata.claimType, "official_fact");
   assert.match(document.metadata.sourceUrl, /teamfighttactics\.leagueoflegends\.com/u);
   assert.match(document.text, /魔法森林/u);
-  assert.match(document.text, /牧羊人/u);
-  assert.match(document.text, /崔斯特掷出 9 时必定获得金币/u);
+  assert.match(document.text, /灵火/u);
+  assert.match(document.text, /选秀回归/u);
+  assert.match(document.text, /S17 将继续并行开放/u);
 });
 
 test("semantic corpus includes official patch notes without realtime-stat authority", () => {

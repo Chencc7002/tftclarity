@@ -28,7 +28,7 @@ test("broad champion play question answers items first and offers composition or
   const { statusCode, payload } = await handleReactChatRequest({
     input: "芸阿娜怎么玩？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(statusCode, 200);
@@ -63,7 +63,7 @@ test("after items and composition, contextual guidance only asks whether to cont
   const { statusCode, payload } = await handleReactChatRequest({
     input: "芸阿娜阵容搭配",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe",
+    seasonContextId: "set18-live",
     messages: [
       { role: "user", content: "芸阿娜怎么玩？" },
       { role: "assistant", content: "芸阿娜当前可参考的出装包括杀人剑、青龙刀和强袭者的链枷。" }
@@ -101,7 +101,7 @@ test("a named unit in the current turn overrides an unrelated multi-composition 
   const { statusCode, payload } = await handleReactChatRequest({
     input: "请问阿狸这个棋子我现在应该怎么玩呢？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe",
+    seasonContextId: "set18-live",
     messages: [
       { role: "user", content: "简述今日上升的阵容" },
       {
@@ -138,7 +138,7 @@ test("an ambiguous pronoun after a multi-composition result asks the user instea
   const { statusCode, payload } = await handleReactChatRequest({
     input: "这个怎么玩？",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe",
+    seasonContextId: "set18-live",
     messages: [
       { role: "user", content: "简述今日上升的阵容" },
       { role: "assistant", content: "上升阵容包括黑荆棘·沃里克、召唤师·深红锋喙鸟和裁决使·芸阿娜。" }
@@ -172,7 +172,7 @@ test("explicit champion guidance question continues into the agent", async () =>
   const { payload } = await handleReactChatRequest({
     input: "芸阿娜阵容搭配",
     locale: "zh-CN",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(payload.status, "completed");
@@ -184,7 +184,7 @@ test("entity catalog resolves common S18 names without waiting for the full remo
   runtime.cacheStore = new MemoryCacheStore();
   runtime.fetchOfficialEntityDetails = async () => new Promise(() => {});
   const bundle = await createDefaultReactToolHandlerBundle({
-    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    request: { seasonContextId: "set18-live", locale: "zh-CN" },
     runtime,
     context: {}
   });
@@ -206,7 +206,7 @@ test("entity catalog also resolves common item aliases without remote startup wo
   runtime.cacheStore = new MemoryCacheStore();
   runtime.fetchOfficialEntityDetails = async () => new Promise(() => {});
   const bundle = await createDefaultReactToolHandlerBundle({
-    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    request: { seasonContextId: "set18-live", locale: "zh-CN" },
     runtime,
     context: {}
   });

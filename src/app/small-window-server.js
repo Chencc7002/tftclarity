@@ -48,8 +48,8 @@ import {
 } from "../core/display-locale.js";
 import {
   ENTITY_DISPLAY_VERSION,
-  S18_PBE_TRAIT_DISPLAY_OVERRIDES,
-  S18_PBE_UNIT_DISPLAY_OVERRIDES,
+  S18_TRAIT_DISPLAY_OVERRIDES,
+  S18_UNIT_DISPLAY_OVERRIDES,
   traitDisplayOverrideByApiName,
   unitDisplayOverrideByApiName
 } from "../data/entity-display-overrides.js";
@@ -3171,7 +3171,12 @@ export function createSmallWindowRuntime(options = {}) {
       comps_rankings: requestTimeouts.compRankingsTimeoutMs,
       comps_trends: requestTimeouts.compRankingsTimeoutMs,
       comps_analysis: requestTimeouts.compRankingsTimeoutMs,
-      unit_details: requestTimeouts.catalogTimeoutMs,
+      // A cold current-season detail request shares the async catalog refresh,
+      // which may need more than the single upstream HTTP timeout.
+      unit_details: Math.max(
+        requestTimeouts.catalogTimeoutMs + 2_000,
+        requestTimeouts.compRankingsTimeoutMs
+      ),
       item_details: requestTimeouts.catalogTimeoutMs,
       item_details_batch: requestTimeouts.catalogTimeoutMs,
       trait_details: requestTimeouts.catalogTimeoutMs
@@ -3241,7 +3246,7 @@ export function createSmallWindowRuntime(options = {}) {
     officialEntityDetailsTimeoutMs: options.officialEntityDetailsTimeoutMs ?? 10000,
     fetchOfficialEntityDetails: options.fetchOfficialEntityDetails ?? fetchOfficialTftEntityDetails,
     fetchCommunityDragonEntityDetails: options.fetchCommunityDragonEntityDetails ?? fetchCommunityDragonEntityDetails,
-    communityDragonEntityDetailsEnabled: options.communityDragonEntityDetailsEnabled
+    communityDragonEntityDetailsEnabled: options.communityDragonEntityDetailsEnabled ?? true
       ?? Boolean(options.fetchCommunityDragonEntityDetails || (!options.compsClient && !options.catalogMetaTFTClient)),
     fetchItems: options.fetchItems ?? true,
     compsData: options.compsData ?? null,
@@ -4394,19 +4399,19 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const setLookupRequest = isPbeCatalog
         ? setLookupRemoteRequest.catch(async () => JSON.parse(await readFile(localLookupPath, "utf8")))
         : setLookupRemoteRequest;
-      const communityDragonDetailsRequest = isPbeCatalog
-        && preferences.tftSet
+      const communityDragonDetailsRequest = preferences.tftSet
         && runtime.communityDragonEntityDetailsEnabled
         ? runtime.fetchCommunityDragonEntityDetails({
             fetchImpl: runtime.officialEntityDetailsFetch,
             tftSet: preferences.tftSet,
-            version: preferences.currentPatch ?? "PBE",
+            version: preferences.currentPatch ?? "current",
+            channel: isPbeCatalog ? "pbe" : "latest",
             lookupPromise: setLookupRequest,
-            localCachePaths: {
+            localCachePaths: isPbeCatalog ? {
               teamplanner: ".cache/communitydragon-pbe-tftchampions-teamplanner.json",
               traits: ".cache/communitydragon-pbe-tfttraits.json",
               lookup: localLookupPath
-            },
+            } : null,
             timeoutMs: catalogRequestTimeoutMs
           })
         : Promise.resolve(null);
@@ -4426,8 +4431,8 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const setLookupPayload = setLookup.status === "fulfilled" ? setLookup.value : null;
       if (communityDragonDetails.status === "fulfilled") {
         entry.entityDetails = communityDragonDetails.value;
-      } else if (isPbeCatalog) {
-        warnings.push(`CommunityDragon PBE 棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
+      } else if (preferences.tftSet) {
+        warnings.push(`CommunityDragon 当前赛季棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
       }
       const itemLookupByApiName = new Map((setLookupPayload?.items ?? [])
         .filter((row) => row?.apiName)
@@ -4438,7 +4443,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const traitLookupByApiName = new Map((setLookupPayload?.traits ?? [])
         .filter((row) => row?.apiName)
         .map((row) => [row.apiName, row]));
-      const pbeSetLookupItems = isPbeCatalog && itemLookupByApiName.size > 0
+      const setLookupItems = preferences.tftSet && itemLookupByApiName.size > 0
         ? buildItemCatalogFromItemsResponse({
             data: [...itemLookupByApiName.keys()].map((apiName) => ({ items: apiName }))
           }, {
@@ -4459,10 +4464,10 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           includeSeeds: includeSeedCatalog
         });
         if (generatedItems.length > 0) {
-          const resolvedItems = mergeCatalogItems(generatedItems, pbeSetLookupItems, { patch });
+          const resolvedItems = mergeCatalogItems(generatedItems, setLookupItems, { patch });
           catalogOverrides.items = resolvedItems;
           entry.itemCatalogMemory = {
-            source: pbeSetLookupItems.length > 0 ? "remote+set_lookup" : "remote",
+            source: setLookupItems.length > 0 ? "remote+set_lookup" : "remote",
             items: resolvedItems.length,
             updatedAt: new Date().toISOString()
           };
@@ -4482,21 +4487,21 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       if (!catalogOverrides.items) {
         const cachedItems = persistedItemCatalog?.value?.items;
         if (Array.isArray(cachedItems) && cachedItems.length > 0) {
-          catalogOverrides.items = mergeCatalogItems(cachedItems, pbeSetLookupItems, { patch });
+          catalogOverrides.items = mergeCatalogItems(cachedItems, setLookupItems, { patch });
           entry.itemCatalogMemory = {
-            source: pbeSetLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
+            source: setLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
             items: catalogOverrides.items.length,
             updatedAt: persistedItemCatalog.updatedAt ?? null
           };
           warnings.push(`已使用 ${persistedItemCatalog.updatedAt ?? "未知时间"} 的持久化装备目录`);
-        } else if (pbeSetLookupItems.length > 0) {
-          catalogOverrides.items = pbeSetLookupItems;
+        } else if (setLookupItems.length > 0) {
+          catalogOverrides.items = setLookupItems;
           entry.itemCatalogMemory = {
             source: "set_lookup",
-            items: pbeSetLookupItems.length,
+            items: setLookupItems.length,
             updatedAt: new Date().toISOString()
           };
-          warnings.push("MetaTFT /items 未返回 PBE 数据，已使用当前 PBE set lookup 装备目录");
+          warnings.push("MetaTFT /items 未返回当前赛季数据，已使用对应 set lookup 装备目录");
         } else if (includeSeedCatalog) {
           const snapshotItems = buildItemCatalogFromItemsResponse({
             data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
@@ -4517,7 +4522,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
             items: 0,
             updatedAt: null
           };
-          warnings.push("当前 PBE 装备目录不可用；为避免跨赛季污染，未回退正式服目录");
+          warnings.push("当前赛季装备目录不可用；为避免跨赛季污染，未回退其他赛季目录");
         }
       }
 
@@ -7043,11 +7048,12 @@ function immediateReactEntityCatalog(runtime, preferences = {}) {
   const cached = runtime.catalogCache?.get?.(key);
   if (cached?.catalog) return cached;
   const base = createCatalog({ patch: preferences.patch ?? "current" });
+  const isSet18 = preferences.tftSet === "TFTSet18";
   return {
     catalog: createCatalog({
       patch: preferences.patch ?? "current",
-      units: mergeDisplayOverrides(base.units, S18_PBE_UNIT_DISPLAY_OVERRIDES),
-      traits: mergeDisplayOverrides(base.traits, S18_PBE_TRAIT_DISPLAY_OVERRIDES),
+      units: isSet18 ? mergeDisplayOverrides(base.units, S18_UNIT_DISPLAY_OVERRIDES) : base.units,
+      traits: isSet18 ? mergeDisplayOverrides(base.traits, S18_TRAIT_DISPLAY_OVERRIDES) : base.traits,
       items: base.items
     }),
     entityDetails: runtime.officialEntityDetails ?? null

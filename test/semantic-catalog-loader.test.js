@@ -107,11 +107,11 @@ test("runtime catalog snapshot can select a namespaced season cache independentl
   const snapshot = {
     itemCatalogs: {
       "season:set17-live|current": live.itemCatalogs.current,
-      "season:set18-pbe|current": { value: { seasonContextId: "set18-pbe", patch: "current", items: [] } }
+      "season:set18-live|current": { value: { seasonContextId: "set18-live", patch: "current", items: [] } }
     },
     domainCatalogs: {
       "season:set17-live|current": live.domainCatalogs.current,
-      "season:set18-pbe|current": { value: { seasonContextId: "set18-pbe", patch: "current", units: [], traits: [] } }
+      "season:set18-live|current": { value: { seasonContextId: "set18-live", patch: "current", units: [], traits: [] } }
     }
   };
   snapshot.itemCatalogs["season:set17-live|current"].value.seasonContextId = "set17-live";
