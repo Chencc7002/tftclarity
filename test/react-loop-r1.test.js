@@ -3,6 +3,7 @@ import test from "node:test";
 import { ToolExecutor } from "../src/agent/tools/executor.js";
 import { ToolRegistry } from "../src/agent/tools/registry.js";
 import {
+  buildCompositionTrendFallback,
   buildCompositionReplacementFallback,
   buildInsufficientEvidenceFallback,
   buildItemContentionFallback,
@@ -28,6 +29,7 @@ function definition(name, options = {}) {
         seasonContextId: { type: "string" },
         unit: { type: "string" },
         patch: { type: "string" },
+        direction: { type: "string", enum: ["rising", "falling"] },
         query: { type: "string" },
         documentTypes: { type: "array", items: { type: "string" } },
         values: { type: "array", items: { type: "string" } },
@@ -1555,6 +1557,171 @@ test("finish validation accepts a rounded positive placement improvement from co
     answer: "未来战士 · 潘森的平均名次由 4.82 提升至 4.00，提升 0.82 名。"
   }, ledger);
   assert.equal(validation.valid, true, validation.errors.join("; "));
+});
+
+test("trend overview cannot discard falling and popularity evidence when rising is empty", () => {
+  const entry = {
+    evidenceId: "ev-comp-trend-partial",
+    toolName: "comps_trends",
+    type: "composition_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      requestedDirection: null,
+      rising: [],
+      falling: [{ name: "战斗学院 · 悠米" }],
+      rankings: { popularity: [{ name: "星之守护者 · 阿狸" }] }
+    }
+  };
+  const ledger = {
+    resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
+    snapshot: () => ({ entries: [entry] })
+  };
+  const validation = validateFinishAction({
+    reasonCode: "insufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "上升榜为空，因此当前证据不足，无法可靠提供趋势排名。"
+  }, ledger);
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.includes(
+    "insufficient_evidence cannot discard available composition trend sections"
+  ));
+});
+
+test("an explicitly rising-only request may report insufficient evidence when rising is empty", () => {
+  const entry = {
+    evidenceId: "ev-rising-empty",
+    toolName: "comps_trends",
+    type: "composition_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      requestedDirection: "rising",
+      rising: [],
+      falling: [{ name: "不会进入当前方向的阵容" }],
+      rankings: { popularity: [{ name: "不会进入当前方向的热门阵容" }] }
+    }
+  };
+  const ledger = {
+    resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
+    snapshot: () => ({ entries: [entry] })
+  };
+  const validation = validateFinishAction({
+    reasonCode: "insufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "当前上升榜没有可验证结果，证据不足。"
+  }, ledger);
+  assert.equal(validation.valid, true, validation.errors.join("; "));
+});
+
+test("the user's explicit trend direction overrides a contradictory model argument", async () => {
+  let observedInput = null;
+  const provider = queueProvider([
+    call("comps_trends", { patch: "current", direction: "falling" }),
+    finish("当前上升榜没有可验证结果，证据不足。", ["ev-1"], "insufficient_evidence")
+  ]);
+  const { result } = await runCase({
+    input: "最近有哪些上升阵容？",
+    provider,
+    handlers: {
+      comps_trends: async (input) => {
+        observedInput = structuredClone(input);
+        return {
+          updatedAt: "2026-08-06T00:00:00.000Z",
+          type: "comp_trends",
+          requestedDirection: input.direction,
+          rising: [],
+          falling: [],
+          rankings: { popularity: [] },
+          trend: { status: "upstream" }
+        };
+      }
+    }
+  });
+  assert.equal(observedInput.direction, "rising");
+  assert.equal(result.terminationReason, "insufficient_evidence");
+});
+
+test("trend fallback renders available falling and popularity sections independently", () => {
+  const entry = {
+    evidenceId: "ev-comp-trend-partial",
+    toolName: "comps_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      requestedDirection: null,
+      rising: [],
+      falling: [{
+        name: "战斗学院 · 悠米",
+        trend: { avgPlacementChange: 0.27 }
+      }],
+      rankings: { popularity: [{
+        name: "星之守护者 · 阿狸",
+        stats: { selectionRate: 0.625 }
+      }] }
+    }
+  };
+  const fallback = buildCompositionTrendFallback({
+    snapshot: () => ({ entries: [entry] })
+  });
+  assert.deepEqual(fallback.evidenceIds, ["ev-comp-trend-partial"]);
+  assert.match(fallback.answer, /上升阵容：当前没有检测到/u);
+  assert.match(fallback.answer, /下降阵容：战斗学院 · 悠米/u);
+  assert.match(fallback.answer, /选取率排行：星之守护者 · 阿狸/u);
+  assert.match(fallback.answer, /62\.5%/u);
+});
+
+test("repeated whole-result trend downgrade falls back to valid partial trend evidence", async () => {
+  let observedInput = null;
+  const provider = queueProvider([
+    call("comps_trends", { patch: "current", direction: "rising" }),
+    finish("上升榜为空，当前证据不足，无法可靠提供趋势排名。", ["ev-1"], "insufficient_evidence"),
+    finish("仍然没有上升阵容，当前证据不足。", ["ev-1"], "insufficient_evidence")
+  ]);
+  const { result } = await runCase({
+    input: "今日趋势解析",
+    provider,
+    handlers: {
+      comps_trends: async (input) => {
+        observedInput = structuredClone(input);
+        return {
+          updatedAt: "2026-08-06T00:00:00.000Z",
+          type: "comp_trends",
+          requestedDirection: null,
+          rising: [],
+          falling: [{
+            name: "战斗学院 · 悠米",
+            trend: { avgPlacementChange: 0.27 }
+          }],
+          rankings: { popularity: [{
+            name: "星之守护者 · 阿狸",
+            stats: { selectionRate: 0.625 }
+          }] },
+          trend: { status: "upstream", officialGate: { status: "insufficient", eligibleCount: 0 } }
+        };
+      }
+    }
+  });
+
+  assert.equal(observedInput.direction, undefined);
+  assert.equal(result.status, "completed_with_warning");
+  assert.equal(result.terminationReason, "finish_validation_fallback");
+  assert.equal(result.answerOrigin, "system_evidence_fallback");
+  assert.match(result.answer, /下降阵容：战斗学院 · 悠米/u);
+  assert.match(result.answer, /选取率排行：星之守护者 · 阿狸/u);
+  assert.ok(result.warnings.includes("composition_trend_partial_evidence_fallback"));
+  assert.deepEqual(
+    provider.requests[1].state.observations.at(-1).nextActionAffordance.sectionAvailability,
+    {
+      rising: { status: "empty", count: 0 },
+      falling: { status: "available", count: 1 },
+      popularity: { status: "available", count: 1 }
+    }
+  );
+  assert.match(
+    provider.requests[2].state.observations.at(-1).repairInstruction,
+    /改用 sufficient_evidence/u
+  );
 });
 
 test("finish validation does not allow an absolute rounded delta for unrelated evidence", () => {

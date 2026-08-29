@@ -155,6 +155,67 @@ function isCompositionTrendEvidence(entry) {
     || entry?.value?.type === "comp_trends";
 }
 
+function compositionTrendSections(entries) {
+  return entries
+    .filter((entry) => entry?.temporalStatus !== "historical" && isCompositionTrendEvidence(entry))
+    .map((entry) => {
+      const value = entry.value ?? {};
+      return {
+        requestedDirection: value.requestedDirection ?? value.query?.trendDirection ?? null,
+        rising: Array.isArray(value.rising) ? value.rising : [],
+        falling: Array.isArray(value.falling) ? value.falling : [],
+        popularity: Array.isArray(value.rankings?.popularity) ? value.rankings.popularity : []
+      };
+    });
+}
+
+function answerMentionsTrendRow(answer, rows) {
+  const text = String(answer ?? "");
+  const names = rows
+    .map((row) => String(row?.name ?? row?.compositionRef?.name ?? "").trim())
+    .filter(Boolean);
+  return names.length === 0 || names.some((name) => text.includes(name));
+}
+
+function compositionTrendCoverageErrors(action, entries) {
+  const errors = [];
+  for (const section of compositionTrendSections(entries)) {
+    const scopedRows = section.requestedDirection === "rising"
+      ? section.rising
+      : section.requestedDirection === "falling"
+        ? section.falling
+        : [...section.rising, ...section.falling, ...section.popularity];
+    if (!scopedRows.length) continue;
+    if (action.reasonCode === "insufficient_evidence") {
+      errors.push("insufficient_evidence cannot discard available composition trend sections");
+      continue;
+    }
+    if (action.reasonCode !== "sufficient_evidence") continue;
+    if (section.requestedDirection === "rising") {
+      if (!answerMentionsTrendRow(action.answer, section.rising)) {
+        errors.push("composition rising-trend answer must include an available result");
+      }
+      continue;
+    }
+    if (section.requestedDirection === "falling") {
+      if (!answerMentionsTrendRow(action.answer, section.falling)) {
+        errors.push("composition falling-trend answer must include an available result");
+      }
+      continue;
+    }
+    if (section.rising.length && !answerMentionsTrendRow(action.answer, section.rising)) {
+      errors.push("composition trend overview must include an available rising result");
+    }
+    if (section.falling.length && !answerMentionsTrendRow(action.answer, section.falling)) {
+      errors.push("composition trend overview must include an available falling result");
+    }
+    if (section.popularity.length && !answerMentionsTrendRow(action.answer, section.popularity)) {
+      errors.push("composition trend overview must include an available popularity result");
+    }
+  }
+  return errors;
+}
+
 function compositionTrendImprovementValues(value, output = []) {
   if (Array.isArray(value)) {
     for (const entry of value) compositionTrendImprovementValues(entry, output);
@@ -387,6 +448,9 @@ export function validateFinishAction(action, ledger) {
   const errors = [];
   const ids = [...new Set(action.evidenceIds ?? [])];
   const entries = ledger.resolve(ids);
+  const currentLedgerEntries = typeof ledger.snapshot === "function"
+    ? (ledger.snapshot()?.entries ?? []).filter((entry) => entry?.temporalStatus !== "historical")
+    : entries;
   if (entries.length !== ids.length) errors.push("finish references unknown evidenceIds");
 
   if (action.reasonCode === "direct_answer") {
@@ -450,6 +514,7 @@ export function validateFinishAction(action, ledger) {
       errors.push("partial item contention coverage requires failed-unit and whole-composition limitations");
     }
     errors.push(...tacticalPositionGroundingErrors(action.answer, entries));
+    errors.push(...compositionTrendCoverageErrors(action, entries));
   } else if (action.reasonCode === "insufficient_evidence") {
     if (!INSUFFICIENT_SIGNAL.test(action.answer)) {
       errors.push("insufficient_evidence answer must explicitly state the limitation");
@@ -460,6 +525,7 @@ export function validateFinishAction(action, ledger) {
     if (omitsPartialContentionCoverage(action.answer, entries)) {
       errors.push("partial item contention coverage requires failed-unit and whole-composition limitations");
     }
+    errors.push(...compositionTrendCoverageErrors(action, currentLedgerEntries));
   }
 
   return {

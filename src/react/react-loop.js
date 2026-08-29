@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { validateToolEvidence } from "../agent/tool-evidence-validator.js";
 import { validateToolInput } from "../agent/tools/contracts.js";
+import { parseCompTrendDirection } from "../core/comp-trend-intent.js";
 import { itemDetailsBatchMatchesPlan } from "../domain/tft/differentiating-item-selector.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
 import { validateReactAction } from "./react-action.js";
@@ -59,6 +60,15 @@ function applyRequestBoundVideoScope(action, request = {}) {
     ...action,
     arguments: { ...(action.arguments ?? {}), ecosystem: "both" }
   };
+}
+
+function applyRequestBoundTrendDirection(action, request = {}) {
+  if (action?.type !== "call_tool" || action.tool !== "comps_trends") return action;
+  const direction = parseCompTrendDirection(currentTurnUserText(request));
+  const argumentsValue = { ...(action.arguments ?? {}) };
+  if (direction) argumentsValue.direction = direction;
+  else delete argumentsValue.direction;
+  return { ...action, arguments: argumentsValue };
 }
 
 function deterministicStrategyVideoFallback(request, availableToolNames, ledger) {
@@ -301,6 +311,42 @@ function compositionTacticalNextActionAffordance(action, toolResult, request) {
         units: [...(plan.units ?? [])],
         seasonContextId: plan.seasonContextId
       }
+    }
+  };
+}
+
+function compositionTrendNextActionAffordance(action, toolResult, addition) {
+  if (action.tool !== "comps_trends" || !addition?.added || !addition.entry?.evidenceId) return null;
+  const value = toolResult?.value ?? {};
+  const requestedDirection = value.requestedDirection ?? value.query?.trendDirection ?? null;
+  const risingCount = Array.isArray(value.rising) ? value.rising.length : 0;
+  const fallingCount = Array.isArray(value.falling) ? value.falling.length : 0;
+  const popularityCount = Array.isArray(value.rankings?.popularity)
+    ? value.rankings.popularity.length
+    : 0;
+  const requestedSectionCount = requestedDirection === "rising"
+    ? risingCount
+    : requestedDirection === "falling"
+      ? fallingCount
+      : risingCount + fallingCount + popularityCount;
+  if (requestedSectionCount === 0) return null;
+  return {
+    schemaVersion: "react-next-action-affordance.v1",
+    resultStatus: requestedDirection
+      ? "requested_trend_available"
+      : risingCount && fallingCount && popularityCount
+        ? "trend_overview_complete"
+        : "trend_overview_partial",
+    requestedDirection,
+    sectionAvailability: {
+      rising: { status: risingCount ? "available" : "empty", count: risingCount },
+      falling: { status: fallingCount ? "available" : "empty", count: fallingCount },
+      popularity: { status: popularityCount ? "available" : "empty", count: popularityCount }
+    },
+    recommendedAction: "finish",
+    finish: {
+      reasonCode: "sufficient_evidence",
+      requiredEvidenceIds: [addition.entry.evidenceId]
     }
   };
 }
@@ -808,6 +854,67 @@ export function buildInsufficientEvidenceFallback(ledger) {
   };
 }
 
+function trendCompName(row) {
+  return String(row?.name ?? row?.compositionRef?.name ?? row?.compId ?? "未知阵容").trim();
+}
+
+function trendPlacementLabel(row, direction) {
+  const change = row?.trend?.avgPlacementChange;
+  if (typeof change !== "number" || !Number.isFinite(change)) return "";
+  return direction === "rising"
+    ? `（平均名次改善 ${Math.abs(change).toFixed(2)}）`
+    : `（平均名次变差 ${Math.abs(change).toFixed(2)}）`;
+}
+
+function trendPopularityLabel(row) {
+  const selectionRate = row?.stats?.selectionRate;
+  return typeof selectionRate === "number" && Number.isFinite(selectionRate)
+    ? `（选取率 ${(selectionRate * 100).toFixed(1)}%）`
+    : "";
+}
+
+function trendRowsText(rows, formatter) {
+  return rows.slice(0, 3)
+    .map((row) => `${trendCompName(row)}${formatter(row)}`)
+    .join("、");
+}
+
+export function buildCompositionTrendFallback(ledger) {
+  const entry = ledger.snapshot().entries.findLast((candidate) => (
+    candidate.temporalStatus !== "historical"
+    && candidate.toolName === "comps_trends"
+    && candidate.value?.type === "comp_trends"
+  ));
+  if (!entry) return null;
+  const value = entry.value;
+  const requestedDirection = value.requestedDirection ?? value.query?.trendDirection ?? null;
+  const rising = Array.isArray(value.rising) ? value.rising : [];
+  const falling = Array.isArray(value.falling) ? value.falling : [];
+  const popularity = Array.isArray(value.rankings?.popularity) ? value.rankings.popularity : [];
+  if (requestedDirection === "rising" && !rising.length) return null;
+  if (requestedDirection === "falling" && !falling.length) return null;
+  if (!requestedDirection && !rising.length && !falling.length && !popularity.length) return null;
+
+  const sections = [];
+  if (requestedDirection !== "falling") {
+    sections.push(rising.length
+      ? `上升阵容：${trendRowsText(rising, (row) => trendPlacementLabel(row, "rising"))}`
+      : falling.length
+        ? "上升阵容：当前没有检测到符合条件的阵容"
+        : "上升/下降变化榜：当前暂无可用数据");
+  }
+  if (requestedDirection !== "rising" && falling.length) {
+    sections.push(`下降阵容：${trendRowsText(falling, (row) => trendPlacementLabel(row, "falling"))}`);
+  }
+  if (!requestedDirection && popularity.length) {
+    sections.push(`选取率排行：${trendRowsText(popularity, trendPopularityLabel)}`);
+  }
+  return {
+    answer: `MetaTFT 今日趋势中，${sections.join("；")}。各榜单按当前返回结果独立展示。`,
+    evidenceIds: [entry.evidenceId]
+  };
+}
+
 function buildAvailableEvidenceFallback(ledger) {
   const entries = ledger.snapshot().entries;
   const buildEntries = entries.filter((entry) => entry.toolName === "unit_builds_batch");
@@ -1231,7 +1338,10 @@ export class ReactLoop {
         continue;
       }
 
-      const action = applyRequestBoundVideoScope(validation.value, request);
+      const action = applyRequestBoundTrendDirection(
+        applyRequestBoundVideoScope(validation.value, request),
+        request
+      );
       state.recordDecision(action);
       emit("decision", decisionEventData(action, state, budget));
 
@@ -1342,13 +1452,16 @@ export class ReactLoop {
             });
           }
           if (action.reasonCode === "insufficient_evidence") {
+            const trendFallback = buildCompositionTrendFallback(ledger);
             insufficientFinishRepairCount += 1;
             state.recordObservation({
               type: "decision_rejected",
               actionType: "finish",
               reasonCode: action.reasonCode,
               errors: finishValidation.errors,
-              repairInstruction: "明确告诉用户数据或证据不足、查询失败或来源不可用；不得补造统计、装备或结论。继续使用 insufficient_evidence。"
+              repairInstruction: trendFallback
+                ? "趋势 Evidence 为部分可用：不得把空的上升榜或旧 officialGate 门槛解释成整个结果不可用。改用 sufficient_evidence，引用趋势 Evidence，并展示所有非空的下降榜和选取率榜；只限定空榜单。"
+                : "明确告诉用户数据或证据不足、查询失败或来源不可用；不得补造统计、装备或结论。继续使用 insufficient_evidence。"
             }, { progress: false });
             const canRepair = (
               insufficientFinishRepairCount === 1
@@ -1359,16 +1472,18 @@ export class ReactLoop {
               continue;
             }
 
-            const fallback = buildInsufficientEvidenceFallback(ledger);
-            state.warn("insufficient_evidence_answer_fallback");
+            const fallback = trendFallback ?? buildInsufficientEvidenceFallback(ledger);
+            state.warn(trendFallback
+              ? "composition_trend_partial_evidence_fallback"
+              : "insufficient_evidence_answer_fallback");
             emit("answer", {
               answer: fallback.answer,
               evidenceIds: fallback.evidenceIds,
-              reasonCode: "insufficient_evidence",
+              reasonCode: trendFallback ? "sufficient_evidence" : "insufficient_evidence",
               narrativeAccepted: false,
               systemFallback: true
             });
-            return terminate("insufficient_evidence", {
+            return terminate(trendFallback ? "finish_validation_fallback" : "insufficient_evidence", {
               status: "completed_with_warning",
               answer: fallback.answer,
               evidenceIds: fallback.evidenceIds,
@@ -1376,7 +1491,8 @@ export class ReactLoop {
             });
           }
           if (action.reasonCode === "sufficient_evidence") {
-            const fallback = buildCompositionReplacementFallback(ledger)
+            const fallback = buildCompositionTrendFallback(ledger)
+              ?? buildCompositionReplacementFallback(ledger)
               ?? buildConstrainedBatchEvidenceFallback(ledger)
               ?? buildItemContentionFallback(ledger)
               ?? buildSingleUnitBuildFallback(ledger)
@@ -1760,6 +1876,10 @@ export class ReactLoop {
         action,
         toolResult,
         request
+      ) ?? compositionTrendNextActionAffordance(
+        action,
+        toolResult,
+        addition
       ) ?? unitBuildBatchNextActionAffordance(
         action,
         toolResult,
