@@ -5,6 +5,8 @@ import vm from "node:vm";
 import { collectCompositionResultGroups } from "../src/app/small-window-ui/composition-result-groups.js";
 import { createToolPreferences, normalizeToolPreferences, recommendQuickTools, QUICK_TOOL_STORAGE_KEY } from "../src/app/small-window-ui/quick-tool-preferences.js";
 import { setupToolMenu } from "../src/app/small-window-ui/quick-tool-library.js";
+import { normalizeOnboardingState, readOnboardingState, writeOnboardingState, ONBOARDING_STORAGE_KEY } from "../src/app/small-window-ui/onboarding-tour.js";
+import { appendVoiceTranscript, createVoiceInput } from "../src/app/small-window-ui/voice-input.js";
 import { matrixLabels, spreadCoincidentMatrixPoints } from "../src/app/small-window-ui/opgg-panel.js";
 
 const ui = (name) => readFileSync(new URL(`../src/app/small-window-ui/${name}`, import.meta.url), "utf8");
@@ -221,6 +223,89 @@ test("welcome recommendations and searchable tool library reuse deterministic qu
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("first-use onboarding is dismissible, replayable, and remembers terminal state", () => {
+  const source = ui("onboarding-tour.js");
+  const css = ui("onboarding-tour.css");
+  assert.match(indexHtml, /id="onboarding-tour"/);
+  assert.match(indexHtml, /id="restart-onboarding-button"/);
+  assert.match(indexHtml, /data-onboarding-action="dismiss"/);
+  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /#tool-menu-toggle/);
+  assert.match(source, /data-open-tools="all"/);
+  assert.match(source, /data-open-tools="favorites"/);
+  assert.match(source, /#query-input/);
+  assert.match(appJs, /onboardingTour\.startIfNeeded\(\)/);
+  assert.match(appJs, /onboardingTour\.start\(\{ force: true \}\)/);
+  assert.doesNotMatch(css, /backdrop-filter:\s*blur/u);
+  assert.equal(normalizeOnboardingState(null), null);
+  assert.equal(normalizeOnboardingState("not-json"), null);
+  assert.equal(normalizeOnboardingState(JSON.stringify({ version: 2, status: "completed" })), null);
+  assert.deepEqual(normalizeOnboardingState(JSON.stringify({ version: 1, status: "dismissed" })), { version: 1, status: "dismissed" });
+  const values = new Map();
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  assert.equal(readOnboardingState(storage), null);
+  assert.equal(writeOnboardingState(storage, "completed"), true);
+  assert.ok(values.has(ONBOARDING_STORAGE_KEY));
+  assert.deepEqual(readOnboardingState(storage), { version: 1, status: "completed" });
+});
+
+test("voice input appends editable transcripts and exposes listening state without auto-submitting", () => {
+  class FakeElement extends EventTarget {
+    constructor() {
+      super();
+      this.attributes = new Map();
+      this.classList = { toggle() {} };
+      this.hidden = true;
+      this.textContent = "";
+      this.title = "";
+      this.value = "";
+      this.form = new EventTarget();
+    }
+    setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  }
+  class FakeRecognition {
+    static current = null;
+    constructor() { FakeRecognition.current = this; }
+    start() { this.onstart(); }
+    stop() { this.onend(); }
+    abort() { this.onend(); }
+    result(transcript, isFinal = false) {
+      const entry = [{ transcript }];
+      entry.isFinal = isFinal;
+      this.onresult({ results: [entry] });
+    }
+  }
+  const button = new FakeElement();
+  const input = new FakeElement();
+  const status = new FakeElement();
+  input.value = "帮我分析";
+  const copy = {
+    voiceStart: "语音输入", voiceStop: "停止语音输入", voiceUnsupported: "不支持",
+    voiceRequestingPermission: "请求权限", voiceListening: "正在聆听", voiceStopped: "已停止"
+  };
+  const controller = createVoiceInput({ button, input, status, t: key => copy[key] ?? key, getLocale: () => "zh-CN", RecognitionConstructor: FakeRecognition });
+  let submitted = false;
+  input.form.addEventListener("submit", () => { submitted = true; });
+  button.dispatchEvent(new Event("click"));
+  assert.equal(controller.active, true);
+  assert.equal(FakeRecognition.current.lang, "zh-CN");
+  assert.equal(FakeRecognition.current.continuous, true);
+  assert.equal(FakeRecognition.current.interimResults, true);
+  assert.equal(button.attributes.get("aria-pressed"), "true");
+  FakeRecognition.current.result("厄斐琉斯怎么出装", true);
+  assert.equal(input.value, "帮我分析厄斐琉斯怎么出装");
+  assert.equal(submitted, false);
+  button.dispatchEvent(new Event("click"));
+  assert.equal(controller.active, false);
+  assert.equal(button.attributes.get("aria-pressed"), "false");
+  assert.equal(appendVoiceTranscript("compare these", "items"), "compare these items");
+  assert.equal(appendVoiceTranscript("分析", "阵容"), "分析阵容");
+  assert.match(indexHtml, /id="voice-input-button"[\s\S]*?<svg/u);
+  assert.match(indexHtml, /id="voice-input-status"[^>]*aria-live="polite"/u);
+  assert.match(ui("quick-tools.css"), /\.voice-input-button\.is-listening/u);
+  assert.doesNotMatch(ui("voice-input.js"), /requestSubmit|\.submit\(/u);
 });
 
 function toolPreferenceFixture(initial = null) {

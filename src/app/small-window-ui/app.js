@@ -3,6 +3,8 @@ import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
 import { createQuickToolLibrary } from "./quick-tool-library.js";
+import { createOnboardingTour } from "./onboarding-tour.js";
+import { createVoiceInput } from "./voice-input.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
 import {
@@ -94,6 +96,7 @@ const settingsClose = document.querySelector("#settings-close");
 const settingsDone = document.querySelector("#settings-done");
 const clearCacheButton = document.querySelector("#clear-cache-button");
 const resetPreferencesButton = document.querySelector("#reset-preferences-button");
+const restartOnboardingButton = document.querySelector("#restart-onboarding-button");
 const exportAliasesButton = document.querySelector("#export-aliases-button");
 const downloadAliasesButton = document.querySelector("#download-aliases-button");
 const reloadAliasesButton = document.querySelector("#reload-aliases-button");
@@ -483,6 +486,7 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   if (seasonPreviewBanner) seasonPreviewBanner.hidden = !previewOnly;
   queryInput.disabled = previewOnly;
   sendButton.disabled = previewOnly;
+  voiceInput.setEnabled(!previewOnly);
   if (previewOnly) queryInput.setAttribute("aria-describedby", "season-preview-banner");
   else queryInput.removeAttribute("aria-describedby");
   if (refreshWallpaper) {
@@ -797,6 +801,19 @@ const quickToolLibrary = createQuickToolLibrary({
   tasks: quickTasksForSeason, categories: QUICK_TASK_CATEGORIES, t, escapeHtml,
   launch: launchQuickTask, isRunning: () => state.requestInFlight
 });
+const onboardingTour = createOnboardingTour({
+  root: document.querySelector("#onboarding-tour"),
+  t,
+  beforeStart: () => appShell.settings.setOpen(false, { persist: false })
+});
+const voiceInput = createVoiceInput({
+  button: document.querySelector("#voice-input-button"),
+  input: queryInput,
+  status: document.querySelector("#voice-input-status"),
+  t,
+  getLocale
+});
+restartOnboardingButton?.addEventListener("click", () => onboardingTour.start({ force: true }));
 
 function quickTasksForSeason() {
   const configured = localizedThemeValue(state.seasonContext?.theme?.quickQuestions, []);
@@ -829,6 +846,7 @@ const QUICK_TASK_FIELD_DEFINITIONS = {
 };
 
 function closeQuickTaskForm({ focus = false } = {}) {
+  voiceInput.cancel({ silent: true });
   activeQuickTask = null;
   quickTaskForm.hidden = true;
   quickTaskFields.replaceChildren();
@@ -3084,6 +3102,8 @@ function activateResponseResult(record) {
 function rerenderLocalizedState() {
   applyI18n();
   quickToolLibrary.refreshLocale();
+  onboardingTour.refreshLocale();
+  voiceInput.refreshLocale();
   if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
@@ -5933,3 +5953,4 @@ void loadSeasonContexts();
 loadPreferences();
 loadAccessStatus();
 void loadRuntimeStatus();
+onboardingTour.startIfNeeded();

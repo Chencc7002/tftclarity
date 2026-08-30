@@ -15,6 +15,7 @@
     <link rel="icon" type="image/png" href="/favicon.png?v=20260727">
     <link rel="stylesheet" href="/styles.css">
     <link rel="stylesheet" href="/quick-tools.css">
+    <link rel="stylesheet" href="/onboarding-tour.css">
     <link rel="stylesheet" href="/opgg-panel.css">
   </head>
   <body>
@@ -108,8 +109,12 @@
               <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">填写条件后将直接执行结构化查询，无需再次理解语义。</small>
             </section>
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>
+            <button type="button" id="voice-input-button" class="voice-input-button" aria-pressed="false" data-i18n-title="voiceStart" data-i18n-aria="voiceStart" title="语音输入" aria-label="语音输入">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7"/></svg>
+            </button>
               </div>
             </div>
+            <p id="voice-input-status" class="voice-input-status" role="status" aria-live="polite" hidden></p>
             <p class="ai-generated-disclaimer" role="note">
               <span class="ai-generated-disclaimer-mark" aria-hidden="true">AI</span>
               <span data-i18n="aiGeneratedDisclaimer">AI 生成内容可能存在错误或不完整。统计数据、数据来源与工具证据可供核对；策略判断、原因分析与推测性建议仅供参考，请结合实际对局判断。</span>
@@ -185,6 +190,14 @@
                 <div id="wallpaper-mobile-options" class="wallpaper-mobile-options"></div>
               </section>
             </section>
+            <section class="settings-section onboarding-settings" aria-labelledby="onboarding-settings-title">
+              <div>
+                <h2 id="onboarding-settings-title" data-i18n="onboardingSettingsTitle">新手引导</h2>
+                <p data-i18n="onboardingSettingsBody">重新了解工具列表、收藏和自然语言提问入口。</p>
+              </div>
+              <button type="button" id="restart-onboarding-button" data-i18n="onboardingReplay">重新查看</button>
+            </section>
+
             <details class="advanced-query-settings" open>
               <summary data-i18n="advancedDefaults">高级查询默认值</summary>
               <section class="controls" data-i18n-aria="queryConditions" aria-label="查询条件">
@@ -333,6 +346,25 @@
       </footer>
     </dialog>
     <div id="tool-library-status" class="tool-library-status" role="status" aria-live="polite"></div>
+    <section id="onboarding-tour" class="onboarding-tour" role="dialog" aria-modal="false" aria-labelledby="onboarding-tour-title" aria-describedby="onboarding-tour-body" aria-hidden="true" hidden>
+      <div class="onboarding-scrim" aria-hidden="true"></div>
+      <article class="onboarding-card">
+        <header>
+          <span data-onboarding-progress>1 / 4</span>
+          <button type="button" data-onboarding-action="dismiss" data-i18n-title="onboardingDismiss" data-i18n-aria="onboardingDismiss" title="关闭新手引导" aria-label="关闭新手引导">×</button>
+        </header>
+        <div class="onboarding-mark" aria-hidden="true">✦</div>
+        <h2 id="onboarding-tour-title" data-onboarding-title></h2>
+        <p id="onboarding-tour-body" data-onboarding-body></p>
+        <footer>
+          <button type="button" class="onboarding-skip" data-onboarding-action="dismiss" data-i18n="onboardingSkip">跳过引导</button>
+          <span>
+            <button type="button" class="onboarding-previous" data-onboarding-action="previous" data-i18n="onboardingPrevious">上一步</button>
+            <button type="button" class="onboarding-next" data-onboarding-action="next">下一步</button>
+          </span>
+        </footer>
+      </article>
+    </section>
     </main>
     <script src="/app.js" type="module"></script>
   </body>

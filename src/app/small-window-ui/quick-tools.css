@@ -1,8 +1,16 @@
 .composer-entry { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: end; gap: 3px; min-width: 0; padding: 5px 8px 5px 5px; border: 1px solid var(--line-strong); border-radius: 20px; background: rgba(255,255,255,.92); }
 .composer-entry:focus-within { border-color: var(--wallpaper-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wallpaper-accent) 12%, transparent); }
-.composer-entry-body { min-width: 0; }
-.composer .composer-entry textarea { display: block; min-height: 36px; padding: 8px 5px; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; }
+.composer-entry-body { position: relative; min-width: 0; }
+.composer .composer-entry textarea { display: block; min-height: 36px; padding: 8px 40px 8px 5px; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; }
 .composer.quick-task-form-active .composer-entry textarea { display: none; }
+.composer.quick-task-form-active .voice-input-button { display: none; }
+.voice-input-button { position: absolute; right: 0; bottom: 1px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
+.voice-input-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.voice-input-button:hover { color: color-mix(in srgb, var(--wallpaper-accent) 82%, var(--ink)); background: color-mix(in srgb, var(--wallpaper-accent) 9%, white); }
+.voice-input-button[aria-disabled="true"] { color: color-mix(in srgb, var(--muted) 62%, white); }
+.voice-input-button.is-listening { color: #fff; background: color-mix(in srgb, var(--wallpaper-accent) 78%, #244b47); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wallpaper-accent) 14%, transparent); }
+.voice-input-status { margin: -2px 4px 0 44px; color: color-mix(in srgb, var(--wallpaper-accent) 72%, var(--ink)); font-size: 9px; line-height: 1.45; }
+.voice-input-status[hidden] { display: none; }
 .composer-entry .quick-task-form { border: 0; box-shadow: none; background: transparent; }
 .composer-tool-anchor { position: relative; align-self: end; }
 .tool-menu-toggle { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
@@ -39,7 +47,7 @@
 .tool-recommendations .tool-card .quick-task-card { min-height: 36px; padding: 7px 34px 7px 10px; grid-template-columns: minmax(0, 1fr); border-radius: 9px; }
 .tool-recommendations .quick-task-copy strong { font-size: 11px; font-weight: 500; white-space: normal; line-height: 1.35; }
 .tool-recommendations .tool-favorite { top: 2px; right: 2px; width: 32px; height: 32px; font-size: 19px; border-radius: 7px; }
-.tool-favorite:focus-visible, .tool-menu-toggle:focus-visible, .tool-menu button:focus-visible, .tool-library button:focus-visible { outline: 2px solid var(--wallpaper-accent); outline-offset: 2px; }
+.tool-favorite:focus-visible, .tool-menu-toggle:focus-visible, .voice-input-button:focus-visible, .tool-menu button:focus-visible, .tool-library button:focus-visible { outline: 2px solid var(--wallpaper-accent); outline-offset: 2px; }
 .tool-library { width: min(660px, calc(100vw - 32px)); max-height: min(760px, calc(100dvh - 48px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid #d4e3ed; border-radius: 20px; color: var(--ink); background: #f7fafc; box-shadow: 0 24px 90px #1e365d40; }
 .tool-library[open] { display: flex; flex-direction: column; }
 .tool-library::backdrop { background: #20364f66; backdrop-filter: blur(5px); }
@@ -79,6 +87,8 @@
   .composer-entry { grid-template-columns: 40px minmax(0, 1fr); padding: 4px; }
   .tool-menu-toggle { width: 40px; height: 40px; }
   .composer .composer-entry textarea { min-height: 40px; padding-block: 10px; }
+  .voice-input-button { width: 38px; height: 38px; }
+  .voice-input-status { margin-left: 45px; font-size: 9px; }
   .tool-library { width: calc(100vw - 16px); max-height: calc(100dvh - 24px); border-radius: 16px; }
   .tool-library-header { padding: 16px 15px 8px; }
   .tool-library-controls { padding: 8px 15px 12px; }
