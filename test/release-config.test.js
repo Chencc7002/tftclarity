@@ -75,7 +75,7 @@ test("Caddy keeps HSTS and serves the public beta with baseline security headers
   assert.match(caddyfile, /Strict-Transport-Security "max-age=31536000; includeSubDomains"/u);
   assert.match(caddyfile, /X-Content-Type-Options "nosniff"/u);
   assert.match(caddyfile, /Referrer-Policy "strict-origin-when-cross-origin"/u);
-  assert.match(caddyfile, /Permissions-Policy "camera=\(\), microphone=\(\), geolocation=\(\)"/u);
+  assert.match(caddyfile, /Permissions-Policy "camera=\(\), microphone=\(self\), geolocation=\(\)"/u);
   assert.match(caddyfile, /Content-Security-Policy "[^"]*default-src 'self'/u);
   assert.match(caddyfile, /Content-Security-Policy "[^"]*frame-ancestors 'none'/u);
   assert.match(caddyfile, /Content-Security-Policy "[^"]*img-src 'self' data:/u);
