@@ -12,6 +12,7 @@ import {
   ReactLoop
 } from "../src/react/react-loop.js";
 import { validateFinishAction } from "../src/react/termination-policy.js";
+import { requestedEquipmentCategoryScope } from "../src/domain/tft/equipment-category-scope.js";
 
 function definition(name, options = {}) {
   return {
@@ -144,6 +145,7 @@ async function runCase(options = {}) {
   const result = await loop.run({
     input: options.input ?? "test",
     ...(Array.isArray(options.messages) ? { messages: options.messages } : {}),
+    ...(options.bridgeContext ? { bridgeContext: options.bridgeContext } : {}),
     seasonContextId: options.seasonContextId ?? "set17-live"
   }, {
     ...context,
@@ -799,6 +801,132 @@ test("ambiguous exact alias resolution leads to ask_user without a details call"
   assert.equal(detailCalls, 0);
 });
 
+test("a curated fuzzy unit candidate forces canonical confirmation even when the model tries to skip it", async () => {
+  let buildCalls = 0;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: { type: "object", additionalProperties: false, required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("entity_catalog_query", { entityType: "unit", filters: { names: ["月男"] } }, "retrieve_entity_details"),
+    call("unit_builds", { unit: "DA_18_Aphelios", itemPolicy: "include_artifact", itemCategories: ["artifact"] })
+  ]);
+  const { result } = await runCase({
+    input: "查询月男的神器",
+    provider,
+    definitions: [catalogDefinition, definition("unit_builds")],
+    handlers: {
+      entity_catalog_query: async () => ({
+        type: "entity_catalog_results", entityType: "unit", updatedAt: "2026-08-30T00:00:00.000Z",
+        resolution: { mode: "exact_alias", requests: [{ inputName: "月男", normalizedName: "月男", status: "ambiguous", candidates: [{
+          apiName: "DA_18_Aphelios", name: "厄斐琉斯", matchedAlias: "月男", matchType: "curated_fuzzy_alias"
+        }] }] },
+        results: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }]
+      }),
+      unit_builds: async () => { buildCalls += 1; return evidence([]); }
+    }
+  });
+  assert.equal(result.status, "clarification_required");
+  assert.equal(result.question, "“月男”可能指“厄斐琉斯”，请确认是否是这个英雄。");
+  assert.deepEqual(result.missingFields, ["unit"]);
+  assert.equal(buildCalls, 0);
+});
+
+test("affirming a fuzzy unit candidate re-resolves its canonical name and preserves the original artifact scope", async () => {
+  const calls = [];
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: { type: "object", additionalProperties: false, required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        itemPolicy: { type: "string" },
+        itemCategories: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    action("ask_user", { question: "你要查哪件神器？", missingFields: ["item"], reasonCode: "missing_context" }),
+    call("unit_builds", { unit: "DA_18_Aphelios", itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"] }),
+    finish("厄斐琉斯神器排行已返回。", ["ev-2"])
+  ]);
+  const { result } = await runCase({
+    input: "是的",
+    provider,
+    bridgeContext: {
+      relation: "reply_to_clarification",
+      view: {
+        pendingClarification: {
+          reason: "ask_user",
+          question: "“月男”可能指“厄斐琉斯”，请确认是否是这个英雄。",
+          confirmationContext: {
+            type: "entity_candidate",
+            entityType: "unit",
+            inputName: "月男",
+            originalInput: "查询月男的神器",
+            equipmentCategoryScope: { itemPolicy: "include_artifact", itemCategories: ["artifact"] },
+            candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }]
+          }
+        },
+        records: []
+      },
+      promotedEvidence: []
+    },
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async (input) => {
+        calls.push({ tool: "entity_catalog_query", input });
+        return {
+          type: "entity_catalog_results", entityType: "unit", updatedAt: "2026-08-30T00:00:00.000Z",
+          resolution: { mode: "exact_alias", requests: [{ inputName: "厄斐琉斯", normalizedName: "厄斐琉斯", status: "resolved", candidates: [{
+            apiName: "DA_18_Aphelios", name: "厄斐琉斯", matchedAlias: "厄斐琉斯", matchType: "exact_alias"
+          }] }] },
+          results: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }]
+        };
+      },
+      unit_builds: async (input) => {
+        calls.push({ tool: "unit_builds", input });
+        return {
+          type: "unit_item_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          unit: { apiName: "DA_18_Aphelios", name: "厄斐琉斯" },
+          query: { unitName: "厄斐琉斯", itemPolicy: input.itemPolicy, itemCategories: input.itemCategories },
+          itemRankings: [{ apiName: "TFT_Item_Artifact", name: "神器", category: "artifact", games: 100 }]
+        };
+      }
+    }
+  });
+
+  assert.equal(result.status, "completed", JSON.stringify({ result, calls }, null, 2));
+  assert.deepEqual(calls[0], {
+    tool: "entity_catalog_query",
+    input: { entityType: "unit", filters: { names: ["厄斐琉斯"] } }
+  });
+  assert.equal(calls[1].tool, "unit_builds");
+  assert.equal(calls[1].input.unit, "DA_18_Aphelios");
+  assert.equal(calls[1].input.itemPolicy, "include_artifact");
+  assert.deepEqual(calls[1].input.itemCategories, ["artifact"]);
+});
+
 test("unit_builds rejects guessed entity ids and accepts exact catalog resolutions", async () => {
   let buildCalls = 0;
   const catalogDefinition = definition("entity_catalog_query", {
@@ -1083,6 +1211,104 @@ test("unnamed single-item data request binds the ordinary item ranking instead o
   )));
 });
 
+test("equipment category vocabulary separates exclusive, additive and negated scopes", () => {
+  for (const input of ["查询厄飞流斯的神器", "我要查的是奥恩神器", "只查询神器", "只包含奥恩神器", "Aphelios artifacts"]) {
+    assert.deepEqual(requestedEquipmentCategoryScope(input), {
+      itemPolicy: "include_artifact", itemCategories: ["artifact"]
+    }, input);
+  }
+  for (const input of ["加入神器", "加上奥恩神器", "神器也一起加入", "普通装备和神器一起排行"]) {
+    assert.deepEqual(requestedEquipmentCategoryScope(input), {
+      itemPolicy: "include_artifact", itemCategories: ["ordinary_completed", "artifact"]
+    }, input);
+  }
+  assert.deepEqual(requestedEquipmentCategoryScope("不要神器，只查普通装备"), {
+    itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
+  });
+  assert.equal(requestedEquipmentCategoryScope("不要神器"), null);
+  for (const input of ["奥恩", "奥恩装备", "奥恩装", "查询奥恩的装备", "Ornn items"]) {
+    assert.equal(requestedEquipmentCategoryScope(input), null, input);
+  }
+  assert.deepEqual(requestedEquipmentCategoryScope("不是普通装备，是奥恩神器"), {
+    itemPolicy: "include_artifact", itemCategories: ["artifact"]
+  });
+  assert.deepEqual(requestedEquipmentCategoryScope("光明装备排行榜"), {
+    itemPolicy: "include_radiant", itemCategories: ["radiant"]
+  });
+});
+
+test("artifact requests override stale ordinary scope and category corrections keep the contextual champion", async (t) => {
+  for (const input of ["查询厄飞流斯的神器", "我要查的是奥恩神器", "厄斐琉斯神器装备排行榜", "只查奥恩神器", "厄斐琉斯光明装备排行榜", "不要神器，只查普通装备", "包含神器的完整出装", "厄斐琉斯推荐普通出装"]) {
+    await t.test(input, async () => {
+      const expected = requestedEquipmentCategoryScope(input);
+      if (input.includes("完整出装") || input.includes("普通出装")) expected.itemCategories = [];
+      const followUp = input === "我要查的是奥恩神器";
+      let observed;
+      const provider = queueProvider([
+        ...(followUp ? [action("ask_user", {
+          question: "奥恩神器是指哪一类？请提供具体装备名称。",
+          missingFields: ["item"], reasonCode: "ambiguous_entity"
+        })] : []),
+        call("entity_catalog_query", { entityType: "unit", filters: { names: ["厄飞流斯"] } }),
+        call("unit_builds", { unit: "DA_18_Aphelios", itemPolicy: "ordinary_only", ...(input.includes("普通出装") ? {} : { itemCategories: ["ordinary_completed"] }) }),
+        finish("已按指定类别返回查询结果。", ["ev-2"])
+      ]);
+      const { result, events } = await runCase({
+        input, provider,
+        messages: followUp ? [
+          { role: "user", content: "查询厄飞流斯的神器" },
+          { role: "assistant", content: "羊刀+无尽+海妖之怒。" }
+        ] : [],
+        definitions: [
+          definition("entity_catalog_query", { inputSchema: {
+            type: "object", additionalProperties: false, required: ["entityType", "filters"],
+            properties: {
+              entityType: { type: "string" },
+              filters: { type: "object", additionalProperties: false, properties: { names: { type: "array", items: { type: "string" } } } }
+            }
+          } }),
+          definition("unit_builds", { inputSchema: {
+            type: "object", additionalProperties: false, required: ["unit"],
+            properties: { unit: { type: "string" }, itemPolicy: { type: "string" }, itemCategories: { type: "array", items: { type: "string" } } }
+          } })
+        ],
+        handlers: {
+          entity_catalog_query: async () => evidence([{ apiName: "DA_18_Aphelios" }], {
+            type: "entity_catalog_results", entityType: "unit",
+            resolution: { requests: [{ inputName: "厄飞流斯", status: "resolved", candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯", matchedAlias: "厄飞流斯" }] }] }
+          }),
+          unit_builds: async (args) => {
+            observed = args;
+            return { updatedAt: "2026-08-30T00:00:00.000Z", type: "unit_item_rankings", query: args,
+              itemRankings: [{ name: "狙击手的专注", category: "artifact" }] };
+          }
+        }
+      });
+      assert.equal(result.status, "completed", JSON.stringify(result.modelConclusion));
+      assert.equal(observed.unit, "DA_18_Aphelios");
+      assert.equal(observed.itemPolicy, expected.itemPolicy);
+      assert.deepEqual(observed.itemCategories, expected.itemCategories);
+      if (followUp) {
+        assert.ok(events.some((event) => event.data?.code === "unnecessary_equipment_item_clarification"));
+        assert.ok(result.observations.some((observation) => observation.repairInstruction?.includes("context")));
+      }
+    });
+  }
+});
+
+test("artifact categories still allow clarification of missing champions or named comparison candidates", async () => {
+  for (const [input, question, missingFields] of [
+    ["查一下奥恩神器", "要查询哪个英雄的奥恩神器？", ["unit"]],
+    ["比较厄斐琉斯的这两件神器", "请提供具体两件装备名称。", ["comparisonItems"]]
+  ]) {
+    const { result } = await runCase({ input, provider: queueProvider([
+      action("ask_user", { question, missingFields, reasonCode: "missing_context" })
+    ]) });
+    assert.equal(result.status, "clarification_required");
+    assert.equal(result.question, question);
+  }
+});
+
 test("finish validation rejects an Artifact claim grounded only in ordinary equipment evidence", () => {
   const entry = {
     evidenceId: "ev-ordinary-items",
@@ -1102,16 +1328,28 @@ test("finish validation rejects an Artifact claim grounded only in ordinary equi
     resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
     snapshot: () => ({ entries: [entry] })
   };
-  const validation = validateFinishAction({
-    reasonCode: "sufficient_evidence",
-    evidenceIds: [entry.evidenceId],
-    answer: "单装备排行榜（含神器）：羊刀。"
-  }, ledger);
+  for (const answer of ["单装备排行榜（含神器）：羊刀。", "厄斐琉斯主流神器：羊刀+无尽+海妖之怒。", "推荐奥恩神器：羊刀。", "神器推荐：羊刀。", "奥恩神器：羊刀。"] ) {
+    const validation = validateFinishAction({ reasonCode: "sufficient_evidence", evidenceIds: [entry.evidenceId], answer }, ledger);
+    assert.equal(validation.valid, false, answer);
+    assert.ok(validation.errors.includes("answer claims an Artifact equipment ranking but cited evidence does not include artifact scope"));
+  }
+  for (const answer of ["普通装备排行榜，不含神器。", "神器数据不足，未返回神器排名。", "没有奥恩神器的数据。普通装备是羊刀。"]) {
+    const validation = validateFinishAction({ reasonCode: "sufficient_evidence", evidenceIds: [entry.evidenceId], answer }, ledger);
+    assert.equal(validation.valid, true, JSON.stringify(validation));
+  }
+  entry.value.query = { itemPolicy: "include_artifact", itemCategories: ["ordinary_completed", "artifact"] };
+  const missingArtifacts = validateFinishAction({ reasonCode: "sufficient_evidence", evidenceIds: [entry.evidenceId], answer: "主流神器：羊刀。" }, ledger);
+  assert.equal(missingArtifacts.valid, false, "an allowed category alone does not prove any artifact samples were returned");
+});
 
-  assert.equal(validation.valid, false);
-  assert.ok(validation.errors.includes(
-    "answer claims an Artifact equipment ranking but cited evidence does not include artifact scope"
-  ));
+test("artifact-only fallback does not claim ordinary equipment is included", () => {
+  const fallback = buildSingleUnitItemRankingFallback({ snapshot: () => ({ entries: [{
+    evidenceId: "ev-artifacts", toolName: "unit_builds", temporalStatus: "current",
+    value: { type: "unit_item_rankings", unit: { name: "厄斐琉斯" }, query: { itemCategories: ["artifact"] },
+      itemRankings: [{ name: "狙击手的专注", category: "artifact", stats: { games: 200, avg: 3.8 } }] }
+  }] }) });
+  assert.match(fallback.answer, /排行榜（神器）/u);
+  assert.doesNotMatch(fallback.answer, /普通装备/u);
 });
 
 test("item ranking fallback summarizes mixed equipment evidence instead of using an unrelated result type", () => {

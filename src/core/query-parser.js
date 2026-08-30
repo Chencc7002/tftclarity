@@ -37,7 +37,7 @@ function parseMinSamples(input) {
 
 function mentionsArtifactCategory(input) {
   const normalized = normalizeText(input);
-  return normalized.includes("神器") || /奥恩装(?!备)/.test(normalized);
+  return normalized.includes("神器") || /\bartifacts?\b/i.test(normalized);
 }
 
 function mentionsEmblemCategory(input) {

@@ -1,12 +1,15 @@
 const S18_LIVE_SOURCE = "metatft_live_2026_08_27_bilingual";
 export const ENTITY_DISPLAY_VERSION = "s18-live-bilingual-2026-08-27";
 
-function displayOverride(apiName, zhName, enName) {
+function displayOverride(apiName, zhName, enName, options = {}) {
   return Object.freeze({
     apiName,
     zhName,
     enName,
     aliases: Object.freeze([zhName, enName]),
+    ...(options.fuzzyAliases?.length ? {
+      fuzzyAliases: Object.freeze([...options.fuzzyAliases])
+    } : {}),
     source: S18_LIVE_SOURCE
   });
 }
@@ -56,7 +59,9 @@ export const S18_UNIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_Ahri", "阿狸", "Ahri"),
   displayOverride("DA_Amumu18", "阿木木", "Amumu"),
   displayOverride("DA_Sentinel18", "苍蓝雕纹魔像", "Sentinel"),
-  displayOverride("DA_18_Aphelios", "厄斐琉斯", "Aphelios"),
+  displayOverride("DA_18_Aphelios", "厄斐琉斯", "Aphelios", {
+    fuzzyAliases: ["月男", "efls"]
+  }),
   displayOverride("DA_Brambleback18", "绯红印记树怪", "Brambleback"),
   displayOverride("DA_18_Zyra", "婕拉", "Zyra"),
   displayOverride("DA_18_Lillia", "莉莉娅", "Lillia"),

@@ -12,6 +12,7 @@ import {
   mergeCatalogTraits,
   mergeCatalogUnits
 } from "../src/data/domain-catalog.js";
+import { queryEntityCatalog } from "../src/domain/tft/entity-catalog-query.js";
 
 test("S18 live bilingual display overrides cover the complete current roster", () => {
   assert.equal(S18_UNIT_DISPLAY_OVERRIDES.length, 65);
@@ -68,4 +69,48 @@ test("S18 live generated and persisted catalogs retain curated bilingual names",
   ], generatedTraits);
   assert.equal(mergedUnits.find((entry) => entry.apiName === "DA_18_Elise").zhName, "伊莉丝");
   assert.equal(mergedTraits.find((entry) => entry.apiName === "DA_18_Sprykin").zhName, "约德尔人");
+});
+
+test("Aphelios spelling alias resolves through generated and cached catalogs without changing display names", () => {
+  const generated = buildUnitCatalogFromExplorerRows({ data: [
+    { units_unique: "DA_18_Aphelios-2", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }
+  ] }, { includeSeeds: false });
+  for (const units of [generated, mergeCatalogUnits([
+    { apiName: "DA_18_Aphelios", zhName: "厄斐琉斯", aliases: ["Aphelios"], current: true }
+  ], generated)]) {
+    const result = queryEntityCatalog({ catalog: { units, items: [], traits: [] },
+      input: { entityType: "unit", filters: { names: ["厄飞流斯"] } }
+    });
+    assert.equal(result.resolution.requests[0].status, "resolved");
+    assert.equal(result.results[0].apiName, "DA_18_Aphelios");
+    assert.equal(result.results[0].name, "厄斐琉斯");
+  }
+});
+
+test("Aphelios nicknames remain fuzzy confirmations with one stable canonical candidate", () => {
+  const units = buildUnitCatalogFromExplorerRows({ data: [
+    { units_unique: "DA_18_Aphelios-2", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
+    { units_unique: "DA_18_Ornn-2", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }
+  ] }, { includeSeeds: false });
+  for (const nickname of ["月男", "efls", "EFLS", " ｅｆｌｓ "]) {
+    const result = queryEntityCatalog({ catalog: { units, items: [], traits: [] },
+      input: { entityType: "unit", filters: { names: [nickname] } }
+    });
+    assert.equal(result.resolution.requests[0].status, "ambiguous", nickname);
+    assert.deepEqual(result.resolution.requests[0].candidates.map((candidate) => ({
+      apiName: candidate.apiName,
+      name: candidate.name,
+      matchType: candidate.matchType
+    })), [{
+      apiName: "DA_18_Aphelios",
+      name: "厄斐琉斯",
+      matchType: "curated_fuzzy_alias"
+    }]);
+    assert.equal(result.results[0].name, "厄斐琉斯");
+  }
+  const ornnItems = queryEntityCatalog({ catalog: { units, items: [], traits: [] },
+    input: { entityType: "unit", filters: { names: ["奥恩"] } }
+  });
+  assert.equal(ornnItems.resolution.requests[0].status, "resolved");
+  assert.equal(ornnItems.results[0].apiName, "DA_18_Ornn");
 });

@@ -4,6 +4,7 @@ import { validateToolInput } from "../agent/tools/contracts.js";
 import { parseCompTrendDirection } from "../core/comp-trend-intent.js";
 import { itemDetailsBatchMatchesPlan } from "../domain/tft/differentiating-item-selector.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
+import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import { validateReactAction } from "./react-action.js";
 import { DuplicateCallGuard } from "./duplicate-call-guard.js";
 import { EvidenceLedger } from "./evidence-ledger.js";
@@ -50,6 +51,103 @@ function currentTurnUserText(request = {}) {
     .join("\n");
 }
 
+const AFFIRMATIVE_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
+
+function entityConfirmationContext(request = {}) {
+  const pending = request.bridgeContext?.view?.pendingClarification
+    ?? request.bridgeContext?.pendingClarification
+    ?? null;
+  const context = pending?.confirmationContext;
+  if (
+    !AFFIRMATIVE_CONFIRMATION.test(currentTurnUserText(request))
+    || context?.type !== "entity_candidate"
+    || !Array.isArray(context.candidates)
+    || context.candidates.length !== 1
+  ) return null;
+  const candidate = context.candidates[0];
+  if (!candidate?.apiName || !candidate?.name || !context.entityType) return null;
+  return context;
+}
+
+function equipmentScopeUserText(request = {}) {
+  const current = currentTurnUserText(request);
+  const confirmation = entityConfirmationContext(request);
+  return confirmation?.originalInput
+    ? `${current}\n${confirmation.originalInput}`
+    : current;
+}
+
+function hasConfirmedEntityResolution(ledger, confirmation) {
+  const candidate = confirmation?.candidates?.[0];
+  return ledger.snapshot().entries.some((entry) => (
+    entry?.temporalStatus !== "historical"
+    && entry?.toolName === "entity_catalog_query"
+    && entry.value?.entityType === confirmation.entityType
+    && entry.value?.resolution?.requests?.some((request) => (
+      request?.status === "resolved"
+      && request.candidates?.some((resolved) => resolved.apiName === candidate.apiName)
+    ))
+  ));
+}
+
+function confirmedEntityCatalogAction(request, availableToolNames, ledger) {
+  const confirmation = entityConfirmationContext(request);
+  if (
+    !confirmation
+    || !availableToolNames.has("entity_catalog_query")
+    || hasConfirmedEntityResolution(ledger, confirmation)
+  ) return null;
+  return {
+    schemaVersion: "react-action.v1",
+    type: "call_tool",
+    tool: "entity_catalog_query",
+    arguments: {
+      entityType: confirmation.entityType,
+      filters: { names: [confirmation.candidates[0].name] }
+    },
+    purposeCode: "retrieve_entity_details"
+  };
+}
+
+function pendingEntityConfirmation(ledger, request = {}) {
+  const entries = ledger.snapshot().entries;
+  for (let entryIndex = entries.length - 1; entryIndex >= 0; entryIndex -= 1) {
+    const entry = entries[entryIndex];
+    if (entry?.temporalStatus === "historical" || entry?.toolName !== "entity_catalog_query") continue;
+    const requests = entry.value?.resolution?.requests ?? [];
+    const pending = requests.find((request) => request?.status === "ambiguous" && request.candidates?.length);
+    if (!pending) continue;
+    const candidates = [...new Map(pending.candidates.map((candidate) => [
+      candidate.apiName, candidate
+    ])).values()];
+    const names = [...new Set(candidates.map((candidate) => candidate.name ?? candidate.apiName).filter(Boolean))];
+    const entityType = String(entry.value?.entityType ?? "");
+    const entityLabel = entityType === "unit" ? "英雄" : entityType === "item" ? "装备" : "羁绊";
+    const missingField = entityType === "unit" ? "unit" : entityType === "item" ? "item" : "trait";
+    const inputName = String(pending.inputName ?? pending.normalizedName ?? "这个名称");
+    const question = names.length === 1
+      ? `“${inputName}”可能指“${names[0]}”，请确认是否是这个${entityLabel}。`
+      : `“${inputName}”有多个可能：${names.join(" / ")}。请确认你指的是哪个${entityLabel}。`;
+    return {
+      question,
+      missingFields: [missingField],
+      reasonCode: "ambiguous_entity",
+      confirmationContext: {
+        type: "entity_candidate",
+        entityType,
+        inputName,
+        originalInput: currentTurnUserText(request),
+        equipmentCategoryScope: requestedEquipmentCategoryScope(currentTurnUserText(request)),
+        candidates: candidates.slice(0, 5).map((candidate) => ({
+          apiName: String(candidate.apiName),
+          name: String(candidate.name ?? candidate.apiName)
+        }))
+      }
+    };
+  }
+  return null;
+}
+
 function applyRequestBoundVideoScope(action, request = {}) {
   if (action?.type !== "call_tool" || action.tool !== "strategy_video_search") return action;
   const userText = currentTurnUserText(request);
@@ -88,32 +186,43 @@ function applyRequestBoundCompositionOverview(action, request = {}) {
 
 function applyRequestBoundEquipmentScope(action, request = {}) {
   if (action?.type !== "call_tool" || action.tool !== "unit_builds") return action;
-  const userText = currentTurnUserText(request);
-  const addsArtifacts = /(?:加入|加上|包含|包括|带上|算上|纳入).{0,6}神器|神器.{0,6}(?:也|一起).{0,6}(?:加入|加上|包含|包括|带上|算上|纳入)/u.test(userText);
+  const userText = equipmentScopeUserText(request);
+  const categoryScope = requestedEquipmentCategoryScope(userText);
   const requestsSingleItemRanking = /(?:单(?:件)?装备(?:数据|排行|排名|榜)|装备(?:单件)?(?:排行|排名|榜))/u.test(userText);
-  if (!addsArtifacts && !requestsSingleItemRanking) return action;
+  if (!categoryScope && !requestsSingleItemRanking) return action;
+  const scope = categoryScope ?? {
+    itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
+  };
+  const ordinaryBuildRequest = categoryScope?.itemPolicy === "ordinary_only"
+    && !requestsSingleItemRanking && !action.arguments?.itemCategories?.length;
+  // Complete builds / owned-item completion keep their operation; only widen the allowed category.
+  const completeBuildRequest = !requestsSingleItemRanking && (
+    /完整出装|三件套|整套|补装|补齐|complete\s+build/iu.test(userText)
+    || action.arguments?.lockedItems?.length > 0
+  );
   return {
     ...action,
     arguments: {
       ...(action.arguments ?? {}),
-      itemPolicy: addsArtifacts ? "include_artifact" : "ordinary_only",
-      itemCategories: addsArtifacts
-        ? ["ordinary_completed", "artifact"]
-        : ["ordinary_completed"]
+      ...scope,
+      ...(completeBuildRequest || ordinaryBuildRequest ? { itemCategories: [] } : {})
     }
   };
 }
 
 function unnecessaryEquipmentClarificationErrors(action, request = {}) {
   if (action?.type !== "ask_user") return [];
-  const userText = currentTurnUserText(request);
+  const userText = equipmentScopeUserText(request);
+  // Named comparisons and owned-item completion can legitimately need item identities.
+  if (/对比|比较|二选一|哪两个|已有|已经有|compare|versus|\bvs\b/iu.test(userText)) return [];
+  if ((action.missingFields ?? []).some((field) => ["unit", "unitName", "champion", "hero"].includes(field))) return [];
   const categoryRankingRequest = (
-    /(?:加入|加上|包含|包括|带上|算上|纳入).{0,6}神器/u.test(userText)
+    requestedEquipmentCategoryScope(userText)?.itemCategories.some((category) => category !== "ordinary_completed")
     || /(?:我想查的是|我想看|查看|查询|返回|给出|列出)?\s*单(?:件)?装备(?:数据|排行榜|排行|排名)\s*[，,。.!！]?$/u.test(userText)
   );
   if (!categoryRankingRequest) return [];
   const asksForSpecificItem = (
-    /(?:哪件|哪个|具体|提供).{0,8}装备|装备.{0,8}(?:名称|名字)/u.test(String(action.question ?? ""))
+    /(?:哪件|哪个|具体|提供).{0,12}(?:装备|神器|名称)|(?:装备|神器).{0,8}(?:名称|名字|哪一类)/u.test(String(action.question ?? ""))
     || (action.missingFields ?? []).some((field) => (
       ["item", "itemName", "performanceItem"].includes(String(field))
     ))
@@ -1099,7 +1208,8 @@ export function buildSingleUnitItemRankingFallback(ledger) {
   if (!entry) return null;
   const value = entry.value;
   const unitName = value.unit?.name ?? value.query?.unitName ?? "该棋子";
-  const includesArtifacts = (value.query?.itemCategories ?? []).includes("artifact");
+  const categoryNames = { ordinary_completed: "普通装备", artifact: "神器", radiant: "光明装备", emblem: "纹章", support: "辅助装备", set_special: "赛季特殊装备" };
+  const categoryLabel = (value.query?.itemCategories ?? []).map((category) => categoryNames[category]).filter(Boolean).join(" + ");
   const rows = value.itemRankings.slice(0, 6).map((item, index) => {
     const category = item.category === "artifact" ? "（神器）" : "";
     const stats = item.stats ?? {};
@@ -1107,7 +1217,7 @@ export function buildSingleUnitItemRankingFallback(ledger) {
       + `前四率${rankingPercent(stats.top4)}、吃鸡率${rankingPercent(stats.win)}、平均名次${stats.avg ?? "-"}、样本${stats.games ?? "-"}`;
   });
   return {
-    answer: `${unitName}单装备排行榜${includesArtifacts ? "（普通装备 + 神器）" : "（普通装备）"}：${rows.join("；")}。`,
+    answer: `${unitName}单装备排行榜${categoryLabel ? `（${categoryLabel}）` : ""}：${rows.join("；")}。`,
     evidenceIds: [entry.evidenceId]
   };
 }
@@ -1312,6 +1422,7 @@ export class ReactLoop {
         groundingAudit: extra.groundingAudit ?? null,
         question: extra.question ?? null,
         missingFields: extra.missingFields ?? [],
+        clarificationContext: extra.clarificationContext ?? null,
         evidenceIds: extra.evidenceIds ?? [],
         evidence: ledger.snapshot().entries,
         observations: structuredClone(state.observations),
@@ -1459,7 +1570,9 @@ export class ReactLoop {
         }
       }
 
-      const candidate = provided?.action ?? provided;
+      const candidate = confirmedEntityCatalogAction(request, this.availableToolNames, ledger)
+        ?? provided?.action
+        ?? provided;
       const validation = validateReactAction(candidate, {
         registry: this.registry,
         availableToolNames: this.availableToolNames
@@ -1506,13 +1619,24 @@ export class ReactLoop {
       state.recordDecision(action);
       emit("decision", decisionEventData(action, state, budget));
 
+      const entityConfirmation = pendingEntityConfirmation(ledger, request);
+      if (entityConfirmation) {
+        emit("ask_user", entityConfirmation);
+        return terminate("ask_user", {
+          status: "clarification_required",
+          question: entityConfirmation.question,
+          missingFields: entityConfirmation.missingFields,
+          clarificationContext: entityConfirmation.confirmationContext
+        });
+      }
+
       const equipmentClarificationErrors = unnecessaryEquipmentClarificationErrors(action, request);
       if (equipmentClarificationErrors.length) {
         state.recordObservation({
           type: "decision_rejected",
           actionType: "ask_user",
           errors: equipmentClarificationErrors,
-          repairInstruction: "This is a category-wide single-item ranking. Do not ask for one item name and do not set performanceItem. Resolve the contextual champion, then call unit_builds; the server binds the requested ordinary or Artifact category scope."
+          repairInstruction: "This is a category-wide single-item ranking. Only 神器 is the artifact category token; in 奥恩神器, 神器 supplies that category while 奥恩 alone remains the champion Ornn. Do not ask for one item name and do not set performanceItem. Keep the champion from user conversation context and resolve it through entity_catalog_query, then call unit_builds with the requested category scope. Ask only if the champion itself is missing or ambiguous."
         }, { progress: false });
         emit("decision_rejected", {
           iteration: state.decisions.length,

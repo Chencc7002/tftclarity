@@ -6,7 +6,7 @@ import {
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
-import { unitResultCoverage, loadFollowUpHistory } from "../src/app/unit-follow-up.js";
+import { unitResultCoverage, singleEquipmentResultSubject, loadFollowUpHistory } from "../src/app/unit-follow-up.js";
 
 const buildEvidenceValue = (unit = "DA_Cinderling18") => ({
   type: "unit_build_rankings", unit: { apiName: unit, name: "绯红树怪" },
@@ -26,6 +26,48 @@ test("follow-up coverage uses delivered rows and entity IDs, not wording or empt
   assert.equal(unitResultCoverage({ status: "completed", evidence: [{ toolName: "comps_rankings", value: {
     resolution: { status: "ambiguous" }, results: [{ members: [{ apiName: "DA_Cinderling18" }] }]
   } }] }, "DA_Cinderling18").composition, false);
+});
+
+test("artifact ranking follow-ups use the returned champion and count delivered item rankings", async () => {
+  const value = {
+    type: "unit_item_rankings", unit: { apiName: "DA_18_Aphelios", name: "厄斐琉斯" },
+    query: { unit: "DA_18_Aphelios", itemCategories: ["artifact"], itemPolicy: "include_artifact" },
+    itemRankings: [{ name: "金币收集者", category: "artifact", stats: { games: 100 } }],
+    updatedAt: new Date().toISOString()
+  };
+  const result = { status: "completed", evidence: [{ toolName: "unit_builds", value }] };
+  assert.equal(unitResultCoverage(result, "DA_18_Aphelios").equipment, true);
+  assert.equal(singleEquipmentResultSubject(result).apiName, "DA_18_Aphelios");
+  assert.equal(singleEquipmentResultSubject({ evidence: [{ toolName: "unit_builds", value, temporalStatus: "historical" }] }), null);
+  assert.equal(singleEquipmentResultSubject({ evidence: [{ toolName: "unit_builds", value: { ...value, itemRankings: [] } }] }), null);
+  assert.equal(singleEquipmentResultSubject({ evidence: [...result.evidence, { toolName: "unit_builds", value: {
+    ...value, unit: { apiName: "DA_18_Ornn", name: "奥恩" }, query: { ...value.query, unit: "DA_18_Ornn" }
+  } }] }), null);
+  const runtime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(),
+    reactToolHandlers: {
+      unit_builds: async () => value,
+      entity_catalog_query: async () => ({ type: "entity_catalog_results", entityType: "unit", updatedAt: new Date().toISOString(),
+        results: [{ apiName: "DA_18_Aphelios" }], resolution: { requests: [{ inputName: "厄飞流斯", status: "resolved", candidates: [value.unit] }] }
+      })
+    },
+    reactDecisionProvider: async ({ state }) => {
+      const ranking = state.evidence.find((entry) => entry.toolName === "unit_builds");
+      if (ranking) return {
+        schemaVersion: "react-action.v1", type: "finish", answer: "厄斐琉斯的神器推荐：金币收集者。",
+        evidenceIds: [ranking.evidenceId], reasonCode: "sufficient_evidence"
+      };
+      return state.evidence.length
+        ? { schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds", arguments: { unit: "DA_18_Aphelios" }, purposeCode: "retrieve_current_statistics" }
+        : { schemaVersion: "react-action.v1", type: "call_tool", tool: "entity_catalog_query", arguments: { entityType: "unit", filters: { names: ["厄飞流斯"] } }, purposeCode: "retrieve_entity_details" };
+    }
+  });
+  const { payload } = await handleReactChatRequest({
+    input: "我要查的是奥恩神器", seasonContextId: "set18-live", messages: [{ role: "user", content: "查询厄飞流斯的神器" }]
+  }, runtime);
+  assert.equal(payload.agentSuggestedActions?.covered.equipment, true);
+  assert.ok(!payload.agentSuggestedActions.actions.some((action) => action.id === "continue_with_equipment"));
+  assert.equal(payload.agentSuggestedActions.actions.find((action) => action.id === "continue_with_compositions").quickTask.arguments.champion, "DA_18_Aphelios");
+  assert.doesNotMatch(payload.agentSuggestedActions.prompt, /奥恩/u);
 });
 
 test("follow-up history is read from stored results and isolated by owner, conversation, season and reset", async () => {

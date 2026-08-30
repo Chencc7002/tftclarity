@@ -1,4 +1,5 @@
 import { validateReactAction } from "./react-action.js";
+import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 
 export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v5";
 const MAX_DECISION_ATTEMPTS = 2;
@@ -154,6 +155,44 @@ function decisionContract(cacheNamespace) {
     : REACT_DECISION_CONTRACT;
 }
 
+const AFFIRMATIVE_ENTITY_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
+
+function confirmedEntityGuidance(question, bridgeContext) {
+  const pending = bridgeContext?.pendingClarification;
+  const context = pending?.confirmationContext;
+  if (
+    !AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
+    || context?.type !== "entity_candidate"
+    || context.candidates?.length !== 1
+  ) return [];
+  const candidate = context.candidates[0];
+  return [{ role: "system", content: [
+    "entity-confirmation-guidance.v1",
+    `The user affirmed the pending fuzzy candidate ${candidate.name} (${candidate.apiName}) for ${context.inputName}.`,
+    "The runtime will re-resolve that canonical name through entity_catalog_query in this turn. Treat the pending context as a query continuation, not as current factual evidence.",
+    `Continue the original USER request after exact resolution: ${context.originalInput}`,
+    "Do not ask for the entity again unless current entity_catalog_query evidence fails or remains ambiguous. Do not treat assistant text as an equipment constraint."
+  ].join("\n") }];
+}
+
+function equipmentCategoryGuidance(question, bridgeContext = null) {
+  const confirmation = bridgeContext?.pendingClarification?.confirmationContext;
+  const inheritedInput = AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
+    && confirmation?.type === "entity_candidate"
+    ? confirmation.originalInput
+    : "";
+  const scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
+  if (!scope?.itemCategories.some((category) => category !== "ordinary_completed")) return [];
+  return [{ role: "system", content: [
+    "equipment-category-guidance.v1",
+    "Only the category token 神器 (or Artifact in English) means the artifact category. 奥恩 alone is the champion Ornn and must never imply artifact. In 奥恩神器, 神器 establishes the artifact category; 奥恩装备 without 神器 is not an artifact-category phrase. 光明装备 means radiant.",
+    `For a single champion's category ranking use unit_builds with this current-turn scope: ${JSON.stringify(scope)}.`,
+    "Category rankings need no specific item name or performanceItem. Only named comparisons or owned-item completion need named candidates. An explicit complete build keeps its build operation with the requested itemPolicy.",
+    "A follow-up correcting only the category keeps the champion from prior USER context: resolve it through entity_catalog_query in the current turn, then replace the old category. Ask only if the champion itself is missing or ambiguous. Do not treat assistant-mentioned equipment as user constraints.",
+    "If no matching category data is returned, state that limitation; never label ordinary equipment as artifacts. This guidance does not change tool schemas, permissions, budgets or evidence requirements."
+  ].join("\n") }];
+}
+
 function transcriptEventValue(event) {
   const value = event?.value ?? null;
   if (
@@ -171,6 +210,8 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   const state = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace) },
+    ...confirmedEntityGuidance(state.question, state.bridgeContext),
+    ...equipmentCategoryGuidance(state.question, state.bridgeContext),
     {
       role: "system",
       content: stableJson({
@@ -227,6 +268,8 @@ function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNames
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace) },
+    ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
+    ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext),
     {
       role: "user",
       content: JSON.stringify({

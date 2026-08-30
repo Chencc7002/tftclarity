@@ -1,5 +1,12 @@
 export const UNIT_ALIAS_OVERRIDES = [
   {
+    apiName: "DA_18_Aphelios",
+    zhName: "厄斐琉斯",
+    aliases: ["厄斐琉斯", "厄飞流斯", "Aphelios"],
+    confidence: 1,
+    source: "manual"
+  },
+  {
     apiName: "TFT17_Xayah",
     zhName: "霞",
     aliases: ["霞", "逆羽", "xayah"],

@@ -5,7 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
-import { loadFollowUpHistory, unitResultCoverage } from "./unit-follow-up.js";
+import { loadFollowUpHistory, singleEquipmentResultSubject, unitResultCoverage } from "./unit-follow-up.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
@@ -7260,7 +7260,9 @@ function contextualUnitGuidance(request, runtime, playGuidance = null, result = 
   if (!result || !["completed", "completed_with_warning"].includes(result.status)
     || result.terminationReason === "insufficient_evidence" || !result.evidence?.length) return null;
   const input = String(request.input ?? "").trim();
-  let entity = playGuidance?.entity ?? null;
+  // Current delivered equipment evidence owns the presentation subject. A category
+  // phrase such as 奥恩神器 must not switch follow-up actions to the champion Ornn.
+  let entity = singleEquipmentResultSubject(result) ?? playGuidance?.entity ?? null;
   if (!entity) {
     const currentMentions = immediateUnitMentions(request, runtime, input);
     if (currentMentions.length === 1) {
@@ -7528,6 +7530,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
               reason: result.terminationReason,
               question: result.question,
               missingFields: result.missingFields,
+              confirmationContext: result.clarificationContext,
               recordId: loadedBridgeState?.activeRecordId ?? null
             }
           });

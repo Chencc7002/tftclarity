@@ -358,7 +358,22 @@ export function buildConversationBridgeContextView(input, bridge = {}, options =
     pendingClarification: bridge.pendingClarification ? {
       reason: sanitizeBridgeText(bridge.pendingClarification.reason, 80),
       question: sanitizeBridgeText(bridge.pendingClarification.question, 300),
-      recordId: bridge.pendingClarification.recordId ?? null
+      recordId: bridge.pendingClarification.recordId ?? null,
+      ...(bridge.pendingClarification.confirmationContext?.type === "entity_candidate" ? {
+        confirmationContext: {
+          type: "entity_candidate",
+          entityType: sanitizeBridgeText(bridge.pendingClarification.confirmationContext.entityType, 20),
+          inputName: sanitizeBridgeText(bridge.pendingClarification.confirmationContext.inputName, 80),
+          originalInput: sanitizeBridgeText(bridge.pendingClarification.confirmationContext.originalInput, 800),
+          equipmentCategoryScope: bridge.pendingClarification.confirmationContext.equipmentCategoryScope
+            ? structuredClone(bridge.pendingClarification.confirmationContext.equipmentCategoryScope)
+            : null,
+          candidates: array(bridge.pendingClarification.confirmationContext.candidates).slice(0, 5).map((candidate) => ({
+            apiName: sanitizeBridgeText(candidate?.apiName, 100),
+            name: sanitizeBridgeText(candidate?.name, 80)
+          })).filter((candidate) => candidate.apiName && candidate.name)
+        }
+      } : {})
     } : null,
     records: []
   };

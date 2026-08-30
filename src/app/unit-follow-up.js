@@ -25,7 +25,7 @@ export function unitResultCoverage(result, apiName) {
       const options = [value, ...list(value.results), ...list(value.units)];
       covered.equipment ||= options.some((option) =>
         usable(option) && [unitId(option.unit), option.apiName, option.query?.unit].includes(apiName)
-        && (list(option.cards).length > 0 || list(option.builds).length > 0 || list(option.buildOptions).length > 0
+        && (list(option.cards).length > 0 || list(option.builds).length > 0 || list(option.buildOptions).length > 0 || list(option.itemRankings).length > 0
           || list(option.comparison?.entries).some((row) => Number(row.stats?.games ?? row.games) > 0)));
     }
     if (COMPOSITION_TYPES.has(type) && !["ambiguous", "not_found"].includes(value.resolution?.status)
@@ -39,6 +39,21 @@ export function unitResultCoverage(result, apiName) {
     }
   }
   return covered;
+}
+
+export function singleEquipmentResultSubject(result) {
+  if (!usable(result)) return null;
+  const subjects = new Map();
+  for (const entry of list(result.evidence)) {
+    if (entry.temporalStatus === "historical" || entry.toolName !== "unit_builds" || !usable(entry.value)) continue;
+    const value = entry.value;
+    const apiName = unitId(value.unit) ?? value.query?.unit;
+    const name = value.unit?.name ?? value.unit?.zhName ?? value.query?.unitName;
+    if (apiName && name && unitResultCoverage({ evidence: [entry] }, apiName).equipment) {
+      subjects.set(apiName, { entityType: "unit", apiName, name });
+    }
+  }
+  return subjects.size === 1 ? [...subjects.values()][0] : null;
 }
 
 export async function loadFollowUpHistory(request, runtime, scope) {
