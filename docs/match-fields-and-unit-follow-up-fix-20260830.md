@@ -1,6 +1,6 @@
 # 对局字段与棋子后续查询修复（2026-08-30）
 
-状态：用户已授权上线；已从实际生产基线 `9f7cc6e` 建立隔离发布分支，发布结果待回填。工作区包含其他任务修改，本次不携带 Skills 实验等无关差异。
+状态：已上线。发布提交 `ece5e13c1bb47c8b481088a83fe8faacaf45cd97`，Web 与 Player MCP 均已切换并通过健康检查；正式域名真实对局和聊天→阵容接口验收通过。工作区包含其他任务修改，本次未携带 Skills 实验等无关差异。
 
 ## 根因
 
@@ -33,7 +33,7 @@ Browser 本地实际操作（真实页面/handler、隔离内存库、固定决�
 
 核对来源为 MetaTFT 单局 `NA1_5631068140` 的公开详情及 S18 中文 catalog。完整原始响应只存本地忽略目录；未把其他参与者数据提交入仓库。
 
-发布需同时更新 Web 和 MetaTFT Player MCP adapter，先小范围检查成功补全/缺失降级两条路径；此次未改生产服务、数据或部署配置。
+发布需同时更新 Web 和 MetaTFT Player MCP adapter；本地阶段已验证成功补全/缺失降级两条路径，生产阶段结果见下文。
 
 ## 隔离发布包复验
 
@@ -41,3 +41,15 @@ Browser 本地实际操作（真实页面/handler、隔离内存库、固定决�
 - 主回归 1135 通过 / 7 跳过；集成 232 通过 / 1 跳过；Agent 评估 50/50。数量少于开发工作区，因为未包含其他任务的实验及测试。
 - 不改 Compose、Dockerfile、依赖、数据库 schema、Worker 或流量入口；只更新 Web 与 Player MCP，保留旧镜像和发布前数据库备份。
 - `r1-release-readiness.md` 的 8 月 11 日域名未就绪状态已过时，本次以实际生产站点健康状态和用户明确上线授权为准。
+
+## 生产发布与验收
+
+- GitHub Actions `33300097130`：test-main、test-integration、bilibili-compose-runtime-gate 三项全部成功。
+- 发布前备份目录：`/root/tftclarity/backups/match-followup-20260830/`。PostgreSQL dump 的 `pg_restore --list` 通过；玩家库快照 integrity_check=ok（26 玩家、984 对局），两份 SHA256 校验通过。
+- PostgreSQL SHA256：`3a55acfd784743917f7385d03e54d5f99e3c2c404add72a943cc4c4bb45bf8de`；玩家库 SHA256：`959743e4c3ae78741d6c8b8911ca47c20ccb9f156af976271505bb6bc3cc58ee`。
+- 旧镜像保留为 `tftclarity-match-followup-rollback-app:20260830` 和 `tftclarity-match-followup-rollback-metatft-player-mcp:20260830`，回退目标 `9f7cc6e`。未改数据库 schema、Compose、Worker 或网关，不删除历史数据。
+- 先构建两个镜像，再先切 MCP、确认 healthy，后切 Web、确认 healthy。正式域名 `/api/health`、`/api/ready` 返回 200；PostgreSQL/Redis ready。
+- 真实单局 `NA1_5631068140`：费用 `[3,4,4,3,4,4,3,4]`，七项已激活羁绊人数正确，source=metatft，warnings=[]。不是用本地 fixture 冒充线上单局。
+- 正式站点独立测试会话“绯红树怪怎么带”：真实链路调用 entity_catalog_query、unit_builds，status=completed；仅建议“绯红树怪阵容搭配”“绯红树怪视频攻略”。继续按服务端返回的 hero-comps QuickTask 查询，得到“峡谷野怪 · 远古石甲虫”“猎人 · 希维尔”，两者均包含 DA_Cinderling18。
+- 线上 Browser 能打开站点并读取原生页面 DOM，但 Playwright DOM 与点击控制多次超时，未计为线上浏览器点击通过。补充验证使用同一正式 API 和原样按钮参数；此前本地 Browser 点击验收仍有效。
+- 线上报告存放于本地忽略目录 `.cache/match-followup-production-after.json`、`.cache/match-followup-production-chat-summary.json`；不提交原始会话和访问凭据。
