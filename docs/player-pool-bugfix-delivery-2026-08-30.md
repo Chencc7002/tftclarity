@@ -11,7 +11,7 @@
 - 保留已有未提交改动；本次开始时仓库已有大量赛季、UI、ReAct 与测试变更。
 - 优先修复 Player Pool 的确定性 API、存储与展示路径；不增加 Agent/Skill runtime、不改权限或证据边界。
 - 不删除现有玩家/对局缓存，不提交或部署未授权变更。
-- 当前状态：**用户已授权上线。发布前补齐 S18 采集遗漏，干净发布包回归和生产备份已通过；Web/MCP 发布及线上验收进行中。**
+- 当前状态：**已上线并完成生产验收。Web 与 Player Match MCP 均运行发布提交 `8ce655b9`；默认 NA 池已从 16.14 旧样本恢复为 S18 18.1 最新样本和可追溯阵容卡片。**
 
 ## 检查点
 
@@ -98,4 +98,11 @@
 - 备份 SHA256：PostgreSQL `19601bdac02f59605e911040e68a72e1ddff7d5631ae3fafdf1163a51664bcba`；Pool `1ac1c6ec56128861e8674a9ba00cf650063bb4111c26f805c626cd45fc14f4fc`。
 - 回退镜像已固定为 `tftclarity-pool-rollback-app:20260830` 与 `tftclarity-pool-rollback-metatft-player-mcp:20260830`。本次不改 Compose、数据库 schema、worker 或 Agent 路径。只重建并重启 MCP 与 app，其他服务及服务器已有未跟踪文件保持原状。
 - `docs/r1-release-readiness.md` 的 8 月 11 日“最终域名未就绪”等状态已过时，实际站点和 8 月 29 日上线记录确认已发布；本次以实际主机与明确上线授权为准。
-- **未完成项**：记录最终提交与 CI；发布两个服务；线上核对刷新结果、样本补丁/时间、卡片与来源跳转，更新本文状态。
+- 发布提交：`8ce655b9d2d6376f32958b473281c3a1717d31ca`；GitHub Actions `33286578521` 的 main、integration、Compose/MCP 三个 job 全部通过。
+- 发布顺序与结果：先重建并健康启动 `metatft-player-mcp`，再重建并健康启动 `app`。发布后 `/api/health`、`/api/ready` 均为 200，PostgreSQL/Redis 就绪，运行时补丁为 18.1；两服务最近日志没有启动错误。
+- 生产验收前基线：默认 NA 池补丁 `16.14`，最新对局 `2026-07-28T12:30:23.516Z`，只有 2 个窗口样本，能精确复现用户报告。
+- 生产真实刷新：请求 11 名成员，10 名成功、1 名明确失败（`FNC Darth Nub`：`MetaTFT profile refresh failed`），新增 24 个 player-match；失败没有覆盖旧数据或误报成功。
+- 刷新后：补丁 `18.1`，最新对局 `2026-08-30T01:46:49.889Z`（北京时间 09:46），11 人都有数据，10 人达到 10 场窗口，窗口样本 101、唯一对局 89。`sampleIsOld=false`。
+- 阵容验收：返回 20 个趋势卡片，20 个均含具体棋盘，20 个均含代表对局；代表对局 `NA1_5631234275` 的详情接口可打开。生产 `opgg-panel.js` 已包含样本补丁与代表对局渲染逻辑。
+- 线上验收产物：`.cache/pool-production-before.json` 与 `.cache/pool-production-after.json`（未入 Git，关键结果已固定在本文）。隔离浏览器验收已覆盖实际卡片交互；本次生产环境受浏览器连接限制，最终用正式域名 HTTP 行为与静态脚本断言完成验证，未把它描述为生产浏览器点击验收。
+- 交付完成；后续若要重试唯一失败成员，可再次点击更新，不需要回退整个池。
