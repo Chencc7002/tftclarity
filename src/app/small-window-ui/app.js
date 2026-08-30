@@ -2682,6 +2682,30 @@ function equipmentCoreConclusionText(data) {
   return items.length ? t("chatCoreWithItems", params) : t("chatCoreWithoutItems", params);
 }
 
+function chatCoreItemsHtml(data) {
+  if (!EQUIPMENT_CORE_RESULT_TYPES.has(data?.type)) return "";
+  const summary = data?.coreItemSummary ?? data?.answer?.coreConclusion;
+  const seen = new Set();
+  const items = (summary?.items ?? []).filter((item) => {
+    if (!item || typeof item !== "object" || !item.iconUrl) return false;
+    const identity = String(item.apiName ?? localizedName(item)).trim();
+    if (!identity || seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+  if (!items.length) return "";
+  return `<aside class="chat-core-items" data-chat-core-items aria-label="${escapeHtml(t("conclusionCoreItems"))}">
+    <span class="chat-core-items-label">${escapeHtml(t("conclusionCoreItems"))}</span>
+    <div class="chat-core-item-list">${items.map((item) => {
+      const label = localizedName(item, t("item"));
+      return `<span class="chat-core-item" title="${escapeHtml(label)}">
+        ${assetThumb(item.iconUrl, label, "chat-core-item-icon", item.fallbackIconUrl)}
+        <strong>${escapeHtml(label)}</strong>
+      </span>`;
+    }).join("")}</div>
+  </aside>`;
+}
+
 function isSpecialItemRanking(data) {
   return data?.type === ItemRankingResult.type
     && (data?.query?.itemCategories ?? []).some((category) => ["radiant", "artifact"].includes(category));
@@ -2829,6 +2853,7 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
           : softValidated ? "modelConclusionPendingVerification"
           : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
     </header>
+    ${chatCoreItemsHtml(data)}
     ${conclusionRichTextHtml(answer || summary)}
     ${feedbackHtml}
   </section>`;
@@ -2975,7 +3000,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
   if (modelConclusion) {
     return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
-  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${chatCoreItemsHtml(data)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -5098,7 +5123,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
           ?? ""
         ).trim();
         activeResponseEl.innerHTML = answer
-          ? `<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
+          ? `${chatCoreItemsHtml(data)}<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
           : `<div>${t("queryFailed")}</div>`;
       }
     } else {

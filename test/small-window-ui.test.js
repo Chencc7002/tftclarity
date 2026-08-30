@@ -523,6 +523,16 @@ test("mobile special-item questions receive a query-specific chat conclusion", (
   assert.match(i18n, /特殊装备按样本等级与表现分展示/u);
 });
 
+test("equipment chat conclusions show deterministic core item icons", () => {
+  assert.match(appJs, /function chatCoreItemsHtml\(data\)/u);
+  assert.match(appJs, /summary\?\.items \?\? \[\]/u);
+  assert.match(appJs, /typeof item !== "object" \|\| !item\.iconUrl/u);
+  assert.match(appJs, /data-chat-core-items/u);
+  assert.match(appJs, /assetThumb\(item\.iconUrl, label, "chat-core-item-icon"/u);
+  assert.match(styles, /\.chat-core-item-icon \{[^}]*width: 20px;[^}]*height: 20px/u);
+  assert.match(styles, /\.chat-core-item \{[^}]*display: inline-flex/u);
+});
+
 test("public UI exposes a visible, localized Riot fan-project notice", () => {
   assert.match(indexHtml, /class="site-legal-footer"/);
   assert.match(indexHtml, /class="settings-section legal-notice"/);
