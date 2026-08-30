@@ -10,6 +10,7 @@ import {
   PR1D_RECOVERY_AUTH_ENV,
   runCanonicalRealProviderExperiment
 } from "../src/experiments/unit-play-guidance-real-provider/canonical.js";
+import { renderCanonicalAttemptReport } from "../src/experiments/unit-play-guidance-real-provider/finalization.js";
 import { runRealProviderPreflight } from "../src/experiments/unit-play-guidance-real-provider/preflight.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -52,61 +53,6 @@ async function ensureNewAttemptDirectory(attemptDirectory) {
     if (error?.code !== "ENOENT") throw error;
   }
   await fs.mkdir(attemptDirectory, { recursive: true });
-}
-
-function report(result) {
-  const armA = result.aggregate.arms.A;
-  const armB = result.aggregate.arms.B;
-  return `# Unit Play Guidance PR1D Canonical Real-provider Attempt
-
-Status: **${result.status.toUpperCase()}**
-
-This is an offline real-provider acceptance artifact. It does not authorize production Skill control, canary, rollout, PR2, live retrieval, new Tools, or other Skills.
-
-## Reproducibility
-
-| Field | Value |
-| --- | --- |
-| Call-enabled experiment commit | \`${result.manifest.implementationCommitSha}\` |
-| Provider / model | \`${result.manifest.provider.runtimeProviderConfig}\` / \`${result.manifest.provider.model}\` |
-| Provider endpoint | \`${result.manifest.provider.endpoint}\` |
-| Credential configured | ${result.manifest.credentialConfigured} |
-| Credential binding confirmed for | \`${result.manifest.credentialBindingConfirmedFor}\` |
-| Pair-order SHA-256 | \`${result.plan.orderSha256}\` |
-| Planned / completed Agent runs | ${result.plan.plannedAgentRuns} / ${result.plan.completedAgentRuns} |
-| Provider HTTP requests | ${result.fuse.providerHttpRequests} |
-| Provider-reported total tokens | ${result.fuse.totalTokens} |
-| Pre-dispatch blocked calls | ${result.fuse.blockedBeforeDispatch} |
-| Reservation underflows | ${result.fuse.reservationUnderflows} |
-| Provider identity observations | ${result.providerIdentity.observations} |
-| Immutable identity unavailable | ${result.providerIdentity.immutableIdentityUnavailable} |
-
-## Reliability and analyzability
-
-| Metric | A | B |
-| --- | ---: | ---: |
-| Attempted runs | ${armA.attempted} | ${armB.attempted} |
-| Normal Provider completions | ${armA.normalProviderCompletions} | ${armB.normalProviderCompletions} |
-| Completion rate | ${armA.normalProviderCompletionRate.toFixed(4)} | ${armB.normalProviderCompletionRate.toFixed(4)} |
-| Mean Tool calls | ${armA.meanToolCalls.toFixed(3)} | ${armB.meanToolCalls.toFixed(3)} |
-| P95 Tool calls | ${armA.p95ToolCalls.toFixed(3)} | ${armB.p95ToolCalls.toFixed(3)} |
-| Mean decision calls | ${armA.meanDecisionCalls.toFixed(3)} | ${armB.meanDecisionCalls.toFixed(3)} |
-| P95 decision calls | ${armA.p95DecisionCalls.toFixed(3)} | ${armB.p95DecisionCalls.toFixed(3)} |
-| Mean actual total tokens | ${armA.meanActualTotalTokens.toFixed(3)} | ${armB.meanActualTotalTokens.toFixed(3)} |
-| Mean Agent E2E latency ms | ${armA.meanE2eLatencyMs.toFixed(3)} | ${armB.meanE2eLatencyMs.toFixed(3)} |
-
-- Valid paired repetitions: ${result.aggregate.validPairedRepetitions}/90.
-- Cases with at least two valid pairs: ${result.aggregate.casesWithAtLeastTwoValidPairs}/30.
-- Candidate Skill failures: ${result.aggregate.reliability.candidateSkillFailures}.
-- Completion parity: ${result.aggregate.reliability.completionParityPass ? "PASS" : "FAIL"}.
-- Global fuse: ${result.fuse.exhausted ? `OPEN (${result.fuse.exhaustedReason})` : "not reached"}.
-- Abort: ${result.abort ? `\`${result.abort.code}\` — ${result.abort.message}` : "none"}.
-- Recovery execution: fresh 180 runs; prior attempt samples imported: ${result.manifest.recovery.priorAttemptSamplesImported}.
-
-## Next gate
-
-Arm-blinded facet labels and adjudication remain required before the Value and Stability gates can produce a final PR1D PASS/FAIL verdict. No subsequent phase is authorized by this attempt.
-`;
 }
 
 const cliAuthorized = process.argv.slice(2).includes("--canonical-real-provider");
@@ -208,7 +154,7 @@ await Promise.all([
   fs.writeFile(path.join(attemptDirectory, "canonical-result.v1.json"), `${JSON.stringify(result, null, 2)}\n`, "utf8"),
   fs.writeFile(path.join(attemptDirectory, "facet-label-packet.blinded.v1.json"), `${JSON.stringify(blinded.packet, null, 2)}\n`, "utf8"),
   fs.writeFile(path.join(attemptDirectory, "facet-label-key.v1.json"), `${JSON.stringify(blinded.key, null, 2)}\n`, "utf8"),
-  fs.writeFile(path.join(attemptDirectory, "canonical-report.md"), report(result), "utf8")
+  fs.writeFile(path.join(attemptDirectory, "canonical-report.md"), renderCanonicalAttemptReport(result), "utf8")
 ]);
 
 console.log(JSON.stringify({

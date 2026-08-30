@@ -10,6 +10,10 @@ import {
   PR1D_CANONICAL_PAIR_ORDER_SHA256,
   runCanonicalRealProviderExperiment
 } from "../src/experiments/unit-play-guidance-real-provider/canonical.js";
+import {
+  deriveCanonicalAttemptOutcome,
+  renderCanonicalAttemptReport
+} from "../src/experiments/unit-play-guidance-real-provider/finalization.js";
 import { numericStatisticalClaimAudit } from "../src/experiments/unit-play-guidance-control/harness.js";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -214,6 +218,17 @@ test("fake transport executes the frozen 180-run plan sequentially and emits bli
     fetchImpl: fake.fetchImpl
   });
   assert.equal(result.status, "awaiting_facet_adjudication");
+  assert.deepEqual(result.acceptance, {
+    status: "awaiting_facet_adjudication",
+    acceptance: "pending",
+    reason: "facet_adjudication_required",
+    safety: "passed",
+    analyzability: "passed",
+    value: "pending",
+    stability: "pending",
+    costAcceptance: "pending",
+    facetAdjudicationRequired: true
+  });
   assert.equal(result.plan.plannedAgentRuns, 180);
   assert.equal(result.plan.completedAgentRuns, 180);
   assert.equal(result.plan.orderSha256, PR1D_CANONICAL_PAIR_ORDER_SHA256);
@@ -230,6 +245,107 @@ test("fake transport executes the frozen 180-run plan sequentially and emits bli
   assert.equal(blinded.key.entries.length, 180);
   assert.equal(blinded.packet.entries.some((entry) => Object.hasOwn(entry, "arm")), false);
   assert.doesNotMatch(JSON.stringify({ result, blinded }), /test-only-not-persisted/u);
+});
+
+test("completed but unanalyzable attempts close as inconclusive before facet adjudication", () => {
+  const outcome = deriveCanonicalAttemptOutcome({
+    abort: null,
+    completedPlan: true,
+    responsesWithoutUsage: 0,
+    analyzability: {
+      validPairedRepetitionsPass: false,
+      coveredCasesPass: false
+    }
+  });
+  assert.deepEqual(outcome, {
+    status: "inconclusive",
+    acceptance: "not_passed",
+    reason: "insufficient_valid_provider_pairs",
+    safety: "passed",
+    analyzability: "failed",
+    value: "not_evaluated",
+    stability: "not_evaluated",
+    costAcceptance: "not_evaluated",
+    facetAdjudicationRequired: false
+  });
+  for (const analyzability of [
+    { validPairedRepetitionsPass: false, coveredCasesPass: true },
+    { validPairedRepetitionsPass: true, coveredCasesPass: false },
+    {}
+  ]) {
+    assert.deepEqual(deriveCanonicalAttemptOutcome({ completedPlan: true, analyzability }), outcome);
+  }
+  for (const code of ["safety_violation", "candidate_skill_failure", "hard_cap_enforcement_failure"]) {
+    const failed = deriveCanonicalAttemptOutcome({
+      abort: { code }, completedPlan: true,
+      analyzability: { validPairedRepetitionsPass: false, coveredCasesPass: false }
+    });
+    assert.equal(failed.status, "failed");
+    assert.equal(failed.reason, code);
+    assert.equal(failed.facetAdjudicationRequired, false);
+  }
+});
+
+test("a complete fake transport-failure population is preserved but cannot enter adjudication", async () => {
+  let fakeHttpRequests = 0;
+  const { result, blinded } = await runCanonicalRealProviderExperiment({
+    config, corpus, fixtures, authorization: authorization(), apiKey: "test-only-not-persisted",
+    fetchImpl: async () => {
+      fakeHttpRequests += 1;
+      throw new TypeError("fetch failed");
+    }
+  });
+  assert.equal(result.plan.completedAgentRuns, 180);
+  assert.equal(result.runs.length, 180);
+  assert.equal(result.runs.filter((run) => run.result.terminationReason === "decision_provider_failed").length, 180);
+  assert.equal(new Set(result.runs.map((run) => `${run.pairId}:${run.arm}`)).size, 180);
+  assert.equal(result.aggregate.validPairedRepetitions, 0);
+  assert.equal(result.aggregate.casesWithAtLeastTwoValidPairs, 0);
+  assert.equal(result.status, "inconclusive");
+  assert.equal(result.acceptance.reason, "insufficient_valid_provider_pairs");
+  assert.equal(result.acceptance.facetAdjudicationRequired, false);
+  for (const gate of ["value", "stability", "costAcceptance"]) {
+    assert.equal(result.acceptance[gate], "not_evaluated");
+  }
+  assert.equal(blinded.packet.entries.length, 180);
+  assert.equal(blinded.key.entries.length, 180);
+  assert.equal(result.fuse.providerHttpRequests, fakeHttpRequests);
+});
+
+test("inconclusive report suppresses facet adjudication and leaves downstream gates unevaluated", () => {
+  const result = {
+    status: "awaiting_facet_adjudication",
+    manifest: {
+      implementationCommitSha: "a".repeat(40),
+      provider: { runtimeProviderConfig: "chat", model: "deepseek-v4-flash", endpoint: "https://api.deepseek.com/chat/completions" },
+      credentialConfigured: true,
+      credentialBindingConfirmedFor: "api.deepseek.com",
+      recovery: { priorAttemptSamplesImported: 0 }
+    },
+    plan: { plannedAgentRuns: 180, completedAgentRuns: 180, orderSha256: PR1D_CANONICAL_PAIR_ORDER_SHA256 },
+    fuse: { providerHttpRequests: 406, totalTokens: 1_500_789, blockedBeforeDispatch: 0, reservationUnderflows: 0, responsesWithoutUsage: 0, exhausted: false, exhaustedReason: null },
+    providerIdentity: { observations: 260, immutableIdentityUnavailable: false },
+    abort: null,
+    aggregate: {
+      arms: {
+        A: { attempted: 90, normalProviderCompletions: 17, normalProviderCompletionRate: 17 / 90, meanToolCalls: 0, p95ToolCalls: 0, meanDecisionCalls: 0, p95DecisionCalls: 0, meanActualTotalTokens: 0, meanE2eLatencyMs: 0 },
+        B: { attempted: 90, normalProviderCompletions: 17, normalProviderCompletionRate: 17 / 90, meanToolCalls: 0, p95ToolCalls: 0, meanDecisionCalls: 0, p95DecisionCalls: 0, meanActualTotalTokens: 0, meanE2eLatencyMs: 0 }
+      },
+      validPairedRepetitions: 17,
+      casesWithAtLeastTwoValidPairs: 6,
+      analyzability: { validPairedRepetitionsPass: false, coveredCasesPass: false },
+      reliability: { candidateSkillFailures: 0, completionParityPass: true }
+    }
+  };
+  const report = renderCanonicalAttemptReport(result);
+  assert.match(report, /Status: \*\*INCONCLUSIVE\*\*/u);
+  assert.match(report, /Acceptance: \*\*NOT_PASSED\*\*/u);
+  assert.match(report, /Reason: \*\*insufficient_valid_provider_pairs\*\*/u);
+  assert.match(report, /Facet adjudication required \| false/u);
+  assert.match(report, /Value, Stability, and Cost Acceptance remain NOT_EVALUATED/u);
+  assert.doesNotMatch(report, /facet labels and adjudication remain required/iu);
+  result.acceptance = { status: "awaiting_facet_adjudication", facetAdjudicationRequired: true };
+  assert.equal(renderCanonicalAttemptReport(result), report, "stale derived metadata cannot override the frozen gate facts");
 });
 
 test("Provider identity drift aborts the canonical attempt before a third HTTP request", async () => {

@@ -1,6 +1,16 @@
 # Unit Play Guidance PR1D Recovery Contract
 
-Status: **Recovery Unlock and zero-call preflight authorized; attempt-02 paid Provider calls are not authorized.**
+Status: **Historical recovery contract. Attempt-02 executed and is archived as INCONCLUSIVE / NOT PASSED; only zero-call finalization is authorized.**
+
+Archive note: the paid-call restriction below records the pre-attempt authorization
+gate that was in force when this contract was written. A subsequent narrow review
+authorized attempt-02 from commit
+`ce0f710c6720df8d8f186ba4f940c3ae851eb9b5`. The attempt completed all 180
+planned run records but failed both analyzability gates because Provider execution
+yielded only `17/90` valid pairs and `6/30` cases with at least two valid pairs.
+The immutable attempt evidence and final disposition are recorded in
+`unit-play-guidance-real-provider-final-acceptance-report.md`. No attempt-03,
+PR2, production control, canary, or rollout is authorized by this update.
 
 This recovery contract amends only the execution controls of
 `unit-play-guidance-real-provider-offline-acceptance-contract.md`. The frozen

@@ -27,6 +27,7 @@ import {
   sha256
 } from "../unit-play-guidance-control/content.js";
 import { buildCanonicalRunPlan, createProviderIdentityTracker } from "./preflight.js";
+import { deriveCanonicalAttemptOutcome } from "./finalization.js";
 import {
   buildCanonicalTokenReservation,
   createCanonicalRunFuse,
@@ -483,21 +484,18 @@ export async function runCanonicalRealProviderExperiment({
   const identity = identityTracker.snapshot();
   const fuseSnapshot = fuse.snapshot();
   const completedPlan = runs.length === config.execution.plannedAgentRuns;
-  const failureCodes = new Set([
-    "candidate_skill_failure",
-    "hard_cap_enforcement_failure",
-    "safety_violation"
-  ]);
-  const status = failureCodes.has(abort?.code)
-    ? "failed"
-    : !completedPlan || abort || fuseSnapshot.responsesWithoutUsage > 0
-      ? "inconclusive"
-      : "awaiting_facet_adjudication";
+  const acceptance = deriveCanonicalAttemptOutcome({
+    abort,
+    completedPlan,
+    responsesWithoutUsage: fuseSnapshot.responsesWithoutUsage,
+    analyzability: aggregate.analyzability
+  });
   const blinded = buildBlindedFacetArtifacts(runs, authorization.implementationCommitSha);
   const result = {
     schemaVersion: PR1D_CANONICAL_SCHEMA_VERSION,
     runtimeVersion: PR1D_CANONICAL_RUNTIME_VERSION,
-    status,
+    status: acceptance.status,
+    acceptance,
     authorization: {
       mode: authorization.mode,
       providerCallsAuthorized: true,
