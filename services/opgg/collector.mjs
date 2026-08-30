@@ -1141,7 +1141,7 @@ function ingestExternalPlayerMatches(
       matchId: String(match.matchId),
       gameDatetime: match.playedAt ?? null,
       gameVersion: match.patch ?? null,
-      patchLabel: match.patch ?? null,
+      patchLabel: patchLabelFromVersion(match.patch, { setNumber }),
       setNumber: Number.isFinite(setNumber) ? setNumber : null,
       queueId: match.queue?.id ?? null,
       placement: match.placement ?? null,
@@ -1163,6 +1163,17 @@ function ingestExternalPlayerMatches(
       augments: match.augments ?? null,
       source: provider
     };
+    // Profile summaries can omit a board already collected in full. Match facts
+    // are immutable; an incomplete refresh must not erase that same match's evidence.
+    const existing = database.prepare(
+      `SELECT traits_json, units_json, augments_json FROM player_match_fact
+       WHERE player_id = ? AND match_id = ?`
+    ).get(entry.id, fact.matchId);
+    if (existing) {
+      if (!fact.units.length) fact.units = JSON.parse(existing.units_json || "[]");
+      if (!fact.traits.length) fact.traits = JSON.parse(existing.traits_json || "[]");
+      if (fact.augments === null && existing.augments_json) fact.augments = JSON.parse(existing.augments_json);
+    }
     fact.traitsJson = JSON.stringify(fact.traits);
     fact.unitsJson = JSON.stringify(fact.units);
     fact.augmentsJson = fact.augments;

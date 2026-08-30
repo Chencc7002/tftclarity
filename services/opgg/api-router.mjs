@@ -29,6 +29,7 @@ import {
   ingestExternalPlayerMatches
 } from "./collector.mjs";
 import { createPlayerMatchMcpClient } from "../metatft-player/mcp-client.mjs";
+import { poolSeason, poolSetNumber } from "../player-pools/season.mjs";
 import {
   aggregatePool,
   getPoolWindow
@@ -99,10 +100,13 @@ function refreshableAccounts(database, scope) {
   const poolAccountIds = new Set();
 
   for (const source of sources) {
+    const pool = getPool(database, source.id);
     for (const player of getPoolPlayers(database, source.id, { activeOnly: true })) {
-      const existing = accounts.get(player.id) ?? { ...player, poolIds: [] };
+      const season = poolSeason(pool, player);
+      const key = `${player.id}:${season}`;
+      const existing = accounts.get(key) ?? { ...player, season, poolIds: [] };
       existing.poolIds.push(source.id);
-      accounts.set(player.id, existing);
+      accounts.set(key, existing);
       if (source.kind === "personal") personalAccountIds.add(player.id);
       else poolAccountIds.add(player.id);
     }
@@ -118,15 +122,26 @@ function refreshableAccounts(database, scope) {
 
 async function collectPlayerFromMetaTft(client, database, player, options = {}) {
   const isPbe = player.region === "pbe";
+  const forceRefresh = options.source === "manual_refresh";
   const history = await client.callTool("list_matches", {
     gameName: player.gameName,
     tagLine: player.tagLine,
     environment: isPbe ? "pbe" : "live",
-    season: isPbe ? "set18-pbe" : "set17-live",
+    season: options.season ?? poolSeason({}, player),
     verificationMode: "provider",
     limit: 20,
-    callerKey: String(options.scope ?? "anonymous")
+    callerKey: String(options.scope ?? "anonymous"),
+    ...(forceRefresh ? { forceRefresh: true } : {})
   });
+  if (forceRefresh && (history.provenance?.cacheStatus === "hit" || history.provenance?.refreshStatus !== "completed")) {
+    throw new Error("服务未确认上游刷新完成，请更新 Player Match MCP 服务后重试。");
+  }
+  if (!history.matches?.length) {
+    throw new Error("上游未返回所选赛季对局；保留已有样本，本次不标记更新成功。");
+  }
+  const newMatchCount = history.matches.filter((match) => !database.prepare(
+    "SELECT 1 FROM player_match_fact WHERE player_id = ? AND match_id = ?"
+  ).get(player.id, match.matchId)).length;
   const ingest = ingestExternalPlayerMatches(database, player, history.matches ?? [], {
     poolId: options.poolId,
     provider: "metatft",
@@ -136,7 +151,12 @@ async function collectPlayerFromMetaTft(client, database, player, options = {}) 
     status: "ok",
     provider: "metatft",
     returnedCount: Number(history.returnedCount ?? history.matches?.length ?? 0),
-    ingestedCount: ingest.ingested
+    ingestedCount: ingest.ingested,
+    newMatchCount,
+    sourceFetchedAt: history.provenance?.sourceFetchedAt ?? null,
+    cacheStatus: history.provenance?.cacheStatus ?? "unknown",
+    refreshStatus: history.provenance?.refreshStatus ?? "not_requested",
+    latestMatchAt: history.matches.map((match) => match.playedAt).filter(Boolean).sort().at(-1) ?? null
   };
 }
 
@@ -144,6 +164,7 @@ function poolQueryOptions(pool, query) {
   const requestedLimit = Number(query.get("per-player"));
   return {
     poolId: pool.id,
+    ...(pool.season ? { setNumber: poolSetNumber(pool) } : {}),
     region: pool.region || (pool.environment === "pbe" ? "pbe" : "na"),
     perPlayerLimit: Number.isFinite(requestedLimit) && requestedLimit > 0
       ? Math.min(requestedLimit, 20)
@@ -357,6 +378,37 @@ function createOpggApiRouter(options = {}) {
   let honorsPromise = null;
   const playerMatchClientFactory = options.playerMatchClientFactory
     ?? (() => options.playerMatchClient ?? createPlayerMatchMcpClient(options));
+  const refreshJobs = new Map();
+
+  async function refreshPlayers(players, scope) {
+    const key = JSON.stringify([scope, players.map((player) => `${player.id}:${player.season}`).sort()]);
+    if (refreshJobs.has(key)) return refreshJobs.get(key);
+    const job = (async () => {
+      const results = [];
+      let client;
+      try {
+        for (const player of players) {
+          try {
+            client ??= playerMatchClientFactory();
+            const collect = await collectPlayerFromMetaTft(client, await getDatabase(), player, {
+              poolId: player.poolIds[0], season: player.season, scope, source: "manual_refresh"
+            });
+            results.push({ playerId: player.id, displayName: player.displayName, poolIds: player.poolIds, ...collect });
+          } catch (error) {
+            results.push({ playerId: player.id, displayName: player.displayName, poolIds: player.poolIds,
+              status: "error", provider: "metatft", error: String(error?.message ?? error) });
+          }
+        }
+      } finally {
+        await client?.close?.();
+      }
+      const refreshedCount = results.filter((result) => result.status === "ok").length;
+      return { requestedCount: players.length, refreshedCount, failedCount: players.length - refreshedCount,
+        newMatchCount: results.reduce((sum, result) => sum + (result.newMatchCount ?? 0), 0), results };
+    })();
+    refreshJobs.set(key, job);
+    try { return await job; } finally { refreshJobs.delete(key); }
+  }
 
   function getDatabase() {
     if (!databasePromise) {
@@ -398,6 +450,16 @@ function createOpggApiRouter(options = {}) {
       if (pathname === "/api/opgg/honors") {
         const honors = await getHonors();
         return sendJson(response, 200, [...honors.values()]);
+      }
+
+      const poolRefreshRoute = pathname.match(/^\/api\/opgg\/pools\/([^/]+)\/refresh$/u);
+      if (poolRefreshRoute && request.method === "POST") {
+        const database = await getDatabase();
+        const pool = accessiblePool(database, decodeURIComponent(poolRefreshRoute[1]), scope);
+        if (!pool) return sendError(response, 404, "Pool not found.");
+        const players = getPoolPlayers(database, pool.id, { activeOnly: true })
+          .map((player) => ({ ...player, season: poolSeason(pool, player), poolIds: [pool.id] }));
+        return sendJson(response, 200, { poolId: pool.id, ...await refreshPlayers(players, scope) });
       }
 
       if (pathname === "/api/opgg/my-review") {
@@ -445,48 +507,12 @@ function createOpggApiRouter(options = {}) {
             results: []
           });
         }
-        const players = refreshScope.players;
-        const results = [];
-        let playerMatchClient = null;
-        try {
-          for (const player of players) {
-            try {
-              playerMatchClient ??= playerMatchClientFactory();
-              const collect = await collectPlayerFromMetaTft(playerMatchClient, database, player, {
-                poolId: player.poolIds[0],
-                scope,
-                source: "manual_refresh"
-              });
-              results.push({
-                playerId: player.id,
-                displayName: player.displayName,
-                provider: "metatft",
-                poolIds: player.poolIds,
-                ...collect
-              });
-            } catch (error) {
-              results.push({
-                playerId: player.id,
-                displayName: player.displayName,
-                provider: "metatft",
-                poolIds: player.poolIds,
-                status: "error",
-                error: String(error?.message ?? error)
-              });
-            }
-          }
-        } finally {
-          await playerMatchClient?.close?.();
-        }
-        const refreshedCount = results.filter((result) => result.status === "ok").length;
+        const refreshed = await refreshPlayers(refreshScope.players, scope);
         return sendJson(response, 200, {
-          requestedCount: players.length,
-          refreshedCount,
-          failedCount: players.length - refreshedCount,
+          ...refreshed,
           poolCount: refreshScope.poolCount,
           personalAccountCount: refreshScope.personalAccountCount,
-          poolAccountCount: refreshScope.poolAccountCount,
-          results
+          poolAccountCount: refreshScope.poolAccountCount
         });
       }
 

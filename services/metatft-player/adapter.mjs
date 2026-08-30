@@ -191,13 +191,14 @@ function createMetaTftAdapter(options = {}) {
   const profileOrigin = options.profileOrigin ?? DEFAULT_PROFILE_ORIGIN;
   const timeoutMs = Number(options.timeoutMs ?? DEFAULT_TIMEOUT_MS);
 
-  async function fetchJson(url, label, { redirect = "follow" } = {}) {
+  async function fetchJson(url, label, { redirect = "follow", method = "GET", requestTimeoutMs = timeoutMs } = {}) {
     let response;
     try {
       response = await fetchImpl(url, {
         headers: { Accept: "application/json" },
+        method,
         redirect,
-        signal: AbortSignal.timeout(timeoutMs)
+        signal: AbortSignal.timeout(Math.max(1, requestTimeoutMs))
       });
     } catch (cause) {
       const timeout = cause?.name === "TimeoutError" || cause?.name === "AbortError";
@@ -239,7 +240,38 @@ function createMetaTftAdapter(options = {}) {
     }
   }
 
-  async function fetchProfile(context) {
+  async function fetchProfile(context, { forceRefresh = false } = {}) {
+    // lookup_by_riotid reads MetaTFT's stored profile. Its public UI explicitly
+    // POSTs refresh_by_riotid, polls completion, then reads the profile again.
+    // Bound the entire refresh to the existing request timeout, including polls.
+    const deadline = Date.now() + timeoutMs;
+    if (forceRefresh) {
+      const refreshUrl = new URL(
+        `/public/profile/refresh_by_riotid/${context.platform}/${encodeURIComponent(context.gameName)}/${encodeURIComponent(context.tagLine)}`,
+        profileOrigin
+      );
+      refreshUrl.searchParams.set("source", "full_profile");
+      refreshUrl.searchParams.set("tier", "1");
+      refreshUrl.searchParams.set("tft_set", context.expectedSet);
+      refreshUrl.searchParams.set("include_revival_matches", "true");
+      let status = await fetchJson(refreshUrl, "Player profile refresh", { method: "POST", requestTimeoutMs: deadline - Date.now() });
+      const attempts = 3;
+      for (let attempt = 0; attempt < attempts && status?.status !== "completed"; attempt += 1) {
+        if (status?.status === "error" || status?.Error || status?.error) {
+          throw new PlayerMatchError("UPSTREAM_UNAVAILABLE", "MetaTFT profile refresh failed.", { retryable: true });
+        }
+        const delay = Number(options.refreshPollDelayMs ?? 500) * (attempt + 1);
+        if (deadline - Date.now() <= delay) break;
+        await new Promise((resolve) => setTimeout(resolve, delay));
+        status = await fetchJson(refreshUrl, "Player profile refresh status", { requestTimeoutMs: deadline - Date.now() });
+      }
+      if (status?.status === "error" || status?.Error || status?.error) {
+        throw new PlayerMatchError("UPSTREAM_UNAVAILABLE", "MetaTFT profile refresh failed.", { retryable: true });
+      }
+      if (status?.status !== "completed") {
+        throw new PlayerMatchError("REFRESH_PENDING", "MetaTFT 对局仍在更新队列中，请稍后重试；本次未将旧样本标记为已更新。", { retryable: true });
+      }
+    }
     const url = new URL(
       `/public/profile/lookup_by_riotid/${context.platform}/${encodeURIComponent(context.gameName)}/${encodeURIComponent(context.tagLine)}`,
       profileOrigin
@@ -247,7 +279,7 @@ function createMetaTftAdapter(options = {}) {
     url.searchParams.set("source", "full_profile");
     url.searchParams.set("tft_set", context.expectedSet);
     url.searchParams.set("include_revival_matches", "true");
-    const body = await fetchJson(url, "Player profile");
+    const body = await fetchJson(url, "Player profile", { requestTimeoutMs: forceRefresh ? deadline - Date.now() : timeoutMs });
     if (!Array.isArray(body?.matches)) {
       throw new PlayerMatchError("SOURCE_CHANGED", "Player profile matches are missing.");
     }
