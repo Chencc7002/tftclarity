@@ -13,7 +13,8 @@ import { createSmallWindowRuntime, startSmallWindowServer } from "../src/app/sma
 const portArg = process.argv.find((value) => value.startsWith("--port="));
 const bridgeArg = process.argv.find((value) => value.startsWith("--bridge="));
 const port = Number(portArg?.slice("--port=".length) ?? 17329);
-const acceptanceMode = process.argv.includes("--acceptance");
+const followUpMode = process.argv.includes("--followup-fixes");
+const acceptanceMode = process.argv.includes("--acceptance") || followUpMode;
 const compositionGroupsMode = process.argv.includes("--composition-groups");
 const karmaTwoOptionMode = process.argv.includes("--karma-two-options");
 const missingItemMechanicsMode = process.argv.includes("--missing-item-mechanics");
@@ -101,7 +102,7 @@ const visualCompId = "TFT17_Aatrox&TFT17_Xayah|TFT17_Stargazer_1&TFT17_Stargazer
 let clockTick = 0;
 const remoteCallsByDays = new Map();
 const cacheStore = new MemoryCacheStore({
-  now: () => Date.parse("2026-07-12T10:00:00+08:00") + (clockTick += 100),
+  now: () => (followUpMode ? Date.now() : Date.parse("2026-07-12T10:00:00+08:00")) + (clockTick += 100),
   ttlMs: { query: 1, defaultContext: 60_000, session: 60_000 }
 });
 
@@ -443,7 +444,7 @@ const runtime = createSmallWindowRuntime({
           purposeCode: "retrieve_supporting_knowledge"
         };
       }
-      if (/卡尔玛|Karma/iu.test(question) && /出装|装备|build/iu.test(question)) {
+      if (/卡尔玛|Karma/iu.test(question) && (/出装|装备|build/iu.test(question) || (followUpMode && /怎么带/u.test(question)))) {
         return {
           schemaVersion: "react-action.v1",
           type: "call_tool",

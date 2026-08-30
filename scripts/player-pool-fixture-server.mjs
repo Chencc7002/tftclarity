@@ -9,13 +9,17 @@ import { createPlayerPoolApiRouter } from "../services/player-pools/api-router.m
 
 const database = await openDatabase(":memory:");
 initSchema(database);
+// Optional sanitized capture: { set, units: [{id, rarity}], activeTraits, inactiveTraits }.
+// The summary intentionally omits cost/counts; opening its match exercises enrichment.
+const capturePath = process.argv.find((arg) => arg.startsWith("--match-fixture="))?.slice("--match-fixture=".length);
+const capture = capturePath ? JSON.parse(await readFile(resolve(capturePath), "utf8")) : null;
 const player = { id: "fixture-na", displayName: "QA Player", gameName: "QA Player", tagLine: "NA1", region: "na", active: true };
-const units = ["TFT17_Karma", "TFT17_Ahri", "TFT17_Poppy", "TFT17_Jinx", "TFT17_Lulu", "TFT17_Ezreal", "TFT17_Shen", "TFT17_Leona"]
+const units = (capture?.units.map((unit) => unit.id) ?? ["TFT17_Karma", "TFT17_Ahri", "TFT17_Poppy", "TFT17_Jinx", "TFT17_Lulu", "TFT17_Ezreal", "TFT17_Shen", "TFT17_Leona"])
   .map((characterId, i) => ({ characterId, starLevel: i < 6 ? 2 : 1,
     items: i === 0 ? ["TFT_Item_SpearOfShojin", "TFT_Item_RabadonsDeathcap", "TFT_Item_JeweledGauntlet"] : [] }));
-const sample = (id, date, patch) => ({ matchId: id, playedAt: date, patch, set: "TFTSet17", placement: 2, level: 8,
+const sample = (id, date, patch) => ({ matchId: id, playedAt: date, patch: capture ? "18.1" : patch, set: capture?.set ?? "TFTSet17", placement: 2, level: 8,
   lastRound: 35, queue: { id: 1100 }, units,
-  traits: [{ id: "TFT17_Stargazer", units: 4, style: 2, tierCurrent: 2 }] });
+  traits: capture ? capture.activeTraits.map((trait) => ({ id: trait.id })) : [{ id: "TFT17_Stargazer", units: 4, style: 2, tierCurrent: 2 }] });
 for (const pool of [
   { id: "default-na-pro", name: "NA 职业选手默认池", region: "na" },
   { id: "qa-owned", name: "我的测试 Pool", region: "na", environment: "live", season: "set17-live", ownerType: "user", ownerId: "qa" }
@@ -25,6 +29,12 @@ for (const pool of [
 }
 const router = createOpggApiRouter({ database, playerMatchClient: {
   async callTool(name, input) {
+    if (capture && name === "get_match" && process.argv.includes("--detail-unavailable")) throw new Error("QA detail unavailable");
+    if (capture && name === "get_match") return { match: {
+      ...sample(input.matchId, "2026-08-30T04:00:00.000Z", "18.1"),
+      units: units.map((unit, index) => ({ ...unit, rarity: capture.units[index].rarity })),
+      traits: [...capture.activeTraits, ...capture.inactiveTraits].map((trait) => ({ ...trait, units: trait.numUnits }))
+    } };
     if (name !== "list_matches" || input.forceRefresh !== true) throw new Error("Expected explicit refresh");
     return { matches: [sample("NA1_FIXTURE_NEW", "2026-08-30T04:00:00.000Z", "17.10")],
       provenance: { cacheStatus: "miss", refreshStatus: "completed", sourceFetchedAt: new Date().toISOString() } };

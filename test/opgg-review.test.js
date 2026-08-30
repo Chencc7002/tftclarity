@@ -1,5 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
+import { localizeMatch } from "../services/opgg/localization.mjs";
 import {
   buildMatchReview,
   buildPlayerReview
@@ -54,6 +55,17 @@ function match({
     compFamilySignature
   };
 }
+
+test("unknown unit cost remains unknown through localization and review", () => {
+  const review = buildMatchReview(localizeMatch(match({ units: [
+    { characterId: "DA_18_Aphelios", cost: null, rarity: null, tier: 2 },
+    { characterId: "DA_18_Morgana", rarity: 3, tier: 2 },
+    { characterId: "DA_18_Diana", cost: "", rarity: 2, tier: 2 },
+    { characterId: "Unknown_Summon", cost: 0, rarity: null, tier: 1 }
+  ] })));
+  assert.deepEqual(review.facts.units.map((unit) => unit.cost), [null, 4, 3, 0]);
+  assert.equal(review.facts.traits[0].tierCurrent, null);
+});
 
 test("single match review generates deterministic field-traceable conclusions", () => {
   const review = buildMatchReview(

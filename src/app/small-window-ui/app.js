@@ -5073,6 +5073,9 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
         ? { supplementalText: state.lastSupplementalText }
         : {}),
       ...(!state.lastQuickTask && reactChatEnabled ? { messages: reactChatMessages() } : {}),
+      ...(!state.lastQuickTask && reactChatEnabled ? {
+        historyQueryIds: state.responseRecords.slice(-8).map((record) => record.data?.queryId).filter(Boolean)
+      } : {}),
       ...(!state.lastQuickTask && state.activeAnalysisContext
         ? { analysisContext: state.activeAnalysisContext }
         : {}),
@@ -5640,7 +5643,8 @@ async function handleResultClick(event) {
     queryInput.value = action.query;
     setMobileView("chat");
     queryInput.focus();
-    await requestRecommendation(false);
+    const quickTask = action.quickTask ? structuredQuickTask(action.quickTask, action.quickTask.arguments) : null;
+    await requestRecommendation(false, action.label, quickTask ? { quickTask } : {});
     return;
   }
   if (!suggestionButton) return;

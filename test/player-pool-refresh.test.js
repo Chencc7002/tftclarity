@@ -51,6 +51,61 @@ async function setup() {
   return db;
 }
 
+test("opening one MetaTFT summary obtains only that match's complete fields and correct source", async () => {
+  const db = await setup();
+  try {
+    ingestExternalPlayerMatches(db, player, [{ ...match(), traits: [{ id: "TFT17_StarGuardian_1" }] }], { poolId: "default-na-pro" });
+    const calls = [];
+    let closed = 0;
+    const router = createOpggApiRouter({ database: db, playerMatchClient: { async callTool(name, input) {
+      calls.push({ name, input });
+      return { match: { matchId: "NA1_NEW", set: "TFTSet17",
+        units: [{ characterId: "TFT17_Ahri", rarity: 3, starLevel: 2, items: ["TFT_Item_SpearOfShojin"] }],
+        traits: [{ id: "TFT17_StarGuardian", units: 4, style: 2, tierCurrent: 2 }, { id: "TFT17_Inactive", units: 1, style: 0, tierCurrent: 0 }]
+      } };
+    }, async close() { closed += 1; } } });
+    const response = capture();
+    await router({ method: "GET" }, response, new URL("http://localhost/api/opgg/players/pro-na/matches/NA1_NEW"), { scope: "owner" });
+    assert.equal(response.status, 200);
+    assert.equal(calls.length, 1);
+    assert.equal(closed, 1);
+    assert.equal(calls[0].name, "get_match");
+    assert.equal(calls[0].input.season, "set17-live");
+    assert.equal(calls[0].input.callerKey, "owner");
+    assert.equal(response.body.review.facts.units[0].cost, 4);
+    assert.equal(response.body.review.facts.source, "metatft");
+    assert.equal(response.body.review.facts.traits[0].numUnits, 4);
+    assert.equal(response.body.review.facts.traits[1].tierCurrent, 0);
+    assert.match(response.body.review.facts.compFamilySignature, /trait:TFT17_StarGuardian/);
+    assert.deepEqual(response.body.warnings, []);
+  } finally { db.close(); }
+});
+
+test("failed or mismatched detail preserves summary and unknown costs without touching other players", async () => {
+  const db = await setup();
+  try {
+    ingestExternalPlayerMatches(db, player, [{ ...match(), set: "TFTSet18", units: [{ characterId: "DA_18_Aphelios", starLevel: 2, items: [] }] }], { poolId: "default-na-pro" });
+    for (const mismatch of [false, true]) {
+      let calls = 0;
+      const router = createOpggApiRouter({ database: db, playerMatchClient: { async callTool() {
+        calls += 1;
+        if (!mismatch) throw new Error("upstream down");
+        return { match: { matchId: "NA1_OTHER", set: "TFTSet17", units: [{ characterId: "Wrong", rarity: 4 }] } };
+      } } });
+      const response = capture();
+      await router({ method: "GET" }, response, new URL("http://localhost/api/opgg/players/pro-na/matches/NA1_NEW"), { scope: "owner" });
+      assert.equal(response.status, 200);
+      assert.equal(response.body.review.facts.units[0].characterId, "DA_18_Aphelios");
+      assert.equal(response.body.review.facts.units[0].cost, null);
+      assert.equal(response.body.warnings.length, 1);
+      const missing = capture();
+      await router({ method: "GET" }, missing, new URL("http://localhost/api/opgg/players/other/matches/NA1_NEW"), { scope: "owner" });
+      assert.equal(missing.status, 404);
+      assert.equal(calls, 1);
+    }
+  } finally { db.close(); }
+});
+
 test("explicit refresh bypasses profile cache, coalesces requests and retains rate limits", async () => {
   let fetched = 0;
   let limited = 0;

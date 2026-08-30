@@ -27,6 +27,8 @@ function normalizeUnit(unit = {}) {
   const normalized = {
     characterId: valueOrNull(unit.character_id ?? unit.characterId),
     starLevel: valueOrNull(unit.tier ?? unit.starLevel),
+    rarity: valueOrNull(unit.rarity),
+    cost: valueOrNull(unit.cost),
     items: Array.isArray(unit.itemNames)
       ? [...unit.itemNames]
       : Array.isArray(unit.items)
@@ -45,10 +47,10 @@ function normalizeTrait(trait) {
   if (!trait || typeof trait !== "object") return { id: null };
   return {
     id: valueOrNull(trait.name ?? trait.id ?? trait.trait_id),
-    units: valueOrNull(trait.num_units ?? trait.units),
+    units: valueOrNull(trait.num_units ?? trait.numUnits ?? trait.units),
     style: valueOrNull(trait.style),
-    tierCurrent: valueOrNull(trait.tier_current),
-    tierTotal: valueOrNull(trait.tier_total)
+    tierCurrent: valueOrNull(trait.tier_current ?? trait.tierCurrent),
+    tierTotal: valueOrNull(trait.tier_total ?? trait.tierTotal)
   };
 }
 

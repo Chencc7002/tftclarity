@@ -263,7 +263,7 @@ function signatureHtml(signature, displaySignature = null) {
   if (carry) roles.push(`主C ${esc(carry)}`);
   if (tank) roles.push(`前排 ${esc(tank)}`);
   return (
-    `<div><div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">无主羁绊</span>'}</div>` +
+    `<div><div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">主羁绊未确认</span>'}</div>` +
     (roles.length
       ? `<div class="opgg-match-sub" style="margin-top:5px">${roles.join(" · ")}</div>`
       : "") +
@@ -586,7 +586,7 @@ async function renderMatch() {
       `/api/opgg/players/${encodeURIComponent(state.playerId)}/matches/${encodeURIComponent(state.matchId)}`
     );
     const facts = data.review.facts;
-    const matchSourceLabel = data.player?.region === "pbe" ? "MetaTFT" : "OP.GG";
+    const matchSourceLabel = facts.source === "metatft" ? "MetaTFT" : facts.source === "opgg" ? "OP.GG" : "当前";
     const units = (facts.units ?? []).map((unit) => {
       const stars = "★".repeat(Math.max(1, unit.tier ?? 1));
       const items = normalizedItems(unit).map((item) => `
@@ -599,13 +599,16 @@ async function renderMatch() {
           <div class="opgg-unit-card-head">
             ${imageHtml(unit.iconUrl, unit.displayName ?? unit.characterId ?? "棋子", "opgg-unit-card-image", unit.fallbackIconUrl)}
             <div><div class="opgg-unit-name">${esc(unit.displayName ?? unit.characterId ?? "?")}</div>
-            <div class="opgg-unit-meta">${unit.cost ?? "?"} 费 · <span class="opgg-stars">${stars}</span></div></div>
+            <div class="opgg-unit-meta">${unit.cost == null ? "费用未知" : `${unit.cost} 费`} · <span class="opgg-stars">${stars}</span></div></div>
           </div>
           ${items ? `<div class="opgg-unit-items">${items}</div>` : `<div class="opgg-unit-no-items">无装备</div>`}
         </div>`;
     }).join("");
-    const traits = (facts.traits ?? []).map((trait) =>
-      `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.name)} ×${trait.numUnits ?? "?"}</span>`
+    const activeTraits = (facts.traits ?? []).filter((trait) => Number(trait.tierCurrent ?? trait.style ?? 0) > 0);
+    const unconfirmedTraits = (facts.traits ?? []).filter((trait) => trait.tierCurrent == null && trait.style == null
+      || trait.numUnits == null && Number(trait.tierCurrent ?? trait.style ?? 0) === 0);
+    const traits = activeTraits.map((trait) =>
+      `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.name)}${trait.numUnits == null ? "（人数未提供）" : ` ×${trait.numUnits}`}</span>`
     ).join("");
     const conclusions = (data.review.conclusions ?? []).map((item) =>
       `<li>${esc(item.conclusion)}</li>`
@@ -638,7 +641,9 @@ async function renderMatch() {
        <div class="opgg-notice">以下展示对局结束时的棋子、星级与装备；当前数据源不包含逐回合经济、搜牌和棋盘站位。</div>
        <div class="opgg-units-grid" style="margin-top:10px">${units || '<div class="opgg-empty">无棋子数据（早期淘汰或数据缺失）</div>'}</div>
        <div class="opgg-section-title">激活羁绊</div>
-       <div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">无</span>'}</div>
+       <div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">暂无已确认的激活羁绊</span>'}</div>
+       ${unconfirmedTraits.length ? `<div class="opgg-notice">摘要羁绊（人数和激活状态未确认）：${unconfirmedTraits.map((trait) => esc(trait.displayName ?? trait.name)).join("、")}</div>` : ""}
+       ${(data.warnings ?? []).map((warning) => `<div class="opgg-notice">${esc(warning)}</div>`).join("")}
        <div class="opgg-section-title">确定性结论</div>
        <ul class="opgg-conclusion-list">${conclusions || "<li>该局无规则结论（数据不完整）。</li>"}</ul>
        <div class="opgg-notice">${esc(data.review.dataBoundaryNote)}</div>`,

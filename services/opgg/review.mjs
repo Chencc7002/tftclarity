@@ -8,6 +8,7 @@
  */
 
 import { playerSampleTier } from "./aggregator.mjs";
+import { matchUnitCost } from "./match-fields.mjs";
 
 const DATA_BOUNDARY_NOTE =
   "当前复盘基于对局结束时的最终状态，不包含逐回合经济、搜牌、升级和站位记录。";
@@ -36,12 +37,7 @@ function unitItemCount(unit) {
 }
 
 function unitCost(unit) {
-  if (Number.isFinite(Number(unit?.cost))) {
-    return Number(unit.cost);
-  }
-  return Number.isFinite(Number(unit?.rarity))
-    ? Number(unit.rarity) + 1
-    : null;
+  return matchUnitCost(unit);
 }
 
 /**
@@ -174,6 +170,7 @@ function buildMatchReview(
 
   const facts = {
     matchId: match.matchId,
+    source: match.source ?? null,
     gameDatetime: match.gameDatetime,
     patchLabel: match.patchLabel ?? null,
     gameVersion: match.gameVersion ?? null,
@@ -186,7 +183,8 @@ function buildMatchReview(
       name: trait?.name ?? null,
       displayName: trait?.displayName ?? trait?.name ?? null,
       numUnits: trait?.numUnits ?? null,
-      style: trait?.style ?? null
+      style: trait?.style ?? null,
+      tierCurrent: trait?.tierCurrent ?? null
     })),
     units: units.map((unit) => ({
       characterId: unit?.characterId ?? unit?.name ?? null,

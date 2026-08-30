@@ -15,8 +15,21 @@ import { createCatalog } from "../src/data/static-data.js";
 import { MemoryCacheStore } from "../src/data/cache-store.js";
 import { associateOfficialPatchChanges } from "../src/data/official-patch-evidence.js";
 import { assembleEvidencePack } from "../src/retrieval/evidence-assembler.js";
+import { createSmallWindowRuntime, createDefaultReactToolHandlerBundle } from "../src/app/small-window-server.js";
 
 const fixture = JSON.parse(await readFile(new URL("./fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url), "utf8"));
+
+test("ReAct analysis handler preserves the target when converting a ranking-style mention", async () => {
+  const runtime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(),
+    compsClient: { getCompsData: async () => fixture.compsData, getCompsStats: async () => fixture.compsStats },
+    recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, compResponse: fixture })
+  });
+  runtime.catalog = catalog();
+  const bundle = await createDefaultReactToolHandlerBundle({ request: { seasonContextId: "set17-live" }, runtime });
+  const result = await bundle.handlers.comps_analysis({ mention: "努努" });
+  assert.deepEqual(result.query.analysis.targetHints.units, ["TFT17_Nunu"]);
+  assert.equal(result.analysis.target.compId, "cluster:409002");
+});
 
 function catalog() {
   return createCatalog({

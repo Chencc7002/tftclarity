@@ -30,6 +30,8 @@ import {
 } from "./collector.mjs";
 import { createPlayerMatchMcpClient } from "../metatft-player/mcp-client.mjs";
 import { poolSeason, poolSetNumber } from "../player-pools/season.mjs";
+import { matchNumber, matchUnitCost } from "./match-fields.mjs";
+import { buildCompFamilySignature, buildExactBoardSignature } from "./signature.mjs";
 import {
   aggregatePool,
   getPoolWindow
@@ -380,6 +382,56 @@ function createOpggApiRouter(options = {}) {
     ?? (() => options.playerMatchClient ?? createPlayerMatchMcpClient(options));
   const refreshJobs = new Map();
 
+  async function expandMatch(target, player, scope) {
+    const needsDetails = target.source === "metatft" && (
+      !target.units?.length || !target.traits?.length
+      || target.units.some((unit) => matchUnitCost(unit) === null)
+      || target.traits.some((trait) => matchNumber(trait.numUnits) === null
+        || (matchNumber(trait.tierCurrent) === null && matchNumber(trait.style) === null))
+    );
+    if (!needsDetails) return { match: target, warnings: [] };
+    let client;
+    try {
+      const environment = player.region === "pbe" ? "pbe" : "live";
+      if (!Number.isInteger(target.setNumber) || target.setNumber <= 0) throw new Error("Unknown match season");
+      const season = `set${target.setNumber}-${environment}`;
+      client = playerMatchClientFactory();
+      const result = await client.callTool("get_match", {
+        gameName: player.gameName, tagLine: player.tagLine, environment, season,
+        verificationMode: "provider", matchId: target.matchId,
+        callerKey: String(scope ?? "anonymous")
+      });
+      const detail = result.match;
+      if (detail?.matchId !== target.matchId || detail.set !== `TFTSet${target.setNumber}`) {
+        throw new Error("Match identity or season mismatch");
+      }
+      const match = {
+        ...target,
+        units: detail.units?.length ? detail.units.map((unit) => ({
+          characterId: unit.characterId, tier: unit.starLevel ?? unit.tier ?? null,
+          rarity: matchNumber(unit.rarity), cost: matchUnitCost(unit),
+          itemNames: unit.items ?? unit.itemNames ?? []
+        })) : target.units,
+        traits: detail.traits?.length ? detail.traits.map((trait) => ({
+          name: trait.id ?? trait.name, numUnits: matchNumber(trait.units ?? trait.numUnits),
+          style: matchNumber(trait.style), tierCurrent: matchNumber(trait.tierCurrent)
+        })) : target.traits,
+        playersEliminated: detail.playersEliminated ?? target.playersEliminated,
+        lastRound: detail.lastRound ?? target.lastRound
+      };
+      const signatureInput = { unitsJson: JSON.stringify(match.units), traitsJson: JSON.stringify(match.traits), setNumber: match.setNumber };
+      match.compFamilySignature = buildCompFamilySignature(signatureInput);
+      match.exactBoardSignature = buildExactBoardSignature(signatureInput);
+      return { match: localizeMatch(match), warnings: [] };
+    } catch {
+      // The MCP owns timeout, URL allowlisting, player identity, season and cache.
+      // Never replace known summary facts with an empty or mismatched detail.
+      return { match: target, warnings: ["完整单局数据暂不可用，保留已取得的摘要；缺失费用或羁绊人数不作推断。"] };
+    } finally {
+      try { await client?.close?.(); } catch { /* Closing a transport must not discard available facts. */ }
+    }
+  }
+
   async function refreshPlayers(players, scope) {
     const key = JSON.stringify([scope, players.map((player) => `${player.id}:${player.season}`).sort()]);
     if (refreshJobs.has(key)) return refreshJobs.get(key);
@@ -682,7 +734,8 @@ function createOpggApiRouter(options = {}) {
           return sendError(response, 404, `Match ${matchId} not found.`);
         }
         const others = allMatches.filter((match) => match.matchId !== matchId);
-        const review = buildMatchReview(target, {
+        const expanded = await expandMatch(target, meta, scope);
+        const review = buildMatchReview(expanded.match, {
           recentPlacements: others.map((match) => match.placement),
           recentLevels: others.map((match) => match.level)
         });
@@ -691,7 +744,8 @@ function createOpggApiRouter(options = {}) {
         );
         return sendJson(response, 200, {
           player: withHonors(honors, meta),
-          review
+          review,
+          warnings: expanded.warnings
         });
       }
 

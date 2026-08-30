@@ -9,6 +9,7 @@ import {
   unitDisplayOverrideByApiName
 } from "../../src/data/entity-display-overrides.js";
 import { createAssetResolver } from "../../src/data/asset-resolver.js";
+import { matchUnitCost } from "./match-fields.mjs";
 
 const assetResolver = createAssetResolver();
 
@@ -101,22 +102,13 @@ function localizeItem(value) {
 
 function localizeUnit(unit) {
   const apiName = unit?.characterId ?? unit?.name;
-  const rarity = Number.isFinite(Number(unit?.rarity))
-    ? Number(unit.rarity)
-    : null;
   const asset = assetResolver.resolveUnit(apiName);
   const itemValues = unit?.itemNames ?? unit?.items ?? [];
   const items = itemValues.map(localizeItem);
   return {
     ...unit,
     displayName: unitDisplayName(apiName),
-    cost: Number.isFinite(Number(unit?.cost))
-      ? Number(unit.cost)
-      : Number.isFinite(Number(asset.cost))
-        ? Number(asset.cost)
-        : rarity === null
-          ? null
-          : rarity + 1,
+    cost: matchUnitCost(unit, asset.cost),
     iconUrl: asset.iconUrl,
     fallbackIconUrl: asset.fallbackIconUrl ?? null,
     assetFallback: asset.fallback,

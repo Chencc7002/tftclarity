@@ -4,6 +4,8 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
+import { loadFollowUpHistory, unitResultCoverage } from "./unit-follow-up.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
@@ -4945,7 +4947,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,
     runId: details.runId ?? null,
-    seasonContextId: payload.seasonContext?.id ?? payload.query?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+    seasonContextId: details.seasonContextId ?? payload.seasonContext?.id ?? payload.query?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
     visitorScope,
     conversationId: details.conversationId,
     input: details.input,
@@ -6553,6 +6555,8 @@ function normalizeReactChatRequest(body = {}) {
     locale: normalizeDisplayLocale(body.locale),
     startNewTask: body.startNewTask === true,
     messages: normalizeReactChatMessages(body.messages),
+    historyQueryIds: [...new Set((Array.isArray(body.historyQueryIds) ? body.historyQueryIds : [])
+      .filter((id) => typeof id === "string" && /^[a-zA-Z0-9-]{1,80}$/u.test(id)))].slice(-8),
     taskAnchor: body.taskAnchor && typeof body.taskAnchor === "object"
       ? structuredClone(body.taskAnchor)
       : null
@@ -6894,6 +6898,12 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         resolvedParsedInput: {
           ...parsed,
           intent: "comp_analysis",
+          analysis: {
+            ...parseCompAnalysisRequest(analysisInput, {
+              units: parsed.unit ? [parsed.unit] : [], traits: parsed.traitFilters ?? []
+            }),
+            requested: true
+          },
           days: input.days,
           patch: input.patch,
           queue: input.queue,
@@ -7246,7 +7256,9 @@ function broadUnitPlayGuidance(request, runtime) {
   };
 }
 
-function contextualUnitGuidance(request, runtime, playGuidance = null) {
+function contextualUnitGuidance(request, runtime, playGuidance = null, result = null, history = []) {
+  if (!result || !["completed", "completed_with_warning"].includes(result.status)
+    || result.terminationReason === "insufficient_evidence" || !result.evidence?.length) return null;
   const input = String(request.input ?? "").trim();
   let entity = playGuidance?.entity ?? null;
   if (!entity) {
@@ -7263,34 +7275,27 @@ function contextualUnitGuidance(request, runtime, playGuidance = null) {
   }
   if (!entity) return null;
 
-  const focusedHistory = (request.messages ?? [])
-    .map((message) => String(message?.content ?? "").trim())
-    .filter(Boolean)
-    .filter((content) => {
-      const mentions = immediateUnitMentions(request, runtime, content);
-      return mentions.length === 1 && mentions[0].unit.apiName === entity.apiName;
-    });
-  const turnText = [...focusedHistory, input].filter(Boolean).join("\n");
-
   const english = String(request.locale ?? "").toLowerCase().startsWith("en");
-  const covered = {
-    equipment: Boolean(playGuidance) || /(?:装备|出装|神装|推荐装|item|build)/iu.test(turnText),
-    composition: /(?:阵容|搭配|站位|羁绊|运营|海克斯|强化符文|comp|lineup|position|augment)/iu.test(turnText),
-    video: /(?:视频|教学视频|视频攻略|bilibili|guide\s*video|video\s*guide)/iu.test(turnText)
-  };
+  const covered = unitResultCoverage(result, entity.apiName);
+  for (const previous of history) {
+    const prior = unitResultCoverage(previous, entity.apiName);
+    for (const facet of Object.keys(covered)) covered[facet] ||= prior[facet];
+  }
   const actions = [];
   if (!covered.equipment) {
     actions.push({
       id: "continue_with_equipment",
       label: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
-      query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`
+      query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
+      quickTask: { id: "unit-build", operation: "unit_build_rankings", arguments: { champion: entity.apiName } }
     });
   }
   if (!covered.composition) {
     actions.push({
       id: "continue_with_compositions",
       label: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`,
-      query: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`
+      query: english ? `Compositions containing ${entity.name}` : `查询包含${entity.name}的阵容`,
+      quickTask: { id: "hero-comps", operation: "comp_rankings", arguments: { champion: entity.apiName } }
     });
   }
   if (!covered.video) {
@@ -7539,10 +7544,13 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     }
     const access = await publicAccessStatus();
+    const followUpHistory = await loadFollowUpHistory(normalizedRequest, runtime, bridgeScopeKey);
     const contextualGuidance = contextualUnitGuidance(
       normalizedRequest,
       runtime,
-      controlledUnitPlay ? null : playGuidance
+      controlledUnitPlay ? null : playGuidance,
+      result,
+      followUpHistory
     );
     const payload = {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
@@ -7567,6 +7575,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         runId: result?.run?.runId ?? null,
         conversationId: request.conversationId,
         input: request.input,
+        seasonContextId: request.seasonContextId,
         startedAt
       });
     }

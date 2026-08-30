@@ -565,7 +565,8 @@ test("OP.GG review views use the result pane and preserve navigation context", (
   assert.doesNotMatch(opggPanel, /const resultEl = el\("result"\)/u);
   assert.match(opggPanel, /backLink\("返回选手", "player", \{ player: state\.playerId \}\)/u);
   assert.match(opggPanel, /unit\.displayName \?\? unit\.characterId/u);
-  assert.match(opggPanel, /unit\.cost \?\? "\?"/u);
+  assert.match(opggPanel, /费用未知/u);
+  assert.doesNotMatch(opggPanel, /trait\.numUnits \?\? "\?"/u);
   assert.match(opggPanel, /itemDisplayNames/u);
   assert.doesNotMatch(opggPanel, /<option value="kr">/u);
   assert.doesNotMatch(opggPanel, /OP\.GG 风格评论/u);
