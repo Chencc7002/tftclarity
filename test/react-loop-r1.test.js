@@ -7,6 +7,8 @@ import {
   buildCompositionReplacementFallback,
   buildInsufficientEvidenceFallback,
   buildItemContentionFallback,
+  buildSingleUnitItemRankingFallback,
+  enrichMetricLeaderInterpretations,
   ReactLoop
 } from "../src/react/react-loop.js";
 import { validateFinishAction } from "../src/react/termination-policy.js";
@@ -870,6 +872,370 @@ test("unit_builds rejects guessed entity ids and accepts exact catalog resolutio
   assert.ok(events.some((event) => event.type === "decision_rejected" && event.data?.code === "ungrounded_unit_build_query"));
 });
 
+test("artifact ranking follow-up rejects assistant-only performanceItem and binds mixed scope", async () => {
+  let observedBuildInput = null;
+  let buildCalls = 0;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        performanceItem: { type: "string" },
+        itemPolicy: { type: "string" },
+        itemCategories: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("entity_catalog_query", {
+      entityType: "unit",
+      filters: { names: ["厄斐琉斯"] }
+    }, "retrieve_entity_details"),
+    call("entity_catalog_query", {
+      entityType: "item",
+      filters: { names: ["羊刀"] }
+    }, "retrieve_entity_details"),
+    call("unit_builds", {
+      unit: "DA_18_Aphelios",
+      performanceItem: "DA_GuinsoosRageblade",
+      itemPolicy: "ordinary_only",
+      itemCategories: ["ordinary_completed"]
+    }),
+    call("unit_builds", {
+      unit: "DA_18_Aphelios",
+      itemPolicy: "ordinary_only",
+      itemCategories: ["ordinary_completed"]
+    }),
+    finish("含神器的单装备排行榜已返回。", ["ev-3"])
+  ]);
+  const { result, events } = await runCase({
+    input: "加入神器，返回一个排行榜",
+    messages: [
+      { role: "user", content: "厄斐琉斯" },
+      { role: "assistant", content: "主流出装是羊刀+无尽+海妖之怒。" },
+      { role: "user", content: "我想查的是单装备数据" },
+      { role: "assistant", content: "羊刀位列同类第一。" }
+    ],
+    provider,
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async (input) => {
+        const item = input.entityType === "item";
+        return {
+          type: "entity_catalog_results",
+          entityType: input.entityType,
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          resolution: {
+            requests: [{
+              inputName: input.filters.names[0],
+              normalizedName: input.filters.names[0],
+              status: "resolved",
+              candidates: [{
+                apiName: item ? "DA_GuinsoosRageblade" : "DA_18_Aphelios",
+                name: input.filters.names[0],
+                matchedAlias: input.filters.names[0]
+              }]
+            }]
+          },
+          results: [{ apiName: item ? "DA_GuinsoosRageblade" : "DA_18_Aphelios" }]
+        };
+      },
+      unit_builds: async (input) => {
+        buildCalls += 1;
+        observedBuildInput = structuredClone(input);
+        return {
+          type: "unit_item_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          query: {
+            itemPolicy: input.itemPolicy,
+            itemCategories: input.itemCategories
+          },
+          itemRankings: [{ apiName: "DA_Item_Artifact", category: "artifact" }]
+        };
+      }
+    }
+  });
+
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(buildCalls, 1);
+  assert.equal(observedBuildInput.performanceItem, undefined);
+  assert.equal(observedBuildInput.itemPolicy, "include_artifact");
+  assert.deepEqual(observedBuildInput.itemCategories, ["ordinary_completed", "artifact"]);
+  assert.ok(events.some((event) => (
+    event.type === "decision_rejected"
+    && event.data?.code === "ungrounded_unit_build_query"
+    && event.data?.errors?.some((error) => /historical assistant messages cannot authorize/u.test(error))
+  )));
+});
+
+test("unnamed single-item data request binds the ordinary item ranking instead of complete builds", async () => {
+  let observedBuildInput = null;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        itemPolicy: { type: "string" },
+        itemCategories: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    action("ask_user", {
+      question: "您想查询厄斐琉斯的哪件单装备数据？请提供具体装备名称。",
+      missingFields: ["item"],
+      reasonCode: "missing_context"
+    }),
+    call("entity_catalog_query", {
+      entityType: "unit",
+      filters: { names: ["厄斐琉斯"] }
+    }, "retrieve_entity_details"),
+    call("unit_builds", { unit: "DA_18_Aphelios" }),
+    finish("厄斐琉斯单装备排行榜已返回。", ["ev-2"])
+  ]);
+  const { result, events } = await runCase({
+    input: "我想查的是单装备数据",
+    messages: [
+      { role: "user", content: "厄斐琉斯" },
+      { role: "assistant", content: "主流出装是羊刀+无尽+海妖之怒。" }
+    ],
+    provider,
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async () => ({
+        type: "entity_catalog_results",
+        entityType: "unit",
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        resolution: {
+          requests: [{
+            inputName: "厄斐琉斯",
+            normalizedName: "厄斐琉斯",
+            status: "resolved",
+            candidates: [{
+              apiName: "DA_18_Aphelios",
+              name: "厄斐琉斯",
+              matchedAlias: "厄斐琉斯"
+            }]
+          }]
+        },
+        results: [{ apiName: "DA_18_Aphelios" }]
+      }),
+      unit_builds: async (input) => {
+        observedBuildInput = structuredClone(input);
+        return {
+          type: "unit_item_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          query: {
+            itemPolicy: input.itemPolicy,
+            itemCategories: input.itemCategories
+          },
+          itemRankings: [{ apiName: "DA_Item_Ordinary", category: "ordinary_completed" }]
+        };
+      }
+    }
+  });
+
+  assert.equal(result.terminationReason, "completed");
+  assert.equal(observedBuildInput.itemPolicy, "ordinary_only");
+  assert.deepEqual(observedBuildInput.itemCategories, ["ordinary_completed"]);
+  assert.equal(observedBuildInput.performanceItem, undefined);
+  assert.ok(events.some((event) => (
+    event.type === "decision_rejected"
+    && event.data?.code === "unnecessary_equipment_item_clarification"
+  )));
+});
+
+test("finish validation rejects an Artifact claim grounded only in ordinary equipment evidence", () => {
+  const entry = {
+    evidenceId: "ev-ordinary-items",
+    toolName: "unit_builds",
+    type: "unit_item_rankings",
+    temporalStatus: "current",
+    value: {
+      type: "unit_item_rankings",
+      query: {
+        itemPolicy: "ordinary_only",
+        itemCategories: ["ordinary_completed"]
+      },
+      itemRankings: [{ name: "羊刀", category: "ordinary_completed" }]
+    }
+  };
+  const ledger = {
+    resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
+    snapshot: () => ({ entries: [entry] })
+  };
+  const validation = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "单装备排行榜（含神器）：羊刀。"
+  }, ledger);
+
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.includes(
+    "answer claims an Artifact equipment ranking but cited evidence does not include artifact scope"
+  ));
+});
+
+test("item ranking fallback summarizes mixed equipment evidence instead of using an unrelated result type", () => {
+  const fallback = buildSingleUnitItemRankingFallback({
+    snapshot: () => ({
+      entries: [{
+        evidenceId: "ev-mixed-items",
+        toolName: "unit_builds",
+        temporalStatus: "current",
+        value: {
+          type: "unit_item_rankings",
+          unit: { name: "厄斐琉斯" },
+          query: { itemCategories: ["ordinary_completed", "artifact"] },
+          itemRankings: [
+            { name: "金币收集者", category: "artifact", stats: { top4: 62.9, win: 14.8, avg: 3.87, games: 1743 } },
+            { name: "杀人剑", category: "ordinary_completed", stats: { top4: 60.2, win: 10.3, avg: 4.07, games: 2949 } }
+          ]
+        }
+      }]
+    })
+  });
+
+  assert.deepEqual(fallback.evidenceIds, ["ev-mixed-items"]);
+  assert.match(fallback.answer, /普通装备 \+ 神器/u);
+  assert.match(fallback.answer, /1\. 金币收集者（神器） 前四率62\.9%/u);
+  assert.match(fallback.answer, /2\. 杀人剑 前四率60\.2%/u);
+  assert.doesNotMatch(fallback.answer, /视频/u);
+});
+
+test("metric leaders receive concise game-meaning explanations without labels or thresholds", () => {
+  const answer = enrichMetricLeaderInterpretations(
+    "今日选择率最高的阵容是星之守护者；吃鸡率最高的阵容是战斗学院。"
+  );
+
+  assert.match(answer, /星之守护者；\n选择率领先说明该阵容当前热度最高/u);
+  assert.match(answer, /更可能遇到同行/u);
+  assert.match(answer, /战斗学院。\n吃鸡率领先说明该阵容成型后的夺冠上限更高/u);
+  assert.match(answer, /稳定性仍需结合前四率判断/u);
+  assert.doesNotMatch(answer, /标签|阈值/u);
+});
+
+test("metric leader explanations are not duplicated when the model already explains them", () => {
+  const source = "今日选择率最高的是星之守护者，因此更容易遇到同行和抢牌；吃鸡率最高的是战斗学院，说明它的夺冠上限更高。";
+  assert.equal(enrichMetricLeaderInterpretations(source), source);
+});
+
+test("accepted composition ranking answers publish metric meaning explanations", async () => {
+  const provider = queueProvider([
+    call("comps_rankings", {}),
+    finish("今日选择率最高的阵容是星之守护者；吃鸡率最高的阵容是战斗学院。", ["ev-1"])
+  ]);
+  const { result } = await runCase({
+    input: "解析今天阵容",
+    provider,
+    handlers: {
+      comps_rankings: async () => ({
+        type: "comp_rankings",
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        rankings: {
+          popularity: [{ name: "星之守护者", stats: { selectionRate: 0.12 } }],
+          winRate: [{ name: "战斗学院", stats: { winRate: 0.18 } }]
+        }
+      })
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.match(result.answer, /更可能遇到同行/u);
+  assert.match(result.answer, /成型后的夺冠上限更高/u);
+});
+
+test("daily composition analysis wording binds to the global rankings instead of a fake named comp", async () => {
+  let observedArguments = null;
+  let analysisCalls = 0;
+  const provider = queueProvider([
+    call("comps_analysis", { mention: "今天阵容" }),
+    finish("今日选择率最高的阵容是星之守护者；吃鸡率最高的阵容是战斗学院。", ["ev-1"])
+  ]);
+  const { result, events } = await runCase({
+    input: "解析今天阵容",
+    provider,
+    definitions: [
+      definition("comps_analysis", {
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { mention: { type: "string" } }
+        }
+      }),
+      definition("comps_rankings", {
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { mention: { type: "string" } }
+        }
+      })
+    ],
+    handlers: {
+      comps_analysis: async () => {
+        analysisCalls += 1;
+        return evidence([]);
+      },
+      comps_rankings: async (input) => {
+        observedArguments = structuredClone(input);
+        return {
+          type: "comp_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          rankings: {
+            popularity: [{ name: "星之守护者", stats: { selectionRate: 0.12 } }],
+            winRate: [{ name: "战斗学院", stats: { winRate: 0.18 } }]
+          }
+        };
+      }
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(analysisCalls, 0);
+  assert.equal(observedArguments.mention, undefined);
+  assert.ok(events.some((event) => event.type === "decision" && event.data?.tool === "comps_rankings"));
+  assert.match(result.answer, /更可能遇到同行/u);
+  assert.match(result.answer, /夺冠上限更高/u);
+});
+
 test("R1-09 a failed tool becomes an observation and a later tool can recover", async () => {
   let trendCalls = 0;
   const provider = queueProvider([
@@ -1685,18 +2051,18 @@ test("repeated whole-result trend downgrade falls back to valid partial trend ev
       comps_trends: async (input) => {
         observedInput = structuredClone(input);
         return {
-          updatedAt: "2026-08-06T00:00:00.000Z",
-          type: "comp_trends",
-          requestedDirection: null,
-          rising: [],
-          falling: [{
-            name: "战斗学院 · 悠米",
-            trend: { avgPlacementChange: 0.27 }
-          }],
-          rankings: { popularity: [{
-            name: "星之守护者 · 阿狸",
-            stats: { selectionRate: 0.625 }
-          }] },
+        updatedAt: "2026-08-06T00:00:00.000Z",
+        type: "comp_trends",
+        requestedDirection: null,
+        rising: [],
+        falling: [{
+          name: "战斗学院 · 悠米",
+          trend: { avgPlacementChange: 0.27 }
+        }],
+        rankings: { popularity: [{
+          name: "星之守护者 · 阿狸",
+          stats: { selectionRate: 0.625 }
+        }] },
           trend: { status: "upstream", officialGate: { status: "insufficient", eligibleCount: 0 } }
         };
       }

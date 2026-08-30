@@ -1,6 +1,7 @@
 const STATISTICAL_SIGNAL = /(?:平均名次|均名|前四率|登顶率|胜率|选择率|出场率|样本|场次|排名变化|top\s*4|win\s*rate|pick\s*rate|sample|games?|\d+(?:\.\d+)?\s*%)/iu;
 const INSUFFICIENT_SIGNAL = /(?:数据不足|证据不足|没有可验证|无可验证|工具不可用|查询失败|结果为空|没有结果|无法可靠判断|暂时无法判断|当前样本门槛下没有|insufficient|unavailable|failed|no reliable|no verifiable)/iu;
 const CURRENT_RANKING_SIGNAL = /(?:当前|现在|目前|最近|这版本|胜率|前四率|登顶率|平均名次|选择率|出场率|样本数|排名|最优|最好|最高|current|latest|best|highest|win\s*rate|top\s*4)/iu;
+const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*神器|(?:含|包含|包括|加入|带上|算上|纳入)\s*神器)/u;
 
 function numericTokens(text) {
   return [...String(text ?? "").matchAll(/\d+(?:\.\d+)?%?/gu)].map((match) => match[0]);
@@ -8,6 +9,26 @@ function numericTokens(text) {
 
 function evidenceText(entries) {
   return entries.map((entry) => JSON.stringify(entry.value)).join("\n");
+}
+
+function artifactScopeGroundingErrors(answer, entries) {
+  if (!ARTIFACT_RANKING_CLAIM.test(String(answer ?? ""))) return [];
+  const equipmentEntries = entries.filter((entry) => (
+    entry?.temporalStatus !== "historical"
+    && (
+      entry.toolName === "unit_builds"
+      || entry.type === "unit_item_rankings"
+      || entry.value?.type === "unit_item_rankings"
+    )
+  ));
+  const hasArtifactScope = equipmentEntries.some((entry) => {
+    const query = entry.value?.query ?? {};
+    return (query.itemCategories ?? []).includes("artifact")
+      && ["include_artifact", "include_special"].includes(query.itemPolicy);
+  });
+  return hasArtifactScope
+    ? []
+    : ["answer claims an Artifact equipment ranking but cited evidence does not include artifact scope"];
 }
 
 function contradictsCompositionBreakpointEvidence(answer, entries) {
@@ -491,6 +512,7 @@ export function validateFinishAction(action, ledger) {
     if (contradictsCompositionBreakpointEvidence(action.answer, entries)) {
       errors.push("answer contradicts deterministic composition breakpoint changes");
     }
+    errors.push(...artifactScopeGroundingErrors(action.answer, entries));
     const contentionEntries = activeUnitBuildEntries(entries).filter((entry) => (
       entry.value?.itemContentionPlan?.status === "available"
       && !(

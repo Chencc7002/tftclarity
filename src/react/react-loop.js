@@ -71,6 +71,58 @@ function applyRequestBoundTrendDirection(action, request = {}) {
   return { ...action, arguments: argumentsValue };
 }
 
+function applyRequestBoundCompositionOverview(action, request = {}) {
+  if (action?.type !== "call_tool" || !["comps_analysis", "comps_rankings"].includes(action.tool)) {
+    return action;
+  }
+  const userText = currentTurnUserText(request);
+  const requestsDailyOverview = (
+    /(?:解析|分析|看看|查看|盘点).{0,6}(?:今天|今日).{0,6}(?:阵容|环境)/u.test(userText)
+    || /(?:今天|今日).{0,6}(?:阵容|环境).{0,6}(?:解析|分析|盘点)/u.test(userText)
+  );
+  if (!requestsDailyOverview) return action;
+  const argumentsValue = { ...(action.arguments ?? {}) };
+  delete argumentsValue.mention;
+  return { ...action, tool: "comps_rankings", arguments: argumentsValue };
+}
+
+function applyRequestBoundEquipmentScope(action, request = {}) {
+  if (action?.type !== "call_tool" || action.tool !== "unit_builds") return action;
+  const userText = currentTurnUserText(request);
+  const addsArtifacts = /(?:加入|加上|包含|包括|带上|算上|纳入).{0,6}神器|神器.{0,6}(?:也|一起).{0,6}(?:加入|加上|包含|包括|带上|算上|纳入)/u.test(userText);
+  const requestsSingleItemRanking = /(?:单(?:件)?装备(?:数据|排行|排名|榜)|装备(?:单件)?(?:排行|排名|榜))/u.test(userText);
+  if (!addsArtifacts && !requestsSingleItemRanking) return action;
+  return {
+    ...action,
+    arguments: {
+      ...(action.arguments ?? {}),
+      itemPolicy: addsArtifacts ? "include_artifact" : "ordinary_only",
+      itemCategories: addsArtifacts
+        ? ["ordinary_completed", "artifact"]
+        : ["ordinary_completed"]
+    }
+  };
+}
+
+function unnecessaryEquipmentClarificationErrors(action, request = {}) {
+  if (action?.type !== "ask_user") return [];
+  const userText = currentTurnUserText(request);
+  const categoryRankingRequest = (
+    /(?:加入|加上|包含|包括|带上|算上|纳入).{0,6}神器/u.test(userText)
+    || /(?:我想查的是|我想看|查看|查询|返回|给出|列出)?\s*单(?:件)?装备(?:数据|排行榜|排行|排名)\s*[，,。.!！]?$/u.test(userText)
+  );
+  if (!categoryRankingRequest) return [];
+  const asksForSpecificItem = (
+    /(?:哪件|哪个|具体|提供).{0,8}装备|装备.{0,8}(?:名称|名字)/u.test(String(action.question ?? ""))
+    || (action.missingFields ?? []).some((field) => (
+      ["item", "itemName", "performanceItem"].includes(String(field))
+    ))
+  );
+  return asksForSpecificItem
+    ? ["category-wide single-item rankings do not require a named performanceItem"]
+    : [];
+}
+
 function deterministicStrategyVideoFallback(request, availableToolNames, ledger) {
   if (!availableToolNames.has("strategy_video_search")) return null;
   if (ledger.snapshot().entries.some((entry) => entry.temporalStatus !== "historical")) return null;
@@ -375,6 +427,39 @@ function resolvedCatalogEntity(entries, entityType, apiName) {
   ));
 }
 
+function catalogResolutionNames(entries, entityType, apiName) {
+  const names = [];
+  for (const entry of entries) {
+    if (entry.toolName !== "entity_catalog_query" || entry.value?.entityType !== entityType) continue;
+    for (const resolution of entry.value?.resolution?.requests ?? []) {
+      const candidate = resolution.candidates?.length === 1 ? resolution.candidates[0] : null;
+      if (
+        resolution.status !== "resolved"
+        || String(candidate?.apiName ?? "") !== apiName
+      ) continue;
+      names.push(
+        resolution.inputName,
+        resolution.normalizedName,
+        candidate.apiName,
+        candidate.name,
+        candidate.zhName,
+        candidate.enName,
+        candidate.shortName,
+        candidate.matchedAlias,
+        ...(Array.isArray(candidate.aliases) ? candidate.aliases : [])
+      );
+    }
+  }
+  return [...new Set(names.map((name) => String(name ?? "").trim()).filter(Boolean))];
+}
+
+function currentRequestMentionsCatalogItem(entries, apiName, request = {}) {
+  const userText = currentTurnUserText(request).toLocaleLowerCase().replace(/\s+/gu, "");
+  return catalogResolutionNames(entries, "item", apiName).some((name) => (
+    userText.includes(name.toLocaleLowerCase().replace(/\s+/gu, ""))
+  ));
+}
+
 function validateUnitBuildsAction(action, ledger, request = {}) {
   if (action.tool !== "unit_builds") return { valid: true, errors: [] };
   const question = String(request.input ?? request.question ?? "");
@@ -397,6 +482,16 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
     if (!resolvedCatalogItem(entries, apiName)) {
       errors.push(`unit_builds item requires prior exact item entity_catalog_query resolution: ${apiName}`);
     }
+  }
+  const performanceItem = String(action.arguments?.performanceItem ?? "").trim();
+  if (
+    performanceItem
+    && resolvedCatalogItem(entries, performanceItem)
+    && !currentRequestMentionsCatalogItem(entries, performanceItem, request)
+  ) {
+    errors.push(
+      "unit_builds performanceItem requires an item name explicitly present in the current user request; historical assistant messages cannot authorize it"
+    );
   }
   return { valid: errors.length === 0, errors };
 }
@@ -879,6 +974,32 @@ function trendRowsText(rows, formatter) {
     .join("、");
 }
 
+const SELECTION_RATE_LEADER_SIGNAL = /(?:(?:选择率|选取率|出场率).{0,18}(?:最高|第一|第\s*1)|(?:最高|第一|第\s*1).{0,18}(?:选择率|选取率|出场率)|(?:选择率|选取率)排行|最热门)/u;
+const WIN_RATE_LEADER_SIGNAL = /(?:(?:吃鸡率|登顶率|胜率).{0,18}(?:最高|第一|第\s*1)|(?:最高|第一|第\s*1).{0,18}(?:吃鸡率|登顶率|胜率))/u;
+const SELECTION_RATE_EXPLANATION_SIGNAL = /(?:同行|内卷|抢牌|装备竞争|竞争更激烈)/u;
+const WIN_RATE_EXPLANATION_SIGNAL = /(?:夺冠上限|吃鸡上限|成型后的?上限|上限更高)/u;
+
+export function enrichMetricLeaderInterpretations(answer) {
+  const text = String(answer ?? "").trim();
+  if (!text) return text;
+  let selectionExplained = SELECTION_RATE_EXPLANATION_SIGNAL.test(text);
+  let winExplained = WIN_RATE_EXPLANATION_SIGNAL.test(text);
+  const clauses = text.match(/[^。！？；\n]+[。！？；]?|\n+/gu) ?? [text];
+  return clauses.map((clause) => {
+    if (/^\n+$/u.test(clause)) return clause;
+    const additions = [];
+    if (!selectionExplained && SELECTION_RATE_LEADER_SIGNAL.test(clause)) {
+      additions.push("选择率领先说明该阵容当前热度最高，实战中更可能遇到同行，抢牌和关键装备竞争也可能更激烈。");
+      selectionExplained = true;
+    }
+    if (!winExplained && WIN_RATE_LEADER_SIGNAL.test(clause)) {
+      additions.push("吃鸡率领先说明该阵容成型后的夺冠上限更高，但不代表吃分最稳定，稳定性仍需结合前四率判断。");
+      winExplained = true;
+    }
+    return additions.length ? `${clause}\n${additions.join("\n")}` : clause;
+  }).join("").trim();
+}
+
 export function buildCompositionTrendFallback(ledger) {
   const entry = ledger.snapshot().entries.findLast((candidate) => (
     candidate.temporalStatus !== "historical"
@@ -910,7 +1031,9 @@ export function buildCompositionTrendFallback(ledger) {
     sections.push(`选取率排行：${trendRowsText(popularity, trendPopularityLabel)}`);
   }
   return {
-    answer: `MetaTFT 今日趋势中，${sections.join("；")}。各榜单按当前返回结果独立展示。`,
+    answer: enrichMetricLeaderInterpretations(
+      `MetaTFT 今日趋势中，${sections.join("；")}。各榜单按当前返回结果独立展示。`
+    ),
     evidenceIds: [entry.evidenceId]
   };
 }
@@ -956,6 +1079,35 @@ function buildSingleUnitBuildFallback(ledger) {
   }).join("；");
   return {
     answer: `${unitName}当前可参考的出装：${cardText}。`,
+    evidenceIds: [entry.evidenceId]
+  };
+}
+
+function rankingPercent(value) {
+  const numeric = Number(value);
+  return Number.isFinite(numeric) ? `${numeric}%` : "-";
+}
+
+export function buildSingleUnitItemRankingFallback(ledger) {
+  const entry = ledger.snapshot().entries.findLast((candidate) => (
+    candidate.toolName === "unit_builds"
+    && candidate.temporalStatus !== "historical"
+    && candidate.value?.type === "unit_item_rankings"
+    && Array.isArray(candidate.value?.itemRankings)
+    && candidate.value.itemRankings.length > 0
+  ));
+  if (!entry) return null;
+  const value = entry.value;
+  const unitName = value.unit?.name ?? value.query?.unitName ?? "该棋子";
+  const includesArtifacts = (value.query?.itemCategories ?? []).includes("artifact");
+  const rows = value.itemRankings.slice(0, 6).map((item, index) => {
+    const category = item.category === "artifact" ? "（神器）" : "";
+    const stats = item.stats ?? {};
+    return `${index + 1}. ${item.name ?? item.apiName ?? "装备"}${category} `
+      + `前四率${rankingPercent(stats.top4)}、吃鸡率${rankingPercent(stats.win)}、平均名次${stats.avg ?? "-"}、样本${stats.games ?? "-"}`;
+  });
+  return {
+    answer: `${unitName}单装备排行榜${includesArtifacts ? "（普通装备 + 神器）" : "（普通装备）"}：${rows.join("；")}。`,
     evidenceIds: [entry.evidenceId]
   };
 }
@@ -1073,6 +1225,7 @@ export function buildCompositionReplacementFallback(ledger) {
 function buildRejectedNarrativeFallback(ledger) {
   return buildConstrainedBatchEvidenceFallback(ledger)
     ?? buildItemContentionFallback(ledger)
+    ?? buildSingleUnitItemRankingFallback(ledger)
     ?? buildSingleUnitBuildFallback(ledger)
     ?? buildAvailableEvidenceFallback(ledger)
     ?? {
@@ -1178,6 +1331,7 @@ export class ReactLoop {
       const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
       const available = buildConstrainedBatchEvidenceFallback(ledger)
         ?? buildItemContentionFallback(ledger)
+        ?? buildSingleUnitItemRankingFallback(ledger)
         ?? buildAvailableEvidenceFallback(ledger);
       const stopExplanation = reason === "duplicate_call"
         ? "模型尝试重复同一查询，但没有新的条件或证据可支持再次执行；系统已拦截重复调用。"
@@ -1282,6 +1436,7 @@ export class ReactLoop {
           provided = { action: deterministicVideoAction };
         } else {
         const fallback = buildItemContentionFallback(ledger)
+          ?? buildSingleUnitItemRankingFallback(ledger)
           ?? buildSingleUnitBuildFallback(ledger)
           ?? buildAvailableEvidenceFallback(ledger);
         if (fallback) {
@@ -1338,12 +1493,38 @@ export class ReactLoop {
         continue;
       }
 
-      const action = applyRequestBoundTrendDirection(
-        applyRequestBoundVideoScope(validation.value, request),
+      const action = applyRequestBoundEquipmentScope(
+        applyRequestBoundCompositionOverview(
+          applyRequestBoundTrendDirection(
+            applyRequestBoundVideoScope(validation.value, request),
+            request
+          ),
+          request
+        ),
         request
       );
       state.recordDecision(action);
       emit("decision", decisionEventData(action, state, budget));
+
+      const equipmentClarificationErrors = unnecessaryEquipmentClarificationErrors(action, request);
+      if (equipmentClarificationErrors.length) {
+        state.recordObservation({
+          type: "decision_rejected",
+          actionType: "ask_user",
+          errors: equipmentClarificationErrors,
+          repairInstruction: "This is a category-wide single-item ranking. Do not ask for one item name and do not set performanceItem. Resolve the contextual champion, then call unit_builds; the server binds the requested ordinary or Artifact category scope."
+        }, { progress: false });
+        emit("decision_rejected", {
+          iteration: state.decisions.length,
+          code: "unnecessary_equipment_item_clarification",
+          errors: equipmentClarificationErrors,
+          repairable: true
+        });
+        if (state.consecutiveNoProgress >= budget.maxConsecutiveNoProgress) {
+          return terminateForNoProgress("unnecessary_equipment_item_clarification");
+        }
+        continue;
+      }
 
       if (action.type === "ask_user") {
         emit("ask_user", {
@@ -1495,6 +1676,7 @@ export class ReactLoop {
               ?? buildCompositionReplacementFallback(ledger)
               ?? buildConstrainedBatchEvidenceFallback(ledger)
               ?? buildItemContentionFallback(ledger)
+              ?? buildSingleUnitItemRankingFallback(ledger)
               ?? buildSingleUnitBuildFallback(ledger)
               ?? buildAvailableEvidenceFallback(ledger);
             if (fallback) {
@@ -1567,8 +1749,10 @@ export class ReactLoop {
             : "accepted_with_grounding_warnings";
         modelConclusion.validationErrors = narrativeValidation.errors.map(String);
         const status = state.warnings.length ? "completed_with_warning" : "completed";
+        const publishedAnswer = rejectedNarrativeFallback?.answer
+          ?? enrichMetricLeaderInterpretations(action.answer);
         emit("answer", {
-          answer: rejectedNarrativeFallback?.answer ?? action.answer,
+          answer: publishedAnswer,
           evidenceIds: rejectedNarrativeFallback?.evidenceIds ?? action.evidenceIds,
           reasonCode: action.reasonCode,
           narrativeAccepted: narrativeValidation.valid,
@@ -1578,7 +1762,7 @@ export class ReactLoop {
           action.reasonCode === "insufficient_evidence" ? "insufficient_evidence" : "completed",
           {
             status,
-            answer: rejectedNarrativeFallback?.answer ?? action.answer,
+            answer: publishedAnswer,
             evidenceIds: rejectedNarrativeFallback?.evidenceIds ?? action.evidenceIds,
             narrative: narrativeValidation.value,
             narrativeWarnings: narrativeValidation.errors,
@@ -1664,7 +1848,7 @@ export class ReactLoop {
           type: "decision_rejected",
           tool: action.tool,
           errors: unitBuildValidation.errors,
-          repairInstruction: "Resolve the champion and every named item with entity_catalog_query, then copy their exact apiNames into unit_builds."
+          repairInstruction: "Use only item constraints explicitly present in the current user request. Historical assistant messages cannot authorize performanceItem. Remove any unsupported performanceItem; resolve every user-named champion and item with entity_catalog_query, then copy their exact apiNames into unit_builds."
         }, { progress: false });
         emit("decision_rejected", {
           iteration: state.decisions.length,

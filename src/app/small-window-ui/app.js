@@ -3093,11 +3093,17 @@ function renderItemRankings(data) {
   if (data.itemPerformance) {
     const performance = data.itemPerformance;
     const target = performance.item;
-    const rankingCards = performance.topRankings ?? [];
+    const allRankings = data.itemRankings ?? [];
+    const rankingCards = (allRankings.length ? allRankings : performance.topRankings ?? [])
+      .slice(0, itemRankingDisplayLimit(data));
+    const rankingTitle = allRankings.length
+      ? `同条件装备排行榜（前 ${rankingCards.length} / 共 ${allRankings.length}）`
+      : `同条件装备 Top ${rankingCards.length}`;
     setResponseHtml(`
       ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", performance.conclusion ?? data.answer?.summary ?? data.text, "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
       ${target ? `<section class="item-ranking-list"><h2>\u6307\u5b9a\u88c5\u5907</h2><article class="item-ranking-card best"><div class="item-ranking-head">${assetThumb(target.iconUrl, localizedName(target), "tiny-item-icon")}<strong>${escapeHtml(localizedName(target))}</strong><span>${performance.rank ? `#${performance.rank}` : t("lowSample")}</span></div><div class="stats">${metric(t("top4"), `${formatNumber(target.stats.top4)}%`)}${metric(t("win"), `${formatNumber(target.stats.win)}%`)}${metric(t("avg"), formatNumber(target.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(target.stats.games))}</div></article></section>` : ""}
-      <section class="item-ranking-list"><h2>\u540c\u6761\u4ef6\u88c5\u5907 Top 3</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
+      ${itemRankingModeControl(data)}
+      <section class="item-ranking-list"><h2>${escapeHtml(rankingTitle)}</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
       <div class="item-ranking-meta">${t("methodology")}：${escapeHtml(data.answer?.methodology ?? "")}</div>${conditionPanel(data)}${sourceAndRisk(data)}
     `);
     return;
@@ -4581,9 +4587,15 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
       : "The model decision service is temporarily unavailable, so the data query did not complete. Please retry.";
   }
   if (code === "missing_required_evidence") {
+    const hasVideoEvidence = Array.isArray(failure?.evidence)
+      && failure.evidence.some((entry) => entry?.value?.type === "strategy_video_search_results");
     return getLocale().startsWith("zh")
-      ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
-      : "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below.";
+      ? hasVideoEvidence
+        ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
+        : "\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u6570\u636e\u7ed3\u679c\u3002"
+      : hasVideoEvidence
+        ? "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below."
+        : "The generated summary did not pass evidence validation. The verifiable data results are shown below.";
   }
   return rawMessage || fallback;
 }

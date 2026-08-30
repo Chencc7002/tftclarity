@@ -71,12 +71,60 @@ function hasExplicitLineStructure(value) {
   });
 }
 
+function emphasizedRankingItem(value) {
+  const text = String(value ?? "").trim().replace(/[；;。]\s*$/u, "");
+  const metricStart = text.search(/(?:平均名次|均名|前四率?|吃鸡率?|登顶率?|胜率|选择率?|出场率?|样本|场次|\d+(?:\.\d+)?)/u);
+  if (metricStart <= 0) return text;
+  const name = text.slice(0, metricStart).trim();
+  return name.length <= 40
+    ? `**${name}** ${text.slice(metricStart).trimStart()}`
+    : text;
+}
+
+function inlineNumberedConclusionText(value) {
+  const line = String(value ?? "").trim();
+  const itemPattern = /(?:^|[：:；;]\s*)(\d+)[.)、]\s+([\s\S]*?)(?=(?:[；;]\s*)\d+[.)、]\s+|$)/gu;
+  const matches = [...line.matchAll(itemPattern)];
+  if (matches.length < 2) return null;
+  const prefix = line.slice(0, matches[0].index).replace(/[：:\s]+$/gu, "").trim();
+  if (!prefix) return null;
+  return [
+    `结论：${prefix}`,
+    "",
+    ...matches.map((match) => `${match[1]}. ${emphasizedRankingItem(match[2])}`)
+  ].join("\n");
+}
+
+function inlineUnnumberedEquipmentRankingText(value) {
+  const line = String(value ?? "").trim();
+  const separatorIndex = line.search(/[：:]/u);
+  if (separatorIndex <= 0) return null;
+  const prefix = line.slice(0, separatorIndex).trim();
+  if (!/装备/u.test(prefix) || !/(?:排行|排名|数据)/u.test(prefix)) return null;
+  const items = line.slice(separatorIndex + 1)
+    .split(/[；;]/u)
+    .map((item) => item.trim())
+    .filter(Boolean);
+  if (items.length < 3 || !items.every((item) => (
+    /(?:前四率?|吃鸡率?|登顶率?|平均名次|均名|样本|场次)/u.test(item)
+  ))) return null;
+  return [
+    `结论：${prefix}`,
+    "",
+    ...items.map((item, index) => `${index + 1}. ${emphasizedRankingItem(item)}`)
+  ].join("\n");
+}
+
 function autoStructuredConclusionText(value) {
   const text = String(value ?? "").replace(/\r\n?/gu, "\n").trim();
   const nonEmptyLines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   if (nonEmptyLines.length !== 1) return text;
 
   const line = nonEmptyLines[0];
+  const inlineNumbered = inlineNumberedConclusionText(line);
+  if (inlineNumbered) return inlineNumbered;
+  const inlineEquipmentRanking = inlineUnnumberedEquipmentRankingText(line);
+  if (inlineEquipmentRanking) return inlineEquipmentRanking;
   const explicitSummary = summaryLineParts(line);
   const summaryLabel = explicitSummary?.[1] ?? (/\p{Script=Han}/u.test(line) ? "结论" : "Summary");
   const body = explicitSummary?.[2] ?? line;
