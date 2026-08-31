@@ -1,4 +1,5 @@
 import { DEFAULT_QUERY_OPTIONS, createCatalog } from "../data/static-data.js";
+import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 
 const DEFAULT_THREE_STAR_MAX_UNIT_COST = 3;
 
@@ -94,7 +95,15 @@ export function buildQueryContext(parsedQuery, options = {}) {
   const itemCount = parsedQuery.itemCount ?? 3;
   const lockedItems = parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [];
   const requestedItemPolicy = parsedQuery.itemPolicy ?? preferences.itemPolicy;
-  const itemPolicy = widenItemPolicyForLockedItems(requestedItemPolicy, lockedItems, catalog);
+  const explicitOrdinaryOnly = requestedItemPolicy === "ordinary_only" && (
+    parsedQuery.parser?.itemPolicyExplicit === true
+    || requestedEquipmentCategoryScope(parsedQuery.rawInput)?.itemPolicy === "ordinary_only"
+  );
+  // Explicit restrictions win. The existing validator reports conflicting locked
+  // special items instead of silently relaxing an ordinary-only request.
+  const itemPolicy = explicitOrdinaryOnly
+    ? requestedItemPolicy
+    : widenItemPolicyForLockedItems(requestedItemPolicy, lockedItems, catalog);
   const itemPolicyExpandedByLockedItems = itemPolicy !== requestedItemPolicy;
   const performanceCategory = parsedQuery.performanceItem
     ? catalog.itemByApiName.get(parsedQuery.performanceItem)?.category

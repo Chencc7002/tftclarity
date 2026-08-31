@@ -1212,6 +1212,11 @@ test("unnamed single-item data request binds the ordinary item ranking instead o
 });
 
 test("equipment category vocabulary separates exclusive, additive and negated scopes", () => {
+  for (const input of ["不含特殊装备", "不要特殊装备", "排除所有特殊装备", "修改为只包含普通装备", "without special items"]) {
+    assert.deepEqual(requestedEquipmentCategoryScope(input), {
+      itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
+    }, input);
+  }
   for (const input of ["查询厄飞流斯的神器", "我要查的是奥恩神器", "只查询神器", "只包含奥恩神器", "Aphelios artifacts"]) {
     assert.deepEqual(requestedEquipmentCategoryScope(input), {
       itemPolicy: "include_artifact", itemCategories: ["artifact"]
@@ -1235,6 +1240,43 @@ test("equipment category vocabulary separates exclusive, additive and negated sc
   assert.deepEqual(requestedEquipmentCategoryScope("光明装备排行榜"), {
     itemPolicy: "include_radiant", itemCategories: ["radiant"]
   });
+});
+
+test("ordinary-only corrections override stale special scope without changing complete-build conditions", async (t) => {
+  for (const input of ["不含特殊装备", "修改为只包含普通装备"]) {
+    await t.test(input, async () => {
+      let observed;
+      const initial = { unit: "DA_18_Aphelios", itemPolicy: "include_special", itemCategories: ["artifact"],
+        itemCount: 3, starLevel: [2], days: 3, minSamples: 100 };
+      const { result } = await runCase({
+        input, messages: [{ role: "user", content: "厄斐琉斯三件套出装，包含特殊装备" }],
+        provider: queueProvider([
+          call("entity_catalog_query", { entityType: "unit", filters: { names: ["厄斐琉斯"] } }),
+          call("unit_builds", initial), finish("已更新三件套出装。", ["ev-2"])
+        ]),
+        definitions: [definition("entity_catalog_query", { inputSchema: {
+          type: "object", additionalProperties: false, properties: {
+            entityType: { type: "string" }, filters: { type: "object", properties: { names: { type: "array", items: { type: "string" } } } }
+          }
+        } }), definition("unit_builds", { inputSchema: {
+          type: "object", additionalProperties: false, required: ["unit"], properties: {
+            unit: { type: "string" }, itemPolicy: { type: "string" }, itemCategories: { type: "array", items: { type: "string" } },
+            itemCount: { type: "integer" }, starLevel: { type: "array", items: { type: "integer" } },
+            days: { type: "integer" }, minSamples: { type: "integer" }
+          }
+        } })],
+        handlers: { entity_catalog_query: async () => evidence([{ apiName: "DA_18_Aphelios" }], {
+          type: "entity_catalog_results", entityType: "unit",
+          resolution: { requests: [{ inputName: "厄斐琉斯", status: "resolved", candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }] }] }
+        }), unit_builds: async (args) => {
+          observed = args;
+          return evidence([{ items: ["ordinary-a", "ordinary-b", "ordinary-c"] }], { type: "unit_build_rankings", query: args });
+        } }
+      });
+      assert.equal(result.status, "completed", JSON.stringify(result));
+      assert.deepEqual(observed, { ...initial, itemPolicy: "ordinary_only", itemCategories: [] });
+    });
+  }
 });
 
 test("artifact requests override stale ordinary scope and category corrections keep the contextual champion", async (t) => {

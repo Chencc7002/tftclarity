@@ -771,6 +771,40 @@ test("user-specified radiant, artifact, and emblem items widen the local item po
   assert.match(mixedSpecial.text, /含特殊装备/);
 });
 
+test("ordinary-only category corrections do not turn a negated special mention into inclusion", () => {
+  for (const input of ["霞三件套不含特殊装备", "霞三件套不要特殊装备", "霞三件套修改为只包含普通装备"]) {
+    const planned = planQuery(input);
+    assert.equal(planned.query.itemPolicy, "ordinary_only", input);
+    assert.deepEqual(planned.query.itemCategories, ["ordinary_completed"], input);
+    assert.equal(planned.query.itemCount, 3);
+  }
+  const conflict = planQuery("霞已有光明羊刀，但只包含普通装备");
+  assert.equal(conflict.query.itemPolicy, "ordinary_only");
+  assert.equal(validateQueryContext(conflict.query).valid, false);
+});
+
+test("a three-item follow-up re-filters special builds while preserving the owned ordinary item", async () => {
+  const rows = [fixtureRows[0], {
+    unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT5_Item_GuinsoosRagebladeRadiant|TFT_Item_InfinityEdge",
+    placement_count: [150, 130, 110, 90, 70, 50, 30, 10]
+  }];
+  const catalog = createCatalog();
+  for (const input of ["不含特殊装备", "修改为只包含普通装备"]) {
+    const cacheStore = new MemoryCacheStore();
+    const options = { response: rows, cacheStore, catalog };
+    const initial = await recommendForInput("霞已有羊刀，查询三件套，包含特殊装备", options);
+    assert.ok(initial.rankedBuilds.some(build => build.items.includes("TFT5_Item_GuinsoosRagebladeRadiant")));
+    const result = await recommendForInput(input, options);
+    assert.equal(result.query.itemPolicy, "ordinary_only");
+    assert.equal(result.query.unit, initial.query.unit);
+    assert.equal(result.query.itemCount, 3);
+    assert.deepEqual(result.query.lockedItems, initial.query.lockedItems);
+    assert.ok(result.rankedBuilds.length > 0);
+    assert.ok(result.rankedBuilds.every(build => build.items.every(apiName => catalog.itemByApiName.get(apiName).category === "ordinary_completed")));
+    assert.notEqual(makeQueryCacheKey(initial.query), makeQueryCacheKey(result.query));
+  }
+});
+
 test("generic radiant and artifact build scopes require every returned trio to contain the requested special category", () => {
   const apiNames = [
     "TFT_Item_GuinsoosRageblade",

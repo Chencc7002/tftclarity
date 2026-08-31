@@ -2,6 +2,31 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
+test("ordinary-only follow-ups get current scope guidance in both provider layouts", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    for (const question of ["不含特殊装备", "修改为只包含普通装备"]) {
+      let body;
+      const provider = createReactDecisionProvider({
+        endpoint: "https://example.test/chat/completions", model: "test-model", messageLayout,
+        fetchImpl: async (_url, options) => {
+          body = JSON.parse(options.body);
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
+            arguments: { unit: "DA_18_Aphelios", itemPolicy: "ordinary_only" }, purposeCode: "retrieve_current_statistics"
+          }) } }] }) };
+        }
+      });
+      await provider({ state: { question, evidence: [], messages: [{ role: "user", content: "厄斐琉斯的三件套含特殊装备" }] },
+        toolCatalog: [{ name: "unit_builds", inputSchema: { type: "object" } }] });
+      const guidance = body.messages.find(message => message.content.includes("equipment-category-guidance.v1"));
+      assert.match(guidance?.content ?? "", /"itemPolicy":"ordinary_only"/u);
+      assert.match(guidance.content, /does not change complete builds into single-item rankings/u);
+      assert.match(guidance.content, /Re-query current unit_builds evidence/u);
+    }
+  }
+});
+
+
 test("react decision provider sends bounded state and returns a validated action", async () => {
   let observedBody;
   const provider = createReactDecisionProvider({

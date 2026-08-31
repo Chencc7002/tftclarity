@@ -182,12 +182,14 @@ function equipmentCategoryGuidance(question, bridgeContext = null) {
     ? confirmation.originalInput
     : "";
   const scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
-  if (!scope?.itemCategories.some((category) => category !== "ordinary_completed")) return [];
+  if (!scope) return [];
   return [{ role: "system", content: [
     "equipment-category-guidance.v1",
     "Only the category token 神器 (or Artifact in English) means the artifact category. 奥恩 alone is the champion Ornn and must never imply artifact. In 奥恩神器, 神器 establishes the artifact category; 奥恩装备 without 神器 is not an artifact-category phrase. 光明装备 means radiant.",
     `For a single champion's category ranking use unit_builds with this current-turn scope: ${JSON.stringify(scope)}.`,
     "Category rankings need no specific item name or performanceItem. Only named comparisons or owned-item completion need named candidates. An explicit complete build keeps its build operation with the requested itemPolicy.",
+    "A category-only follow-up edits the prior query; it does not change complete builds into single-item rankings. Preserve its champion, item count, star level, owned/excluded items, days and other explicit constraints. For complete builds/completion use itemCategories=[]; for a single-item category ranking use the requested itemCategories.",
+    "Excluding special equipment (不含特殊装备) or requesting only ordinary equipment sets itemPolicy=ordinary_only and replaces any earlier special policy/category. Re-query current unit_builds evidence with the changed scope; never reuse the earlier answer as if filtered. If a locked special item conflicts with ordinary-only, ask which constraint to relax instead of silently widening the policy.",
     "A follow-up correcting only the category keeps the champion from prior USER context: resolve it through entity_catalog_query in the current turn, then replace the old category. Ask only if the champion itself is missing or ambiguous. Do not treat assistant-mentioned equipment as user constraints.",
     "If no matching category data is returned, state that limitation; never label ordinary equipment as artifacts. This guidance does not change tool schemas, permissions, budgets or evidence requirements."
   ].join("\n") }];

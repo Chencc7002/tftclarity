@@ -6804,7 +6804,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         queue: input.queue,
         rankFilter: input.rank,
         minSamples: input.minSamples,
-        parser: { intentExplicit: true }
+        parser: { intentExplicit: true, itemPolicyExplicit: input.itemPolicy != null }
       };
       const equipmentQueryKey = [
         unitApiName,

@@ -77,6 +77,9 @@ export function validateQueryContext(query, options = {}) {
     if (query.itemPolicy === "ordinary_only" && item.category !== "ordinary_completed" && !excludedOnly) {
       warnings.push(`普通装备查询中不会混入“${item.shortName ?? item.zhName}”这类 ${item.category} 装备`);
     }
+    if (lockedItems.includes(itemApiName) && !POLICY_CATEGORIES[query.itemPolicy]?.has(item.category)) {
+      errors.push(`已锁定的“${item.shortName ?? item.zhName}”与当前装备范围冲突，请取消锁定或修改装备范围`);
+    }
     if (
       comparisonItems.includes(itemApiName)
       && !POLICY_CATEGORIES[query.itemPolicy]?.has(item.category)

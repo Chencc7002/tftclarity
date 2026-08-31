@@ -188,16 +188,33 @@ function applyRequestBoundEquipmentScope(action, request = {}) {
   if (action?.type !== "call_tool" || action.tool !== "unit_builds") return action;
   const userText = equipmentScopeUserText(request);
   const categoryScope = requestedEquipmentCategoryScope(userText);
-  const requestsSingleItemRanking = /(?:单(?:件)?装备(?:数据|排行|排名|榜)|装备(?:单件)?(?:排行|排名|榜))/u.test(userText);
+  const singleItemRankingSignal = /(?:单(?:件)?装备(?:数据|排行|排名|榜)|装备(?:单件)?(?:排行|排名|榜))/u;
+  const requestsSingleItemRanking = singleItemRankingSignal.test(userText);
   if (!categoryScope && !requestsSingleItemRanking) return action;
   const scope = categoryScope ?? {
     itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
   };
+  const completeBuildSignal = /完整出装|[三3]件(?:套|装(?:备)?)|整套|补装|补齐|complete\s+build/iu;
+  // User-authored query shape is context only, never equipment identity/evidence.
+  // Do not let a stale model category convert an ordinary-only build edit into a ranking.
+  const previousUserQuery = [...(request.messages ?? [])].reverse().find((message) => (
+    message?.role === "user" && (
+      completeBuildSignal.test(String(message.content ?? ""))
+      || singleItemRankingSignal.test(String(message.content ?? ""))
+    )
+  ));
+  const bridgeView = request.bridgeContext?.view ?? request.bridgeContext;
+  const priorBuildOperation = ["modify", "continue"].includes(bridgeView?.relation)
+    && ["unit_build_rankings", "unit_build_completion"].includes(bridgeView.records?.[0]?.operation);
   const ordinaryBuildRequest = categoryScope?.itemPolicy === "ordinary_only"
-    && !requestsSingleItemRanking && !action.arguments?.itemCategories?.length;
+    && !requestsSingleItemRanking && (
+      !action.arguments?.itemCategories?.length
+      || completeBuildSignal.test(String(previousUserQuery?.content ?? ""))
+      || priorBuildOperation
+    );
   // Complete builds / owned-item completion keep their operation; only widen the allowed category.
   const completeBuildRequest = !requestsSingleItemRanking && (
-    /完整出装|三件套|整套|补装|补齐|complete\s+build/iu.test(userText)
+    completeBuildSignal.test(userText)
     || action.arguments?.lockedItems?.length > 0
   );
   return {

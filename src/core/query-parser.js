@@ -6,6 +6,7 @@ import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
 import { isCompTrendRequest } from "./comp-trend-intent.js";
 import { isCompAnalysisInput, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
+import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import { normalizeTftSemanticInput } from "./semantic-input-normalizer.js";
 
 function parseStarLevels(input) {
@@ -48,6 +49,8 @@ function mentionsEmblemCategory(input) {
 }
 
 function parseItemCategories(input) {
+  const scope = requestedEquipmentCategoryScope(input);
+  if (scope?.itemPolicy === "ordinary_only") return scope.itemCategories;
   const normalized = normalizeText(input);
   const categories = [];
   if (normalized.includes("普通")) categories.push("ordinary_completed");
@@ -181,6 +184,8 @@ function parseSort(input) {
 }
 
 function parseItemPolicy(input, itemMatches = []) {
+  const scope = requestedEquipmentCategoryScope(input);
+  if (scope?.itemPolicy === "ordinary_only") return scope.itemPolicy;
   const categories = new Set(itemMatches.map((match) => match.record?.category).filter(Boolean));
   const hasRadiant = categories.has("radiant");
   const hasArtifact = categories.has("artifact");
