@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -477,7 +478,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
 
 test("controlled conversation results tolerate catalog warnings without a query object", async () => {
   let receivedTurnInterpreterBudget = null;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
     metaTFTClient: {},
@@ -544,7 +545,7 @@ test("handleRecommendRequest returns official item encyclopedia details before r
       obtainable: true
     }]
   });
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog,
     cacheStore,
     fetchItems: false,
@@ -712,7 +713,7 @@ test("entity catalog returns current units and groups trait tiers", async () => 
     ],
     items: []
   });
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog,
     cacheStore,
     fetchItems: false,
@@ -884,7 +885,7 @@ test("S18 entity detail redirects a duplicate MetaTFT id to the official Communi
 });
 
 test("entity catalog and detail HTTP routes are publicly readable", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [{ apiName: "TFT17_MasterYi", zhName: "剑圣", aliases: ["剑圣", "易"] }],
       traits: [],
@@ -2231,7 +2232,7 @@ test("small-window cache clear removes query history without resetting preferenc
 
 test("comp details preserve observed positioning, expose compatible augments, and use a short cache", async () => {
   const calls = { details: 0, tiers: 0, lookup: 0 };
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [
         { apiName: "TFT17_Front", zhName: "Frontline", aliases: [], stats: { attackRange: 1 } },
@@ -2369,7 +2370,7 @@ test("comp details preserve observed positioning, expose compatible augments, an
 });
 
 test("comp-detail HTTP route accepts a rendered card's MetaTFT identifiers", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [{ apiName: "TFT17_Front", zhName: "Frontline", aliases: [] }],
       traits: [],
@@ -2470,7 +2471,7 @@ test("Set 18 comp details prefer the latest CommunityDragon augment names", asyn
 });
 
 test("comp detail keeps compatible augments when positioning data is temporarily unavailable", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({ units: [], traits: [], items: [] }),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -3026,7 +3027,7 @@ test("structured quick tasks bypass semantic interpretation and use the shared r
   let capturedInput = null;
   let capturedOptions = null;
   let providerCalls = 0;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -3077,7 +3078,7 @@ test("structured quick tasks bypass semantic interpretation and use the shared r
 test("a structured quick task becomes the active context for a natural-language modification", async () => {
   const cacheStore = new MemoryCacheStore();
   let providerMessages = null;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore,
     fetchItems: false,
@@ -3145,7 +3146,7 @@ test("Set 17 Artifact carrier quick task resolves 巨九 through the real struct
       data: [{ items: hydra }]
     }, { includeSeeds: false })
   });
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog,
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,

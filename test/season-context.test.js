@@ -37,7 +37,8 @@ test("SeasonContext registry exposes only safe public records", () => {
   assert.equal(set18.themeId, "set18");
   assert.equal(set18.status, "live");
   assert.equal(set18.availability.available, true);
-  assert.equal(set17.selectable, true);
+  assert.equal(set17.selectable, false);
+  assert.equal(set17.status, "unavailable");
   assert.equal(set17.themeId, "set17");
   assert.equal(set18.theme.documentTitle, "TFTClarity｜云顶数据智答");
   assert.equal(set18.theme.wallpaper.seasonId, "set-18");
@@ -143,10 +144,14 @@ test("Set 18 live catalog uses MetaTFT lookup localization without leaking Set 1
   }
 });
 
-test("two selectable live seasons resolve independent UI themes during a simulated switch", () => {
+test("disabled Set 17 retains isolated metadata but rejects selection and queries", () => {
   const service = createSeasonContextService();
 
-  const before = service.publicRecord(service.resolveForQuery("set17-live"));
+  const before = service.publicRecord(service.get("set17-live"));
+  for (const resolve of ["resolveForSelection", "resolveForQuery"]) {
+    assert.throws(() => service[resolve]("set17-live"), (error) => error.code === "season_context_not_selectable" && error.statusCode === 409);
+  }
+  assert.equal(before.selectable, false);
   const after = service.publicRecord(service.resolveForQuery("set18-live"));
 
   assert.equal(before.id, "set17-live");
@@ -185,6 +190,9 @@ test("Set 18 live requests reach the recommendation path while removed PBE and i
     input: "阵容排行",
     seasonContextId: "set18-live"
   }, runtime);
+  const disabledSet17 = await handleRecommendRequest({input: "阵容排行", seasonContextId: "set17-live"}, runtime);
+  assert.equal(disabledSet17.statusCode, 409);
+  assert.equal(disabledSet17.payload.code, "season_context_not_selectable");
   const removedPbe = await handleRecommendRequest({
     input: "阵容排行",
     seasonContextId: "set18-pbe"

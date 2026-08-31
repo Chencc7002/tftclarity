@@ -55,17 +55,17 @@ const CONTEXTS = [
       },
       riskNotice: null
     },
-    notices: ["S18“魔法森林”已在 18.1 版本上线；S17 将继续并行开放数个版本。"]
+    notices: ["S18“魔法森林”已在 18.1 版本上线；本站 S17 数据查询暂时停用。"]
   },
   {
     id: LEGACY_SEASON_CONTEXT_ID,
-    label: "Set 17 · 正式服",
+    label: "Set 17 · 暂不可用",
     season: 17,
     environment: "live",
     mode: "standard",
-    status: "live",
+    status: "unavailable",
     visible: true,
-    selectable: true,
+    selectable: false,
     isDefault: false,
     catalogNamespace: LEGACY_SEASON_CONTEXT_ID,
     source: {
@@ -103,7 +103,7 @@ const CONTEXTS = [
       },
       riskNotice: null
     },
-    notices: []
+    notices: ["本站 S17 数据查询暂时停用，请使用 S18。历史数据保留。"]
   }
 ];
 

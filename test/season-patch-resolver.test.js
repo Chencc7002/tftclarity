@@ -78,7 +78,8 @@ test("SeasonContextService.updateProviderPatch replaces current and previous pat
   assert.equal(updated.source.currentPatch, "17.9");
   assert.equal(updated.source.previousPatch, "17.8");
   assert.equal(updated.patchResolution.source, "official_riot_news");
-  const resolved = service.resolveForQuery("set17-live");
+  const resolved = service.resolve("set17-live", { requireSelectable: false });
+  assert.equal(resolved.selectable, false);
   assert.equal(resolved.currentPatch, "17.9");
   assert.equal(resolved.previousPatch, "17.8");
 });

@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -164,7 +165,7 @@ test("default ReAct bundle never substitutes catalog compOptions for live comps_
   ));
   const details = { meta: {}, units: new Map(), traits: new Map() };
   let liveDataCalls = 0;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     compsData: { compOptions: [{ not: "page definitions" }] },

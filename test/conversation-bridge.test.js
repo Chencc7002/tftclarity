@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import assert from "node:assert/strict";
 import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -559,7 +560,7 @@ test("modify and new-tool supplemental text cannot change quickTask arguments or
   }];
   let recommendationCalls = 0;
   let classifierCalls = 0;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -604,7 +605,7 @@ test("supplemental classifier timeout keeps the quickTask result and adds a warn
     placement_count: [120, 100, 90, 80, 60, 40, 30, 20]
   }];
   let classifierCalls = 0;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -639,7 +640,7 @@ test("quick-task bridge write failure preserves the successful quick result", as
     unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge|TFT_Item_GiantSlayer",
     placement_count: [120, 100, 90, 80, 60, 40, 30, 20]
   }];
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -682,7 +683,7 @@ test("HTTP quick-task timeout and cancellation finalize bridge records", async (
       compsClient: {},
       conversationBridgeStore: store
     };
-    const timeoutRuntime = createSmallWindowRuntime({
+    const timeoutRuntime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
       ...commonRuntime,
       recommendForInputImpl: async () => {
         throw Object.assign(new Error("quick task deadline exceeded"), { code: "run_timed_out" });
@@ -706,7 +707,7 @@ test("HTTP quick-task timeout and cancellation finalize bridge records", async (
     assert.equal(timeoutState.contextEpoch, 0);
     assert.equal(timeoutState.activeRecordId, null);
 
-    const cancelledRuntime = createSmallWindowRuntime({
+    const cancelledRuntime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
       ...commonRuntime,
       recommendForInputImpl: async () => new Promise(() => {})
     });
@@ -739,7 +740,7 @@ test("successful quickTask is promoted into the next dependent ReAct turn end to
     }];
     let observedHistoricalEvidence = null;
     let recommendationCalls = 0;
-    const runtime = createSmallWindowRuntime({
+    const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
       catalog: createCatalog(),
       cacheStore: new MemoryCacheStore(),
       fetchItems: false,

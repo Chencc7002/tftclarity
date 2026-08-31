@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -73,7 +74,7 @@ test("default react completion handler retains a carried emblem but restricts th
   const rows = ["TFT_Item_InfinityEdge", "TFT5_Item_GuinsoosRagebladeRadiant"].map(candidate => ({
     unit_builds: `${unit}&${emblem}|${locked}|${candidate}`, placement_count: [150, 130, 110, 90, 70, 50, 30, 10]
   }));
-  const runtime = createSmallWindowRuntime({ catalog, cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(), catalog, cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
     recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, response: rows }) });
   const bundle = await createDefaultReactToolHandlerBundle({ runtime, context: {},
     request: { input: "第三件只要普通装备", seasonContextId: "set17-live", locale: "zh-CN" } });
@@ -373,7 +374,7 @@ test("TFT handler factory reports unavailable tools and enforces explicit covera
 });
 
 test("default react bundle is request-scoped and exposes H1 only when its dependency is available", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     cacheStore: new MemoryCacheStore(),
     semanticRetriever: {
       async search() { return []; }
@@ -461,7 +462,7 @@ test("Set 18 live unit details reuse the season-scoped catalog", async () => {
 test("default react item carrier handler reuses the deterministic ranking service", async () => {
   let parsedInput = null;
   const itemApiName = "TFT_Item_GuinsoosRageblade";
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [{ apiName: "TFT18_Test", zhName: "测试棋子", aliases: ["测试棋子"] }],
       items: [{ apiName: itemApiName, zhName: "鬼索的狂暴之刃", aliases: ["羊刀"] }]
