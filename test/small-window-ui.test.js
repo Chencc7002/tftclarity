@@ -26,6 +26,36 @@ const legalCss = ui("legal.css");
 const opggPanel = ui("opgg-panel.js");
 const opggStyles = ui("opgg-panel.css");
 
+test("header and settings language buttons share one locale handler", () => {
+  const TitleBar = vm.runInNewContext(appShell.replaceAll("export ", "") + "\nTitleBar;");
+  function node(parent = null, locale = null) {
+    return { parent, dataset: locale ? { locale } : {}, listeners: [],
+      addEventListener(type, handler) { if (type === "click") this.listeners.push(handler); },
+      closest() { return this.dataset.locale ? this : this.parent?.closest() ?? null; },
+      click() { for (let current = this; current; current = current.parent) {
+        for (const handler of current.listeners) handler({ target: this });
+      } }
+    };
+  }
+  const shell = node(), header = node(shell), settings = node(shell);
+  const headerZh = node(header, "zh-CN"), headerEn = node(header, "en-US");
+  const settingsEn = node(settings, "en-US"), settingsZh = node(settings, "zh-CN");
+  let locale = "zh-CN";
+  const changes = [];
+  new TitleBar({ root: header, localeRoot: shell, getLocale: () => locale,
+    onLocaleChange(next) { locale = next; changes.push(next); } });
+  node(settingsEn).click();
+  assert.equal(locale, "en-US", "settings button must switch to English");
+  settingsEn.click();
+  headerZh.click();
+  headerEn.click();
+  settingsZh.click();
+  node(settings).click();
+  assert.deepEqual(changes, ["en-US", "zh-CN", "en-US", "zh-CN"]);
+  assert.equal(shell.listeners.length, 1, "one shared listener avoids double dispatch");
+  assert.match(appJs, /new TitleBar\(\{\s*root: document.querySelector\("#title-bar"\),\s*localeRoot: shellEl,/);
+});
+
 test("equipment policy chips distinguish remaining items from a whole-build restriction", () => {
   const messages = vm.runInNewContext(i18n.slice(0, i18n.indexOf("let locale ="))
     .replaceAll("export ", "") + "\nmessages;");

@@ -1,9 +1,10 @@
 const SETTINGS_STORAGE_KEY = "tftagent.settingsOpen";
 
 export class TitleBar {
-  constructor({ root, onLocaleChange, getLocale }) {
+  constructor({ root, localeRoot = root, onLocaleChange, getLocale }) {
     this.root = root;
-    this.root.addEventListener("click", (event) => {
+    // Header and mobile settings share the same delegated language handler.
+    localeRoot.addEventListener("click", (event) => {
       const button = event.target.closest("[data-locale]");
       if (button && button.dataset.locale !== getLocale()) onLocaleChange(button.dataset.locale);
     });

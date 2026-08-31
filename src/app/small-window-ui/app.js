@@ -169,6 +169,7 @@ const wallpaperController = new WallpaperController({
 });
 const titleBar = new TitleBar({
   root: document.querySelector("#title-bar"),
+  localeRoot: shellEl,
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
