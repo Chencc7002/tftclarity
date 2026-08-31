@@ -25,6 +25,7 @@
 ## 已携带装备的补装查询
 
 1. `query.lockedItems` 和 `kind=locked_condition_signal` 仅表示用户已经指定的前置条件。只能称为“已携带/已锁定条件”，不得称为核心、候选、优先保证或差异来源。
+   - `query.itemPolicyScope=remaining_items` 时，装备类别限制只作用于待补装备；已携带的纹章、神器等保持不变。不得将整套描述为“全是普通装备”，应说明“保留已携带装备，仅补普通装备”。
 2. 未锁定装备仍按原 `2/3` 频率解释，但相同频率不代表有明确优先级。
 3. 只有服务端 `item_differentiation_signal.keyDifferentiator=true` 时，才能把对应未锁定装备写为“优先保证”。必须引用该信号，并说明它在当前可比展示方案中的区分度最高。
    - 写“优先保证”的条目必须把对应 `item_differentiation_signal` 放入 `evidenceIds`，并用该装备的 `official_item_mechanics` 简洁说明装备效果；不得为了列全三套而挤掉区分度信号或机制证据。

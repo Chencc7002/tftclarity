@@ -4,7 +4,7 @@ import { createReactDecisionProvider } from "../src/react/react-decision-provide
 
 test("ordinary-only follow-ups get current scope guidance in both provider layouts", async () => {
   for (const messageLayout of ["append_only", "legacy_full_state"]) {
-    for (const question of ["不含特殊装备", "修改为只包含普通装备"]) {
+    for (const question of ["不含特殊装备", "修改为只包含普通装备", "改为近3天", "改为近7天"]) {
       let body;
       const provider = createReactDecisionProvider({
         endpoint: "https://example.test/chat/completions", model: "test-model", messageLayout,
@@ -16,16 +16,30 @@ test("ordinary-only follow-ups get current scope guidance in both provider layou
           }) } }] }) };
         }
       });
-      await provider({ state: { question, evidence: [], messages: [{ role: "user", content: "厄斐琉斯的三件套含特殊装备" }] },
+      await provider({ state: { question, evidence: [], messages: [
+        { role: "user", content: "厄斐琉斯已有斗转和羊刀" },
+        ...(question === "改为近7天" ? [
+          { role: "user", content: "第三件只要普通装备" },
+          { role: "assistant", content: "包含特殊装备" }
+        ] : [])
+      ],
+        bridgeContext: { relation: "modify", records: [{ operation: "unit_build_completion" }] } },
         toolCatalog: [{ name: "unit_builds", inputSchema: { type: "object" } }] });
+      if (question === "改为近3天") {
+        const guidance = body.messages.find(message => message.content.includes("equipment-completion-guidance.v1"));
+        assert.match(guidance?.content ?? "", /never unit_builds_batch/);
+        assert.match(guidance.content, /Do not lock the recommended third item/);
+        continue;
+      }
       const guidance = body.messages.find(message => message.content.includes("equipment-category-guidance.v1"));
       assert.match(guidance?.content ?? "", /"itemPolicy":"ordinary_only"/u);
       assert.match(guidance.content, /does not change complete builds into single-item rankings/u);
       assert.match(guidance.content, /Re-query current unit_builds evidence/u);
+      assert.match(guidance.content, /ordinary-only restricts the NEW remaining items/u);
+      assert.match(guidance.content, /retain all lockedItems even when they are special/u);
     }
   }
 });
-
 
 test("react decision provider sends bounded state and returns a validated action", async () => {
   let observedBody;

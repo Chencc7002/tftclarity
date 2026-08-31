@@ -2276,7 +2276,8 @@ function conditionChipValue(key, constraint, query) {
   }
   if (key === "star_level") return t("starLevel", { value: (value ?? []).join("/") });
   if (key === "item_count") return t("completedItems", { value });
-  if (key === "item_policy") return itemPolicyChip(value);
+  if (key === "item_policy") return query.itemPolicyScope === "remaining_items"
+    ? t("remainingItemPolicy", { value: itemPolicyChip(value) }) : itemPolicyChip(value);
   if (key === "item_categories") {
     const labels = { radiant: t("radiant"), artifact: t("artifact"), emblem: t("emblem") };
     return (Array.isArray(value) ? value : [value]).map((category) => labels[category] ?? category).join("/");

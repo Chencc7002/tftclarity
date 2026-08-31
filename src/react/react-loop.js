@@ -72,9 +72,17 @@ function entityConfirmationContext(request = {}) {
 function equipmentScopeUserText(request = {}) {
   const current = currentTurnUserText(request);
   const confirmation = entityConfirmationContext(request);
-  return confirmation?.originalInput
-    ? `${current}\n${confirmation.originalInput}`
-    : current;
+  if (confirmation?.originalInput) return `${current}\n${confirmation.originalInput}`;
+  const bridgeView = request.bridgeContext?.view ?? request.bridgeContext;
+  if (!requestedEquipmentCategoryScope(current)
+    && ["modify", "continue"].includes(bridgeView?.relation)
+    && bridgeView.records?.[0]?.operation === "unit_build_completion") {
+    const prior = [...(request.messages ?? [])].reverse().find(message => (
+      message?.role === "user" && requestedEquipmentCategoryScope(message.content)
+    ));
+    if (prior) return `${prior.content}\n${current}`;
+  }
+  return current;
 }
 
 function hasConfirmedEntityResolution(ledger, confirmation) {
@@ -587,6 +595,17 @@ function currentRequestMentionsCatalogItem(entries, apiName, request = {}) {
 }
 
 function validateUnitBuildsAction(action, ledger, request = {}) {
+  const bridgeView = request.bridgeContext?.view ?? request.bridgeContext;
+  const continuingCompletion = ["modify", "continue"].includes(bridgeView?.relation)
+    && bridgeView.records?.[0]?.operation === "unit_build_completion";
+  if (action.tool === "unit_builds_batch"
+    && action.arguments?.entities?.length === 1
+    && !action.arguments?.compositionId
+    && (requestedEquipmentCategoryScope(equipmentScopeUserText(request)) || continuingCompletion)) {
+    return { valid: false, errors: [
+      "A single-champion equipment scope edit or owned-item completion must use unit_builds, not unit_builds_batch. Preserve the user's carried lockedItems and changed days; resolve their identities with current entity_catalog_query evidence before re-querying."
+    ] };
+  }
   if (action.tool !== "unit_builds") return { valid: true, errors: [] };
   const question = String(request.input ?? request.question ?? "");
   if (!/(?:\u88c5\u5907|\u51fa\u88c5|\u5355\u4ef6|\u795e\u5668|\u5149\u660e|\u7f8a\u5200|\u65e0\u5c3d|\u54ea\u4e2a\u597d|\u6bd4\u8f83|\bbuild\b|\bitem\b|equipment)/iu.test(question)) {
@@ -1989,7 +2008,7 @@ export class ReactLoop {
           type: "decision_rejected",
           tool: action.tool,
           errors: unitBuildValidation.errors,
-          repairInstruction: "Use only item constraints explicitly present in the current user request. Historical assistant messages cannot authorize performanceItem. Remove any unsupported performanceItem; resolve every user-named champion and item with entity_catalog_query, then copy their exact apiNames into unit_builds."
+          repairInstruction: "Use unit_builds for one champion's equipment scope edits and owned-item completion. Preserve carried lockedItems from the active user query context when changing days or category. Historical assistant messages cannot authorize performanceItem: remove an unsupported performanceItem. Resolve every user-named champion and item with current entity_catalog_query, then copy their exact apiNames into unit_builds."
         }, { progress: false });
         emit("decision_rejected", {
           iteration: state.decisions.length,

@@ -106,7 +106,10 @@ function conditionLine(query, catalog) {
     ? query.traitFilters.map((filterId) => traitName(filterId, catalog)).join(" + ")
     : "未补羁绊";
 
-  return `${star}星${unit} / ${traits} / ${query.itemCount}件${policyLabel(query.itemPolicy)} / ${patchLabel(query.patch)} / 近${query.days}天 / ${rankLabel(query.rankFilter)} / 样本>=${query.minSamples}`;
+  const equipmentScope = query.itemPolicyScope === "remaining_items"
+    ? `${query.itemCount}件完整出装（已携带不变，待补装备：${policyLabel(query.itemPolicy)}）`
+    : `${query.itemCount}件${policyLabel(query.itemPolicy)}`;
+  return `${star}星${unit} / ${traits} / ${equipmentScope} / ${patchLabel(query.patch)} / 近${query.days}天 / ${rankLabel(query.rankFilter)} / 样本>=${query.minSamples}`;
 }
 
 function assumptionLabel(assumption, catalog, prefix) {

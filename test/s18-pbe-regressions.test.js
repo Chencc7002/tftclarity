@@ -348,6 +348,7 @@ test("Set 18 PBE item carrier aliases cover every emblem 转 shorthand", () => {
   });
   const catalog = createCatalog({ units: [], traits: [], items });
 
+  assert.equal(planQuery("斗转适合谁带", { catalog }).parsed.carrierItem, "DA_18_EmblemBrawler");
   for (const [apiName, emblemName] of cases) {
     const traitName = emblemName.replace(/纹章$/, "");
     for (const alias of [`${traitName}转`, `${traitName}转职`]) {

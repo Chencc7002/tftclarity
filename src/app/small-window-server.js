@@ -5,6 +5,7 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
+import { requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
 import { loadFollowUpHistory, singleEquipmentResultSubject, unitResultCoverage } from "./unit-follow-up.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
@@ -339,6 +340,9 @@ function resolvedQuickTaskEntities(task, catalog) {
     item1,
     item2,
     trait,
+    unresolvedItems: suppliedEntityArguments
+      .filter((key) => ["item", "item1", "item2"].includes(key) && !byArgument[key])
+      .map((key) => ({ entityType: "item", inputFragment: task.arguments[key] })),
     complete: suppliedEntityArguments.every((key) => Boolean(byArgument[key]))
   };
 }
@@ -412,6 +416,10 @@ function directParsedForQuickTask(task, input, catalog, preferences) {
       ...(parsed.parser ?? {}),
       intentExplicit: true,
       usedLLM: false,
+      unresolvedEntityHints: [
+        ...resolved.unresolvedItems,
+        ...(parsed.parser?.unresolvedEntityHints ?? [])
+      ],
       ...(complete ? {
         bareUnitIntentAmbiguous: false,
         constraintConflicts: [],
@@ -2944,6 +2952,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
           ? "system_default"
           : null,
       itemPolicy: query.itemPolicy,
+      itemPolicyScope: query.itemPolicyScope,
       lockedItems: lockedItemApiNames,
       lockedItemNames: lockedItemApiNames.map((apiName) => itemName(apiName, catalog)),
       comparisonItems: query.comparisonItems ?? [],
@@ -6795,6 +6804,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
           : undefined,
         performanceItem,
         itemPolicy,
+        itemPolicyScope: requestedEquipmentPolicyScope(request.input),
         itemCategories,
         starLevel: input.starLevel,
         itemCount: input.itemCount,

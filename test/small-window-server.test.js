@@ -3422,6 +3422,32 @@ test("all Set 18 live equipment shortcuts resolve form entities directly and use
   }
 });
 
+test("completion shortcuts never silently drop one unresolved carried item", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {
+      async getUnitBuilds() { assert.fail("unresolved carried items must block the statistics query"); }
+    },
+    compsClient: {}
+  });
+  for (const [item1, item2] of [["未知测试装备", "羊刀"], ["羊刀", "未知测试装备"]]) {
+    const response = await handleRecommendRequest({
+      input: `查询霞已携带${item1}和${item2}时的推荐出装`,
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id: "unit-build-completion",
+        operation: "unit_build_completion",
+        arguments: { champion: "霞", item1, item2 }
+      }
+    }, runtime);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.type, "clarification");
+    assert.match(JSON.stringify(response.payload), /未知测试装备/);
+  }
+});
+
 test("all Set 18 live comp and library shortcuts keep the selected season context", async () => {
   const unit = "DA_18_Ahri";
   const item = "DA_Artifact_TitanicHydra";

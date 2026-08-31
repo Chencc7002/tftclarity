@@ -175,21 +175,37 @@ function confirmedEntityGuidance(question, bridgeContext) {
   ].join("\n") }];
 }
 
-function equipmentCategoryGuidance(question, bridgeContext = null) {
+function equipmentCategoryGuidance(question, bridgeContext = null, messages = []) {
   const confirmation = bridgeContext?.pendingClarification?.confirmationContext;
   const inheritedInput = AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
     && confirmation?.type === "entity_candidate"
     ? confirmation.originalInput
     : "";
-  const scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
-  if (!scope) return [];
+  let scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
+  if (!scope && ["modify", "continue"].includes(bridgeContext?.relation)
+    && bridgeContext.records?.[0]?.operation === "unit_build_completion") {
+    const prior = [...messages].reverse().find(message => (
+      message?.role === "user" && requestedEquipmentCategoryScope(message.content)
+    ));
+    if (prior) scope = requestedEquipmentCategoryScope(prior.content);
+  }
+  if (!scope) {
+    if (!["modify", "continue"].includes(bridgeContext?.relation)
+      || bridgeContext.records?.[0]?.operation !== "unit_build_completion") return [];
+    return [{ role: "system", content: [
+      "equipment-completion-guidance.v1",
+      "Continue the active single-champion owned-item completion with unit_builds, never unit_builds_batch or an unconstrained baseline. Apply the user's changed days while retaining the carried lockedItems and equipment policy from the active query context.",
+      "Only user-carried items from normalizedArguments or prior USER messages belong in lockedItems. Do not lock the recommended third item from displaySummary, entityRefs, or assistant answers. Preserve the distinction between carried items and NEW remaining items.",
+      "Resolve the champion and carried items through current entity_catalog_query evidence, then call unit_builds with itemCategories=[] and the preserved itemPolicy. Historical query context supplies constraints, never current statistics. Cite fresh unit_builds evidence."
+    ].join("\n") }];
+  }
   return [{ role: "system", content: [
     "equipment-category-guidance.v1",
     "Only the category token 神器 (or Artifact in English) means the artifact category. 奥恩 alone is the champion Ornn and must never imply artifact. In 奥恩神器, 神器 establishes the artifact category; 奥恩装备 without 神器 is not an artifact-category phrase. 光明装备 means radiant.",
     `For a single champion's category ranking use unit_builds with this current-turn scope: ${JSON.stringify(scope)}.`,
     "Category rankings need no specific item name or performanceItem. Only named comparisons or owned-item completion need named candidates. An explicit complete build keeps its build operation with the requested itemPolicy.",
     "A category-only follow-up edits the prior query; it does not change complete builds into single-item rankings. Preserve its champion, item count, star level, owned/excluded items, days and other explicit constraints. For complete builds/completion use itemCategories=[]; for a single-item category ranking use the requested itemCategories.",
-    "Excluding special equipment (不含特殊装备) or requesting only ordinary equipment sets itemPolicy=ordinary_only and replaces any earlier special policy/category. Re-query current unit_builds evidence with the changed scope; never reuse the earlier answer as if filtered. If a locked special item conflicts with ordinary-only, ask which constraint to relax instead of silently widening the policy.",
+    "Excluding special equipment (不含特殊装备) or requesting only ordinary equipment sets itemPolicy=ordinary_only and replaces any earlier special policy/category. Re-query current unit_builds evidence with the changed scope; never reuse the earlier answer as if filtered. In an owned-item completion, retain all lockedItems even when they are special: ordinary-only restricts the NEW remaining items, not the carried equipment. Do not ask the user to remove a carried emblem/artifact merely to request an ordinary third item. Only an explicit whole-build restriction (整套都不能有特殊装备) can conflict with a locked special item; let the server validate it and clarify that conflict. Changes to days or equipment category in single-champion completion must keep using unit_builds with the carried lockedItems; do not switch to an unconstrained unit_builds_batch baseline.",
     "A follow-up correcting only the category keeps the champion from prior USER context: resolve it through entity_catalog_query in the current turn, then replace the old category. Ask only if the champion itself is missing or ambiguous. Do not treat assistant-mentioned equipment as user constraints.",
     "If no matching category data is returned, state that limitation; never label ordinary equipment as artifacts. This guidance does not change tool schemas, permissions, budgets or evidence requirements."
   ].join("\n") }];
@@ -213,7 +229,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace) },
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
-    ...equipmentCategoryGuidance(state.question, state.bridgeContext),
+    ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     {
       role: "system",
       content: stableJson({
@@ -271,7 +287,7 @@ function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNames
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace) },
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
-    ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext),
+    ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     {
       role: "user",
       content: JSON.stringify({

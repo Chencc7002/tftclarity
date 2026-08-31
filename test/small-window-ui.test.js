@@ -26,6 +26,20 @@ const legalCss = ui("legal.css");
 const opggPanel = ui("opgg-panel.js");
 const opggStyles = ui("opgg-panel.css");
 
+test("equipment policy chips distinguish remaining items from a whole-build restriction", () => {
+  const messages = vm.runInNewContext(i18n.slice(0, i18n.indexOf("let locale ="))
+    .replaceAll("export ", "") + "\nmessages;");
+  for (const locale of ["zh-CN", "en-US"]) {
+    const scope = vm.createContext({ t: (key, values = {}) => Object.entries(values).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), messages[locale][key] ?? key) });
+    vm.runInContext(appJs.slice(appJs.indexOf("function itemPolicyChip("), appJs.indexOf("function conditionChips(")), scope);
+    const constraint = { value: "ordinary_only" };
+    assert.equal(scope.conditionChipValue("item_policy", constraint, { itemPolicyScope: "remaining_items" }),
+      locale === "zh-CN" ? "待补装备：普通装备" : "Remaining items: Normal items");
+    assert.equal(scope.conditionChipValue("item_policy", constraint, {}), messages[locale].ordinaryItems);
+  }
+});
+
 test("direct MetaTFT match views render localized entities, assets, and freshness", () => {
   assert.match(opggPanel, /displayName: unit\.displayName \?\? unit\.characterId/);
   assert.match(opggPanel, /iconUrl: unit\.iconUrl/);

@@ -32,8 +32,19 @@ export function filterBuildRows(rows, query, options = {}) {
     .filter((build) => build.items.length === query.itemCount)
     .filter((build) => {
       const itemRecords = build.items.map((apiName) => catalog.itemByApiName.get(apiName));
-      const allowed = itemRecords.every((item) => isAllowedItem(item, query.itemPolicy));
+      const remainingLocks = [...(query.lockedItems ?? query.ownedItems ?? [])];
+      const allowed = itemRecords.every((item, index) => {
+        const lockedIndex = remainingLocks.indexOf(build.items[index]);
+        if (lockedIndex >= 0) remainingLocks.splice(lockedIndex, 1);
+        // Exempt only the exact number already carried, not every copy of that ID.
+        // Current-set availability is still mandatory for locked equipment.
+        if (query.itemPolicyScope === "remaining_items" && lockedIndex >= 0) {
+          return Boolean(item?.current && item?.obtainable);
+        }
+        return isAllowedItem(item, query.itemPolicy);
+      });
       if (!allowed) return false;
+      if (remainingLocks.length > 0) return false;
       if (requiredSpecialCategories.size > 0
         && !itemRecords.some((item) => requiredSpecialCategories.has(item?.category))) return false;
       if (!(query.ownedItems ?? []).every((ownedItem) => build.items.includes(ownedItem))) return false;

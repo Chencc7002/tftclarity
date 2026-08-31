@@ -1243,18 +1243,31 @@ test("equipment category vocabulary separates exclusive, additive and negated sc
 });
 
 test("ordinary-only corrections override stale special scope without changing complete-build conditions", async (t) => {
-  for (const input of ["不含特殊装备", "修改为只包含普通装备"]) {
+  for (const input of ["不含特殊装备", "修改为只包含普通装备", "修改为只包含普通装备，改为近7天", "改为近7天"]) {
     await t.test(input, async () => {
       let observed;
       const initial = { unit: "DA_18_Aphelios", itemPolicy: "include_special", itemCategories: ["artifact"],
         itemCount: 3, starLevel: [2], days: 3, minSamples: 100 };
-      const { result } = await runCase({
-        input, messages: [{ role: "user", content: "厄斐琉斯三件套出装，包含特殊装备" }],
+      if (input.includes("7天")) initial.days = 7;
+      const { result, events } = await runCase({
+        input, messages: [
+          { role: "user", content: "厄斐琉斯三件套出装，包含特殊装备" },
+          ...(input === "改为近7天" ? [
+            { role: "user", content: "第三件只要普通装备" },
+            { role: "assistant", content: "包含特殊装备" }
+          ] : [])
+        ],
+        bridgeContext: { view: { relation: "modify", records: [{ operation: "unit_build_completion" }] } },
         provider: queueProvider([
           call("entity_catalog_query", { entityType: "unit", filters: { names: ["厄斐琉斯"] } }),
+          call("unit_builds_batch", { entities: [{ apiName: initial.unit }] }),
           call("unit_builds", initial), finish("已更新三件套出装。", ["ev-2"])
         ]),
-        definitions: [definition("entity_catalog_query", { inputSchema: {
+        definitions: [definition("unit_builds_batch", { inputSchema: {
+          type: "object", additionalProperties: false, properties: {
+            entities: { type: "array", items: { type: "object", properties: { apiName: { type: "string" } } } }
+          }
+        } }), definition("entity_catalog_query", { inputSchema: {
           type: "object", additionalProperties: false, properties: {
             entityType: { type: "string" }, filters: { type: "object", properties: { names: { type: "array", items: { type: "string" } } } }
           }
@@ -1265,7 +1278,8 @@ test("ordinary-only corrections override stale special scope without changing co
             days: { type: "integer" }, minSamples: { type: "integer" }
           }
         } })],
-        handlers: { entity_catalog_query: async () => evidence([{ apiName: "DA_18_Aphelios" }], {
+        handlers: { unit_builds_batch: async () => assert.fail("a scope edit must not execute an unconstrained batch"),
+          entity_catalog_query: async () => evidence([{ apiName: "DA_18_Aphelios" }], {
           type: "entity_catalog_results", entityType: "unit",
           resolution: { requests: [{ inputName: "厄斐琉斯", status: "resolved", candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }] }] }
         }), unit_builds: async (args) => {
@@ -1274,6 +1288,7 @@ test("ordinary-only corrections override stale special scope without changing co
         } }
       });
       assert.equal(result.status, "completed", JSON.stringify(result));
+      assert.ok(events.some(event => event.type === "decision_rejected" && event.data.code === "ungrounded_unit_build_query"));
       assert.deepEqual(observed, { ...initial, itemPolicy: "ordinary_only", itemCategories: [] });
     });
   }

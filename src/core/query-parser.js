@@ -6,7 +6,7 @@ import { isCompRankingInput, parseCompRankingQuery } from "./comp-query.js";
 import { isCompTrendRequest } from "./comp-trend-intent.js";
 import { isCompAnalysisInput, parseCompAnalysisRequest } from "./comp-analysis.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
-import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import { requestedEquipmentCategoryScope, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
 import { normalizeTftSemanticInput } from "./semantic-input-normalizer.js";
 
 function parseStarLevels(input) {
@@ -415,7 +415,7 @@ function inferUnresolvedEntityHints(input, entities) {
   }
 
   if (entities.traits.length === 0) {
-    const levelTrait = normalized.match(/[1-9一二三四五六七八九](?!套|个|种)([\p{Script=Han}a-z]{2,12}?)(?:羁绊|开了|已开|装备|三件套|三件|怎么|如何|$)/u);
+    const levelTrait = normalized.match(/[1-9一二三四五六七八九](?!套|个|种|件)([\p{Script=Han}a-z]{2,12}?)(?:羁绊|开了|已开|装备|三件套|三件|怎么|如何|$)/u);
     const beforeOpen = normalized.match(/([\p{Script=Han}a-z]{2,12}?)(?:开了|已开)/u);
     const afterOpen = normalized.match(/(?:开了|已开)([\p{Script=Han}a-z]{2,12}?)(?:装备|怎么|如何|$)/u);
     const fragment = cleanUnresolvedFragment(levelTrait?.[1] ?? beforeOpen?.[1] ?? afterOpen?.[1], entities)
@@ -590,6 +590,7 @@ export function parseQuery(input, options = {}) {
     traitFilters,
     compMention,
     itemPolicy: parseItemPolicy(input, activeItemMatches),
+    itemPolicyScope: requestedEquipmentPolicyScope(input),
     itemCategories,
     performanceItem,
     carrierItem,

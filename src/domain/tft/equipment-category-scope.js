@@ -5,6 +5,15 @@ const ADDITIVE_PREFIX = /(?:加入|加上|包含|包括|带上|算上|纳入|inc
 const EXCLUSIVE_SCOPE = /(?:只|仅)(?:看|查|查询|要|用|包括|包含)?\s*(?:(?:奥恩)?神器|光明|artifacts?|radiant)|(?:only|just)\s+(?:artifacts?|radiant)/iu;
 const EXCLUSIVE_ORDINARY_PREFIX = /(?:(?:只|仅)(?:看|查|查询|要|用|包括|包含|允许)?|only|just)\s*$/iu;
 
+// This selects the target of a category restriction, never equipment identity.
+export function requestedEquipmentPolicyScope(input) {
+  const text = String(input ?? "");
+  if (!requestedEquipmentCategoryScope(text)) return undefined;
+  if (/(?:整套|全套|所有装备|全部装备|[三3]件(?:装备)?(?:都|全部))[^，,。；;\n]{0,16}(?:普通|特殊|神器|光明)|(?:entire|whole)\s+build[^.\n]{0,30}(?:ordinary|special|artifact|radiant)/iu.test(text)) return "all_items";
+  if (/(?:剩余|剩下|待补|补的|第[三3]件|另外[一二两12]件)[^，,。；;\n]{0,16}(?:普通|特殊|神器|光明)/u.test(text)) return "remaining_items";
+  return undefined;
+}
+
 export function requestedEquipmentCategoryScope(input) {
   const text = String(input ?? "");
   const categories = [];

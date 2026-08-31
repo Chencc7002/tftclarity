@@ -6,7 +6,7 @@ import {
   handleFeedbackRequest,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
-import { MemoryCacheStore, createCatalog } from "../src/index.js";
+import { MemoryCacheStore, createCatalog, recommendForInput } from "../src/index.js";
 import {
   assertHandlerCoverage,
   createTftToolHandlers
@@ -63,6 +63,25 @@ test("independent react endpoint answers without entering recommendForInput", as
     "composition_member_statistics",
     "strategy_video_search"
   ]);
+});
+
+test("default react completion handler retains a carried emblem but restricts the new slot", async () => {
+  const unit = "TFT17_Xayah", emblem = "Test_BruiserEmblem", locked = "TFT_Item_GuinsoosRageblade";
+  const catalog = createCatalog({ items: [...createCatalog().items, {
+    apiName: emblem, zhName: "斗士纹章", aliases: ["斗转"], category: "emblem", current: true, obtainable: true
+  }] });
+  const rows = ["TFT_Item_InfinityEdge", "TFT5_Item_GuinsoosRagebladeRadiant"].map(candidate => ({
+    unit_builds: `${unit}&${emblem}|${locked}|${candidate}`, placement_count: [150, 130, 110, 90, 70, 50, 30, 10]
+  }));
+  const runtime = createSmallWindowRuntime({ catalog, cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
+    recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, response: rows }) });
+  const bundle = await createDefaultReactToolHandlerBundle({ runtime, context: {},
+    request: { input: "第三件只要普通装备", seasonContextId: "set17-live", locale: "zh-CN" } });
+  const result = await bundle.handlers.unit_builds({ unit, lockedItems: [emblem, locked], itemPolicy: "ordinary_only", itemCount: 3, minSamples: 0 });
+  assert.equal(result.type, "unit_build_completion");
+  assert.equal(result.query.itemPolicyScope, "remaining_items");
+  assert.deepEqual(result.query.lockedItems, [emblem, locked]);
+  assert.deepEqual(result.cards.map(card => card.items.map(item => item.apiName)), [[emblem, locked, "TFT_Item_InfinityEdge"]]);
 });
 
 test("default react unit_builds handler preserves deterministic equipment intents", async () => {

@@ -99,9 +99,11 @@ export function buildQueryContext(parsedQuery, options = {}) {
     parsedQuery.parser?.itemPolicyExplicit === true
     || requestedEquipmentCategoryScope(parsedQuery.rawInput)?.itemPolicy === "ordinary_only"
   );
-  // Explicit restrictions win. The existing validator reports conflicting locked
-  // special items instead of silently relaxing an ordinary-only request.
-  const itemPolicy = explicitOrdinaryOnly
+  const itemPolicyScope = parsedQuery.itemPolicyScope
+    ?? (explicitOrdinaryOnly && lockedItems.length > 0 ? "remaining_items" : undefined);
+  // In completion queries the requested category constrains new items only.
+  // Explicit whole-build restrictions still validate against the locked items.
+  const itemPolicy = explicitOrdinaryOnly || itemPolicyScope === "remaining_items"
     ? requestedItemPolicy
     : widenItemPolicyForLockedItems(requestedItemPolicy, lockedItems, catalog);
   const itemPolicyExpandedByLockedItems = itemPolicy !== requestedItemPolicy;
@@ -200,6 +202,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     traitFilters,
     comp,
     itemPolicy,
+    itemPolicyScope,
     itemCategories,
     lockedItems,
     comparisonItems,
