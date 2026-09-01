@@ -259,7 +259,8 @@ export function auditForwardCanonicalRun(run) {
 }
 
 export async function runForwardCanonicalArm({ arm, pair, evalCase, observations, config, authorization,
-  fetchImpl, toolRegistry, fuse, identityTracker, candidateSkill = UNIT_PLAY_GUIDANCE_SKILL_V1_5_7 }) {
+  fetchImpl, toolRegistry, fuse, identityTracker, candidateSkill = UNIT_PLAY_GUIDANCE_SKILL_V1_5_7,
+  runContextOptions = null }) {
   const taskFrame = taskFrameFromCase(evalCase);
   const availableTools = Object.freeze([...candidateSkill.allowedTools]);
   const skillRegistry = new SkillRegistry({ definitions: [candidateSkill], toolRegistry });
@@ -306,6 +307,11 @@ export async function runForwardCanonicalArm({ arm, pair, evalCase, observations
   context.compositionCardScope = true;
   context.compositionCardsOwnPositioning = true;
   context.officialItemEvidenceV1 = true;
+  if (runContextOptions?.unitPlayFixedCardCompletionAffordance === true) {
+    context.unitPlayFixedCardCompletionAffordance = true;
+    context.unitPlayFixedCardCount = Number.isInteger(runContextOptions.unitPlayFixedCardCount)
+      ? runContextOptions.unitPlayFixedCardCount : 2;
+  }
   const result = await loop.run({ input: evalCase.input, messages: clone(evalCase.messages ?? []),
     seasonContextId: observations.seasonContextId, taskAnchor: taskFrame,
     semanticAdvisory: { schemaVersion: "react-semantic-advisory.v1", action: "recommend",

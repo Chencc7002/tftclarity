@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "unit-play-guidance-completion-config.v5",
+  "experimentId": "unit-play-guidance-completion.2026-09-01.v5",
+  "mode": "adaptive_candidate_reliability_preflight",
+  "adaptiveDisclosure": {
+    "priorAttemptsObserved": true,
+    "sourceAttemptCommits": [
+      "40e4c1286a8bcaf5170801103972de0ef7c33205",
+      "842579f2b3a16944770f02a5af96f4e8db7efdfc",
+      "f76cbbb50dccaab044fce851020e71ca1364efe6",
+      "2d93413be806b92c38eee76484c63274b1705b8c"
+    ],
+    "answerContentUsedForTuning": false,
+    "boundedActionTraceUsedForCompletionRepair": true,
+    "pairedEfficacyClaimAllowed": false
+  },
+  "authorization": {
+    "realProviderRun": false,
+    "productionControl": false
+  },
+  "provider": {
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "timeoutMs": 25000,
+    "temperature": 0,
+    "maxOutputTokens": 1800,
+    "thinkingMode": "disabled",
+    "messageLayout": "append_only"
+  },
+  "agent": {
+    "deadlineMs": 30000,
+    "maxDecisions": 24,
+    "maxRetriesPerTool": 1,
+    "groundingMode": "strict"
+  },
+  "execution": {
+    "eligibleCases": 30,
+    "repetitions": 3,
+    "plannedAgentRuns": 90,
+    "concurrency": 1,
+    "providerHttpRequestHardCap": 1000,
+    "totalTokenHardCap": null,
+    "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11"
+  },
+  "runtimeAffordance": {
+    "unitPlayFixedCardCompletionAffordance": true,
+    "unitPlayFixedCardCount": 2
+  },
+  "frozen": {
+    "sourceCorpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "sourceObservationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillVersion": "1.5.9",
+    "candidateSkillSha256": "8f96107e182ac0347aee7adbb57e90d89ab609d44cd18f96a7d9f593af07fb36",
+    "candidateRenderedContextSha256": "5c8ee38e76410ee27b2fec0087d6cf8958e0610bcad2ab5881fbe66381c0be6c"
+  },
+  "claimBoundary": "Adaptive candidate-only reliability evaluation; no paired efficacy or production authorization."
+}

@@ -509,6 +509,33 @@ function compositionTacticalNextActionAffordance(action, toolResult, request) {
   };
 }
 
+function unitPlayFixedCardCompletionAffordance(action, addition, ledger, context) {
+  if (context?.unitPlayFixedCardCompletionAffordance !== true) return null;
+  if (action.tool !== "composition_tactical_details" || !addition?.added) return null;
+  const requiredCardCount = Number.isInteger(context.unitPlayFixedCardCount)
+    && context.unitPlayFixedCardCount > 0 ? context.unitPlayFixedCardCount : 2;
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const tacticalEntries = entries.filter((entry) => (
+    entry.toolName === "composition_tactical_details"
+    && Array.isArray(entry.value?.formation?.units)
+  ));
+  if (tacticalEntries.length < requiredCardCount) return null;
+  return {
+    schemaVersion: "react-next-action-affordance.v1",
+    resultStatus: "unit_play_fixed_composition_cards_complete",
+    recommendedAction: "finish",
+    finish: {
+      reasonCode: "sufficient_evidence",
+      requiredEvidenceIds: entries.map((entry) => entry.evidenceId).filter(Boolean)
+    },
+    compositionCards: {
+      requiredCardCount,
+      observedTacticalEvidenceCount: tacticalEntries.length,
+      positioningProseAllowed: false
+    }
+  };
+}
+
 function compositionTrendNextActionAffordance(action, toolResult, addition) {
   if (action.tool !== "comps_trends" || !addition?.added || !addition.entry?.evidenceId) return null;
   const value = toolResult?.value ?? {};
@@ -2268,7 +2295,12 @@ export class ReactLoop {
         allowModelGeneratedStatistics: false
       };
       const addition = ledger.add({ definition, toolResult, evidenceContract });
-      const nextActionAffordance = compositionTacticalNextActionAffordance(
+      const nextActionAffordance = unitPlayFixedCardCompletionAffordance(
+        action,
+        addition,
+        ledger,
+        context
+      ) ?? compositionTacticalNextActionAffordance(
         action,
         toolResult,
         request

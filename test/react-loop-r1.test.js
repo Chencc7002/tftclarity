@@ -150,6 +150,7 @@ async function runCase(options = {}) {
     seasonContextId: options.seasonContextId ?? "set17-live"
   }, {
     ...context,
+    ...(options.contextOverrides ?? {}),
     onEvent: (event) => events.push(event)
   });
   return { result, events, context };
@@ -3041,6 +3042,108 @@ test("G5 constrained batch requires and reuses an unconstrained baseline for the
   assert.equal(affordance.recommendedAction, "finish");
   assert.equal(affordance.mechanismLookup.required, false);
   assert.deepEqual(affordance.finish.requiredEvidenceIds, ["ev-1", "ev-2"]);
+});
+
+test("unit-play fixed card affordance recommends finish after required tactical cards", async () => {
+  const compsDefinition = definition("comps_rankings", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mention"],
+      properties: { mention: { type: "string" } }
+    }
+  });
+  const tacticalDefinition = definition("composition_tactical_details", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["compositionId", "clusterId", "units", "seasonContextId"],
+      properties: {
+        compositionId: { type: "string" },
+        clusterId: { type: "string" },
+        units: { type: "array", items: { type: "string" } },
+        seasonContextId: { type: "string" }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("comps_rankings", { mention: "cluster:one" }),
+    call("composition_tactical_details", {
+      compositionId: "comp-one",
+      clusterId: "cluster-one",
+      units: ["TFT_Alpha"],
+      seasonContextId: "set17-live"
+    }),
+    call("comps_rankings", { mention: "cluster:two" }),
+    call("composition_tactical_details", {
+      compositionId: "comp-two",
+      clusterId: "cluster-two",
+      units: ["TFT_Alpha"],
+      seasonContextId: "set17-live"
+    }),
+    finish("已取得装备和两张阵容卡；拿到推荐装备，或者来牌多、升星顺时可以考虑玩。",
+      ["ev-1", "ev-2", "ev-3", "ev-4"])
+  ]);
+  const tacticalPlan = (id) => ({
+    status: "ready",
+    compositionId: `comp-${id}`,
+    clusterId: `cluster-${id}`,
+    units: ["TFT_Alpha"],
+    seasonContextId: "set17-live"
+  });
+  const { result } = await runCase({
+    provider,
+    input: "Alpha 怎么玩？阵容与站位用卡片展示。",
+    definitions: [compsDefinition, tacticalDefinition],
+    contextOverrides: {
+      compositionCardScope: true,
+      compositionCardsOwnPositioning: true,
+      unitPlayFixedCardCompletionAffordance: true,
+      unitPlayFixedCardCount: 2
+    },
+    handlers: {
+      comps_rankings: async (input) => {
+        const id = input.mention?.includes("two") ? "two" : "one";
+        return {
+          type: "composition_rankings",
+          resolution: { status: "resolved" },
+          results: [{
+            compositionRef: { name: `Comp ${id}` },
+            tacticalDetailQueryPlan: tacticalPlan(id)
+          }],
+          source: { updatedAt: "2026-08-08T00:00:00.000Z" },
+          updatedAt: "2026-08-08T00:00:00.000Z"
+        };
+      },
+      composition_tactical_details: async (input) => ({
+        type: "composition_tactical_details",
+        ok: true,
+        compId: input.compositionId,
+        clusterId: input.clusterId,
+        seasonContextId: input.seasonContextId,
+        formation: {
+          units: [{
+            apiName: "TFT_Alpha",
+            name: "Alpha",
+            boardPosition: { rowFromFront: 1, columnFromLeft: 1 }
+          }]
+        },
+        source: { updatedAt: "2026-08-08T00:00:00.000Z" },
+        updatedAt: "2026-08-08T00:00:00.000Z"
+      })
+    }
+  });
+  assert.equal(result.terminationReason, "completed");
+  const firstTacticalObservation = provider.requests[2].state.observations.at(-1);
+  assert.equal(firstTacticalObservation.tool, "composition_tactical_details");
+  assert.equal(firstTacticalObservation.nextActionAffordance, undefined);
+  const secondTacticalObservation = provider.requests[4].state.observations.at(-1);
+  const affordance = secondTacticalObservation.nextActionAffordance;
+  assert.equal(affordance.schemaVersion, "react-next-action-affordance.v1");
+  assert.equal(affordance.resultStatus, "unit_play_fixed_composition_cards_complete");
+  assert.equal(affordance.recommendedAction, "finish");
+  assert.deepEqual(affordance.finish.requiredEvidenceIds, ["ev-1", "ev-2", "ev-3", "ev-4"]);
+  assert.equal(affordance.compositionCards.positioningProseAllowed, false);
 });
 
 test("G5 lets the model repair one repeated baseline by adding the requested nested constraint", async () => {

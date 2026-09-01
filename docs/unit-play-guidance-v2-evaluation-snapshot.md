@@ -34,6 +34,10 @@ The commit-bound v3 formal attempt at `f76cbbb50dccaab044fce851020e71ca1364efe6`
 
 Skill 1.5.9 keeps the same tools, schemas, evidence contracts and production lock, but narrows the answer: composition and positioning are rendered only as source-backed cards, while model prose is limited to official unit role, equipment interpretation, and the general when-to-play condition. A v4 candidate-only reliability preflight freezes this candidate separately before any further paid run.
 
+The commit-bound v4 formal attempt at `2d93413be806b92c38eee76484c63274b1705b8c` also stopped with status `inconclusive`: 27 native model completions out of 37 runs, 37 exact frozen Tool sequences, 9 cases with at least two native completions, 360 Provider requests, and 5,340,089 observed tokens. It improved completion rate but still failed reliability. The bounded trace shows the remaining failure is post-retrieval over-calling of `comps_rankings` after the fixed card sequence has already been satisfied; the next fix should be deterministic runtime affordance or finish gating rather than more prose-only Skill text.
+
+The v5 preflight keeps Skill 1.5.9 and adds an experiment-gated ReAct next-action affordance: once two current composition tactical details have been added, the latest observation recommends `finish` with all current Evidence IDs and marks positioning prose as disallowed. This preserves the two existing runtimes and does not widen tool permissions or production behavior.
+
 The immutable `metatft-409000-17.9.raw.json` fixture was copied byte-for-byte from the original working tree after Git worktree checkout changed its line endings. Its expected SHA-256 remains `836c609c0c519d6b647be2249a98ecd49d13aaea7f451b0cc6468b6767ebef5b`.
 
 ## Next gate

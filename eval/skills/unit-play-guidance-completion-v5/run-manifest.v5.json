@@ -1,7 +1,7 @@
 {
-  "schemaVersion": "unit-play-guidance-completion-run-manifest.v4",
-  "experimentId": "unit-play-guidance-completion.2026-09-01.v4",
-  "classification": "adaptive candidate-only reliability; no paired efficacy claim",
+  "schemaVersion": "unit-play-guidance-completion-run-manifest.v5",
+  "experimentId": "unit-play-guidance-completion.2026-09-01.v5",
+  "classification": "adaptive candidate-only reliability with deterministic post-card finish affordance; no paired efficacy claim",
   "adaptiveDisclosure": {
     "priorProviderAttemptsObserved": true,
     "answerContentUsedForTuning": false,
@@ -16,21 +16,23 @@
     "minimumNativeModelCompletions": 81,
     "minimumCasesWithTwoNativeCompletions": 27,
     "exactToolSequenceEvaluatedSeparately": true,
-    "earlyStopWhenGatesUnreachable": true
+    "earlyStopWhenGatesUnreachable": true,
+    "unitPlayFixedCardCompletionAffordance": true,
+    "unitPlayFixedCardCount": 2
   },
   "frozen": {
-    "configNormalizedSha256": "2b3994abcdeb43333cdf3b87ad639a750643cf8d0f00d6fe530a180a26657667",
-    "preflightResultNormalizedSha256": "b2da708ff8fdd343c750025269fe0b2def3784bf507a998f43f76c6a94387b3b",
+    "configNormalizedSha256": "d6f3fc4e71dcb8550533b18de270e9cecdef512f8a7878550d3223cbc2f824ed",
+    "preflightResultNormalizedSha256": "478500362780c09b61b75d827b26759a21b0f9db070daff4b466564ec33a5624",
     "sourceCorpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
     "sourceObservationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
     "candidateSkillSha256": "8f96107e182ac0347aee7adbb57e90d89ab609d44cd18f96a7d9f593af07fb36",
     "candidateRenderedContextSha256": "5c8ee38e76410ee27b2fec0087d6cf8958e0610bcad2ab5881fbe66381c0be6c"
   },
   "implementation": {
-    "preflightRawSha256": "aa5f851a9fb1b45ed999c0f3f347ed6a1cafbeaa3f6a73ea8b3f39a1b2d996b8",
-    "canonicalRawSha256": "ff20468d82455bac19dfda93fe1300568dde42c0678a1ffc3d8aded851484078",
-    "formalRunnerRawSha256": "3b3b021fb959ada1e09422a75a8409459c4a81ca1984f9af99bc50eb4eb7d7e1",
-    "dryRunnerRawSha256": "88d8c7e6342d5ca850e8efa62fea73860a0a73d50b29b8cd37f3a6d56b340ce8"
+    "preflightRawSha256": "628a36269c929cf39323ced2b7e3e2d555159074fa67fc3b3d8deaa0012adba6",
+    "canonicalRawSha256": "c49830b8eb74fe30d6394f8a9ac3df244a6dfc9ee4de59a0fc03870795614ce8",
+    "formalRunnerRawSha256": "1a16fd4dee178a073c032fe60c257b26ea60cf23fbadbdb67f20b9fc58b01e2d",
+    "dryRunnerRawSha256": "15498e1be73177037e80116f7b9d21dad96022b08336ef7231d28e0f904af498"
   },
   "scriptedDryRun": {
     "completedAgentRuns": 90,
@@ -40,8 +42,8 @@
     "exactFrozenToolSequences": 90,
     "casesWithAtLeastTwoNativeCompletions": 30,
     "reviewEntries": 90,
-    "resultNormalizedSha256": "620e0ec8652bb7f2aac36150e6a7f13cddd595121c38589d2ac98a027b055d82",
-    "reviewPacketNormalizedSha256": "dbec2f316b796fcdc22e38cc6632a2929d1031ecaf81b654348847219dfeb9c1"
+    "resultNormalizedSha256": "7a4d175b1e55c5cffe1a13ccdd46274a3377e35dab2e6896955a32ed57c69d96",
+    "reviewPacketNormalizedSha256": "0b9c25a73770bbbdb46a3740f6031a23e88e9320a6e35cdc6940166dd16de4ec"
   },
   "authorization": {
     "realProviderRun": false,
@@ -69,10 +71,10 @@
       "stopReason": "native_model_completion_gate_unreachable",
       "nativeModelCompletions": 20,
       "exactFrozenToolSequences": 30,
+      "casesWithAtLeastTwoNativeCompletions": 7,
       "completedResultProduced": true,
       "reviewPacketProduced": true,
-      "reviewEntries": 20,
-      "casesWithAtLeastTwoNativeCompletions": 7
+      "reviewEntries": 20
     },
     {
       "implementationCommitSha": "2d93413be806b92c38eee76484c63274b1705b8c",

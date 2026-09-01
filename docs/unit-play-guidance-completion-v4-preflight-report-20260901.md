@@ -35,3 +35,9 @@ No answer text from incomplete or inconclusive attempts was used. Only bounded a
 - Formal CLI remains locked without a commit-bound authorization artifact.
 
 The scripted run verifies wiring only. A real v4 run requires a new explicit authorization bound to the final commit because the candidate differs from v3.
+
+## Formal run result
+
+The commit-bound v4 formal attempt on `2d93413be806b92c38eee76484c63274b1705b8c` stopped early with status `inconclusive`. It completed 37 Agent runs, used 360 Provider requests and 5,340,089 observed tokens, and stopped because the native model completion gate became mathematically unreachable.
+
+The bounded result was 27 native model completions, 37 exact frozen Tool sequences, and 9 cases with at least two native completions. This improved the native completion rate from v3's 20/30 to 27/37, but did not pass the reliability gates. The remaining failures were concentrated in runs that completed the expected card retrieval sequence and then issued extra `comps_rankings` calls until the same-capability circuit opened. The next candidate should make post-card completion a deterministic runtime affordance or gated finish path rather than relying on Skill prose alone.
