@@ -15,7 +15,8 @@
     "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11",
     "minimumNativeModelCompletions": 81,
     "minimumCasesWithTwoNativeCompletions": 27,
-    "exactToolSequenceEvaluatedSeparately": true
+    "exactToolSequenceEvaluatedSeparately": true,
+    "earlyStopWhenGatesUnreachable": true
   },
   "frozen": {
     "configNormalizedSha256": "360b53c44bbb08fd1dcfcd0789510b64cfebd1a97332ccff1fdb3774d2d5cc75",
@@ -27,7 +28,7 @@
   },
   "implementation": {
     "preflightRawSha256": "9adadc3466bd260cc394f8b2043a510178853a502678b62bb15a17ebe5bf3daf",
-    "canonicalRawSha256": "a7d1e517dfe028e88dda0629f215c3f54b1ac9ccf8dd78d23868e5b57da001a9",
+    "canonicalRawSha256": "4076d289fccbf0ff0c4e67b8a278725b4dc0ed34efeeeec3b110791124a5f6ac",
     "formalRunnerRawSha256": "97a347a965915fe25eca19c0bf7d977ce61f595c362e31b2011ad450a51603fc",
     "dryRunnerRawSha256": "7221fc259092a01a04ec941add65e4a0cc1fc6b993ad1427a826bf6313d653e8"
   },
@@ -39,7 +40,7 @@
     "exactFrozenToolSequences": 90,
     "casesWithAtLeastTwoNativeCompletions": 30,
     "reviewEntries": 90,
-    "resultNormalizedSha256": "39bd4a9217beca8f8cfad46949c728b3466fba61f5839da7311bde66a82098b8",
+    "resultNormalizedSha256": "360617a3b03b8b25ad84b4dfa8d5bca519dfa5c9194bd0be18492c1758d596ad",
     "reviewPacketNormalizedSha256": "494bf86020a9f4b0032aeaa009369759ae10920cc5bdd0a2447362bd7e61b393"
   },
   "authorization": {

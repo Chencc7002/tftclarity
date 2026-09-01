@@ -81,6 +81,30 @@ function labelTemplates(packet) {
   }));
 }
 
+function summarizeCompletionRuns(runs, plan) {
+  const validRuns = runs.filter((run) => run.audit.valid);
+  const counts = new Map();
+  for (const run of validRuns) counts.set(run.caseId, (counts.get(run.caseId) ?? 0) + 1);
+  const casesWithAtLeastTwoNativeCompletions = [...counts.values()].filter((count) => count >= 2).length;
+  const remainingByCase = new Map();
+  for (const planned of plan.runs.slice(runs.length)) {
+    remainingByCase.set(planned.caseId, (remainingByCase.get(planned.caseId) ?? 0) + 1);
+  }
+  const allCaseIds = new Set([...plan.runs.map((run) => run.caseId), ...counts.keys()]);
+  const maxCasesWithAtLeastTwoNativeCompletions = [...allCaseIds].filter((caseId) => (
+    (counts.get(caseId) ?? 0) + (remainingByCase.get(caseId) ?? 0) >= 2
+  )).length;
+  const remainingRuns = plan.runs.length - runs.length;
+  const maxNativeModelCompletions = validRuns.length + remainingRuns;
+  const reliability = { nativeCompletionsPass: validRuns.length >= 81,
+    coveredCasesPass: casesWithAtLeastTwoNativeCompletions >= 27 };
+  return { attempted: runs.length, nativeModelCompletions: validRuns.length,
+    nativeModelCompletionRate: runs.length ? validRuns.length / runs.length : 0,
+    exactFrozenToolSequences: runs.filter((run) => run.audit.checks.exactFrozenToolSequence).length,
+    casesWithAtLeastTwoNativeCompletions, maxNativeModelCompletions,
+    maxCasesWithAtLeastTwoNativeCompletions, reliability };
+}
+
 export async function runCompletionV3Experiment({ config, corpus, observations, preflightResult,
   authorization, fetchImpl, onCheckpoint = null } = {}) {
   if (!authorization || !["fake_test", "real_provider"].includes(authorization.transportMode)) {
@@ -101,6 +125,7 @@ export async function runCompletionV3Experiment({ config, corpus, observations, 
   const fuse = createCompletionV3Fuse();
   const identityTracker = createForwardProviderIdentityTracker();
   const runs = [];
+  let stopReason = null;
   for (const planned of plan.runs) {
     const evalCase = corpus.positive.find((entry) => entry.caseId === planned.caseId);
     const run = await runForwardCanonicalArm({ arm: "B", pair: { pairId: planned.runId,
@@ -109,17 +134,18 @@ export async function runCompletionV3Experiment({ config, corpus, observations, 
       candidateSkill: UNIT_PLAY_GUIDANCE_SKILL_V1_5_8 });
     runs.push(run);
     await onCheckpoint?.({ type: "arm_completed", completedAgentRuns: runs.length, run: clone(run) });
+    const progress = summarizeCompletionRuns(runs, plan);
+    if (progress.maxNativeModelCompletions < 81) {
+      stopReason = "native_model_completion_gate_unreachable";
+      break;
+    }
+    if (progress.maxCasesWithAtLeastTwoNativeCompletions < 27) {
+      stopReason = "case_coverage_gate_unreachable";
+      break;
+    }
   }
   const validRuns = runs.filter((run) => run.audit.valid);
-  const counts = new Map();
-  for (const run of validRuns) counts.set(run.caseId, (counts.get(run.caseId) ?? 0) + 1);
-  const casesWithAtLeastTwoNativeCompletions = [...counts.values()].filter((count) => count >= 2).length;
-  const aggregate = { attempted: runs.length, nativeModelCompletions: validRuns.length,
-    nativeModelCompletionRate: runs.length ? validRuns.length / runs.length : 0,
-    exactFrozenToolSequences: runs.filter((run) => run.audit.checks.exactFrozenToolSequence).length,
-    casesWithAtLeastTwoNativeCompletions,
-    reliability: { nativeCompletionsPass: validRuns.length >= 81,
-      coveredCasesPass: casesWithAtLeastTwoNativeCompletions >= 27 } };
+  const aggregate = summarizeCompletionRuns(runs, plan);
   const passed = Object.values(aggregate.reliability).every(Boolean);
   const rawReview = buildForwardBlindedReviewArtifacts(validRuns,
     createHash("sha256").update(`${implementationSeed(authorization)}\0completion-v3`).digest("hex"));
@@ -130,6 +156,7 @@ export async function runCompletionV3Experiment({ config, corpus, observations, 
   return { result: { schemaVersion: "unit-play-guidance-completion-result.v3",
     experimentId: COMPLETION_V3_EXPERIMENT_ID, status: passed ? "awaiting_independent_review" : "inconclusive",
     claimBoundary: "Adaptive candidate-only reliability; no paired efficacy or production claim.",
+    stopReason,
     plan: { plannedAgentRuns: 90, completedAgentRuns: runs.length, orderSha256: plan.orderSha256, concurrency: 1 },
     actualProviderModelCalls: authorization.transportMode === "real_provider" ? fuse.snapshot().providerHttpRequests : 0,
     fuse: fuse.snapshot(), providerIdentity: identityTracker.snapshot(), aggregate, runs },

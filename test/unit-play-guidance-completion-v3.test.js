@@ -61,6 +61,26 @@ test("v3 scripted transport completes 90 candidate runs and emits review artifac
   assert.equal(transport.snapshot().requests, 810);
 });
 
+test("v3 stops early once reliability gates are mathematically unreachable", async () => {
+  const earlyFallback = async () => {
+    const body = { choices: [{ message: { content: JSON.stringify({ schemaVersion: "react-action.v1",
+      type: "finish", answer: "evidence unavailable", evidenceIds: [], reasonCode: "insufficient_evidence",
+      narrative: null }) } }], model: "deepseek-v4-flash-test", system_fingerprint: "completion-v3-test",
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+    const make = () => ({ ok: true, status: 200, async json() { return structuredClone(body); }, clone: make });
+    return make();
+  };
+  const authorization = authorizeCompletionV3Run({ config, preflightResult, transportMode: "fake_test" });
+  const output = await runCompletionV3Experiment({ config, corpus, observations, preflightResult,
+    authorization, fetchImpl: earlyFallback });
+  assert.equal(output.result.status, "inconclusive");
+  assert.equal(output.result.stopReason, "native_model_completion_gate_unreachable");
+  assert.equal(output.result.plan.completedAgentRuns, 10);
+  assert.equal(output.result.aggregate.maxNativeModelCompletions, 80);
+  assert.equal(output.review.packet.entries.length, 0);
+  assert.deepEqual(output.review.labels, []);
+});
+
 test("v3 manifest pins the adaptive implementation and keeps Provider and production locked", async () => {
   assert.equal(manifest.authorization.realProviderRun, false);
   assert.equal(manifest.authorization.productionControl, false);
