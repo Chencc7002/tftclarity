@@ -262,4 +262,19 @@ export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_8 = freezeSkillContract({
   )
 });
 
+// Completion-reliability candidate after the first v3 real-provider run showed
+// exact retrieval but brittle completion. Keep cards as the only positioning UI:
+// model prose should finish with equipment and when-to-play interpretation only.
+export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_9 = freezeSkillContract({
+  ...UNIT_PLAY_GUIDANCE_SKILL_V1_5_8,
+  version: "1.5.9",
+  instructions: UNIT_PLAY_GUIDANCE_SKILL_V1_5_8.instructions.map((instruction, index) => {
+    if (index === 7) return "正文目标80—160汉字，只写三件事：英雄官方定位/技能一句；来源主流三件装备及每件核心机制；最后一句两个可玩条件。阵容、成员、羁绊、统计、站位和棋盘全部由卡片展示，正文不得写任何阵容名、坐标、行列、前排/中排/后排、cell 或站位解释。";
+    if (index === 8) return "卡片获取使用本轮第一次 comps_rankings.unit=resolvedId 返回的固定候选集合，不刷新、不扩展，也不寻找第三张卡。按来源顺序给每个候选执行一次自己的 resolutionPrerequisite，再用该 resolved 结果的 tacticalDetailQueryPlan 调一次 composition_tactical_details；partial、unavailable、失败或运行时拒绝都算该候选已处理，不重复同一阵容或战术查询。固定集合处理完后立即结束证据获取：引用初始候选和已取得的各卡战术 Evidence，让界面生成多个各带自身棋盘的阵容卡片。正文绝不写阵容或站位。";
+    return instruction;
+  }).concat(
+    "若 finish 被拒绝且错误涉及 positioning prose、composition card scope、invalid_composition_tactical_detail_evidence 或 capability_failure_circuit_open，不要再调用 comps_rankings 或 composition_tactical_details；删除正文中的阵容/站位文字，只保留装备、官方定位和两个可玩条件，然后再次 finish。"
+  )
+});
+
 export const UNIT_PLAY_GUIDANCE_SKILL = UNIT_PLAY_GUIDANCE_SKILL_V1_3;

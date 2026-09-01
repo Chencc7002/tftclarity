@@ -30,6 +30,10 @@ The adaptive v3 candidate-reliability preflight is frozen separately: 90 B-only 
 
 The first v3 attempt at `a198fef2d072f3622d66fe8d72cd022e31a363c4` stopped after 3 runs because the native-completion audit was stale relative to PR1D and rejected model completions that carried recoverable warnings. It created checkpoints only.
 
+The commit-bound v3 formal attempt at `f76cbbb50dccaab044fce851020e71ca1364efe6` stopped after 30 Agent runs with status `inconclusive`: 20 native model completions, 30 exact frozen Tool sequences, 7 cases with at least two native completions, 298 Provider requests, and 4,405,158 observed tokens. The bounded trace shows retrieval ordering is reliable but completion remains brittle when the model writes or repairs positioning/composition prose after card evidence is already present.
+
+Skill 1.5.9 keeps the same tools, schemas, evidence contracts and production lock, but narrows the answer: composition and positioning are rendered only as source-backed cards, while model prose is limited to official unit role, equipment interpretation, and the general when-to-play condition. A v4 candidate-only reliability preflight freezes this candidate separately before any further paid run.
+
 The immutable `metatft-409000-17.9.raw.json` fixture was copied byte-for-byte from the original working tree after Git worktree checkout changed its line endings. Its expected SHA-256 remains `836c609c0c519d6b647be2249a98ecd49d13aaea7f451b0cc6468b6767ebef5b`.
 
 ## Next gate
