@@ -248,4 +248,18 @@ export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_7 = freezeSkillContract({
   })
 });
 
+// Completion-reliability candidate derived from bounded Provider action traces.
+// It changes no facts, tools or permissions: the initial server-returned card
+// set remains authoritative and retrieval stops once that finite set is done.
+export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_8 = freezeSkillContract({
+  ...UNIT_PLAY_GUIDANCE_SKILL_V1_5_7,
+  version: "1.5.8",
+  instructions: UNIT_PLAY_GUIDANCE_SKILL_V1_5_7.instructions.map((instruction, index) => {
+    if (index === 8) return "卡片获取使用本轮第一次 comps_rankings.unit=resolvedId 返回的固定候选集合，不刷新、不扩展，也不寻找第三张卡。按来源顺序给每个候选执行一次自己的 resolutionPrerequisite，再用该 resolved 结果的 tacticalDetailQueryPlan 调一次 composition_tactical_details；partial、unavailable 或失败都算该候选已处理，不重复同一阵容或战术查询。固定集合全部处理后，证据获取立即结束：引用初始候选和已取得的各卡战术 Evidence，让界面生成多个各带自身棋盘的阵容卡片，正文不写阵容或站位。";
+    return instruction;
+  }).concat(
+    "固定候选集合处理完后，下一动作必须是 react-action.v1 的 finish，不能再调用 comps_rankings、composition_tactical_details 或其他工具。finish 若被运行时拒绝，只按 decision_rejected 给出的格式或引用问题修正 answer、evidenceIds、reasonCode、narrative 后再次 finish；除非拒绝信息明确指出某个尚未执行的固定候选动作，不得用新检索代替答案修正。"
+  )
+});
+
 export const UNIT_PLAY_GUIDANCE_SKILL = UNIT_PLAY_GUIDANCE_SKILL_V1_3;

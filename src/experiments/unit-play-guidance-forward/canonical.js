@@ -32,7 +32,6 @@ export const FORWARD_REVIEW_FACETS = Object.freeze([
   "concision"
 ]);
 
-const AVAILABLE_TOOLS = Object.freeze([...UNIT_PLAY_GUIDANCE_SKILL_V1_5_7.allowedTools]);
 export const FORWARD_EXPECTED_TOOL_SEQUENCE = Object.freeze([
   "unit_details",
   "unit_builds",
@@ -229,10 +228,10 @@ function actionShapedProjectedFetch(fetchImpl, targetUnitId, telemetry, fuse, id
   };
 }
 
-function renderCandidate(skillContext) {
+function renderCandidate(skillContext, candidateSkill = UNIT_PLAY_GUIDANCE_SKILL_V1_5_7) {
   return JSON.stringify({
     schemaVersion: "unit-play-browser-candidate.v1",
-    contentHash: sha256(JSON.stringify(UNIT_PLAY_GUIDANCE_SKILL_V1_5_7)),
+    contentHash: sha256(JSON.stringify(candidateSkill)),
     skillContext
   });
 }
@@ -259,15 +258,16 @@ export function auditForwardCanonicalRun(run) {
   return { valid: validityChecks.every(Boolean), checks, toolSequence, errorCodes: errors };
 }
 
-async function runArm({ arm, pair, evalCase, observations, config, authorization, fetchImpl, toolRegistry,
-  fuse, identityTracker }) {
+export async function runForwardCanonicalArm({ arm, pair, evalCase, observations, config, authorization,
+  fetchImpl, toolRegistry, fuse, identityTracker, candidateSkill = UNIT_PLAY_GUIDANCE_SKILL_V1_5_7 }) {
   const taskFrame = taskFrameFromCase(evalCase);
-  const skillRegistry = new SkillRegistry({ definitions: [UNIT_PLAY_GUIDANCE_SKILL_V1_5_7], toolRegistry });
+  const availableTools = Object.freeze([...candidateSkill.allowedTools]);
+  const skillRegistry = new SkillRegistry({ definitions: [candidateSkill], toolRegistry });
   const selection = matchSkill(taskFrame, skillRegistry);
   if (selection.status !== "selected") throw taggedError(`${evalCase.caseId} no longer selects the candidate Skill`, "candidate_skill_failure");
-  const skillContext = buildSkillContext({ skill: UNIT_PLAY_GUIDANCE_SKILL_V1_5_7, selection, taskFrame,
-    runtimeAvailableTools: AVAILABLE_TOOLS });
-  const candidateContext = renderCandidate(skillContext);
+  const skillContext = buildSkillContext({ skill: candidateSkill, selection, taskFrame,
+    runtimeAvailableTools: availableTools });
+  const candidateContext = renderCandidate(skillContext, candidateSkill);
   if (sha256(candidateContext) !== config.frozen.candidateRenderedContextSha256) {
     throw taggedError("candidate rendered context hash drifted", "candidate_skill_failure");
   }
@@ -299,7 +299,7 @@ async function runArm({ arm, pair, evalCase, observations, config, authorization
       error: entry.error == null ? null : String(entry.error).slice(0, 300) })
   });
   const loop = new ReactLoop({ registry: toolRegistry, toolExecutor: executor, decisionProvider: provider,
-    handlers, availableToolNames: AVAILABLE_TOOLS, budget: config.agent, groundingMode: config.agent.groundingMode,
+    handlers, availableToolNames: availableTools, budget: config.agent, groundingMode: config.agent.groundingMode,
     createId: () => `${prefix}-loop-${++id}`, now: () => frozenNow });
   const events = [];
   const context = createRunContext(pair.pairId, arm, events, { maxRetriesPerTool: config.agent.maxRetriesPerTool });
@@ -509,7 +509,7 @@ export async function runForwardCanonicalExperiment({ config, corpus, observatio
   for (const pair of plan.pairs) {
     const evalCase = corpus.positive.find((entry) => entry.caseId === pair.caseId);
     for (const arm of pair.order) {
-      const run = await runArm({ arm, pair, evalCase, observations, config, authorization, fetchImpl, toolRegistry,
+      const run = await runForwardCanonicalArm({ arm, pair, evalCase, observations, config, authorization, fetchImpl, toolRegistry,
         fuse, identityTracker });
       runs.push(run);
       await onCheckpoint?.({ type: "arm_completed", completedAgentRuns: runs.length,

@@ -5,7 +5,7 @@ import { createSmallWindowRuntimeAsync, startSmallWindowServer } from "../src/ap
 import { MemoryCacheStore } from "../src/index.js";
 import { createUnitPlayBrowserCandidate } from "../src/experiments/unit-play-guidance-browser/candidate.js";
 import { REACT_DECISION_PROMPT_VERSION, REACT_SCOPED_TACTICAL_PROMPT_VERSION } from "../src/react/react-decision-provider.js";
-import { UNIT_PLAY_GUIDANCE_SKILL_V1_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_2, UNIT_PLAY_GUIDANCE_SKILL_V1_5_3, UNIT_PLAY_GUIDANCE_SKILL_V1_5_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_5, UNIT_PLAY_GUIDANCE_SKILL_V1_5_6, UNIT_PLAY_GUIDANCE_SKILL_V1_5_7 } from "../src/skills/definitions/unit-play-guidance.js";
+import { UNIT_PLAY_GUIDANCE_SKILL_V1_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_2, UNIT_PLAY_GUIDANCE_SKILL_V1_5_3, UNIT_PLAY_GUIDANCE_SKILL_V1_5_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_5, UNIT_PLAY_GUIDANCE_SKILL_V1_5_6, UNIT_PLAY_GUIDANCE_SKILL_V1_5_7, UNIT_PLAY_GUIDANCE_SKILL_V1_5_8 } from "../src/skills/definitions/unit-play-guidance.js";
 
 // Explicit local diagnostic, never loaded by the production server. User browser
 // interactions can incur normal configured-provider usage; no automatic queries.
@@ -26,6 +26,7 @@ const compactAnswerContract = process.argv.includes("--compact-answer-contract")
 const cardsOnlyAnswerContract = process.argv.includes("--cards-only-answer-contract");
 const exactCardQueryContract = process.argv.includes("--exact-card-query-contract");
 const unitPlayItemBatch = process.argv.includes("--unit-play-item-batch");
+const unitPlayCompletionStop = process.argv.includes("--unit-play-completion-stop");
 const modelObservationProjection = process.argv.includes("--model-observation-projection");
 const maxRequestsArg = arg("max-requests", "");
 const maxRequests = maxRequestsArg === "" ? null : Number(maxRequestsArg);
@@ -36,8 +37,10 @@ if (compactAnswerContract && !answerContract) throw new Error("--compact-answer-
 if (cardsOnlyAnswerContract && !compactAnswerContract) throw new Error("--cards-only-answer-contract requires --compact-answer-contract");
 if (exactCardQueryContract && !cardsOnlyAnswerContract) throw new Error("--exact-card-query-contract requires --cards-only-answer-contract");
 if (unitPlayItemBatch && !exactCardQueryContract) throw new Error("--unit-play-item-batch requires --exact-card-query-contract");
+if (unitPlayCompletionStop && !unitPlayItemBatch) throw new Error("--unit-play-completion-stop requires --unit-play-item-batch");
 if (modelObservationProjection && !answerContract) throw new Error("--model-observation-projection requires --answer-contract");
-const skill = unitPlayItemBatch ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_7
+const skill = unitPlayCompletionStop ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_8
+  : unitPlayItemBatch ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_7
   : exactCardQueryContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_6
   : cardsOnlyAnswerContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_5
   : compactAnswerContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_4

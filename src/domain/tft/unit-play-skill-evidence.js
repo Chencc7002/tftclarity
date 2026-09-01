@@ -136,8 +136,8 @@ export function analyzeUnitPlaySkillEvidence({ skill, selection, taskFrame, runt
   now = Date.now(), maxAgeMs = 30 * 60 * 1000, tacticalMaxAgeMs = 5 * 60 * 1000 }) {
   // 1.2/1.3 change method instructions only; facet/data contracts stay at 1.1.
   // Opt-in 1.4 additionally recognizes the existing official role detail field.
-  if (skill.id !== "unit_play_guidance" || !["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5", "1.5.6", "1.5.7"].includes(skill.version)) throw new TypeError("Unsupported unit-play Skill adapter version");
-  const supportsItemMechanisms = ["1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5", "1.5.6", "1.5.7"].includes(skill.version);
+  if (skill.id !== "unit_play_guidance" || !["1.1.0", "1.2.0", "1.3.0", "1.4.0", "1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5", "1.5.6", "1.5.7", "1.5.8"].includes(skill.version)) throw new TypeError("Unsupported unit-play Skill adapter version");
+  const supportsItemMechanisms = ["1.5.0", "1.5.1", "1.5.2", "1.5.3", "1.5.4", "1.5.5", "1.5.6", "1.5.7", "1.5.8"].includes(skill.version);
   if (!text(scope?.unitId) || !text(scope?.seasonContextId) || !text(scope?.patch)
     || !Number.isFinite(now) || !Number.isFinite(maxAgeMs) || maxAgeMs <= 0 || !Number.isFinite(tacticalMaxAgeMs) || tacticalMaxAgeMs <= 0) throw new TypeError("Unit-play evidence scope/freshness policy is required");
   const observations = list(result?.observations).slice(0, MAX_OBSERVATIONS);

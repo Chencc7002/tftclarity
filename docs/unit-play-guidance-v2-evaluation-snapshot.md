@@ -22,6 +22,12 @@ This branch is an evaluation-only snapshot of the complete working tree used to 
 
 The first authorized attempt at `40e4c1286a8bcaf5170801103972de0ef7c33205` was stopped after 7 arms, 56 Provider requests, and 693,199 tokens because it projected beyond the then-authorized 10,000,000-token cap. It retained diagnostic checkpoints only and produced no completed result or blind packet.
 
+The second attempt at `842579f2b3a16944770f02a5af96f4e8db7efdfc` removed the aggregate token cap but became mathematically unanalyzable after four fully attempted cases had zero valid pairs. It stopped at 26 arms, 207 requests, and 2,449,197 tokens. B followed the exact Tool sequence in 13/13 arms but passed native completion in 4; A passed native completion in 0/13. The resulting 1.5.8 candidate changes only the post-card completion instruction and requires a new adaptive evaluation.
+
+Skill 1.5.8 content SHA-256 is `7d2e6ca88c8c8300ab6bdbf28d3a5a567198993c489e0d3a73984a29d48ff405`.
+
+The adaptive v3 candidate-reliability preflight is frozen separately: 90 B-only Agent runs, a 1,000-request hard cap, no aggregate token cap, and no paired-efficacy claim. Its 11 zero-call gates pass and its scripted transport completes 90/90 runs with 810 fake requests. A real v3 run needs scope-specific authorization.
+
 The immutable `metatft-409000-17.9.raw.json` fixture was copied byte-for-byte from the original working tree after Git worktree checkout changed its line endings. Its expected SHA-256 remains `836c609c0c519d6b647be2249a98ecd49d13aaea7f451b0cc6468b6767ebef5b`.
 
 ## Next gate
