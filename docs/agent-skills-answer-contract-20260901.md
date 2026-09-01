@@ -298,8 +298,9 @@ cards-only 和官方装备批量回执。A/B 仍只允许 guidance 不同。
 候选一精确解析及战术详情、候选二精确解析及战术详情。任何扩大参数、额外实体解析、
 单件装备查询、未知阵容 mention 或战术参数漂移都会失败关闭。
 
-全局执行控制固定为并发 1、最多 1800 个 Provider HTTP 请求和 1000 万 token。每次
-请求在发出前预留输入与输出额度；响应缺少 usage、实际 usage 超过预留、熔断开启，或
+全局执行控制固定为并发 1、最多 1800 个 Provider HTTP 请求。第一次正式尝试证明
+1000 万总 token 无法覆盖 180 个 Agent run 后，用户取消了总 token 上限；每个响应仍
+保留 1800 output token 上限并记录实际 usage。响应缺少 usage、请求熔断开启，或
 Provider 的 model/system_fingerprint 在运行中漂移，都会中止实验。
 
 完整脚本化演练结果：
@@ -326,11 +327,17 @@ run 上限、Provider 主机和模型。正式入口还会分别校验命令行�
 干净工作树和 commit SHA。当前结果只证明运行器与盲审流水线可用，脚本化答案不能作为
 效果证据。
 
-每个 arm 在进入盲包前必须完成原生 ReAct finish、无运行时错误、严格执行固定 8 步
-Tool 序列、并发不超过 1，并且每次 Provider decision 都带 usage。只有同一 pair 的 A/B
-两臂都有效才进入盲审。至少需要 81 个有效 pair，且至少 27 个 case 各有 2 次有效
+每个 arm 在进入盲包前必须由模型原生完成 ReAct finish、无运行时错误、并发不超过 1，
+并且每次 Provider decision 都带 usage。固定 8 步 Tool 序列按 A/B 臂分别统计为实验
+结果，不作为共同入场条件，否则会预先排除 Skill 需要改善的基线行为。只有同一 pair 的
+A/B 两臂都有效才进入盲审。至少需要 81 个有效 pair，且至少 27 个 case 各有 2 次有效
 pair；达不到时结果为 `inconclusive`，不生成评审标签。正式入口逐 arm 追加有界检查点，
 拒绝覆盖已有输出；检查点只用于诊断，不支持从中断位置续跑，凭据不会写入任何产物。
+
+提交 `40e4c1286a8bcaf5170801103972de0ef7c33205` 的第一次正式尝试在 7 个 arm 后主动停止：
+共 56 次 Provider 请求、693199 token，只有 1 次模型原生完成，另有 1 次 duplicate-call
+fallback 和 5 次 no-progress fallback。该尝试只有检查点，没有完整结果或盲包，不能作为
+效果证据；它仅用于发现总 token 预算与入场口径问题，具体答案没有用于修改 Skill。
 
 下一步只剩两个独立边界：其一，在隔离评估快照的最终零调用回归通过后，由用户明确
 授权一次 180 次 Agent run 的正式 Provider 实验，随后交给两名独立评审者；其二，恢复本地可视环境后补做

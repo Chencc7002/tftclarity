@@ -58,7 +58,13 @@ const appendCheckpoint = async (checkpoint) => {
     caseId: run?.caseId ?? null, terminationReason: run?.result?.terminationReason ?? null,
     audit: run?.audit ?? null, telemetry: run ? { toolCalls: run.telemetry.toolCalls,
       frozenAccesses: run.telemetry.frozenAccesses, transportRequests: run.telemetry.transportRequests,
-      actualTotalTokens: run.telemetry.actualTotalTokens } : null };
+      actualTotalTokens: run.telemetry.actualTotalTokens,
+      decisionTrace: run.telemetry.providerLogs.map((entry) => ({ status: entry.status,
+        actionType: entry.actionType, actionTool: entry.actionTool })) } : null,
+    terminationTrace: run ? run.events.filter((event) => ["decision_rejected", "error", "answer"].includes(event.type))
+      .slice(-16).map((event) => ({ type: event.type, code: event.data?.code ?? null,
+        reasonCode: event.data?.reasonCode ?? null, narrativeAccepted: event.data?.narrativeAccepted ?? null,
+        systemFallback: event.data?.systemFallback ?? null })) : null };
   await appendFile(checkpointPath, `${JSON.stringify(bounded)}\n`, "utf8");
 };
 

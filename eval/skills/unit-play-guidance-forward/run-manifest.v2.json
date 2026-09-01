@@ -9,7 +9,7 @@
     "pairConcurrency": 1,
     "plannedPairs": 90,
     "plannedAgentRuns": 180,
-    "totalTokenHardCap": 10000000,
+    "totalTokenHardCap": null,
     "providerHttpRequestHardCap": 1800,
     "frozenReplayClock": "observation_frozen_at_plus_1ms",
     "expectedToolSequence": [
@@ -25,7 +25,9 @@
     "analyzability": {
       "minimumValidPairedRepetitions": 81,
       "minimumCasesWithTwoValidPairs": 27,
-      "invalidArmsExcludedFromBlindReview": true
+      "invalidArmsExcludedFromBlindReview": true,
+      "nativeModelCompletionRequired": true,
+      "exactToolSequenceEvaluatedAsOutcome": true
     }
   },
   "frozen": {
@@ -36,10 +38,10 @@
     "reviewSchemaNormalizedSha256": "19cc05dc1a8bb1a02f19471efc263330b2357c3b0b696241f7a8175cc1d29e07"
   },
   "implementation": {
-    "canonicalRuntimeRawSha256": "815b8728e977d9e0f4cbd4324f691d50c8770c234eb400f66760b1659d8d005e",
+    "canonicalRuntimeRawSha256": "62b9d899aa9e7c34e25ec1d2ae5bbfa0a089fd31ecf8e380c10925b168fd885e",
     "scriptedTransportRawSha256": "6bce2d2137d3409878bf98e1b1023ac5405ad7da86d98f29a3449d34e2155ea9",
     "dryRunScriptRawSha256": "a9a909c78291322f383feb1c06dfd088ebaaf93dd26e409cd7aac54675fc6859",
-    "formalRunnerRawSha256": "246d2803b2e9cd2ae007e44c40bc5dc48f2cbe47082a24101fc527a65e0ab498"
+    "formalRunnerRawSha256": "0d9a1798c4ab2f749d20bfd756374e9048853544ba59574bdc2baed7710c2c92"
   },
   "scriptedDryRun": {
     "completed": true,
@@ -54,7 +56,7 @@
       1080,
       1080
     ],
-    "resultNormalizedSha256": "d96090e29114190cb44895171aa5be2b47d343a454472fe5cf51ffcaaa76d3b7",
+    "resultNormalizedSha256": "703def59cd4cacf0b8b42490f80e8fca2601393bb74cedc5fc9f15342830951c",
     "packetNormalizedSha256": "ce4b3deeffe9e5619dd3583ade70046a1ae5edd0373b0c460980868635f69bbf",
     "classification": "local scripted transport only; no efficacy claim"
   },
@@ -64,6 +66,20 @@
     "blindKeySeparated": true,
     "originalLabelsPreserved": true
   },
+  "disclosedIncompleteAttempts": [
+    {
+      "implementationCommitSha": "40e4c1286a8bcaf5170801103972de0ef7c33205",
+      "classification": "operator-stopped diagnostic attempt; not efficacy evidence",
+      "completedAgentRuns": 7,
+      "providerHttpRequests": 56,
+      "observedTokens": 693199,
+      "nativeModelCompletions": 1,
+      "duplicateCallFallbacks": 1,
+      "noProgressFallbacks": 5,
+      "completedResultProduced": false,
+      "blindPacketProduced": false
+    }
+  ],
   "authorization": {
     "realProviderPairedRun": false,
     "productionControl": false,
@@ -74,6 +90,8 @@
       "implementationCommitSha",
       "configNormalizedSha256",
       "maxAgentRuns=180",
+      "providerHttpRequestHardCap=1800",
+      "totalTokenHardCap=null",
       "provider.hostname",
       "provider.model"
     ]

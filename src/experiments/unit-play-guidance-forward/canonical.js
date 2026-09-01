@@ -19,7 +19,7 @@ export const FORWARD_CANONICAL_CREDENTIAL_ENV = "OPENAI_API_KEY";
 export const FORWARD_CANONICAL_PROVIDER_AUTH_SCHEMA = "unit-play-guidance-forward-provider-authorization.v2";
 export const FORWARD_CANONICAL_PAIR_ORDER_SHA256 = "2ad4596d97eacc7cfe77e5460fbe3ed14014988fe7906f5118c2daa4e6719f65";
 export const FORWARD_CANONICAL_LIMITS = Object.freeze({
-  totalTokenHardCap: 10_000_000,
+  totalTokenHardCap: null,
   providerHttpRequestHardCap: 1_800,
   pairConcurrency: 1
 });
@@ -72,10 +72,6 @@ export function createForwardCanonicalFuse() {
         blockedBeforeDispatch += 1;
         fail("forward canonical HTTP-request hard cap reached");
       }
-      if (totalTokens + reservedTokens > FORWARD_CANONICAL_LIMITS.totalTokenHardCap) {
-        blockedBeforeDispatch += 1;
-        fail("forward canonical token hard cap would be exceeded before dispatch");
-      }
       providerHttpRequests += 1;
     },
     observePayload(payload, reservedTokens) {
@@ -87,10 +83,8 @@ export function createForwardCanonicalFuse() {
       }
       if (observed > reservedTokens) {
         reservationUnderflows += 1;
-        fail("Provider token usage exceeded its pre-dispatch reservation", "hard_cap_enforcement_failure");
       }
       totalTokens += observed;
-      if (totalTokens >= FORWARD_CANONICAL_LIMITS.totalTokenHardCap) exhaustedReason = "total_token_hard_cap";
     },
     snapshot: () => ({ limits: FORWARD_CANONICAL_LIMITS, providerHttpRequests, totalTokens,
       blockedBeforeDispatch, responsesWithoutUsage, reservationUnderflows,
@@ -253,13 +247,16 @@ export function auditForwardCanonicalRun(run) {
   const errors = (run?.events ?? []).filter((event) => event.type === "error")
     .map((event) => String(event.data?.code ?? "runtime_error"));
   const checks = {
-    nativeCompletion: run?.result?.terminationReason === "completed",
+    nativeModelCompletion: run?.result?.status === "completed"
+      && run?.result?.terminationReason === "completed" && run?.result?.answerOrigin === "model",
     exactFrozenToolSequence: stableJson(toolSequence) === stableJson(FORWARD_EXPECTED_TOOL_SEQUENCE),
     noRuntimeErrors: errors.length === 0,
     oneTransportAtATime: Number(run?.telemetry?.maxConcurrentTransportRequests ?? 0) <= 1,
     providerUsageComplete: (run?.telemetry?.providerLogs ?? []).every((entry) => entry.usage !== null)
   };
-  return { valid: Object.values(checks).every(Boolean), checks, toolSequence, errorCodes: errors };
+  const validityChecks = [checks.nativeModelCompletion, checks.noRuntimeErrors,
+    checks.oneTransportAtATime, checks.providerUsageComplete];
+  return { valid: validityChecks.every(Boolean), checks, toolSequence, errorCodes: errors };
 }
 
 async function runArm({ arm, pair, evalCase, observations, config, authorization, fetchImpl, toolRegistry,
@@ -398,6 +395,11 @@ export function authorizeForwardCanonicalRun({ config, preflightResult, transpor
     || providerAuthorization?.maxAgentRuns !== 180) {
     failures.push("Provider authorization run cap must equal the frozen 180-agent-run plan");
   }
+  if (providerAuthorization?.limits?.providerHttpRequestHardCap
+      !== FORWARD_CANONICAL_LIMITS.providerHttpRequestHardCap
+    || providerAuthorization?.limits?.totalTokenHardCap !== FORWARD_CANONICAL_LIMITS.totalTokenHardCap) {
+    failures.push("Provider authorization execution limits differ from the canonical runtime");
+  }
   if (providerAuthorization?.provider?.hostname !== hostname
     || providerAuthorization?.provider?.model !== config?.provider?.model) {
     failures.push("Provider authorization target differs from the frozen Provider target");
@@ -463,6 +465,15 @@ export function buildForwardIndependentLabelTemplates(packet, reviewerIds = ["re
 }
 
 function aggregateForwardRuns(runs) {
+  const arms = Object.fromEntries(["A", "B"].map((arm) => {
+    const armRuns = runs.filter((run) => run.arm === arm);
+    const nativeModelCompletions = armRuns.filter((run) => run.audit?.checks?.nativeModelCompletion).length;
+    const exactFrozenToolSequences = armRuns.filter((run) => run.audit?.checks?.exactFrozenToolSequence).length;
+    return [arm, { attempted: armRuns.length, nativeModelCompletions,
+      nativeModelCompletionRate: armRuns.length ? nativeModelCompletions / armRuns.length : 0,
+      exactFrozenToolSequences,
+      exactFrozenToolSequenceRate: armRuns.length ? exactFrozenToolSequences / armRuns.length : 0 }];
+  }));
   const pairs = new Map();
   for (const run of runs) {
     if (!pairs.has(run.pairId)) pairs.set(run.pairId, []);
@@ -477,7 +488,7 @@ function aggregateForwardRuns(runs) {
   const casesWithAtLeastTwoValidPairs = [...countsByCase.values()].filter((count) => count >= 2).length;
   const analyzability = { validPairedRepetitionsPass: validPairRuns.length >= 81,
     coveredCasesPass: casesWithAtLeastTwoValidPairs >= 27 };
-  return { validPairedRepetitions: validPairRuns.length, casesWithAtLeastTwoValidPairs, analyzability,
+  return { arms, validPairedRepetitions: validPairRuns.length, casesWithAtLeastTwoValidPairs, analyzability,
     validRuns: validPairRuns.flat() };
 }
 
@@ -526,7 +537,7 @@ export async function runForwardCanonicalExperiment({ config, corpus, observatio
       actualProviderModelCalls,
       fuse: fuse.snapshot(),
       providerIdentity: identityTracker.snapshot(),
-      aggregate: { validPairedRepetitions: aggregate.validPairedRepetitions,
+      aggregate: { arms: aggregate.arms, validPairedRepetitions: aggregate.validPairedRepetitions,
         casesWithAtLeastTwoValidPairs: aggregate.casesWithAtLeastTwoValidPairs,
         analyzability: aggregate.analyzability },
       runs

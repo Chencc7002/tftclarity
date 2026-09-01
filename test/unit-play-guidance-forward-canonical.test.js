@@ -6,6 +6,7 @@ import test from "node:test";
 import {
   FORWARD_CANONICAL_PROVIDER_AUTH_SCHEMA,
   FORWARD_CANONICAL_PAIR_ORDER_SHA256,
+  auditForwardCanonicalRun,
   authorizeForwardCanonicalRun,
   buildForwardBlindedReviewArtifacts,
   buildForwardIndependentLabelTemplates,
@@ -46,6 +47,7 @@ test("v2 real transport authorization is separately scoped to one commit and the
     approvedCommitSha: commit,
     configNormalizedSha256: sha256(config),
     maxAgentRuns: 180,
+    limits: { providerHttpRequestHardCap: 1800, totalTokenHardCap: null },
     provider: { hostname: "api.deepseek.com", model: config.provider.model }
   };
   const authorization = authorizeForwardCanonicalRun({ config, preflightResult, transportMode: "real_provider",
@@ -62,9 +64,12 @@ test("v2 real transport authorization is separately scoped to one commit and the
 test("global request/token fuse and Provider identity checks fail closed", () => {
   const fuse = createForwardCanonicalFuse();
   fuse.beforeRequest(10_000_000);
-  fuse.observePayload({ usage: { total_tokens: 10_000_000 } }, 10_000_000);
-  assert.equal(fuse.snapshot().exhaustedReason, "total_token_hard_cap");
-  assert.throws(() => fuse.beforeRequest(1), (error) => error?.code === "budget_failure");
+  fuse.observePayload({ usage: { total_tokens: 10_000_001 } }, 10_000_000);
+  assert.equal(fuse.snapshot().totalTokens, 10_000_001);
+  assert.equal(fuse.snapshot().reservationUnderflows, 1);
+  assert.equal(fuse.snapshot().exhausted, false);
+  assert.throws(() => fuse.observePayload({ usage: null }, 1),
+    (error) => error?.code === "hard_cap_enforcement_failure");
 
   const identity = createForwardProviderIdentityTracker();
   identity.observe({ model: "model-a", system_fingerprint: "fp-a" });
@@ -127,7 +132,12 @@ test("fake transport exercises all 180 canonical runs sequentially with zero act
   assert.equal(result.plan.completedAgentRuns, 180);
   assert.equal(result.actualProviderModelCalls, 0);
   assert.equal(result.status, "awaiting_independent_review");
-  assert.deepEqual(result.aggregate, { validPairedRepetitions: 90, casesWithAtLeastTwoValidPairs: 30,
+  assert.deepEqual(result.aggregate, { arms: {
+    A: { attempted: 90, nativeModelCompletions: 90, nativeModelCompletionRate: 1,
+      exactFrozenToolSequences: 90, exactFrozenToolSequenceRate: 1 },
+    B: { attempted: 90, nativeModelCompletions: 90, nativeModelCompletionRate: 1,
+      exactFrozenToolSequences: 90, exactFrozenToolSequenceRate: 1 }
+  }, validPairedRepetitions: 90, casesWithAtLeastTwoValidPairs: 30,
     analyzability: { validPairedRepetitionsPass: true, coveredCasesPass: true } });
   assert.equal(result.fuse.providerHttpRequests, 1620);
   assert.equal(result.fuse.totalTokens, 19_440);
@@ -153,7 +163,18 @@ test("fake transport exercises all 180 canonical runs sequentially with zero act
   assert.equal(fake.snapshot().requests, 1620);
 });
 
-test("premature finishes are preserved but excluded from review as unanalyzable", async () => {
+test("native completion validity is independent from Tool-sequence adherence", () => {
+  const audit = auditForwardCanonicalRun({
+    result: { status: "completed", terminationReason: "completed", answerOrigin: "model" },
+    events: [],
+    telemetry: { frozenAccesses: [{ tool: "unit_details" }], maxConcurrentTransportRequests: 1,
+      providerLogs: [{ usage: { outputTokens: 1 } }] }
+  });
+  assert.equal(audit.valid, true);
+  assert.equal(audit.checks.exactFrozenToolSequence, false);
+});
+
+test("rejected evidence-free finishes remain excluded as system fallbacks", async () => {
   const early = async () => {
     const body = { choices: [{ message: { content: JSON.stringify({ schemaVersion: "react-action.v1",
       type: "finish", answer: "资料不足。", evidenceIds: [], reasonCode: "insufficient_evidence", narrative: null }) } }],
@@ -167,6 +188,8 @@ test("premature finishes are preserved but excluded from review as unanalyzable"
     preflightResult, authorization, fetchImpl: early, blindSeed: "c".repeat(40) });
   assert.equal(result.status, "inconclusive");
   assert.equal(result.aggregate.validPairedRepetitions, 0);
+  assert.equal(result.aggregate.arms.A.exactFrozenToolSequences, 0);
+  assert.equal(result.aggregate.arms.B.exactFrozenToolSequences, 0);
   assert.equal(blinded.packet.entries.length, 0);
   assert.deepEqual(labels, []);
 });
