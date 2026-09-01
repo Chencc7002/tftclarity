@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
@@ -155,6 +156,17 @@ test("production composition handler uses matching live definition/statistics cl
   )));
   assert.ok(result.results[0].members.every((member) => Object.hasOwn(member, "iconUrl")));
   assert.ok(result.results[0].traits.every((trait) => Object.hasOwn(trait, "iconUrl")));
+  const candidates = await queryCompositionRankings({}, createCatalog(), runtime, { details: { units: new Map() } });
+  assert.equal(candidates.resolution.status, "unfiltered");
+  for (const row of candidates.results) {
+    const prerequisite = row.tacticalDetailQueryPlan.resolutionPrerequisite;
+    assert.deepEqual(prerequisite, { tool: "comps_rankings", arguments: { mention: row.compositionRef.compId } });
+    const resolved = await queryCompositionRankings(prerequisite.arguments, createCatalog(), runtime, { details: { units: new Map() } });
+    assert.equal(resolved.resolution.status, "resolved");
+    assert.equal(resolved.results[0].compositionRef.compId, row.compositionRef.compId);
+    assert.equal(resolved.results[0].tacticalDetailQueryPlan.resolutionPrerequisite, undefined);
+    assert.deepEqual(resolved.results[0].tacticalDetailQueryPlan.units, row.tacticalDetailQueryPlan.units);
+  }
 });
 
 test("default ReAct bundle never substitutes catalog compOptions for live comps_data", async () => {
@@ -164,7 +176,7 @@ test("default ReAct bundle never substitutes catalog compOptions for live comps_
   ));
   const details = { meta: {}, units: new Map(), traits: new Map() };
   let liveDataCalls = 0;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     compsData: { compOptions: [{ not: "page definitions" }] },
@@ -190,4 +202,44 @@ test("default ReAct bundle never substitutes catalog compOptions for live comps_
   assert.equal(liveDataCalls, 1);
   assert.equal(result.resolution.status, "resolved");
   assert.equal(result.results[0].compositionRef.compId, "cluster:409002");
+});
+
+test("opt-in per-request snapshot reuse preserves source data while resolving each identity", async (t) => {
+  t.mock.timers.enable({ apis: ["Date"] });
+  const fixture = JSON.parse(await readFile(new URL("./fixtures/comp-rankings/metatft-comps-page-minimal.json", import.meta.url), "utf8"));
+  const details = { meta: {}, units: new Map(), traits: new Map() };
+  let dataCalls = 0, statsCalls = 0;
+  const runtime = createSmallWindowRuntime({ catalog: createCatalog(), cacheStore: new MemoryCacheStore(),
+    seasonContextService: createLegacySeasonFixture(),
+    officialEntityDetails: details, fetchOfficialEntityDetails: async () => details,
+    compsClient: { getCompsData: async () => { dataCalls++; return structuredClone(fixture.compsData); },
+      getCompsStats: async () => { statsCalls++; return structuredClone(fixture.compsStats); } } });
+  runtime.reactCompositionSnapshotReuse = true;
+  const newBundle = () => createDefaultReactToolHandlerBundle({ request: { seasonContextId: "set17-live" }, runtime, context: {} });
+  const bundle = await newBundle();
+  const candidates = await bundle.handlers.comps_rankings({});
+  const first = structuredClone(candidates.results[0]);
+  candidates.results[0].members.length = 0; // caller mutation cannot corrupt raw cache
+  const resolved = await bundle.handlers.comps_rankings({ mention: first.compositionRef.compId });
+  assert.equal(resolved.resolution.status, "resolved");
+  assert.deepEqual(resolved.results[0].members, first.members);
+  assert.deepEqual(resolved.results[0].stats, first.stats);
+  assert.deepEqual(resolved.source, candidates.source);
+  assert.equal(dataCalls, 1);
+  assert.equal(statsCalls, 1);
+  await bundle.handlers.comps_rankings({ days: 7 });
+  await bundle.handlers.comps_rankings({ patch: "17.1" });
+  await bundle.handlers.comps_rankings({ queue: "1160" });
+  assert.equal(dataCalls, 4, "changed source scope is not reused");
+  const secondRequest = await newBundle();
+  await secondRequest.handlers.comps_rankings({});
+  assert.equal(dataCalls, 5, "separate requests cannot share mutable snapshots");
+  t.mock.timers.tick(30_000);
+  await bundle.handlers.comps_rankings({});
+  assert.equal(dataCalls, 6, "expired snapshot is downloaded again");
+  runtime.reactCompositionSnapshotReuse = false;
+  const legacy = await newBundle();
+  await legacy.handlers.comps_rankings({});
+  await legacy.handlers.comps_rankings({ mention: first.compositionRef.compId });
+  assert.equal(dataCalls, 8, "default behavior remains unchanged");
 });

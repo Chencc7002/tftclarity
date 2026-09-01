@@ -380,6 +380,12 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .assistant-rich-text__summary { margin-top: 3px; padding: 9px 10px; display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 6px; border-left: 3px solid var(--wallpaper-accent); border-radius: 3px 9px 9px 3px; color: var(--ink); background: color-mix(in srgb, var(--wallpaper-accent) 11%, rgba(255,255,255,.72)); line-height: 1.65; }
 .assistant-rich-text__summary strong { color: color-mix(in srgb, var(--wallpaper-accent) 82%, var(--ink)); font-size: 14px; font-weight: 900; white-space: nowrap; }
 .assistant-rich-text__summary span { min-width: 0; font-weight: 700; overflow-wrap: anywhere; }
+.chat-core-items { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 6px 8px; }
+.chat-core-items-label { flex: 0 0 auto; color: color-mix(in srgb, var(--wallpaper-accent) 76%, var(--ink)); font-size: 9px; font-weight: 850; }
+.chat-core-item-list { min-width: 0; display: flex; align-items: center; flex-wrap: wrap; gap: 5px; }
+.chat-core-item { min-height: 25px; padding: 2px 7px 2px 3px; display: inline-flex; align-items: center; gap: 5px; border: 1px solid color-mix(in srgb, var(--wallpaper-accent) 22%, var(--line)); border-radius: 7px; color: var(--ink); background: color-mix(in srgb, var(--wallpaper-accent) 6%, #fff); }
+.chat-core-item strong { font-size: 9px; font-weight: 760; line-height: 1.2; white-space: nowrap; }
+.chat-core-item-icon { width: 20px; height: 20px; flex-basis: 20px; border-radius: 5px; }
 .chat-model-conclusion.rejected { border-color: color-mix(in srgb, var(--danger) 34%, var(--line)); background: color-mix(in srgb, var(--danger) 6%, rgba(255,255,255,.95)); }
 .chat-model-conclusion.rejected header strong { color: var(--danger); }
 .chat-model-conclusion.rejected header small { color: color-mix(in srgb, var(--danger) 72%, var(--muted)); }
@@ -409,7 +415,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .quick-task-field input { width: 100%; min-height: 34px; padding: 0 9px; border: 1px solid var(--line-strong); border-radius: 9px; color: var(--ink); background: rgba(255,255,255,.94); font-size: 11px; }
 .quick-task-field input:focus { border-color: var(--wallpaper-accent); background: #fff; }
 .quick-task-form-hint { color: var(--muted); font-size: 8px; line-height: 1.45; }
-.composer.quick-task-form-active > #query-input { display: none; }
+.composer.quick-task-form-active #query-input { display: none; }
 .composer textarea { width: 100%; min-height: 52px; max-height: 112px; resize: none; padding: 10px 11px; border: 1px solid var(--line-strong); border-radius: 11px; color: var(--ink); background: #fbfcfe; line-height: 1.45; }
 .composer textarea:focus { border-color: var(--star-cyan); background: #fff; }
 .ai-generated-disclaimer { min-width: 0; margin: 0; display: flex; align-items: flex-start; gap: 6px; color: var(--muted); font-size: 9px; line-height: 1.45; }

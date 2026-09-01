@@ -30,3 +30,14 @@ Player Pool 是用户自行定义的玩家样本边界。Pool 名称只用于展
 - `POST /api/player-pools/:poolId/import-seed`
 - `GET /api/player-pools/:poolId/stats`
 - `GET /api/player-pools/compare?pool=:left&pool=:right`
+
+## 更新对局与样本补丁
+
+- 趋势页、成员页、阵容对局页和单 Pool 看板的「更新对局」调用 `POST /api/opgg/pools/:poolId/refresh`。只能更新公开池或当前用户拥有的池。
+- 手动更新通过既有 `list_matches` 工具的 `forceRefresh: true` 触发 MetaTFT 上游刷新，等待完成后读取；仍保留环境/赛季校验、限流及请求预算。排队超限、空返回或失败不会将旧样本标记为更新成功。
+- 返回成功/失败成员及新增 player-match 数；比赛时间与采集时间分别展示。更新完成不意味着该玩家在所选赛季一定有新比赛。
+- 页面显示的是**样本补丁**，由最新有效对局决定；客户端版本与 TFT 补丁在入库时统一归一化，不能将历史样本称为当前线上补丁。
+- 阵容卡片展示样本中的代表终局及对应比赛引用，不是推荐阵容；缺失数据明确标记，不通过批量展开单局补齐。
+- 发布此更新需同时部署 Web 和 Player Match MCP 服务。详见 `docs/player-pool-bugfix-delivery-2026-08-30.md`。
+
+正式服 Pool 默认采集赛季跟随服务端 DEFAULT_SEASON_CONTEXT_ID（当前 set18-live）；明确固定赛季的已有自定义 Pool 保留原范围，统计按 set_number 隔离。新正式服池通过 MetaTFT 校验当前赛季；旧 OP.GG 采集路径保留。PBE 种子导入只允许 PBE 池。

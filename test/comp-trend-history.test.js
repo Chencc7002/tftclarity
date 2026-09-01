@@ -121,7 +121,7 @@ test("trend baselines survive query-history clearing and are isolated by comp cl
   const key = makeCompTrendHistoryKey(query);
 
   cacheStore.clearQueryHistory();
-  assert.equal(cacheStore.getCompTrendHistory(key).value.snapshots.length, 1);
+  assert.equal(cacheStore.getCompTrendHistory(key, { seasonContextId: "set17-live" }).value.snapshots.length, 1);
 
   now += COMP_TREND_WINDOW_MS;
   const changedCluster = await enrichCompResponseWithTrendHistory(

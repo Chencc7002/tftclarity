@@ -1,6 +1,10 @@
 const STATISTICAL_SIGNAL = /(?:平均名次|均名|前四率|登顶率|胜率|选择率|出场率|样本|场次|排名变化|top\s*4|win\s*rate|pick\s*rate|sample|games?|\d+(?:\.\d+)?\s*%)/iu;
 const INSUFFICIENT_SIGNAL = /(?:数据不足|证据不足|没有可验证|无可验证|工具不可用|查询失败|结果为空|没有结果|无法可靠判断|暂时无法判断|当前样本门槛下没有|insufficient|unavailable|failed|no reliable|no verifiable)/iu;
 const CURRENT_RANKING_SIGNAL = /(?:当前|现在|目前|最近|这版本|胜率|前四率|登顶率|平均名次|选择率|出场率|样本数|排名|最优|最好|最高|current|latest|best|highest|win\s*rate|top\s*4)/iu;
+const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*(?:奥恩)?神器|(?:含|包含|包括|加入|带上|算上|纳入|主流|推荐|首选|最强|适合).{0,8}(?:奥恩)?神器|(?:奥恩)?神器.{0,8}(?:排行|排名|推荐|首选|主流|[：:]))/u;
+
+import { hasTacticalPositionProse, scopedTacticalPositionErrors } from "./tactical-position-grounding.js";
+import { officialItemEvidenceFailure, officialItemBatchEvidenceFailure } from "../agent/official-item-evidence.js";
 
 function numericTokens(text) {
   return [...String(text ?? "").matchAll(/\d+(?:\.\d+)?%?/gu)].map((match) => match[0]);
@@ -8,6 +12,31 @@ function numericTokens(text) {
 
 function evidenceText(entries) {
   return entries.map((entry) => JSON.stringify(entry.value)).join("\n");
+}
+
+function artifactScopeGroundingErrors(answer, entries) {
+  const positiveClaims = String(answer ?? "").split(/[。；;\n]/u).filter((clause) => (
+    !/(?:不含|不包含|未包含|不包括|排除|没有|无|不足|未查|不可用|无法).{0,8}(?:奥恩)?神器|神器.{0,12}(?:不足|未返回|不可用|无法|没有)/u.test(clause)
+  ));
+  if (!positiveClaims.some((clause) => ARTIFACT_RANKING_CLAIM.test(clause))) return [];
+  const equipmentEntries = entries.filter((entry) => (
+    entry?.temporalStatus !== "historical"
+    && (
+      entry.toolName === "unit_builds"
+      || entry.type === "unit_item_rankings"
+      || entry.value?.type === "unit_item_rankings"
+    )
+  ));
+  const hasArtifactScope = equipmentEntries.some((entry) => {
+    const query = entry.value?.query ?? {};
+    return (query.itemCategories ?? []).includes("artifact")
+      && ["include_artifact", "include_special"].includes(query.itemPolicy)
+      && (!Array.isArray(entry.value?.itemRankings)
+        || entry.value.itemRankings.some((item) => item.category === "artifact"));
+  });
+  return hasArtifactScope
+    ? []
+    : ["answer claims an Artifact equipment ranking but cited evidence does not include artifact scope"];
 }
 
 function contradictsCompositionBreakpointEvidence(answer, entries) {
@@ -153,6 +182,67 @@ function isCompositionTrendEvidence(entry) {
   return entry?.toolName === "comps_trends"
     || entry?.type === "composition_trends"
     || entry?.value?.type === "comp_trends";
+}
+
+function compositionTrendSections(entries) {
+  return entries
+    .filter((entry) => entry?.temporalStatus !== "historical" && isCompositionTrendEvidence(entry))
+    .map((entry) => {
+      const value = entry.value ?? {};
+      return {
+        requestedDirection: value.requestedDirection ?? value.query?.trendDirection ?? null,
+        rising: Array.isArray(value.rising) ? value.rising : [],
+        falling: Array.isArray(value.falling) ? value.falling : [],
+        popularity: Array.isArray(value.rankings?.popularity) ? value.rankings.popularity : []
+      };
+    });
+}
+
+function answerMentionsTrendRow(answer, rows) {
+  const text = String(answer ?? "");
+  const names = rows
+    .map((row) => String(row?.name ?? row?.compositionRef?.name ?? "").trim())
+    .filter(Boolean);
+  return names.length === 0 || names.some((name) => text.includes(name));
+}
+
+function compositionTrendCoverageErrors(action, entries) {
+  const errors = [];
+  for (const section of compositionTrendSections(entries)) {
+    const scopedRows = section.requestedDirection === "rising"
+      ? section.rising
+      : section.requestedDirection === "falling"
+        ? section.falling
+        : [...section.rising, ...section.falling, ...section.popularity];
+    if (!scopedRows.length) continue;
+    if (action.reasonCode === "insufficient_evidence") {
+      errors.push("insufficient_evidence cannot discard available composition trend sections");
+      continue;
+    }
+    if (action.reasonCode !== "sufficient_evidence") continue;
+    if (section.requestedDirection === "rising") {
+      if (!answerMentionsTrendRow(action.answer, section.rising)) {
+        errors.push("composition rising-trend answer must include an available result");
+      }
+      continue;
+    }
+    if (section.requestedDirection === "falling") {
+      if (!answerMentionsTrendRow(action.answer, section.falling)) {
+        errors.push("composition falling-trend answer must include an available result");
+      }
+      continue;
+    }
+    if (section.rising.length && !answerMentionsTrendRow(action.answer, section.rising)) {
+      errors.push("composition trend overview must include an available rising result");
+    }
+    if (section.falling.length && !answerMentionsTrendRow(action.answer, section.falling)) {
+      errors.push("composition trend overview must include an available falling result");
+    }
+    if (section.popularity.length && !answerMentionsTrendRow(action.answer, section.popularity)) {
+      errors.push("composition trend overview must include an available popularity result");
+    }
+  }
+  return errors;
 }
 
 function compositionTrendImprovementValues(value, output = []) {
@@ -383,11 +473,40 @@ export function containsStatisticalClaim(answer) {
   return STATISTICAL_SIGNAL.test(String(answer ?? ""));
 }
 
-export function validateFinishAction(action, ledger) {
+export function validateFinishAction(action, ledger, options = {}) {
   const errors = [];
   const ids = [...new Set(action.evidenceIds ?? [])];
   const entries = ledger.resolve(ids);
+  const currentLedgerEntries = typeof ledger.snapshot === "function"
+    ? (ledger.snapshot()?.entries ?? []).filter((entry) => entry?.temporalStatus !== "historical")
+    : entries;
   if (entries.length !== ids.length) errors.push("finish references unknown evidenceIds");
+  if (options.officialItemEvidenceV1 === true) {
+    for (const entry of entries.filter(item => item.toolName === "item_details")) {
+      const reason = officialItemEvidenceFailure(entry, { now: options.now ?? Date.now(), seasonContextId: options.seasonContextId });
+      if (reason) errors.push(`current official item evidence rejected: ${reason}`);
+    }
+    for (const entry of entries.filter(item => item.toolName === "item_details_batch")) {
+      const reason = officialItemBatchEvidenceFailure(entry, { now: options.now ?? Date.now(), seasonContextId: options.seasonContextId });
+      if (reason) errors.push(`current official item batch evidence rejected: ${reason}`);
+    }
+    if (action.reasonCode === "sufficient_evidence") {
+      const officialItems = currentLedgerEntries.flatMap(entry => entry.toolName === "item_details"
+        ? [{ evidenceId: entry.evidenceId, value: entry.value }]
+        : entry.toolName === "item_details_batch"
+          ? (entry.value?.items ?? []).map(value => ({ evidenceId: entry.evidenceId, value }))
+          : []);
+      for (const item of officialItems) {
+        const aliases = [item.value?.displayName, ...currentLedgerEntries.filter(entry => entry.toolName === "unit_builds")
+          .flatMap(entry => entry.value?.cards ?? []).flatMap(card => card.items ?? [])
+          .filter(row => row.apiName === item.value?.apiName).flatMap(row => [row.name, row.displayName, row.shortName])]
+          .filter(name => typeof name === "string" && name.length >= 2);
+        if (aliases.some(name => String(action.answer ?? "").includes(name)) && !ids.includes(item.evidenceId)) {
+          errors.push(`mentioned retrieved official item requires its evidence citation: ${item.value.apiName}`);
+        }
+      }
+    }
+  }
 
   if (action.reasonCode === "direct_answer") {
     if (ids.length) errors.push("direct_answer must not cite tool evidence");
@@ -427,6 +546,7 @@ export function validateFinishAction(action, ledger) {
     if (contradictsCompositionBreakpointEvidence(action.answer, entries)) {
       errors.push("answer contradicts deterministic composition breakpoint changes");
     }
+    errors.push(...artifactScopeGroundingErrors(action.answer, entries));
     const contentionEntries = activeUnitBuildEntries(entries).filter((entry) => (
       entry.value?.itemContentionPlan?.status === "available"
       && !(
@@ -449,7 +569,13 @@ export function validateFinishAction(action, ledger) {
     if (omitsPartialContentionCoverage(action.answer, entries)) {
       errors.push("partial item contention coverage requires failed-unit and whole-composition limitations");
     }
-    errors.push(...tacticalPositionGroundingErrors(action.answer, entries));
+    if (options.compositionCardsOwnPositioning === true && hasTacticalPositionProse(action.answer)) {
+      errors.push("positioning prose is reserved for the cited composition cards");
+    }
+    errors.push(...(options.compositionCardScope === true
+      ? scopedTacticalPositionErrors(action.answer, entries)
+      : tacticalPositionGroundingErrors(action.answer, entries)));
+    errors.push(...compositionTrendCoverageErrors(action, entries));
   } else if (action.reasonCode === "insufficient_evidence") {
     if (!INSUFFICIENT_SIGNAL.test(action.answer)) {
       errors.push("insufficient_evidence answer must explicitly state the limitation");
@@ -460,6 +586,7 @@ export function validateFinishAction(action, ledger) {
     if (omitsPartialContentionCoverage(action.answer, entries)) {
       errors.push("partial item contention coverage requires failed-unit and whole-composition limitations");
     }
+    errors.push(...compositionTrendCoverageErrors(action, currentLedgerEntries));
   }
 
   return {

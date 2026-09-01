@@ -67,3 +67,26 @@ test("conclusion rich text emphasizes natural-language count changes", () => {
   assert.match(html, /<mark class="assistant-rich-text__emphasis">未达到<\/mark>/u);
   assert.match(html, /<mark class="assistant-rich-text__emphasis">人数不变<\/mark>/u);
 });
+
+test("inline equipment rankings keep each number with its item and emphasize item names", () => {
+  const source = "厄斐琉斯（2星）单装备排行榜（含神器）：1. 羊刀 平均名次4.16 前四57.1% 吃鸡10.5% 样本62738；2. 海妖之怒 4.10 58.5% 10.9% 45339；3. 杀人剑 4.07 59.4% 10.5% 40046。";
+  const html = conclusionRichTextHtml(source);
+
+  assert.match(html, /<aside class="assistant-rich-text__summary"><strong>结论<\/strong>/u);
+  assert.match(html, /<ol class="assistant-rich-text__list">/u);
+  assert.equal((html.match(/<li>/gu) ?? []).length, 3);
+  assert.doesNotMatch(html, /<li>\s*\d+[.)]\s*<\/li>/u);
+  assert.match(html, /<li><strong class="assistant-rich-text__strong">羊刀<\/strong> 平均名次4\.16/u);
+  assert.match(html, /<li><strong class="assistant-rich-text__strong">海妖之怒<\/strong> 4\.10/u);
+});
+
+test("unnumbered equipment rankings become a readable list with emphasized item names", () => {
+  const html = conclusionRichTextHtml(
+    "厄斐琉斯单装备排行榜（含神器，按前四率排序）：金币收集者前四率63%、吃鸡率14.8%、均名3.87、样本1745；杀人剑前四率60.3%、吃鸡率10.3%、均名4.07、样本2951；鱼骨头前四率60.4%、吃鸡率11.7%、均名4.01、样本1504。"
+  );
+
+  assert.match(html, /<ol class="assistant-rich-text__list">/u);
+  assert.match(html, /<strong class="assistant-rich-text__strong">金币收集者<\/strong>/u);
+  assert.match(html, /<strong class="assistant-rich-text__strong">杀人剑<\/strong>/u);
+  assert.match(html, /<strong class="assistant-rich-text__strong">鱼骨头<\/strong>/u);
+});

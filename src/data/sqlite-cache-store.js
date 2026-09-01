@@ -3,6 +3,7 @@ import { dirname } from "node:path";
 import { DEFAULT_CACHE_TTL_MS } from "./cache-store.js";
 import {
   DEFAULT_SEASON_CONTEXT_ID,
+  LEGACY_SEASON_CONTEXT_ID,
   normalizeSeasonContextId
 } from "../season/season-context.js";
 
@@ -313,7 +314,7 @@ function rebuildSeasonScopedTable(database, table, createSql, columns) {
     DROP TABLE IF EXISTS ${migrated};
     ${createSql.replaceAll(table, migrated)}
     INSERT INTO ${migrated} (season_context_id, ${columns.join(", ")})
-    SELECT '${DEFAULT_SEASON_CONTEXT_ID}', ${columns.join(", ")} FROM ${table};
+    SELECT '${LEGACY_SEASON_CONTEXT_ID}', ${columns.join(", ")} FROM ${table};
     DROP TABLE ${table};
     ALTER TABLE ${migrated} RENAME TO ${table};
     COMMIT;
@@ -323,7 +324,7 @@ function rebuildSeasonScopedTable(database, table, createSql, columns) {
 function addSeasonColumn(database, table) {
   const columns = tableColumns(database, table);
   if (!columns.length || columns.some((column) => column.name === "season_context_id")) return;
-  database.exec(`ALTER TABLE ${table} ADD COLUMN season_context_id TEXT NOT NULL DEFAULT '${DEFAULT_SEASON_CONTEXT_ID}'`);
+  database.exec(`ALTER TABLE ${table} ADD COLUMN season_context_id TEXT NOT NULL DEFAULT '${LEGACY_SEASON_CONTEXT_ID}'`);
 }
 
 export function migrateSQLiteSeasonContextSchema(database) {

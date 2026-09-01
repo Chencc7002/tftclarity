@@ -8,7 +8,7 @@ import {
   buildSkillContext,
   matchSkill,
   projectSkillProgress,
-  validateSkillCompletion
+  projectSkillCompletion
 } from "../src/skills/index.js";
 
 function registry() {
@@ -75,12 +75,12 @@ test("SkillContext only intersects tools and progress never plans tool steps", (
   assert.deepEqual(progress.requiredFacets, ["unit_role", "equipment_logic", "composition_context", "positioning"]);
   assert.equal(Object.hasOwn(progress, "nextTool"), false);
   assert.equal(progress.status, "in_progress");
-  const completion = validateSkillCompletion({ skill, progress });
+  const completion = projectSkillCompletion({ skill, progress });
   assert.equal(completion.valid, false);
   assert.equal(completion.status, "rejected");
 });
 
-test("completion validation checks facet coverage, not Evidence validity or grounding", () => {
+test("shadow completion projection only describes coverage and never authorizes finish", () => {
   const skill = registry().get("unit_play_guidance");
   const progress = {
     schemaVersion: "skill-progress.v1",
@@ -96,7 +96,7 @@ test("completion validation checks facet coverage, not Evidence validity or grou
     unsupportedFacets: [],
     status: "complete"
   };
-  const result = validateSkillCompletion({
+  const result = projectSkillCompletion({
     skill,
     progress,
     evidenceLedger: { invalid: true },
@@ -105,4 +105,3 @@ test("completion validation checks facet coverage, not Evidence validity or grou
   assert.equal(result.valid, true);
   assert.equal(result.status, "complete");
 });
-

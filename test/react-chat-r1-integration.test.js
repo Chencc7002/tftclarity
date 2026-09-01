@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
@@ -6,7 +7,7 @@ import {
   handleFeedbackRequest,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
-import { MemoryCacheStore, createCatalog } from "../src/index.js";
+import { MemoryCacheStore, createCatalog, recommendForInput } from "../src/index.js";
 import {
   assertHandlerCoverage,
   createTftToolHandlers
@@ -65,6 +66,55 @@ test("independent react endpoint answers without entering recommendForInput", as
   ]);
 });
 
+test("default react completion handler retains a carried emblem but restricts the new slot", async () => {
+  const unit = "TFT17_Xayah", emblem = "Test_BruiserEmblem", locked = "TFT_Item_GuinsoosRageblade";
+  const catalog = createCatalog({ items: [...createCatalog().items, {
+    apiName: emblem, zhName: "斗士纹章", aliases: ["斗转"], category: "emblem", current: true, obtainable: true
+  }] });
+  const rows = ["TFT_Item_InfinityEdge", "TFT5_Item_GuinsoosRagebladeRadiant"].map(candidate => ({
+    unit_builds: `${unit}&${emblem}|${locked}|${candidate}`, placement_count: [150, 130, 110, 90, 70, 50, 30, 10]
+  }));
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(), catalog, cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
+    recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, response: rows }) });
+  const bundle = await createDefaultReactToolHandlerBundle({ runtime, context: {},
+    request: { input: "第三件只要普通装备", seasonContextId: "set17-live", locale: "zh-CN" } });
+  const result = await bundle.handlers.unit_builds({ unit, lockedItems: [emblem, locked], itemPolicy: "ordinary_only", itemCount: 3, minSamples: 0 });
+  assert.equal(result.type, "unit_build_completion");
+  assert.equal(result.query.itemPolicyScope, "remaining_items");
+  assert.deepEqual(result.query.lockedItems, [emblem, locked]);
+  assert.deepEqual(result.cards.map(card => card.items.map(item => item.apiName)), [[emblem, locked, "TFT_Item_InfinityEdge"]]);
+});
+
+test("unit-play item mechanism plan is server-derived from the leading card and default off", async () => {
+  const unit = "TFT17_Xayah";
+  const items = ["TFT_Item_InfinityEdge", "TFT_Item_GuinsoosRageblade", "TFT_Item_SpearOfShojin"];
+  const catalog = createCatalog();
+  const rows = [{ unit_builds: `${unit}&${items.join("|")}`,
+    placement_count: [150, 130, 110, 90, 70, 50, 30, 10] }];
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(), catalog,
+    cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
+    recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, response: rows }) });
+  const request = { input: "霞怎么玩？", seasonContextId: "set17-live", locale: "zh-CN",
+    semanticAdvisory: { action: "recommend", goal: "recommend_unit_play",
+      subject: { resolvedId: unit }, expectedOutput: ["unit_play_guidance"] } };
+  const legacy = await createDefaultReactToolHandlerBundle({ runtime, context: {}, request });
+  const legacyResult = await legacy.handlers.unit_builds({ unit, itemCount: 3, minSamples: 0 });
+  assert.equal(legacyResult.mechanismQueryPlan, undefined);
+  runtime.reactUnitPlayItemMechanismBatch = true;
+  const candidate = await createDefaultReactToolHandlerBundle({ runtime, context: {}, request });
+  const result = await candidate.handlers.unit_builds({ unit, itemCount: 3, minSamples: 0 });
+  assert.deepEqual(result.mechanismQueryPlan, {
+    schemaVersion: "unit-play-item-mechanism-query-plan.v1",
+    status: "available",
+    apiNames: result.cards[0].items.map((item) => item.apiName),
+    seasonContextId: "set17-live",
+    sourceCardIndex: 0
+  });
+  const unrelated = await createDefaultReactToolHandlerBundle({ runtime, context: {},
+    request: { input: "霞推荐出装", seasonContextId: "set17-live", locale: "zh-CN" } });
+  assert.equal((await unrelated.handlers.unit_builds({ unit, itemCount: 3, minSamples: 0 })).mechanismQueryPlan, undefined);
+});
+
 test("default react unit_builds handler preserves deterministic equipment intents", async () => {
   const calls = [];
   const unitApiName = "TFT18_Test";
@@ -108,7 +158,7 @@ test("default react unit_builds handler preserves deterministic equipment intent
     }
   });
   const bundle = await createDefaultReactToolHandlerBundle({
-    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    request: { seasonContextId: "set18-live", locale: "zh-CN" },
     runtime,
     context: {}
   });
@@ -130,6 +180,10 @@ test("default react unit_builds handler preserves deterministic equipment intent
   assert.equal(ranked.type, "unit_item_rankings");
   assert.equal(completed.type, "unit_build_completion");
   assert.equal(compared.type, "unit_item_comparison");
+  for (const value of [ranked, completed, compared]) {
+    assert.deepEqual(value.scope, { seasonContextId: "set18-live", patch: "current" });
+    assert.equal(value.source.updatedAt, "2026-08-13T00:00:00.000Z", "scope must not refresh an old source");
+  }
   assert.deepEqual(calls.map((entry) => entry.intent), [
     "unit_item_rankings",
     "unit_build_completion",
@@ -162,7 +216,7 @@ test("active Pool dashboard evidence is promoted into the ReAct ledger", async (
     pool: {
       id: "pool-a",
       name: "pbe高手",
-      scope: { season: "set18-pbe", patch: "18.1" },
+      scope: { season: "set18-live", patch: "18.1" },
       coverage: { matchCount: 180, activePlayerCount: 9 },
       performance: { avgPlacement: 3.82, top4Rate: .62, winRate: .2 },
       compositions: [{ label: "阿狸", matchWeightedUsageRate: .1, matchCount: 18 }]
@@ -354,7 +408,7 @@ test("TFT handler factory reports unavailable tools and enforces explicit covera
 });
 
 test("default react bundle is request-scoped and exposes H1 only when its dependency is available", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     cacheStore: new MemoryCacheStore(),
     semanticRetriever: {
       async search() { return []; }
@@ -390,7 +444,7 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
   );
 });
 
-test("PBE unit details reuse the season-scoped CommunityDragon catalog", async () => {
+test("Set 18 live unit details reuse the season-scoped catalog", async () => {
   const rawOfficialDetails = {
     meta: { updatedAt: "2026-08-13T00:00:00.000Z" },
     units: new Map(),
@@ -416,7 +470,7 @@ test("PBE unit details reuse the season-scoped CommunityDragon catalog", async (
     officialEntityDetails: rawOfficialDetails
   });
   runtime.catalogCache.set(
-    "set18-pbe:metatft-pbe.v1:current:PBE:TFTSet18:pbe:zh_cn",
+    "set18-live:metatft-live.v1:current:1100:TFTSet18:latest:zh_cn",
     {
       catalog: createCatalog({
         units: [{ apiName: "DA_18_Warwick", zhName: "沃里克", aliases: ["沃里克"] }]
@@ -428,7 +482,7 @@ test("PBE unit details reuse the season-scoped CommunityDragon catalog", async (
   );
 
   const bundle = await createDefaultReactToolHandlerBundle({
-    request: { seasonContextId: "set18-pbe", locale: "zh-CN" },
+    request: { seasonContextId: "set18-live", locale: "zh-CN" },
     runtime,
     context: {}
   });
@@ -442,7 +496,7 @@ test("PBE unit details reuse the season-scoped CommunityDragon catalog", async (
 test("default react item carrier handler reuses the deterministic ranking service", async () => {
   let parsedInput = null;
   const itemApiName = "TFT_Item_GuinsoosRageblade";
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [{ apiName: "TFT18_Test", zhName: "测试棋子", aliases: ["测试棋子"] }],
       items: [{ apiName: itemApiName, zhName: "鬼索的狂暴之刃", aliases: ["羊刀"] }]

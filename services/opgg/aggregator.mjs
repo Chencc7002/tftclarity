@@ -83,7 +83,7 @@ function compSampleTier(count) {
   return "confident";
 }
 
-function getCurrentPatch(database, { poolId, region = "na" }) {
+function getCurrentPatch(database, { poolId, region = "na", setNumber = null }) {
   const row = database
     .prepare(
       `SELECT m.patch_label
@@ -92,11 +92,12 @@ function getCurrentPatch(database, { poolId, region = "na" }) {
        JOIN tracked_player p ON p.id = f.player_id
        JOIN pool_player pp ON pp.player_id = p.id AND pp.pool_id = ?
        WHERE p.region = ? AND p.active = 1
+         AND (? IS NULL OR m.set_number = ?)
          AND m.patch_label IS NOT NULL
        ORDER BY m.game_datetime DESC
        LIMIT 1`
     )
-    .get(poolId, region);
+    .get(poolId, region, setNumber, setNumber);
   return row?.patch_label ?? null;
 }
 
@@ -130,9 +131,9 @@ function rowToFact(row) {
  */
 function getPoolWindow(
   database,
-  { poolId, region = "na", patch = null, perPlayerLimit = 10 } = {}
+  { poolId, region = "na", patch = null, perPlayerLimit = 10, setNumber = null } = {}
 ) {
-  const effectivePatch = patch ?? getCurrentPatch(database, { poolId, region });
+  const effectivePatch = patch ?? getCurrentPatch(database, { poolId, region, setNumber });
   if (!effectivePatch) {
     return { patch: null, rows: [] };
   }
@@ -156,10 +157,11 @@ function getPoolWindow(
          JOIN tracked_player p ON p.id = f.player_id
          JOIN pool_player pp ON pp.player_id = p.id AND pp.pool_id = ?
          WHERE p.region = ? AND p.active = 1 AND m.patch_label = ?
+           AND (? IS NULL OR m.set_number = ?)
        )
        SELECT * FROM ranked WHERE player_match_rank <= ?`
     )
-    .all(poolId, region, effectivePatch, perPlayerLimit);
+    .all(poolId, region, effectivePatch, setNumber, setNumber, perPlayerLimit);
 
   return {
     patch: effectivePatch,
@@ -182,7 +184,7 @@ function countActivePoolPlayers(database, { poolId, region = "na" }) {
 
 function countCurrentPatchPlayerMatches(
   database,
-  { poolId, region = "na", patch }
+  { poolId, region = "na", patch, setNumber = null }
 ) {
   if (!patch) {
     return 0;
@@ -195,19 +197,21 @@ function countCurrentPatchPlayerMatches(
          JOIN match_record m ON m.match_id = f.match_id
          JOIN tracked_player p ON p.id = f.player_id
          JOIN pool_player pp ON pp.player_id = p.id AND pp.pool_id = ?
-         WHERE p.region = ? AND p.active = 1 AND m.patch_label = ?`
+         WHERE p.region = ? AND p.active = 1 AND m.patch_label = ?
+           AND (? IS NULL OR m.set_number = ?)`
       )
-      .get(poolId, region, patch).n
+      .get(poolId, region, patch, setNumber, setNumber).n
   );
 }
 
 function getPoolOverview(
   database,
-  { poolId, region = "na", patch = null, perPlayerLimit = 10 } = {}
+  { poolId, region = "na", patch = null, perPlayerLimit = 10, setNumber = null } = {}
 ) {
   const window = getPoolWindow(database, {
     poolId,
     region,
+    setNumber,
     patch,
     perPlayerLimit
   });
@@ -215,6 +219,7 @@ function getPoolOverview(
   const currentPatchPlayerMatches = countCurrentPatchPlayerMatches(database, {
     poolId,
     region,
+    setNumber,
     patch: window.patch
   });
 
@@ -235,11 +240,22 @@ function getPoolOverview(
       tier: playerSampleTier(sample.count)
     }))
     .sort((a, b) => b.count - a.count || a.playerId.localeCompare(b.playerId));
+  const sampleTimes = window.rows.map((row) => Date.parse(row.gameDatetime)).filter(Number.isFinite);
+  const latestMatchAt = sampleTimes.length ? new Date(Math.max(...sampleTimes)).toISOString() : null;
+  const poll = database.prepare(
+    `SELECT MAX(p.last_successful_poll_at) AS latest_poll
+     FROM tracked_player p JOIN pool_player pp ON pp.player_id = p.id
+     WHERE pp.pool_id = ? AND p.region = ? AND p.active = 1`
+  ).get(poolId, region);
 
   return {
     poolId,
     region,
     currentPatch: window.patch,
+    patchBasis: "latest_observed_match",
+    latestMatchAt,
+    lastSuccessfulPollAt: poll?.latest_poll ?? null,
+    sampleIsOld: latestMatchAt ? Date.now() - Date.parse(latestMatchAt) > 48 * 60 * 60 * 1000 : false,
     trackedPlayers,
     playersWithData: perPlayer.size,
     playersMeetingTarget: [...perPlayer.values()].filter(
@@ -303,6 +319,9 @@ function getCompTrends(
     if (!board.latestSeenAt || row.gameDatetime > board.latestSeenAt) {
       board.latestSeenAt = row.gameDatetime;
       board.units = row.units ?? board.units;
+      board.matchId = row.matchId;
+      board.playerId = row.playerId;
+      board.placement = row.placement;
     }
     group.boards.set(boardKey, board);
     if (!group.latestSeenAt || row.gameDatetime > group.latestSeenAt) {
@@ -364,6 +383,10 @@ function getCompTrends(
         performanceComparable: canComparePerformance,
         representativeBoardCount: representativeBoard?.count ?? 0,
         representativeUnits: representativeBoard?.units ?? [],
+        representativeMatch: representativeBoard ? {
+          matchId: representativeBoard.matchId, playerId: representativeBoard.playerId,
+          playedAt: representativeBoard.latestSeenAt, placement: representativeBoard.placement
+        } : null,
         sampleCount,
         sampleTier: compSampleTier(group.playerMatchCount),
         latestSeenAt: group.latestSeenAt
@@ -562,7 +585,7 @@ function getItemTrends(windowRows) {
   };
 }
 
-function getPatchDistribution(database, { poolId, region = "na" }) {
+function getPatchDistribution(database, { poolId, region = "na", setNumber = null }) {
   return database
     .prepare(
       `SELECT m.patch_label, MAX(m.game_version) AS latest_version,
@@ -574,11 +597,12 @@ function getPatchDistribution(database, { poolId, region = "na" }) {
        JOIN tracked_player p ON p.id = f.player_id
        JOIN pool_player pp ON pp.player_id = p.id AND pp.pool_id = ?
        WHERE p.region = ? AND p.active = 1
+         AND (? IS NULL OR m.set_number = ?)
          AND m.patch_label IS NOT NULL
        GROUP BY m.patch_label
        ORDER BY matches DESC, m.patch_label DESC`
     )
-    .all(poolId, region)
+    .all(poolId, region, setNumber, setNumber)
     .map((row) => ({
       patch: row.patch_label,
       latestVersion: row.latest_version,
@@ -595,6 +619,7 @@ function aggregatePool(
     region = "na",
     patch = null,
     perPlayerLimit = 10,
+    setNumber = null,
     topComps = 20,
     topUnits = 20,
     topItems = 30
@@ -603,12 +628,14 @@ function aggregatePool(
   const overview = getPoolOverview(database, {
     poolId,
     region,
+    setNumber,
     patch,
     perPlayerLimit
   });
   const window = getPoolWindow(database, {
     poolId,
     region,
+    setNumber,
     patch: overview.currentPatch,
     perPlayerLimit
   });
@@ -623,7 +650,7 @@ function aggregatePool(
     totalPlayerMatches
   });
   const items = getItemTrends(window.rows);
-  const patchDistribution = getPatchDistribution(database, { poolId, region });
+  const patchDistribution = getPatchDistribution(database, { poolId, region, setNumber });
 
   return {
     overview,

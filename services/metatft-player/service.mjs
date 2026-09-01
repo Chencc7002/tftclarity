@@ -85,6 +85,7 @@ function createPlayerMatchService(options = {}) {
   const profileTtlMs = Number(options.profileTtlMs ?? 120_000);
   const detailTtlMs = Number(options.detailTtlMs ?? 600_000);
   const inFlight = new Map();
+  const latestProfileRequest = new Map();
 
   function route(input) {
     return resolveRoutingContext(input, options);
@@ -108,25 +109,35 @@ function createPlayerMatchService(options = {}) {
     return promise;
   }
 
-  async function profileFor(context) {
+  async function profileFor(context, { forceRefresh = false } = {}) {
     const key = cacheKey(context, "profile");
+    if (inFlight.has(`${key}:refresh`)) return inFlight.get(`${key}:refresh`);
     const cached = cache.get(key);
-    if (cached) return { ...cached, cacheStatus: "hit" };
-    return coalesced(key, async () => {
-      const profile = await adapter.fetchProfile(context);
-      const normalized = adapter.normalizeProfile(profile, context);
-      const rawUrls = new Map(
-        profile.matches
-          .filter((match) => match?.tft_set === context.expectedSet)
-          .map((match) => [String(match.riot_match_id), match.match_data_url])
-      );
-      const value = {
-        ...normalized,
-        rawUrls,
-        sourceFetchedAt: new Date().toISOString()
-      };
-      cache.set(key, value, profileTtlMs);
-      return { ...value, cacheStatus: "miss" };
+    if (cached && !forceRefresh) return { ...cached, cacheStatus: "hit" };
+    // An explicit refresh must not join an older ordinary lookup. Keep each
+    // mode coalesced and prevent an older response from replacing fresh cache.
+    return coalesced(forceRefresh ? `${key}:refresh` : key, async () => {
+      const request = {};
+      latestProfileRequest.set(key, request);
+      try {
+        const profile = await adapter.fetchProfile(context, { forceRefresh });
+        const normalized = adapter.normalizeProfile(profile, context);
+        const rawUrls = new Map(
+          profile.matches
+            .filter((match) => match?.tft_set === context.expectedSet)
+            .map((match) => [String(match.riot_match_id), match.match_data_url])
+        );
+        const value = {
+          ...normalized,
+          rawUrls,
+          sourceFetchedAt: new Date().toISOString(),
+          refreshStatus: forceRefresh ? "completed" : "not_requested"
+        };
+        if (latestProfileRequest.get(key) === request) cache.set(key, value, profileTtlMs);
+        return { ...value, cacheStatus: "miss" };
+      } finally {
+        if (latestProfileRequest.get(key) === request) latestProfileRequest.delete(key);
+      }
     });
   }
 
@@ -163,7 +174,7 @@ function createPlayerMatchService(options = {}) {
     const context = route(input);
     checkLimit(input, context);
     const limit = boundedLimit(input?.limit);
-    const profile = await profileFor(context);
+    const profile = await profileFor(context, { forceRefresh: input?.forceRefresh === true });
     const matches = profile.summaries.slice(0, limit);
     return {
       player: {
@@ -178,7 +189,8 @@ function createPlayerMatchService(options = {}) {
       missingFields: [],
       warnings: profile.warnings,
       provenance: provenance(context, profile.sourceFetchedAt, {
-        cacheStatus: profile.cacheStatus
+        cacheStatus: profile.cacheStatus,
+        refreshStatus: profile.refreshStatus
       })
     };
   }

@@ -29,41 +29,46 @@ async function nodeSQLite() {
 test("SeasonContext registry exposes only safe public records", () => {
   const service = createSeasonContextService();
   const records = service.listPublic();
-  const live = records.find((record) => record.id === "set17-live");
-  const pbe = records.find((record) => record.id === "set18-pbe");
+  const set17 = records.find((record) => record.id === "set17-live");
+  const set18 = records.find((record) => record.id === "set18-live");
 
-  assert.equal(service.defaultContextId, "set17-live");
-  assert.equal(live.selectable, true);
-  assert.equal(live.themeId, "set17");
-  assert.equal(pbe.status, "pbe");
-  assert.equal(pbe.selectable, true);
-  assert.equal(pbe.themePreview, false);
-  assert.equal(pbe.availability.available, true);
-  assert.equal(live.theme.documentTitle, "TFTClarity｜云顶数据智答");
-  assert.equal(live.theme.wallpaper.seasonId, "set-17");
-  assert.equal(live.theme.patchNoteVersion, "17.9");
-  assert.equal(pbe.theme.wallpaper.defaultId, "set18-verdant-realm");
-  assert.equal(pbe.theme.patchNoteVersion, null);
-  assert.match(pbe.theme.riskNotice["en-US"], /data is available/i);
-  assert.equal("source" in live, false);
-  assert.equal("catalogNamespace" in live, false);
+  assert.equal(service.defaultContextId, "set18-live");
+  assert.equal(set18.selectable, true);
+  assert.equal(set18.themeId, "set18");
+  assert.equal(set18.status, "live");
+  assert.equal(set18.availability.available, true);
+  assert.equal(set17.selectable, false);
+  assert.equal(set17.status, "unavailable");
+  assert.equal(set17.themeId, "set17");
+  assert.equal(set18.theme.documentTitle, "TFTClarity｜云顶数据智答");
+  assert.equal(set18.theme.wallpaper.seasonId, "set-18");
+  assert.equal(set18.theme.patchNoteVersion, "18.1");
+  assert.equal(set17.theme.patchNoteVersion, "17.9");
+  assert.equal(records.some((record) => record.id === "set18-pbe"), false);
+  assert.equal("source" in set18, false);
+  assert.equal("catalogNamespace" in set18, false);
   assert.doesNotMatch(JSON.stringify(records), /api-hc\.metatft\.com|pbe-comps/);
 });
 
-test("Set 18 PBE can be selected and queried through its isolated provider context", () => {
+test("Set 18 live can be selected and queried through its isolated provider context", () => {
   const service = createSeasonContextService();
-  const selected = service.resolveForSelection("set18-pbe");
-  const queryable = service.resolveForQuery("set18-pbe");
+  const selected = service.resolveForSelection("set18-live");
+  const queryable = service.resolveForQuery("set18-live");
 
-  assert.equal(selected.id, "set18-pbe");
-  assert.equal(queryable.id, "set18-pbe");
-  assert.equal(queryable.source.queue, "PBE");
+  assert.equal(selected.id, "set18-live");
+  assert.equal(queryable.id, "set18-live");
+  assert.equal(queryable.source.queue, "1100");
   assert.equal(queryable.source.tftSet, "TFTSet18");
-  assert.equal(queryable.source.lookupChannel, "pbe");
+  assert.equal(queryable.source.lookupChannel, "latest");
+  assert.equal(queryable.currentPatch, "18.1");
   assert.equal(queryable.availability.available, true);
+  assert.throws(
+    () => service.resolveForSelection("set18-pbe"),
+    (error) => error.code === "season_context_not_found"
+  );
 });
 
-test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17 seeds", async () => {
+test("Set 18 live catalog uses MetaTFT lookup localization without leaking Set 17 seeds", async () => {
   const cacheStore = new MemoryCacheStore();
   const catalogStoreCalls = [];
   for (const methodName of ["getItemCatalog", "getDomainCatalog", "setItemCatalog", "setDomainCatalog"]) {
@@ -102,13 +107,13 @@ test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17
   });
 
   const entry = await loadRuntimeCatalog(runtime, {
-    seasonContextId: "set18-pbe",
-    providerVersion: "metatft-pbe.v1",
-    effectivePatch: "current",
+    seasonContextId: "set18-live",
+    providerVersion: "metatft-live.v1",
+    effectivePatch: "18.1",
     patch: "current",
-    queue: "PBE",
+    queue: "1100",
     tftSet: "TFTSet18",
-    lookupChannel: "pbe",
+    lookupChannel: "latest",
     lookupLocale: "zh_cn"
   });
   const resolver = createAssetResolver();
@@ -132,50 +137,32 @@ test("Set 18 PBE catalog uses MetaTFT lookup localization without leaking Set 17
   assert.match(resolver.resolveTrait("DA_Riftbeast18_3").iconUrl, /traits\/da_riftbeast18\.png$/);
   assert.ok(catalogStoreCalls.length >= 4);
   for (const call of catalogStoreCalls) {
-    assert.equal(call.options.seasonContextId, "set18-pbe");
+    assert.equal(call.options.seasonContextId, "set18-live");
     assert.equal(call.options.provider, "metatft");
-    assert.equal(call.options.providerVersion, "metatft-pbe.v1");
-    assert.equal(call.options.queue, "PBE");
+    assert.equal(call.options.providerVersion, "metatft-live.v1");
+    assert.equal(call.options.queue, "1100");
   }
 });
 
-test("two selectable live seasons resolve independent UI themes during a simulated switch", () => {
-  const registry = createSeasonContextService();
-  const set17 = registry.getDefault();
-  const set18 = {
-    ...structuredClone(set17),
-    id: "set18-live",
-    label: "Set 18 · Live",
-    season: 18,
-    isDefault: false,
-    catalogNamespace: "set18-live",
-    themeId: "set18",
-    theme: {
-      ...structuredClone(set17.theme),
-      documentTitle: "tftclarity · Set 18",
-      colors: { primary: "#805ad5", secondary: "#ed64a6" },
-      wallpaper: {
-        seasonId: "set-18",
-        directory: "/assets/wallpapers/set-18/",
-        defaultId: "set18-default"
-      },
-      patchNoteVersion: "18.1"
-    }
-  };
-  const service = createSeasonContextService({ contexts: [set17, set18] });
+test("disabled Set 17 retains isolated metadata but rejects selection and queries", () => {
+  const service = createSeasonContextService();
 
-  const before = service.publicRecord(service.resolveForQuery("set17-live"));
+  const before = service.publicRecord(service.get("set17-live"));
+  for (const resolve of ["resolveForSelection", "resolveForQuery"]) {
+    assert.throws(() => service[resolve]("set17-live"), (error) => error.code === "season_context_not_selectable" && error.statusCode === 409);
+  }
+  assert.equal(before.selectable, false);
   const after = service.publicRecord(service.resolveForQuery("set18-live"));
 
   assert.equal(before.id, "set17-live");
   assert.equal(after.id, "set18-live");
-  assert.notEqual(after.theme.documentTitle, before.theme.documentTitle);
+  assert.notEqual(after.theme.subtitle["zh-CN"], before.theme.subtitle["zh-CN"]);
   assert.notEqual(after.theme.colors.primary, before.theme.colors.primary);
   assert.notEqual(after.theme.wallpaper.seasonId, before.theme.wallpaper.seasonId);
   assert.equal(after.selectable, true);
 });
 
-test("PBE requests reach the recommendation path while invalid SeasonContexts are rejected", async () => {
+test("Set 18 live requests reach the recommendation path while removed PBE and invalid contexts are rejected", async () => {
   let recommendationCalls = 0;
   let receivedPreferences = null;
   const runtime = createSmallWindowRuntime({
@@ -194,12 +181,19 @@ test("PBE requests reach the recommendation path while invalid SeasonContexts ar
         filteredBuilds: [],
         rankedBuilds: [],
         results: [],
-        text: "PBE ready"
+        text: "Set 18 ready"
       };
     }
   });
 
-  const pbe = await handleRecommendRequest({
+  const live = await handleRecommendRequest({
+    input: "阵容排行",
+    seasonContextId: "set18-live"
+  }, runtime);
+  const disabledSet17 = await handleRecommendRequest({input: "阵容排行", seasonContextId: "set17-live"}, runtime);
+  assert.equal(disabledSet17.statusCode, 409);
+  assert.equal(disabledSet17.payload.code, "season_context_not_selectable");
+  const removedPbe = await handleRecommendRequest({
     input: "阵容排行",
     seasonContextId: "set18-pbe"
   }, runtime);
@@ -208,10 +202,12 @@ test("PBE requests reach the recommendation path while invalid SeasonContexts ar
     seasonContextId: "https://attacker.invalid/provider"
   }, runtime);
 
-  assert.equal(pbe.statusCode, 200);
-  assert.equal(pbe.payload.seasonContext.id, "set18-pbe");
-  assert.equal(receivedPreferences.queue, "PBE");
+  assert.equal(live.statusCode, 200);
+  assert.equal(live.payload.seasonContext.id, "set18-live");
+  assert.equal(receivedPreferences.queue, "1100");
   assert.equal(receivedPreferences.tftSet, "TFTSet18");
+  assert.equal(removedPbe.statusCode, 404);
+  assert.equal(removedPbe.payload.code, "season_context_not_found");
   assert.equal(invalid.statusCode, 404);
   assert.equal(invalid.payload.code, "season_context_not_found");
   assert.equal(recommendationCalls, 1);
@@ -246,26 +242,26 @@ test("cache fingerprints include SeasonContext, provider version, patch and queu
 test("memory caches, catalogs, aliases and semantic documents are season-isolated", async () => {
   const store = new MemoryCacheStore();
   store.setQuery("same", { value: "live" }, { seasonContextId: "set17-live" });
-  store.setQuery("same", { value: "pbe" }, { seasonContextId: "set18-pbe" });
+  store.setQuery("same", { value: "new" }, { seasonContextId: "set18-live" });
   store.setItemCatalog("current", [{ apiName: "TFT_Item_Same", zhName: "正式服" }], { seasonContextId: "set17-live" });
-  store.setItemCatalog("current", [{ apiName: "TFT_Item_Same", zhName: "PBE" }], { seasonContextId: "set18-pbe" });
+  store.setItemCatalog("current", [{ apiName: "TFT_Item_Same", zhName: "新赛季" }], { seasonContextId: "set18-live" });
   store.addEntityAlias({ alias: "同名", entityType: "item", apiName: "TFT_Item_Same", seasonContextId: "set17-live" });
-  store.addEntityAlias({ alias: "同名", entityType: "item", apiName: "TFT_Item_Same", seasonContextId: "set18-pbe" });
+  store.addEntityAlias({ alias: "同名", entityType: "item", apiName: "TFT_Item_Same", seasonContextId: "set18-live" });
 
   assert.equal(store.getQuery("same", { seasonContextId: "set17-live" }).value.value, "live");
-  assert.equal(store.getQuery("same", { seasonContextId: "set18-pbe" }).value.value, "pbe");
+  assert.equal(store.getQuery("same", { seasonContextId: "set18-live" }).value.value, "new");
   assert.equal(store.getItemCatalog("current", { seasonContextId: "set17-live" }).value.items[0].zhName, "正式服");
-  assert.equal(store.getItemCatalog("current", { seasonContextId: "set18-pbe" }).value.items[0].zhName, "PBE");
+  assert.equal(store.getItemCatalog("current", { seasonContextId: "set18-live" }).value.items[0].zhName, "新赛季");
   assert.equal(store.listEntityAliases({ seasonContextId: "set17-live" }).length, 1);
-  assert.equal(store.listEntityAliases({ seasonContextId: "set18-pbe" }).length, 1);
+  assert.equal(store.listEntityAliases({ seasonContextId: "set18-live" }).length, 1);
 
   const semantic = new MemorySemanticDocumentStore();
   await semantic.upsert([
     { id: "same", seasonContextId: "set17-live", documentType: "unit", content: "live" },
-    { id: "same", seasonContextId: "set18-pbe", documentType: "unit", content: "pbe" }
+    { id: "same", seasonContextId: "set18-live", documentType: "unit", content: "new" }
   ]);
   assert.equal((await semantic.list({ seasonContextId: "set17-live" }))[0].content, "live");
-  assert.equal((await semantic.list({ seasonContextId: "set18-pbe" }))[0].content, "pbe");
+  assert.equal((await semantic.list({ seasonContextId: "set18-live" }))[0].content, "new");
 });
 
 test("legacy SQLite rows migrate to set17-live and composite keys accept same entity ids", async (t) => {

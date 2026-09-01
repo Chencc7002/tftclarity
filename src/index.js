@@ -289,6 +289,7 @@ export {
 } from "./core/comp-enrichment.js";
 export {
   DEFAULT_SEASON_CONTEXT_ID,
+  LEGACY_SEASON_CONTEXT_ID,
   SEASON_CONTEXTS,
   SeasonContextError,
   SeasonContextService,

@@ -7,7 +7,7 @@ import {
   SkillRegistry,
   UNIT_PLAY_GUIDANCE_SKILL,
   matchSkill,
-  validateSkillCompletion
+  projectSkillCompletion
 } from "../src/skills/index.js";
 
 const root = resolve(fileURLToPath(new URL("..", import.meta.url)));
@@ -42,7 +42,7 @@ const completionMatches = completionRows.filter((row) => {
     unsupportedFacets: row.unsupportedFacets.map((facetId) => ({ facetId, reasonCode: "data_unavailable" })),
     status: row.expectedStatus === "rejected" ? "in_progress" : row.expectedStatus
   };
-  return validateSkillCompletion({ skill, progress }).status === row.expectedStatus;
+  return projectSkillCompletion({ skill, progress }).status === row.expectedStatus;
 }).length;
 const bridgeMatches = bridgeRows.filter((row) => {
   if (row.expectedCanSupportCurrentClaim === false) return row.evidence.temporalStatus === "historical";
@@ -66,6 +66,8 @@ const report = {
     falseTakeovers: negatives.length - negativeMatches
   },
   completion: {
+    mode: "coverage_projection_only",
+    answerValidated: false,
     cases: completionRows.length,
     correct: completionMatches,
     accuracy: ratio(completionMatches, completionRows.length)
@@ -90,4 +92,3 @@ if (positiveMatches !== positives.length
   || bridgeMatches !== bridgeRows.length) {
   process.exitCode = 1;
 }
-

@@ -14,6 +14,8 @@
     <link rel="canonical" href="https://tftclarity.cn/">
     <link rel="icon" type="image/png" href="/favicon.png?v=20260727">
     <link rel="stylesheet" href="/styles.css">
+    <link rel="stylesheet" href="/quick-tools.css">
+    <link rel="stylesheet" href="/onboarding-tour.css">
     <link rel="stylesheet" href="/opgg-panel.css">
   </head>
   <body>
@@ -75,47 +77,26 @@
           <section class="conversation" id="result" aria-live="polite">
             <article class="message assistant-message welcome-message">
               <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">tftclarity</strong></div>
-              <div class="message-body" data-i18n="welcome">使用下方快捷查询可跳过语义理解，通常返回更快；你也可以直接用自然语言提问。</div>
+              <div class="message-body" data-i18n="welcome">使用工具查询通常更快，也可以直接用自然语言提问。</div>
             </article>
-            <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="功能分类与快捷查询">
-              <div class="quick-tasks-heading">
-                <strong data-i18n="quickTasksTitle">功能导航</strong>
-                <span data-i18n="quickTasksHint">按类型查看当前已支持的功能</span>
-              </div>
-              <div class="quick-category-grid">
-                <button type="button" class="quick-category-card" data-quick-category="equipment" aria-expanded="false">
-                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/></svg></span>
-                  <span class="quick-category-copy"><strong data-i18n="quickCategoryEquipmentTitle">装备分析</strong><small data-i18n="quickCategoryEquipmentBody">出装、补装、评估与对比</small></span>
-                  <span class="quick-category-count" data-i18n="quickCategoryEquipmentCount">6 项</span>
-                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
-                </button>
-                <button type="button" class="quick-category-card" data-quick-category="comps" aria-expanded="false">
-                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/></svg></span>
-                  <span class="quick-category-copy"><strong data-i18n="quickCategoryCompsTitle">阵容决策</strong><small data-i18n="quickCategoryCompsBody">排行、趋势、指定英雄</small></span>
-                  <span class="quick-category-count" data-i18n="quickCategoryCompsCount">3 项</span>
-                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
-                </button>
-                <button type="button" class="quick-category-card" data-quick-category="library" aria-expanded="false">
-                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 16h10M9 8h5M9 11h6"/></svg></span>
-                  <span class="quick-category-copy"><strong data-i18n="quickCategoryLibraryTitle">资料百科</strong><small data-i18n="quickCategoryLibraryBody">英雄、装备与羁绊资料</small></span>
-                  <span class="quick-category-count" data-i18n="quickCategoryLibraryCount">5 项</span>
-                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
-                </button>
-                <button type="button" class="quick-category-card" data-quick-category="news" aria-expanded="false">
-                  <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/></svg></span>
-                  <span class="quick-category-copy"><strong data-i18n="quickCategoryNewsTitle">智能复盘与资讯</strong><small data-i18n="quickCategoryNewsBody">个人复盘、职业教学与阵容资讯</small></span>
-                  <span class="quick-category-count" data-i18n="quickCategoryNewsCount">4 项</span>
-                  <span class="quick-category-chevron" aria-hidden="true">⌄</span>
-                </button>
-              </div>
-            </section>
+            <section class="quick-tasks" aria-label="推荐快捷工具"></section>
           </section>
 
           <form class="query-panel composer" id="query-form">
+            <aside id="tool-reminder" class="tool-reminder" hidden></aside>
             <div class="season-preview-banner" id="season-preview-banner" role="status" hidden>
               <span class="season-preview-mark" aria-hidden="true">✦</span>
-              <span><strong data-i18n="seasonPreviewMode">S18 PBE 暂不可用</strong><small data-i18n="seasonPreviewQueryDisabled">PBE 数据源当前不可用，已暂停查询以避免回退到其他赛季。</small></span>
+              <span><strong data-i18n="seasonPreviewMode">赛季预览暂不可用</strong><small data-i18n="seasonPreviewQueryDisabled">该赛季数据源当前不可用，已暂停查询以避免回退到其他赛季。</small></span>
             </div>
+            <div class="composer-entry">
+              <div class="composer-tool-anchor" id="composer-tool-anchor">
+                <button type="button" id="tool-menu-toggle" class="tool-menu-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="tool-menu" data-i18n-aria="toolMenu" data-i18n-title="toolMenu" aria-label="工具与收藏" title="工具与收藏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
+                <div id="tool-menu" class="tool-menu" role="menu" data-i18n-aria="toolMenu" aria-label="工具与收藏" hidden>
+                  <button type="button" role="menuitem" data-open-tools="all" aria-haspopup="dialog"><span aria-hidden="true">▦</span><span data-i18n="toolAll">全部工具</span></button>
+                  <button type="button" role="menuitem" data-open-tools="favorites" aria-haspopup="dialog"><span aria-hidden="true">☆</span><span data-i18n="toolFavorites">我的收藏</span><span data-favorites-count>0</span></button>
+                </div>
+              </div>
+              <div class="composer-entry-body">
             <section class="quick-task-form" id="quick-task-form" aria-labelledby="quick-task-form-title" hidden>
               <header class="quick-task-form-heading">
                 <div>
@@ -128,6 +109,12 @@
               <small class="quick-task-form-hint" data-i18n="quickTaskFormHint">填写条件后将直接执行结构化查询，无需再次理解语义。</small>
             </section>
             <textarea id="query-input" name="query" rows="1" autocomplete="off" spellcheck="false" data-i18n-placeholder="composerPlaceholder" placeholder="输入英雄、装备或阵容问题，Enter 发送…"></textarea>
+            <button type="button" id="voice-input-button" class="voice-input-button" aria-pressed="false" data-i18n-title="voiceStart" data-i18n-aria="voiceStart" title="语音输入" aria-label="语音输入">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11.5a6.5 6.5 0 0 0 13 0M12 18v3M8.5 21h7"/></svg>
+            </button>
+              </div>
+            </div>
+            <p id="voice-input-status" class="voice-input-status" role="status" aria-live="polite" hidden></p>
             <p class="ai-generated-disclaimer" role="note">
               <span class="ai-generated-disclaimer-mark" aria-hidden="true">AI</span>
               <span data-i18n="aiGeneratedDisclaimer">AI 生成内容可能存在错误或不完整。统计数据、数据来源与工具证据可供核对；策略判断、原因分析与推测性建议仅供参考，请结合实际对局判断。</span>
@@ -203,6 +190,14 @@
                 <div id="wallpaper-mobile-options" class="wallpaper-mobile-options"></div>
               </section>
             </section>
+            <section class="settings-section onboarding-settings" aria-labelledby="onboarding-settings-title">
+              <div>
+                <h2 id="onboarding-settings-title" data-i18n="onboardingSettingsTitle">新手引导</h2>
+                <p data-i18n="onboardingSettingsBody">重新了解工具列表、收藏和自然语言提问入口。</p>
+              </div>
+              <button type="button" id="restart-onboarding-button" data-i18n="onboardingReplay">重新查看</button>
+            </section>
+
             <details class="advanced-query-settings" open>
               <summary data-i18n="advancedDefaults">高级查询默认值</summary>
               <section class="controls" data-i18n-aria="queryConditions" aria-label="查询条件">
@@ -331,6 +326,45 @@
         </span>
       </footer>
       <div class="resize-grip" data-i18n-title="nativeResize" title="拖动窗口边缘调整大小（由桌面壳提供）" aria-hidden="true"><span></span><span></span></div>
+    <dialog id="tool-library" class="tool-library" aria-labelledby="tool-library-title" aria-describedby="tool-library-privacy">
+      <header class="tool-library-header">
+        <div><h2 id="tool-library-title">全部工具</h2><p data-tool-count></p></div>
+        <button type="button" data-close-tools data-i18n-aria="toolClose" aria-label="关闭工具面板">×</button>
+      </header>
+      <div class="tool-library-controls">
+        <div class="tool-library-tabs" role="group" data-i18n-aria="toolNavigation" aria-label="快捷工具导航">
+          <button type="button" data-tool-view="all" aria-pressed="true" data-i18n="toolAll">全部工具</button>
+          <button type="button" data-tool-view="favorites" aria-pressed="false" data-i18n="toolFavorites">我的收藏</button>
+        </div>
+        <label class="tool-library-search"><span data-i18n="toolSearch">搜索工具</span><input type="search" maxlength="100" data-i18n-placeholder="toolSearchPlaceholder" placeholder="搜索阵容、装备、英雄…" autocomplete="off"></label>
+        <div class="tool-library-filters" data-tool-filters role="group" data-i18n-aria="toolCategories" aria-label="工具分类"></div>
+      </div>
+      <div class="tool-library-list" data-tool-list></div>
+      <footer>
+        <label class="tool-recommendations-setting"><input type="checkbox" id="tool-recommendations-toggle" checked><span data-i18n="toolShowRecommendations">在聊天区显示工具推荐</span></label>
+        <p id="tool-library-privacy" data-tool-storage></p>
+      </footer>
+    </dialog>
+    <div id="tool-library-status" class="tool-library-status" role="status" aria-live="polite"></div>
+    <section id="onboarding-tour" class="onboarding-tour" role="dialog" aria-modal="false" aria-labelledby="onboarding-tour-title" aria-describedby="onboarding-tour-body" aria-hidden="true" hidden>
+      <div class="onboarding-scrim" aria-hidden="true"></div>
+      <article class="onboarding-card">
+        <header>
+          <span data-onboarding-progress>1 / 4</span>
+          <button type="button" data-onboarding-action="dismiss" data-i18n-title="onboardingDismiss" data-i18n-aria="onboardingDismiss" title="关闭新手引导" aria-label="关闭新手引导">×</button>
+        </header>
+        <div class="onboarding-mark" aria-hidden="true">✦</div>
+        <h2 id="onboarding-tour-title" data-onboarding-title></h2>
+        <p id="onboarding-tour-body" data-onboarding-body></p>
+        <footer>
+          <button type="button" class="onboarding-skip" data-onboarding-action="dismiss" data-i18n="onboardingSkip">跳过引导</button>
+          <span>
+            <button type="button" class="onboarding-previous" data-onboarding-action="previous" data-i18n="onboardingPrevious">上一步</button>
+            <button type="button" class="onboarding-next" data-onboarding-action="next">下一步</button>
+          </span>
+        </footer>
+      </article>
+    </section>
     </main>
     <script src="/app.js" type="module"></script>
   </body>

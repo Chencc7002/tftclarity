@@ -25,7 +25,7 @@ function assertStringArray(value, label, { allowEmpty = true } = {}) {
   if (!Array.isArray(value) || (!allowEmpty && value.length === 0)) {
     throw new TypeError(`${label} must be ${allowEmpty ? "an" : "a non-empty"} array`);
   }
-  if (value.some((entry) => !String(entry ?? "").trim())) {
+  if (value.some((entry) => typeof entry !== "string" || !entry.trim())) {
     throw new TypeError(`${label} entries must be non-empty strings`);
   }
   if (new Set(value).size !== value.length) throw new TypeError(`${label} entries must be unique`);
@@ -68,9 +68,15 @@ export function validateSkillDefinition(input) {
   }
   if (!Array.isArray(input.facets) || input.facets.length === 0) throw new TypeError("SkillDefinition.facets must be non-empty");
   for (const facet of input.facets) {
-    assertExactKeys(facet, ["id", "requirement"], "SkillDefinition.facet");
+    assertExactKeys(facet, ["id", "requirement", "dataDependenciesAny"], "SkillDefinition.facet");
     if (!ID_PATTERN.test(String(facet.id ?? ""))) throw new TypeError("SkillDefinition facet id is invalid");
-    if (!["required", "optional"].includes(facet.requirement)) throw new TypeError("SkillDefinition facet requirement is invalid");
+    if (!["required", "required_if_supported", "optional"].includes(facet.requirement)) throw new TypeError("SkillDefinition facet requirement is invalid");
+    if (facet.dataDependenciesAny !== undefined) {
+      assertStringArray(facet.dataDependenciesAny, "SkillDefinition.facet.dataDependenciesAny", { allowEmpty: false });
+      if (facet.dataDependenciesAny.some((id) => !input.dataDependencies.some((dependency) => dependency.id === id))) {
+        throw new TypeError("SkillDefinition facet references an undeclared dependency");
+      }
+    }
   }
   if (new Set(input.facets.map(({ id }) => id)).size !== input.facets.length) throw new TypeError("SkillDefinition facet ids must be unique");
 
@@ -107,6 +113,22 @@ export function freezeSkillContract(input) {
   return deepFreeze(structuredClone(input));
 }
 
+// Policies must be synchronous, deterministic server code. No model result or
+// asynchronous retriever is accepted as an approval decision.
+export function runSkillPolicy(policy, input) {
+  if (typeof policy !== "function" || policy.constructor?.name === "AsyncFunction") return null;
+  try {
+    const result = policy(input);
+    if (result && typeof result.then === "function") {
+      Promise.resolve(result).catch(() => {});
+      return null;
+    }
+    return result;
+  } catch {
+    return null;
+  }
+}
+
 export function validateSkillSelection(input) {
   assertExactKeys(input, ["schemaVersion", "status", "mode", "selected", "alternatives", "reasonCodes", "semanticFallback"], "SkillSelection");
   if (input.schemaVersion !== SKILL_SELECTION_SCHEMA_VERSION) throw new TypeError(`SkillSelection schemaVersion must be ${SKILL_SELECTION_SCHEMA_VERSION}`);
@@ -130,8 +152,15 @@ export function validateSkillDataAvailability(input) {
   if (input.schemaVersion !== SKILL_DATA_AVAILABILITY_SCHEMA_VERSION) throw new TypeError(`SkillDataAvailability schemaVersion must be ${SKILL_DATA_AVAILABILITY_SCHEMA_VERSION}`);
   if (!String(input.dependencyId ?? "").trim() || !String(input.reasonCode ?? "").trim()) throw new TypeError("SkillDataAvailability identifiers are required");
   if (!["available", "unavailable", "stale", "unknown"].includes(input.status)) throw new TypeError("SkillDataAvailability status is invalid");
-  if (!["available_registered_tool", "source_unavailable", "freshness_failed", "not_probed"].includes(input.reasonCode)) throw new TypeError("SkillDataAvailability reasonCode is invalid");
-  if (input.observedAt !== null && Number.isNaN(Date.parse(input.observedAt))) throw new TypeError("SkillDataAvailability observedAt is invalid");
+  const reasons = {
+    available: ["available_registered_tool", "observed_data"],
+    unavailable: ["source_unavailable", "source_exhausted", "empty_result", "field_unavailable"],
+    stale: ["freshness_failed"],
+    unknown: ["not_probed", "source_failed"]
+  };
+  if (!reasons[input.status].includes(input.reasonCode)) throw new TypeError("SkillDataAvailability reasonCode is invalid");
+  if (input.observedAt !== null && (typeof input.observedAt !== "string" || Number.isNaN(Date.parse(input.observedAt)))) throw new TypeError("SkillDataAvailability observedAt is invalid");
+  if (["observed_data", "source_failed", "source_exhausted", "empty_result", "field_unavailable", "freshness_failed"].includes(input.reasonCode) && input.observedAt === null) throw new TypeError("SkillDataAvailability observation requires observedAt");
   assertStringArray(input.sourceIds, "SkillDataAvailability.sourceIds");
   return deepFreeze(structuredClone(input));
 }
@@ -145,8 +174,12 @@ export function validateSkillContext(input) {
   if (input.selection.skillId !== input.skillId || input.selection.skillVersion !== input.skillVersion || !Number.isFinite(input.selection.score)) throw new TypeError("SkillContext selection does not match Skill identity");
   assertStringArray(input.selection.reasons, "SkillContext.selection.reasons", { allowEmpty: false });
   for (const facet of input.facets) {
-    assertExactKeys(facet, ["id", "requirement"], "SkillContext.facet");
-    if (!String(facet.id ?? "").trim() || !["required", "optional"].includes(facet.requirement)) throw new TypeError("SkillContext facet is invalid");
+    assertExactKeys(facet, ["id", "requirement", "dataDependenciesAny"], "SkillContext.facet");
+    if (!String(facet.id ?? "").trim() || !["required", "required_if_supported", "optional"].includes(facet.requirement)) throw new TypeError("SkillContext facet is invalid");
+    if (facet.dataDependenciesAny !== undefined) {
+      assertStringArray(facet.dataDependenciesAny, "SkillContext.facet.dataDependenciesAny", { allowEmpty: false });
+      if (facet.dataDependenciesAny.some((id) => !input.dataAvailability.some((entry) => entry.dependencyId === id))) throw new TypeError("SkillContext facet references an undeclared dependency");
+    }
   }
   input.dataAvailability.forEach(validateSkillDataAvailability);
   assertStringArray(input.instructions, "SkillContext.instructions");
@@ -168,13 +201,18 @@ export function validateSkillProgress(input) {
   for (const entry of input.coveredFacets) {
     assertExactKeys(entry, ["facetId", "evidenceIds", "tierSummary"], "SkillProgress.coveredFacet");
     if (!String(entry.facetId ?? "").trim()) throw new TypeError("SkillProgress coveredFacet facetId is required");
-    assertStringArray(entry.evidenceIds, "SkillProgress.coveredFacet.evidenceIds");
-    assertStringArray(entry.tierSummary, "SkillProgress.coveredFacet.tierSummary");
+    assertStringArray(entry.evidenceIds, "SkillProgress.coveredFacet.evidenceIds", { allowEmpty: false });
+    assertStringArray(entry.tierSummary, "SkillProgress.coveredFacet.tierSummary", { allowEmpty: false });
+    if (entry.tierSummary.some((tier) => !/^[A-E]$/u.test(tier))) throw new TypeError("SkillProgress tier is invalid");
   }
   for (const entry of input.unsupportedFacets) {
     assertExactKeys(entry, ["facetId", "reasonCode"], "SkillProgress.unsupportedFacet");
     if (!String(entry.facetId ?? "").trim() || !String(entry.reasonCode ?? "").trim()) throw new TypeError("SkillProgress unsupportedFacet is invalid");
   }
+  const partition = [...input.coveredFacets.map(({ facetId }) => facetId), ...input.missingFacets, ...input.unsupportedFacets.map(({ facetId }) => facetId)];
+  if (new Set(partition).size !== partition.length || partition.length !== input.requiredFacets.length || partition.some((id) => !input.requiredFacets.includes(id))) throw new TypeError("SkillProgress facets must partition requiredFacets");
+  const expectedStatus = input.missingFacets.length ? "in_progress" : input.unsupportedFacets.length ? "qualified_incomplete" : "complete";
+  if (input.status !== expectedStatus && !(input.status === "in_progress" && input.unsupportedFacets.length)) throw new TypeError("SkillProgress status contradicts coverage");
   return deepFreeze(structuredClone(input));
 }
 

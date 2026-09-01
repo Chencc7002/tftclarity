@@ -32,6 +32,7 @@ import {
   buildExactBoardSignature
 } from "./signature.mjs";
 import { patchLabelFromVersion } from "./patch.mjs";
+import { matchNumber, matchUnitCost } from "./match-fields.mjs";
 
 const DEFAULT_DB_PATH = resolve(
   process.cwd(),
@@ -291,14 +292,12 @@ function cleanUnits(units) {
     return [];
   }
   return units.map((unit) => {
-    const rarity = Number.isFinite(Number(unit?.rarity))
-      ? Number(unit.rarity)
-      : null;
+    const rarity = matchNumber(unit?.rarity);
     return {
       characterId: unit?.characterId ?? null,
       name: unit?.name ?? null,
       rarity,
-      cost: rarity === null ? null : rarity + 1,
+      cost: matchUnitCost(unit),
       tier: unit?.tier ?? null,
       itemNames: Array.isArray(unit?.itemNames) ? unit.itemNames : []
     };
@@ -1141,7 +1140,7 @@ function ingestExternalPlayerMatches(
       matchId: String(match.matchId),
       gameDatetime: match.playedAt ?? null,
       gameVersion: match.patch ?? null,
-      patchLabel: match.patch ?? null,
+      patchLabel: patchLabelFromVersion(match.patch, { setNumber }),
       setNumber: Number.isFinite(setNumber) ? setNumber : null,
       queueId: match.queue?.id ?? null,
       placement: match.placement ?? null,
@@ -1152,17 +1151,30 @@ function ingestExternalPlayerMatches(
       traits: (match.traits ?? []).map((trait) => ({
         name: trait.id ?? trait.name ?? null,
         numUnits: trait.units ?? trait.numUnits ?? null,
-        style: trait.style ?? 0,
-        tierCurrent: trait.tierCurrent ?? trait.tier_current ?? 0
+        style: trait.style ?? null,
+        tierCurrent: trait.tierCurrent ?? trait.tier_current ?? null
       })),
       units: (match.units ?? []).map((unit) => ({
         characterId: unit.characterId ?? null,
+        rarity: matchNumber(unit.rarity),
+        cost: matchUnitCost(unit),
         tier: unit.starLevel ?? unit.tier ?? 1,
         itemNames: unit.items ?? unit.itemNames ?? []
       })),
       augments: match.augments ?? null,
       source: provider
     };
+    // Profile summaries can omit a board already collected in full. Match facts
+    // are immutable; an incomplete refresh must not erase that same match's evidence.
+    const existing = database.prepare(
+      `SELECT traits_json, units_json, augments_json FROM player_match_fact
+       WHERE player_id = ? AND match_id = ?`
+    ).get(entry.id, fact.matchId);
+    if (existing) {
+      if (!fact.units.length) fact.units = JSON.parse(existing.units_json || "[]");
+      if (!fact.traits.length) fact.traits = JSON.parse(existing.traits_json || "[]");
+      if (fact.augments === null && existing.augments_json) fact.augments = JSON.parse(existing.augments_json);
+    }
     fact.traitsJson = JSON.stringify(fact.traits);
     fact.unitsJson = JSON.stringify(fact.units);
     fact.augmentsJson = fact.augments;
@@ -1414,7 +1426,7 @@ function listPlayerMatches(
       `SELECT pm.match_id, pm.placement, pm.level, pm.gold_left,
               pm.last_round, pm.players_eliminated, pm.traits_json,
               pm.units_json, pm.augments_json, pm.comp_family_signature,
-              pm.exact_board_signature, pm.first_seen_at, pm.last_seen_at,
+              pm.exact_board_signature, pm.first_seen_at, pm.last_seen_at, pm.source,
               m.game_datetime, m.game_version, m.patch_label, m.set_number,
               m.queue_id
        FROM player_match_fact pm
@@ -1428,6 +1440,7 @@ function listPlayerMatches(
     .map((row) => ({
       matchId: row.match_id,
       gameDatetime: row.game_datetime,
+      source: row.source,
       gameVersion: row.game_version,
       patchLabel: row.patch_label,
       setNumber: row.set_number,

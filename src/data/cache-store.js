@@ -133,6 +133,8 @@ export function makeQueryCacheKey(query) {
     owned_items: sortStrings(query.ownedItems ?? query.owned_items),
     excluded_items: sortStrings(query.excludedItems ?? query.excluded_items),
     item_policy: query.itemPolicy ?? query.item_policy ?? null,
+    ...((query.itemPolicyScope ?? query.item_policy_scope) === "remaining_items"
+      ? { item_policy_scope: "remaining_items.v1" } : {}),
     item_categories: sortStrings(query.itemCategories ?? query.item_categories),
     rank: sortStrings(query.rankFilter ?? query.rank),
     days: query.days ?? null,

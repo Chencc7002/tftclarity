@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createMetaTftAdapter, validatedMatchUrl } from "../services/metatft-player/adapter.mjs";
+import { createMetaTftAdapter, validatedMatchUrl, normalizeMatchSummary } from "../services/metatft-player/adapter.mjs";
 import { PlayerMatchError } from "../services/metatft-player/errors.mjs";
 import { resolveRoutingContext } from "../services/metatft-player/routing.mjs";
 import {
@@ -13,6 +13,19 @@ const enabledOptions = {
   pbeEnabled: true,
   naEnabled: true
 };
+
+test("normalization retains rarity and unknowns instead of inventing cost or activation", () => {
+  const value = normalizeMatchSummary(match({ summary: {
+    units: [{ character_id: "DA_18_Aphelios", rarity: 3, tier: 2 }, { character_id: "DA_18_Diana", tier: 2 }],
+    traits: [{ name: "DA_18_Lunar", num_units: 2, style: 1, tier_current: 1 }, "DA_Riftbeast18_1"]
+  } }), { platform: "PBE1", expectedSet: "TFTSet18" });
+  assert.equal(value.units[0].rarity, 3);
+  assert.equal(value.units[0].cost, null);
+  assert.equal(value.units[1].rarity, null);
+  assert.equal(value.traits[0].units, 2);
+  assert.equal(value.traits[0].tierCurrent, 1);
+  assert.equal(value.traits[1].units, undefined);
+});
 
 function match(overrides = {}) {
   return {

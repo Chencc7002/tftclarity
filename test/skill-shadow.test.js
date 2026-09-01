@@ -30,7 +30,7 @@ async function run({ shadow }) {
       parserCalls += 1;
       return parseSemanticTask(input, options);
     },
-    onAgentSkillShadow: (event) => { shadowEvent = event; },
+    onAgentSkillShadow: (event) => { if (event.schemaVersion === "agent-skill-shadow.v1") shadowEvent = event; },
     reactDecisionProvider: async (request) => {
       providerCalls += 1;
       providerProjection = stableDecisionProjection(request);
@@ -43,7 +43,7 @@ async function run({ shadow }) {
       };
     }
   });
-  const result = await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-pbe" }, runtime);
+  const result = await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-live" }, runtime);
   return { runtime, result, providerCalls, parserCalls, providerProjection, shadowEvent };
 }
 
@@ -80,6 +80,9 @@ test("Skill shadow adds zero LLM calls and leaves decision prompt, tools, answer
   assert.equal(shadow.shadowEvent.success, true);
   assert.equal(shadow.shadowEvent.selected, true);
   assert.equal(shadow.shadowEvent.skillId, "unit_play_guidance");
+  assert.equal(shadow.shadowEvent.skillVersion, "1.3.0");
+  assert.equal(shadow.shadowEvent.dataAvailability.current_unit_build_statistics, "unknown");
+  assert.ok(shadow.shadowEvent.unsupportedFacets.includes("unit_role"));
   assert.equal(shadow.shadowEvent.llmCallsAdded, 0);
   assert.deepEqual(shadow.shadowEvent.effectiveTools, ["entity_catalog_query", "unit_builds"]);
 });
@@ -97,7 +100,7 @@ test("Skill shadow matcher/parser failures fail open without changing production
       return { schemaVersion: "react-action.v1", type: "finish", answer: "旧路径", evidenceIds: [], reasonCode: "direct_answer" };
     }
   });
-  const { payload } = await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-pbe" }, runtime);
+  const { payload } = await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-live" }, runtime);
   assert.equal(payload.status, "completed");
   assert.equal(providerQuestion, "沃里克推荐出装");
   assert.equal(event.success, false);
@@ -117,7 +120,7 @@ test("Skill and TaskFrame shadows reuse one deterministic parse promise", async 
       return parseSemanticTask(input, options);
     },
     onReactTaskFrameShadow: () => { taskFrameEvents += 1; },
-    onAgentSkillShadow: () => { skillEvents += 1; },
+    onAgentSkillShadow: (event) => { if (event.schemaVersion === "agent-skill-shadow.v1") skillEvents += 1; },
     reactDecisionProvider: async () => ({
       schemaVersion: "react-action.v1",
       type: "finish",
@@ -126,7 +129,7 @@ test("Skill and TaskFrame shadows reuse one deterministic parse promise", async 
       reasonCode: "direct_answer"
     })
   });
-  await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-pbe" }, runtime);
+  await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-live" }, runtime);
   assert.equal(parserCalls, 1);
   assert.equal(taskFrameEvents, 1);
   assert.equal(skillEvents, 1);
@@ -144,7 +147,7 @@ test("narrow parameterized queries emit no-Skill telemetry and keep their origin
       return { schemaVersion: "react-action.v1", type: "finish", answer: "原路径", evidenceIds: [], reasonCode: "direct_answer" };
     }
   });
-  await handleReactChatRequest({ input: "沃里克推荐什么装备？", locale: "zh-CN", seasonContextId: "set18-pbe" }, runtime);
+  await handleReactChatRequest({ input: "沃里克推荐什么装备？", locale: "zh-CN", seasonContextId: "set18-live" }, runtime);
   assert.equal(question, "沃里克推荐什么装备？");
   assert.equal(event.success, true);
   assert.equal(event.selected, false);
@@ -170,7 +173,7 @@ test("invalid static Skill definitions are fail-visible while production remains
   });
   assert.equal(runtime.agentSkillShadowOperational, false);
   assert.equal(runtime.agentSkillShadowDiagnostic, "invalid_skill_definition");
-  const { payload } = await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-pbe" }, runtime);
+  const { payload } = await handleReactChatRequest({ input: "沃里克怎么玩？", locale: "zh-CN", seasonContextId: "set18-live" }, runtime);
   assert.equal(payload.status, "completed");
   assert.equal(payload.answer, "生产路径健康");
   assert.equal(parserCalls, 0);

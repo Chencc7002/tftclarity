@@ -54,7 +54,7 @@ function createPlayerMatchMcpServer(options = {}) {
     {
       title: "List TFT player matches",
       description: "List 10 to 20 normalized match summaries (default 20). If fewer exist, returns the actual count; does not fetch every match detail.",
-      inputSchema: { ...commonSchema, limit: z.number().int().min(10).max(20).optional() }
+      inputSchema: { ...commonSchema, limit: z.number().int().min(10).max(20).optional(), forceRefresh: z.boolean().optional().describe("Explicit user refresh: bypass the profile cache; existing rate limits still apply") }
     },
     (input) => resultOf(() => service.listMatches(input))
   );
@@ -74,7 +74,7 @@ function createPlayerMatchMcpServer(options = {}) {
     {
       title: "Get TFT player match history",
       description: "Convenience alias for resolve_player plus list_matches semantics; it never expands every match.",
-      inputSchema: { ...commonSchema, limit: z.number().int().min(10).max(20).optional() }
+      inputSchema: { ...commonSchema, limit: z.number().int().min(10).max(20).optional(), forceRefresh: z.boolean().optional().describe("Explicit user refresh: bypass the profile cache; existing rate limits still apply") }
     },
     (input) => resultOf(() => service.getPlayerMatchHistory(input))
   );

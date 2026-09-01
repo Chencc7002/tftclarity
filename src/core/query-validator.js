@@ -44,6 +44,9 @@ export function validateQueryContext(query, options = {}) {
   if (!VALID_ITEM_POLICIES.has(query.itemPolicy)) {
     errors.push(`装备策略不合法：${query.itemPolicy}`);
   }
+  if (query.itemPolicyScope != null && !["all_items", "remaining_items"].includes(query.itemPolicyScope)) {
+    errors.push(`装备范围作用域不合法：${query.itemPolicyScope}`);
+  }
   for (const category of query.itemCategories ?? []) {
     if (!VALID_ITEM_CATEGORIES.has(category)) errors.push(`装备类别不合法：${category}`);
   }
@@ -74,8 +77,12 @@ export function validateQueryContext(query, options = {}) {
     if ((!item.current || !item.obtainable) && !excludedOnly) {
       warnings.push(`“${item.shortName ?? item.zhName}”当前版本不属于可用装备`);
     }
-    if (query.itemPolicy === "ordinary_only" && item.category !== "ordinary_completed" && !excludedOnly) {
+    const retainedLock = query.itemPolicyScope === "remaining_items" && lockedItems.includes(itemApiName);
+    if (query.itemPolicy === "ordinary_only" && item.category !== "ordinary_completed" && !excludedOnly && !retainedLock) {
       warnings.push(`普通装备查询中不会混入“${item.shortName ?? item.zhName}”这类 ${item.category} 装备`);
+    }
+    if (lockedItems.includes(itemApiName) && !retainedLock && !POLICY_CATEGORIES[query.itemPolicy]?.has(item.category)) {
+      errors.push(`已锁定的“${item.shortName ?? item.zhName}”与当前装备范围冲突，请取消锁定或修改装备范围`);
     }
     if (
       comparisonItems.includes(itemApiName)

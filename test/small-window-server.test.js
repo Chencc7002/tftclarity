@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "./fixtures/season-context.js";
 import test from "node:test";
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
@@ -477,7 +478,7 @@ test("handleRecommendRequest serializes result cards for the small window", asyn
 
 test("controlled conversation results tolerate catalog warnings without a query object", async () => {
   let receivedTurnInterpreterBudget = null;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
     metaTFTClient: {},
@@ -507,12 +508,13 @@ test("controlled conversation results tolerate catalog warnings without a query 
       };
     }
   });
-  const catalogState = await loadRuntimeCatalog(runtime, {});
+  const catalogState = await loadRuntimeCatalog(runtime, { seasonContextId: "set17-live" });
   catalogState.warning = "fixture catalog warning";
 
   const { statusCode, payload } = await handleRecommendRequest({
     input: "可以多推荐几套吗",
-    conversationId: "conversation-warning-exhausted"
+    conversationId: "conversation-warning-exhausted",
+    seasonContextId: "set17-live"
   }, runtime);
 
   assert.equal(statusCode, 200);
@@ -543,7 +545,7 @@ test("handleRecommendRequest returns official item encyclopedia details before r
       obtainable: true
     }]
   });
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog,
     cacheStore,
     fetchItems: false,
@@ -565,6 +567,7 @@ test("handleRecommendRequest returns official item encyclopedia details before r
   const conversationId = "item-details-context";
   const { statusCode, payload } = await handleRecommendRequest({
     conversationId,
+    seasonContextId: "set17-live",
     input: "合剂是什么装备？"
   }, runtime);
 
@@ -710,7 +713,7 @@ test("entity catalog returns current units and groups trait tiers", async () => 
     ],
     items: []
   });
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog,
     cacheStore,
     fetchItems: false,
@@ -747,15 +750,17 @@ test("entity catalog returns current units and groups trait tiers", async () => 
     })
   });
 
-  const units = await handleEntityCatalogRequest(runtime, { entityType: "unit" });
-  const traits = await handleEntityCatalogRequest(runtime, { entityType: "trait" });
+  const units = await handleEntityCatalogRequest(runtime, { entityType: "unit", seasonContextId: "set17-live" });
+  const traits = await handleEntityCatalogRequest(runtime, { entityType: "trait", seasonContextId: "set17-live" });
   const englishUnits = await handleEntityCatalogRequest(runtime, {
     entityType: "unit",
+    seasonContextId: "set17-live",
     locale: "en-US"
   });
   const conversationId = "unit-catalog-context";
   const naturalLanguage = await handleRecommendRequest({
     conversationId,
+    seasonContextId: "set17-live",
     input: "返回全部的棋子"
   }, runtime);
 
@@ -783,6 +788,7 @@ test("entity catalog returns current units and groups trait tiers", async () => 
   );
   const followUp = await handleRecommendRequest({
     conversationId,
+    seasonContextId: "set17-live",
     input: "分别怎么出装"
   }, runtime);
   assert.equal(followUp.statusCode, 200);
@@ -870,7 +876,7 @@ test("S18 entity detail redirects a duplicate MetaTFT id to the official Communi
   const payload = await handleEntityDetailRequest(runtime, {
     entityType: "unit",
     apiName: "TFT18_Diana",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   });
 
   assert.equal(payload.type, "unit_details");
@@ -879,7 +885,7 @@ test("S18 entity detail redirects a duplicate MetaTFT id to the official Communi
 });
 
 test("entity catalog and detail HTTP routes are publicly readable", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [{ apiName: "TFT17_MasterYi", zhName: "剑圣", aliases: ["剑圣", "易"] }],
       traits: [],
@@ -1644,7 +1650,7 @@ test("concurrent cold catalog loads share one request batch", async () => {
   const [firstEntry, secondEntry] = await Promise.all([first, second]);
 
   assert.equal(firstEntry, secondEntry);
-  assert.equal(runtime.catalogCache.get("set17-live:metatft-live.v1:current:1100"), firstEntry);
+  assert.equal(runtime.catalogCache.get("set18-live:metatft-live.v1:current:1100"), firstEntry);
   assert.equal(runtime.catalogLoadPromises.size, 0);
 });
 
@@ -1672,7 +1678,7 @@ test("invalidated slow catalog loads cannot overwrite a newer generation", async
 
   const staleLoad = loadRuntimeCatalog(runtime, {});
   await Promise.resolve();
-  invalidateRuntimeCatalog(runtime, "set17-live:metatft-live.v1:current:1100");
+  invalidateRuntimeCatalog(runtime, "set18-live:metatft-live.v1:current:1100");
   const freshEntry = await loadRuntimeCatalog(runtime, {});
   firstItemsGate.resolve();
   const staleEntry = await staleLoad;
@@ -1686,7 +1692,7 @@ test("invalidated slow catalog loads cannot overwrite a newer generation", async
     staleEntry.catalog.itemByApiName.get("TFT_Item_GuinsoosRageblade").raw.marker,
     1
   );
-  assert.equal(runtime.catalogCache.get("set17-live:metatft-live.v1:current:1100"), freshEntry);
+  assert.equal(runtime.catalogCache.get("set18-live:metatft-live.v1:current:1100"), freshEntry);
 });
 
 test("catalog load failures clear in-flight state and allow retry", async () => {
@@ -1706,12 +1712,12 @@ test("catalog load failures clear in-flight state and allow retry", async () => 
 
   await assert.rejects(loadRuntimeCatalog(runtime, {}), /alias store unavailable/);
   assert.equal(runtime.catalogLoadPromises.size, 0);
-  assert.equal(runtime.catalogCache.has("set17-live:metatft-live.v1:current:1100"), false);
+  assert.equal(runtime.catalogCache.has("set18-live:metatft-live.v1:current:1100"), false);
 
   const recovered = await loadRuntimeCatalog(runtime, {});
   assert.ok(recovered.catalog);
   assert.equal(aliasReads, 2);
-  assert.equal(runtime.catalogCache.get("set17-live:metatft-live.v1:current:1100"), recovered);
+  assert.equal(runtime.catalogCache.get("set18-live:metatft-live.v1:current:1100"), recovered);
 });
 
 test("small-window startup prewarms the dynamic catalog without delaying listen", async () => {
@@ -1733,10 +1739,10 @@ test("small-window startup prewarms the dynamic catalog without delaying listen"
     assert.deepEqual(prewarm, {
       ok: true,
       skipped: false,
-      key: "set17-live:metatft-live.v1:current:1100",
+      key: "set18-live:metatft-live.v1:current:1100",
       warning: null
     });
-    assert.equal(runtime.catalogCache.has("set17-live:metatft-live.v1:current:1100"), true);
+    assert.equal(runtime.catalogCache.has("set18-live:metatft-live.v1:current:1100"), true);
     await loadRuntimeCatalog(runtime, {});
     assert.deepEqual(calls, {
       items: 1,
@@ -1917,6 +1923,15 @@ test("unit_builds tool timeout covers one Explorer retry instead of racing the f
 
   assert.equal(runtime.toolRegistry.get("unit_builds").timeoutMs, 8000);
   assert.equal(runtime.toolRegistry.get("unit_comp_candidates").timeoutMs, 8000);
+});
+
+test("unit_details tool timeout covers one cold current-season catalog refresh", () => {
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false
+  });
+
+  assert.equal(runtime.toolRegistry.get("unit_details").timeoutMs, 8000);
 });
 
 test("async small-window runtime applies environment timeout overrides", async () => {
@@ -2217,7 +2232,7 @@ test("small-window cache clear removes query history without resetting preferenc
 
 test("comp details preserve observed positioning, expose compatible augments, and use a short cache", async () => {
   const calls = { details: 0, tiers: 0, lookup: 0 };
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [
         { apiName: "TFT17_Front", zhName: "Frontline", aliases: [], stats: { attackRange: 1 } },
@@ -2355,7 +2370,7 @@ test("comp details preserve observed positioning, expose compatible augments, an
 });
 
 test("comp-detail HTTP route accepts a rendered card's MetaTFT identifiers", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({
       units: [{ apiName: "TFT17_Front", zhName: "Frontline", aliases: [] }],
       traits: [],
@@ -2447,7 +2462,7 @@ test("Set 18 comp details prefer the latest CommunityDragon augment names", asyn
     compId: "180100",
     clusterId: "1801",
     units: "DA_18_Ahri",
-    seasonContextId: "set18-pbe"
+    seasonContextId: "set18-live"
   }, runtime);
 
   assert.equal(result.ok, true);
@@ -2456,7 +2471,7 @@ test("Set 18 comp details prefer the latest CommunityDragon augment names", asyn
 });
 
 test("comp detail keeps compatible augments when positioning data is temporarily unavailable", async () => {
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog({ units: [], traits: [], items: [] }),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -3012,7 +3027,7 @@ test("structured quick tasks bypass semantic interpretation and use the shared r
   let capturedInput = null;
   let capturedOptions = null;
   let providerCalls = 0;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -3063,7 +3078,7 @@ test("structured quick tasks bypass semantic interpretation and use the shared r
 test("a structured quick task becomes the active context for a natural-language modification", async () => {
   const cacheStore = new MemoryCacheStore();
   let providerMessages = null;
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore,
     fetchItems: false,
@@ -3131,7 +3146,7 @@ test("Set 17 Artifact carrier quick task resolves 巨九 through the real struct
       data: [{ items: hydra }]
     }, { includeSeeds: false })
   });
-  const runtime = createSmallWindowRuntime({
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(),
     catalog,
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,
@@ -3233,7 +3248,7 @@ test("Set 18 single-item carrier quick task resolves Flora Fatalis emblem aliase
   for (const alias of ["绝命花妖纹章", "花妖纹章"]) {
     const response = await handleRecommendRequest({
       input: `${alias}最适合哪些英雄携带`,
-      seasonContextId: "set18-pbe",
+      seasonContextId: "set18-live",
       quickTask: {
         schemaVersion: "quick-task.v1",
         id: "item-carriers",
@@ -3251,7 +3266,7 @@ test("Set 18 single-item carrier quick task resolves Flora Fatalis emblem aliase
   }
 });
 
-test("PBE catalog resolves 巨九 from the current set lookup when /items is empty", async () => {
+test("Set 18 live catalog resolves 巨九 from the current set lookup when /items is empty", async () => {
   const hydra = "DA_Artifact_TitanicHydra";
   const runtime = createSmallWindowRuntime({
     cacheStore: new MemoryCacheStore(),
@@ -3271,6 +3286,12 @@ test("PBE catalog resolves 巨九 from the current set lookup when /items is emp
       async getLatestClusterInfo() {
         return [];
       },
+      async getCompOptions() {
+        return [];
+      },
+      async getCompBuilds() {
+        return [];
+      },
       async getSetLookup() {
         return {
           items: [{ apiName: hydra, name: "巨型九头蛇" }],
@@ -3282,10 +3303,13 @@ test("PBE catalog resolves 巨九 from the current set lookup when /items is emp
   });
 
   const entry = await loadRuntimeCatalog(runtime, {
-    seasonContextId: "set18-pbe",
-    queue: "PBE",
+    seasonContextId: "set18-live",
+    providerVersion: "metatft-live.v1",
+    effectivePatch: "18.1",
+    queue: "1100",
     tftSet: "TFTSet18",
-    patch: "PBE"
+    lookupChannel: "latest",
+    patch: "current"
   });
   const parsed = parseQuery("巨九", { catalog: entry.catalog });
 
@@ -3297,62 +3321,7 @@ test("PBE catalog resolves 巨九 from the current set lookup when /items is emp
   );
 });
 
-test("PBE Artifact carrier quick task uses the PBE item detail source without a baseline request", async () => {
-  const hydra = "DA_Artifact_TitanicHydra";
-  const unit = "DA_18_ElderDragon";
-  const catalog = createCatalog({
-    units: [{ apiName: unit, zhName: "Elder Dragon", aliases: ["Elder Dragon"], current: true }],
-    traits: [],
-    items: buildItemCatalogFromItemsResponse({ data: [{ items: hydra }] }, { includeSeeds: false })
-  });
-  let capturedPlan = null;
-  let baselineCalls = 0;
-  const runtime = createSmallWindowRuntime({
-    catalog,
-    cacheStore: new MemoryCacheStore(),
-    fetchItems: false,
-    metaTFTClient: {
-      async getItemCarrierBuilds(plan) {
-        capturedPlan = plan;
-        return {
-          updated: 1785832084329,
-          units: [{ unit, places: [281, 172, 119, 102, 81, 73, 43, 21] }],
-          units_overall: [{ unit, places: [21734, 18284, 14796, 13108, 11517, 9878, 7968, 4609] }]
-        };
-      }
-    },
-    compsClient: {
-      async getUnitItemsProcessed() {
-        baselineCalls += 1;
-        throw new Error("PBE item detail already contains unit baselines");
-      }
-    },
-    conversationStateV2Mode: "on"
-  });
-
-  const response = await handleRecommendRequest({
-    input: "PBE Titanic Hydra carriers",
-    seasonContextId: "set18-pbe",
-    quickTask: {
-      schemaVersion: "quick-task.v1",
-      id: "item-carriers",
-      operation: "item_carrier_rankings",
-      arguments: { item: "巨九" }
-    }
-  }, runtime);
-
-  assert.equal(response.statusCode, 200);
-  assert.equal(response.payload.type, "item_carrier_rankings");
-  assert.equal(response.payload.query.item, hydra);
-  assert.equal(response.payload.query.patch, "current");
-  assert.equal(response.payload.source.endpoint, "tft-stat-api/item_detail");
-  assert.equal(capturedPlan.path, "/tft-stat-api/item_detail");
-  assert.equal(capturedPlan.params.patch, "current");
-  assert.equal(baselineCalls, 0);
-  assert.ok(response.payload.carriers.length > 0);
-});
-
-test("all PBE equipment shortcuts resolve form entities directly and use the current patch", async () => {
+test("all Set 18 live equipment shortcuts resolve form entities directly and use the current patch", async () => {
   const unit = "DA_18_Ahri";
   const itemA = "DA_Item_TestA";
   const itemB = "DA_Item_TestB";
@@ -3397,9 +3366,9 @@ test("all PBE equipment shortcuts resolve form entities directly and use the cur
 
   for (const [id, operation, args] of tasks) {
     const response = await handleRecommendRequest({
-      input: `PBE quick ${id}`,
-      seasonContextId: "set18-pbe",
-      conversationId: `pbe-quick-${id}`,
+      input: `Set 18 quick ${id}`,
+      seasonContextId: "set18-live",
+      conversationId: `set18-live-quick-${id}`,
       quickTask: {
         schemaVersion: "quick-task.v1",
         id,
@@ -3420,8 +3389,8 @@ test("all PBE equipment shortcuts resolve form entities directly and use the cur
   ]) {
     const response = await handleRecommendRequest({
       input: `Ahri ${itemCategory}单装备排行`,
-      seasonContextId: "set18-pbe",
-      conversationId: `pbe-item-category-${expectedCategory}`,
+      seasonContextId: "set18-live",
+      conversationId: `set18-live-item-category-${expectedCategory}`,
       quickTask: {
         schemaVersion: "quick-task.v1",
         id: "item-performance",
@@ -3437,8 +3406,8 @@ test("all PBE equipment shortcuts resolve form entities directly and use the cur
 
   const naturalLanguageResponse = await handleRecommendRequest({
     input: "Ahri单装备排行",
-    seasonContextId: "set18-pbe",
-    conversationId: "pbe-natural-single-item-ranking",
+    seasonContextId: "set18-live",
+    conversationId: "set18-live-natural-single-item-ranking",
     preferences: { minSamples: 1 }
   }, runtime);
   assert.equal(naturalLanguageResponse.statusCode, 200);
@@ -3448,13 +3417,39 @@ test("all PBE equipment shortcuts resolve form entities directly and use the cur
 
   assert.ok(plans.length >= tasks.length);
   for (const plan of plans) {
-    assert.equal(plan.path, "/tft-stat-api/unit_detail_items");
-    assert.equal(plan.params.queue, "PBE");
+    assert.equal(plan.path, "/tft-explorer-api/unit_builds/DA_18_Ahri");
+    assert.equal(plan.params.queue, "1100");
     assert.equal(plan.params.patch, "current");
   }
 });
 
-test("all PBE comp and library shortcuts keep the selected season context", async () => {
+test("completion shortcuts never silently drop one unresolved carried item", async () => {
+  const runtime = createSmallWindowRuntime({
+    catalog: createCatalog(),
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    metaTFTClient: {
+      async getUnitBuilds() { assert.fail("unresolved carried items must block the statistics query"); }
+    },
+    compsClient: {}
+  });
+  for (const [item1, item2] of [["未知测试装备", "羊刀"], ["羊刀", "未知测试装备"]]) {
+    const response = await handleRecommendRequest({
+      input: `查询霞已携带${item1}和${item2}时的推荐出装`,
+      quickTask: {
+        schemaVersion: "quick-task.v1",
+        id: "unit-build-completion",
+        operation: "unit_build_completion",
+        arguments: { champion: "霞", item1, item2 }
+      }
+    }, runtime);
+    assert.equal(response.statusCode, 200);
+    assert.equal(response.payload.type, "clarification");
+    assert.match(JSON.stringify(response.payload), /未知测试装备/);
+  }
+});
+
+test("all Set 18 live comp and library shortcuts keep the selected season context", async () => {
   const unit = "DA_18_Ahri";
   const item = "DA_Artifact_TitanicHydra";
   const trait = "DA_18_Forest";
@@ -3524,9 +3519,9 @@ test("all PBE comp and library shortcuts keep the selected season context", asyn
 
   for (const [id, operation, args, expectedType] of tasks) {
     const response = await handleRecommendRequest({
-      input: `PBE quick ${id}`,
-      seasonContextId: "set18-pbe",
-      conversationId: `pbe-quick-${id}`,
+      input: `Set 18 quick ${id}`,
+      seasonContextId: "set18-live",
+      conversationId: `set18-live-quick-${id}`,
       quickTask: {
         schemaVersion: "quick-task.v1",
         id,
@@ -3536,12 +3531,12 @@ test("all PBE comp and library shortcuts keep the selected season context", asyn
     }, runtime);
     assert.equal(response.statusCode, 200, id);
     assert.equal(response.payload.type, expectedType, id);
-    assert.equal(response.payload.seasonContext.id, "set18-pbe", id);
+    assert.equal(response.payload.seasonContext.id, "set18-live", id);
   }
 
   assert.equal(compStatsCalls.length, 3);
   for (const params of compStatsCalls) {
-    assert.equal(params.queue, "PBE");
+    assert.equal(params.queue, "1100");
     assert.equal(params.patch, "current");
   }
 });
@@ -3569,7 +3564,7 @@ test("structured quick task validation rejects mismatched operations", async () 
   assert.equal(response.payload.code, "invalid_quick_task");
 });
 
-test("PBE unit details use the static-data TTL, return retained cache immediately, and start one background refresh", async () => {
+test("Set 18 live unit details use the static-data TTL, return retained cache immediately, and start one background refresh", async () => {
   const cacheStore = new MemoryCacheStore();
   const runtime = createSmallWindowRuntime({
     catalog: createCatalog({
@@ -3595,7 +3590,7 @@ test("PBE unit details use the static-data TTL, return retained cache immediatel
   });
   const body = {
     input: "查询阿狸的技能、费用、属性和羁绊资料",
-    seasonContextId: "set18-pbe",
+    seasonContextId: "set18-live",
     quickTask: {
       schemaVersion: "quick-task.v1",
       id: "unit-details",
@@ -3610,11 +3605,11 @@ test("PBE unit details use the static-data TTL, return retained cache immediatel
   assert.equal(first.payload.unit.apiName, "DA_18_Ahri");
   assert.match(first.payload.unit.ability.name, /法球/);
   assert.equal(first.payload.cache.query.hit, false);
-  assert.equal(first.payload.cache.query.policy.refreshAfterMs, 6 * 60 * 60 * 1000);
+  assert.equal(first.payload.cache.query.policy.refreshAfterMs, 12 * 60 * 60 * 1000);
   assert.equal(first.payload.cache.query.policy.retainForMs, QUICK_TASK_CACHE_RETENTION_MS);
 
   for (const entry of cacheStore.queryCache.values()) {
-    entry.updatedAt = new Date(Date.now() - 7 * 60 * 60 * 1000).toISOString();
+    entry.updatedAt = new Date(Date.now() - 13 * 60 * 60 * 1000).toISOString();
   }
   const second = await handleRecommendRequest(body, runtime);
 
@@ -3789,7 +3784,7 @@ test("refresh requests invalidate only the active runtime catalog entry", async 
     builds: 2
   });
   assert.equal(runtime.catalogCache.has("other:999"), true);
-  assert.equal(runtime.catalogCache.has("set17-live:metatft-live.v1:current:1100"), true);
+  assert.equal(runtime.catalogCache.has("set18-live:metatft-live.v1:current:1100:TFTSet18:latest:zh_cn"), true);
 });
 
 test("handleRecommendRequest rejects empty input", async () => {

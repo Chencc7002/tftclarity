@@ -68,12 +68,56 @@ function attachShellRefresh() {
   const button = el("result-refresh-button");
   if (!button || shellRefreshAttached) return;
   button.addEventListener("click", (event) => {
-    if (shellRefreshMode !== "personal") return;
+    if (!shellRefreshMode) return;
     event.preventDefault();
     event.stopImmediatePropagation();
-    refreshPersonalAccounts();
+    if (shellRefreshMode === "personal") refreshPersonalAccounts();
+    else refreshCurrentPool();
   }, true);
   shellRefreshAttached = true;
+}
+
+function configurePoolShellRefresh() {
+  const button = el("result-refresh-button");
+  shellRefreshMode = "pool";
+  if (!button) return;
+  button.disabled = false;
+  setShellRefreshLabel(button, "更新对局", "从上游更新当前 Pool 的成员对局");
+}
+
+function refreshNotice(result) {
+  if (!result) return "";
+  if (result.error) return `<div class="opgg-notice">本次更新失败：${esc(result.error)}；以下保留已有样本。</div>`;
+  const failures = (result.results ?? []).filter((entry) => entry.status === "error")
+    .map((entry) => `${entry.displayName ?? "成员"}：${entry.error}`).join("；");
+  return `<div class="opgg-notice" role="status">本次更新 ${result.refreshedCount}/${result.requestedCount} 名成员，新增 ${result.newMatchCount ?? 0} 条玩家对局记录。${result.failedCount ? `${result.failedCount} 名未更新：${esc(failures)}` : "上游未新增的对局仍保留原始时间。"}</div>`;
+}
+
+function freshnessNotice({ latestMatchAt, lastSuccessfulPollAt, sampleIsOld } = {}) {
+  return `<div class="opgg-notice">最新对局：${fmtDate(latestMatchAt)} · 最近一次成员采集成功：${fmtDate(lastSuccessfulPollAt)}。补丁来自样本，不代表当前线上补丁。${sampleIsOld ? "样本最新对局已超过 48 小时，可点击「更新对局」获取上游可用记录。" : ""}</div>`;
+}
+
+async function refreshCurrentPool() {
+  const pool = state.pool;
+  const view = state.view;
+  const button = el("result-refresh-button");
+  if (button?.disabled) return;
+  if (button) {
+    button.disabled = true;
+    button.classList.add("is-opgg-refreshing");
+    setShellRefreshLabel(button, "更新中…", "正在从上游更新 Pool 对局");
+  }
+  let result;
+  try {
+    result = await api(`/api/opgg/pools/${encodeURIComponent(pool)}/refresh`, { method: "POST" });
+  } catch (error) {
+    result = { error: error.message };
+  }
+  if (state.pool !== pool || state.view !== view || shellRefreshMode !== "pool") return;
+  if (view === "pool-stats") return renderPoolStats(pool, result);
+  if (view === "players") return renderPlayers(result);
+  if (view === "comp") return renderComp(result);
+  return renderTrends(result);
 }
 
 function esc(value) {
@@ -219,7 +263,7 @@ function signatureHtml(signature, displaySignature = null) {
   if (carry) roles.push(`主C ${esc(carry)}`);
   if (tank) roles.push(`前排 ${esc(tank)}`);
   return (
-    `<div><div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">无主羁绊</span>'}</div>` +
+    `<div><div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">主羁绊未确认</span>'}</div>` +
     (roles.length
       ? `<div class="opgg-match-sub" style="margin-top:5px">${roles.join(" · ")}</div>`
       : "") +
@@ -275,7 +319,7 @@ function backLink(label, action, data = {}) {
 function overviewChips(result) {
   const overview = result.overview;
   const chips = [
-    ["当前补丁", esc(overview.currentPatch ?? "无数据")],
+    ["样本补丁", esc(overview.currentPatch ?? "无数据")],
     ["样本", `${overview.availablePlayerMatches}/${overview.maximumPlayerMatches}`],
     ["唯一对局", overview.uniqueMatches],
     ["选手覆盖", `${overview.playersWithData}/${overview.trackedPlayers}`],
@@ -286,7 +330,7 @@ function overviewChips(result) {
     .join("")}</div>`;
 }
 
-async function renderTrends() {
+async function renderTrends(refreshResult = null) {
   state.view = "trends";
   setResult("玩家 Pool 阵容趋势", loadingHtml());
   try {
@@ -326,14 +370,14 @@ async function renderTrends() {
         <span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(analysisCompSummary(result, comp, metric))}</small>
       </div>`).join("")}</div>` : "";
     const pool = result.pool ?? pools.find((entry) => entry.id === state.pool) ?? {};
-    const environmentLabel = pool.environment === "pbe" ? "S18 PBE · MetaTFT" : "NA 正式服 · OP.GG";
+    const environmentLabel = pool.environment === "pbe" ? "S18 PBE" : "NA 正式服";
     setResult(
       `${pool.name ?? "玩家 Pool"} · 阵容趋势`,
       `
         <div class="opgg-page-head">
           <div>
             <h3 class="opgg-page-title">玩家 Pool 阵容趋势</h3>
-            <p class="opgg-page-sub">${esc(environmentLabel)} · 每名玩家最近 ${result.overview.perPlayerMatchWindow} 场 · 仅当前补丁</p>
+            <p class="opgg-page-sub">${esc(environmentLabel)} · 每名玩家最近 ${result.overview.perPlayerMatchWindow} 场 · 仅样本最新补丁</p>
           </div>
           <div class="opgg-toolbar">
             <select id="opgg-pool-select">${poolOptions}</select>
@@ -341,21 +385,27 @@ async function renderTrends() {
           </div>
         </div>
         ${overviewChips(result)}
+        ${refreshNotice(refreshResult)}
+        ${freshnessNotice(result.overview)}
         ${analysisHtml}
         ${result.overview.availablePlayerMatches < result.overview.maximumPlayerMatches
           ? `<div class="opgg-notice">当前积累 ${result.overview.availablePlayerMatches}/${result.overview.maximumPlayerMatches} 条 player-match。评级、均名、前四、登顶与老八均为职业池小样本观察；少于 5 场的行已弱化显示，不代表全服强度。</div>`
           : ""}
-        <div class="opgg-section-title">阵容小数据 <small>点击行进入对局可视化，展开每一场的棋子与装备</small></div>
+        <div class="opgg-section-title">阵容卡片 <small>真实样本的代表终局棋盘，展开查看英雄名称、星级和装备</small></div>
+        <div class="opgg-compare-comp-list">${(result.compTrends ?? []).map((comp) => singlePoolCompCard(comp, { coverage: { activePlayerCount: result.overview.playersWithData } })).join("") || '<div class="opgg-empty">样本暂无可分类阵容；可先更新对局或查看成员对局。</div>'}</div>
+        <details><summary class="opgg-section-title">阵容统计表 · 点击展开</summary>
         <div class="opgg-trend-table" role="table" aria-label="玩家 Pool 阵容小数据">
           <div class="opgg-trend-header" role="row">
             <span role="columnheader">阵容</span><span role="columnheader">评级</span><span role="columnheader">场次</span><span role="columnheader">出场率</span><span role="columnheader">均名</span><span role="columnheader">前四率</span><span role="columnheader">登顶率</span><span role="columnheader">老八率</span>
           </div>
-          ${rows || '<div class="opgg-empty">当前补丁暂无已分类阵容</div>'}
+          ${rows || '<div class="opgg-empty">样本补丁暂无已分类阵容</div>'}
         </div>
+        </details>
         ${result.unclassifiedPlayerMatches ? `<div class="opgg-notice">另有 ${result.unclassifiedPlayerMatches} 场对局缺少完整棋子/羁绊数据，未参与阵容统计。</div>` : ""}
       `,
       { view: "trends", pool: state.pool }
     );
+    configurePoolShellRefresh();
     const select = el("opgg-pool-select");
     if (select) {
       select.addEventListener("change", (event) => {
@@ -368,7 +418,7 @@ async function renderTrends() {
   }
 }
 
-async function renderPlayers() {
+async function renderPlayers(refreshResult = null) {
   state.view = "players";
   setResult("职业选手与个人复盘", loadingHtml());
   try {
@@ -407,15 +457,17 @@ async function renderPlayers() {
            <p class="opgg-page-sub">查看对局进入棋盘可视化；AI 复盘只使用已采集的真实比赛证据</p>
          </div>
        </div>
+       ${refreshNotice(refreshResult)}
        <div class="opgg-grid">${cards || '<div class="opgg-empty">暂无选手</div>'}</div>`,
       { view: "players", pool: state.pool }
     );
+    configurePoolShellRefresh();
   } catch (error) {
     setResult("选手列表", errorHtml(error));
   }
 }
 
-async function renderComp() {
+async function renderComp(refreshResult = null) {
   state.view = "comp";
   setResult("阵容对局", loadingHtml());
   try {
@@ -445,10 +497,12 @@ async function renderComp() {
          </div>
        </div>
         <div class="opgg-card opgg-comp-summary"><div class="opgg-card-body">${signatureHtml(data.signature, data.displaySignature)}</div></div>
+       ${refreshNotice(refreshResult)}
        <div class="opgg-section-title">对局卡片 <small>点击查看终局阵容详情</small></div>
        <div class="opgg-match-board-list">${cards || '<div class="opgg-empty">该阵容暂无对局</div>'}</div>`,
       { view: "comp", pool: state.pool, sig: state.sig }
     );
+    configurePoolShellRefresh();
   } catch (error) {
     setResult("阵容对局", errorHtml(error));
   }
@@ -532,7 +586,7 @@ async function renderMatch() {
       `/api/opgg/players/${encodeURIComponent(state.playerId)}/matches/${encodeURIComponent(state.matchId)}`
     );
     const facts = data.review.facts;
-    const matchSourceLabel = data.player?.region === "pbe" ? "MetaTFT" : "OP.GG";
+    const matchSourceLabel = facts.source === "metatft" ? "MetaTFT" : facts.source === "opgg" ? "OP.GG" : "当前";
     const units = (facts.units ?? []).map((unit) => {
       const stars = "★".repeat(Math.max(1, unit.tier ?? 1));
       const items = normalizedItems(unit).map((item) => `
@@ -545,13 +599,16 @@ async function renderMatch() {
           <div class="opgg-unit-card-head">
             ${imageHtml(unit.iconUrl, unit.displayName ?? unit.characterId ?? "棋子", "opgg-unit-card-image", unit.fallbackIconUrl)}
             <div><div class="opgg-unit-name">${esc(unit.displayName ?? unit.characterId ?? "?")}</div>
-            <div class="opgg-unit-meta">${unit.cost ?? "?"} 费 · <span class="opgg-stars">${stars}</span></div></div>
+            <div class="opgg-unit-meta">${unit.cost == null ? "费用未知" : `${unit.cost} 费`} · <span class="opgg-stars">${stars}</span></div></div>
           </div>
           ${items ? `<div class="opgg-unit-items">${items}</div>` : `<div class="opgg-unit-no-items">无装备</div>`}
         </div>`;
     }).join("");
-    const traits = (facts.traits ?? []).map((trait) =>
-      `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.name)} ×${trait.numUnits ?? "?"}</span>`
+    const activeTraits = (facts.traits ?? []).filter((trait) => Number(trait.tierCurrent ?? trait.style ?? 0) > 0);
+    const unconfirmedTraits = (facts.traits ?? []).filter((trait) => trait.tierCurrent == null && trait.style == null
+      || trait.numUnits == null && Number(trait.tierCurrent ?? trait.style ?? 0) === 0);
+    const traits = activeTraits.map((trait) =>
+      `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.name)}${trait.numUnits == null ? "（人数未提供）" : ` ×${trait.numUnits}`}</span>`
     ).join("");
     const conclusions = (data.review.conclusions ?? []).map((item) =>
       `<li>${esc(item.conclusion)}</li>`
@@ -584,7 +641,9 @@ async function renderMatch() {
        <div class="opgg-notice">以下展示对局结束时的棋子、星级与装备；当前数据源不包含逐回合经济、搜牌和棋盘站位。</div>
        <div class="opgg-units-grid" style="margin-top:10px">${units || '<div class="opgg-empty">无棋子数据（早期淘汰或数据缺失）</div>'}</div>
        <div class="opgg-section-title">激活羁绊</div>
-       <div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">无</span>'}</div>
+       <div class="opgg-traits">${traits || '<span class="opgg-badge opgg-badge-muted">暂无已确认的激活羁绊</span>'}</div>
+       ${unconfirmedTraits.length ? `<div class="opgg-notice">摘要羁绊（人数和激活状态未确认）：${unconfirmedTraits.map((trait) => esc(trait.displayName ?? trait.name)).join("、")}</div>` : ""}
+       ${(data.warnings ?? []).map((warning) => `<div class="opgg-notice">${esc(warning)}</div>`).join("")}
        <div class="opgg-section-title">确定性结论</div>
        <ul class="opgg-conclusion-list">${conclusions || "<li>该局无规则结论（数据不完整）。</li>"}</ul>
        <div class="opgg-notice">${esc(data.review.dataBoundaryNote)}</div>`,
@@ -649,7 +708,7 @@ async function renderPersonal(refreshResult = null) {
             <label><span>地区</span><select id="opgg-personal-environment" aria-label="选择账号地区"><option value="pbe">PBE</option><option value="live">NA</option></select></label>
             <button type="button" class="opgg-primary-button" data-opgg-action="personal-add">添加并复盘</button>
           </div>
-          <p class="opgg-form-hint">地区由你明确选择，Tag 保留 Riot ID 原值，不再用 PBE/NA 前缀猜测服务器。PBE 使用 MetaTFT，NA 使用 OP.GG；两者不会互相回退。</p>
+          <p class="opgg-form-hint">地区由你明确选择，Tag 保留 Riot ID 原值，不再用 PBE/NA 前缀猜测服务器。账号更新使用 MetaTFT，对局按所选地区和赛季隔离。</p>
         </div></div>
         <div class="opgg-section-title">我的账号 <small>点击账号看详情，点击 AI 智能复盘直接生成分析</small></div>
         <div class="opgg-grid">${cards || '<div class="opgg-empty">还没有添加账号</div>'}</div>
@@ -1068,13 +1127,17 @@ function singlePoolUsageChart(stats) {
 }
 
 function singlePoolCompCard(comp, stats) {
+  const sample = comp.representativeMatch;
+  const source = sample?.matchId && sample?.playerId
+    ? `<p class="opgg-match-sub">代表对局：${fmtDate(sample.playedAt)} · 第 ${esc(sample.placement ?? "?")} 名 · ${esc(sample.matchId)}</p><button type="button" class="opgg-view-match-button" data-opgg-action="match" data-player="${esc(sample.playerId)}" data-match="${esc(sample.matchId)}">查看这场真实对局</button>`
+    : '<p class="opgg-match-sub">代表终局来自当前统计样本，不是推荐阵容。</p>';
   return `<details class="opgg-compare-comp-card opgg-single-comp-card">
     <summary><span class="opgg-compare-comp-title"><strong>${esc(poolCompLabel(comp, comp.compSignature))}</strong><small>覆盖 ${comp.playerCoverage ?? 0}/${stats.coverage.activePlayerCount} 名玩家 · ${comp.playerMatchCount ?? 0} 场</small></span>${unitBoardHtml(comp.representativeUnits, { compact: true })}<span class="opgg-compare-comp-usage"><b>${pct1(comp.playerMatchShare)} 使用</b><small>前四 ${pct1(observedCompMetric(comp, "top4Rate"))} · 展开详情</small></span></summary>
-    <div class="opgg-compare-comp-expanded"><div class="opgg-single-metric-grid"><div><small>平均名次</small><strong>${metricText(observedCompMetric(comp, "avgPlacement"), "placement")}</strong></div><div><small>前四率</small><strong>${pct1(observedCompMetric(comp, "top4Rate"))}</strong></div><div><small>登顶率</small><strong>${pct1(observedCompMetric(comp, "winRate"))}</strong></div><div><small>玩家等权占比</small><strong>${pct1(comp.playerBalancedUsageRate)}</strong></div></div><div class="opgg-section-title">代表终局棋盘</div>${unitBoardHtml(comp.representativeUnits, { showNames: true })}</div>
+    <div class="opgg-compare-comp-expanded"><div class="opgg-single-metric-grid"><div><small>平均名次</small><strong>${metricText(observedCompMetric(comp, "avgPlacement"), "placement")}</strong></div><div><small>前四率</small><strong>${pct1(observedCompMetric(comp, "top4Rate"))}</strong></div><div><small>登顶率</small><strong>${pct1(observedCompMetric(comp, "winRate"))}</strong></div><div><small>玩家等权占比</small><strong>${pct1(comp.playerBalancedUsageRate)}</strong></div></div><div class="opgg-section-title">代表终局棋盘</div>${unitBoardHtml(comp.representativeUnits, { showNames: true })}${source}</div>
   </details>`;
 }
 
-async function renderPoolStats(poolId) {
+async function renderPoolStats(poolId, refreshResult = null) {
   state.view = "pool-stats";
   state.pool = poolId;
   setResult("玩家 Pool 数据看板", loadingHtml());
@@ -1084,9 +1147,12 @@ async function renderPoolStats(poolId) {
       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(stats.pool.name)}</h3><p class="opgg-page-sub">${esc(stats.scope.season)} · ${esc(stats.scope.patch ?? "暂无 Patch")} · 对局加权 + 玩家等权</p></div><div class="opgg-page-actions">${poolAnalysisButton()}<span class="opgg-badge opgg-badge-muted">${esc(stats.coverage.sampleTier)}</span></div></div>
       <div class="opgg-chips"><div class="opgg-chip"><b>玩家</b><span>${stats.coverage.activePlayerCount}/${stats.coverage.playerCount}</span></div><div class="opgg-chip"><b>对局</b><span>${stats.coverage.matchCount}</span></div><div class="opgg-chip"><b>平均名次</b><span>${stats.performance.avgPlacement ?? "-"}</span></div><div class="opgg-chip"><b>前四率</b><span>${pct1(stats.performance.top4Rate)}</span></div><div class="opgg-chip"><b>吃鸡率</b><span>${pct1(stats.performance.winRate)}</span></div></div>
       ${(stats.warnings ?? []).map((warning) => `<div class="opgg-notice">${esc(warning)}</div>`).join("")}
+      ${refreshNotice(refreshResult)}
+      ${freshnessNotice({ ...stats.coverage, latestMatchAt: stats.coverage.timeTo })}
       <div class="opgg-dashboard-chart-grid">${singlePoolUsageChart(stats)}${singlePoolEffectMatrix(stats)}</div>
-      <div class="opgg-section-title">阵容卡片 <small>点击展开完整指标和代表棋盘</small></div><div class="opgg-compare-comp-list">${(stats.compTrends ?? []).slice(0, 12).map((comp) => singlePoolCompCard(comp, stats)).join("")}</div>
+      <div class="opgg-section-title">阵容卡片 <small>点击展开完整指标和代表棋盘</small></div><div class="opgg-compare-comp-list">${(stats.compTrends ?? []).slice(0, 12).map((comp) => singlePoolCompCard(comp, stats)).join("") || '<div class="opgg-empty">暂无可分类阵容；请更新对局或查看成员对局。</div>'}</div>
       <details class="opgg-raw-table"><summary>查看完整指标表</summary><div class="opgg-pool-table-wrap"><table class="opgg-pool-table"><thead><tr><th>阵容</th><th>对局加权</th><th>玩家等权</th><th>均名次</th><th>前四</th><th>登顶</th><th>样本</th></tr></thead><tbody>${poolTrendRows(stats)}</tbody></table></div></details>`, stats);
+    configurePoolShellRefresh();
     publishPoolAnalysisContext({ schemaVersion: "player-pool-analysis-context.v1", kind: "single_pool", poolIds: [stats.pool.id] });
   } catch (error) { setResult("玩家 Pool 数据看板", errorHtml(error)); }
 }

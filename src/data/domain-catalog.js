@@ -114,6 +114,11 @@ function unitRecord(apiName, options = {}, dynamicSource = null) {
       apiName,
       token
     ]),
+    fuzzyAliases: compact([
+      ...(displayOverride?.fuzzyAliases ?? []),
+      ...(override?.fuzzyAliases ?? []),
+      ...(seed?.fuzzyAliases ?? [])
+    ]),
     current: true,
     patch: options.patch ?? "current",
     source: sourceLabel(seed, override, dynamicSource),
@@ -146,6 +151,11 @@ function collapseEquivalentUnits(units) {
         ...(displayOverride?.aliases ?? []),
         ...(preferred.aliases ?? []),
         ...(fallback.aliases ?? [])
+      ]),
+      fuzzyAliases: compact([
+        ...(displayOverride?.fuzzyAliases ?? []),
+        ...(preferred.fuzzyAliases ?? []),
+        ...(fallback.fuzzyAliases ?? [])
       ])
     });
   }

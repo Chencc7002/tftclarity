@@ -2,6 +2,9 @@ import { validateSkillDefinition } from "./contracts.js";
 
 export const KNOWN_SKILL_DATA_DEPENDENCIES = Object.freeze([
   "official_tft_entity_catalog",
+  "official_unit_details",
+  "official_item_details",
+  "official_item_details_batch",
   "current_unit_build_statistics",
   "current_composition_statistics",
   "current_composition_tactical_details",
@@ -48,4 +51,3 @@ export class SkillRegistry {
     return [...this.definitions.values()];
   }
 }
-

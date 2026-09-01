@@ -105,6 +105,7 @@ function buildQuery(result, catalog) {
     unit: unitRecord(query.unit, catalog),
     starLevels,
     itemPolicy: query.itemPolicy ?? null,
+    ...(query.itemPolicyScope ? { itemPolicyScope: query.itemPolicyScope } : {}),
     lockedItems: asArray(query.lockedItems ?? query.ownedItems).slice(0, 3).map((apiName) => itemRecord(apiName, catalog)),
     excludedItems: asArray(query.excludedItems).slice(0, 8).map((apiName) => itemRecord(apiName, catalog)),
     comparisonItems: asArray(query.comparisonItems).slice(0, 5).map((apiName) => itemRecord(apiName, catalog)),

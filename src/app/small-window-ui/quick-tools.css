@@ -1,0 +1,99 @@
+.composer-entry { display: grid; grid-template-columns: 36px minmax(0, 1fr); align-items: end; gap: 3px; min-width: 0; padding: 5px 8px 5px 5px; border: 1px solid var(--line-strong); border-radius: 20px; background: rgba(255,255,255,.92); }
+.composer-entry:focus-within { border-color: var(--wallpaper-accent); box-shadow: 0 0 0 2px color-mix(in srgb, var(--wallpaper-accent) 12%, transparent); }
+.composer-entry-body { position: relative; min-width: 0; }
+.composer .composer-entry textarea { display: block; min-height: 36px; padding: 8px 40px 8px 5px; border: 0; border-radius: 0; outline: 0; background: transparent; box-shadow: none; }
+.composer.quick-task-form-active .composer-entry textarea { display: none; }
+.composer.quick-task-form-active .voice-input-button { display: none; }
+.voice-input-button { position: absolute; right: 0; bottom: 1px; display: grid; place-items: center; width: 34px; height: 34px; padding: 0; border: 0; border-radius: 50%; color: var(--muted); background: transparent; transition: color .18s ease, background .18s ease, box-shadow .18s ease; }
+.voice-input-button svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.voice-input-button:hover { color: color-mix(in srgb, var(--wallpaper-accent) 82%, var(--ink)); background: color-mix(in srgb, var(--wallpaper-accent) 9%, white); }
+.voice-input-button[aria-disabled="true"] { color: color-mix(in srgb, var(--muted) 62%, white); }
+.voice-input-button.is-listening { color: #fff; background: color-mix(in srgb, var(--wallpaper-accent) 78%, #244b47); box-shadow: 0 0 0 4px color-mix(in srgb, var(--wallpaper-accent) 14%, transparent); }
+.voice-input-status { margin: -2px 4px 0 44px; color: color-mix(in srgb, var(--wallpaper-accent) 72%, var(--ink)); font-size: 9px; line-height: 1.45; }
+.voice-input-status[hidden] { display: none; }
+.composer-entry .quick-task-form { border: 0; box-shadow: none; background: transparent; }
+.composer-tool-anchor { position: relative; align-self: end; }
+.tool-menu-toggle { display: grid; place-items: center; width: 36px; height: 36px; padding: 0; border: 0; border-radius: 50%; color: var(--ink); background: transparent; }
+.tool-menu-toggle svg { width: 23px; height: 23px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; }
+.tool-menu-toggle:hover, .tool-menu-toggle[aria-expanded="true"] { color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); background: color-mix(in srgb, var(--wallpaper-accent) 10%, transparent); }
+.tool-menu { position: absolute; bottom: calc(100% + 12px); left: 0; z-index: 30; display: grid; gap: 4px; width: 206px; max-width: calc(100vw - 40px); padding: 7px; border: 1px solid #d4e3ed; border-radius: 14px; background: #fbfdff; box-shadow: 0 9px 32px #233e6529; }
+.tool-menu[hidden] { display: none; }
+.tool-menu button { display: flex; align-items: center; gap: 10px; min-width: 0; min-height: 42px; padding: 0 10px; border: 0; border-radius: 9px; color: var(--ink); background: transparent; text-align: left; font-size: 12px; }
+.tool-menu button:hover, .tool-menu button:focus-visible { background: color-mix(in srgb, var(--wallpaper-accent) 10%, white); }
+.tool-menu button > span:first-child { font-size: 18px; color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); }
+.tool-menu [data-favorites-count] { margin-left: auto; }
+[data-favorites-count] { min-width: 18px; padding: 1px 5px; border-radius: 8px; background: color-mix(in srgb, var(--wallpaper-accent) 10%, white); color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); font-size: 10px; }
+.tool-recommendations { gap: 6px; }
+.tool-recommendations[hidden] { display: none; }
+.tool-recommendation-actions { display: flex; align-items: center; gap: 4px; }
+.tool-recommendations .quick-tasks-heading .tool-recommendations-shuffle { min-height: 28px; padding: 0 5px; display: inline-flex; align-items: center; gap: 4px; border: 0; color: var(--muted); background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; font-size: 10px; }
+.tool-recommendations .quick-tasks-heading .tool-recommendations-close { display: grid; place-items: center; width: 28px; height: 28px; padding: 0; border: 0; border-radius: 0; color: var(--muted); background: transparent; -webkit-backdrop-filter: none; backdrop-filter: none; box-shadow: none; font-size: 18px; }
+.tool-recommendations .tool-recommendations-shuffle:hover,
+.tool-recommendations .tool-recommendations-close:hover { color: var(--ink); background: transparent; }
+.tool-recommendations-shuffle:focus-visible,
+.tool-recommendations-close:focus-visible { outline: 2px solid var(--wallpaper-accent); outline-offset: 2px; }
+.tool-recommendations .quick-tasks-heading { align-items: center; }
+.tool-recommendations .quick-tasks-heading strong { padding: 0; color: var(--ink); background: transparent; font-size: 11px; font-weight: 500; }
+.tool-recommendations .quick-tasks-heading button { flex-shrink: 0; }
+.tool-recommendations .quick-task-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.tool-card { position: relative; min-width: 0; }
+.tool-card .quick-task-card { width: 100%; min-height: 80px; padding: 12px 48px 12px 12px; border-radius: 13px; }
+.tool-card .quick-task-copy strong { font-size: 12px; }
+.tool-card .quick-task-copy small { font-size: 11px; white-space: normal; line-height: 1.5; }
+.tool-card .quick-task-example { font-size: 9px; }
+.tool-favorite { position: absolute; top: 9px; right: 6px; display: grid; place-items: center; width: 38px; height: 38px; border: 0; border-radius: 9px; color: var(--muted); background: transparent; font-size: 24px; transition: color .18s ease; }
+.tool-favorite:hover { color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); }
+.tool-favorite[aria-pressed="true"] { color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); }
+.tool-recommendations .tool-card .quick-task-card { min-height: 36px; padding: 7px 34px 7px 10px; grid-template-columns: minmax(0, 1fr); border-radius: 9px; }
+.tool-recommendations .quick-task-copy strong { font-size: 11px; font-weight: 500; white-space: normal; line-height: 1.35; }
+.tool-recommendations .tool-favorite { top: 2px; right: 2px; width: 32px; height: 32px; font-size: 19px; border-radius: 7px; }
+.tool-favorite:focus-visible, .tool-menu-toggle:focus-visible, .voice-input-button:focus-visible, .tool-menu button:focus-visible, .tool-library button:focus-visible { outline: 2px solid var(--wallpaper-accent); outline-offset: 2px; }
+.tool-library { width: min(660px, calc(100vw - 32px)); max-height: min(760px, calc(100dvh - 48px)); margin: auto; padding: 0; overflow: hidden; border: 1px solid #d4e3ed; border-radius: 20px; color: var(--ink); background: #f7fafc; box-shadow: 0 24px 90px #1e365d40; }
+.tool-library[open] { display: flex; flex-direction: column; }
+.tool-library::backdrop { background: #20364f66; backdrop-filter: blur(5px); }
+.tool-library-header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 20px 22px 10px; }
+.tool-library-header h2 { margin: 0; font-size: 21px; }
+.tool-library-header p { margin: 6px 0 0; font-size: 11px; color: var(--muted); }
+.tool-library-header > button { width: 38px; height: 38px; border: 1px solid var(--line); border-radius: 11px; background: #fff; color: var(--muted); font-size: 23px; }
+.tool-library-controls { display: grid; gap: 12px; padding: 10px 22px 14px; }
+.tool-library-tabs { display: flex; gap: 6px; }
+.tool-library-tabs button, .tool-library-filters button { min-height: 36px; padding: 0 12px; border: 1px solid transparent; border-radius: 9px; color: var(--muted); background: transparent; font-size: 12px; }
+.tool-library-tabs button[aria-pressed="true"] { background: color-mix(in srgb, var(--wallpaper-accent) 10%, white); color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); font-weight: 700; }
+.tool-library-search { display: grid; gap: 6px; font-size: 11px; color: var(--muted); }
+.tool-library-search input { min-width: 0; width: 100%; min-height: 43px; padding: 0 13px; border: 1px solid #ccdae6; border-radius: 11px; color: var(--ink); background: #fff; font: inherit; font-size: 13px; }
+.tool-library-filters { display: flex; flex-wrap: wrap; gap: 5px; }
+.tool-library-filters button { min-height: 32px; padding: 0 9px; border-color: var(--line); background: #fff; font-size: 11px; }
+.tool-library-filters button span { margin-left: 5px; opacity: .65; font-size: 10px; }
+.tool-library-filters button[aria-pressed="true"] { border-color: color-mix(in srgb, var(--wallpaper-accent) 50%, white); color: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); background: color-mix(in srgb, var(--wallpaper-accent) 7%, white); }
+.tool-library-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-content: start; gap: 10px; overflow-y: auto; min-height: 120px; padding: 2px 22px 18px; overscroll-behavior: contain; }
+.tool-library-list .tool-card .quick-task-card { height: 100%; min-height: 96px; }
+.tool-library-list .quick-task-copy strong { white-space: normal; }
+.tool-library footer { padding: 13px 22px; border-top: 1px solid var(--line); color: var(--muted); background: #fff; font-size: 10px; line-height: 1.6; }
+.tool-library footer p { margin: 7px 0 0; }
+.tool-recommendations-setting { display: flex; align-items: center; gap: 7px; min-height: 32px; color: var(--ink); font-size: 11px; cursor: pointer; }
+.tool-recommendations-setting input { width: 15px; height: 15px; margin: 0; accent-color: var(--wallpaper-accent); }
+.tool-library-empty { grid-column: 1 / -1; display: grid; justify-items: center; text-align: center; padding: 25px 10px 35px; }
+.tool-library-empty > span { font-size: 38px; color: #86a3b8; margin-bottom: 12px; }
+.tool-library-empty strong { font-size: 14px; }
+.tool-library-empty p { max-width: 300px; margin: 9px 0 17px; color: var(--muted); font-size: 12px; line-height: 1.7; }
+.tool-reminder { padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--wallpaper-accent) 26%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--wallpaper-accent) 6%, white); }
+.tool-reminder[hidden] { display: none; }
+.tool-reminder p { margin: 0 0 7px; font-size: 11px; line-height: 1.6; color: var(--ink); }
+.tool-reminder > div { display: flex; flex-wrap: wrap; gap: 5px; }
+.tool-reminder button { min-height: 32px; padding: 0 8px; border: 0; border-radius: 7px; color: var(--muted); background: transparent; font-size: 11px; }
+.tool-reminder button:first-child { color: #fff; background: color-mix(in srgb, var(--wallpaper-accent) 80%, var(--ink)); }
+.tool-library-status { position: absolute; width: 1px; height: 1px; padding: 0; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+@media (max-width: 599px) {
+  .composer-entry { grid-template-columns: 40px minmax(0, 1fr); padding: 4px; }
+  .tool-menu-toggle { width: 40px; height: 40px; }
+  .composer .composer-entry textarea { min-height: 40px; padding-block: 10px; }
+  .voice-input-button { width: 38px; height: 38px; }
+  .voice-input-status { margin-left: 45px; font-size: 9px; }
+  .tool-library { width: calc(100vw - 16px); max-height: calc(100dvh - 24px); border-radius: 16px; }
+  .tool-library-header { padding: 16px 15px 8px; }
+  .tool-library-controls { padding: 8px 15px 12px; }
+  .tool-library-list { grid-template-columns: minmax(0, 1fr); padding: 2px 15px 16px; }
+  .tool-library-list .tool-card .quick-task-card { min-height: 80px; }
+  .tool-library footer { padding: 11px 15px; }
+  .tool-favorite { width: 42px; height: 42px; }
+}

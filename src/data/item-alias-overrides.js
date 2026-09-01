@@ -2,6 +2,13 @@ export const ITEM_DISPLAY_VERSION = "s18-pbe-items-zh-2026-08-21";
 
 export const ITEM_ALIAS_OVERRIDES = [
   {
+    apiName: "DA_18_EmblemBrawler",
+    aliases: ["斗转", "斗士转", "斗士转职", "斗士纹章"],
+    confidence: 1,
+    source: "manual_current_set_player_aliases",
+    season: "TFT18"
+  },
+  {
     apiName: "DA_RedBuff",
     zhName: "红霸符",
     shortName: "红霸符",

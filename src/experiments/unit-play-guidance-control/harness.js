@@ -2,7 +2,7 @@ import { ToolExecutor } from "../../agent/tools/executor.js";
 import { ToolRegistry } from "../../agent/tools/registry.js";
 import { ReactLoop } from "../../react/react-loop.js";
 import { buildSkillContext, matchSkill, SkillRegistry } from "../../skills/index.js";
-import { UNIT_PLAY_GUIDANCE_SKILL } from "../../skills/definitions/unit-play-guidance.js";
+import { UNIT_PLAY_GUIDANCE_SKILL_V1 as UNIT_PLAY_GUIDANCE_SKILL } from "../../skills/definitions/unit-play-guidance.js";
 import { migrateTaskFrame } from "../../understanding/task-frame.js";
 import {
   BASELINE_GUIDANCE,

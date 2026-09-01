@@ -3,12 +3,16 @@ import test from "node:test";
 import { ToolExecutor } from "../src/agent/tools/executor.js";
 import { ToolRegistry } from "../src/agent/tools/registry.js";
 import {
+  buildCompositionTrendFallback,
   buildCompositionReplacementFallback,
   buildInsufficientEvidenceFallback,
   buildItemContentionFallback,
+  buildSingleUnitItemRankingFallback,
+  enrichMetricLeaderInterpretations,
   ReactLoop
 } from "../src/react/react-loop.js";
 import { validateFinishAction } from "../src/react/termination-policy.js";
+import { requestedEquipmentCategoryScope } from "../src/domain/tft/equipment-category-scope.js";
 
 function definition(name, options = {}) {
   return {
@@ -28,6 +32,7 @@ function definition(name, options = {}) {
         seasonContextId: { type: "string" },
         unit: { type: "string" },
         patch: { type: "string" },
+        direction: { type: "string", enum: ["rising", "falling"] },
         query: { type: "string" },
         documentTypes: { type: "array", items: { type: "string" } },
         values: { type: "array", items: { type: "string" } },
@@ -140,6 +145,8 @@ async function runCase(options = {}) {
   const result = await loop.run({
     input: options.input ?? "test",
     ...(Array.isArray(options.messages) ? { messages: options.messages } : {}),
+    ...(options.bridgeContext ? { bridgeContext: options.bridgeContext } : {}),
+    ...(options.semanticAdvisory ? { semanticAdvisory: options.semanticAdvisory } : {}),
     seasonContextId: options.seasonContextId ?? "set17-live"
   }, {
     ...context,
@@ -147,6 +154,56 @@ async function runCase(options = {}) {
   });
   return { result, events, context };
 }
+
+test("controlled unit-play reuses the exact TaskFrame subject for unit build grounding", async () => {
+  let buildCalls = 0;
+  const provider = queueProvider([
+    call("unit_builds", { unit: "DA_18_Warwick" }),
+    finish("来源装备已经取得。", ["ev-1"])
+  ]);
+  const { result, events } = await runCase({
+    input: "沃里克推荐装备",
+    semanticAdvisory: {
+      action: "recommend",
+      goal: "recommend_unit_play",
+      subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+      expectedOutput: ["unit_play_guidance"]
+    },
+    provider,
+    definitions: [definition("unit_builds")],
+    handlers: { unit_builds: async () => {
+      buildCalls += 1;
+      return { type: "unit_build_rankings", unit: { apiName: "DA_18_Warwick" },
+        cards: [{ items: [] }], updatedAt: "2026-08-30T00:00:00.000Z" };
+    } }
+  });
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(buildCalls, 1);
+  assert.ok(!events.some((event) => event.type === "decision_rejected"));
+});
+
+test("controlled unit-play cannot reuse a different TaskFrame subject for unit build grounding", async () => {
+  let buildCalls = 0;
+  const provider = queueProvider([
+    call("unit_builds", { unit: "DA_18_Xayah" }),
+    finish("无法取得装备。", [], "insufficient_evidence")
+  ]);
+  const { events } = await runCase({
+    input: "沃里克推荐装备",
+    semanticAdvisory: {
+      action: "recommend",
+      goal: "recommend_unit_play",
+      subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+      expectedOutput: ["unit_play_guidance"]
+    },
+    provider,
+    definitions: [definition("unit_builds")],
+    handlers: { unit_builds: async () => { buildCalls += 1; return {}; } }
+  });
+  assert.equal(buildCalls, 0);
+  assert.ok(events.some((event) => event.type === "decision_rejected"
+    && event.data?.code === "ungrounded_unit_build_query"));
+});
 
 const evidence = (results, extra = {}) => ({
   updatedAt: "2026-08-06T00:00:00.000Z",
@@ -188,6 +245,23 @@ test("R1-02 one static tool produces validated evidence and ordered events", asy
   );
   assert.equal(provider.requests[1].state.transcript[2].value.evidenceId, "ev-1");
   assert.equal(provider.requests[1].state.transcript[2].value.evidence.evidenceId, "ev-1");
+});
+
+test("unit detail requests with 属性 do not enter the item-comparison completion guard", async () => {
+  const provider = queueProvider([
+    call("unit_details", { apiName: "TFT18_Ahri" }, "retrieve_entity_details"),
+    finish("阿狸资料已返回。", ["ev-1"])
+  ]);
+  const { result, events } = await runCase({
+    input: "查询阿狸的技能、费用、属性和羁绊资料",
+    provider,
+    handlers: {
+      unit_details: async () => evidence([{ apiName: "TFT18_Ahri", spell: "灵魄炸弹" }])
+    }
+  });
+
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(events.some((event) => event.data?.code === "incomplete_item_comparison_details"), false);
 });
 
 test("explicit TFT and Golden Spatula request binds one video call to both ecosystems", async () => {
@@ -526,6 +600,65 @@ test("UI-07D item mechanism batch is constrained to the deterministic difference
   )));
 });
 
+test("unit-play item mechanism batch must exactly copy the server plan", async () => {
+  const buildValue = {
+    type: "unit_build_rankings",
+    unit: { apiName: "DA_18_Warwick" },
+    mechanismQueryPlan: {
+      schemaVersion: "unit-play-item-mechanism-query-plan.v1",
+      status: "available",
+      apiNames: ["Shojin", "Sterak", "Titans"],
+      seasonContextId: "set18-live",
+      sourceCardIndex: 0
+    },
+    cards: [{ items: [{ apiName: "Shojin" }, { apiName: "Sterak" }, { apiName: "Titans" }] }],
+    updatedAt: "2026-08-30T00:00:00.000Z"
+  };
+  const definitions = [definition("unit_builds"), definition("item_details_batch", { evidenceType: "official_item_batch" })];
+  let batchCalls = 0;
+  const valid = await runCase({
+    input: "沃里克怎么玩？",
+    seasonContextId: "set18-live",
+    semanticAdvisory: { action: "recommend", goal: "recommend_unit_play",
+      subject: { resolvedId: "DA_18_Warwick" }, expectedOutput: ["unit_play_guidance"] },
+    definitions,
+    provider: queueProvider([
+      call("unit_builds", { unit: "DA_18_Warwick" }),
+      call("item_details_batch", { apiNames: ["Shojin", "Sterak", "Titans"], seasonContextId: "set18-live" }, "retrieve_entity_details"),
+      finish("三件来源装备机制已取得。", ["ev-1", "ev-2"])
+    ]),
+    handlers: {
+      unit_builds: async () => buildValue,
+      item_details_batch: async () => { batchCalls += 1; return { type: "item_details_batch",
+        updatedAt: "2026-08-30T00:00:00.000Z", items: [{ apiName: "Shojin", status: "found" }] }; }
+    }
+  });
+  assert.equal(valid.result.status, "completed", JSON.stringify(valid.result));
+  assert.equal(batchCalls, 1);
+
+  for (const argumentsValue of [
+    { apiNames: ["Shojin", "Titans", "Sterak"], seasonContextId: "set18-live" },
+    { apiNames: ["Shojin", "Sterak"], seasonContextId: "set18-live" },
+    { apiNames: ["Shojin", "Sterak", "Titans"], seasonContextId: "set17-live" }
+  ]) {
+    const invalid = await runCase({
+      input: "沃里克怎么玩？", seasonContextId: "set18-live",
+      semanticAdvisory: { action: "recommend", goal: "recommend_unit_play",
+        subject: { resolvedId: "DA_18_Warwick" }, expectedOutput: ["unit_play_guidance"] },
+      definitions,
+      provider: queueProvider([
+        call("unit_builds", { unit: "DA_18_Warwick" }),
+        call("item_details_batch", argumentsValue, "retrieve_entity_details"),
+        finish("只保留来源装备统计。", ["ev-1"])
+      ]),
+      handlers: { unit_builds: async () => buildValue,
+        item_details_batch: async () => assert.fail("invalid batch plan must not execute") }
+    });
+    assert.ok(invalid.events.some((event) => event.type === "decision_rejected"
+      && event.data?.code === "invalid_differentiating_item_selection"), JSON.stringify(argumentsValue));
+  }
+});
+
 test("R1-04 later decisions observe earlier tools in a multi-tool loop", async () => {
   const provider = queueProvider([
     call("comps_trends", { patch: "current" }),
@@ -778,6 +911,132 @@ test("ambiguous exact alias resolution leads to ask_user without a details call"
   assert.equal(detailCalls, 0);
 });
 
+test("a curated fuzzy unit candidate forces canonical confirmation even when the model tries to skip it", async () => {
+  let buildCalls = 0;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: { type: "object", additionalProperties: false, required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("entity_catalog_query", { entityType: "unit", filters: { names: ["月男"] } }, "retrieve_entity_details"),
+    call("unit_builds", { unit: "DA_18_Aphelios", itemPolicy: "include_artifact", itemCategories: ["artifact"] })
+  ]);
+  const { result } = await runCase({
+    input: "查询月男的神器",
+    provider,
+    definitions: [catalogDefinition, definition("unit_builds")],
+    handlers: {
+      entity_catalog_query: async () => ({
+        type: "entity_catalog_results", entityType: "unit", updatedAt: "2026-08-30T00:00:00.000Z",
+        resolution: { mode: "exact_alias", requests: [{ inputName: "月男", normalizedName: "月男", status: "ambiguous", candidates: [{
+          apiName: "DA_18_Aphelios", name: "厄斐琉斯", matchedAlias: "月男", matchType: "curated_fuzzy_alias"
+        }] }] },
+        results: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }]
+      }),
+      unit_builds: async () => { buildCalls += 1; return evidence([]); }
+    }
+  });
+  assert.equal(result.status, "clarification_required");
+  assert.equal(result.question, "“月男”可能指“厄斐琉斯”，请确认是否是这个英雄。");
+  assert.deepEqual(result.missingFields, ["unit"]);
+  assert.equal(buildCalls, 0);
+});
+
+test("affirming a fuzzy unit candidate re-resolves its canonical name and preserves the original artifact scope", async () => {
+  const calls = [];
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: { type: "object", additionalProperties: false, required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object", additionalProperties: false, required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        itemPolicy: { type: "string" },
+        itemCategories: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    action("ask_user", { question: "你要查哪件神器？", missingFields: ["item"], reasonCode: "missing_context" }),
+    call("unit_builds", { unit: "DA_18_Aphelios", itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"] }),
+    finish("厄斐琉斯神器排行已返回。", ["ev-2"])
+  ]);
+  const { result } = await runCase({
+    input: "是的",
+    provider,
+    bridgeContext: {
+      relation: "reply_to_clarification",
+      view: {
+        pendingClarification: {
+          reason: "ask_user",
+          question: "“月男”可能指“厄斐琉斯”，请确认是否是这个英雄。",
+          confirmationContext: {
+            type: "entity_candidate",
+            entityType: "unit",
+            inputName: "月男",
+            originalInput: "查询月男的神器",
+            equipmentCategoryScope: { itemPolicy: "include_artifact", itemCategories: ["artifact"] },
+            candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }]
+          }
+        },
+        records: []
+      },
+      promotedEvidence: []
+    },
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async (input) => {
+        calls.push({ tool: "entity_catalog_query", input });
+        return {
+          type: "entity_catalog_results", entityType: "unit", updatedAt: "2026-08-30T00:00:00.000Z",
+          resolution: { mode: "exact_alias", requests: [{ inputName: "厄斐琉斯", normalizedName: "厄斐琉斯", status: "resolved", candidates: [{
+            apiName: "DA_18_Aphelios", name: "厄斐琉斯", matchedAlias: "厄斐琉斯", matchType: "exact_alias"
+          }] }] },
+          results: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }]
+        };
+      },
+      unit_builds: async (input) => {
+        calls.push({ tool: "unit_builds", input });
+        return {
+          type: "unit_item_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          unit: { apiName: "DA_18_Aphelios", name: "厄斐琉斯" },
+          query: { unitName: "厄斐琉斯", itemPolicy: input.itemPolicy, itemCategories: input.itemCategories },
+          itemRankings: [{ apiName: "TFT_Item_Artifact", name: "神器", category: "artifact", games: 100 }]
+        };
+      }
+    }
+  });
+
+  assert.equal(result.status, "completed", JSON.stringify({ result, calls }, null, 2));
+  assert.deepEqual(calls[0], {
+    tool: "entity_catalog_query",
+    input: { entityType: "unit", filters: { names: ["厄斐琉斯"] } }
+  });
+  assert.equal(calls[1].tool, "unit_builds");
+  assert.equal(calls[1].input.unit, "DA_18_Aphelios");
+  assert.equal(calls[1].input.itemPolicy, "include_artifact");
+  assert.deepEqual(calls[1].input.itemCategories, ["artifact"]);
+});
+
 test("unit_builds rejects guessed entity ids and accepts exact catalog resolutions", async () => {
   let buildCalls = 0;
   const catalogDefinition = definition("entity_catalog_query", {
@@ -849,6 +1108,537 @@ test("unit_builds rejects guessed entity ids and accepts exact catalog resolutio
   assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
   assert.equal(buildCalls, 1);
   assert.ok(events.some((event) => event.type === "decision_rejected" && event.data?.code === "ungrounded_unit_build_query"));
+});
+
+test("artifact ranking follow-up rejects assistant-only performanceItem and binds mixed scope", async () => {
+  let observedBuildInput = null;
+  let buildCalls = 0;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        performanceItem: { type: "string" },
+        itemPolicy: { type: "string" },
+        itemCategories: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("entity_catalog_query", {
+      entityType: "unit",
+      filters: { names: ["厄斐琉斯"] }
+    }, "retrieve_entity_details"),
+    call("entity_catalog_query", {
+      entityType: "item",
+      filters: { names: ["羊刀"] }
+    }, "retrieve_entity_details"),
+    call("unit_builds", {
+      unit: "DA_18_Aphelios",
+      performanceItem: "DA_GuinsoosRageblade",
+      itemPolicy: "ordinary_only",
+      itemCategories: ["ordinary_completed"]
+    }),
+    call("unit_builds", {
+      unit: "DA_18_Aphelios",
+      itemPolicy: "ordinary_only",
+      itemCategories: ["ordinary_completed"]
+    }),
+    finish("含神器的单装备排行榜已返回。", ["ev-3"])
+  ]);
+  const { result, events } = await runCase({
+    input: "加入神器，返回一个排行榜",
+    messages: [
+      { role: "user", content: "厄斐琉斯" },
+      { role: "assistant", content: "主流出装是羊刀+无尽+海妖之怒。" },
+      { role: "user", content: "我想查的是单装备数据" },
+      { role: "assistant", content: "羊刀位列同类第一。" }
+    ],
+    provider,
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async (input) => {
+        const item = input.entityType === "item";
+        return {
+          type: "entity_catalog_results",
+          entityType: input.entityType,
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          resolution: {
+            requests: [{
+              inputName: input.filters.names[0],
+              normalizedName: input.filters.names[0],
+              status: "resolved",
+              candidates: [{
+                apiName: item ? "DA_GuinsoosRageblade" : "DA_18_Aphelios",
+                name: input.filters.names[0],
+                matchedAlias: input.filters.names[0]
+              }]
+            }]
+          },
+          results: [{ apiName: item ? "DA_GuinsoosRageblade" : "DA_18_Aphelios" }]
+        };
+      },
+      unit_builds: async (input) => {
+        buildCalls += 1;
+        observedBuildInput = structuredClone(input);
+        return {
+          type: "unit_item_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          query: {
+            itemPolicy: input.itemPolicy,
+            itemCategories: input.itemCategories
+          },
+          itemRankings: [{ apiName: "DA_Item_Artifact", category: "artifact" }]
+        };
+      }
+    }
+  });
+
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(buildCalls, 1);
+  assert.equal(observedBuildInput.performanceItem, undefined);
+  assert.equal(observedBuildInput.itemPolicy, "include_artifact");
+  assert.deepEqual(observedBuildInput.itemCategories, ["ordinary_completed", "artifact"]);
+  assert.ok(events.some((event) => (
+    event.type === "decision_rejected"
+    && event.data?.code === "ungrounded_unit_build_query"
+    && event.data?.errors?.some((error) => /historical assistant messages cannot authorize/u.test(error))
+  )));
+});
+
+test("unnamed single-item data request binds the ordinary item ranking instead of complete builds", async () => {
+  let observedBuildInput = null;
+  const catalogDefinition = definition("entity_catalog_query", {
+    evidenceType: "official_entity_catalog",
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["entityType", "filters"],
+      properties: {
+        entityType: { type: "string" },
+        filters: {
+          type: "object",
+          additionalProperties: false,
+          required: ["names"],
+          properties: { names: { type: "array", items: { type: "string" } } }
+        }
+      }
+    }
+  });
+  const unitBuildDefinition = definition("unit_builds", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["unit"],
+      properties: {
+        unit: { type: "string" },
+        itemPolicy: { type: "string" },
+        itemCategories: { type: "array", items: { type: "string" } }
+      }
+    }
+  });
+  const provider = queueProvider([
+    action("ask_user", {
+      question: "您想查询厄斐琉斯的哪件单装备数据？请提供具体装备名称。",
+      missingFields: ["item"],
+      reasonCode: "missing_context"
+    }),
+    call("entity_catalog_query", {
+      entityType: "unit",
+      filters: { names: ["厄斐琉斯"] }
+    }, "retrieve_entity_details"),
+    call("unit_builds", { unit: "DA_18_Aphelios" }),
+    finish("厄斐琉斯单装备排行榜已返回。", ["ev-2"])
+  ]);
+  const { result, events } = await runCase({
+    input: "我想查的是单装备数据",
+    messages: [
+      { role: "user", content: "厄斐琉斯" },
+      { role: "assistant", content: "主流出装是羊刀+无尽+海妖之怒。" }
+    ],
+    provider,
+    definitions: [catalogDefinition, unitBuildDefinition],
+    handlers: {
+      entity_catalog_query: async () => ({
+        type: "entity_catalog_results",
+        entityType: "unit",
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        resolution: {
+          requests: [{
+            inputName: "厄斐琉斯",
+            normalizedName: "厄斐琉斯",
+            status: "resolved",
+            candidates: [{
+              apiName: "DA_18_Aphelios",
+              name: "厄斐琉斯",
+              matchedAlias: "厄斐琉斯"
+            }]
+          }]
+        },
+        results: [{ apiName: "DA_18_Aphelios" }]
+      }),
+      unit_builds: async (input) => {
+        observedBuildInput = structuredClone(input);
+        return {
+          type: "unit_item_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          query: {
+            itemPolicy: input.itemPolicy,
+            itemCategories: input.itemCategories
+          },
+          itemRankings: [{ apiName: "DA_Item_Ordinary", category: "ordinary_completed" }]
+        };
+      }
+    }
+  });
+
+  assert.equal(result.terminationReason, "completed");
+  assert.equal(observedBuildInput.itemPolicy, "ordinary_only");
+  assert.deepEqual(observedBuildInput.itemCategories, ["ordinary_completed"]);
+  assert.equal(observedBuildInput.performanceItem, undefined);
+  assert.ok(events.some((event) => (
+    event.type === "decision_rejected"
+    && event.data?.code === "unnecessary_equipment_item_clarification"
+  )));
+});
+
+test("equipment category vocabulary separates exclusive, additive and negated scopes", () => {
+  for (const input of ["不含特殊装备", "不要特殊装备", "排除所有特殊装备", "修改为只包含普通装备", "without special items"]) {
+    assert.deepEqual(requestedEquipmentCategoryScope(input), {
+      itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
+    }, input);
+  }
+  for (const input of ["查询厄飞流斯的神器", "我要查的是奥恩神器", "只查询神器", "只包含奥恩神器", "Aphelios artifacts"]) {
+    assert.deepEqual(requestedEquipmentCategoryScope(input), {
+      itemPolicy: "include_artifact", itemCategories: ["artifact"]
+    }, input);
+  }
+  for (const input of ["加入神器", "加上奥恩神器", "神器也一起加入", "普通装备和神器一起排行"]) {
+    assert.deepEqual(requestedEquipmentCategoryScope(input), {
+      itemPolicy: "include_artifact", itemCategories: ["ordinary_completed", "artifact"]
+    }, input);
+  }
+  assert.deepEqual(requestedEquipmentCategoryScope("不要神器，只查普通装备"), {
+    itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
+  });
+  assert.equal(requestedEquipmentCategoryScope("不要神器"), null);
+  for (const input of ["奥恩", "奥恩装备", "奥恩装", "查询奥恩的装备", "Ornn items"]) {
+    assert.equal(requestedEquipmentCategoryScope(input), null, input);
+  }
+  assert.deepEqual(requestedEquipmentCategoryScope("不是普通装备，是奥恩神器"), {
+    itemPolicy: "include_artifact", itemCategories: ["artifact"]
+  });
+  assert.deepEqual(requestedEquipmentCategoryScope("光明装备排行榜"), {
+    itemPolicy: "include_radiant", itemCategories: ["radiant"]
+  });
+});
+
+test("ordinary-only corrections override stale special scope without changing complete-build conditions", async (t) => {
+  for (const input of ["不含特殊装备", "修改为只包含普通装备", "修改为只包含普通装备，改为近7天", "改为近7天"]) {
+    await t.test(input, async () => {
+      let observed;
+      const initial = { unit: "DA_18_Aphelios", itemPolicy: "include_special", itemCategories: ["artifact"],
+        itemCount: 3, starLevel: [2], days: 3, minSamples: 100 };
+      if (input.includes("7天")) initial.days = 7;
+      const { result, events } = await runCase({
+        input, messages: [
+          { role: "user", content: "厄斐琉斯三件套出装，包含特殊装备" },
+          ...(input === "改为近7天" ? [
+            { role: "user", content: "第三件只要普通装备" },
+            { role: "assistant", content: "包含特殊装备" }
+          ] : [])
+        ],
+        bridgeContext: { view: { relation: "modify", records: [{ operation: "unit_build_completion" }] } },
+        provider: queueProvider([
+          call("entity_catalog_query", { entityType: "unit", filters: { names: ["厄斐琉斯"] } }),
+          call("unit_builds_batch", { entities: [{ apiName: initial.unit }] }),
+          call("unit_builds", initial), finish("已更新三件套出装。", ["ev-2"])
+        ]),
+        definitions: [definition("unit_builds_batch", { inputSchema: {
+          type: "object", additionalProperties: false, properties: {
+            entities: { type: "array", items: { type: "object", properties: { apiName: { type: "string" } } } }
+          }
+        } }), definition("entity_catalog_query", { inputSchema: {
+          type: "object", additionalProperties: false, properties: {
+            entityType: { type: "string" }, filters: { type: "object", properties: { names: { type: "array", items: { type: "string" } } } }
+          }
+        } }), definition("unit_builds", { inputSchema: {
+          type: "object", additionalProperties: false, required: ["unit"], properties: {
+            unit: { type: "string" }, itemPolicy: { type: "string" }, itemCategories: { type: "array", items: { type: "string" } },
+            itemCount: { type: "integer" }, starLevel: { type: "array", items: { type: "integer" } },
+            days: { type: "integer" }, minSamples: { type: "integer" }
+          }
+        } })],
+        handlers: { unit_builds_batch: async () => assert.fail("a scope edit must not execute an unconstrained batch"),
+          entity_catalog_query: async () => evidence([{ apiName: "DA_18_Aphelios" }], {
+          type: "entity_catalog_results", entityType: "unit",
+          resolution: { requests: [{ inputName: "厄斐琉斯", status: "resolved", candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯" }] }] }
+        }), unit_builds: async (args) => {
+          observed = args;
+          return evidence([{ items: ["ordinary-a", "ordinary-b", "ordinary-c"] }], { type: "unit_build_rankings", query: args });
+        } }
+      });
+      assert.equal(result.status, "completed", JSON.stringify(result));
+      assert.ok(events.some(event => event.type === "decision_rejected" && event.data.code === "ungrounded_unit_build_query"));
+      assert.deepEqual(observed, { ...initial, itemPolicy: "ordinary_only", itemCategories: [] });
+    });
+  }
+});
+
+test("artifact requests override stale ordinary scope and category corrections keep the contextual champion", async (t) => {
+  for (const input of ["查询厄飞流斯的神器", "我要查的是奥恩神器", "厄斐琉斯神器装备排行榜", "只查奥恩神器", "厄斐琉斯光明装备排行榜", "不要神器，只查普通装备", "包含神器的完整出装", "厄斐琉斯推荐普通出装"]) {
+    await t.test(input, async () => {
+      const expected = requestedEquipmentCategoryScope(input);
+      if (input.includes("完整出装") || input.includes("普通出装")) expected.itemCategories = [];
+      const followUp = input === "我要查的是奥恩神器";
+      let observed;
+      const provider = queueProvider([
+        ...(followUp ? [action("ask_user", {
+          question: "奥恩神器是指哪一类？请提供具体装备名称。",
+          missingFields: ["item"], reasonCode: "ambiguous_entity"
+        })] : []),
+        call("entity_catalog_query", { entityType: "unit", filters: { names: ["厄飞流斯"] } }),
+        call("unit_builds", { unit: "DA_18_Aphelios", itemPolicy: "ordinary_only", ...(input.includes("普通出装") ? {} : { itemCategories: ["ordinary_completed"] }) }),
+        finish("已按指定类别返回查询结果。", ["ev-2"])
+      ]);
+      const { result, events } = await runCase({
+        input, provider,
+        messages: followUp ? [
+          { role: "user", content: "查询厄飞流斯的神器" },
+          { role: "assistant", content: "羊刀+无尽+海妖之怒。" }
+        ] : [],
+        definitions: [
+          definition("entity_catalog_query", { inputSchema: {
+            type: "object", additionalProperties: false, required: ["entityType", "filters"],
+            properties: {
+              entityType: { type: "string" },
+              filters: { type: "object", additionalProperties: false, properties: { names: { type: "array", items: { type: "string" } } } }
+            }
+          } }),
+          definition("unit_builds", { inputSchema: {
+            type: "object", additionalProperties: false, required: ["unit"],
+            properties: { unit: { type: "string" }, itemPolicy: { type: "string" }, itemCategories: { type: "array", items: { type: "string" } } }
+          } })
+        ],
+        handlers: {
+          entity_catalog_query: async () => evidence([{ apiName: "DA_18_Aphelios" }], {
+            type: "entity_catalog_results", entityType: "unit",
+            resolution: { requests: [{ inputName: "厄飞流斯", status: "resolved", candidates: [{ apiName: "DA_18_Aphelios", name: "厄斐琉斯", matchedAlias: "厄飞流斯" }] }] }
+          }),
+          unit_builds: async (args) => {
+            observed = args;
+            return { updatedAt: "2026-08-30T00:00:00.000Z", type: "unit_item_rankings", query: args,
+              itemRankings: [{ name: "狙击手的专注", category: "artifact" }] };
+          }
+        }
+      });
+      assert.equal(result.status, "completed", JSON.stringify(result.modelConclusion));
+      assert.equal(observed.unit, "DA_18_Aphelios");
+      assert.equal(observed.itemPolicy, expected.itemPolicy);
+      assert.deepEqual(observed.itemCategories, expected.itemCategories);
+      if (followUp) {
+        assert.ok(events.some((event) => event.data?.code === "unnecessary_equipment_item_clarification"));
+        assert.ok(result.observations.some((observation) => observation.repairInstruction?.includes("context")));
+      }
+    });
+  }
+});
+
+test("artifact categories still allow clarification of missing champions or named comparison candidates", async () => {
+  for (const [input, question, missingFields] of [
+    ["查一下奥恩神器", "要查询哪个英雄的奥恩神器？", ["unit"]],
+    ["比较厄斐琉斯的这两件神器", "请提供具体两件装备名称。", ["comparisonItems"]]
+  ]) {
+    const { result } = await runCase({ input, provider: queueProvider([
+      action("ask_user", { question, missingFields, reasonCode: "missing_context" })
+    ]) });
+    assert.equal(result.status, "clarification_required");
+    assert.equal(result.question, question);
+  }
+});
+
+test("finish validation rejects an Artifact claim grounded only in ordinary equipment evidence", () => {
+  const entry = {
+    evidenceId: "ev-ordinary-items",
+    toolName: "unit_builds",
+    type: "unit_item_rankings",
+    temporalStatus: "current",
+    value: {
+      type: "unit_item_rankings",
+      query: {
+        itemPolicy: "ordinary_only",
+        itemCategories: ["ordinary_completed"]
+      },
+      itemRankings: [{ name: "羊刀", category: "ordinary_completed" }]
+    }
+  };
+  const ledger = {
+    resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
+    snapshot: () => ({ entries: [entry] })
+  };
+  for (const answer of ["单装备排行榜（含神器）：羊刀。", "厄斐琉斯主流神器：羊刀+无尽+海妖之怒。", "推荐奥恩神器：羊刀。", "神器推荐：羊刀。", "奥恩神器：羊刀。"] ) {
+    const validation = validateFinishAction({ reasonCode: "sufficient_evidence", evidenceIds: [entry.evidenceId], answer }, ledger);
+    assert.equal(validation.valid, false, answer);
+    assert.ok(validation.errors.includes("answer claims an Artifact equipment ranking but cited evidence does not include artifact scope"));
+  }
+  for (const answer of ["普通装备排行榜，不含神器。", "神器数据不足，未返回神器排名。", "没有奥恩神器的数据。普通装备是羊刀。"]) {
+    const validation = validateFinishAction({ reasonCode: "sufficient_evidence", evidenceIds: [entry.evidenceId], answer }, ledger);
+    assert.equal(validation.valid, true, JSON.stringify(validation));
+  }
+  entry.value.query = { itemPolicy: "include_artifact", itemCategories: ["ordinary_completed", "artifact"] };
+  const missingArtifacts = validateFinishAction({ reasonCode: "sufficient_evidence", evidenceIds: [entry.evidenceId], answer: "主流神器：羊刀。" }, ledger);
+  assert.equal(missingArtifacts.valid, false, "an allowed category alone does not prove any artifact samples were returned");
+});
+
+test("artifact-only fallback does not claim ordinary equipment is included", () => {
+  const fallback = buildSingleUnitItemRankingFallback({ snapshot: () => ({ entries: [{
+    evidenceId: "ev-artifacts", toolName: "unit_builds", temporalStatus: "current",
+    value: { type: "unit_item_rankings", unit: { name: "厄斐琉斯" }, query: { itemCategories: ["artifact"] },
+      itemRankings: [{ name: "狙击手的专注", category: "artifact", stats: { games: 200, avg: 3.8 } }] }
+  }] }) });
+  assert.match(fallback.answer, /排行榜（神器）/u);
+  assert.doesNotMatch(fallback.answer, /普通装备/u);
+});
+
+test("item ranking fallback summarizes mixed equipment evidence instead of using an unrelated result type", () => {
+  const fallback = buildSingleUnitItemRankingFallback({
+    snapshot: () => ({
+      entries: [{
+        evidenceId: "ev-mixed-items",
+        toolName: "unit_builds",
+        temporalStatus: "current",
+        value: {
+          type: "unit_item_rankings",
+          unit: { name: "厄斐琉斯" },
+          query: { itemCategories: ["ordinary_completed", "artifact"] },
+          itemRankings: [
+            { name: "金币收集者", category: "artifact", stats: { top4: 62.9, win: 14.8, avg: 3.87, games: 1743 } },
+            { name: "杀人剑", category: "ordinary_completed", stats: { top4: 60.2, win: 10.3, avg: 4.07, games: 2949 } }
+          ]
+        }
+      }]
+    })
+  });
+
+  assert.deepEqual(fallback.evidenceIds, ["ev-mixed-items"]);
+  assert.match(fallback.answer, /普通装备 \+ 神器/u);
+  assert.match(fallback.answer, /1\. 金币收集者（神器） 前四率62\.9%/u);
+  assert.match(fallback.answer, /2\. 杀人剑 前四率60\.2%/u);
+  assert.doesNotMatch(fallback.answer, /视频/u);
+});
+
+test("metric leaders receive concise game-meaning explanations without labels or thresholds", () => {
+  const answer = enrichMetricLeaderInterpretations(
+    "今日选择率最高的阵容是星之守护者；吃鸡率最高的阵容是战斗学院。"
+  );
+
+  assert.match(answer, /星之守护者；\n选择率领先说明该阵容当前热度最高/u);
+  assert.match(answer, /更可能遇到同行/u);
+  assert.match(answer, /战斗学院。\n吃鸡率领先说明该阵容成型后的夺冠上限更高/u);
+  assert.match(answer, /稳定性仍需结合前四率判断/u);
+  assert.doesNotMatch(answer, /标签|阈值/u);
+});
+
+test("metric leader explanations are not duplicated when the model already explains them", () => {
+  const source = "今日选择率最高的是星之守护者，因此更容易遇到同行和抢牌；吃鸡率最高的是战斗学院，说明它的夺冠上限更高。";
+  assert.equal(enrichMetricLeaderInterpretations(source), source);
+});
+
+test("accepted composition ranking answers publish metric meaning explanations", async () => {
+  const provider = queueProvider([
+    call("comps_rankings", {}),
+    finish("今日选择率最高的阵容是星之守护者；吃鸡率最高的阵容是战斗学院。", ["ev-1"])
+  ]);
+  const { result } = await runCase({
+    input: "解析今天阵容",
+    provider,
+    handlers: {
+      comps_rankings: async () => ({
+        type: "comp_rankings",
+        updatedAt: "2026-08-30T00:00:00.000Z",
+        rankings: {
+          popularity: [{ name: "星之守护者", stats: { selectionRate: 0.12 } }],
+          winRate: [{ name: "战斗学院", stats: { winRate: 0.18 } }]
+        }
+      })
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.match(result.answer, /更可能遇到同行/u);
+  assert.match(result.answer, /成型后的夺冠上限更高/u);
+});
+
+test("daily composition analysis wording binds to the global rankings instead of a fake named comp", async () => {
+  let observedArguments = null;
+  let analysisCalls = 0;
+  const provider = queueProvider([
+    call("comps_analysis", { mention: "今天阵容" }),
+    finish("今日选择率最高的阵容是星之守护者；吃鸡率最高的阵容是战斗学院。", ["ev-1"])
+  ]);
+  const { result, events } = await runCase({
+    input: "解析今天阵容",
+    provider,
+    definitions: [
+      definition("comps_analysis", {
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { mention: { type: "string" } }
+        }
+      }),
+      definition("comps_rankings", {
+        inputSchema: {
+          type: "object",
+          additionalProperties: false,
+          properties: { mention: { type: "string" } }
+        }
+      })
+    ],
+    handlers: {
+      comps_analysis: async () => {
+        analysisCalls += 1;
+        return evidence([]);
+      },
+      comps_rankings: async (input) => {
+        observedArguments = structuredClone(input);
+        return {
+          type: "comp_rankings",
+          updatedAt: "2026-08-30T00:00:00.000Z",
+          rankings: {
+            popularity: [{ name: "星之守护者", stats: { selectionRate: 0.12 } }],
+            winRate: [{ name: "战斗学院", stats: { winRate: 0.18 } }]
+          }
+        };
+      }
+    }
+  });
+
+  assert.equal(result.status, "completed");
+  assert.equal(analysisCalls, 0);
+  assert.equal(observedArguments.mention, undefined);
+  assert.ok(events.some((event) => event.type === "decision" && event.data?.tool === "comps_rankings"));
+  assert.match(result.answer, /更可能遇到同行/u);
+  assert.match(result.answer, /夺冠上限更高/u);
 });
 
 test("R1-09 a failed tool becomes an observation and a later tool can recover", async () => {
@@ -1540,6 +2330,171 @@ test("finish validation accepts a rounded positive placement improvement from co
   assert.equal(validation.valid, true, validation.errors.join("; "));
 });
 
+test("trend overview cannot discard falling and popularity evidence when rising is empty", () => {
+  const entry = {
+    evidenceId: "ev-comp-trend-partial",
+    toolName: "comps_trends",
+    type: "composition_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      requestedDirection: null,
+      rising: [],
+      falling: [{ name: "战斗学院 · 悠米" }],
+      rankings: { popularity: [{ name: "星之守护者 · 阿狸" }] }
+    }
+  };
+  const ledger = {
+    resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
+    snapshot: () => ({ entries: [entry] })
+  };
+  const validation = validateFinishAction({
+    reasonCode: "insufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "上升榜为空，因此当前证据不足，无法可靠提供趋势排名。"
+  }, ledger);
+  assert.equal(validation.valid, false);
+  assert.ok(validation.errors.includes(
+    "insufficient_evidence cannot discard available composition trend sections"
+  ));
+});
+
+test("an explicitly rising-only request may report insufficient evidence when rising is empty", () => {
+  const entry = {
+    evidenceId: "ev-rising-empty",
+    toolName: "comps_trends",
+    type: "composition_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      requestedDirection: "rising",
+      rising: [],
+      falling: [{ name: "不会进入当前方向的阵容" }],
+      rankings: { popularity: [{ name: "不会进入当前方向的热门阵容" }] }
+    }
+  };
+  const ledger = {
+    resolve: (ids) => ids.includes(entry.evidenceId) ? [entry] : [],
+    snapshot: () => ({ entries: [entry] })
+  };
+  const validation = validateFinishAction({
+    reasonCode: "insufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "当前上升榜没有可验证结果，证据不足。"
+  }, ledger);
+  assert.equal(validation.valid, true, validation.errors.join("; "));
+});
+
+test("the user's explicit trend direction overrides a contradictory model argument", async () => {
+  let observedInput = null;
+  const provider = queueProvider([
+    call("comps_trends", { patch: "current", direction: "falling" }),
+    finish("当前上升榜没有可验证结果，证据不足。", ["ev-1"], "insufficient_evidence")
+  ]);
+  const { result } = await runCase({
+    input: "最近有哪些上升阵容？",
+    provider,
+    handlers: {
+      comps_trends: async (input) => {
+        observedInput = structuredClone(input);
+        return {
+          updatedAt: "2026-08-06T00:00:00.000Z",
+          type: "comp_trends",
+          requestedDirection: input.direction,
+          rising: [],
+          falling: [],
+          rankings: { popularity: [] },
+          trend: { status: "upstream" }
+        };
+      }
+    }
+  });
+  assert.equal(observedInput.direction, "rising");
+  assert.equal(result.terminationReason, "insufficient_evidence");
+});
+
+test("trend fallback renders available falling and popularity sections independently", () => {
+  const entry = {
+    evidenceId: "ev-comp-trend-partial",
+    toolName: "comps_trends",
+    temporalStatus: "current",
+    value: {
+      type: "comp_trends",
+      requestedDirection: null,
+      rising: [],
+      falling: [{
+        name: "战斗学院 · 悠米",
+        trend: { avgPlacementChange: 0.27 }
+      }],
+      rankings: { popularity: [{
+        name: "星之守护者 · 阿狸",
+        stats: { selectionRate: 0.625 }
+      }] }
+    }
+  };
+  const fallback = buildCompositionTrendFallback({
+    snapshot: () => ({ entries: [entry] })
+  });
+  assert.deepEqual(fallback.evidenceIds, ["ev-comp-trend-partial"]);
+  assert.match(fallback.answer, /上升阵容：当前没有检测到/u);
+  assert.match(fallback.answer, /下降阵容：战斗学院 · 悠米/u);
+  assert.match(fallback.answer, /选取率排行：星之守护者 · 阿狸/u);
+  assert.match(fallback.answer, /62\.5%/u);
+});
+
+test("repeated whole-result trend downgrade falls back to valid partial trend evidence", async () => {
+  let observedInput = null;
+  const provider = queueProvider([
+    call("comps_trends", { patch: "current", direction: "rising" }),
+    finish("上升榜为空，当前证据不足，无法可靠提供趋势排名。", ["ev-1"], "insufficient_evidence"),
+    finish("仍然没有上升阵容，当前证据不足。", ["ev-1"], "insufficient_evidence")
+  ]);
+  const { result } = await runCase({
+    input: "今日趋势解析",
+    provider,
+    handlers: {
+      comps_trends: async (input) => {
+        observedInput = structuredClone(input);
+        return {
+        updatedAt: "2026-08-06T00:00:00.000Z",
+        type: "comp_trends",
+        requestedDirection: null,
+        rising: [],
+        falling: [{
+          name: "战斗学院 · 悠米",
+          trend: { avgPlacementChange: 0.27 }
+        }],
+        rankings: { popularity: [{
+          name: "星之守护者 · 阿狸",
+          stats: { selectionRate: 0.625 }
+        }] },
+          trend: { status: "upstream", officialGate: { status: "insufficient", eligibleCount: 0 } }
+        };
+      }
+    }
+  });
+
+  assert.equal(observedInput.direction, undefined);
+  assert.equal(result.status, "completed_with_warning");
+  assert.equal(result.terminationReason, "finish_validation_fallback");
+  assert.equal(result.answerOrigin, "system_evidence_fallback");
+  assert.match(result.answer, /下降阵容：战斗学院 · 悠米/u);
+  assert.match(result.answer, /选取率排行：星之守护者 · 阿狸/u);
+  assert.ok(result.warnings.includes("composition_trend_partial_evidence_fallback"));
+  assert.deepEqual(
+    provider.requests[1].state.observations.at(-1).nextActionAffordance.sectionAvailability,
+    {
+      rising: { status: "empty", count: 0 },
+      falling: { status: "available", count: 1 },
+      popularity: { status: "available", count: 1 }
+    }
+  );
+  assert.match(
+    provider.requests[2].state.observations.at(-1).repairInstruction,
+    /改用 sufficient_evidence/u
+  );
+});
+
 test("finish validation does not allow an absolute rounded delta for unrelated evidence", () => {
   const entry = {
     evidenceId: "ev-unrelated-delta",
@@ -1819,6 +2774,21 @@ test("tactical finish validation rejects prose that moves units to a different b
     answer: "**前排（第1排）**：**易**、**菲奥娜**位于边角，方便切入。\n**中排（第2排）**：**厄加特**、**卑尔维斯**利用2格攻击距离输出。"
   }, ledger);
   assert.equal(valid.valid, true, valid.errors.join("; "));
+
+  const cardOnly = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "易放在前排。"
+  }, ledger, { compositionCardScope: true, compositionCardsOwnPositioning: true });
+  assert.equal(cardOnly.valid, false);
+  assert.ok(cardOnly.errors.includes("positioning prose is reserved for the cited composition cards"));
+
+  const cardsOwnPositioning = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "阵容与站位请查看对应来源卡片。"
+  }, ledger, { compositionCardScope: true, compositionCardsOwnPositioning: true });
+  assert.equal(cardsOwnPositioning.valid, true, cardsOwnPositioning.errors.join("; "));
 });
 
 test("G4-A rejects model-selected composition members outside the deterministic candidate plan", async () => {

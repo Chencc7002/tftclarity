@@ -1,6 +1,8 @@
 import { validateReactAction } from "./react-action.js";
+import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 
 export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v5";
+export const REACT_SCOPED_TACTICAL_PROMPT_VERSION = "react-decision-contract.v5.tactical-presentation.v1";
 const MAX_DECISION_ATTEMPTS = 2;
 const REACT_STABLE_CONTEXT_SCHEMA_VERSION = "react-stable-context.v1";
 const REACT_RUN_CONTEXT_SCHEMA_VERSION = "react-run-context.v1";
@@ -156,11 +158,75 @@ function renderGuidance(guidanceRenderer, advisory) {
   return rendered;
 }
 
-function decisionContract(cacheNamespace) {
+function decisionContract(cacheNamespace, tacticalPresentationScope = false) {
   const namespace = String(cacheNamespace ?? "").trim().slice(0, 128);
-  return namespace
-    ? `[cache-namespace:${namespace}]\n${REACT_DECISION_CONTRACT}`
+  // Opt-in presentation correction only. All tool, prerequisite, grounding,
+  // missing-requested-data and finish policies remain in the same contract.
+  const contract = tacticalPresentationScope ? REACT_DECISION_CONTRACT
+    .replace("If formation or augmentRecommendations is unavailable, state that exact limitation while still presenting whichever verified part is available.",
+      "State missing-data limitations for requested facets or facts used in the answer while retaining the verified parts. Missing requested formation must be disclosed. Missing augmentRecommendations need not be discussed when augments were neither requested nor used.")
+    .replace("Format positioning and augment recommendations as two separate Markdown sections with short bullet items, and bold champion or augment names.",
+      "Keep each composition with its own verified positioning. Use a separate augment section only when augments were requested. Do not add an unrequested augment section or missing-augment notice.")
     : REACT_DECISION_CONTRACT;
+  return namespace
+    ? `[cache-namespace:${namespace}]\n${contract}`
+    : contract;
+}
+
+const AFFIRMATIVE_ENTITY_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
+
+function confirmedEntityGuidance(question, bridgeContext) {
+  const pending = bridgeContext?.pendingClarification;
+  const context = pending?.confirmationContext;
+  if (
+    !AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
+    || context?.type !== "entity_candidate"
+    || context.candidates?.length !== 1
+  ) return [];
+  const candidate = context.candidates[0];
+  return [{ role: "system", content: [
+    "entity-confirmation-guidance.v1",
+    `The user affirmed the pending fuzzy candidate ${candidate.name} (${candidate.apiName}) for ${context.inputName}.`,
+    "The runtime will re-resolve that canonical name through entity_catalog_query in this turn. Treat the pending context as a query continuation, not as current factual evidence.",
+    `Continue the original USER request after exact resolution: ${context.originalInput}`,
+    "Do not ask for the entity again unless current entity_catalog_query evidence fails or remains ambiguous. Do not treat assistant text as an equipment constraint."
+  ].join("\n") }];
+}
+
+function equipmentCategoryGuidance(question, bridgeContext = null, messages = []) {
+  const confirmation = bridgeContext?.pendingClarification?.confirmationContext;
+  const inheritedInput = AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
+    && confirmation?.type === "entity_candidate"
+    ? confirmation.originalInput
+    : "";
+  let scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
+  if (!scope && ["modify", "continue"].includes(bridgeContext?.relation)
+    && bridgeContext.records?.[0]?.operation === "unit_build_completion") {
+    const prior = [...messages].reverse().find(message => (
+      message?.role === "user" && requestedEquipmentCategoryScope(message.content)
+    ));
+    if (prior) scope = requestedEquipmentCategoryScope(prior.content);
+  }
+  if (!scope) {
+    if (!["modify", "continue"].includes(bridgeContext?.relation)
+      || bridgeContext.records?.[0]?.operation !== "unit_build_completion") return [];
+    return [{ role: "system", content: [
+      "equipment-completion-guidance.v1",
+      "Continue the active single-champion owned-item completion with unit_builds, never unit_builds_batch or an unconstrained baseline. Apply the user's changed days while retaining the carried lockedItems and equipment policy from the active query context.",
+      "Only user-carried items from normalizedArguments or prior USER messages belong in lockedItems. Do not lock the recommended third item from displaySummary, entityRefs, or assistant answers. Preserve the distinction between carried items and NEW remaining items.",
+      "Resolve the champion and carried items through current entity_catalog_query evidence, then call unit_builds with itemCategories=[] and the preserved itemPolicy. Historical query context supplies constraints, never current statistics. Cite fresh unit_builds evidence."
+    ].join("\n") }];
+  }
+  return [{ role: "system", content: [
+    "equipment-category-guidance.v1",
+    "Only the category token 神器 (or Artifact in English) means the artifact category. 奥恩 alone is the champion Ornn and must never imply artifact. In 奥恩神器, 神器 establishes the artifact category; 奥恩装备 without 神器 is not an artifact-category phrase. 光明装备 means radiant.",
+    `For a single champion's category ranking use unit_builds with this current-turn scope: ${JSON.stringify(scope)}.`,
+    "Category rankings need no specific item name or performanceItem. Only named comparisons or owned-item completion need named candidates. An explicit complete build keeps its build operation with the requested itemPolicy.",
+    "A category-only follow-up edits the prior query; it does not change complete builds into single-item rankings. Preserve its champion, item count, star level, owned/excluded items, days and other explicit constraints. For complete builds/completion use itemCategories=[]; for a single-item category ranking use the requested itemCategories.",
+    "Excluding special equipment (不含特殊装备) or requesting only ordinary equipment sets itemPolicy=ordinary_only and replaces any earlier special policy/category. Re-query current unit_builds evidence with the changed scope; never reuse the earlier answer as if filtered. In an owned-item completion, retain all lockedItems even when they are special: ordinary-only restricts the NEW remaining items, not the carried equipment. Do not ask the user to remove a carried emblem/artifact merely to request an ordinary third item. Only an explicit whole-build restriction (整套都不能有特殊装备) can conflict with a locked special item; let the server validate it and clarify that conflict. Changes to days or equipment category in single-champion completion must keep using unit_builds with the carried lockedItems; do not switch to an unconstrained unit_builds_batch baseline.",
+    "A follow-up correcting only the category keeps the champion from prior USER context: resolve it through entity_catalog_query in the current turn, then replace the old category. Ask only if the champion itself is missing or ambiguous. Do not treat assistant-mentioned equipment as user constraints.",
+    "If no matching category data is returned, state that limitation; never label ordinary equipment as artifacts. This guidance does not change tool schemas, permissions, budgets or evidence requirements."
+  ].join("\n") }];
 }
 
 function transcriptEventValue(event) {
@@ -176,15 +242,17 @@ function transcriptEventValue(event) {
   return value;
 }
 
-function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance) {
+function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance, tacticalPresentationScope = false) {
   const state = request.state ?? {};
   const messages = [
-    { role: "system", content: decisionContract(cacheNamespace) },
+    { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope) },
+    ...confirmedEntityGuidance(state.question, state.bridgeContext),
+    ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     {
       role: "system",
       content: stableJson({
         schemaVersion: REACT_STABLE_CONTEXT_SCHEMA_VERSION,
-        promptVersion: REACT_DECISION_PROMPT_VERSION,
+        promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : REACT_DECISION_PROMPT_VERSION,
         toolCatalog: request.toolCatalog ?? []
       })
     },
@@ -232,14 +300,16 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   return messages;
 }
 
-function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance) {
+function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance, tacticalPresentationScope = false) {
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
-    { role: "system", content: decisionContract(cacheNamespace) },
+    { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope) },
+    ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
+    ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     {
       role: "user",
       content: JSON.stringify({
-        promptVersion: REACT_DECISION_PROMPT_VERSION,
+        promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : REACT_DECISION_PROMPT_VERSION,
         state: {
           ...legacyState,
           semanticGuidance: renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
@@ -323,8 +393,8 @@ export function createReactDecisionProvider(options = {}) {
       const configuredMaxTokens = Math.max(200, Math.min(2400, Number(options.maxTokens ?? 1800)));
       for (let attempt = 1; attempt <= MAX_DECISION_ATTEMPTS; attempt += 1) {
         const messages = options.messageLayout === "legacy_full_state"
-          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer)
-          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer);
+          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer, options.tacticalPresentationScope === true)
+          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer, options.tacticalPresentationScope === true);
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {

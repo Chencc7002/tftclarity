@@ -2,6 +2,10 @@ import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
+import { hasBoundTacticalEvidence } from "./composition-card-details.js";
+import { createQuickToolLibrary } from "./quick-tool-library.js";
+import { createOnboardingTour } from "./onboarding-tour.js";
+import { createVoiceInput } from "./voice-input.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { getPatchNote } from "./patch-notes.js";
 import {
@@ -71,7 +75,7 @@ const state = {
   itemRankingCategoryBeforeMixed: "ordinary_completed",
   mobileView: "chat",
   conclusionStreamText: "",
-  seasonContextId: "set17-live",
+  seasonContextId: "set18-live",
   seasonContexts: [],
   seasonContext: null,
   activeAnalysisContext: null
@@ -93,6 +97,7 @@ const settingsClose = document.querySelector("#settings-close");
 const settingsDone = document.querySelector("#settings-done");
 const clearCacheButton = document.querySelector("#clear-cache-button");
 const resetPreferencesButton = document.querySelector("#reset-preferences-button");
+const restartOnboardingButton = document.querySelector("#restart-onboarding-button");
 const exportAliasesButton = document.querySelector("#export-aliases-button");
 const downloadAliasesButton = document.querySelector("#download-aliases-button");
 const reloadAliasesButton = document.querySelector("#reload-aliases-button");
@@ -165,6 +170,7 @@ const wallpaperController = new WallpaperController({
 });
 const titleBar = new TitleBar({
   root: document.querySelector("#title-bar"),
+  localeRoot: shellEl,
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
@@ -482,6 +488,7 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   if (seasonPreviewBanner) seasonPreviewBanner.hidden = !previewOnly;
   queryInput.disabled = previewOnly;
   sendButton.disabled = previewOnly;
+  voiceInput.setEnabled(!previewOnly);
   if (previewOnly) queryInput.setAttribute("aria-describedby", "season-preview-banner");
   else queryInput.removeAttribute("aria-describedby");
   if (refreshWallpaper) {
@@ -562,7 +569,7 @@ async function loadSeasonContexts() {
     if (!preferred) throw new Error(t("seasonLoadFailed"));
     await selectSeasonContext(preferred.id, { reset: false, announce: false });
   } catch (error) {
-    state.seasonContextId = "set17-live";
+    state.seasonContextId = "set18-live";
     setStatus(error.message || t("seasonLoadFailed"), "error");
   }
 }
@@ -792,6 +799,24 @@ const QUICK_TASKS = [
   }
 ];
 
+const quickToolLibrary = createQuickToolLibrary({
+  tasks: quickTasksForSeason, categories: QUICK_TASK_CATEGORIES, t, escapeHtml,
+  launch: launchQuickTask, isRunning: () => state.requestInFlight
+});
+const onboardingTour = createOnboardingTour({
+  root: document.querySelector("#onboarding-tour"),
+  t,
+  beforeStart: () => appShell.settings.setOpen(false, { persist: false })
+});
+const voiceInput = createVoiceInput({
+  button: document.querySelector("#voice-input-button"),
+  input: queryInput,
+  status: document.querySelector("#voice-input-status"),
+  t,
+  getLocale
+});
+restartOnboardingButton?.addEventListener("click", () => onboardingTour.start({ force: true }));
+
 function quickTasksForSeason() {
   const configured = localizedThemeValue(state.seasonContext?.theme?.quickQuestions, []);
   const configuredIndexes = new Map([
@@ -806,62 +831,8 @@ function quickTasksForSeason() {
   });
 }
 
-function quickTaskCardHtml(task) {
-  const isInteractive = task.query || task.queryKey || task.view || task.formFields;
-  const action = isInteractive
-    ? ` data-quick-task="${escapeHtml(task.id)}"`
-    : " disabled";
-  return `
-    <button type="button" class="quick-task-card${isInteractive ? "" : " is-planned"}"${action}>
-      <span class="quick-task-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${task.icon}</svg></span>
-      <span class="quick-task-copy">
-        <strong data-i18n="${task.titleKey}">${escapeHtml(t(task.titleKey))}</strong>
-        <small data-i18n="${task.bodyKey}">${escapeHtml(t(task.bodyKey))}</small>
-        <span class="quick-task-example" data-i18n="${task.exampleKey}">${escapeHtml(t(task.exampleKey))}</span>
-      </span>
-      <span class="quick-task-arrow" aria-hidden="true">→</span>
-    </button>
-  `;
-}
-
 function quickTasksHtml() {
-  const tasks = quickTasksForSeason();
-  const categoryCards = QUICK_TASK_CATEGORIES.map((category) => `
-    <button type="button" class="quick-category-card" data-quick-category="${escapeHtml(category.id)}" aria-expanded="false" aria-controls="quick-category-panel-${escapeHtml(category.id)}">
-      <span class="quick-category-icon" aria-hidden="true"><svg viewBox="0 0 24 24">${category.icon}</svg></span>
-      <span class="quick-category-copy">
-        <strong data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
-        <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
-      </span>
-      <span class="quick-category-count" data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
-      <span class="quick-category-chevron" aria-hidden="true">⌄</span>
-    </button>
-  `).join("");
-  const panels = QUICK_TASK_CATEGORIES.map((category) => {
-    const categoryTasks = tasks.filter((task) => task.category === category.id);
-    return `
-      <section class="quick-task-panel" id="quick-category-panel-${escapeHtml(category.id)}" data-quick-category-panel="${escapeHtml(category.id)}" aria-labelledby="quick-category-title-${escapeHtml(category.id)}" hidden>
-        <header class="quick-task-panel-heading">
-          <div>
-            <strong id="quick-category-title-${escapeHtml(category.id)}" data-i18n="${category.titleKey}">${escapeHtml(t(category.titleKey))}</strong>
-            <small data-i18n="${category.bodyKey}">${escapeHtml(t(category.bodyKey))}</small>
-          </div>
-          <span data-i18n="${category.countKey}">${escapeHtml(t(category.countKey))}</span>
-        </header>
-        <div class="quick-task-list">${categoryTasks.map(quickTaskCardHtml).join("")}</div>
-      </section>
-    `;
-  }).join("");
-  return `
-    <section class="quick-tasks" data-i18n-aria="quickTasksLabel" aria-label="${escapeHtml(t("quickTasksLabel"))}">
-      <div class="quick-tasks-heading">
-        <strong data-i18n="quickTasksTitle">${escapeHtml(t("quickTasksTitle"))}</strong>
-        <span data-i18n="quickTasksHint">${escapeHtml(t("quickTasksHint"))}</span>
-      </div>
-      <div class="quick-category-grid">${categoryCards}</div>
-      ${panels}
-    </section>
-  `;
+  return quickToolLibrary.welcomeHtml();
 }
 
 const QUICK_TASK_FIELD_DEFINITIONS = {
@@ -877,6 +848,7 @@ const QUICK_TASK_FIELD_DEFINITIONS = {
 };
 
 function closeQuickTaskForm({ focus = false } = {}) {
+  voiceInput.cancel({ silent: true });
   activeQuickTask = null;
   quickTaskForm.hidden = true;
   quickTaskFields.replaceChildren();
@@ -956,30 +928,6 @@ async function submitQuickTaskForm() {
     }
   );
   return true;
-}
-
-function collapseQuickTaskCategories(section) {
-  if (!section) return;
-  for (const button of section.querySelectorAll("[data-quick-category]")) {
-    button.setAttribute("aria-expanded", "false");
-  }
-  for (const panel of section.querySelectorAll("[data-quick-category-panel]")) {
-    panel.hidden = true;
-  }
-}
-
-function toggleQuickTaskCategory(button) {
-  const section = button.closest(".quick-tasks");
-  if (!section) return;
-  const category = button.dataset.quickCategory;
-  const shouldExpand = button.getAttribute("aria-expanded") !== "true";
-  collapseQuickTaskCategories(section);
-  if (!shouldExpand) return;
-  const panel = [...section.querySelectorAll("[data-quick-category-panel]")]
-    .find((entry) => entry.dataset.quickCategoryPanel === category);
-  if (!panel) return;
-  button.setAttribute("aria-expanded", "true");
-  panel.hidden = false;
 }
 
 function welcomeConversationHtml(messageKey = "newConversation") {
@@ -1297,15 +1245,17 @@ function renderCompUnit(unit, comp, expanded = false) {
 }
 
 function compDetailDescriptor(comp) {
-  const compId = String(comp?.source?.clusterId ?? "").trim();
-  const dataClusterId = String(comp?.source?.dataClusterId ?? "").trim();
+  const embeddedDetail = comp?.tacticalDetail ?? null;
+  const compId = String(embeddedDetail?.compositionId ?? comp?.source?.clusterId ?? "").trim();
+  const dataClusterId = String(embeddedDetail?.clusterId ?? comp?.source?.dataClusterId ?? "").trim();
   if (!compId || !dataClusterId) return null;
   const units = [...new Set((comp?.units ?? [])
     .map((unit) => String(unit?.apiName ?? "").trim())
     .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
-  const seasonContextId = String(state.seasonContextId ?? "").trim();
-  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|");
-  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units };
+  const seasonContextId = String(embeddedDetail?.seasonContextId ?? state.seasonContextId ?? "").trim();
+  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|")
+    + (embeddedDetail ? `|${embeddedDetail.rankingEvidenceId}|${embeddedDetail.evidenceId ?? "missing"}` : "");
+  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units, embeddedDetail };
   state.compDetailDescriptors.set(key, descriptor);
   return descriptor;
 }
@@ -1420,8 +1370,10 @@ function renderCompFormation(comp, formation, placedUnits) {
   if (!placedUnits.size) {
     return `<section class="comp-formation" data-status="unavailable"><h3>${escapeHtml(t("compFormation"))}</h3><p>${escapeHtml(t("compFormationUnavailable"))}</p></section>`;
   }
-  return `<section class="comp-formation" data-status="available">
+  const partial = formation?.status === "partial";
+  return `<section class="comp-formation" data-status="${partial ? "partial" : "available"}">
     <h3>${escapeHtml(t("compFormation"))}</h3>
+    ${partial ? `<p>${escapeHtml(t("compFormationPartial"))}</p>` : ""}
     <div class="comp-hex-board" role="group" aria-label="${escapeHtml(t("compFormation"))}">
       ${Array.from({ length: 28 }, (_, cell) => {
         const row = Math.floor(cell / 7);
@@ -1501,7 +1453,10 @@ function compDetailSourceLabel(source) {
 }
 
 function renderCompDetailContent(descriptor) {
-  const detailState = state.compDetailCache.get(descriptor.key);
+  const detailState = descriptor.embeddedDetail ?? state.compDetailCache.get(descriptor.key);
+  if (descriptor.embeddedDetail && !detailState.data) {
+    return renderCompFormation(descriptor.comp, null, new Map());
+  }
   if (!detailState || detailState.status === "loading") {
     return `<div class="comp-detail-state" data-status="loading" aria-live="polite">${escapeHtml(t("compDetailLoading"))}</div>`;
   }
@@ -1534,6 +1489,9 @@ function updateCompDetailPanels(key) {
 }
 
 async function loadCompDetail(descriptor, { retry = false } = {}) {
+  // ReAct cards render their own Ledger snapshot. Opening them must not fetch a
+  // different formation that the model never observed, or silently fill a gap.
+  if (descriptor.embeddedDetail) return;
   const cached = state.compDetailCache.get(descriptor.key);
   if (!retry && (cached?.status === "ready" || cached?.status === "unavailable" || cached?.status === "loading")) return;
   if (state.compDetailRequests.has(descriptor.key)) return state.compDetailRequests.get(descriptor.key);
@@ -2330,7 +2288,8 @@ function conditionChipValue(key, constraint, query) {
   }
   if (key === "star_level") return t("starLevel", { value: (value ?? []).join("/") });
   if (key === "item_count") return t("completedItems", { value });
-  if (key === "item_policy") return itemPolicyChip(value);
+  if (key === "item_policy") return query.itemPolicyScope === "remaining_items"
+    ? t("remainingItemPolicy", { value: itemPolicyChip(value) }) : itemPolicyChip(value);
   if (key === "item_categories") {
     const labels = { radiant: t("radiant"), artifact: t("artifact"), emblem: t("emblem") };
     return (Array.isArray(value) ? value : [value]).map((category) => labels[category] ?? category).join("/");
@@ -2754,6 +2713,30 @@ function equipmentCoreConclusionText(data) {
   return items.length ? t("chatCoreWithItems", params) : t("chatCoreWithoutItems", params);
 }
 
+function chatCoreItemsHtml(data) {
+  if (!EQUIPMENT_CORE_RESULT_TYPES.has(data?.type)) return "";
+  const summary = data?.coreItemSummary ?? data?.answer?.coreConclusion;
+  const seen = new Set();
+  const items = (summary?.items ?? []).filter((item) => {
+    if (!item || typeof item !== "object" || !item.iconUrl) return false;
+    const identity = String(item.apiName ?? localizedName(item)).trim();
+    if (!identity || seen.has(identity)) return false;
+    seen.add(identity);
+    return true;
+  });
+  if (!items.length) return "";
+  return `<aside class="chat-core-items" data-chat-core-items aria-label="${escapeHtml(t("conclusionCoreItems"))}">
+    <span class="chat-core-items-label">${escapeHtml(t("conclusionCoreItems"))}</span>
+    <div class="chat-core-item-list">${items.map((item) => {
+      const label = localizedName(item, t("item"));
+      return `<span class="chat-core-item" title="${escapeHtml(label)}">
+        ${assetThumb(item.iconUrl, label, "chat-core-item-icon", item.fallbackIconUrl)}
+        <strong>${escapeHtml(label)}</strong>
+      </span>`;
+    }).join("")}</div>
+  </aside>`;
+}
+
 function isSpecialItemRanking(data) {
   return data?.type === ItemRankingResult.type
     && (data?.query?.itemCategories ?? []).some((category) => ["radiant", "artifact"].includes(category));
@@ -2895,12 +2878,13 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
     <header>
       <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
       <small>${escapeHtml(t(systemFallback
-        ? "systemConclusionFallback"
+        ? data?.terminationReason === "deadline_exceeded" ? "systemConclusionDeadline" : "systemConclusionFallback"
         : hasGroundingWarnings
           ? "modelConclusionGroundingWarning"
           : softValidated ? "modelConclusionPendingVerification"
           : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
     </header>
+    ${chatCoreItemsHtml(data)}
     ${conclusionRichTextHtml(answer || summary)}
     ${feedbackHtml}
   </section>`;
@@ -3047,7 +3031,7 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
   if (modelConclusion) {
     return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
-  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${chatCoreItemsHtml(data)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -3130,6 +3114,9 @@ function activateResponseResult(record) {
 
 function rerenderLocalizedState() {
   applyI18n();
+  quickToolLibrary.refreshLocale();
+  onboardingTour.refreshLocale();
+  voiceInput.refreshLocale();
   if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
@@ -3164,11 +3151,17 @@ function renderItemRankings(data) {
   if (data.itemPerformance) {
     const performance = data.itemPerformance;
     const target = performance.item;
-    const rankingCards = performance.topRankings ?? [];
+    const allRankings = data.itemRankings ?? [];
+    const rankingCards = (allRankings.length ? allRankings : performance.topRankings ?? [])
+      .slice(0, itemRankingDisplayLimit(data));
+    const rankingTitle = allRankings.length
+      ? `同条件装备排行榜（前 ${rankingCards.length} / 共 ${allRankings.length}）`
+      : `同条件装备 Top ${rankingCards.length}`;
     setResponseHtml(`
       ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", performance.conclusion ?? data.answer?.summary ?? data.text, "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
       ${target ? `<section class="item-ranking-list"><h2>\u6307\u5b9a\u88c5\u5907</h2><article class="item-ranking-card best"><div class="item-ranking-head">${assetThumb(target.iconUrl, localizedName(target), "tiny-item-icon")}<strong>${escapeHtml(localizedName(target))}</strong><span>${performance.rank ? `#${performance.rank}` : t("lowSample")}</span></div><div class="stats">${metric(t("top4"), `${formatNumber(target.stats.top4)}%`)}${metric(t("win"), `${formatNumber(target.stats.win)}%`)}${metric(t("avg"), formatNumber(target.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(target.stats.games))}</div></article></section>` : ""}
-      <section class="item-ranking-list"><h2>\u540c\u6761\u4ef6\u88c5\u5907 Top 3</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
+      ${itemRankingModeControl(data)}
+      <section class="item-ranking-list"><h2>${escapeHtml(rankingTitle)}</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
       <div class="item-ranking-meta">${t("methodology")}：${escapeHtml(data.answer?.methodology ?? "")}</div>${conditionPanel(data)}${sourceAndRisk(data)}
     `);
     return;
@@ -3982,6 +3975,11 @@ function renderCurrentResult(data) {
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details", "strategy_video_search_results"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
+  if (data.compositionResultGroups?.length && !["comp_rankings", "comp_trends", "comp_analysis"].includes(data.type)) {
+    resultContentEl.insertAdjacentHTML("beforeend", `<div class="composition-result-groups">${data.compositionResultGroups.map((group, index) =>
+      `<section class="composition-result-group" data-evidence-id="${escapeHtml(group.evidenceId)}">${compRankingsHtml(group.result, { initiallyOpen: index === 0, grouped: true })}</section>`).join("")}</div>`);
+    queueOpenCompDetailLoads();
+  }
   const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
   const knowledgeHtml = renderKnowledgeEvidence(data);
@@ -4652,9 +4650,15 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
       : "The model decision service is temporarily unavailable, so the data query did not complete. Please retry.";
   }
   if (code === "missing_required_evidence") {
+    const hasVideoEvidence = Array.isArray(failure?.evidence)
+      && failure.evidence.some((entry) => entry?.value?.type === "strategy_video_search_results");
     return getLocale().startsWith("zh")
-      ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
-      : "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below.";
+      ? hasVideoEvidence
+        ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
+        : "\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u6570\u636e\u7ed3\u679c\u3002"
+      : hasVideoEvidence
+        ? "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below."
+        : "The generated summary did not pass evidence validation. The verifiable data results are shown below.";
   }
   return rawMessage || fallback;
 }
@@ -4790,6 +4794,7 @@ function normalizeReactCompositionRankings(value) {
     })),
     traits: result.traits ?? [],
     stats: result.stats ?? {},
+    tacticalDetailQueryPlan: result.tacticalDetailQueryPlan ?? null,
     source: result.source ?? value.source ?? null
   }));
   return {
@@ -4874,7 +4879,9 @@ function normalizeEndpointPayload(payload) {
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
     ? payload.answer
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
-  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  const displayIds = new Set([...(payload.evidenceIds ?? []), ...(payload.cardEvidenceIds ?? [])]);
+  const evidence = (Array.isArray(payload.evidence) ? payload.evidence : [])
+    .filter(entry => payload.compositionCardScope !== true || displayIds.has(entry.evidenceId));
   const nativeResultTypes = new Set([
     "composition_rankings",
     "comp_rankings",
@@ -4907,17 +4914,30 @@ function normalizeEndpointPayload(payload) {
     "trait_external_unit_statistics", "strategy_video_search_results",
     "unit_details", "item_details", "trait_details", "entity_catalog_results"
   ];
-  const primaryValue = primaryTypeOrder
+  let primaryValue = primaryTypeOrder
     .map((type) => evidenceValues.find((value) => value?.type === type))
     .find(Boolean)
     ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
     ?? null;
+  const compositionResultGroups = collectCompositionResultGroups(payload, normalizeReactCompositionRankings);
+  if (payload.compositionCardScope === true && compositionResultGroups.length
+    && ["composition_rankings", "comp_rankings", "composition_tactical_details"].includes(primaryValue?.type)) {
+    primaryValue = compositionResultGroups[0].result;
+  }
+  // Positioning is a field of its cited composition card, not a replacement
+  // for all the ranked cards. A standalone positioning answer keeps its view.
+  if (primaryValue?.type === "composition_tactical_details") {
+    const primaryEntry = evidence.find((entry) => entry.value === primaryValue);
+    const matchingGroup = compositionResultGroups.find((group) => hasBoundTacticalEvidence(group, primaryEntry?.evidenceId));
+    if (matchingGroup) primaryValue = matchingGroup.result;
+  }
   const officialDetailValue = primaryValue?.schemaVersion === "official-entity-detail.v1"
     ? normalizeReactOfficialDetail(primaryValue)
     : primaryValue;
-  const displayValue = officialDetailValue?.type === "composition_rankings"
+  const selectedRankingGroup = compositionResultGroups.find((group) => evidence.some((entry) => entry.evidenceId === group.evidenceId && entry.value === primaryValue));
+  const displayValue = selectedRankingGroup?.result ?? (officialDetailValue?.type === "composition_rankings"
     ? normalizeReactCompositionRankings(officialDetailValue)
-    : officialDetailValue;
+    : officialDetailValue);
   const comparisonDetails = displayValue?.type === "unit_item_comparison"
     ? new Map(evidenceValues
       .filter((value) => value?.type === "item_details")
@@ -4951,13 +4971,12 @@ function normalizeEndpointPayload(payload) {
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
-  const compositionResultGroups = ["comp_trends", "comp_rankings"].includes(displayValue?.type)
-    ? collectCompositionResultGroups(payload, normalizeReactCompositionRankings)
-    : [];
+  const supplementalCompositions = ["unit_build_rankings", "unit_build_completion", "unit_best_3_items", "unit_builds_batch_results"].includes(displayValue?.type);
   return {
     ...(hydratedDisplayValue ?? {}),
     ...payload,
-    ...(compositionResultGroups.length > 1 ? { compositionResultGroups } : {}),
+    ...((compositionResultGroups.length > 1 && ["comp_rankings", "comp_trends"].includes(displayValue?.type))
+      || (compositionResultGroups.length && supplementalCompositions) ? { compositionResultGroups } : {}),
     ...(clarification ? { clarification } : {}),
     ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
       ? { status: displayValue.status, runStatus: payload.status }
@@ -5018,7 +5037,7 @@ function setRequestRunning(running) {
   refreshButton.disabled = running || !state.lastInput;
   resultRefreshButton.disabled = running || !state.lastInput;
   form.querySelector("button[type=submit]").disabled = running;
-  for (const button of resultEl.querySelectorAll("[data-quick-task]")) button.disabled = running;
+  for (const button of document.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
 }
@@ -5087,6 +5106,9 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
         ? { supplementalText: state.lastSupplementalText }
         : {}),
       ...(!state.lastQuickTask && reactChatEnabled ? { messages: reactChatMessages() } : {}),
+      ...(!state.lastQuickTask && reactChatEnabled ? {
+        historyQueryIds: state.responseRecords.slice(-8).map((record) => record.data?.queryId).filter(Boolean)
+      } : {}),
       ...(!state.lastQuickTask && state.activeAnalysisContext
         ? { analysisContext: state.activeAnalysisContext }
         : {}),
@@ -5144,6 +5166,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     if (requestId !== state.requestSerial) return;
     if (data.access) renderAccessStatus(data.access);
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("queryFailed"));
+    if (!reuseLastInput && quickTask && !data.clarification?.needsClarification) quickToolLibrary.recordUse(quickTask.id);
     completeRecommendationProgress(recommendationProgress, data);
     if (preserveResultPane) {
       setDeveloperOutput(data);
@@ -5156,7 +5179,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
           ?? ""
         ).trim();
         activeResponseEl.innerHTML = answer
-          ? `<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
+          ? `${chatCoreItemsHtml(data)}<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
           : `<div>${t("queryFailed")}</div>`;
       }
     } else {
@@ -5404,8 +5427,6 @@ async function launchQuickTask(quickTaskTarget) {
     ? quickTaskTarget
     : quickTaskTarget.dataset.quickTask;
   cancelOpggRequests();
-  // Keep the selected category expanded while its result is open, so
-  // returning to the conversation restores the same quick-entry context.
   const baseQuickTask = QUICK_TASKS.find((task) => task.id === taskId);
   const quickTask = quickTasksForSeason().find((task) => task.id === taskId) ?? baseQuickTask;
   if (!quickTask) return;
@@ -5414,6 +5435,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderPatchNote();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5421,6 +5443,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderOpggTrends();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5428,6 +5451,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderOpggPersonal();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5435,6 +5459,7 @@ async function launchQuickTask(quickTaskTarget) {
     state.currentConclusionController?.abort();
     state.currentConclusionController = null;
     renderOpggProTeaching();
+    quickToolLibrary.recordUse(quickTask.id);
     openMobileResult();
     return;
   }
@@ -5492,11 +5517,6 @@ async function handleResultClick(event) {
   const itemRankingMixButton = event.target.closest("button[data-item-ranking-mix-toggle]");
   if (itemRankingMixButton && ["unit_item_rankings", "unit_emblem_rankings"].includes(state.lastResult?.type)) {
     await toggleItemRankingMode(state.lastResult, itemRankingMixButton.dataset.itemRankingMixToggle === "on");
-    return;
-  }
-  const quickCategoryButton = event.target.closest("button[data-quick-category]");
-  if (quickCategoryButton) {
-    toggleQuickTaskCategory(quickCategoryButton);
     return;
   }
   const quickTaskButton = event.target.closest("button[data-quick-task]");
@@ -5656,7 +5676,8 @@ async function handleResultClick(event) {
     queryInput.value = action.query;
     setMobileView("chat");
     queryInput.focus();
-    await requestRecommendation(false);
+    const quickTask = action.quickTask ? structuredQuickTask(action.quickTask, action.quickTask.arguments) : null;
+    await requestRecommendation(false, action.label, quickTask ? { quickTask } : {});
     return;
   }
   if (!suggestionButton) return;
@@ -5737,6 +5758,7 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   rawOutputEl.textContent = "";
   closeQuickTaskForm();
   composer.clear();
+  quickToolLibrary.reset();
   resultEl.innerHTML = welcomeConversationHtml();
   renderEmptyResult();
   setMobileView("chat", { replaceHistory: true });
@@ -5968,3 +5990,4 @@ void loadSeasonContexts();
 loadPreferences();
 loadAccessStatus();
 void loadRuntimeStatus();
+onboardingTour.startIfNeeded();

@@ -3,6 +3,77 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
+test("opt-in tactical presentation changes only two presentation rules, preserving catalog, control and default prompt", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    const bodies = [];
+    const action = { schemaVersion: "react-action.v1", type: "finish", answer: "当前资料不足。",
+      evidenceIds: [], reasonCode: "insufficient_evidence", narrative: null };
+    const request = { state: { question: "沃里克怎么玩？", tacticalPresentationScope: true,
+      transcript: [{ type: "runtime_state", value: { nextActionAffordance: { recommendedAction: "finish" } } }] },
+      toolCatalog: [{ name: "unit_details", inputSchema: { type: "object", additionalProperties: false } }] };
+    for (const tacticalPresentationScope of [undefined, false, true, "true"]) {
+      const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+        tacticalPresentationScope, fetchImpl: async (_url, init) => {
+          bodies.push(JSON.parse(init.body));
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(action) } }] }) };
+        } });
+      assert.deepEqual((await provider(request)).action, action);
+    }
+    assert.deepEqual(bodies[0], bodies[1]);
+    assert.deepEqual(bodies[0], bodies[3]); // Request data and truthy strings cannot enable it.
+    const baseline = bodies[0].messages[0].content.split("\n");
+    const candidate = bodies[2].messages[0].content.split("\n");
+    assert.equal(candidate.length, baseline.length);
+    assert.equal(candidate.filter((line, index) => line !== baseline[index]).length, 2);
+    assert.match(candidate.join("\n"), /Missing requested formation must be disclosed/);
+    assert.match(candidate.join("\n"), /only when augments were requested/);
+    assert.match(candidate.join("\n"), /execute callTool exactly as provided/);
+    const versionNeutral = (body) => body.messages.slice(1).map(message => ({ ...message,
+      content: message.content.replaceAll("react-decision-contract.v5.tactical-presentation.v1", "react-decision-contract.v5") }));
+    assert.deepEqual(versionNeutral(bodies[0]), versionNeutral(bodies[2]));
+    assert.equal(bodies[0].max_tokens, bodies[2].max_tokens);
+  }
+});
+
+test("ordinary-only follow-ups get current scope guidance in both provider layouts", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    for (const question of ["不含特殊装备", "修改为只包含普通装备", "改为近3天", "改为近7天"]) {
+      let body;
+      const provider = createReactDecisionProvider({
+        endpoint: "https://example.test/chat/completions", model: "test-model", messageLayout,
+        fetchImpl: async (_url, options) => {
+          body = JSON.parse(options.body);
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
+            arguments: { unit: "DA_18_Aphelios", itemPolicy: "ordinary_only" }, purposeCode: "retrieve_current_statistics"
+          }) } }] }) };
+        }
+      });
+      await provider({ state: { question, evidence: [], messages: [
+        { role: "user", content: "厄斐琉斯已有斗转和羊刀" },
+        ...(question === "改为近7天" ? [
+          { role: "user", content: "第三件只要普通装备" },
+          { role: "assistant", content: "包含特殊装备" }
+        ] : [])
+      ],
+        bridgeContext: { relation: "modify", records: [{ operation: "unit_build_completion" }] } },
+        toolCatalog: [{ name: "unit_builds", inputSchema: { type: "object" } }] });
+      if (question === "改为近3天") {
+        const guidance = body.messages.find(message => message.content.includes("equipment-completion-guidance.v1"));
+        assert.match(guidance?.content ?? "", /never unit_builds_batch/);
+        assert.match(guidance.content, /Do not lock the recommended third item/);
+        continue;
+      }
+      const guidance = body.messages.find(message => message.content.includes("equipment-category-guidance.v1"));
+      assert.match(guidance?.content ?? "", /"itemPolicy":"ordinary_only"/u);
+      assert.match(guidance.content, /does not change complete builds into single-item rankings/u);
+      assert.match(guidance.content, /Re-query current unit_builds evidence/u);
+      assert.match(guidance.content, /ordinary-only restricts the NEW remaining items/u);
+      assert.match(guidance.content, /retain all lockedItems even when they are special/u);
+    }
+  }
+});
+
 test("react decision provider sends bounded state and returns a validated action", async () => {
   let observedBody;
   const provider = createReactDecisionProvider({

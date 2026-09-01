@@ -127,7 +127,7 @@ test("NA account registration uses MetaTFT live history instead of OP.GG", async
         assert.equal(name, "list_matches");
         assert.deepEqual(
           { environment: input.environment, season: input.season, verificationMode: input.verificationMode },
-          { environment: "live", season: "set17-live", verificationMode: "provider" }
+          { environment: "live", season: "set18-live", verificationMode: "provider" }
         );
         return {
           returnedCount: 1,
@@ -215,6 +215,7 @@ test("refresh updates personal accounts and every owned Pool member without cros
         observedRoutes.push({ gameName: input.gameName, environment: input.environment, season: input.season });
         const isPbe = input.environment === "pbe";
         return {
+          provenance: { cacheStatus: "miss", refreshStatus: "completed" },
           returnedCount: 1,
           matches: [{
             matchId: `${isPbe ? "PBE1" : "NA1"}_REFRESH_${input.gameName}`,
@@ -261,7 +262,7 @@ test("refresh updates personal accounts and every owned Pool member without cros
   assert.equal(playerMatchClosed, 1);
   assert.equal(playerMatchCalls, 3);
   assert.deepEqual(observedRoutes.toSorted((a, b) => a.gameName.localeCompare(b.gameName)), [
-    { gameName: "NaUser", environment: "live", season: "set17-live" },
+    { gameName: "NaUser", environment: "live", season: "set18-live" },
     { gameName: "PbeUser", environment: "pbe", season: "set18-pbe" },
     { gameName: "PoolUser", environment: "pbe", season: "set18-pbe" }
   ]);

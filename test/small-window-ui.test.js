@@ -3,6 +3,11 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import vm from "node:vm";
 import { collectCompositionResultGroups } from "../src/app/small-window-ui/composition-result-groups.js";
+import { hasBoundTacticalEvidence } from "../src/app/small-window-ui/composition-card-details.js";
+import { createToolPreferences, normalizeToolPreferences, recommendQuickTools, QUICK_TOOL_STORAGE_KEY } from "../src/app/small-window-ui/quick-tool-preferences.js";
+import { setupToolMenu } from "../src/app/small-window-ui/quick-tool-library.js";
+import { normalizeOnboardingState, readOnboardingState, writeOnboardingState, ONBOARDING_STORAGE_KEY } from "../src/app/small-window-ui/onboarding-tour.js";
+import { appendVoiceTranscript, createVoiceInput } from "../src/app/small-window-ui/voice-input.js";
 import { matrixLabels, spreadCoincidentMatrixPoints } from "../src/app/small-window-ui/opgg-panel.js";
 
 const ui = (name) => readFileSync(new URL(`../src/app/small-window-ui/${name}`, import.meta.url), "utf8");
@@ -21,6 +26,50 @@ const termsHtml = ui("terms.html");
 const legalCss = ui("legal.css");
 const opggPanel = ui("opgg-panel.js");
 const opggStyles = ui("opgg-panel.css");
+
+test("header and settings language buttons share one locale handler", () => {
+  const TitleBar = vm.runInNewContext(appShell.replaceAll("export ", "") + "\nTitleBar;");
+  function node(parent = null, locale = null) {
+    return { parent, dataset: locale ? { locale } : {}, listeners: [],
+      addEventListener(type, handler) { if (type === "click") this.listeners.push(handler); },
+      closest() { return this.dataset.locale ? this : this.parent?.closest() ?? null; },
+      click() { for (let current = this; current; current = current.parent) {
+        for (const handler of current.listeners) handler({ target: this });
+      } }
+    };
+  }
+  const shell = node(), header = node(shell), settings = node(shell);
+  const headerZh = node(header, "zh-CN"), headerEn = node(header, "en-US");
+  const settingsEn = node(settings, "en-US"), settingsZh = node(settings, "zh-CN");
+  let locale = "zh-CN";
+  const changes = [];
+  new TitleBar({ root: header, localeRoot: shell, getLocale: () => locale,
+    onLocaleChange(next) { locale = next; changes.push(next); } });
+  node(settingsEn).click();
+  assert.equal(locale, "en-US", "settings button must switch to English");
+  settingsEn.click();
+  headerZh.click();
+  headerEn.click();
+  settingsZh.click();
+  node(settings).click();
+  assert.deepEqual(changes, ["en-US", "zh-CN", "en-US", "zh-CN"]);
+  assert.equal(shell.listeners.length, 1, "one shared listener avoids double dispatch");
+  assert.match(appJs, /new TitleBar\(\{\s*root: document.querySelector\("#title-bar"\),\s*localeRoot: shellEl,/);
+});
+
+test("equipment policy chips distinguish remaining items from a whole-build restriction", () => {
+  const messages = vm.runInNewContext(i18n.slice(0, i18n.indexOf("let locale ="))
+    .replaceAll("export ", "") + "\nmessages;");
+  for (const locale of ["zh-CN", "en-US"]) {
+    const scope = vm.createContext({ t: (key, values = {}) => Object.entries(values).reduce(
+      (text, [name, value]) => text.replaceAll(`{${name}}`, String(value)), messages[locale][key] ?? key) });
+    vm.runInContext(appJs.slice(appJs.indexOf("function itemPolicyChip("), appJs.indexOf("function conditionChips(")), scope);
+    const constraint = { value: "ordinary_only" };
+    assert.equal(scope.conditionChipValue("item_policy", constraint, { itemPolicyScope: "remaining_items" }),
+      locale === "zh-CN" ? "待补装备：普通装备" : "Remaining items: Normal items");
+    assert.equal(scope.conditionChipValue("item_policy", constraint, {}), messages[locale].ordinaryItems);
+  }
+});
 
 test("direct MetaTFT match views render localized entities, assets, and freshness", () => {
   assert.match(opggPanel, /displayName: unit\.displayName \?\? unit\.characterId/);
@@ -138,13 +187,16 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.match(i18n, /closeSeasonNotice/);
 });
 
-test("welcome view exposes categorized, localized, actionable quick tasks", () => {
+test("welcome recommendations and searchable tool library reuse deterministic quick tasks", () => {
   assert.match(indexHtml, /class="quick-tasks"/);
-  assert.equal((indexHtml.match(/class="quick-category-card/g) ?? []).length, 4);
-  assert.match(indexHtml, /data-quick-category="equipment"/);
-  assert.match(indexHtml, /data-quick-category="comps"/);
-  assert.match(indexHtml, /data-quick-category="library"/);
-  assert.match(indexHtml, /data-quick-category="news"/);
+  assert.match(indexHtml, /data-open-tools="all"/);
+  assert.match(indexHtml, /data-open-tools="favorites"/);
+  assert.match(indexHtml, /<dialog id="tool-library"/);
+  assert.match(indexHtml, /type="search"/);
+  assert.match(ui("quick-tool-library.js"), /data-tool-category=/);
+  assert.match(ui("quick-tool-library.js"), /data-favorite-tool=/);
+  assert.match(ui("quick-tool-library.js"), /data-shuffle-tools/);
+  assert.match(ui("quick-tool-library.js"), /dialog\.showModal\(\)/);
   assert.match(appJs, /const QUICK_TASK_CATEGORIES/);
   assert.match(appJs, /const QUICK_TASKS/);
   assert.equal((appJs.match(/category: "comps"/g) ?? []).length, 3);
@@ -174,7 +226,6 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(i18n, /quickTaskCarriersTitle: "神器\/装备定阵"/);
   assert.doesNotMatch(i18n, /霞|Xayah/);
   assert.match(appJs, /quickTasksHtml/);
-  assert.match(appJs, /button\[data-quick-category\]/);
   assert.match(appJs, /button\[data-quick-task\]/);
   assert.doesNotMatch(appJs, /collapseQuickTaskCategories\(quickTaskButton\.closest\("\.quick-tasks"\)\)/);
   assert.doesNotMatch(indexHtml, /class="composer-feature-shortcuts"/);
@@ -194,13 +245,14 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(appJs, /locale: getLocale\(\)/);
   assert.match(appJs, /operation: "unit_build_rankings"/);
   assert.match(appJs, /quickTask: state\.lastQuickTask/);
-  assert.match(i18n, /快捷查询可跳过语义理解，通常返回更快/);
+  assert.match(i18n, /welcome: "使用工具查询通常更快，也可以直接用自然语言提问。"/);
+  assert.match(i18n, /newConversation: "使用工具查询通常更快，也可以直接用自然语言提问。"/);
   assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "17\.9"/);
-  assert.match(patchNotes, /publishedAt: "2026-08-11T18:00:00\.000Z"/);
-  assert.match(patchNotes, /teamfight-tactics-patch-17-9/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "18\.1"/);
+  assert.match(patchNotes, /publishedAt: "2026-08-25T18:00:00\.000Z"/);
+  assert.match(patchNotes, /teamfight-tactics-patch-18-1/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
@@ -216,6 +268,276 @@ test("welcome view exposes categorized, localized, actionable quick tasks", () =
   assert.match(styles, /\.topbar[\s\S]*color-mix\(in srgb, var\(--wallpaper-accent\)[\s\S]*var\(--wallpaper-accent-secondary\)/);
   assert.match(wallpaperCatalog, /accentSecondary/);
   assert.match(wallpaperController, /--wallpaper-accent-secondary/);
+});
+
+test("first-use onboarding is dismissible, replayable, and remembers terminal state", () => {
+  const source = ui("onboarding-tour.js");
+  const css = ui("onboarding-tour.css");
+  assert.match(indexHtml, /id="onboarding-tour"/);
+  assert.match(indexHtml, /id="restart-onboarding-button"/);
+  assert.match(indexHtml, /data-onboarding-action="dismiss"/);
+  assert.match(source, /event\.key === "Escape"/);
+  assert.match(source, /#tool-menu-toggle/);
+  assert.match(source, /data-open-tools="all"/);
+  assert.match(source, /data-open-tools="favorites"/);
+  assert.match(source, /#query-input/);
+  assert.match(appJs, /onboardingTour\.startIfNeeded\(\)/);
+  assert.match(appJs, /onboardingTour\.start\(\{ force: true \}\)/);
+  assert.doesNotMatch(css, /backdrop-filter:\s*blur/u);
+  assert.equal(normalizeOnboardingState(null), null);
+  assert.equal(normalizeOnboardingState("not-json"), null);
+  assert.equal(normalizeOnboardingState(JSON.stringify({ version: 2, status: "completed" })), null);
+  assert.deepEqual(normalizeOnboardingState(JSON.stringify({ version: 1, status: "dismissed" })), { version: 1, status: "dismissed" });
+  const values = new Map();
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  assert.equal(readOnboardingState(storage), null);
+  assert.equal(writeOnboardingState(storage, "completed"), true);
+  assert.ok(values.has(ONBOARDING_STORAGE_KEY));
+  assert.deepEqual(readOnboardingState(storage), { version: 1, status: "completed" });
+});
+
+test("voice input appends editable transcripts and exposes listening state without auto-submitting", () => {
+  class FakeElement extends EventTarget {
+    constructor() {
+      super();
+      this.attributes = new Map();
+      this.classList = { toggle() {} };
+      this.hidden = true;
+      this.textContent = "";
+      this.title = "";
+      this.value = "";
+      this.form = new EventTarget();
+    }
+    setAttribute(name, value) { this.attributes.set(name, String(value)); }
+  }
+  class FakeRecognition {
+    static current = null;
+    constructor() { FakeRecognition.current = this; }
+    start() { this.onstart(); }
+    stop() { this.onend(); }
+    abort() { this.onend(); }
+    result(transcript, isFinal = false) {
+      const entry = [{ transcript }];
+      entry.isFinal = isFinal;
+      this.onresult({ results: [entry] });
+    }
+  }
+  const button = new FakeElement();
+  const input = new FakeElement();
+  const status = new FakeElement();
+  input.value = "帮我分析";
+  const copy = {
+    voiceStart: "语音输入", voiceStop: "停止语音输入", voiceUnsupported: "不支持",
+    voiceRequestingPermission: "请求权限", voiceListening: "正在聆听", voiceStopped: "已停止"
+  };
+  const controller = createVoiceInput({ button, input, status, t: key => copy[key] ?? key, getLocale: () => "zh-CN", RecognitionConstructor: FakeRecognition });
+  let submitted = false;
+  input.form.addEventListener("submit", () => { submitted = true; });
+  button.dispatchEvent(new Event("click"));
+  assert.equal(controller.active, true);
+  assert.equal(FakeRecognition.current.lang, "zh-CN");
+  assert.equal(FakeRecognition.current.continuous, true);
+  assert.equal(FakeRecognition.current.interimResults, true);
+  assert.equal(button.attributes.get("aria-pressed"), "true");
+  FakeRecognition.current.result("厄斐琉斯怎么出装", true);
+  assert.equal(input.value, "帮我分析厄斐琉斯怎么出装");
+  assert.equal(submitted, false);
+  button.dispatchEvent(new Event("click"));
+  assert.equal(controller.active, false);
+  assert.equal(button.attributes.get("aria-pressed"), "false");
+  assert.equal(appendVoiceTranscript("compare these", "items"), "compare these items");
+  assert.equal(appendVoiceTranscript("分析", "阵容"), "分析阵容");
+  assert.match(indexHtml, /id="voice-input-button"[\s\S]*?<svg/u);
+  assert.match(indexHtml, /id="voice-input-status"[^>]*aria-live="polite"/u);
+  assert.match(ui("quick-tools.css"), /\.voice-input-button\.is-listening/u);
+  assert.doesNotMatch(ui("voice-input.js"), /requestSubmit|\.submit\(/u);
+});
+
+function toolPreferenceFixture(initial = null) {
+  let time = new Date(2026, 7, 20, 12).getTime();
+  const values = new Map(initial ? [[QUICK_TOOL_STORAGE_KEY, JSON.stringify(initial)]] : []);
+  const storage = { getItem: key => values.get(key) ?? null, setItem: (key, value) => values.set(key, value) };
+  const preferences = createToolPreferences({ ids: ["comp-trends", "unit-build", "patch-notes"], storage: () => storage, now: () => time });
+  return { preferences, values, storage, now: () => time, advance: days => { time += days * 86_400_000; } };
+}
+
+test("tool favorites are manual, deduplicated, validated, and survive reload", () => {
+  const f = toolPreferenceFixture();
+  for (let i = 0; i < 5; i++) f.preferences.recordUse("comp-trends");
+  assert.deepEqual(f.preferences.snapshot().favorites, []);
+  f.preferences.toggleFavorite("comp-trends");
+  f.preferences.toggleFavorite("unknown");
+  const restored = createToolPreferences({ ids: ["comp-trends", "unit-build", "patch-notes"], storage: () => f.storage, now: f.now });
+  assert.deepEqual(restored.snapshot().favorites, ["comp-trends"]);
+  restored.toggleFavorite("comp-trends");
+  assert.deepEqual(f.preferences.snapshot().favorites, []);
+  const normalized = normalizeToolPreferences({ favorites: ["comp-trends", "comp-trends", "removed"] }, ["comp-trends"], f.now());
+  assert.deepEqual(normalized.favorites, ["comp-trends"]);
+  assert.equal(JSON.stringify(f.preferences.snapshot()).includes("query"), false);
+});
+
+test("hiding chat recommendations persists independently of favorites and usage and can be undone", () => {
+  const f = toolPreferenceFixture();
+  assert.equal(f.preferences.snapshot().recommendationsHidden, false);
+  f.preferences.toggleFavorite("comp-trends");
+  f.preferences.recordUse("comp-trends");
+  const before = f.preferences.snapshot();
+  f.preferences.setRecommendationsHidden(true);
+  const restored = createToolPreferences({ ids: ["comp-trends", "unit-build", "patch-notes"], storage: () => f.storage, now: f.now });
+  assert.equal(restored.snapshot().recommendationsHidden, true);
+  assert.deepEqual(restored.snapshot().favorites, before.favorites);
+  assert.deepEqual(restored.snapshot().tools, before.tools);
+  restored.setRecommendationsHidden(false);
+  assert.equal(f.preferences.snapshot().recommendationsHidden, false);
+  assert.equal(normalizeToolPreferences({ recommendationsHidden: "true" }, []).recommendationsHidden, false);
+});
+
+test("favorite reminders require three uses across two days and share a 24 hour cooldown", () => {
+  const f = toolPreferenceFixture();
+  f.preferences.recordUse("comp-trends");
+  f.preferences.recordUse("comp-trends");
+  assert.equal(f.preferences.claimReminder("comp-trends"), false);
+  f.preferences.recordUse("comp-trends");
+  assert.equal(f.preferences.claimReminder("comp-trends"), false);
+  f.preferences.recordUse("unit-build");
+  f.advance(1);
+  f.preferences.recordUse("comp-trends");
+  assert.equal(f.preferences.claimReminder("comp-trends"), true);
+  f.preferences.recordUse("unit-build");
+  f.preferences.recordUse("unit-build");
+  assert.equal(f.preferences.claimReminder("unit-build"), false);
+  f.advance(1);
+  assert.equal(f.preferences.claimReminder("unit-build"), true);
+  assert.deepEqual(f.preferences.snapshot().favorites, []);
+});
+
+test("favorite reminder snooze, permanent opt-out, saved tools and rolling expiry are respected", () => {
+  const f = toolPreferenceFixture();
+  const use = id => { f.preferences.recordUse(id); f.preferences.recordUse(id); };
+  ["comp-trends", "unit-build", "patch-notes"].forEach(use);
+  f.advance(1);
+  ["comp-trends", "unit-build", "patch-notes"].forEach(use);
+  f.preferences.dismissReminder("comp-trends");
+  f.preferences.dismissReminder("unit-build", true);
+  f.preferences.toggleFavorite("patch-notes");
+  for (const id of ["comp-trends", "unit-build", "patch-notes"]) assert.equal(f.preferences.claimReminder(id), false);
+  f.advance(6);
+  use("comp-trends");
+  assert.equal(f.preferences.claimReminder("comp-trends"), false);
+  f.advance(1);
+  use("comp-trends");
+  assert.equal(f.preferences.claimReminder("comp-trends"), true);
+  assert.equal(f.preferences.claimReminder("unit-build"), false);
+  f.advance(8);
+  assert.deepEqual(f.preferences.snapshot().tools["comp-trends"].days, {});
+  use("comp-trends");
+  assert.equal(f.preferences.claimReminder("comp-trends"), false);
+  assert.deepEqual(f.preferences.snapshot().favorites, ["patch-notes"]);
+});
+
+test("tool storage tolerates corrupt or blocked storage and never loses session favorites", () => {
+  for (const storage of [() => { throw Error("denied"); }, () => ({ getItem: () => "{broken", setItem: () => { throw Error("quota"); } })]) {
+    const preferences = createToolPreferences({ ids: ["comp-trends"], storage });
+    assert.doesNotThrow(() => preferences.snapshot());
+    assert.equal(preferences.toggleFavorite("comp-trends").persistent, false);
+    assert.deepEqual(preferences.snapshot().favorites, ["comp-trends"]);
+    preferences.recordUse("comp-trends");
+    assert.deepEqual(preferences.snapshot().favorites, ["comp-trends"]);
+  }
+  const f = toolPreferenceFixture();
+  f.preferences.toggleFavorite("comp-trends");
+  f.values.clear();
+  assert.deepEqual(f.preferences.snapshot().favorites, []);
+});
+
+test("random recommendations are unique, rotate on demand and mix in personal shortcuts", () => {
+  const tasks = Array.from({ length: 8 }, (_, index) => ({ id: `tool-${index}`, query: "sample" }));
+  const preferences = normalizeToolPreferences({ favorites: ["tool-3"] }, tasks.map(task => task.id));
+  const first = recommendQuickTools([...tasks, tasks[0], { id: "disabled" }], preferences, { random: () => .4 });
+  assert.equal(first.length, 4);
+  assert.equal(new Set(first).size, 4);
+  assert.ok(first.includes("tool-3"));
+  const next = recommendQuickTools(tasks, preferences, { previous: first, random: () => .4 });
+  assert.equal(next.some(id => first.includes(id)), false);
+  assert.deepEqual(recommendQuickTools([], preferences), []);
+  assert.deepEqual(recommendQuickTools([tasks[0]], preferences), ["tool-0"]);
+  assert.equal(recommendQuickTools(tasks, preferences).every(id => tasks.some(task => task.id === id)), true);
+});
+
+test("shortcut usage only counts fresh successful submissions, not refreshes or form opening", () => {
+  const formOpen = appJs.slice(appJs.indexOf("function openQuickTaskForm("), appJs.indexOf("function quickTaskQuery("));
+  assert.doesNotMatch(formOpen, /recordUse/);
+  assert.match(appJs, /if \(!response\.ok \|\| !data\.ok\) throw[^\n]+\n\s*if \(!reuseLastInput && quickTask && !data\.clarification\?\.needsClarification\) quickToolLibrary\.recordUse\(quickTask\.id\)/);
+});
+
+test("compact chat recommendations preserve complete tool names without large descriptions", () => {
+  const source = ui("quick-tool-library.js");
+  const task = { id: "comp-trends", query: "趋势", titleKey: "title", bodyKey: "body", exampleKey: "example", icon: "" };
+  const copy = { title: "阵容趋势", body: "查看阵容上升、下降与选择率", example: "示例：当前版本哪些阵容在上升？" };
+  const scope = vm.createContext({
+    t: key => copy[key] ?? key, escape: value => String(value),
+    preferences: { snapshot: () => ({ favorites: [] }) },
+    tasks: () => [task], recommendQuickTools: () => [task.id],
+    recommendedIds: [], isRunning: () => false
+  });
+  vm.runInContext(source.slice(source.indexOf("  function favoriteButton("), source.indexOf("  function renderLibrary(")), scope);
+  const compact = scope.welcomeHtml();
+  const full = scope.card(task);
+  assert.match(compact, /<strong>阵容趋势<\/strong>/);
+  assert.match(full, /<strong>阵容趋势<\/strong>/);
+  assert.doesNotMatch(compact, /查看阵容上升|示例：|quick-task-icon/);
+  assert.match(full, /查看阵容上升、下降与选择率/);
+  assert.match(compact, /data-favorite-tool="comp-trends"/);
+  assert.equal((compact.match(/data-quick-task="comp-trends"/g) ?? []).length, 1);
+  assert.match(compact, /data-hide-recommendations/);
+  scope.preferences.snapshot = () => ({ favorites: [], recommendationsHidden: true });
+  const hidden = scope.welcomeHtml();
+  assert.match(hidden, /hidden/);
+  assert.doesNotMatch(hidden, /data-quick-task|data-shuffle-tools/);
+});
+
+test("composer plus menu opens, supports keyboard navigation and dismisses accessibly", () => {
+  const rootEvents = new Map();
+  const buttonEvents = new Map();
+  const attributes = new Map();
+  const root = { activeElement: null, addEventListener: (type, handler) => rootEvents.set(type, handler) };
+  const button = { addEventListener: (type, handler) => buttonEvents.set(type, handler), setAttribute: (key, value) => attributes.set(key, value), focus: () => { root.activeElement = button; }, click: () => buttonEvents.get("click")() };
+  let activations = 0;
+  const entries = Array.from({ length: 2 }, () => { const item = { focus: () => { root.activeElement = item; }, click: () => { activations++; } }; return item; });
+  const menu = { hidden: true, querySelectorAll: () => entries };
+  const anchor = { contains: target => target === button || entries.includes(target) };
+  const controller = setupToolMenu({ button, menu, anchor, root });
+  const key = value => rootEvents.get("keydown")({ key: value, target: root.activeElement, preventDefault() {} });
+  buttonEvents.get("click")();
+  assert.equal(menu.hidden, false);
+  assert.equal(attributes.get("aria-expanded"), "true");
+  assert.equal(root.activeElement, entries[0]);
+  key("ArrowDown");
+  assert.equal(root.activeElement, entries[1]);
+  key("ArrowDown");
+  assert.equal(root.activeElement, entries[0]);
+  key("End");
+  assert.equal(root.activeElement, entries[1]);
+  key("Enter");
+  key(" ");
+  assert.equal(activations, 2);
+  key("Escape");
+  assert.equal(menu.hidden, true);
+  assert.equal(attributes.get("aria-expanded"), "false");
+  assert.equal(root.activeElement, button);
+  buttonEvents.get("keydown")({ key: "ArrowUp", preventDefault() {}, stopPropagation() {} });
+  assert.equal(root.activeElement, entries[1]);
+  key("Tab");
+  assert.equal(menu.hidden, true);
+  buttonEvents.get("click")();
+  rootEvents.get("pointerdown")({ target: {} });
+  assert.equal(menu.hidden, true);
+  buttonEvents.get("click")();
+  controller.close({ restoreFocus: true });
+  assert.equal(root.activeElement, button);
+  assert.equal(menu.hidden, true);
+  assert.match(indexHtml, /class="composer-entry"[\s\S]*id="tool-menu-toggle"[\s\S]*role="menu"[\s\S]*id="query-input"/);
+  assert.doesNotMatch(indexHtml, /class="tool-launcher"/);
 });
 
 test("react clarification and post-answer guidance stay visible and continue immediately", () => {
@@ -288,7 +610,8 @@ test("OP.GG review views use the result pane and preserve navigation context", (
   assert.doesNotMatch(opggPanel, /const resultEl = el\("result"\)/u);
   assert.match(opggPanel, /backLink\("返回选手", "player", \{ player: state\.playerId \}\)/u);
   assert.match(opggPanel, /unit\.displayName \?\? unit\.characterId/u);
-  assert.match(opggPanel, /unit\.cost \?\? "\?"/u);
+  assert.match(opggPanel, /费用未知/u);
+  assert.doesNotMatch(opggPanel, /trait\.numUnits \?\? "\?"/u);
   assert.match(opggPanel, /itemDisplayNames/u);
   assert.doesNotMatch(opggPanel, /<option value="kr">/u);
   assert.doesNotMatch(opggPanel, /OP\.GG 风格评论/u);
@@ -329,6 +652,16 @@ test("mobile special-item questions receive a query-specific chat conclusion", (
   assert.match(appJs, /chatCoreConclusionText\(data\)/u);
   assert.match(i18n, /chatSpecialRankingWithItems/u);
   assert.match(i18n, /特殊装备按样本等级与表现分展示/u);
+});
+
+test("equipment chat conclusions show deterministic core item icons", () => {
+  assert.match(appJs, /function chatCoreItemsHtml\(data\)/u);
+  assert.match(appJs, /summary\?\.items \?\? \[\]/u);
+  assert.match(appJs, /typeof item !== "object" \|\| !item\.iconUrl/u);
+  assert.match(appJs, /data-chat-core-items/u);
+  assert.match(appJs, /assetThumb\(item\.iconUrl, label, "chat-core-item-icon"/u);
+  assert.match(styles, /\.chat-core-item-icon \{[^}]*width: 20px;[^}]*height: 20px/u);
+  assert.match(styles, /\.chat-core-item \{[^}]*display: inline-flex/u);
 });
 
 test("public UI exposes a visible, localized Riot fan-project notice", () => {
@@ -594,6 +927,7 @@ function compositionResultHarness() {
   let renders = 0;
   const context = vm.createContext({
     collectCompositionResultGroups,
+    hasBoundTacticalEvidence,
     conclusionDisplayText: (value) => value,
     t: (key) => key,
     escapeHtml: (value) => String(value ?? "").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
@@ -973,7 +1307,7 @@ test("comp units are keyboard-accessible shortcuts for explicit high-sample buil
 test("small-window exposes current-set entity catalogs with direct detail navigation", () => {
   assert.match(appJs, /id: "unit-catalog"/);
   assert.match(appJs, /id: "trait-catalog"/);
-  assert.match(appJs, /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.formFields/);
+  assert.match(ui("quick-tool-preferences.js"), /task\.query \|\| task\.queryKey \|\| task\.view \|\| task\.formFields/);
   assert.match(appJs, /data-entity-catalog/);
   assert.match(appJs, /data-entity-detail/);
   assert.match(appJs, /\/api\/entity-details/);

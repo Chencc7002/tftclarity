@@ -348,6 +348,7 @@ test("Set 18 PBE item carrier aliases cover every emblem 转 shorthand", () => {
   });
   const catalog = createCatalog({ units: [], traits: [], items });
 
+  assert.equal(planQuery("斗转适合谁带", { catalog }).parsed.carrierItem, "DA_18_EmblemBrawler");
   for (const [apiName, emblemName] of cases) {
     const traitName = emblemName.replace(/纹章$/, "");
     for (const alias of [`${traitName}转`, `${traitName}转职`]) {
@@ -680,7 +681,7 @@ test("Kayle placement distribution produces ordinary eight-place stats instead o
   assert.ok(stats.top4Rate > 0.1 && stats.top4Rate < 0.25);
 });
 
-test("CommunityDragon PBE details expose Set 18 unit stats, ability, and trait tiers", () => {
+test("CommunityDragon live details expose Set 18 unit stats, ability, and trait tiers", () => {
   const details = buildCommunityDragonEntityDetails({
     teamplanner: {
       TFTSet18: [{
@@ -714,7 +715,7 @@ test("CommunityDragon PBE details expose Set 18 unit stats, ability, and trait t
         attributeValues: { MagicDamage: [56, 84, 98, 112] }
       }]
     }
-  }, { tftSet: "TFTSet18", version: "current" });
+  }, { tftSet: "TFTSet18", version: "18.1", channel: "latest" });
 
   const kayle = details.units.get("DA_18_Kayle");
   assert.equal(kayle.stats.health, 550);
@@ -724,6 +725,7 @@ test("CommunityDragon PBE details expose Set 18 unit stats, ability, and trait t
   assert.deepEqual(kayle.traitNames, ["日光射线", "迅捷射手"]);
   assert.equal(details.traits.get("DA_18_Rapidfire").levels[0].units, 2);
   assert.match(details.traits.get("DA_18_Rapidfire").levels[0].effect, /3%/);
+  assert.match(details.meta.url, /raw\.communitydragon\.org\/latest\//u);
 });
 
 test("CommunityDragon PBE details fall back to local raw snapshots when the network is unavailable", async () => {

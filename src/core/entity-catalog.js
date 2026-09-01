@@ -107,28 +107,23 @@ function unitEntries(catalog, details, options = {}) {
   const officialUnits = details?.units instanceof Map
     ? [...details.units.entries()].filter(([apiName]) => apiName)
     : [];
-  const sourceUnits = officialUnits.length
-    ? officialUnits.map(([mapApiName, official]) => {
-      const apiName = official?.apiName ?? mapApiName;
-      const officialName = official?.name ?? apiName;
-      const related = catalogUnits.filter((unit) => (
-        unit.apiName === apiName
-        || normalizedText(unit.zhName ?? unit.displayName ?? unit.name) === normalizedText(officialName)
-      ));
-      const catalogUnit = related.find((unit) => unit.apiName === apiName) ?? related[0] ?? null;
-      return {
-        unit: catalogUnit ?? { apiName, aliases: [] },
-        official,
-        apiName,
-        aliases: related.flatMap((unit) => [unit.apiName, ...(unit.aliases ?? [])])
-      };
-    })
-    : catalogUnits.map((unit) => ({
+  const officialByApiName = new Map(officialUnits.map(([mapApiName, official]) => [
+    official?.apiName ?? mapApiName,
+    official
+  ]));
+  const sourceUnits = catalogUnits.map((unit) => {
+    const official = officialByApiName.get(unit.apiName)
+      ?? officialUnits.find(([, candidate]) => (
+        normalizedText(candidate?.name) === normalizedText(unit.zhName ?? unit.displayName ?? unit.name)
+      ))?.[1]
+      ?? null;
+    return {
       unit,
-      official: null,
-      apiName: unit.apiName,
-      aliases: unit.aliases ?? []
-    }));
+      official,
+      apiName: official?.apiName ?? unit.apiName,
+      aliases: [unit.apiName, ...(unit.aliases ?? [])]
+    };
+  });
 
   return collapseUnitRecords(sourceUnits
     .map(({ unit, official, apiName, aliases }) => {
@@ -159,6 +154,8 @@ function unitEntries(catalog, details, options = {}) {
       return { entry, aliases: [...new Set([...(aliases ?? []), ...(unit.aliases ?? [])])] };
     }))
     .filter(({ entry, aliases }) => {
+      const entryCost = Number(entry.cost);
+      if (Number.isFinite(entryCost) && entryCost <= 0) return false;
       if (Number.isFinite(cost) && Number(entry.cost) !== cost) return false;
       if (role && !normalizedText(entry.role).includes(role)) return false;
       if (trait && !entry.traitNames.some((name) => normalizedText(name).includes(trait))) return false;

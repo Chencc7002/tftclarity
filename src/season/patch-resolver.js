@@ -3,12 +3,20 @@ export const OFFICIAL_TFT_NEWS_URL = "https://teamfighttactics.leagueoflegends.c
 export const PATCH_RESOLVER_CACHE_KEY = "current_patch";
 
 export function parseLatestTftPatch(html) {
-  const mentions = [...String(html ?? "").matchAll(/\b17\.\d+\b/g)]
-    .map((match) => match[0]);
+  const mentions = [...String(html ?? "").matchAll(/\b\d{1,2}\.\d+\b/g)]
+    .map((match) => match[0])
+    // Riot patch majors follow the calendar-year range. Ignore unrelated decimal
+    // values from page markup and asset metadata (for example, "62.5").
+    .filter((patch) => {
+      const major = Number(patch.split(".")[0]);
+      return major >= 10 && major <= 30;
+    });
   if (!mentions.length) return null;
-  return mentions.sort((left, right) => (
-    Number(right.replace(".", "")) - Number(left.replace(".", ""))
-  ))[0];
+  return mentions.sort((left, right) => {
+    const [leftMajor, leftMinor] = left.split(".").map(Number);
+    const [rightMajor, rightMinor] = right.split(".").map(Number);
+    return rightMajor - leftMajor || rightMinor - leftMinor;
+  })[0];
 }
 
 export async function resolveLatestTftPatch(options = {}) {

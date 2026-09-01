@@ -1,10 +1,11 @@
-export const DEFAULT_SEASON_CONTEXT_ID = "set17-live";
+export const DEFAULT_SEASON_CONTEXT_ID = "set18-live";
+export const LEGACY_SEASON_CONTEXT_ID = "set17-live";
 
 const CONTEXTS = [
   {
     id: DEFAULT_SEASON_CONTEXT_ID,
-    label: "Set 17 · 正式服",
-    season: 17,
+    label: "Set 18 · 正式服",
+    season: 18,
     environment: "live",
     mode: "standard",
     status: "live",
@@ -12,6 +13,61 @@ const CONTEXTS = [
     selectable: true,
     isDefault: true,
     catalogNamespace: DEFAULT_SEASON_CONTEXT_ID,
+    source: {
+      provider: "metatft-live",
+      providerVersion: "metatft-live.v1",
+      queue: "1100",
+      patchPolicy: "latest",
+      currentPatch: "18.1",
+      explorerPatch: "current",
+      unitBuildPatch: "current",
+      compsPatch: "current",
+      tftSet: "TFTSet18",
+      lookupChannel: "latest",
+      lookupLocale: "zh_cn",
+      requestDeadlineMs: 20000
+    },
+    themeId: "set18",
+    theme: {
+      documentTitle: "TFTClarity｜云顶数据智答",
+      subtitle: {
+        "zh-CN": "S18 魔法森林 · 18.1",
+        "en-US": "Set 18 Enchanted Wilds · 18.1"
+      },
+      colors: {
+        primary: "#356b43",
+        secondary: "#48b8c7"
+      },
+      wallpaper: {
+        seasonId: "set-18",
+        directory: "/assets/wallpapers/set-18/",
+        defaultId: "set18-verdant-realm"
+      },
+      particles: {
+        density: 0.62,
+        speed: 0.62,
+        tones: ["214,239,160", "121,221,197", "239,211,116"]
+      },
+      patchNoteVersion: "18.1",
+      quickQuestions: {
+        "zh-CN": ["当前有什么稳定阵容？", "当前版本阵容趋势", "阿狸最好的三件装备是什么"],
+        "en-US": ["What comps are stable right now?", "Show current comp trends", "What are Ahri's best three items?"]
+      },
+      riskNotice: null
+    },
+    notices: ["S18“魔法森林”已在 18.1 版本上线；本站 S17 数据查询暂时停用。"]
+  },
+  {
+    id: LEGACY_SEASON_CONTEXT_ID,
+    label: "Set 17 · 暂不可用",
+    season: 17,
+    environment: "live",
+    mode: "standard",
+    status: "unavailable",
+    visible: true,
+    selectable: false,
+    isDefault: false,
+    catalogNamespace: LEGACY_SEASON_CONTEXT_ID,
     source: {
       provider: "metatft-live",
       providerVersion: "metatft-live.v1",
@@ -47,68 +103,7 @@ const CONTEXTS = [
       },
       riskNotice: null
     },
-    notices: []
-  },
-  {
-    id: "set18-pbe",
-    label: "Set 18 · PBE · Current",
-    season: 18,
-    environment: "pbe",
-    mode: "standard",
-    status: "pbe",
-    visible: true,
-    selectable: true,
-    themePreview: false,
-    isDefault: false,
-    catalogNamespace: "set18-pbe",
-    source: {
-      provider: "metatft-pbe",
-      providerVersion: "metatft-pbe.v1",
-      pageUrl: "https://www.metatft.com/pbe-comps",
-      explorerUrl: "https://www.metatft.com/explorer?set=TFTSet18",
-      queue: "PBE",
-      patchPolicy: "latest",
-      currentPatch: "current",
-      explorerPatch: "current",
-      unitBuildPatch: "current",
-      compsPatch: "current",
-      tftSet: "TFTSet18",
-      lookupChannel: "pbe",
-      lookupLocale: "zh_cn",
-      requestDeadlineMs: 20000
-    },
-    themeId: "set18",
-    theme: {
-      documentTitle: "TFTClarity｜云顶数据智答",
-      subtitle: {
-        "zh-CN": "S18 PBE · 当前版本",
-        "en-US": "Set 18 PBE · Current"
-      },
-      colors: {
-        primary: "#356b43",
-        secondary: "#48b8c7"
-      },
-      wallpaper: {
-        seasonId: "set-18-pbe",
-        directory: "/assets/wallpapers/set-18/",
-        defaultId: "set18-verdant-realm"
-      },
-      particles: {
-        density: 0.62,
-        speed: 0.62,
-        tones: ["214,239,160", "121,221,197", "239,211,116"]
-      },
-      patchNoteVersion: null,
-      quickQuestions: {
-        "zh-CN": ["当前有什么稳定阵容？", "当前版本阵容趋势", "阿狸最好的三件装备是什么"],
-        "en-US": ["What comps are stable right now?", "Show current comp trends", "What are Ahri's best three items?"]
-      },
-      riskNotice: {
-        "zh-CN": "S18 PBE 数据已开放；测试服内容和统计会频繁变化，结果仅供当前版本参考。",
-        "en-US": "Set 18 PBE data is available. Test-realm content and statistics can change frequently."
-      }
-    },
-    notices: ["S18 PBE 数据已开放；测试服内容和统计会频繁变化。"]
+    notices: ["本站 S17 数据查询暂时停用，请使用 S18。历史数据保留。"]
   }
 ];
 
@@ -146,16 +141,6 @@ export class SeasonContextService {
     this.contexts = new Map(contexts.map((context) => [context.id, deepFreeze(clone(context))]));
     this.providerAvailability = new Map(Object.entries({
       "metatft-live": {
-        available: true,
-        status: "available",
-        health: {
-          status: "ready",
-          lastCheckedAt: null,
-          lastSuccessfulSyncAt: null,
-          catalogStatus: "runtime_managed"
-        }
-      },
-      "metatft-pbe": {
         available: true,
         status: "available",
         health: {

@@ -16,6 +16,11 @@ export class ChatAgent {
     this.availableToolNames = options.availableToolNames ?? Object.keys(this.handlers);
     this.budget = normalizeReactLoopBudget(options.budget);
     this.groundingMode = options.groundingMode;
+    // Opt-in recovery, no production environment switch. Quick Task is untouched.
+    this.deadlineRecovery = options.deadlineRecovery === true;
+    this.compositionCardScope = options.compositionCardScope === true;
+    this.compositionCardsOwnPositioning = options.compositionCardsOwnPositioning === true;
+    this.officialItemEvidenceV1 = options.officialItemEvidenceV1 === true;
     this.agentRuntime = options.agentRuntime ?? new AgentRuntime({
       budget: {
         deadlineMs: this.budget.deadlineMs,
@@ -42,33 +47,54 @@ export class ChatAgent {
       ...(this.createId ? { createId: this.createId } : {}),
       ...(this.now ? { now: this.now } : {})
     });
-    const execution = await this.agentRuntime.run({
-      conversationId: request.conversationId,
-      principalId: request.principalId,
-      seasonContextId: request.seasonContextId
-    }, (run) => loop.run(request, {
-      run,
-      signal: options.signal,
-      onEvent: options.onEvent,
-      budget: options.budget,
-      groundingMode: options.groundingMode ?? this.groundingMode,
-      createEvidenceId: options.createEvidenceId
-    }), {
-      signal: options.signal,
-      budget: {
-        deadlineMs: Number(options.budget?.deadlineMs ?? this.budget.deadlineMs),
-        maxToolCalls: null,
-        maxRetriesPerTool: Number(
-          options.budget?.maxRetriesPerTool ?? this.budget.maxRetriesPerTool
-        )
-      },
-      classifyResult: (value) => value?.status === "clarification_required"
-        ? "clarification_required"
-        : "completed"
-    });
-    return {
-      ...execution.value,
-      run: execution.publicRun
-    };
+    const controller = this.deadlineRecovery ? new AbortController() : null;
+    const cancel = () => controller?.abort(options.signal?.reason);
+    if (options.signal?.aborted) cancel();
+    else if (controller) options.signal?.addEventListener("abort", cancel, { once: true });
+    let recoverDeadline;
+    try {
+      const execution = await this.agentRuntime.run({
+        conversationId: request.conversationId,
+        principalId: request.principalId,
+        seasonContextId: request.seasonContextId
+      }, (run) => loop.run(request, {
+        run,
+        compositionCardScope: this.compositionCardScope,
+        compositionCardsOwnPositioning: this.compositionCardsOwnPositioning,
+        officialItemEvidenceV1: this.officialItemEvidenceV1,
+        signal: controller?.signal ?? options.signal,
+        ...(controller ? { registerDeadlineRecovery: (recover) => { recoverDeadline = recover; } } : {}),
+        onEvent: options.onEvent,
+        budget: options.budget,
+        groundingMode: options.groundingMode ?? this.groundingMode,
+        createEvidenceId: options.createEvidenceId
+      }), {
+        signal: options.signal,
+        budget: {
+          deadlineMs: Number(options.budget?.deadlineMs ?? this.budget.deadlineMs),
+          maxToolCalls: null,
+          maxRetriesPerTool: Number(
+            options.budget?.maxRetriesPerTool ?? this.budget.maxRetriesPerTool
+          )
+        },
+        classifyResult: (value) => value?.status === "clarification_required"
+          ? "clarification_required"
+          : "completed"
+      });
+      return {
+        ...execution.value,
+        run: execution.publicRun
+      };
+    } catch (error) {
+      controller?.abort(error);
+      const partial = recoverDeadline?.(options.signal?.aborted ? { code: "run_cancelled" } : error);
+      if (partial && error.code === "run_timed_out" && !options.signal?.aborted) {
+        return { ...partial, run: error.publicRun };
+      }
+      throw error;
+    } finally {
+      controller?.abort();
+      if (controller) options.signal?.removeEventListener("abort", cancel);
+    }
   }
 }

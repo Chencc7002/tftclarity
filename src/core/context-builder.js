@@ -1,4 +1,5 @@
 import { DEFAULT_QUERY_OPTIONS, createCatalog } from "../data/static-data.js";
+import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 
 const DEFAULT_THREE_STAR_MAX_UNIT_COST = 3;
 
@@ -94,7 +95,17 @@ export function buildQueryContext(parsedQuery, options = {}) {
   const itemCount = parsedQuery.itemCount ?? 3;
   const lockedItems = parsedQuery.lockedItems ?? parsedQuery.ownedItems ?? [];
   const requestedItemPolicy = parsedQuery.itemPolicy ?? preferences.itemPolicy;
-  const itemPolicy = widenItemPolicyForLockedItems(requestedItemPolicy, lockedItems, catalog);
+  const explicitOrdinaryOnly = requestedItemPolicy === "ordinary_only" && (
+    parsedQuery.parser?.itemPolicyExplicit === true
+    || requestedEquipmentCategoryScope(parsedQuery.rawInput)?.itemPolicy === "ordinary_only"
+  );
+  const itemPolicyScope = parsedQuery.itemPolicyScope
+    ?? (explicitOrdinaryOnly && lockedItems.length > 0 ? "remaining_items" : undefined);
+  // In completion queries the requested category constrains new items only.
+  // Explicit whole-build restrictions still validate against the locked items.
+  const itemPolicy = explicitOrdinaryOnly || itemPolicyScope === "remaining_items"
+    ? requestedItemPolicy
+    : widenItemPolicyForLockedItems(requestedItemPolicy, lockedItems, catalog);
   const itemPolicyExpandedByLockedItems = itemPolicy !== requestedItemPolicy;
   const performanceCategory = parsedQuery.performanceItem
     ? catalog.itemByApiName.get(parsedQuery.performanceItem)?.category
@@ -191,6 +202,7 @@ export function buildQueryContext(parsedQuery, options = {}) {
     traitFilters,
     comp,
     itemPolicy,
+    itemPolicyScope,
     itemCategories,
     lockedItems,
     comparisonItems,

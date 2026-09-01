@@ -1,3 +1,4 @@
+import { createLegacySeasonFixture } from "../test/fixtures/season-context.js";
 import { readFile } from "node:fs/promises";
 import {
   AgentRuntime,
@@ -64,6 +65,7 @@ function createCaseRuntime(caseRecord, compFixture, eventSink) {
     now: () => 0
   });
   return createSmallWindowRuntime({
+    seasonContextService: createLegacySeasonFixture(),
     catalog: createCatalog(),
     cacheStore: new MemoryCacheStore(),
     fetchItems: false,

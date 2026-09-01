@@ -5,6 +5,7 @@ import {
   DEFAULT_DB_PATH,
   openDatabase,
   initSchema,
+  backfillPatchLabels,
   createPool,
   renamePool,
   setPoolShareCode,
@@ -24,6 +25,7 @@ import { aggregatePool, getPoolWindow } from "../opgg/aggregator.mjs";
 import { localizeAggregate } from "../opgg/localization.mjs";
 import { createOpggClient } from "../opgg/mcp-client.mjs";
 import { createPlayerMatchMcpClient } from "../metatft-player/mcp-client.mjs";
+import { poolSeason, poolSetNumber } from "./season.mjs";
 import {
   buildPoolComparisonAnalysisEvidence,
   buildSinglePoolAnalysisEvidence
@@ -97,11 +99,13 @@ function sampleTier(count) {
 function poolStats(database, pool) {
   const result = localizeAggregate(aggregatePool(database, {
     poolId: pool.id,
+    setNumber: poolSetNumber(pool),
     region: pool.region,
     perPlayerLimit: 20
   }));
   const rows = getPoolWindow(database, {
     poolId: pool.id,
+    setNumber: poolSetNumber(pool),
     region: pool.region,
     patch: result.overview.currentPatch,
     perPlayerLimit: 20
@@ -149,6 +153,9 @@ function poolStats(database, pool) {
       uniqueMatchCount: result.overview.uniqueMatches,
       timeFrom: timeValues.length ? new Date(Math.min(...timeValues)).toISOString() : null,
       timeTo: timeValues.length ? new Date(Math.max(...timeValues)).toISOString() : null,
+      lastSuccessfulPollAt: result.overview.lastSuccessfulPollAt,
+      sampleIsOld: result.overview.sampleIsOld,
+      patchBasis: result.overview.patchBasis,
       patchDistribution: result.patchDistribution,
       sampleTier: sampleTier(rows.length)
     },
@@ -242,30 +249,31 @@ function createPlayerPoolApiRouter(options = {}) {
   const matchClient = options.matchClient ?? createPlayerMatchMcpClient(options);
   const getDatabase = async () => {
     databasePromise ??= (async () => {
-      const database = await openDatabase(options.databasePath ?? DEFAULT_DB_PATH);
+      const database = options.database ?? await openDatabase(options.databasePath ?? DEFAULT_DB_PATH);
       initSchema(database);
+      backfillPatchLabels(database);
       return database;
     })();
     return databasePromise;
   };
 
-  async function addPbePlayer(database, pool, player, ownerId, source = "manual") {
+  async function addMetaTftPlayer(database, pool, player, ownerId, source = "manual") {
     const history = await matchClient.callTool("list_matches", {
       gameName: player.gameName,
       tagLine: player.tagLine,
-      environment: "pbe",
-      season: "set18-pbe",
+      environment: pool.environment,
+      season: poolSeason(pool),
       verificationMode: "provider",
       limit: 20,
       callerKey: ownerId
     });
-    if (!history.returnedCount) throw new Error("NO_S18_PBE_MATCH_EVIDENCE");
+    if (!history.returnedCount) throw new Error(pool.environment === "pbe" ? "NO_S18_PBE_MATCH_EVIDENCE" : "NO_CURRENT_SEASON_MATCH_EVIDENCE");
     const entry = {
-      id: slugify(player.gameName, player.tagLine, "pbe"),
+      id: slugify(player.gameName, player.tagLine, pool.region),
       displayName: `${player.gameName}#${player.tagLine}`,
       gameName: player.gameName,
       tagLine: player.tagLine,
-      region: "pbe",
+      region: pool.region,
       active: true
     };
     const ingest = ingestExternalPlayerMatches(database, entry, history.matches, {
@@ -308,15 +316,16 @@ function createPlayerPoolApiRouter(options = {}) {
           name,
           region: environment === "pbe" ? "pbe" : "na",
           environment,
-          season: environment === "pbe" ? "set18-pbe" : "set17-live",
-          provider: environment === "pbe" ? "metatft" : "opgg",
+          season: poolSeason({ environment }),
+          provider: "metatft",
           ownerType: "user",
           ownerId,
           visibility: "private"
         });
         try {
-          if (environment === "pbe") {
-            await addPbePlayer(database, pool, initialPlayer, ownerId);
+          if (pool.provider === "metatft") {
+            if (environment === "live" && !/^NA[0-9]+$/iu.test(initialPlayer.tagLine)) throw new Error("LIVE_POOL_REQUIRES_NA_TAG");
+            await addMetaTftPlayer(database, pool, initialPlayer, ownerId);
           } else {
             if (!/^NA[0-9]+$/iu.test(initialPlayer.tagLine)) throw new Error("LIVE_POOL_REQUIRES_NA_TAG");
             const entry = {
@@ -394,6 +403,7 @@ function createPlayerPoolApiRouter(options = {}) {
       if (importMatch && request.method === "POST") {
         const pool = ownedPool(database, importMatch[1], ownerId);
         if (!pool) return sendJson(response, 404, { error: "POOL_NOT_FOUND" });
+        if (pool.environment !== "pbe") return sendJson(response, 400, { error: "PBE_SEED_REQUIRES_PBE_POOL" });
         const seed = JSON.parse(await readFile(options.seedPath ?? SEED_PATH, "utf8"));
         const results = [];
         for (const player of seed.players ?? []) {
@@ -402,7 +412,7 @@ function createPlayerPoolApiRouter(options = {}) {
             continue;
           }
           try {
-            const added = await addPbePlayer(database, pool, player, ownerId, "seed_import");
+            const added = await addMetaTftPlayer(database, pool, player, ownerId, "seed_import");
             results.push({ riotId: `${player.gameName}#${player.tagLine}`, status: "verified", ...added });
           } catch (error) {
             results.push({ riotId: `${player.gameName}#${player.tagLine}`, status: "unresolved", reason: error.code ?? error.message });
@@ -431,8 +441,9 @@ function createPlayerPoolApiRouter(options = {}) {
           const body = await readJsonBody(request);
           const player = { gameName: String(body.gameName ?? "").trim(), tagLine: String(body.tagLine ?? "").trim() };
           if (!player.gameName || !player.tagLine) return sendJson(response, 400, { error: "PLAYER_ID_REQUIRED" });
-          if (pool.environment === "pbe") {
-            return sendJson(response, 201, await addPbePlayer(database, pool, player, ownerId));
+          if (pool.environment === "pbe" || pool.provider === "metatft") {
+            if (pool.environment === "live" && !/^NA[0-9]+$/iu.test(player.tagLine)) return sendJson(response, 400, { error: "LIVE_POOL_REQUIRES_NA_TAG" });
+            return sendJson(response, 201, await addMetaTftPlayer(database, pool, player, ownerId));
           }
           if (!/^NA[0-9]+$/iu.test(player.tagLine)) return sendJson(response, 400, { error: "LIVE_POOL_REQUIRES_NA_TAG" });
           const entry = {

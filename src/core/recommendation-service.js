@@ -1769,6 +1769,7 @@ function inheritParsedFromSession(parsed, sessionValue) {
       .filter((item) => !explicitlyLockedItems.includes(item));
   }
   inheritScalar("itemPolicy", "itemPolicy", "item_policy");
+  inheritScalar("itemPolicyScope", "itemPolicyScope", "item_policy_scope");
   inheritArray("itemCategories", "itemCategories", "item_categories");
   inheritArray("rankFilter", "rankFilter", "rank");
   inheritScalar("days");
@@ -1866,6 +1867,7 @@ function serializeQueryForSession(query) {
     ownedItems: query.ownedItems,
     excludedItems: query.excludedItems,
     itemPolicy: query.itemPolicy,
+    itemPolicyScope: query.itemPolicyScope,
     itemCategories: query.itemCategories,
     rankFilter: query.rankFilter,
     days: query.days,

@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "unit-play-guidance-forward-run-manifest.v2",
+  "experimentId": "unit-play-guidance-forward.2026-09-01.v2",
+  "mode": "canonical_implementation_ready_provider_locked",
+  "runtime": {
+    "schemaVersion": "unit-play-guidance-forward-canonical.v2",
+    "runtimeVersion": "unit-play-guidance-forward-canonical-runtime.v2",
+    "pairOrderSha256": "2ad4596d97eacc7cfe77e5460fbe3ed14014988fe7906f5118c2daa4e6719f65",
+    "pairConcurrency": 1,
+    "plannedPairs": 90,
+    "plannedAgentRuns": 180,
+    "totalTokenHardCap": 10000000,
+    "providerHttpRequestHardCap": 1800,
+    "frozenReplayClock": "observation_frozen_at_plus_1ms"
+  },
+  "frozen": {
+    "corpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "observationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillSha256": "a71442c1b012d49f36ab14cabaf8810f4e2fe7689a498ebeaff5d3218047beb8",
+    "preflightResultNormalizedSha256": "7868114c56ba6a64c18822c3464789d60439361633f62c2d379f669ddaf6b58e",
+    "reviewSchemaNormalizedSha256": "19cc05dc1a8bb1a02f19471efc263330b2357c3b0b696241f7a8175cc1d29e07"
+  },
+  "implementation": {
+    "canonicalRuntimeRawSha256": "db8276ca2833dc8a254b610fcf74fc7666b7ce46bb1054cb069da179ffda1227",
+    "scriptedTransportRawSha256": "6bce2d2137d3409878bf98e1b1023ac5405ad7da86d98f29a3449d34e2155ea9",
+    "dryRunScriptRawSha256": "a9a909c78291322f383feb1c06dfd088ebaaf93dd26e409cd7aac54675fc6859"
+  },
+  "scriptedDryRun": {
+    "completed": true,
+    "plannedAgentRuns": 180,
+    "completedAgentRuns": 180,
+    "transportRequests": 1620,
+    "observedScriptedTokens": 19440,
+    "maxConcurrentTransportRequests": 1,
+    "actualProviderModelCalls": 0,
+    "blindedEntries": 180,
+    "reviewerLabelCounts": [
+      1080,
+      1080
+    ],
+    "resultNormalizedSha256": "1a1e935aa4beb06f43acc65795fcb71341309b4956cd9debeee4ec9220aa8c18",
+    "packetNormalizedSha256": "ce4b3deeffe9e5619dd3583ade70046a1ae5edd0373b0c460980868635f69bbf",
+    "classification": "local scripted transport only; no efficacy claim"
+  },
+  "review": {
+    "reviewersRequired": 2,
+    "independentBeforeAdjudication": true,
+    "blindKeySeparated": true,
+    "originalLabelsPreserved": true
+  },
+  "authorization": {
+    "realProviderPairedRun": false,
+    "productionControl": false,
+    "credentialPersisted": false
+  },
+  "claimBoundary": "The canonical implementation and its local scripted dry run are ready. Real Provider calls and production control remain unauthorized."
+}

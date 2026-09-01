@@ -63,13 +63,31 @@ function exactAliasResolution(catalog, entityType, requestedNames) {
         matchedAlias
       });
     }
+    const exactMatchCount = byApiName.size;
+    if (exactMatchCount === 0) {
+      for (const record of records) {
+        const matchedAlias = array(record?.fuzzyAliases).find((alias) => (
+          normalizeAlias(alias) === normalizedName
+        ));
+        const apiName = canonicalApiName(record, entityType);
+        if (!matchedAlias || !apiName || byApiName.has(apiName)) continue;
+        byApiName.set(apiName, {
+          apiName,
+          name: String(displayName(record)),
+          matchedAlias,
+          matchType: "curated_fuzzy_alias"
+        });
+      }
+    }
     const candidates = [...byApiName.values()].sort((left, right) => (
       left.apiName.localeCompare(right.apiName)
     ));
     return {
       inputName,
       normalizedName,
-      status: candidates.length === 1 ? "resolved" : candidates.length ? "ambiguous" : "not_found",
+      // Curated fuzzy aliases supply stable candidates but deliberately require
+      // confirmation. They never acquire exact-alias authority implicitly.
+      status: exactMatchCount === 1 ? "resolved" : candidates.length ? "ambiguous" : "not_found",
       candidates
     };
   });

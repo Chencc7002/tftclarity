@@ -771,6 +771,76 @@ test("user-specified radiant, artifact, and emblem items widen the local item po
   assert.match(mixedSpecial.text, /含特殊装备/);
 });
 
+test("ordinary-only completion preserves locked special items unless the whole build is explicitly restricted", () => {
+  for (const input of ["霞三件套不含特殊装备", "霞三件套不要特殊装备", "霞三件套修改为只包含普通装备"]) {
+    const planned = planQuery(input);
+    assert.equal(planned.query.itemPolicy, "ordinary_only", input);
+    assert.deepEqual(planned.query.itemCategories, ["ordinary_completed"], input);
+    assert.equal(planned.query.itemCount, 3);
+  }
+  const completion = planQuery("霞已有光明羊刀，但只包含普通装备");
+  assert.equal(completion.query.itemPolicy, "ordinary_only");
+  assert.equal(completion.query.itemPolicyScope, "remaining_items");
+  assert.equal(validateQueryContext(completion.query).valid, true);
+  const conflict = planQuery("霞已有光明羊刀，但整套都只包含普通装备");
+  assert.equal(conflict.query.itemPolicy, "ordinary_only");
+  assert.equal(conflict.query.itemPolicyScope, "all_items");
+  assert.equal(validateQueryContext(conflict.query).valid, false);
+});
+
+test("a locked emblem is retained while only the remaining slot is filtered to ordinary equipment", async () => {
+  const emblem = "Test_BruiserEmblem", ordinary = "TFT_Item_GuinsoosRageblade";
+  const catalog = createCatalog({ items: [...createCatalog().items, {
+    apiName: emblem, zhName: "斗士纹章", shortName: "斗转", aliases: ["斗转"],
+    category: "emblem", current: true, obtainable: true
+  }, { apiName: "Test_Unavailable", zhName: "已下架装备", category: "ordinary_completed", current: false, obtainable: false }] });
+  const rows = [
+    [emblem, ordinary, "TFT_Item_InfinityEdge"],
+    [emblem, ordinary, "TFT5_Item_GuinsoosRagebladeRadiant"],
+    [emblem, ordinary, emblem],
+    [ordinary, "TFT_Item_InfinityEdge", "TFT_Item_GiantSlayer"],
+    [emblem, ordinary, "Test_Unavailable"]
+  ].map(items => ({ unit_builds: `TFT17_Xayah&${items.join("|")}`, placement_count: [150, 130, 110, 90, 70, 50, 30, 10] }));
+  for (const input of ["不含特殊装备", "修改为只包含普通装备", "第三件只要普通装备"]) {
+    const options = { response: rows, cacheStore: new MemoryCacheStore(), catalog };
+    const initial = await recommendForInput("霞已有斗转和羊刀，补齐三件套，包含特殊装备", options);
+    assert.ok(initial.rankedBuilds.some(build => build.items.includes("TFT5_Item_GuinsoosRagebladeRadiant")));
+    const result = await recommendForInput(input, options);
+    assert.equal(result.query.itemPolicy, "ordinary_only", input);
+    assert.equal(result.query.itemPolicyScope, "remaining_items");
+    assert.deepEqual(result.query.lockedItems, [emblem, ordinary]);
+    assert.equal(result.query.itemCount, 3);
+    assert.deepEqual(result.rankedBuilds.map(build => build.items), [[emblem, ordinary, "TFT_Item_InfinityEdge"]], JSON.stringify({ input, query: result.query, warnings: result.warnings, text: result.text }));
+    assert.match(result.text, /待补装备.*普通装备/);
+    assert.notEqual(makeQueryCacheKey(result.query), makeQueryCacheKey({ ...result.query, itemPolicyScope: "all_items" }));
+    const continued = await recommendForInput("改为近7天", options);
+    assert.equal(continued.query.itemPolicyScope, "remaining_items");
+    assert.deepEqual(continued.rankedBuilds.map(build => build.items), [[emblem, ordinary, "TFT_Item_InfinityEdge"]]);
+  }
+});
+
+test("a three-item follow-up re-filters special builds while preserving the owned ordinary item", async () => {
+  const rows = [fixtureRows[0], {
+    unit_builds: "TFT17_Xayah&TFT_Item_GuinsoosRageblade|TFT5_Item_GuinsoosRagebladeRadiant|TFT_Item_InfinityEdge",
+    placement_count: [150, 130, 110, 90, 70, 50, 30, 10]
+  }];
+  const catalog = createCatalog();
+  for (const input of ["不含特殊装备", "修改为只包含普通装备"]) {
+    const cacheStore = new MemoryCacheStore();
+    const options = { response: rows, cacheStore, catalog };
+    const initial = await recommendForInput("霞已有羊刀，查询三件套，包含特殊装备", options);
+    assert.ok(initial.rankedBuilds.some(build => build.items.includes("TFT5_Item_GuinsoosRagebladeRadiant")));
+    const result = await recommendForInput(input, options);
+    assert.equal(result.query.itemPolicy, "ordinary_only");
+    assert.equal(result.query.unit, initial.query.unit);
+    assert.equal(result.query.itemCount, 3);
+    assert.deepEqual(result.query.lockedItems, initial.query.lockedItems);
+    assert.ok(result.rankedBuilds.length > 0);
+    assert.ok(result.rankedBuilds.every(build => build.items.every(apiName => catalog.itemByApiName.get(apiName).category === "ordinary_completed")));
+    assert.notEqual(makeQueryCacheKey(initial.query), makeQueryCacheKey(result.query));
+  }
+});
+
 test("generic radiant and artifact build scopes require every returned trio to contain the requested special category", () => {
   const apiNames = [
     "TFT_Item_GuinsoosRageblade",
@@ -1413,7 +1483,7 @@ test("answers current-patch historical item aliases through the normal data path
   assert.equal(result.plan.endpoint, "unit_builds");
   assert.equal(explorerCalls, 1);
   assert.equal(compsCalls, 0);
-  assert.equal(cacheStore.getSessionState(SESSION_LAST_QUERY_KEY).value.query.unit, "TFT17_Xayah");
+  assert.equal(cacheStore.getSessionState(SESSION_LAST_QUERY_KEY, { seasonContextId: "set17-live" }).value.query.unit, "TFT17_Xayah");
 });
 
 test("synchronous recommendation treats the historical Runaan name as current Kraken", () => {

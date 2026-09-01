@@ -164,7 +164,8 @@ test("unit catalog collapses duplicate runtime ids onto the official detail-back
       { apiName: "DA_18_Diana", zhName: "Diana", cost: 3, current: true, aliases: ["diana"] },
       { apiName: "TFT18_Diana", zhName: "Diana", cost: 3, current: true, aliases: ["legacy-diana"] },
       { apiName: "DA_18_Elise", zhName: "Elise", cost: 2, current: true, aliases: ["elise"] },
-      { apiName: "DA_18_EliseSpider", zhName: "Elise", cost: 2, current: true, aliases: ["spider-form"] }
+      { apiName: "DA_18_EliseSpider", zhName: "Elise", cost: 2, current: true, aliases: ["spider-form"] },
+      { apiName: "DA_18_InternalHelper", zhName: "Internal helper", cost: 0, current: true, aliases: [] }
     ],
     traits: []
   };
@@ -183,6 +184,13 @@ test("unit catalog collapses duplicate runtime ids onto the official detail-back
         cost: 2,
         traitNames: ["Coven"],
         iconUrl: "https://example.test/elise.jpg"
+      }],
+      ["TFT17_Xayah", {
+        apiName: "TFT17_Xayah",
+        name: "霞",
+        cost: 4,
+        traitNames: ["观星者"],
+        iconUrl: "https://example.test/xayah.jpg"
       }]
     ]),
     traits: new Map()
@@ -196,6 +204,8 @@ test("unit catalog collapses duplicate runtime ids onto the official detail-back
 
   assert.equal(all.pagination.total, 2);
   assert.deepEqual(all.items.map((entry) => entry.apiName).sort(), ["DA_18_Diana", "DA_18_Elise"]);
+  assert.equal(all.items.some((entry) => entry.apiName === "TFT17_Xayah"), false);
+  assert.equal(all.items.some((entry) => entry.apiName === "DA_18_InternalHelper"), false);
   assert.ok(all.items.every((entry) => entry.hasDetails && entry.iconUrl));
   assert.equal(legacyAlias.pagination.total, 1);
   assert.equal(legacyAlias.items[0].apiName, "DA_18_Diana");

@@ -9,6 +9,8 @@ import { SeasonContextService } from "../src/season/season-context.js";
 
 test("parseLatestTftPatch picks the highest patch mention", () => {
   assert.equal(parseLatestTftPatch("Patch 17.7 notes and 17.8 preview 17.6"), "17.8");
+  assert.equal(parseLatestTftPatch("Patch 17.9 notes and Patch 18.1 launch"), "18.1");
+  assert.equal(parseLatestTftPatch("layout 62.5; Teamfight Tactics Patch 18.1"), "18.1");
   assert.equal(parseLatestTftPatch("no patch here"), null);
   assert.equal(parseLatestTftPatch(""), null);
 });
@@ -76,7 +78,8 @@ test("SeasonContextService.updateProviderPatch replaces current and previous pat
   assert.equal(updated.source.currentPatch, "17.9");
   assert.equal(updated.source.previousPatch, "17.8");
   assert.equal(updated.patchResolution.source, "official_riot_news");
-  const resolved = service.resolveForQuery("set17-live");
+  const resolved = service.resolve("set17-live", { requireSelectable: false });
+  assert.equal(resolved.selectable, false);
   assert.equal(resolved.currentPatch, "17.9");
   assert.equal(resolved.previousPatch, "17.8");
 });

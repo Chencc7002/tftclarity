@@ -36,7 +36,7 @@ test("SkillRegistry rejects unknown tools, dependencies, and unmet required capa
     toolRegistry: tools
   }), /not registered/u);
   assert.throws(() => new SkillRegistry({
-    definitions: [{ ...UNIT_PLAY_GUIDANCE_SKILL, dataDependencies: [{ id: "unknown_feed", requirement: "required" }] }],
+    definitions: [{ ...UNIT_PLAY_GUIDANCE_SKILL, dataDependencies: [...UNIT_PLAY_GUIDANCE_SKILL.dataDependencies, { id: "unknown_feed", requirement: "required" }] }],
     toolRegistry: tools
   }), /Unknown Skill data dependency/u);
   assert.throws(() => new SkillRegistry({

@@ -4,6 +4,11 @@ import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
+import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
+import { requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
+import { loadFollowUpHistory, singleEquipmentResultSubject, unitResultCoverage } from "./unit-follow-up.js";
+import { currentDeadlineEvidence } from "../react/deadline-evidence.js";
+import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
@@ -36,8 +41,9 @@ import {
   buildSkillContext,
   matchSkill,
   projectSkillProgress,
-  validateSkillCompletion
+  projectSkillCompletion
 } from "../skills/index.js";
+import { analyzeUnitPlaySkillEvidence } from "../domain/tft/unit-play-skill-evidence.js";
 import {
   buildConversationBridgeContextView,
   isHistoryDependentInput
@@ -56,8 +62,8 @@ import {
 } from "../core/display-locale.js";
 import {
   ENTITY_DISPLAY_VERSION,
-  S18_PBE_TRAIT_DISPLAY_OVERRIDES,
-  S18_PBE_UNIT_DISPLAY_OVERRIDES,
+  S18_TRAIT_DISPLAY_OVERRIDES,
+  S18_UNIT_DISPLAY_OVERRIDES,
   traitDisplayOverrideByApiName,
   unitDisplayOverrideByApiName
 } from "../data/entity-display-overrides.js";
@@ -345,6 +351,9 @@ function resolvedQuickTaskEntities(task, catalog) {
     item1,
     item2,
     trait,
+    unresolvedItems: suppliedEntityArguments
+      .filter((key) => ["item", "item1", "item2"].includes(key) && !byArgument[key])
+      .map((key) => ({ entityType: "item", inputFragment: task.arguments[key] })),
     complete: suppliedEntityArguments.every((key) => Boolean(byArgument[key]))
   };
 }
@@ -418,6 +427,10 @@ function directParsedForQuickTask(task, input, catalog, preferences) {
       ...(parsed.parser ?? {}),
       intentExplicit: true,
       usedLLM: false,
+      unresolvedEntityHints: [
+        ...resolved.unresolvedItems,
+        ...(parsed.parser?.unresolvedEntityHints ?? [])
+      ],
       ...(complete ? {
         bareUnitIntentAmbiguous: false,
         constraintConflicts: [],
@@ -1310,12 +1323,14 @@ function itemDetailsNameHint(input) {
 }
 
 async function loadOfficialItemDetails(runtime) {
-  if (runtime.officialItemDetails) return runtime.officialItemDetails;
+  if (runtime.officialItemDetails && (runtime.reactOfficialItemEvidenceV1 !== true
+    || currentOfficialItemRetrieval(runtime.officialItemDetails.meta?.retrieval))) return runtime.officialItemDetails;
   if (!runtime.officialItemDetailsPromise) {
     runtime.officialItemDetailsPromise = runtime.fetchOfficialItemDetails({
       fetchImpl: runtime.officialItemDetailsFetch,
       url: runtime.officialItemDetailsUrl,
-      timeoutMs: runtime.officialItemDetailsTimeoutMs
+      timeoutMs: runtime.officialItemDetailsTimeoutMs,
+      ...(runtime.reactOfficialItemEvidenceV1 === true ? { captureRetrieval: true } : {})
     }).then((details) => {
       runtime.officialItemDetails = details;
       runtime.officialItemDetailsLoadedAt = new Date().toISOString();
@@ -2950,6 +2965,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
           ? "system_default"
           : null,
       itemPolicy: query.itemPolicy,
+      itemPolicyScope: query.itemPolicyScope,
       lockedItems: lockedItemApiNames,
       lockedItemNames: lockedItemApiNames.map((apiName) => itemName(apiName, catalog)),
       comparisonItems: query.comparisonItems ?? [],
@@ -3184,7 +3200,12 @@ export function createSmallWindowRuntime(options = {}) {
       comps_rankings: requestTimeouts.compRankingsTimeoutMs,
       comps_trends: requestTimeouts.compRankingsTimeoutMs,
       comps_analysis: requestTimeouts.compRankingsTimeoutMs,
-      unit_details: requestTimeouts.catalogTimeoutMs,
+      // A cold current-season detail request shares the async catalog refresh,
+      // which may need more than the single upstream HTTP timeout.
+      unit_details: Math.max(
+        requestTimeouts.catalogTimeoutMs + 2_000,
+        requestTimeouts.compRankingsTimeoutMs
+      ),
       item_details: requestTimeouts.catalogTimeoutMs,
       item_details_batch: requestTimeouts.catalogTimeoutMs,
       trait_details: requestTimeouts.catalogTimeoutMs
@@ -3268,7 +3289,7 @@ export function createSmallWindowRuntime(options = {}) {
     officialEntityDetailsTimeoutMs: options.officialEntityDetailsTimeoutMs ?? 10000,
     fetchOfficialEntityDetails: options.fetchOfficialEntityDetails ?? fetchOfficialTftEntityDetails,
     fetchCommunityDragonEntityDetails: options.fetchCommunityDragonEntityDetails ?? fetchCommunityDragonEntityDetails,
-    communityDragonEntityDetailsEnabled: options.communityDragonEntityDetailsEnabled
+    communityDragonEntityDetailsEnabled: options.communityDragonEntityDetailsEnabled ?? true
       ?? Boolean(options.fetchCommunityDragonEntityDetails || (!options.compsClient && !options.catalogMetaTFTClient)),
     fetchItems: options.fetchItems ?? true,
     compsData: options.compsData ?? null,
@@ -3361,10 +3382,18 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
   const limit = Number.isFinite(requestedLimit)
     ? Math.max(1, Math.min(100, Math.floor(requestedLimit)))
     : 20;
-  const compsData = options.compsData ?? await runtime.compsClient.getCompsData({ queue });
+  // Optional request-local raw snapshot reuse. Each registered call still
+  // resolves/filters/ranks independently and passes the normal Evidence gates.
+  const snapshotKey = JSON.stringify([seasonContext.id, queue ?? null, patch, days]);
+  const snapshotCache = options.compsData ? null : options.snapshotCache;
+  const cached = snapshotCache?.get(snapshotKey);
+  const reuse = cached && Date.now() >= cached.fetchedAt && Date.now() - cached.fetchedAt < 30_000;
+  options.signal?.throwIfAborted?.();
+  const compsData = reuse ? structuredClone(cached.compsData)
+    : options.compsData ?? await runtime.compsClient.getCompsData({ queue });
   options.signal?.throwIfAborted?.();
   const dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
-  const compsStats = await runtime.compsClient.getCompsStats({
+  const compsStats = reuse ? structuredClone(cached.compsStats) : await runtime.compsClient.getCompsStats({
     queue,
     patch,
     days,
@@ -3382,6 +3411,10 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
       code: "comp_cluster_mismatch",
       recoverable: true
     });
+  }
+  if (snapshotCache && !reuse) {
+    if (snapshotCache.size >= 16) snapshotCache.delete(snapshotCache.keys().next().value);
+    snapshotCache.set(snapshotKey, { fetchedAt: Date.now(), compsData: structuredClone(compsData), compsStats: structuredClone(compsStats) });
   }
   const intent = options.intent === "comp_trends" ? "comp_trends" : "comp_rankings";
   const rankings = buildCompRankings(createCompsPageSnapshot(compsData, compsStats), {
@@ -3435,7 +3468,10 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
       compositionId: detailCompId,
       clusterId: detailClusterId,
       units: (result.members ?? []).map((member) => String(member.apiName ?? "")).filter(Boolean),
-      seasonContextId: seasonContext.id
+      seasonContextId: seasonContext.id,
+      ...(resolution.resolution.status !== "resolved" ? {
+        resolutionPrerequisite: { tool: "comps_rankings", arguments: { mention: result.compositionRef.compId } }
+      } : {})
     };
   }
   return resolution;
@@ -4426,19 +4462,19 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const setLookupRequest = isPbeCatalog
         ? setLookupRemoteRequest.catch(async () => JSON.parse(await readFile(localLookupPath, "utf8")))
         : setLookupRemoteRequest;
-      const communityDragonDetailsRequest = isPbeCatalog
-        && preferences.tftSet
+      const communityDragonDetailsRequest = preferences.tftSet
         && runtime.communityDragonEntityDetailsEnabled
         ? runtime.fetchCommunityDragonEntityDetails({
             fetchImpl: runtime.officialEntityDetailsFetch,
             tftSet: preferences.tftSet,
-            version: preferences.currentPatch ?? "PBE",
+            version: preferences.currentPatch ?? "current",
+            channel: isPbeCatalog ? "pbe" : "latest",
             lookupPromise: setLookupRequest,
-            localCachePaths: {
+            localCachePaths: isPbeCatalog ? {
               teamplanner: ".cache/communitydragon-pbe-tftchampions-teamplanner.json",
               traits: ".cache/communitydragon-pbe-tfttraits.json",
               lookup: localLookupPath
-            },
+            } : null,
             timeoutMs: catalogRequestTimeoutMs
           })
         : Promise.resolve(null);
@@ -4458,8 +4494,8 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const setLookupPayload = setLookup.status === "fulfilled" ? setLookup.value : null;
       if (communityDragonDetails.status === "fulfilled") {
         entry.entityDetails = communityDragonDetails.value;
-      } else if (isPbeCatalog) {
-        warnings.push(`CommunityDragon PBE 棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
+      } else if (preferences.tftSet) {
+        warnings.push(`CommunityDragon 当前赛季棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
       }
       const itemLookupByApiName = new Map((setLookupPayload?.items ?? [])
         .filter((row) => row?.apiName)
@@ -4470,7 +4506,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const traitLookupByApiName = new Map((setLookupPayload?.traits ?? [])
         .filter((row) => row?.apiName)
         .map((row) => [row.apiName, row]));
-      const pbeSetLookupItems = isPbeCatalog && itemLookupByApiName.size > 0
+      const setLookupItems = preferences.tftSet && itemLookupByApiName.size > 0
         ? buildItemCatalogFromItemsResponse({
             data: [...itemLookupByApiName.keys()].map((apiName) => ({ items: apiName }))
           }, {
@@ -4491,10 +4527,10 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           includeSeeds: includeSeedCatalog
         });
         if (generatedItems.length > 0) {
-          const resolvedItems = mergeCatalogItems(generatedItems, pbeSetLookupItems, { patch });
+          const resolvedItems = mergeCatalogItems(generatedItems, setLookupItems, { patch });
           catalogOverrides.items = resolvedItems;
           entry.itemCatalogMemory = {
-            source: pbeSetLookupItems.length > 0 ? "remote+set_lookup" : "remote",
+            source: setLookupItems.length > 0 ? "remote+set_lookup" : "remote",
             items: resolvedItems.length,
             updatedAt: new Date().toISOString()
           };
@@ -4514,21 +4550,21 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       if (!catalogOverrides.items) {
         const cachedItems = persistedItemCatalog?.value?.items;
         if (Array.isArray(cachedItems) && cachedItems.length > 0) {
-          catalogOverrides.items = mergeCatalogItems(cachedItems, pbeSetLookupItems, { patch });
+          catalogOverrides.items = mergeCatalogItems(cachedItems, setLookupItems, { patch });
           entry.itemCatalogMemory = {
-            source: pbeSetLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
+            source: setLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
             items: catalogOverrides.items.length,
             updatedAt: persistedItemCatalog.updatedAt ?? null
           };
           warnings.push(`已使用 ${persistedItemCatalog.updatedAt ?? "未知时间"} 的持久化装备目录`);
-        } else if (pbeSetLookupItems.length > 0) {
-          catalogOverrides.items = pbeSetLookupItems;
+        } else if (setLookupItems.length > 0) {
+          catalogOverrides.items = setLookupItems;
           entry.itemCatalogMemory = {
             source: "set_lookup",
-            items: pbeSetLookupItems.length,
+            items: setLookupItems.length,
             updatedAt: new Date().toISOString()
           };
-          warnings.push("MetaTFT /items 未返回 PBE 数据，已使用当前 PBE set lookup 装备目录");
+          warnings.push("MetaTFT /items 未返回当前赛季数据，已使用对应 set lookup 装备目录");
         } else if (includeSeedCatalog) {
           const snapshotItems = buildItemCatalogFromItemsResponse({
             data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
@@ -4549,7 +4585,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
             items: 0,
             updatedAt: null
           };
-          warnings.push("当前 PBE 装备目录不可用；为避免跨赛季污染，未回退正式服目录");
+          warnings.push("当前赛季装备目录不可用；为避免跨赛季污染，未回退其他赛季目录");
         }
       }
 
@@ -4972,7 +5008,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,
     runId: details.runId ?? null,
-    seasonContextId: payload.seasonContext?.id ?? payload.query?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+    seasonContextId: details.seasonContextId ?? payload.seasonContext?.id ?? payload.query?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
     visitorScope,
     conversationId: details.conversationId,
     input: details.input,
@@ -6580,6 +6616,8 @@ function normalizeReactChatRequest(body = {}) {
     locale: normalizeDisplayLocale(body.locale),
     startNewTask: body.startNewTask === true,
     messages: normalizeReactChatMessages(body.messages),
+    historyQueryIds: [...new Set((Array.isArray(body.historyQueryIds) ? body.historyQueryIds : [])
+      .filter((id) => typeof id === "string" && /^[a-zA-Z0-9-]{1,80}$/u.test(id)))].slice(-8),
     taskAnchor: body.taskAnchor && typeof body.taskAnchor === "object"
       ? structuredClone(body.taskAnchor)
       : null
@@ -6677,19 +6715,20 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         const fullyResolved = immediateResult.resolution?.requests?.every((entry) => (
           entry.status === "resolved" || entry.status === "ambiguous"
         ));
-        if (fullyResolved) return immediateResult;
+        if (fullyResolved) return { ...immediateResult, scope: { seasonContextId: seasonContext.id, patch: seasonContext.currentPatch ?? seasonContext.effectivePatch ?? "current" } };
       }
       const loaded = await resources();
       const details = loaded.entityDetails ?? await loadOfficialEntityDetails(runtime, {
         signal: toolContext.signal
       });
       toolContext.signal?.throwIfAborted?.();
-      return queryEntityCatalog({
+      const catalogResult = queryEntityCatalog({
         catalog: loaded.catalog,
         details,
         input,
         updatedAt: details?.meta?.updatedAt
       });
+      return { ...catalogResult, scope: { seasonContextId: seasonContext.id, patch: seasonContext.currentPatch ?? seasonContext.effectivePatch ?? "current" } };
     };
   }
 
@@ -6698,12 +6737,14 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     && typeof runtime.compsClient?.getCompsStats === "function"
     && typeof runtime.fetchOfficialEntityDetails === "function"
   ) {
+    const snapshotCache = runtime.reactCompositionSnapshotReuse === true ? new Map() : null;
     handlers.comps_rankings = async (input, toolContext = {}) => {
       toolContext.signal?.throwIfAborted?.();
       const loaded = await resources();
       return queryCompositionRankings(input, loaded.catalog, runtime, {
         preferences,
         seasonContext,
+        snapshotCache,
         details: loaded.entityDetails,
         signal: toolContext.signal
       });
@@ -6818,6 +6859,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
           : undefined,
         performanceItem,
         itemPolicy,
+        itemPolicyScope: requestedEquipmentPolicyScope(request.input),
         itemCategories,
         starLevel: input.starLevel,
         itemCount: input.itemCount,
@@ -6827,7 +6869,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         queue: input.queue,
         rankFilter: input.rank,
         minSamples: input.minSamples,
-        parser: { intentExplicit: true }
+        parser: { intentExplicit: true, itemPolicyExplicit: input.itemPolicy != null }
       };
       const equipmentQueryKey = [
         unitApiName,
@@ -6873,8 +6915,31 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         entityDetails: loaded.entityDetails,
         itemDetails
       });
+      const mechanismApiNames = runtime.reactUnitPlayItemMechanismBatch === true
+        && request.semanticAdvisory?.goal === "recommend_unit_play"
+        && request.semanticAdvisory?.subject?.resolvedId === unitApiName
+        && serialized.type === "unit_build_rankings"
+        ? (serialized.cards?.[0]?.items ?? []).map((item) => String(item?.apiName ?? "")).filter(Boolean)
+        : [];
+      const mechanismQueryPlan = mechanismApiNames.length >= 1 && mechanismApiNames.length <= 4
+        && new Set(mechanismApiNames).size === mechanismApiNames.length
+        ? {
+          schemaVersion: "unit-play-item-mechanism-query-plan.v1",
+          status: "available",
+          apiNames: mechanismApiNames,
+          seasonContextId: preferences.seasonContextId,
+          sourceCardIndex: 0
+        }
+        : null;
       return {
         ...serialized,
+        ...(mechanismQueryPlan ? { mechanismQueryPlan } : {}),
+        // Scope belongs to the server-resolved handler, never model arguments.
+        // Keep source timestamps and any existing query scope intact for audits.
+        scope: {
+          seasonContextId: preferences.seasonContextId,
+          patch: serialized.query?.patch ?? preferences.unitBuildPatch ?? preferences.patch ?? "current"
+        },
         updatedAt: serialized.source?.updatedAt
           ?? result.source?.updatedAt
           ?? result.cache?.query?.updatedAt
@@ -6921,6 +6986,12 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         resolvedParsedInput: {
           ...parsed,
           intent: "comp_analysis",
+          analysis: {
+            ...parseCompAnalysisRequest(analysisInput, {
+              units: parsed.unit ? [parsed.unit] : [], traits: parsed.traitFilters ?? []
+            }),
+            requested: true
+          },
           days: input.days,
           patch: input.patch,
           queue: input.queue,
@@ -7024,6 +7095,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     // official catalog, so bypassing the loaded runtime catalog creates a
     // false `not_found` after a successful entity resolution.
     loadOfficialEntityDetails: currentEntityDetails,
+    officialItemEvidenceV1: runtime.reactOfficialItemEvidenceV1 === true,
     loadOfficialItemDetails: (toolContext = {}) => {
       toolContext.signal?.throwIfAborted?.();
       return loadOfficialItemDetails(runtime);
@@ -7075,11 +7147,12 @@ function immediateReactEntityCatalog(runtime, preferences = {}) {
   const cached = runtime.catalogCache?.get?.(key);
   if (cached?.catalog) return cached;
   const base = createCatalog({ patch: preferences.patch ?? "current" });
+  const isSet18 = preferences.tftSet === "TFTSet18";
   return {
     catalog: createCatalog({
       patch: preferences.patch ?? "current",
-      units: mergeDisplayOverrides(base.units, S18_PBE_UNIT_DISPLAY_OVERRIDES),
-      traits: mergeDisplayOverrides(base.traits, S18_PBE_TRAIT_DISPLAY_OVERRIDES),
+      units: isSet18 ? mergeDisplayOverrides(base.units, S18_UNIT_DISPLAY_OVERRIDES) : base.units,
+      traits: isSet18 ? mergeDisplayOverrides(base.traits, S18_TRAIT_DISPLAY_OVERRIDES) : base.traits,
       items: base.items
     }),
     entityDetails: runtime.officialEntityDetails ?? null
@@ -7160,7 +7233,8 @@ function createReactTaskFrameParse(request, runtime) {
         return parser(request.input, {
           provider: null,
           catalog: immediate.catalog,
-          conversation: []
+          conversation: [],
+          compoundUnitPlayGuidance: runtime.reactCompoundUnitPlayGuidance === true
         });
       });
     }
@@ -7289,7 +7363,7 @@ async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvaila
     const skill = runtime.skillRegistry.get(selection.selected.skillId);
     const skillContext = buildSkillContext({ skill, selection, taskFrame, runtimeAvailableTools });
     const progress = projectSkillProgress({ skill, context: skillContext, facetEvidence: {} });
-    const completion = validateSkillCompletion({ skill, progress });
+    const completion = projectSkillCompletion({ skill, progress });
     await emitAgentSkillShadow(runtime, {
       schemaVersion: "agent-skill-shadow.v1",
       success: true,
@@ -7313,6 +7387,7 @@ async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvaila
       contextBytes: Buffer.byteLength(JSON.stringify(skillContext), "utf8"),
       llmCallsAdded: 0
     });
+    return { skill, selection, taskFrame, runtimeAvailableTools: [...runtimeAvailableTools] };
   } catch (error) {
     await emitAgentSkillShadow(runtime, {
       schemaVersion: "agent-skill-shadow.v1",
@@ -7324,6 +7399,42 @@ async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvaila
       legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
       matcherDurationMs: Math.max(0, Date.now() - startedAt),
       llmCallsAdded: 0
+    });
+  }
+}
+
+function observeAgentSkillOutcome(runtime, selected, request, result) {
+  if (!runtime.agentSkillsShadowV1 || !selected) return;
+  const startedAt = Date.now();
+  try {
+    const season = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
+    const projection = analyzeUnitPlaySkillEvidence({
+      ...selected,
+      toolRegistry: runtime.toolRegistry,
+      result,
+      scope: {
+        unitId: selected.taskFrame.subjects.find((subject) => subject.expectedType === "champion")?.resolvedId,
+        seasonContextId: request.seasonContextId,
+        patch: season.currentPatch ?? season.effectivePatch ?? "current"
+      },
+      now: startedAt,
+      maxAgeMs: REACT_UNIT_BUILD_CACHE_TTL_MS,
+      tacticalMaxAgeMs: runtime.compDetailCacheTtlMs ?? DEFAULT_COMP_DETAIL_CACHE_TTL_MS
+    });
+    // Do not put answers, facts, user text, arbitrary errors or data snapshots in
+    // telemetry. Never await an external observer after the run has finished.
+    const { sourceStatements: _sourceStatements, ...telemetry } = projection;
+    void emitAgentSkillShadow(runtime, {
+      schemaVersion: "agent-skill-outcome-shadow.v1", mode: "shadow", stage: "completed",
+      success: true, selected: true, skillId: selected.skill.id, skillVersion: selected.skill.version,
+      runStatus: ["completed", "completed_with_warning", "clarification_required", "cancelled", "timed_out", "failed"].includes(result?.status) ? result.status : "failed",
+      outcome: telemetry, observerDurationMs: Date.now() - startedAt, llmCallsAdded: 0
+    });
+  } catch {
+    void emitAgentSkillShadow(runtime, {
+      schemaVersion: "agent-skill-outcome-shadow.v1", mode: "shadow", stage: "completed",
+      success: false, selected: true, skillId: selected.skill.id, skillVersion: selected.skill.version,
+      fallbackReason: "skill_outcome_shadow_failed_open", observerDurationMs: Date.now() - startedAt, llmCallsAdded: 0
     });
   }
 }
@@ -7359,9 +7470,13 @@ function broadUnitPlayGuidance(request, runtime) {
   };
 }
 
-function contextualUnitGuidance(request, runtime, playGuidance = null) {
+function contextualUnitGuidance(request, runtime, playGuidance = null, result = null, history = []) {
+  if (!result || !["completed", "completed_with_warning"].includes(result.status)
+    || result.terminationReason === "insufficient_evidence" || !result.evidence?.length) return null;
   const input = String(request.input ?? "").trim();
-  let entity = playGuidance?.entity ?? null;
+  // Current delivered equipment evidence owns the presentation subject. A category
+  // phrase such as 奥恩神器 must not switch follow-up actions to the champion Ornn.
+  let entity = singleEquipmentResultSubject(result) ?? playGuidance?.entity ?? null;
   if (!entity) {
     const currentMentions = immediateUnitMentions(request, runtime, input);
     if (currentMentions.length === 1) {
@@ -7376,34 +7491,27 @@ function contextualUnitGuidance(request, runtime, playGuidance = null) {
   }
   if (!entity) return null;
 
-  const focusedHistory = (request.messages ?? [])
-    .map((message) => String(message?.content ?? "").trim())
-    .filter(Boolean)
-    .filter((content) => {
-      const mentions = immediateUnitMentions(request, runtime, content);
-      return mentions.length === 1 && mentions[0].unit.apiName === entity.apiName;
-    });
-  const turnText = [...focusedHistory, input].filter(Boolean).join("\n");
-
   const english = String(request.locale ?? "").toLowerCase().startsWith("en");
-  const covered = {
-    equipment: Boolean(playGuidance) || /(?:装备|出装|神装|推荐装|item|build)/iu.test(turnText),
-    composition: /(?:阵容|搭配|站位|羁绊|运营|海克斯|强化符文|comp|lineup|position|augment)/iu.test(turnText),
-    video: /(?:视频|教学视频|视频攻略|bilibili|guide\s*video|video\s*guide)/iu.test(turnText)
-  };
+  const covered = unitResultCoverage(result, entity.apiName);
+  for (const previous of history) {
+    const prior = unitResultCoverage(previous, entity.apiName);
+    for (const facet of Object.keys(covered)) covered[facet] ||= prior[facet];
+  }
   const actions = [];
   if (!covered.equipment) {
     actions.push({
       id: "continue_with_equipment",
       label: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
-      query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`
+      query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
+      quickTask: { id: "unit-build", operation: "unit_build_rankings", arguments: { champion: entity.apiName } }
     });
   }
   if (!covered.composition) {
     actions.push({
       id: "continue_with_compositions",
       label: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`,
-      query: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`
+      query: english ? `Compositions containing ${entity.name}` : `查询包含${entity.name}的阵容`,
+      quickTask: { id: "hero-comps", operation: "comp_rankings", arguments: { champion: entity.apiName } }
     });
   }
   if (!covered.video) {
@@ -7583,7 +7691,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       "item_details_batch"
     ].includes(name))
     : availableToolNames;
-  await observeAgentSkillShadow(runtime, getTaskFrameParse, scopedToolNames, {
+  const selectedSkillShadow = await observeAgentSkillShadow(runtime, getTaskFrameParse, scopedToolNames, {
     legacyBroadUnitPlayMatched: Boolean(playGuidance)
   });
   const agent = new ChatAgent({
@@ -7594,6 +7702,10 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     availableToolNames: scopedToolNames,
     agentRuntime: runtime.agentRuntime,
     budget: runtime.reactChatBudget,
+    deadlineRecovery: runtime.reactDeadlineRecovery === true,
+    compositionCardScope: runtime.reactCompositionCardScope === true,
+    compositionCardsOwnPositioning: runtime.reactCompositionCardsOwnPositioning === true,
+    officialItemEvidenceV1: runtime.reactOfficialItemEvidenceV1 === true,
     groundingMode: runtime.reactGroundingMode
   });
   try {
@@ -7608,7 +7720,14 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));
-    if (playGuidance && !controlledUnitPlay) {
+    if (runtime.reactCompositionCardScope === true) {
+      // Presentation receipt, separate from the model's citations/completion.
+      result.compositionCardScope = true;
+      result.cardEvidenceIds = currentDeadlineEvidence(result.evidence ?? [], Date.now(), request.seasonContextId)
+        .filter(entry => ["comps_rankings", "composition_tactical_details"].includes(entry.toolName))
+        .map(entry => entry.evidenceId);
+    }
+    if (playGuidance && !controlledUnitPlay && result.terminationReason !== "deadline_exceeded") {
       const unitBuildEvidence = result.evidence?.findLast?.((entry) => (
         entry.toolName === "unit_builds"
         && Array.isArray(entry.value?.cards)
@@ -7639,6 +7758,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
               reason: result.terminationReason,
               question: result.question,
               missingFields: result.missingFields,
+              confirmationContext: result.clarificationContext,
               recordId: loadedBridgeState?.activeRecordId ?? null
             }
           });
@@ -7655,10 +7775,13 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     }
     const access = await publicAccessStatus();
-    const contextualGuidance = contextualUnitGuidance(
+    const followUpHistory = await loadFollowUpHistory(normalizedRequest, runtime, bridgeScopeKey);
+    const contextualGuidance = result.terminationReason === "deadline_exceeded" ? null : contextualUnitGuidance(
       normalizedRequest,
       runtime,
-      controlledUnitPlay ? null : playGuidance
+      controlledUnitPlay ? null : playGuidance,
+      result,
+      followUpHistory
     );
     const payload = {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
@@ -7683,15 +7806,18 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         runId: result?.run?.runId ?? null,
         conversationId: request.conversationId,
         input: request.input,
+        seasonContextId: request.seasonContextId,
         startedAt
       });
     }
+    observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, payload);
     return {
       statusCode: 200,
       payload
     };
   } catch (error) {
     const access = await publicAccessStatus();
+    observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, null);
     return {
       statusCode: Number.isInteger(error?.statusCode)
         ? error.statusCode

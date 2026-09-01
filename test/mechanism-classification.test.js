@@ -261,7 +261,7 @@ test("classification batches a full trait catalog and still returns a late growt
   const result = await answerMechanismClassificationQuery({
     input: "\u54ea\u4e9b\u7f81\u7eca\u53ef\u6210\u957f\uff1f",
     entityDetails: { units: new Map(), traits, meta: { provider: "fixture" } },
-    seasonContext: { id: "set18-pbe" },
+    seasonContext: { id: "set18-live" },
     provider
   });
 
@@ -312,7 +312,7 @@ test("classification retries only omitted entities instead of silently dropping 
   const result = await answerMechanismClassificationQuery({
     input: "\u54ea\u4e9b\u7f81\u7eca\u53ef\u53d1\u80b2\uff1f",
     entityDetails: { units: new Map(), traits: traitDetails, meta: { provider: "fixture" } },
-    seasonContext: { id: "set18-pbe" },
+    seasonContext: { id: "set18-live" },
     provider
   });
 
@@ -343,7 +343,7 @@ test("an incomplete model response is disclosed and never made sticky in cache",
         levels: []
       }]])
     },
-    seasonContext: { id: "set18-pbe" },
+    seasonContext: { id: "set18-live" },
     provider,
     cache,
     loadPromises: new Map()
