@@ -4,6 +4,7 @@ import { readFile } from "node:fs/promises";
 import test from "node:test";
 
 import {
+  FORWARD_CANONICAL_PROVIDER_AUTH_SCHEMA,
   FORWARD_CANONICAL_PAIR_ORDER_SHA256,
   authorizeForwardCanonicalRun,
   buildForwardBlindedReviewArtifacts,
@@ -13,6 +14,7 @@ import {
   createForwardProviderIdentityTracker,
   runForwardCanonicalExperiment
 } from "../src/experiments/unit-play-guidance-forward/canonical.js";
+import { sha256 } from "../src/experiments/unit-play-guidance-control/content.js";
 import { createForwardScriptedTransport } from "../src/experiments/unit-play-guidance-forward/scripted-transport.js";
 
 const load = async (path) => JSON.parse(await readFile(new URL(path, import.meta.url), "utf8"));
@@ -27,10 +29,34 @@ const rawSha256 = async (path) => createHash("sha256").update(await readFile(new
 test("v2 call authorization fails closed while the frozen config is locked", () => {
   assert.throws(() => authorizeForwardCanonicalRun({ config, preflightResult, transportMode: "real_provider",
     cliAuthorized: true, environmentAuthorization: "1", apiKey: "test", endpoint: config.provider.endpoint,
-    worktreeClean: true, implementationCommitSha: "a".repeat(40) }), /does not authorize real Provider calls/u);
+    worktreeClean: true, implementationCommitSha: "a".repeat(40) }), /authorization artifact is required/u);
   assert.deepEqual(authorizeForwardCanonicalRun({ config, preflightResult, transportMode: "fake_test" }), {
     transportMode: "fake_test", providerCallsAuthorized: false, actualProviderModelCalls: 0, apiKey: null
   });
+});
+
+test("v2 real transport authorization is separately scoped to one commit and the frozen 180-run plan", () => {
+  const commit = "a".repeat(40);
+  const providerAuthorization = {
+    schemaVersion: FORWARD_CANONICAL_PROVIDER_AUTH_SCHEMA,
+    experimentId: config.experimentId,
+    authorizationId: "test-only",
+    scope: "one_formal_paired_run",
+    approved: true,
+    approvedCommitSha: commit,
+    configNormalizedSha256: sha256(config),
+    maxAgentRuns: 180,
+    provider: { hostname: "api.deepseek.com", model: config.provider.model }
+  };
+  const authorization = authorizeForwardCanonicalRun({ config, preflightResult, transportMode: "real_provider",
+    cliAuthorized: true, environmentAuthorization: "1", apiKey: "test", endpoint: config.provider.endpoint,
+    worktreeClean: true, implementationCommitSha: commit, providerAuthorization });
+  assert.equal(authorization.providerCallsAuthorized, true);
+  assert.equal(authorization.authorizationId, "test-only");
+  assert.throws(() => authorizeForwardCanonicalRun({ config, preflightResult, transportMode: "real_provider",
+    cliAuthorized: true, environmentAuthorization: "1", apiKey: "test", endpoint: config.provider.endpoint,
+    worktreeClean: true, implementationCommitSha: "b".repeat(40), providerAuthorization }),
+  /not bound to this implementation commit/u);
 });
 
 test("global request/token fuse and Provider identity checks fail closed", () => {
@@ -88,6 +114,8 @@ test("v2 manifest pins the runner, review protocol, and Provider lock", async ()
     manifest.implementation.scriptedTransportRawSha256);
   assert.equal(await rawSha256("../scripts/run-unit-play-guidance-forward-canonical-dry-run.mjs"),
     manifest.implementation.dryRunScriptRawSha256);
+  assert.equal(await rawSha256("../scripts/run-unit-play-guidance-forward-canonical.mjs"),
+    manifest.implementation.formalRunnerRawSha256);
 });
 
 test("fake transport exercises all 180 canonical runs sequentially with zero actual Provider calls", async () => {
@@ -98,6 +126,9 @@ test("fake transport exercises all 180 canonical runs sequentially with zero act
   assert.equal(result.plan.orderSha256, FORWARD_CANONICAL_PAIR_ORDER_SHA256);
   assert.equal(result.plan.completedAgentRuns, 180);
   assert.equal(result.actualProviderModelCalls, 0);
+  assert.equal(result.status, "awaiting_independent_review");
+  assert.deepEqual(result.aggregate, { validPairedRepetitions: 90, casesWithAtLeastTwoValidPairs: 30,
+    analyzability: { validPairedRepetitionsPass: true, coveredCasesPass: true } });
   assert.equal(result.fuse.providerHttpRequests, 1620);
   assert.equal(result.fuse.totalTokens, 19_440);
   assert.equal(result.fuse.exhausted, false);
@@ -120,6 +151,24 @@ test("fake transport exercises all 180 canonical runs sequentially with zero act
   assert.equal(labels.every((entry) => entry.labels.length === 1080), true);
   assert.equal(fake.snapshot().maxActive, 1);
   assert.equal(fake.snapshot().requests, 1620);
+});
+
+test("premature finishes are preserved but excluded from review as unanalyzable", async () => {
+  const early = async () => {
+    const body = { choices: [{ message: { content: JSON.stringify({ schemaVersion: "react-action.v1",
+      type: "finish", answer: "资料不足。", evidenceIds: [], reasonCode: "insufficient_evidence", narrative: null }) } }],
+    model: "deepseek-v4-flash-test", system_fingerprint: "early-test",
+    usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } };
+    const make = () => ({ ok: true, status: 200, async json() { return structuredClone(body); }, clone: make });
+    return make();
+  };
+  const authorization = authorizeForwardCanonicalRun({ config, preflightResult, transportMode: "fake_test" });
+  const { result, blinded, labels } = await runForwardCanonicalExperiment({ config, corpus, observations,
+    preflightResult, authorization, fetchImpl: early, blindSeed: "c".repeat(40) });
+  assert.equal(result.status, "inconclusive");
+  assert.equal(result.aggregate.validPairedRepetitions, 0);
+  assert.equal(blinded.packet.entries.length, 0);
+  assert.deepEqual(labels, []);
 });
 
 test("canonical runner rejects observation drift before dispatch", async () => {

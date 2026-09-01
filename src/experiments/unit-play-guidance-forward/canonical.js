@@ -16,6 +16,7 @@ export const FORWARD_CANONICAL_SCHEMA_VERSION = "unit-play-guidance-forward-cano
 export const FORWARD_CANONICAL_RUNTIME_VERSION = "unit-play-guidance-forward-canonical-runtime.v2";
 export const FORWARD_CANONICAL_AUTH_ENV = "UNIT_PLAY_GUIDANCE_FORWARD_PROVIDER_AUTHORIZED";
 export const FORWARD_CANONICAL_CREDENTIAL_ENV = "OPENAI_API_KEY";
+export const FORWARD_CANONICAL_PROVIDER_AUTH_SCHEMA = "unit-play-guidance-forward-provider-authorization.v2";
 export const FORWARD_CANONICAL_PAIR_ORDER_SHA256 = "2ad4596d97eacc7cfe77e5460fbe3ed14014988fe7906f5118c2daa4e6719f65";
 export const FORWARD_CANONICAL_LIMITS = Object.freeze({
   totalTokenHardCap: 10_000_000,
@@ -32,6 +33,16 @@ export const FORWARD_REVIEW_FACETS = Object.freeze([
 ]);
 
 const AVAILABLE_TOOLS = Object.freeze([...UNIT_PLAY_GUIDANCE_SKILL_V1_5_7.allowedTools]);
+export const FORWARD_EXPECTED_TOOL_SEQUENCE = Object.freeze([
+  "unit_details",
+  "unit_builds",
+  "item_details_batch",
+  "comps_rankings",
+  "comps_rankings",
+  "composition_tactical_details",
+  "comps_rankings",
+  "composition_tactical_details"
+]);
 const clone = (value) => structuredClone(value);
 
 function taggedError(message, code) {
@@ -237,6 +248,20 @@ function providerUsageTotal(logs) {
     + Number(entry.usage?.uncachedInputTokens ?? 0) + Number(entry.usage?.outputTokens ?? 0), 0);
 }
 
+export function auditForwardCanonicalRun(run) {
+  const toolSequence = (run?.telemetry?.frozenAccesses ?? []).map((entry) => entry.tool);
+  const errors = (run?.events ?? []).filter((event) => event.type === "error")
+    .map((event) => String(event.data?.code ?? "runtime_error"));
+  const checks = {
+    nativeCompletion: run?.result?.terminationReason === "completed",
+    exactFrozenToolSequence: stableJson(toolSequence) === stableJson(FORWARD_EXPECTED_TOOL_SEQUENCE),
+    noRuntimeErrors: errors.length === 0,
+    oneTransportAtATime: Number(run?.telemetry?.maxConcurrentTransportRequests ?? 0) <= 1,
+    providerUsageComplete: (run?.telemetry?.providerLogs ?? []).every((entry) => entry.usage !== null)
+  };
+  return { valid: Object.values(checks).every(Boolean), checks, toolSequence, errorCodes: errors };
+}
+
 async function runArm({ arm, pair, evalCase, observations, config, authorization, fetchImpl, toolRegistry,
   fuse, identityTracker }) {
   const taskFrame = taskFrameFromCase(evalCase);
@@ -293,7 +318,7 @@ async function runArm({ arm, pair, evalCase, observations, config, authorization
     && ["provider_identity_drift", "budget_failure", "hard_cap_enforcement_failure"]
       .includes(String(event.data?.code ?? "")));
   if (fatal) throw taggedError(String(fatal.data?.message ?? fatal.data.code), fatal.data.code);
-  return {
+  const run = {
     schemaVersion: "unit-play-guidance-forward-arm.v2",
     pairId: pair.pairId,
     caseId: pair.caseId,
@@ -313,6 +338,7 @@ async function runArm({ arm, pair, evalCase, observations, config, authorization
       guidanceSha256: arm === "B" ? config.frozen.candidateRenderedContextSha256 : config.frozen.baselineGuidanceSha256
     }
   };
+  return { ...run, audit: auditForwardCanonicalRun(run) };
 }
 
 function validateFrozenInputs(config, corpus, observations, preflightResult) {
@@ -335,7 +361,7 @@ function validateFrozenInputs(config, corpus, observations, preflightResult) {
 
 export function authorizeForwardCanonicalRun({ config, preflightResult, transportMode = "real_provider",
   cliAuthorized = false, environmentAuthorization, apiKey, endpoint, worktreeClean = false,
-  implementationCommitSha } = {}) {
+  implementationCommitSha, providerAuthorization } = {}) {
   if (transportMode === "fake_test") {
     if (config?.authorization?.realProviderPairedRun !== false) {
       throw taggedError("fake transport is only allowed while real Provider calls remain locked", "authorization_failed");
@@ -344,7 +370,7 @@ export function authorizeForwardCanonicalRun({ config, preflightResult, transpor
   }
   const failures = [];
   if (transportMode !== "real_provider") failures.push("unsupported transport mode");
-  if (config?.authorization?.realProviderPairedRun !== true) failures.push("frozen config does not authorize real Provider calls");
+  if (config?.authorization?.realProviderPairedRun !== false) failures.push("frozen config Provider lock must remain unchanged");
   if (preflightResult?.status !== "passed") failures.push("zero-call preflight must pass");
   if (cliAuthorized !== true) failures.push("missing --canonical-real-provider");
   if (environmentAuthorization !== "1") failures.push(`${FORWARD_CANONICAL_AUTH_ENV} must equal 1`);
@@ -354,9 +380,32 @@ export function authorizeForwardCanonicalRun({ config, preflightResult, transpor
   if (hostname !== "api.deepseek.com") failures.push("credential binding target must be api.deepseek.com");
   if (worktreeClean !== true) failures.push("call-enabled experiment worktree must be clean");
   if (!/^[0-9a-f]{40}$/u.test(String(implementationCommitSha ?? ""))) failures.push("implementation commit SHA is unavailable");
+  if (providerAuthorization?.schemaVersion !== FORWARD_CANONICAL_PROVIDER_AUTH_SCHEMA) {
+    failures.push("a separate Provider authorization artifact is required");
+  }
+  if (providerAuthorization?.experimentId !== FORWARD_EXPERIMENT_ID
+    || providerAuthorization?.scope !== "one_formal_paired_run"
+    || providerAuthorization?.approved !== true) {
+    failures.push("Provider authorization scope is invalid");
+  }
+  if (providerAuthorization?.approvedCommitSha !== implementationCommitSha) {
+    failures.push("Provider authorization is not bound to this implementation commit");
+  }
+  if (providerAuthorization?.configNormalizedSha256 !== sha256(config)) {
+    failures.push("Provider authorization is not bound to the frozen config");
+  }
+  if (providerAuthorization?.maxAgentRuns !== config?.execution?.plannedAgentRuns
+    || providerAuthorization?.maxAgentRuns !== 180) {
+    failures.push("Provider authorization run cap must equal the frozen 180-agent-run plan");
+  }
+  if (providerAuthorization?.provider?.hostname !== hostname
+    || providerAuthorization?.provider?.model !== config?.provider?.model) {
+    failures.push("Provider authorization target differs from the frozen Provider target");
+  }
   if (failures.length) throw taggedError(`forward Provider unlock denied: ${failures.join("; ")}`, "authorization_failed");
   return Object.freeze({ transportMode, providerCallsAuthorized: true, actualProviderModelCalls: null,
-    apiKey: String(apiKey), implementationCommitSha: String(implementationCommitSha), hostname });
+    apiKey: String(apiKey), implementationCommitSha: String(implementationCommitSha), hostname,
+    authorizationId: String(providerAuthorization.authorizationId ?? "") });
 }
 
 export function buildForwardBlindedReviewArtifacts(runs, blindSeed) {
@@ -413,6 +462,25 @@ export function buildForwardIndependentLabelTemplates(packet, reviewerIds = ["re
   return reviewerIds.map(make);
 }
 
+function aggregateForwardRuns(runs) {
+  const pairs = new Map();
+  for (const run of runs) {
+    if (!pairs.has(run.pairId)) pairs.set(run.pairId, []);
+    pairs.get(run.pairId).push(run);
+  }
+  const validPairRuns = [...pairs.values()].filter((pairRuns) => pairRuns.length === 2
+    && new Set(pairRuns.map((run) => run.arm)).size === 2 && pairRuns.every((run) => run.audit?.valid));
+  const countsByCase = new Map();
+  for (const pairRuns of validPairRuns) {
+    countsByCase.set(pairRuns[0].caseId, (countsByCase.get(pairRuns[0].caseId) ?? 0) + 1);
+  }
+  const casesWithAtLeastTwoValidPairs = [...countsByCase.values()].filter((count) => count >= 2).length;
+  const analyzability = { validPairedRepetitionsPass: validPairRuns.length >= 81,
+    coveredCasesPass: casesWithAtLeastTwoValidPairs >= 27 };
+  return { validPairedRepetitions: validPairRuns.length, casesWithAtLeastTwoValidPairs, analyzability,
+    validRuns: validPairRuns.flat() };
+}
+
 export async function runForwardCanonicalExperiment({ config, corpus, observations, preflightResult,
   authorization, fetchImpl, blindSeed = "0".repeat(40), onCheckpoint = null } = {}) {
   if (!authorization || !["fake_test", "real_provider"].includes(authorization.transportMode)) {
@@ -437,8 +505,10 @@ export async function runForwardCanonicalExperiment({ config, corpus, observatio
         pairId: pair.pairId, arm, run: clone(run) });
     }
   }
-  const blinded = buildForwardBlindedReviewArtifacts(runs, blindSeed);
-  const labels = buildForwardIndependentLabelTemplates(blinded.packet);
+  const aggregate = aggregateForwardRuns(runs);
+  const blinded = buildForwardBlindedReviewArtifacts(aggregate.validRuns, blindSeed);
+  const analyzable = Object.values(aggregate.analyzability).every(Boolean);
+  const labels = analyzable ? buildForwardIndependentLabelTemplates(blinded.packet) : [];
   const actualProviderModelCalls = authorization.transportMode === "real_provider"
     ? runs.reduce((sum, run) => sum + run.telemetry.transportRequests, 0) : 0;
   return {
@@ -446,7 +516,7 @@ export async function runForwardCanonicalExperiment({ config, corpus, observatio
       schemaVersion: FORWARD_CANONICAL_SCHEMA_VERSION,
       runtimeVersion: FORWARD_CANONICAL_RUNTIME_VERSION,
       experimentId: FORWARD_EXPERIMENT_ID,
-      status: "awaiting_independent_review",
+      status: analyzable ? "awaiting_independent_review" : "inconclusive",
       claimBoundary: authorization.transportMode === "fake_test"
         ? "scripted fake-transport verification only; zero actual Provider model calls and no efficacy claim"
         : "formal paired outputs awaiting two independent reviewers; no production authorization",
@@ -456,6 +526,9 @@ export async function runForwardCanonicalExperiment({ config, corpus, observatio
       actualProviderModelCalls,
       fuse: fuse.snapshot(),
       providerIdentity: identityTracker.snapshot(),
+      aggregate: { validPairedRepetitions: aggregate.validPairedRepetitions,
+        casesWithAtLeastTwoValidPairs: aggregate.casesWithAtLeastTwoValidPairs,
+        analyzability: aggregate.analyzability },
       runs
     },
     blinded,

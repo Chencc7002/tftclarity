@@ -11,7 +11,22 @@
     "plannedAgentRuns": 180,
     "totalTokenHardCap": 10000000,
     "providerHttpRequestHardCap": 1800,
-    "frozenReplayClock": "observation_frozen_at_plus_1ms"
+    "frozenReplayClock": "observation_frozen_at_plus_1ms",
+    "expectedToolSequence": [
+      "unit_details",
+      "unit_builds",
+      "item_details_batch",
+      "comps_rankings",
+      "comps_rankings",
+      "composition_tactical_details",
+      "comps_rankings",
+      "composition_tactical_details"
+    ],
+    "analyzability": {
+      "minimumValidPairedRepetitions": 81,
+      "minimumCasesWithTwoValidPairs": 27,
+      "invalidArmsExcludedFromBlindReview": true
+    }
   },
   "frozen": {
     "corpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
@@ -21,9 +36,10 @@
     "reviewSchemaNormalizedSha256": "19cc05dc1a8bb1a02f19471efc263330b2357c3b0b696241f7a8175cc1d29e07"
   },
   "implementation": {
-    "canonicalRuntimeRawSha256": "db8276ca2833dc8a254b610fcf74fc7666b7ce46bb1054cb069da179ffda1227",
+    "canonicalRuntimeRawSha256": "815b8728e977d9e0f4cbd4324f691d50c8770c234eb400f66760b1659d8d005e",
     "scriptedTransportRawSha256": "6bce2d2137d3409878bf98e1b1023ac5405ad7da86d98f29a3449d34e2155ea9",
-    "dryRunScriptRawSha256": "a9a909c78291322f383feb1c06dfd088ebaaf93dd26e409cd7aac54675fc6859"
+    "dryRunScriptRawSha256": "a9a909c78291322f383feb1c06dfd088ebaaf93dd26e409cd7aac54675fc6859",
+    "formalRunnerRawSha256": "246d2803b2e9cd2ae007e44c40bc5dc48f2cbe47082a24101fc527a65e0ab498"
   },
   "scriptedDryRun": {
     "completed": true,
@@ -38,7 +54,7 @@
       1080,
       1080
     ],
-    "resultNormalizedSha256": "1a1e935aa4beb06f43acc65795fcb71341309b4956cd9debeee4ec9220aa8c18",
+    "resultNormalizedSha256": "d96090e29114190cb44895171aa5be2b47d343a454472fe5cf51ffcaaa76d3b7",
     "packetNormalizedSha256": "ce4b3deeffe9e5619dd3583ade70046a1ae5edd0373b0c460980868635f69bbf",
     "classification": "local scripted transport only; no efficacy claim"
   },
@@ -51,7 +67,16 @@
   "authorization": {
     "realProviderPairedRun": false,
     "productionControl": false,
-    "credentialPersisted": false
+    "credentialPersisted": false,
+    "separateAuthorizationArtifactRequired": true,
+    "authorizationScope": "one_formal_paired_run",
+    "authorizationBinds": [
+      "implementationCommitSha",
+      "configNormalizedSha256",
+      "maxAgentRuns=180",
+      "provider.hostname",
+      "provider.model"
+    ]
   },
   "claimBoundary": "The canonical implementation and its local scripted dry run are ready. Real Provider calls and production control remain unauthorized."
 }

@@ -40,7 +40,7 @@ zero-call forward-evaluation readiness only; no formal paired result or producti
 
 ## Canonical runner scripted verification
 
-The v2 canonical runner is now implemented behind a fail-closed authorization boundary. The checked-in config still has `realProviderPairedRun: false`; supplying CLI, environment, credential, clean-worktree, and commit inputs cannot override that lock. The production default remains Skill 1.3.0 and production source does not import this experiment.
+The v2 canonical runner is now implemented behind a fail-closed authorization boundary. The checked-in config remains frozen with `realProviderPairedRun: false`. A real run additionally requires a separate, uncommitted authorization artifact created only after explicit user approval. That artifact is limited to one formal paired run and binds the exact implementation commit, normalized frozen config, 180-Agent-run cap, Provider hostname, and model. CLI opt-in, environment opt-in, credential presence, a clean worktree, and the matching commit are still independently required. The production default remains Skill 1.3.0 and production source does not import this experiment.
 
 The runner reuses the frozen TaskFrame identity, registered Tool definitions, ToolExecutor, ReAct loop, tactical prompt, action-shaped transcript, and model-observation projection. Every replayed query must exactly match the frozen server plan. Entity re-resolution, individual item lookups, widened build queries, unknown composition mentions, and tactical argument drift fail closed.
 
@@ -60,4 +60,8 @@ The local scripted transport exercised the entire order without a Provider model
 
 Each blinded entry contains two distinct composition cards with its own complete formation. Raw Evidence IDs, pair IDs, arm, repetition, Provider usage, and guidance hashes are excluded from packet entries; the blind key is a separate artifact. The review schema requires two independent reviewers, preserves both original label sets, and requires adjudication on disagreement. Keyword presence alone is not accepted as facet coverage.
 
-This verification proves runner wiring, deterministic replay, output blinding, and failure locks only. The scripted answers are not formal efficacy evidence. No formal paired Provider output has been created, no review has started, and production promotion remains unauthorized.
+Every arm is audited before blinding. It must finish through the native ReAct completion path, contain no runtime error, execute the exact eight-step frozen Tool sequence, keep transport concurrency at one, and retain Provider usage for every decision request. A pair enters the blind packet only when both distinct arms pass. The run is analyzable only with at least 81 valid paired repetitions and at least 27 cases having two valid pairs; otherwise its status is `inconclusive`, invalid outputs remain in the private result for diagnosis, and no reviewer templates are emitted.
+
+The formal CLI writes bounded, append-only per-arm checkpoints and refuses to overwrite an existing output directory. Credentials are held only in memory and are not written to results, checkpoints, the blind packet, or the authorization artifact. Checkpoints preserve partial progress for diagnosis; the runner intentionally does not resume a partial formal attempt.
+
+This verification proves runner wiring, deterministic replay, analyzability filtering, output blinding, and failure locks only. The scripted answers are not formal efficacy evidence. No Provider authorization artifact or formal paired Provider output has been created, no review has started, and production promotion remains unauthorized.
