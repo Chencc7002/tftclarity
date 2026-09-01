@@ -31,3 +31,5 @@ No answer text from the incomplete attempts was used. Only bounded action types,
 - Formal CLI without a commit-bound authorization artifact exits nonzero before creating output.
 
 The scripted run verifies wiring only. A real v3 run requires a new explicit authorization because its candidate-only adaptive scope differs from the previously authorized paired experiment.
+
+The first v3 attempt on `a198fef2d072f3622d66fe8d72cd022e31a363c4` was stopped after 3 runs, 33 Provider requests, and 478,556 observed tokens. It showed that the native-completion audit was stricter than the existing PR1D contract: model answers accepted after a recoverable warning were being marked invalid. The audit now accepts `completed_with_warning` only when the termination reason is `completed`, the answer origin is `model`, runtime errors are absent, usage is complete, and transport concurrency remains one. That attempt produced checkpoints only and is not reliability evidence.

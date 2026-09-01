@@ -28,6 +28,8 @@ Skill 1.5.8 content SHA-256 is `7d2e6ca88c8c8300ab6bdbf28d3a5a567198993c489e0d3a
 
 The adaptive v3 candidate-reliability preflight is frozen separately: 90 B-only Agent runs, a 1,000-request hard cap, no aggregate token cap, and no paired-efficacy claim. Its 11 zero-call gates pass and its scripted transport completes 90/90 runs with 810 fake requests. A real v3 run needs scope-specific authorization.
 
+The first v3 attempt at `a198fef2d072f3622d66fe8d72cd022e31a363c4` stopped after 3 runs because the native-completion audit was stale relative to PR1D and rejected model completions that carried recoverable warnings. It created checkpoints only.
+
 The immutable `metatft-409000-17.9.raw.json` fixture was copied byte-for-byte from the original working tree after Git worktree checkout changed its line endings. Its expected SHA-256 remains `836c609c0c519d6b647be2249a98ecd49d13aaea7f451b0cc6468b6767ebef5b`.
 
 ## Next gate

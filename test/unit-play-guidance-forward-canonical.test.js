@@ -165,7 +165,7 @@ test("fake transport exercises all 180 canonical runs sequentially with zero act
 
 test("native completion validity is independent from Tool-sequence adherence", () => {
   const audit = auditForwardCanonicalRun({
-    result: { status: "completed", terminationReason: "completed", answerOrigin: "model" },
+    result: { status: "completed_with_warning", terminationReason: "completed", answerOrigin: "model" },
     events: [],
     telemetry: { frozenAccesses: [{ tool: "unit_details" }], maxConcurrentTransportRequests: 1,
       providerLogs: [{ usage: { outputTokens: 1 } }] }

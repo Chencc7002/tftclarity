@@ -246,7 +246,7 @@ export function auditForwardCanonicalRun(run) {
   const errors = (run?.events ?? []).filter((event) => event.type === "error")
     .map((event) => String(event.data?.code ?? "runtime_error"));
   const checks = {
-    nativeModelCompletion: run?.result?.status === "completed"
+    nativeModelCompletion: ["completed", "completed_with_warning"].includes(run?.result?.status)
       && run?.result?.terminationReason === "completed" && run?.result?.answerOrigin === "model",
     exactFrozenToolSequence: stableJson(toolSequence) === stableJson(FORWARD_EXPECTED_TOOL_SEQUENCE),
     noRuntimeErrors: errors.length === 0,

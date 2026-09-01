@@ -43,6 +43,17 @@
     "resultNormalizedSha256": "360617a3b03b8b25ad84b4dfa8d5bca519dfa5c9194bd0be18492c1758d596ad",
     "reviewPacketNormalizedSha256": "494bf86020a9f4b0032aeaa009369759ae10920cc5bdd0a2447362bd7e61b393"
   },
+  "disclosedIncompleteAttempts": [
+    {
+      "implementationCommitSha": "a198fef2d072f3622d66fe8d72cd022e31a363c4",
+      "classification": "operator-stopped diagnostic attempt with stale native-completion audit; not reliability evidence",
+      "completedAgentRuns": 3,
+      "providerHttpRequests": 33,
+      "observedTokens": 478556,
+      "completedResultProduced": false,
+      "reviewPacketProduced": false
+    }
+  ],
   "authorization": {
     "realProviderRun": false,
     "separateCommitBoundArtifactRequired": true,
