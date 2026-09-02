@@ -36,3 +36,11 @@ No answer text from incomplete or inconclusive attempts was used. Only bounded a
 - Formal CLI remains locked without a commit-bound authorization artifact.
 
 The scripted run verifies wiring only. A real v5 run requires a new explicit authorization bound to the final commit because the runtime affordance differs from v4.
+
+## Formal run result
+
+The commit-bound v5 formal attempt on `c80d299629a42d6d4ea2cdf848932d3d70eb42de` completed all 90 Agent runs with status `awaiting_independent_review`. It used 810 Provider requests and 11,722,546 observed tokens.
+
+The reliability result passed: 90 native model completions, 90 exact frozen Tool sequences, and 30 cases with at least two native completions. The bounded checkpoint audit found 0 invalid runs, 0 decision rejections, and 0 post-sequence `comps_rankings` over-calls. Review artifacts were written for 90 candidate outputs with two independent 540-facet reviewer templates.
+
+This supports the candidate-only reliability claim for the v5 runtime affordance. It still does not make a paired efficacy claim and does not authorize production. The next gate is independent answer review, adjudication of disagreements, and then a separate product extraction decision.

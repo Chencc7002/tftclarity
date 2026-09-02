@@ -38,6 +38,8 @@ The commit-bound v4 formal attempt at `2d93413be806b92c38eee76484c63274b1705b8c`
 
 The v5 preflight keeps Skill 1.5.9 and adds an experiment-gated ReAct next-action affordance: once two current composition tactical details have been added, the latest observation recommends `finish` with all current Evidence IDs and marks positioning prose as disallowed. This preserves the two existing runtimes and does not widen tool permissions or production behavior.
 
+The commit-bound v5 formal attempt at `c80d299629a42d6d4ea2cdf848932d3d70eb42de` completed all 90 Agent runs with status `awaiting_independent_review`: 90 native model completions, 90 exact frozen Tool sequences, 30 cases with at least two native completions, 810 Provider requests, and 11,722,546 observed tokens. It had 0 invalid checkpoints, 0 decision rejections, and 0 post-sequence `comps_rankings` over-calls. This passes the candidate-only reliability gate and produces a 90-output blinded review packet plus two independent 540-facet label templates. It still does not support a paired efficacy or production claim.
+
 The immutable `metatft-409000-17.9.raw.json` fixture was copied byte-for-byte from the original working tree after Git worktree checkout changed its line endings. Its expected SHA-256 remains `836c609c0c519d6b647be2249a98ecd49d13aaea7f451b0cc6468b6767ebef5b`.
 
 ## Next gate

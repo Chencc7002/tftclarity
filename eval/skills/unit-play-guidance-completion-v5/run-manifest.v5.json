@@ -92,5 +92,23 @@
       "reviewPacketProduced": true,
       "reviewEntries": 27
     }
-  ]
+  ],
+  "formalProviderRun": {
+    "implementationCommitSha": "c80d299629a42d6d4ea2cdf848932d3d70eb42de",
+    "authorizationId": "8f489bd4-7f18-4560-b210-584e42bd3297",
+    "status": "awaiting_independent_review",
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 810,
+    "observedTokens": 11722546,
+    "nativeModelCompletions": 90,
+    "nativeModelCompletionRate": 1,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reliability": {
+      "nativeCompletionsPass": true,
+      "coveredCasesPass": true
+    },
+    "reviewEntries": 90,
+    "productionControl": false
+  }
 }
