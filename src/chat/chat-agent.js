@@ -21,6 +21,10 @@ export class ChatAgent {
     this.compositionCardScope = options.compositionCardScope === true;
     this.compositionCardsOwnPositioning = options.compositionCardsOwnPositioning === true;
     this.officialItemEvidenceV1 = options.officialItemEvidenceV1 === true;
+    this.unitPlayFixedCardCompletionAffordance = options.unitPlayFixedCardCompletionAffordance === true;
+    this.unitPlayInputLanguageGuard = options.unitPlayInputLanguageGuard === true;
+    this.unitPlayFixedCardCount = Number.isInteger(options.unitPlayFixedCardCount)
+      && options.unitPlayFixedCardCount > 0 ? options.unitPlayFixedCardCount : 2;
     this.agentRuntime = options.agentRuntime ?? new AgentRuntime({
       budget: {
         deadlineMs: this.budget.deadlineMs,
@@ -62,6 +66,9 @@ export class ChatAgent {
         compositionCardScope: this.compositionCardScope,
         compositionCardsOwnPositioning: this.compositionCardsOwnPositioning,
         officialItemEvidenceV1: this.officialItemEvidenceV1,
+        unitPlayFixedCardCompletionAffordance: this.unitPlayFixedCardCompletionAffordance,
+        unitPlayFixedCardCount: this.unitPlayFixedCardCount,
+        unitPlayInputLanguageGuard: this.unitPlayInputLanguageGuard,
         signal: controller?.signal ?? options.signal,
         ...(controller ? { registerDeadlineRecovery: (recover) => { recoverDeadline = recover; } } : {}),
         onEvent: options.onEvent,

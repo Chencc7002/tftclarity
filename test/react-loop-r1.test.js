@@ -11,7 +11,7 @@ import {
   enrichMetricLeaderInterpretations,
   ReactLoop
 } from "../src/react/react-loop.js";
-import { validateFinishAction } from "../src/react/termination-policy.js";
+import { preferredAnswerLanguage, validateFinishAction } from "../src/react/termination-policy.js";
 import { requestedEquipmentCategoryScope } from "../src/domain/tft/equipment-category-scope.js";
 
 function definition(name, options = {}) {
@@ -62,6 +62,40 @@ function definition(name, options = {}) {
     execute: async (input, context) => context.handler(input, context)
   };
 }
+
+test("unit-play input-language guard rejects a Chinese answer for a clear English turn", () => {
+  const ledger = { resolve: () => [], snapshot: () => ({ entries: [] }) };
+  assert.equal(preferredAnswerLanguage("How should I play Amumu?"), "en");
+  assert.equal(preferredAnswerLanguage("阿木木怎么玩？"), "zh");
+
+  const rejected = validateFinishAction({
+    reasonCode: "direct_answer",
+    evidenceIds: [],
+    answer: "阿木木是一名魔法坦克，可以在来牌顺时考虑。"
+  }, ledger, {
+    unitPlayInputLanguageGuard: true,
+    currentTurnInput: "How should I play Amumu?"
+  });
+  assert.equal(rejected.valid, false);
+  assert.match(rejected.errors.join("\n"), /requires an English answer/u);
+
+  const accepted = validateFinishAction({
+    reasonCode: "direct_answer",
+    evidenceIds: [],
+    answer: "Amumu is a magic tank. Consider playing him when his recommended items or upgrades come naturally."
+  }, ledger, {
+    unitPlayInputLanguageGuard: true,
+    currentTurnInput: "How should I play Amumu?"
+  });
+  assert.equal(accepted.valid, true);
+
+  const legacy = validateFinishAction({
+    reasonCode: "direct_answer",
+    evidenceIds: [],
+    answer: "阿木木是一名魔法坦克，可以在来牌顺时考虑。"
+  }, ledger);
+  assert.equal(legacy.valid, true, "legacy completion remains unchanged");
+});
 
 function action(type, value = {}) {
   return { schemaVersion: "react-action.v1", type, ...value };

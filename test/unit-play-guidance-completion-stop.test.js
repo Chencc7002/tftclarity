@@ -6,7 +6,8 @@ import {
   UNIT_PLAY_GUIDANCE_SKILL_V1_5_7,
   UNIT_PLAY_GUIDANCE_SKILL_V1_5_8,
   UNIT_PLAY_GUIDANCE_SKILL_V1_5_9,
-  UNIT_PLAY_GUIDANCE_SKILL_V1_5_10
+  UNIT_PLAY_GUIDANCE_SKILL_V1_5_10,
+  UNIT_PLAY_GUIDANCE_SKILL_V1_5_11
 } from "../src/skills/definitions/unit-play-guidance.js";
 
 test("1.5.8 stops retrieval after the fixed source-card set without widening authority", () => {
@@ -71,5 +72,18 @@ test("1.5.10 keeps v5 authority fixed while narrowing answer detail and matching
   assert.match(prompt, /具体数值、触发阈值、持续时间和次要触发可以整项省略/u);
   assert.match(prompt, /主动提到的效果必须与当前官方装备 Evidence 一致/u);
   assert.match(prompt, /正文不得写任何阵容名、坐标、行列、前排\/中排\/后排、cell 或站位解释/u);
+  assert.equal(UNIT_PLAY_GUIDANCE_SKILL.version, "1.3.0");
+});
+
+test("1.5.11 preserves unit-effect conditions and makes current-turn language explicit", () => {
+  assert.equal(UNIT_PLAY_GUIDANCE_SKILL_V1_5_11.version, "1.5.11");
+  for (const field of ["allowedTools", "dataDependencies", "facets", "toolPolicy", "evidencePolicy", "completionPolicy"]) {
+    assert.deepEqual(UNIT_PLAY_GUIDANCE_SKILL_V1_5_11[field], UNIT_PLAY_GUIDANCE_SKILL_V1_5_10[field]);
+  }
+  const prompt = UNIT_PLAY_GUIDANCE_SKILL_V1_5_11.instructions.join("\n");
+  assert.match(prompt, /英文输入必须用英文正文/u);
+  assert.match(prompt, /施加者、作用对象、前置条件和结果/u);
+  assert.match(prompt, /目标已灼烧时眩晕更久/u);
+  assert.match(prompt, /不能写成‘技能灼烧目标’/u);
   assert.equal(UNIT_PLAY_GUIDANCE_SKILL.version, "1.3.0");
 });

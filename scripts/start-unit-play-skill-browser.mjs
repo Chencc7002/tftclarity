@@ -5,7 +5,7 @@ import { createSmallWindowRuntimeAsync, startSmallWindowServer } from "../src/ap
 import { MemoryCacheStore } from "../src/index.js";
 import { createUnitPlayBrowserCandidate } from "../src/experiments/unit-play-guidance-browser/candidate.js";
 import { REACT_DECISION_PROMPT_VERSION, REACT_SCOPED_TACTICAL_PROMPT_VERSION } from "../src/react/react-decision-provider.js";
-import { UNIT_PLAY_GUIDANCE_SKILL_V1_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_2, UNIT_PLAY_GUIDANCE_SKILL_V1_5_3, UNIT_PLAY_GUIDANCE_SKILL_V1_5_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_5, UNIT_PLAY_GUIDANCE_SKILL_V1_5_6, UNIT_PLAY_GUIDANCE_SKILL_V1_5_7, UNIT_PLAY_GUIDANCE_SKILL_V1_5_8 } from "../src/skills/definitions/unit-play-guidance.js";
+import { UNIT_PLAY_GUIDANCE_SKILL_V1_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_2, UNIT_PLAY_GUIDANCE_SKILL_V1_5_3, UNIT_PLAY_GUIDANCE_SKILL_V1_5_4, UNIT_PLAY_GUIDANCE_SKILL_V1_5_5, UNIT_PLAY_GUIDANCE_SKILL_V1_5_6, UNIT_PLAY_GUIDANCE_SKILL_V1_5_7, UNIT_PLAY_GUIDANCE_SKILL_V1_5_8, UNIT_PLAY_GUIDANCE_SKILL_V1_5_9, UNIT_PLAY_GUIDANCE_SKILL_V1_5_10, UNIT_PLAY_GUIDANCE_SKILL_V1_5_11 } from "../src/skills/definitions/unit-play-guidance.js";
 
 // Explicit local diagnostic, never loaded by the production server. User browser
 // interactions can incur normal configured-provider usage; no automatic queries.
@@ -27,6 +27,9 @@ const cardsOnlyAnswerContract = process.argv.includes("--cards-only-answer-contr
 const exactCardQueryContract = process.argv.includes("--exact-card-query-contract");
 const unitPlayItemBatch = process.argv.includes("--unit-play-item-batch");
 const unitPlayCompletionStop = process.argv.includes("--unit-play-completion-stop");
+const unitPlayCompletionAffordance = process.argv.includes("--unit-play-completion-affordance");
+const conciseAnswerContract = process.argv.includes("--concise-answer-contract");
+const unitMechanismAnswerContract = process.argv.includes("--unit-mechanism-answer-contract");
 const modelObservationProjection = process.argv.includes("--model-observation-projection");
 const maxRequestsArg = arg("max-requests", "");
 const maxRequests = maxRequestsArg === "" ? null : Number(maxRequestsArg);
@@ -38,8 +41,14 @@ if (cardsOnlyAnswerContract && !compactAnswerContract) throw new Error("--cards-
 if (exactCardQueryContract && !cardsOnlyAnswerContract) throw new Error("--exact-card-query-contract requires --cards-only-answer-contract");
 if (unitPlayItemBatch && !exactCardQueryContract) throw new Error("--unit-play-item-batch requires --exact-card-query-contract");
 if (unitPlayCompletionStop && !unitPlayItemBatch) throw new Error("--unit-play-completion-stop requires --unit-play-item-batch");
+if (unitPlayCompletionAffordance && !unitPlayCompletionStop) throw new Error("--unit-play-completion-affordance requires --unit-play-completion-stop");
+if (conciseAnswerContract && !unitPlayCompletionAffordance) throw new Error("--concise-answer-contract requires --unit-play-completion-affordance");
+if (unitMechanismAnswerContract && !conciseAnswerContract) throw new Error("--unit-mechanism-answer-contract requires --concise-answer-contract");
 if (modelObservationProjection && !answerContract) throw new Error("--model-observation-projection requires --answer-contract");
-const skill = unitPlayCompletionStop ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_8
+const skill = unitMechanismAnswerContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_11
+  : conciseAnswerContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_10
+  : unitPlayCompletionAffordance ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_9
+  : unitPlayCompletionStop ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_8
   : unitPlayItemBatch ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_7
   : exactCardQueryContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_6
   : cardsOnlyAnswerContract ? UNIT_PLAY_GUIDANCE_SKILL_V1_5_5
@@ -80,11 +89,15 @@ runtime.reactCompositionCardsOwnPositioning = cardsOnlyAnswerContract;
 runtime.reactCompoundUnitPlayGuidance = compoundUnitPlayGuidance;
 runtime.reactOfficialItemEvidenceV1 = mechanismEvidence;
 runtime.reactUnitPlayItemMechanismBatch = unitPlayItemBatch;
+runtime.reactUnitPlayFixedCardCompletionAffordance = unitPlayCompletionAffordance;
+runtime.reactUnitPlayFixedCardCount = 2;
+runtime.reactUnitPlayInputLanguageGuard = unitMechanismAnswerContract;
 writeFileSync(resolve(output, "manifest.json"), JSON.stringify({ mode: "isolated_browser_diagnostic", skillId: skill.id,
   skillVersion: skill.version, contentHash: candidate.contentHash, skill,
   model: runtime.reactDecisionProvider.model, taskFrameControl: runtime.reactTaskFrameControlV1,
   budget: runtime.reactChatBudget, messageLayout, decisionMessages, deadlineRecovery, compositionSnapshotReuse, compositionCardScope, compoundUnitPlayGuidance, mechanismEvidence, answerContract, tacticalPresentationScope,
-  compactAnswerContract, cardsOnlyAnswerContract, exactCardQueryContract, unitPlayItemBatch, modelObservationProjection,
+  compactAnswerContract, cardsOnlyAnswerContract, exactCardQueryContract, unitPlayItemBatch, unitPlayCompletionStop,
+  unitPlayCompletionAffordance, conciseAnswerContract, unitMechanismAnswerContract, modelObservationProjection,
   maxRequests,
   providerPromptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : REACT_DECISION_PROMPT_VERSION,
   productionSkillControl: false, frozenPairedEvaluation: false }, null, 2));

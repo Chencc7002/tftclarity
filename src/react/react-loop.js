@@ -1828,7 +1828,10 @@ export class ReactLoop {
         }
         const finishValidation = validateFinishAction(action, ledger, { compositionCardScope: context.compositionCardScope,
           compositionCardsOwnPositioning: context.compositionCardsOwnPositioning,
-          officialItemEvidenceV1: context.officialItemEvidenceV1, now: this.now(), seasonContextId: state.seasonContextId });
+          officialItemEvidenceV1: context.officialItemEvidenceV1,
+          unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
+          currentTurnInput: request.input ?? request.question,
+          now: this.now(), seasonContextId: state.seasonContextId });
         if (context.compositionCardScope) {
           const legacyValidation = validateFinishAction(action, ledger);
           emit("positioning_validation_comparison", { legacyErrors: legacyValidation.errors,

@@ -7550,6 +7550,29 @@ function contextualUnitGuidance(request, runtime, playGuidance = null, result = 
   };
 }
 
+// Presentation-only receipt. A completed model answer has already passed the
+// Ledger and finish validators, so keep its cited composition snapshots even
+// when an upstream clock is a few seconds ahead of the local response clock.
+// Deadline recovery remains conservative and uses only current evidence.
+export function compositionCardEvidenceIds(result, now, seasonContextId) {
+  const evidence = result?.evidence ?? [];
+  const permitted = new Set(currentDeadlineEvidence(evidence, now, seasonContextId)
+    .map((entry) => entry.evidenceId));
+  if (result?.answerOrigin === "model" && result?.terminationReason === "completed") {
+    const cited = new Set(result.evidenceIds ?? []);
+    for (const entry of currentDeadlineEvidence(
+      evidence.filter((item) => cited.has(item.evidenceId)),
+      now,
+      seasonContextId,
+      { sourceClockSkewMs: 10_000 }
+    )) permitted.add(entry.evidenceId);
+  }
+  return evidence
+    .filter((entry) => permitted.has(entry.evidenceId)
+      && ["comps_rankings", "composition_tactical_details"].includes(entry.toolName))
+    .map((entry) => entry.evidenceId);
+}
+
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
   const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
@@ -7706,6 +7729,9 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     compositionCardScope: runtime.reactCompositionCardScope === true,
     compositionCardsOwnPositioning: runtime.reactCompositionCardsOwnPositioning === true,
     officialItemEvidenceV1: runtime.reactOfficialItemEvidenceV1 === true,
+    unitPlayFixedCardCompletionAffordance: runtime.reactUnitPlayFixedCardCompletionAffordance === true,
+    unitPlayFixedCardCount: runtime.reactUnitPlayFixedCardCount,
+    unitPlayInputLanguageGuard: runtime.reactUnitPlayInputLanguageGuard === true,
     groundingMode: runtime.reactGroundingMode
   });
   try {
@@ -7723,9 +7749,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     if (runtime.reactCompositionCardScope === true) {
       // Presentation receipt, separate from the model's citations/completion.
       result.compositionCardScope = true;
-      result.cardEvidenceIds = currentDeadlineEvidence(result.evidence ?? [], Date.now(), request.seasonContextId)
-        .filter(entry => ["comps_rankings", "composition_tactical_details"].includes(entry.toolName))
-        .map(entry => entry.evidenceId);
+      result.cardEvidenceIds = compositionCardEvidenceIds(result, Date.now(), request.seasonContextId);
     }
     if (playGuidance && !controlledUnitPlay && result.terminationReason !== "deadline_exceeded") {
       const unitBuildEvidence = result.evidence?.findLast?.((entry) => (

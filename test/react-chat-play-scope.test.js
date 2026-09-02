@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createDefaultReactToolHandlerBundle,
+  compositionCardEvidenceIds,
   createSmallWindowRuntime,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
@@ -63,6 +64,26 @@ test("isolated follow-up coverage counts displayed card receipts, never unshown 
   assert.deepEqual(unitResultCoverage(result, "DA_Cinderling18"), { equipment: true, composition: false, video: false });
   assert.equal(unitResultCoverage({ ...result, cardEvidenceIds: ["comps"] }, "DA_Cinderling18").composition, true);
   assert.equal(unitResultCoverage({ ...result, evidenceIds: [], cardEvidenceIds: [] }, "DA_Cinderling18").equipment, false);
+});
+
+test("completed model card receipt retains cited snapshots despite small upstream clock skew", () => {
+  const now = Date.now();
+  const entry = (evidenceId, toolName, offsetMs) => ({ evidenceId, toolName,
+    validatedAt: new Date(now).toISOString(), updatedAt: new Date(now + offsetMs).toISOString(),
+    source: "metatft", metadata: { source: "metatft", updatedAt: new Date(now + offsetMs).toISOString() },
+    value: { seasonContextId: "set18-live", source: { updatedAt: new Date(now + offsetMs).toISOString() } } });
+  const result = { answerOrigin: "model", terminationReason: "completed",
+    evidenceIds: ["ranking", "formation", "too-future", "wrong-season", "historical"], evidence: [
+      entry("ranking", "comps_rankings", 0), entry("formation", "composition_tactical_details", 2_000),
+      entry("uncited", "composition_tactical_details", 2_000), entry("build", "unit_builds", 0),
+      entry("too-future", "composition_tactical_details", 20_000),
+      { ...entry("wrong-season", "composition_tactical_details", 2_000), value: {
+        ...entry("wrong-season", "composition_tactical_details", 2_000).value, seasonContextId: "set17-live" } },
+      { ...entry("historical", "composition_tactical_details", 2_000), temporalStatus: "historical" }
+    ] };
+  assert.deepEqual(compositionCardEvidenceIds(result, now, "set18-live"), ["ranking", "formation"]);
+  assert.deepEqual(compositionCardEvidenceIds({ ...result, answerOrigin: "system_evidence_fallback",
+    terminationReason: "deadline_exceeded" }, now, "set18-live"), ["ranking"]);
 });
 
 test("follow-up coverage uses delivered rows and entity IDs, not wording or empty evidence", () => {

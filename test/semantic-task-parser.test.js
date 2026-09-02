@@ -137,13 +137,16 @@ test("opt-in compound play guidance refines the original TaskFrame without chang
   for (const input of [
     "沃里克怎么玩？请给推荐装备和多个阵容，每个阵容带对应站位。",
     "沃里克怎么玩，装备、阵容和站位都讲一下",
-    "请说说沃里克玩法。给出装和阵容推荐。"
+    "请说说沃里克玩法。给出装和阵容推荐。",
+    "How should I play Warwick? Explain the unit and sourced items; show two comp cards with their own positioning."
   ]) {
     const options = { provider: null, catalog: broadPlayCatalog, conversation: [] };
     const legacy = (await parseSemanticTask(input, options)).taskFrame;
     const candidate = (await parseSemanticTask(input, { ...options, compoundUnitPlayGuidance: true })).taskFrame;
     assert.notEqual(legacy.goal, "recommend_unit_play", input);
     assert.equal(candidate.goal, "recommend_unit_play", input);
+    assert.equal(candidate.domain, "tft", input);
+    assert.equal(candidate.understandingStatus, "understood_and_supported", input);
     assert.deepEqual(candidate.expectedOutput, ["unit_play_guidance"], input);
     const refined = await applyDeterministicTftSemantics(legacy, input, { compoundUnitPlayGuidance: true });
     assert.equal(refined.goal, candidate.goal, input);

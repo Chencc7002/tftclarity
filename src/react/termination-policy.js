@@ -473,6 +473,28 @@ export function containsStatisticalClaim(answer) {
   return STATISTICAL_SIGNAL.test(String(answer ?? ""));
 }
 
+function scriptCounts(text) {
+  const value = String(text ?? "");
+  return {
+    latin: (value.match(/[A-Za-z]/gu) ?? []).length,
+    han: (value.match(/\p{Script=Han}/gu) ?? []).length
+  };
+}
+
+export function preferredAnswerLanguage(input) {
+  const { latin, han } = scriptCounts(input);
+  if (latin >= 12 && latin > han * 2) return "en";
+  if (han >= 4 && han >= latin) return "zh";
+  return null;
+}
+
+function answerLanguageErrors(answer, input) {
+  if (preferredAnswerLanguage(input) !== "en") return [];
+  const { latin, han } = scriptCounts(answer);
+  if (latin >= 20 && latin >= han * 2) return [];
+  return ["English unit-play input requires an English answer; preserve the cited claims and rewrite only the answer language before finishing"];
+}
+
 export function validateFinishAction(action, ledger, options = {}) {
   const errors = [];
   const ids = [...new Set(action.evidenceIds ?? [])];
@@ -480,6 +502,9 @@ export function validateFinishAction(action, ledger, options = {}) {
   const currentLedgerEntries = typeof ledger.snapshot === "function"
     ? (ledger.snapshot()?.entries ?? []).filter((entry) => entry?.temporalStatus !== "historical")
     : entries;
+  if (options.unitPlayInputLanguageGuard === true) {
+    errors.push(...answerLanguageErrors(action.answer, options.currentTurnInput));
+  }
   if (entries.length !== ids.length) errors.push("finish references unknown evidenceIds");
   if (options.officialItemEvidenceV1 === true) {
     for (const entry of entries.filter(item => item.toolName === "item_details")) {

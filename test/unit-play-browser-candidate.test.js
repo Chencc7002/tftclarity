@@ -4,7 +4,8 @@ import { createUnitPlayBrowserCandidate, projectUnitPlayModelObservation } from 
 import { ToolRegistry } from "../src/agent/tools/registry.js";
 import { createStructuredToolDefinitions } from "../src/agent/tools/definitions.js";
 import { UNIT_PLAY_GUIDANCE_SKILL_V1_4 as skill,
-  UNIT_PLAY_GUIDANCE_SKILL_V1_5_10 } from "../src/skills/definitions/unit-play-guidance.js";
+  UNIT_PLAY_GUIDANCE_SKILL_V1_5_10,
+  UNIT_PLAY_GUIDANCE_SKILL_V1_5_11 } from "../src/skills/definitions/unit-play-guidance.js";
 
 const registry = new ToolRegistry(createStructuredToolDefinitions());
 const frame = { schemaVersion: "task-frame.v1", domain: "tft", action: "recommend", goal: "recommend_unit_play",
@@ -45,6 +46,22 @@ test("1.5.10 renders the user-confirmed prose policy without changing the candid
   assert.deepEqual(rendered.skillContext.instructions, UNIT_PLAY_GUIDANCE_SKILL_V1_5_10.instructions);
   assert.match(rendered.skillContext.instructions.join("\n"), /跟随用户当前输入的主要语言/u);
   assert.deepEqual(JSON.parse(JSON.stringify(englishRequest.state.semanticAdvisory)), run.semanticAdvisory);
+  assert.equal(f.baseline.length, 0);
+});
+
+test("1.5.11 renders the reviewed unit-mechanism repair without changing the candidate seam", async () => {
+  const f = fixture("append_only", "event", false, UNIT_PLAY_GUIDANCE_SKILL_V1_5_11);
+  const englishRequest = { ...request, state: { ...request.state, question: "How should I play Amumu?" } };
+  await f.candidate.runRequest(async () => {
+    await f.candidate.parseTask(frame);
+    await f.candidate.decisionProvider(englishRequest, {});
+  });
+  const content = f.sent[0].messages.map((message) => { try { return JSON.parse(message.content); } catch { return null; } });
+  const run = content.find((value) => value?.schemaVersion === "react-run-context.v1");
+  const rendered = JSON.parse(run.semanticGuidance);
+  assert.equal(rendered.skillContext.skillVersion, "1.5.11");
+  assert.deepEqual(rendered.skillContext.instructions, UNIT_PLAY_GUIDANCE_SKILL_V1_5_11.instructions);
+  assert.match(rendered.skillContext.instructions.join("\n"), /目标已灼烧时眩晕更久/u);
   assert.equal(f.baseline.length, 0);
 });
 

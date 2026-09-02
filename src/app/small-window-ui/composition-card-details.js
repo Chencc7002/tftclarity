@@ -1,5 +1,6 @@
 const list = (value) => Array.isArray(value) ? value : [];
 const time = (value) => typeof value === "number" ? value : typeof value === "string" ? Date.parse(value) : NaN;
+const SOURCE_CLOCK_SKEW_MS = 10_000;
 const sameUnits = (left, right) => left.length === right.length
   && new Set(left).size === left.length && new Set(right).size === right.length
   && left.every((id) => typeof id === "string" && id && right.includes(id));
@@ -11,7 +12,8 @@ function currentEntry(entry, toolName, now, ttlMs) {
   if (markers.some((value) => ["historical", "stale", "expired"].includes(value))
     || entry.metadata?.stale || entry.metadata?.cache?.stale || entry.value?.cache?.stale) return false;
   const stamps = [entry.updatedAt, entry.metadata.updatedAt, entry.value?.source?.updatedAt];
-  if (stamps.some((stamp) => !Number.isFinite(time(stamp)) || time(stamp) > now || now - time(stamp) > ttlMs)) return false;
+  if (stamps.some((stamp) => !Number.isFinite(time(stamp)) || time(stamp) > now + SOURCE_CLOCK_SKEW_MS
+    || now - time(stamp) > ttlMs)) return false;
   const expiry = entry.value?.cache?.expiresAt ?? entry.metadata?.cache?.expiresAt;
   return expiry == null || (Number.isFinite(time(expiry)) && time(expiry) > now);
 }
@@ -26,7 +28,8 @@ function matchesPlan(entry, plan, now) {
     || value.compositionRef?.compId !== plan.compositionId || value.compositionRef?.clusterId !== plan.clusterId
     || source?.compId !== plan.compositionId || source?.clusterId !== plan.clusterId
     || source?.endpoint !== "/tft-comps-api/comp_details"
-    || !Number.isFinite(time(source.updatedAt)) || time(source.updatedAt) > now || now - time(source.updatedAt) > 5 * 60 * 1000
+    || !Number.isFinite(time(source.updatedAt)) || time(source.updatedAt) > now + SOURCE_CLOCK_SKEW_MS
+    || now - time(source.updatedAt) > 5 * 60 * 1000
     || !["available", "partial", "unavailable"].includes(formation.status)) return false;
   const units = list(formation.units);
   const missing = list(formation.missingUnitApiNames);

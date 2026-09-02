@@ -290,4 +290,18 @@ export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_10 = freezeSkillContract({
   })
 });
 
+// Browser-review candidate after 1.5.10 followed the retrieval contract but
+// still changed a unit-effect condition and answered an English turn in Chinese.
+// Keep authority fixed; tighten only mechanism wording and current-turn language.
+export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_11 = freezeSkillContract({
+  ...UNIT_PLAY_GUIDANCE_SKILL_V1_5_10,
+  version: "1.5.11",
+  instructions: UNIT_PLAY_GUIDANCE_SKILL_V1_5_10.instructions.map((instruction, index) => {
+    if (index === 7) return "正文跟随用户当前输入的主要语言：中文目标80—160字，英文目标50—100词。只写三件事：英雄官方定位/技能一句；来源推荐三件装备及每件主要用途；最后一句两个可玩条件。低样本结果仍可称为来源推荐或参考装备，但来源未明确支持时不能写成主流。阵容、成员、羁绊、统计、站位和棋盘全部由卡片展示，正文不得写任何阵容名、坐标、行列、前排/中排/后排、cell 或站位解释。英文输入必须用英文正文；来源中的中文专有名词可以保留，但不能输出中文句子。";
+    return instruction;
+  }).concat(
+    "英雄技能解读必须保留官方 unit_details 中的施加者、作用对象、前置条件和结果之间的关系。可以整项省略次要机制，不能把目标已有的状态改写成技能施加该状态，也不能把条件成立后的加强效果写成无条件效果。例如‘目标已灼烧时眩晕更久’不能写成‘技能灼烧目标’。不确定时只写不会改变条件关系的主要效果。"
+  )
+});
+
 export const UNIT_PLAY_GUIDANCE_SKILL = UNIT_PLAY_GUIDANCE_SKILL_V1_3;

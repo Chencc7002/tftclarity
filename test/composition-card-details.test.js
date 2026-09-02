@@ -130,6 +130,21 @@ test("wrong composition, cluster, season, roster, cells or timestamps cannot be 
   }
 });
 
+test("card binding tolerates small provider clock skew but rejects a future snapshot", async () => {
+  const payload = await compositionCardPayload();
+  const now = Date.now();
+  for (const [offsetMs, expected] of [[2_000, "ready"], [20_000, "unavailable"]]) {
+    const copy = structuredClone(payload);
+    const timestamp = new Date(now + offsetMs).toISOString();
+    copy.evidence[1].updatedAt = timestamp;
+    copy.evidence[1].metadata.updatedAt = timestamp;
+    copy.evidence[1].value.source.updatedAt = timestamp;
+    copy.evidence[1].value.formation.source.updatedAt = timestamp;
+    assert.equal(cards(collectCompositionResultGroups(copy,
+      harness().normalizeReactCompositionRankings)[0].result)[0].tacticalDetail.status, expected);
+  }
+});
+
 test("partial formation stays in its own card and cannot silently fill missing units", async () => {
   const payload = await compositionCardPayload();
   const formation = payload.evidence[1].value.formation;
