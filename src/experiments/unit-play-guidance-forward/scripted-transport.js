@@ -22,7 +22,7 @@ function response(action) {
   return make();
 }
 
-export function createForwardScriptedTransport() {
+export function createForwardScriptedTransport(configuration = {}) {
   let requests = 0, active = 0, maxActive = 0;
   return {
     async fetchImpl(_url, options) {
@@ -63,8 +63,14 @@ export function createForwardScriptedTransport() {
               clusterId: plan.clusterId, units: plan.units, seasonContextId: plan.seasonContextId });
           }
         } else {
+          const english = configuration.matchInputLanguage === true
+            && (Array.isArray(configuration.englishUnitApiNames)
+              ? configuration.englishUnitApiNames.includes(unit)
+              : messages.some((entry) => /How should I play/iu.test(JSON.stringify(entry))));
           action = { schemaVersion: "react-action.v1", type: "finish",
-            answer: "英雄按工具资料理解并使用推荐装备；拿到推荐装备或本体来牌顺时考虑选择。阵容方案见卡片。",
+            answer: english
+              ? "Use the unit according to its official details and source-recommended items. Consider playing when those items are available or when copies and upgrades come smoothly."
+              : "英雄按工具资料理解并使用推荐装备；拿到推荐装备或本体来牌顺时考虑选择。阵容方案见卡片。",
             evidenceIds: seen.map((entry) => entry.evidence?.evidenceId).filter(Boolean),
             reasonCode: "sufficient_evidence", narrative: null };
         }

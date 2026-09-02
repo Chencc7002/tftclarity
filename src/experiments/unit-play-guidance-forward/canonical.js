@@ -312,6 +312,9 @@ export async function runForwardCanonicalArm({ arm, pair, evalCase, observations
     context.unitPlayFixedCardCount = Number.isInteger(runContextOptions.unitPlayFixedCardCount)
       ? runContextOptions.unitPlayFixedCardCount : 2;
   }
+  if (runContextOptions?.unitPlayInputLanguageGuard === true) {
+    context.unitPlayInputLanguageGuard = true;
+  }
   const result = await loop.run({ input: evalCase.input, messages: clone(evalCase.messages ?? []),
     seasonContextId: observations.seasonContextId, taskAnchor: taskFrame,
     semanticAdvisory: { schemaVersion: "react-semantic-advisory.v1", action: "recommend",

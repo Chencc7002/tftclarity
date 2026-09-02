@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "unit-play-guidance-completion-preflight.v6",
+  "experimentId": "unit-play-guidance-completion.2026-09-02.v6",
+  "status": "passed",
+  "gates": {
+    "configIdentity": true,
+    "adaptiveDisclosure": true,
+    "sourcePreflight": true,
+    "sourceCorpus": true,
+    "sourceObservations": true,
+    "candidateSkill": true,
+    "candidateSelection": true,
+    "candidateRendering": true,
+    "plan": true,
+    "runtimeAffordance": true,
+    "providerLocked": true,
+    "productionLocked": true
+  },
+  "plan": {
+    "plannedAgentRuns": 90,
+    "actualProviderModelCalls": 0,
+    "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11",
+    "concurrency": 1
+  },
+  "hashes": {
+    "sourceCorpus": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "sourceObservations": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkill": "7df0d4830a8221150a49ecf251e86ad7c25980e2468650cba4b4e718cd95be8a",
+    "candidateRenderedContext": "730f637d005537e023b9c92e56c18f93798e8b67a69c84853f004819bb2cd80b"
+  },
+  "claimBoundary": "Adaptive candidate reliability readiness only; no paired efficacy or production claim."
+}

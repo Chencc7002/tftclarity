@@ -13,7 +13,10 @@ if (!process.argv.includes("--live")) throw new Error("Pass --live only for an a
 const arg = (name, fallback) => process.argv.find((value) => value.startsWith(`--${name}=`))?.slice(name.length + 3) ?? fallback;
 const messageLayout = arg("message-layout", "append_only");
 if (!["append_only", "legacy_full_state"].includes(messageLayout)) throw new Error("Unknown provider message layout");
-const decisionMessages = arg("decision-messages", "event");
+// Match the canonical experiment transport by default. The event envelope is
+// retained only as an explicit diagnostic because it can make the Provider
+// echo transcript wrappers and spend an avoidable repair request per action.
+const decisionMessages = arg("decision-messages", "action");
 if (!["event", "action"].includes(decisionMessages)) throw new Error("Unknown diagnostic decision message format");
 const deadlineRecovery = process.argv.includes("--deadline-recovery");
 const compositionSnapshotReuse = process.argv.includes("--composition-snapshot-reuse");
