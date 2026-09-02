@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createUnitPlayBrowserCandidate, projectUnitPlayModelObservation } from "../src/experiments/unit-play-guidance-browser/candidate.js";
 import { ToolRegistry } from "../src/agent/tools/registry.js";
 import { createStructuredToolDefinitions } from "../src/agent/tools/definitions.js";
-import { UNIT_PLAY_GUIDANCE_SKILL_V1_4 as skill } from "../src/skills/definitions/unit-play-guidance.js";
+import { UNIT_PLAY_GUIDANCE_SKILL_V1_4 as skill,
+  UNIT_PLAY_GUIDANCE_SKILL_V1_5_10 } from "../src/skills/definitions/unit-play-guidance.js";
 
 const registry = new ToolRegistry(createStructuredToolDefinitions());
 const frame = { schemaVersion: "task-frame.v1", domain: "tft", action: "recommend", goal: "recommend_unit_play",
@@ -13,9 +14,11 @@ const request = { state: { question: "沃里克怎么玩？", seasonContextId: "
   semanticAdvisory: { goal: "recommend_unit_play", subject: { resolvedId: "DA_18_Warwick" } } },
   toolCatalog: registry.list().filter((tool) => skill.allowedTools.includes(tool.name)) };
 
-function fixture(messageLayout = "append_only", decisionMessages = "event", modelObservationProjection = false) {
+function fixture(messageLayout = "append_only", decisionMessages = "event", modelObservationProjection = false,
+  candidateSkill = skill) {
   const sent = [], events = [], baseline = [];
   const candidate = createUnitPlayBrowserCandidate({ toolRegistry: registry, decisionMessages, modelObservationProjection,
+    skill: candidateSkill,
     parseTask: async (taskFrame) => ({ taskFrame }),
     baselineProvider: async (input) => { baseline.push(input); return "baseline"; },
     onEvent: (event) => events.push(event),
@@ -27,6 +30,23 @@ function fixture(messageLayout = "append_only", decisionMessages = "event", mode
   });
   return { candidate, sent, events, baseline };
 }
+
+test("1.5.10 renders the user-confirmed prose policy without changing the candidate seam", async () => {
+  const f = fixture("append_only", "event", false, UNIT_PLAY_GUIDANCE_SKILL_V1_5_10);
+  const englishRequest = { ...request, state: { ...request.state, question: "How should I play Warwick?" } };
+  await f.candidate.runRequest(async () => {
+    await f.candidate.parseTask(frame);
+    await f.candidate.decisionProvider(englishRequest, {});
+  });
+  const content = f.sent[0].messages.map((message) => { try { return JSON.parse(message.content); } catch { return null; } });
+  const run = content.find((value) => value?.schemaVersion === "react-run-context.v1");
+  const rendered = JSON.parse(run.semanticGuidance);
+  assert.equal(rendered.skillContext.skillVersion, "1.5.10");
+  assert.deepEqual(rendered.skillContext.instructions, UNIT_PLAY_GUIDANCE_SKILL_V1_5_10.instructions);
+  assert.match(rendered.skillContext.instructions.join("\n"), /跟随用户当前输入的主要语言/u);
+  assert.deepEqual(JSON.parse(JSON.stringify(englishRequest.state.semanticAdvisory)), run.semanticAdvisory);
+  assert.equal(f.baseline.length, 0);
+});
 
 test("isolated candidate replaces professional guidance using the existing single parse and exact catalog", async () => {
   const f = fixture();

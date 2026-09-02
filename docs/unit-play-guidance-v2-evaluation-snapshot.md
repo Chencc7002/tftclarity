@@ -40,6 +40,8 @@ The v5 preflight keeps Skill 1.5.9 and adds an experiment-gated ReAct next-actio
 
 The commit-bound v5 formal attempt at `c80d299629a42d6d4ea2cdf848932d3d70eb42de` completed all 90 Agent runs with status `awaiting_independent_review`: 90 native model completions, 90 exact frozen Tool sequences, 30 cases with at least two native completions, 810 Provider requests, and 11,722,546 observed tokens. It had 0 invalid checkpoints, 0 decision rejections, and 0 post-sequence `comps_rankings` over-calls. This passes the candidate-only reliability gate and produces a 90-output blinded review packet plus two independent 540-facet label templates. It still does not support a paired efficacy or production claim.
 
+A user-reviewed preliminary pass over the 90 v5 outputs established the next prose-only candidate, Skill 1.5.10. Equipment explanations should state the main practical contribution and may omit exact values, thresholds, duration, and secondary triggers; any mechanism that is mentioned must still agree with current official item Evidence. A low-sample result may remain a source recommendation but must not be promoted to mainstream without source support. Model prose follows the current user input language. The v5 retrieval sequence, two source-owned composition/formation cards, Evidence rules, finish affordance, permissions, and production lock remain unchanged.
+
 The immutable `metatft-409000-17.9.raw.json` fixture was copied byte-for-byte from the original working tree after Git worktree checkout changed its line endings. Its expected SHA-256 remains `836c609c0c519d6b647be2249a98ecd49d13aaea7f451b0cc6468b6767ebef5b`.
 
 ## Next gate

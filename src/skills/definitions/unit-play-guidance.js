@@ -277,4 +277,17 @@ export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_9 = freezeSkillContract({
   )
 });
 
+// Answer-quality candidate derived from the user-reviewed v5 outputs. Keep the
+// proven retrieval/card completion contract and narrow only prose granularity,
+// recommendation strength and response-language behavior.
+export const UNIT_PLAY_GUIDANCE_SKILL_V1_5_10 = freezeSkillContract({
+  ...UNIT_PLAY_GUIDANCE_SKILL_V1_5_9,
+  version: "1.5.10",
+  instructions: UNIT_PLAY_GUIDANCE_SKILL_V1_5_9.instructions.map((instruction, index) => {
+    if (index === 7) return "正文目标80—160字，并跟随用户当前输入的主要语言。只写三件事：英雄官方定位/技能一句；来源推荐三件装备及每件主要用途；最后一句两个可玩条件。低样本结果仍可称为来源推荐或参考装备，但来源未明确支持时不能写成主流。阵容、成员、羁绊、统计、站位和棋盘全部由卡片展示，正文不得写任何阵容名、坐标、行列、前排/中排/后排、cell 或站位解释。";
+    if (index === 10) return "装备解释优先写主要用途，例如输出属性、吸血、回蓝、坦度或降低抗性。具体数值、触发阈值、持续时间和次要触发可以整项省略，不需要复述完整装备说明；省略细节不能改变留下的机制，主动提到的效果必须与当前官方装备 Evidence 一致。不要用统计高低或模型记忆补充机制，也不要为了完整而加入用户不需要的细节。";
+    return instruction;
+  })
+});
+
 export const UNIT_PLAY_GUIDANCE_SKILL = UNIT_PLAY_GUIDANCE_SKILL_V1_3;
