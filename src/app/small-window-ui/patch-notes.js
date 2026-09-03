@@ -1,3 +1,5 @@
+import { buildPatchHistory } from "./patch-history.js";
+
 export const CURRENT_PATCH_VERSION = "18.1";
 
 const PATCH_NOTES = {
@@ -255,9 +257,12 @@ export function getPatchNote(version, locale = "zh-CN") {
   const patch = PATCH_NOTES[String(version ?? "")];
   if (!patch) return null;
   const localized = patch.locales[locale] ?? patch.locales["zh-CN"];
+  const history = buildPatchHistory(patch, localized, locale);
   return {
     version: patch.version,
     publishedAt: patch.publishedAt,
+    updatedAt: history.at(-1)?.publishedAt ?? patch.publishedAt,
+    history,
     ...localized
   };
 }

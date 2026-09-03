@@ -2565,6 +2565,95 @@ function renderEmptyResult(track = true) {
   setResponseHtml(`<section class="result-state result-empty" data-state="empty"><div class="state-orbit" aria-hidden="true">✦</div><strong>${t("resultEmptyTitle")}</strong><p>${t("resultEmptyBody")}</p></section>`);
 }
 
+function patchRevisionKindLabel(kind) {
+  return t(kind === "balance" ? "patchNotesBalance" : "patchNotesHotfix");
+}
+
+function patchChangeDirectionLabel(direction) {
+  return t(direction === "buff" ? "patchNotesBuff" : "patchNotesNerf");
+}
+
+function formatPatchDate(value) {
+  if (!/^\d{4}-\d{2}-\d{2}$/u.test(String(value ?? ""))) return formatDate(value);
+  return new Intl.DateTimeFormat(getLocale(), {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    timeZone: "UTC"
+  }).format(new Date(`${value}T00:00:00.000Z`));
+}
+
+function patchHistoryHtml(patch) {
+  const history = patch.history ?? [];
+  const latestId = history.at(-1)?.id;
+  const totalChanges = history.reduce((total, revision) => (
+    total + (revision.groups ?? []).reduce((count, group) => count + (group.changes ?? []).length, 0)
+  ), 0);
+  return `
+    <section class="patch-note-section patch-history" aria-label="${escapeHtml(t("patchNotesHistory"))}">
+      <div class="patch-note-section-title">
+        <div><span class="eyebrow">${t("patchNotesHistory")}</span><small>${t("patchNotesTraceHint")}</small></div>
+        <strong title="${escapeHtml(t("patchNotesChanges"))}">${escapeHtml(totalChanges)}</strong>
+      </div>
+      <div class="patch-change-legend" aria-label="${escapeHtml(t("patchNotesNumericSummary"))}">
+        <span class="is-buff"><i aria-hidden="true">↑</i>${t("patchNotesBuff")}</span>
+        <span class="is-nerf"><i aria-hidden="true">↓</i>${t("patchNotesNerf")}</span>
+        <small>${t("patchNotesNumericSummary")}</small>
+      </div>
+      <div class="patch-history-list">
+        ${[...history].reverse().map((revision) => {
+          const isLatest = revision.id === latestId;
+          const changeCount = (revision.groups ?? []).reduce((count, group) => count + (group.changes ?? []).length, 0);
+          return `
+            <article class="patch-history-node${isLatest ? " is-latest" : ""}" id="${escapeHtml(revision.id)}" data-revision-id="${escapeHtml(revision.id)}"${revision.parentId ? ` data-parent-revision-id="${escapeHtml(revision.parentId)}"` : ""}>
+              <span class="patch-history-marker" aria-hidden="true"></span>
+              <div class="patch-history-card">
+                <header>
+                  <div class="patch-history-badges"><span>${escapeHtml(patchRevisionKindLabel(revision.kind))}</span>${isLatest ? `<b>${t("patchNotesLatest")}</b>` : ""}</div>
+                  <time datetime="${escapeHtml(revision.publishedAt)}">${escapeHtml(formatPatchDate(revision.publishedAt))}</time>
+                </header>
+                <h3>${escapeHtml(revision.title)}</h3>
+                <p>${escapeHtml(revision.summary)}</p>
+                <div class="patch-history-lineage">
+                  <span><b>${t("patchNotesRevision")}</b><code>${escapeHtml(revision.id)}</code></span>
+                  <span><b>${t("patchNotesParent")}</b><code>${escapeHtml(revision.parentId ?? t("patchNotesRoot"))}</code></span>
+                </div>
+                <details${isLatest ? " open" : ""}>
+                  <summary>${t("patchNotesShowChanges", { count: changeCount })}</summary>
+                  <div class="patch-history-groups">
+                    ${(revision.groups ?? []).map((group) => `
+                      <section>
+                        <h4>${escapeHtml(group.title)}</h4>
+                        <ol>
+                          ${(group.changes ?? []).map((change) => `
+                            <li class="patch-change is-${escapeHtml(change.direction)}" id="${escapeHtml(change.id)}">
+                              <a href="#${escapeHtml(change.id)}" aria-label="${escapeHtml(t("patchNotesCopyAnchor"))}">#</a>
+                              <span class="patch-change-body">
+                                <span class="patch-change-name">${escapeHtml(change.body)}</span>
+                                <span class="patch-change-values">
+                                  <b>${escapeHtml(patchChangeDirectionLabel(change.direction))}</b>
+                                  <del>${escapeHtml(change.before)}</del>
+                                  <i aria-hidden="true">→</i>
+                                  <strong>${escapeHtml(change.after)}</strong>
+                                </span>
+                              </span>
+                            </li>
+                          `).join("")}
+                        </ol>
+                      </section>
+                    `).join("")}
+                  </div>
+                </details>
+                <footer><span>${escapeHtml(revision.sourceName)}</span><a href="${escapeHtml(revision.sourceUrl)}" target="_blank" rel="noopener noreferrer">${t("patchNotesOfficialLink")} <span aria-hidden="true">↗</span></a></footer>
+              </div>
+            </article>
+          `;
+        }).join("")}
+      </div>
+    </section>
+  `;
+}
+
 function renderPatchNote(track = true) {
   const version = state.seasonContext?.theme?.patchNoteVersion;
   const patch = getPatchNote(version, getLocale());
@@ -2583,30 +2672,18 @@ function renderPatchNote(track = true) {
   resultTitleEl.textContent = t("patchNotesTitle", { version: patch.version });
   resultRefreshButton.disabled = true;
   rawOutputEl.textContent = JSON.stringify(patch, null, 2);
+  const latestRevision = patch.history?.at(-1);
   setResponseHtml(`
     <article class="patch-note-hero">
       <div>
         <span class="patch-version">PATCH ${escapeHtml(patch.version)}</span>
         <h2>${escapeHtml(patch.title)}</h2>
-        <p>${escapeHtml(patch.summary)}</p>
+        <p>${escapeHtml(t("patchNotesNumericSummary"))}</p>
+        ${latestRevision ? `<div class="patch-note-latest"><strong>${t("patchNotesLatest")}</strong><span>${escapeHtml(latestRevision.title)} · ${escapeHtml(latestRevision.summary)}</span></div>` : ""}
       </div>
-      <time datetime="${escapeHtml(patch.publishedAt)}"><span>${t("patchNotesPublished")}</span>${escapeHtml(formatDate(patch.publishedAt))}</time>
+      <time datetime="${escapeHtml(patch.updatedAt)}"><span>${t("patchNotesUpdated")}</span>${escapeHtml(formatPatchDate(patch.updatedAt))}</time>
     </article>
-    <section class="patch-note-section" aria-label="${escapeHtml(t("patchNotesHighlights"))}">
-      <div class="patch-note-section-title"><span class="eyebrow">${t("patchNotesHighlights")}</span><strong>${escapeHtml(patch.highlights.length)}</strong></div>
-      <div class="patch-note-grid">
-        ${patch.highlights.map((highlight, index) => `
-          <article class="patch-note-card">
-            <span>${String(index + 1).padStart(2, "0")}</span>
-            <div><strong>${escapeHtml(highlight.title)}</strong><p>${escapeHtml(highlight.body)}</p></div>
-          </article>
-        `).join("")}
-      </div>
-    </section>
-    <footer class="patch-note-source">
-      <div><span>${t("patchNotesSource")}</span><strong>${escapeHtml(patch.sourceName)}</strong></div>
-      <a href="${escapeHtml(patch.sourceUrl)}" target="_blank" rel="noopener noreferrer">${t("patchNotesOfficialLink")} <span aria-hidden="true">↗</span></a>
-    </footer>
+    ${patchHistoryHtml(patch)}
   `);
 }
 
