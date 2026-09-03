@@ -1,6 +1,6 @@
 # Unit-play guidance v6 extraction architecture review request
 
-Status: **draft for architecture/product review; no implementation or production authorization**
+Status: **Stage 1 implemented and verified; default off; no control or production activation**
 
 ## Decision being carried forward
 
@@ -25,11 +25,12 @@ The repository currently has two relevant but separate mechanisms:
 2. `TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1` can attach the existing broad unit-play
    `semanticAdvisory`. It does not consume `SkillContext` or candidate 1.5.11 instructions.
 
-Candidate 1.5.11 is imported only by isolated evaluation and Browser diagnostic modules.
-The production `src/skills/index.js` export remains 1.3.0. The fixed card-completion and
-input-language affordances used by v6 already live in the existing ReAct loop and
-termination policy, but the production runtime does not configure them as a complete
-candidate mode.
+Candidate 1.5.11 is used by isolated evaluation and Browser diagnostic modules and is now
+also imported directly by the small-window runtime for the separate default-off metadata
+shadow. The production `src/skills/index.js` export remains 1.3.0. The fixed
+card-completion and input-language affordances used by v6 already live in the existing
+ReAct loop and termination policy, but the production runtime does not configure them as
+a complete candidate mode.
 
 Consequently, replacing only the definition observed by the current Skill shadow would
 measure routing and projected context. It would not exercise the candidate instructions,
@@ -93,13 +94,26 @@ any Tool-policy, Evidence, temporal, grounding, Quick Task, budget, or fallback 
 Its cohort size and cost cap require a new approval. The v6 external-run authorization
 cannot be reused.
 
-## Review decision requested later
+## Review decision and remaining authorization
 
-Before implementation, architecture/product review must separately choose whether to:
-
-1. authorize Stage 1 candidate metadata shadow only; or
-2. keep the candidate isolated and perform no runtime extraction.
+The user selected Stage 1 candidate metadata shadow for implementation after the scope
+was explained. This decision did not select Stage 2.
 
 Stage 2 is deliberately excluded from that choice and requires a later explicit
 production-control authorization after Stage 1 evidence and the outstanding independent
 review are considered.
+
+## Stage 1 implementation record
+
+On 2026-09-03 the user agreed to proceed with the default-off, zero-effect candidate
+metadata shadow after clarifying that the application is primarily single-user. Natural
+traffic volume is therefore not an exit dependency: repository boundary tests and a
+small set of owner-triggered requests are sufficient to validate Stage 1 mechanics.
+
+The implementation adds `AGENT_SKILLS_CANDIDATE_SHADOW_V1`, defaulting to off. When
+enabled, it constructs a separate validated registry containing only accepted candidate
+1.5.11, reuses the existing TaskFrame parse promise, and emits
+`agent-skill-candidate-shadow.v1`. The event contains bounded selection/context metadata
+and the accepted candidate content hash. Candidate telemetry dispatch is non-blocking, so
+a pending observer cannot delay the normal response. It does not inject the Skill, call a
+Tool or model, change the response, or produce a candidate outcome claim.

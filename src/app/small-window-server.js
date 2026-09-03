@@ -43,6 +43,7 @@ import {
   projectSkillProgress,
   projectSkillCompletion
 } from "../skills/index.js";
+import { UNIT_PLAY_GUIDANCE_SKILL_V1_5_11 } from "../skills/definitions/unit-play-guidance.js";
 import { analyzeUnitPlaySkillEvidence } from "../domain/tft/unit-play-skill-evidence.js";
 import {
   buildConversationBridgeContextView,
@@ -1111,6 +1112,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
       reactTaskFrameControlV1: runtime.reactTaskFrameControlV1 === true,
       reactTaskFrameShadowV1: runtime.reactTaskFrameShadowV1 === true,
+      agentSkillsShadowV1: runtime.agentSkillsShadowV1 === true,
+      agentSkillsCandidateShadowV1: runtime.agentSkillsCandidateShadowV1 === true,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
       conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
     },
@@ -3135,6 +3138,11 @@ export function createSmallWindowRuntime(options = {}) {
       ?? runtimeEnv.AGENT_SKILLS_SHADOW_V1
       ?? "off"
   ).trim().toLowerCase());
+  const agentSkillsCandidateShadowV1 = ["1", "true", "on", "enabled"].includes(String(
+    options.agentSkillsCandidateShadowV1
+      ?? runtimeEnv.AGENT_SKILLS_CANDIDATE_SHADOW_V1
+      ?? "off"
+  ).trim().toLowerCase());
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options);
   const explorerToolTimeoutMs = Math.max(
     requestTimeouts.explorerTimeoutMs * 2 + 2_000,
@@ -3224,6 +3232,18 @@ export function createSmallWindowRuntime(options = {}) {
       // Static contract failure disables only the Skill shadow subsystem. It is
       // fail-visible in runtime state while the production Agent stays healthy.
       agentSkillShadowDiagnostic = "invalid_skill_definition";
+    }
+  }
+  let candidateSkillRegistry = options.candidateSkillRegistry ?? null;
+  let agentSkillCandidateShadowDiagnostic = null;
+  if (agentSkillsCandidateShadowV1 && !candidateSkillRegistry) {
+    try {
+      candidateSkillRegistry = new SkillRegistry({
+        definitions: options.candidateSkillDefinitions ?? [UNIT_PLAY_GUIDANCE_SKILL_V1_5_11],
+        toolRegistry
+      });
+    } catch {
+      agentSkillCandidateShadowDiagnostic = "invalid_candidate_skill_definition";
     }
   }
   const executionPlanExecutor = options.executionPlanExecutor
@@ -3344,9 +3364,13 @@ export function createSmallWindowRuntime(options = {}) {
     reactTaskFrameShadowV1,
     reactTaskFrameControlV1,
     agentSkillsShadowV1,
+    agentSkillsCandidateShadowV1,
     skillRegistry,
+    candidateSkillRegistry,
     agentSkillShadowOperational: agentSkillsShadowV1 && Boolean(skillRegistry),
+    agentSkillCandidateShadowOperational: agentSkillsCandidateShadowV1 && Boolean(candidateSkillRegistry),
     agentSkillShadowDiagnostic,
+    agentSkillCandidateShadowDiagnostic,
     parseSemanticTask: options.parseSemanticTask ?? parseSemanticTask,
     onReactTaskFrameShadow: options.onReactTaskFrameShadow ?? null,
     onAgentSkillShadow: options.onAgentSkillShadow ?? null,
@@ -7325,17 +7349,30 @@ async function emitAgentSkillShadow(runtime, event) {
 }
 
 async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvailableTools, options = {}) {
-  if (!runtime.agentSkillsShadowV1) return;
+  const candidate = options.candidate === true;
+  const enabled = candidate ? runtime.agentSkillsCandidateShadowV1 : runtime.agentSkillsShadowV1;
+  if (!enabled) return;
+  const registry = candidate ? runtime.candidateSkillRegistry : runtime.skillRegistry;
+  const operational = candidate
+    ? runtime.agentSkillCandidateShadowOperational
+    : runtime.agentSkillShadowOperational;
+  const diagnostic = candidate
+    ? runtime.agentSkillCandidateShadowDiagnostic
+    : runtime.agentSkillShadowDiagnostic;
+  const schemaVersion = candidate ? "agent-skill-candidate-shadow.v1" : "agent-skill-shadow.v1";
+  const emitShadowEvent = candidate
+    ? (event) => { void emitAgentSkillShadow(runtime, event); }
+    : (event) => emitAgentSkillShadow(runtime, event);
   const startedAt = Date.now();
-  if (!runtime.agentSkillShadowOperational || !runtime.skillRegistry) {
-    await emitAgentSkillShadow(runtime, {
-      schemaVersion: "agent-skill-shadow.v1",
+  if (!operational || !registry) {
+    await emitShadowEvent({
+      schemaVersion,
       success: false,
       mode: "shadow",
       selected: false,
       errorName: "SkillInitializationError",
-      fallbackReason: "skill_subsystem_unavailable",
-      diagnostic: runtime.agentSkillShadowDiagnostic ?? "skill_registry_unavailable",
+      fallbackReason: candidate ? "candidate_skill_subsystem_unavailable" : "skill_subsystem_unavailable",
+      diagnostic: diagnostic ?? (candidate ? "candidate_skill_registry_unavailable" : "skill_registry_unavailable"),
       legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
       matcherDurationMs: Math.max(0, Date.now() - startedAt),
       llmCallsAdded: 0
@@ -7344,10 +7381,10 @@ async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvaila
   }
   try {
     const { taskFrame } = await getTaskFrameParse();
-    const selection = matchSkill(taskFrame, runtime.skillRegistry);
+    const selection = matchSkill(taskFrame, registry);
     if (selection.status !== "selected") {
-      await emitAgentSkillShadow(runtime, {
-        schemaVersion: "agent-skill-shadow.v1",
+      await emitShadowEvent({
+        schemaVersion,
         success: true,
         mode: "shadow",
         selected: false,
@@ -7360,12 +7397,12 @@ async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvaila
       });
       return;
     }
-    const skill = runtime.skillRegistry.get(selection.selected.skillId);
+    const skill = registry.get(selection.selected.skillId);
     const skillContext = buildSkillContext({ skill, selection, taskFrame, runtimeAvailableTools });
     const progress = projectSkillProgress({ skill, context: skillContext, facetEvidence: {} });
     const completion = projectSkillCompletion({ skill, progress });
-    await emitAgentSkillShadow(runtime, {
-      schemaVersion: "agent-skill-shadow.v1",
+    await emitShadowEvent({
+      schemaVersion,
       success: true,
       mode: "shadow",
       selected: true,
@@ -7385,17 +7422,20 @@ async function observeAgentSkillShadow(runtime, getTaskFrameParse, runtimeAvaila
       taskFrameControlEligible: isControlledUnitPlayTaskFrame(taskFrame),
       matcherDurationMs: Math.max(0, Date.now() - startedAt),
       contextBytes: Buffer.byteLength(JSON.stringify(skillContext), "utf8"),
+      ...(candidate ? {
+        skillContentSha256: createHash("sha256").update(JSON.stringify(skill)).digest("hex")
+      } : {}),
       llmCallsAdded: 0
     });
     return { skill, selection, taskFrame, runtimeAvailableTools: [...runtimeAvailableTools] };
   } catch (error) {
-    await emitAgentSkillShadow(runtime, {
-      schemaVersion: "agent-skill-shadow.v1",
+    await emitShadowEvent({
+      schemaVersion,
       success: false,
       mode: "shadow",
       selected: false,
       errorName: error?.name ?? "Error",
-      fallbackReason: "skill_shadow_failed_open",
+      fallbackReason: candidate ? "candidate_skill_shadow_failed_open" : "skill_shadow_failed_open",
       legacyBroadUnitPlayMatched: Boolean(options.legacyBroadUnitPlayMatched),
       matcherDurationMs: Math.max(0, Date.now() - startedAt),
       llmCallsAdded: 0
@@ -7715,6 +7755,10 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     ].includes(name))
     : availableToolNames;
   const selectedSkillShadow = await observeAgentSkillShadow(runtime, getTaskFrameParse, scopedToolNames, {
+    legacyBroadUnitPlayMatched: Boolean(playGuidance)
+  });
+  await observeAgentSkillShadow(runtime, getTaskFrameParse, scopedToolNames, {
+    candidate: true,
     legacyBroadUnitPlayMatched: Boolean(playGuidance)
   });
   const agent = new ChatAgent({
