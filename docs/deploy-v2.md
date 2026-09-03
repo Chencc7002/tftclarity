@@ -245,8 +245,15 @@ readiness/AI/公共配额应按既定策略失败或降级，而不是静默绕�
 `app` 不以 MCP 健康作为启动依赖，worker/migrate 也不注入 MCP endpoint；因此 sidecar 故障应只让
 Bilibili 工具返回明确的可见失败原因，不阻塞主页、PostgreSQL readiness 或其他工具。
 
-升级 sidecar 只能修改 Dockerfile 中固定的完整上游 commit SHA，重建后执行真实 MCP smoke、端口/网络
-检查、停机降级和恢复调用。不能跟随浮动 `main`。
+升级 sidecar 必须继续锁定 Dockerfile 中的完整上游 commit SHA，不能跟随浮动 `main`。如果上游在
+已锁定版本中尚未修复外部接口兼容性，允许在构建阶段应用仓库内受审计的最小补丁，但补丁必须：
+
+- 精确匹配预期的上游源码，匹配数量或源码形态变化时构建失败；
+- 有独立单元测试覆盖成功路径和 fail-closed 路径；
+- 不扩大 MCP 的网络、secret 或工具权限边界；
+- 重建后通过真实 MCP smoke、端口/网络检查、停机降级和恢复调用。
+
+上游发布等价修复后，应删除本地兼容补丁并把固定 SHA 更新到已验证的上游 commit。
 
 ## 11. 故障排查
 
