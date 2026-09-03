@@ -12,6 +12,8 @@ RUN git init \
     && git remote add origin "$BILIBILI_MCP_REPOSITORY" \
     && git fetch --depth=1 origin "$BILIBILI_MCP_REF" \
     && git checkout --detach FETCH_HEAD
+COPY deploy/patch-bilibili-mcp-upstream.mjs /tmp/patch-bilibili-mcp-upstream.mjs
+RUN node /tmp/patch-bilibili-mcp-upstream.mjs /build/src/index.ts
 RUN npm ci \
     && npm run build
 
