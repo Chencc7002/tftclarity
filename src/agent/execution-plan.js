@@ -367,6 +367,13 @@ function allowlistedArguments(tool, frame) {
       )
     };
   }
+  if (tool === "patch_facts") {
+    const patch = resolvedIds(entities, "patch")[0] ?? constraints.patch;
+    return {
+      ...(patch ? { patch } : {}),
+      locale: constraints.locale ?? "zh-CN"
+    };
+  }
   if (tool === "unit_comp_candidates") {
     return {
       unit: resolvedIds(entities, "champion")[0],

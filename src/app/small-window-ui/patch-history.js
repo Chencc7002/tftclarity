@@ -11,21 +11,21 @@ const NUMERIC_REVISIONS = Object.freeze({
       },
       groupTitle: { "zh-CN": "羁绊与弈子数值", "en-US": "Trait and champion tuning" },
       changes: Object.freeze([
-        { id: "riftbeast-seven-stats", direction: "nerf", before: "6%", after: "5%", text: { "zh-CN": "7 裂隙野兽 · 攻击力 / 法强 / 攻速加成", "en-US": "Riftbeast (7) · AD / AP / AS bonus" } },
-        { id: "cinderling-base-ad", direction: "nerf", before: "45", after: "40", text: { "zh-CN": "绯红树怪 · 基础攻击力", "en-US": "Cinderling · Base AD" } },
-        { id: "cinderling-ability-damage", direction: "nerf", before: "340/510/765/1300%", after: "310/465/700/1200%", text: { "zh-CN": "绯红树怪 · 技能攻击力倍率", "en-US": "Cinderling · Ability AD ratio" } },
-        { id: "cassiopeia-ability-damage", direction: "nerf", before: "440/660/1050%", after: "400/600/950%", text: { "zh-CN": "卡西奥佩娅 · 技能法强倍率", "en-US": "Cassiopeia · Ability AP ratio" } },
-        { id: "master-yi-resists", direction: "nerf", before: "60", after: "55", text: { "zh-CN": "易 · 护甲与魔抗", "en-US": "Master Yi · Armor and Magic Resist" } },
-        { id: "ahri-ability-damage", direction: "nerf", before: "450/675%", after: "425/640%", text: { "zh-CN": "阿狸 · 技能法强倍率", "en-US": "Ahri · Ability AP ratio" } },
-        { id: "amumu-mana", direction: "buff", before: "30/140", after: "30/125", text: { "zh-CN": "阿木木 · 法力值", "en-US": "Amumu · Mana" } },
-        { id: "amumu-heal", direction: "buff", before: "2.2%", after: "2.5%", text: { "zh-CN": "阿木木 · 最大生命值治疗", "en-US": "Amumu · Max-Health healing" } },
-        { id: "morgana-mana", direction: "nerf", before: "0/60", after: "0/65", text: { "zh-CN": "莫甘娜 · 法力值", "en-US": "Morgana · Mana" } },
-        { id: "soraka-initial-star-damage", direction: "buff", before: "190/285%", after: "225/335%", text: { "zh-CN": "索拉卡 · 初始星体法强倍率", "en-US": "Soraka · Initial-star AP ratio" } },
-        { id: "draven-mana", direction: "buff", before: "0/120", after: "0/110", text: { "zh-CN": "德莱文 · 法力值", "en-US": "Draven · Mana" } },
-        { id: "draven-attack-speed", direction: "buff", before: "0.8", after: "0.85", text: { "zh-CN": "德莱文 · 基础攻速", "en-US": "Draven · Base Attack Speed" } },
-        { id: "elder-dragon-base-ad", direction: "buff", before: "115", after: "125", text: { "zh-CN": "远古巨龙 · 基础攻击力", "en-US": "Elder Dragon · Base AD" } },
-        { id: "lux-ability-damage", direction: "buff", before: "330/520%", after: "355/550%", text: { "zh-CN": "拉克丝 · 技能法强倍率", "en-US": "Lux · Ability AP ratio" } },
-        { id: "lux-lunar-amp", direction: "nerf", before: "10%", after: "8%", text: { "zh-CN": "拉克丝 · 月相伤害增幅", "en-US": "Lux · Lunar damage amplification" } }
+        { id: "riftbeast-seven-stats", direction: "nerf", entityType: "trait", entityApiNames: ["DA_Riftbeast18"], stat: "ad_ap_attack_speed_bonus", before: "6%", after: "5%", text: { "zh-CN": "7 裂隙野兽 · 攻击力 / 法强 / 攻速加成", "en-US": "Riftbeast (7) · AD / AP / AS bonus" } },
+        { id: "cinderling-base-ad", direction: "nerf", entityType: "unit", entityApiNames: ["DA_Cinderling18"], stat: "base_attack_damage", before: "45", after: "40", text: { "zh-CN": "绯红树怪 · 基础攻击力", "en-US": "Cinderling · Base AD" } },
+        { id: "cinderling-ability-damage", direction: "nerf", entityType: "unit", entityApiNames: ["DA_Cinderling18"], stat: "ability_attack_damage_ratio", before: "340/510/765/1300%", after: "310/465/700/1200%", text: { "zh-CN": "绯红树怪 · 技能攻击力倍率", "en-US": "Cinderling · Ability AD ratio" } },
+        { id: "cassiopeia-ability-damage", direction: "nerf", entityType: "unit", entityApiNames: ["DA_18_Cassiopeia"], stat: "ability_power_ratio", before: "440/660/1050%", after: "400/600/950%", text: { "zh-CN": "卡西奥佩娅 · 技能法强倍率", "en-US": "Cassiopeia · Ability AP ratio" } },
+        { id: "master-yi-resists", direction: "nerf", entityType: "unit", entityApiNames: ["DA_18_MasterYi_AD"], stat: "armor_and_magic_resist", before: "60", after: "55", text: { "zh-CN": "易 · 护甲与魔抗", "en-US": "Master Yi · Armor and Magic Resist" } },
+        { id: "ahri-ability-damage", direction: "nerf", entityType: "unit", entityApiNames: ["DA_18_Ahri"], stat: "ability_power_ratio", before: "450/675%", after: "425/640%", text: { "zh-CN": "阿狸 · 技能法强倍率", "en-US": "Ahri · Ability AP ratio" } },
+        { id: "amumu-mana", direction: "buff", entityType: "unit", entityApiNames: ["DA_Amumu18"], stat: "mana", before: "30/140", after: "30/125", text: { "zh-CN": "阿木木 · 法力值", "en-US": "Amumu · Mana" } },
+        { id: "amumu-heal", direction: "buff", entityType: "unit", entityApiNames: ["DA_Amumu18"], stat: "max_health_healing", before: "2.2%", after: "2.5%", text: { "zh-CN": "阿木木 · 最大生命值治疗", "en-US": "Amumu · Max-Health healing" } },
+        { id: "morgana-mana", direction: "nerf", entityType: "unit", entityApiNames: ["DA_18_Morgana"], stat: "mana", before: "0/60", after: "0/65", text: { "zh-CN": "莫甘娜 · 法力值", "en-US": "Morgana · Mana" } },
+        { id: "soraka-initial-star-damage", direction: "buff", entityType: "unit", entityApiNames: ["DA_18_Soraka"], stat: "initial_star_ability_power_ratio", before: "190/285%", after: "225/335%", text: { "zh-CN": "索拉卡 · 初始星体法强倍率", "en-US": "Soraka · Initial-star AP ratio" } },
+        { id: "draven-mana", direction: "buff", entityType: "unit", entityApiNames: ["DA_Draven18"], stat: "mana", before: "0/120", after: "0/110", text: { "zh-CN": "德莱文 · 法力值", "en-US": "Draven · Mana" } },
+        { id: "draven-attack-speed", direction: "buff", entityType: "unit", entityApiNames: ["DA_Draven18"], stat: "base_attack_speed", before: "0.8", after: "0.85", text: { "zh-CN": "德莱文 · 基础攻速", "en-US": "Draven · Base Attack Speed" } },
+        { id: "elder-dragon-base-ad", direction: "buff", entityType: "unit", entityApiNames: ["DA_18_ElderDragon"], stat: "base_attack_damage", before: "115", after: "125", text: { "zh-CN": "远古巨龙 · 基础攻击力", "en-US": "Elder Dragon · Base AD" } },
+        { id: "lux-ability-damage", direction: "buff", entityType: "unit", entityApiNames: ["DA_Lux18_Base"], stat: "ability_power_ratio", before: "330/520%", after: "355/550%", text: { "zh-CN": "拉克丝 · 技能法强倍率", "en-US": "Lux · Ability AP ratio" } },
+        { id: "lux-lunar-amp", direction: "nerf", entityType: "unit", entityApiNames: ["DA_Lux18_Base"], relatedTraitApiNames: ["DA_18_Lunar"], stat: "lunar_damage_amplification", before: "10%", after: "8%", text: { "zh-CN": "拉克丝 · 月相伤害增幅", "en-US": "Lux · Lunar damage amplification" } }
       ])
     })
   ])
@@ -52,6 +52,10 @@ export function buildPatchHistory(patch, localizedPatch, locale = "zh-CN") {
         id: `${revision.id}-${change.id}`,
         body: localized(change.text, locale),
         direction: change.direction,
+        entityType: change.entityType,
+        entityApiNames: [...(change.entityApiNames ?? [])],
+        relatedTraitApiNames: [...(change.relatedTraitApiNames ?? [])],
+        stat: change.stat,
         before: change.before,
         after: change.after
       }))

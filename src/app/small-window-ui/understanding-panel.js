@@ -181,6 +181,7 @@ const TOOLS = Object.freeze({
   unit_details: ["查询英雄资料", "Query champion details"],
   item_details: ["查询装备资料", "Query item details"],
   trait_details: ["查询羁绊资料", "Query trait details"],
+  patch_facts: ["查询官方补丁数值事实", "Query official numeric patch facts"],
   semantic_search: ["检索机制与攻略知识", "Retrieve strategy and mechanic knowledge"]
 });
 
@@ -671,6 +672,7 @@ const AGENT_TOOL_LABELS = Object.freeze({
   item_details: ["装备详情", "item details"],
   item_details_batch: ["装备机制批量详情", "item mechanic details"],
   trait_details: ["羁绊详情", "trait details"],
+  patch_facts: ["官方补丁数值事实", "official numeric patch facts"],
   semantic_search: ["本地知识索引", "local knowledge index"],
   strategy_video_search: ["攻略视频来源", "strategy video sources"]
 });

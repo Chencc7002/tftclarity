@@ -19,6 +19,7 @@ const DESCRIPTIONS = Object.freeze({
   trait_details: "Requires an official trait apiName and returns current trusted trait catalog details. For a user-facing name or alias, call entity_catalog_query first. Do not guess apiName. Not for live composition strength.",
   entity_catalog_query: "Query current TFT units, items or traits with bounded filters or exact normalized name/alias resolution. For natural-language entity names, call this before a details tool and follow resolution.requests[].status; never guess an apiName or silently choose an ambiguous candidate.",
   composition_member_statistics: "Aggregate current composition samples by unit and optionally exclude native members of a target trait. Use for non-trait splash-unit statistics, never emblem-carrier rankings.",
+  patch_facts: "Return exact numeric-only official TFT patch facts with patch release time, traceable revision dates and parent links, stable entity IDs, buff/nerf direction, and before/after values. Use this before summarizing patch changes or combining patch facts with statistics. Omit patch only for the current server-scoped patch. This tool provides official facts, not causal or performance conclusions.",
   semantic_search: "Search only the local knowledge index for mechanism_knowledge, patch_note, static_game_knowledge, or explicitly requested video_guide documents. Never use for current statistics, realtime web/video discovery, or strength ranking. Creator advice must stay attributed.",
   strategy_video_search: "Search Bilibili for current TFT strategy-video candidates through the configured MCP adapter. Returns source links, publish-time patch inference, detail availability, interaction signals, fallback metadata, and traceable ranking signals. It does not inspect or validate video content and must never be described as an攻略正确性评分。"
 });
@@ -297,6 +298,40 @@ const CAPABILITIES = Object.freeze({
       outputs: ["analysis", "ranking", "evidence"]
     })
   ]),
+  patch_facts: Object.freeze([
+    Object.freeze({
+      action: "search",
+      allowedEntityTypes: ["patch", "champion", "trait"],
+      allowNoEntities: true,
+      features: ["official_patch_facts"],
+      goals: ["find_relevant_data", "summarize_patch_changes"],
+      outputs: ["results", "patch_facts", "evidence"]
+    }),
+    Object.freeze({
+      action: "explain",
+      allowedEntityTypes: ["patch", "champion", "trait"],
+      allowNoEntities: true,
+      features: ["official_patch_facts"],
+      goals: ["explain_concept_or_entity", "summarize_patch_changes"],
+      outputs: ["explanation", "patch_facts", "evidence"]
+    }),
+    Object.freeze({
+      action: "summarize",
+      allowedEntityTypes: ["patch", "champion", "trait"],
+      allowNoEntities: true,
+      features: ["official_patch_facts"],
+      goals: ["summarize_patch_changes"],
+      outputs: ["summary", "patch_facts", "evidence"]
+    }),
+    Object.freeze({
+      action: "analyze",
+      allowedEntityTypes: ["patch", "champion", "trait", "composition"],
+      allowNoEntities: true,
+      features: ["official_patch_facts"],
+      goals: ["analyze_evidence", "analyze_patch_impact"],
+      outputs: ["analysis", "patch_facts", "evidence"]
+    })
+  ]),
   semantic_search: Object.freeze([
     Object.freeze({
       action: "search",
@@ -348,6 +383,7 @@ const EVIDENCE_TYPES = Object.freeze({
   trait_details: "official_trait",
   entity_catalog_query: "official_entity_catalog",
   composition_member_statistics: "trait_external_unit_statistics",
+  patch_facts: "official_patch_facts",
   semantic_search: "semantic_candidates",
   strategy_video_search: "strategy_video_candidates"
 });

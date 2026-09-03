@@ -1,3 +1,5 @@
+import { getOfficialPatchFacts } from "../../data/official-patch-facts.js";
+
 export const TFT_TOOL_HANDLER_FACTORY_VERSION = "tft-tool-handler-factory.v1";
 
 function functionEntries(value = {}) {
@@ -160,6 +162,23 @@ export function assertHandlerCoverage(options = {}) {
 
 export function createTftToolHandlers(dependencies = {}) {
   const handlers = Object.fromEntries(functionEntries(dependencies.handlers));
+
+  handlers.patch_facts ??= (input = {}) => {
+    if (input.patch !== undefined && !/^[0-9]{1,2}\.[0-9]{1,2}$/u.test(String(input.patch))) {
+      throw new TypeError("Invalid input for patch_facts: patch must use the N.N format");
+    }
+    if (input.locale !== undefined && !["zh-CN", "en-US"].includes(String(input.locale))) {
+      throw new TypeError("Invalid input for patch_facts: locale must be zh-CN or en-US");
+    }
+    return getOfficialPatchFacts({
+      patch: input.patch
+      ?? dependencies.patchState?.currentPatch
+      ?? dependencies.seasonContext?.currentPatch
+      ?? dependencies.seasonContext?.effectivePatch
+      ?? dependencies.patch,
+      locale: input.locale ?? dependencies.locale ?? "zh-CN"
+    });
+  };
 
   if (
     typeof dependencies.loadOfficialEntityDetails === "function"

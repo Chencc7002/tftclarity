@@ -131,6 +131,10 @@ export {
   getOfficialPatchEvidence,
   listOfficialPatchEvidence
 } from "./data/official-patch-evidence.js";
+export {
+  OFFICIAL_PATCH_FACTS_SCHEMA_VERSION,
+  getOfficialPatchFacts
+} from "./data/official-patch-facts.js";
 export { filterBuildRows } from "./core/item-policy-filter.js";
 export {
   compareRankedBuilds,

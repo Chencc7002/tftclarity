@@ -77,6 +77,10 @@ const OPERATION_REGISTRY = Object.freeze({
     source: "semantic_index",
     params: Object.freeze(["query", "documentTypes", "patch", "locale", "topK"])
   }),
+  patch_facts: Object.freeze({
+    source: "riot_patch_notes",
+    params: Object.freeze(["patch", "locale"])
+  }),
   strategy_video_search: Object.freeze({
     source: "bilibili",
     params: Object.freeze(["query", "ecosystem", "page", "limit"]),

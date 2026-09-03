@@ -24,6 +24,10 @@ test("18.1 announcement exposes a numeric-only traceable revision chain", () => 
   assert.equal(changes.filter((change) => change.direction === "buff").length, 7);
   assert.equal(changes.filter((change) => change.direction === "nerf").length, 8);
   assert.equal(changes.find((change) => change.id.endsWith("amumu-heal")).after, "2.5%");
+  assert.deepEqual(
+    changes.find((change) => change.id.endsWith("amumu-heal")).entityApiNames,
+    ["DA_Amumu18"]
+  );
   assert.equal(patch.history.every((revision) => revision.sourceUrl.includes("teamfighttactics.leagueoflegends.com")), true);
 });
 

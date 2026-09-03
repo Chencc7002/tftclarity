@@ -62,6 +62,7 @@ test("independent react endpoint answers without entering recommendForInput", as
     "trait_details",
     "entity_catalog_query",
     "composition_member_statistics",
+    "patch_facts",
     "strategy_video_search"
   ]);
 });
@@ -360,7 +361,7 @@ test("TFT handler factory reports unavailable tools and enforces explicit covera
     handlers: { unit_details: async () => ({}) }
   });
   assert.equal(typeof bundle.handlers.unit_details, "function");
-  assert.deepEqual(bundle.availableToolNames, ["unit_details"]);
+  assert.deepEqual(bundle.availableToolNames, ["unit_details", "patch_facts"]);
   assert.ok(bundle.unavailableTools.includes("unit_builds"));
   assert.throws(
     () => assertHandlerCoverage({ registry: runtime.toolRegistry, handlers: bundle.handlers }),
@@ -397,6 +398,7 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
     "unit_builds_batch",
     "comps_analysis",
     "item_carrier_rankings",
+    "patch_facts",
     "unit_details",
     "trait_details",
     "item_details",
@@ -644,6 +646,7 @@ test("H1 factory handlers return bounded catalog and semantic evidence", async (
     }]
   });
   assert.deepEqual(bundle.availableToolNames, [
+    "patch_facts",
     "unit_details",
     "trait_details",
     "item_details",
