@@ -44,6 +44,7 @@ test("announcement renderer exposes trace anchors and buff/nerf visuals", () => 
   assert.match(app, /data-parent-revision-id/u);
   assert.match(app, /href="#\$\{escapeHtml\(change\.id\)\}"/u);
   assert.match(app, /patch-change-values/u);
+  assert.match(app, /theme\?\.patchNoteVersion \?\? CURRENT_PATCH_VERSION/u);
   assert.match(styles, /\.patch-history-node::before/u);
   assert.match(styles, /\.patch-change\.is-buff/u);
   assert.match(styles, /\.patch-change\.is-nerf/u);
