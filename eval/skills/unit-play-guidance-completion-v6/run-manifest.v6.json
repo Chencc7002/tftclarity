@@ -89,5 +89,53 @@
       "productionControl": false
     }
   ],
-  "formalProviderRun": null
+  "formalProviderRun": {
+    "implementationCommitSha": "5ce0bef26165873ed82170958a12895014a3368e",
+    "authorizationId": "30a11477-1887-481e-a8c6-324897495ca8",
+    "authorizationConfigNormalizedSha256": "b341ce23896030c9ae51af455f651af5b012f1d7875cfbb54f85cfc9f72b119f",
+    "status": "awaiting_independent_review",
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 840,
+    "observedTokens": 12487457,
+    "nativeModelCompletions": 90,
+    "nativeModelCompletionRate": 1,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reliability": {
+      "nativeCompletionsPass": true,
+      "coveredCasesPass": true
+    },
+    "providerIdentity": {
+      "model": "deepseek-v4-flash",
+      "systemFingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+    },
+    "reviewEntries": 90,
+    "artifacts": {
+      "resultNormalizedSha256": "e945443d7fbf2a2f7c3cdfd300a97299d4dcbf9880b2e08520dce10ab87aa131",
+      "reviewPacketNormalizedSha256": "bc275a0672cbe8957e05fa96d7be13894b33825f4400e936a35287f03e8d6271",
+      "reviewKeyNormalizedSha256": "6423200302bc8f9a8d8d3fcc6bcd80d8c6d2731f20fa4ed8c53f97d4d32f5a7f",
+      "reviewerOneTemplateNormalizedSha256": "595514db02ee07ebcb8d74337f9f0481b99575ac6d2515a25ff89bfdf355e69b",
+      "reviewerTwoTemplateNormalizedSha256": "e09391e4640494f522385c2f980b30541d28483d9e29f0a2392e6c97c14efa4b",
+      "preliminaryReviewRawSha256": "fad65b4e0be8d9d2e8fc28cad5745a6df0415a42aa49b4191611c7e8b46b54c6"
+    },
+    "preliminaryOperatorReview": {
+      "status": "complete",
+      "ratingCounts": {
+        "pass": 605,
+        "partial": 16,
+        "fail": 9
+      },
+      "independentReviewComplete": false
+    },
+    "productDisposition": {
+      "status": "accepted_with_known_limitations",
+      "decidedBy": "user",
+      "decidedAt": "2026-09-03T07:31:03.1768817Z",
+      "basis": "The user stated that the preliminary findings are acceptable and do not require another candidate revision.",
+      "noFurtherCandidateRevisionRequested": true,
+      "independentReviewWaived": false,
+      "productionControl": false
+    },
+    "productionControl": false
+  }
 }
