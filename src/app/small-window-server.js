@@ -44,6 +44,10 @@ import {
   projectSkillCompletion
 } from "../skills/index.js";
 import { UNIT_PLAY_GUIDANCE_SKILL_V1_5_11 } from "../skills/definitions/unit-play-guidance.js";
+import {
+  prepareUnitPlayCandidateControl,
+  resolveUnitPlayCandidateControl
+} from "../skills/unit-play-control.js";
 import { analyzeUnitPlaySkillEvidence } from "../domain/tft/unit-play-skill-evidence.js";
 import {
   buildConversationBridgeContextView,
@@ -1114,6 +1118,10 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       reactTaskFrameShadowV1: runtime.reactTaskFrameShadowV1 === true,
       agentSkillsShadowV1: runtime.agentSkillsShadowV1 === true,
       agentSkillsCandidateShadowV1: runtime.agentSkillsCandidateShadowV1 === true,
+      agentSkillsUnitPlayControlV1: runtime.agentSkillsUnitPlayControlV1 === true,
+      agentSkillsUnitPlayControlSelector: runtime.agentSkillsUnitPlayControlSelector ?? "off",
+      agentSkillsUnitPlayControlOperational: runtime.agentSkillsUnitPlayControlOperational === true,
+      agentSkillsUnitPlayControlDiagnostic: runtime.agentSkillUnitPlayControlDiagnostic ?? null,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
       conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
     },
@@ -3143,6 +3151,12 @@ export function createSmallWindowRuntime(options = {}) {
       ?? runtimeEnv.AGENT_SKILLS_CANDIDATE_SHADOW_V1
       ?? "off"
   ).trim().toLowerCase());
+  const unitPlayCandidateControl = resolveUnitPlayCandidateControl(
+    options.agentSkillsUnitPlayControlV1
+      ?? runtimeEnv.AGENT_SKILLS_UNIT_PLAY_CONTROL_V1
+      ?? "off",
+    UNIT_PLAY_GUIDANCE_SKILL_V1_5_11
+  );
   const requestTimeouts = resolveSmallWindowRequestTimeouts(options);
   const explorerToolTimeoutMs = Math.max(
     requestTimeouts.explorerTimeoutMs * 2 + 2_000,
@@ -3236,7 +3250,8 @@ export function createSmallWindowRuntime(options = {}) {
   }
   let candidateSkillRegistry = options.candidateSkillRegistry ?? null;
   let agentSkillCandidateShadowDiagnostic = null;
-  if (agentSkillsCandidateShadowV1 && !candidateSkillRegistry) {
+  let agentSkillUnitPlayControlDiagnostic = unitPlayCandidateControl.diagnostic;
+  if ((agentSkillsCandidateShadowV1 || unitPlayCandidateControl.enabled) && !candidateSkillRegistry) {
     try {
       candidateSkillRegistry = new SkillRegistry({
         definitions: options.candidateSkillDefinitions ?? [UNIT_PLAY_GUIDANCE_SKILL_V1_5_11],
@@ -3244,6 +3259,9 @@ export function createSmallWindowRuntime(options = {}) {
       });
     } catch {
       agentSkillCandidateShadowDiagnostic = "invalid_candidate_skill_definition";
+      if (unitPlayCandidateControl.enabled) {
+        agentSkillUnitPlayControlDiagnostic = "invalid_candidate_skill_definition";
+      }
     }
   }
   const executionPlanExecutor = options.executionPlanExecutor
@@ -3361,19 +3379,33 @@ export function createSmallWindowRuntime(options = {}) {
     toolExecutor,
     executionPlanExecutor,
     reactDecisionProvider: options.reactDecisionProvider ?? null,
+    reactCreateId: options.reactCreateId ?? null,
+    reactNow: options.reactNow ?? null,
     reactTaskFrameShadowV1,
     reactTaskFrameControlV1,
     agentSkillsShadowV1,
     agentSkillsCandidateShadowV1,
+    agentSkillsUnitPlayControlV1: unitPlayCandidateControl.enabled,
+    agentSkillsUnitPlayControlSelector: unitPlayCandidateControl.selector,
     skillRegistry,
     candidateSkillRegistry,
     agentSkillShadowOperational: agentSkillsShadowV1 && Boolean(skillRegistry),
     agentSkillCandidateShadowOperational: agentSkillsCandidateShadowV1 && Boolean(candidateSkillRegistry),
+    agentSkillsUnitPlayControlOperational: unitPlayCandidateControl.enabled && Boolean(candidateSkillRegistry),
     agentSkillShadowDiagnostic,
     agentSkillCandidateShadowDiagnostic,
+    agentSkillUnitPlayControlDiagnostic,
     parseSemanticTask: options.parseSemanticTask ?? parseSemanticTask,
     onReactTaskFrameShadow: options.onReactTaskFrameShadow ?? null,
     onAgentSkillShadow: options.onAgentSkillShadow ?? null,
+    onAgentSkillControl: options.onAgentSkillControl ?? null,
+    reactCompositionCardScope: options.reactCompositionCardScope === true,
+    reactCompositionCardsOwnPositioning: options.reactCompositionCardsOwnPositioning === true,
+    reactOfficialItemEvidenceV1: options.reactOfficialItemEvidenceV1 === true,
+    reactUnitPlayFixedCardCompletionAffordance: options.reactUnitPlayFixedCardCompletionAffordance === true,
+    reactUnitPlayFixedCardCount: Number.isInteger(options.reactUnitPlayFixedCardCount)
+      && options.reactUnitPlayFixedCardCount > 0 ? options.reactUnitPlayFixedCardCount : 2,
+    reactUnitPlayInputLanguageGuard: options.reactUnitPlayInputLanguageGuard === true,
     reactToolHandlers: options.reactToolHandlers ?? {},
     createReactToolHandlers: options.createReactToolHandlers ?? null,
     // Acceptance runs preserve qualitative model output so unsupported-claim
@@ -7613,6 +7645,15 @@ export function compositionCardEvidenceIds(result, now, seasonContextId) {
     .map((entry) => entry.evidenceId);
 }
 
+function emitAgentSkillControl(runtime, event) {
+  if (typeof runtime.onAgentSkillControl !== "function") return;
+  try {
+    void Promise.resolve(runtime.onAgentSkillControl(structuredClone(event))).catch(() => {});
+  } catch {
+    // Candidate control telemetry cannot change the request result.
+  }
+}
+
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
   const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
@@ -7650,25 +7691,6 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     };
   }
-  const controlledUnitPlay = Boolean(semanticAdvisory);
-  const request = controlledUnitPlay
-    ? {
-      ...normalizedRequest,
-      semanticAdvisory
-    }
-    : playGuidance
-    ? {
-      ...normalizedRequest,
-      input: playGuidance.initialQuery,
-      messages: [
-        ...(normalizedRequest.messages ?? []),
-        {
-          role: "user",
-          content: `当前首答范围仅为“${playGuidance.initialQuery}”。本轮只完成当前版本的出装数据查询，工具范围限制为 entity_catalog_query、unit_builds 和必要的 item_details_batch。`
-        }
-      ]
-    }
-    : normalizedRequest;
   if (typeof runtime.reactDecisionProvider !== "function") {
     return {
       statusCode: 503,
@@ -7679,6 +7701,88 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     };
   }
+  let candidateTaskFrame = null;
+  if (runtime.agentSkillsUnitPlayControlOperational && runtime.candidateSkillRegistry) {
+    try {
+      const parsed = await getTaskFrameParse();
+      const selection = matchSkill(parsed?.taskFrame, runtime.candidateSkillRegistry);
+      if (isControlledUnitPlayTaskFrame(parsed?.taskFrame)
+        && selection.status === "selected"
+        && selection.selected.skillId === "unit_play_guidance") {
+        candidateTaskFrame = parsed.taskFrame;
+      }
+    } catch {
+      emitAgentSkillControl(runtime, {
+        schemaVersion: "agent-skill-control.v1",
+        active: false,
+        reason: "candidate_task_frame_failed",
+        skillId: "unit_play_guidance",
+        skillVersion: "1.5.11"
+      });
+    }
+  }
+  const requestFor = (advisory) => advisory
+    ? { ...normalizedRequest, semanticAdvisory: advisory }
+    : playGuidance
+      ? {
+        ...normalizedRequest,
+        input: playGuidance.initialQuery,
+        messages: [
+          ...(normalizedRequest.messages ?? []),
+          {
+            role: "user",
+            content: `当前首答范围仅为“${playGuidance.initialQuery}”。本轮只完成当前版本的出装数据查询，工具范围限制为 entity_catalog_query、unit_builds 和必要的 item_details_batch。`
+          }
+        ]
+      }
+      : normalizedRequest;
+  const injectedHandlers = runtime.reactToolHandlers ?? {};
+  const createHandlerBundle = async (requestValue) => typeof runtime.createReactToolHandlers === "function"
+    ? runtime.createReactToolHandlers({ request: requestValue, runtime, context })
+    : Object.keys(injectedHandlers).length
+      ? createTftToolHandlers({ registry: runtime.toolRegistry, handlers: injectedHandlers })
+      : createDefaultReactToolHandlerBundle({ request: requestValue, runtime, context });
+  let candidateControl = null;
+  let handlerBundle = null;
+  if (candidateTaskFrame) {
+    const candidateAdvisory = unitPlaySemanticAdvisory(candidateTaskFrame);
+    const candidateRequest = requestFor(candidateAdvisory);
+    try {
+      const candidateHandlerBundle = await createHandlerBundle(candidateRequest);
+      const candidateAvailableTools = candidateHandlerBundle.availableToolNames
+        ?? Object.keys(candidateHandlerBundle.handlers ?? candidateHandlerBundle);
+      const prepared = prepareUnitPlayCandidateControl({
+        taskFrame: candidateTaskFrame,
+        registry: runtime.candidateSkillRegistry,
+        runtimeAvailableTools: candidateAvailableTools
+      });
+      if (prepared.active) {
+        candidateControl = prepared;
+        semanticAdvisory = candidateAdvisory;
+        handlerBundle = candidateHandlerBundle;
+      } else {
+        emitAgentSkillControl(runtime, {
+          schemaVersion: "agent-skill-control.v1",
+          active: false,
+          reason: prepared.reason,
+          skillId: "unit_play_guidance",
+          skillVersion: prepared.skillVersion ?? "1.5.11",
+          effectiveTools: prepared.effectiveTools ?? []
+        });
+      }
+    } catch (error) {
+      emitAgentSkillControl(runtime, {
+        schemaVersion: "agent-skill-control.v1",
+        active: false,
+        reason: "candidate_control_preparation_failed",
+        errorName: error?.name ?? "Error",
+        skillId: "unit_play_guidance",
+        skillVersion: "1.5.11"
+      });
+    }
+  }
+  const controlledUnitPlay = Boolean(semanticAdvisory);
+  const request = requestFor(semanticAdvisory);
   const bridgeScopeKey = String(context.visitor?.scope ?? "local");
   let bridgeContext = null;
   let loadedBridgeState = null;
@@ -7718,12 +7822,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }
   }
   bridgeContext = attachTrustedAnalysisContext(bridgeContext, context.trustedAnalysisContext);
-  const injectedHandlers = runtime.reactToolHandlers ?? {};
-  const handlerBundle = typeof runtime.createReactToolHandlers === "function"
-    ? await runtime.createReactToolHandlers({ request, runtime, context })
-    : Object.keys(injectedHandlers).length
-      ? createTftToolHandlers({ registry: runtime.toolRegistry, handlers: injectedHandlers })
-      : await createDefaultReactToolHandlerBundle({ request, runtime, context });
+  if (!handlerBundle) handlerBundle = await createHandlerBundle(request);
   const reserveLlmUseForRequest = createTransportRetryQuotaReservation({
     body,
     runtime,
@@ -7731,8 +7830,14 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     visitor: context.visitor,
     signal: context.signal
   });
+  const candidateDecisionProvider = candidateControl
+    ? Object.assign(async (decisionRequest, decisionContext) => runtime.reactDecisionProvider({
+      ...decisionRequest,
+      candidateDecisionProfile: candidateControl.decisionProfile
+    }, decisionContext), runtime.reactDecisionProvider)
+    : runtime.reactDecisionProvider;
   const decisionProvider = quotaWrappedCallable(
-    runtime.reactDecisionProvider,
+    candidateDecisionProvider,
     context.accessService,
     context.visitor,
     reserveLlmUseForRequest
@@ -7747,13 +7852,15 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   };
   const availableToolNames = handlerBundle.availableToolNames
     ?? Object.keys(handlerBundle.handlers ?? handlerBundle);
-  const scopedToolNames = playGuidance && !controlledUnitPlay
-    ? availableToolNames.filter((name) => [
+  const scopedToolNames = candidateControl
+    ? [...candidateControl.effectiveTools]
+    : playGuidance && !controlledUnitPlay
+      ? availableToolNames.filter((name) => [
       "entity_catalog_query",
       "unit_builds",
       "item_details_batch"
-    ].includes(name))
-    : availableToolNames;
+      ].includes(name))
+      : availableToolNames;
   const selectedSkillShadow = await observeAgentSkillShadow(runtime, getTaskFrameParse, scopedToolNames, {
     legacyBroadUnitPlayMatched: Boolean(playGuidance)
   });
@@ -7761,6 +7868,19 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     candidate: true,
     legacyBroadUnitPlayMatched: Boolean(playGuidance)
   });
+  if (candidateControl) {
+    emitAgentSkillControl(runtime, {
+      schemaVersion: "agent-skill-control.v1",
+      active: true,
+      stage: "started",
+      skillId: candidateControl.skill.id,
+      skillVersion: candidateControl.skillVersion,
+      skillContentSha256: candidateControl.skillContentSha256,
+      renderedContextSha256: candidateControl.renderedContextSha256,
+      effectiveTools: [...candidateControl.effectiveTools],
+      llmCallsAdded: 0
+    });
+  }
   const agent = new ChatAgent({
     registry: runtime.toolRegistry,
     toolExecutor: runtime.toolExecutor,
@@ -7770,13 +7890,16 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     agentRuntime: runtime.agentRuntime,
     budget: runtime.reactChatBudget,
     deadlineRecovery: runtime.reactDeadlineRecovery === true,
-    compositionCardScope: runtime.reactCompositionCardScope === true,
-    compositionCardsOwnPositioning: runtime.reactCompositionCardsOwnPositioning === true,
-    officialItemEvidenceV1: runtime.reactOfficialItemEvidenceV1 === true,
-    unitPlayFixedCardCompletionAffordance: runtime.reactUnitPlayFixedCardCompletionAffordance === true,
-    unitPlayFixedCardCount: runtime.reactUnitPlayFixedCardCount,
-    unitPlayInputLanguageGuard: runtime.reactUnitPlayInputLanguageGuard === true,
-    groundingMode: runtime.reactGroundingMode
+    compositionCardScope: candidateControl ? true : runtime.reactCompositionCardScope === true,
+    compositionCardsOwnPositioning: candidateControl ? true : runtime.reactCompositionCardsOwnPositioning === true,
+    officialItemEvidenceV1: candidateControl ? true : runtime.reactOfficialItemEvidenceV1 === true,
+    unitPlayFixedCardCompletionAffordance: candidateControl
+      ? true : runtime.reactUnitPlayFixedCardCompletionAffordance === true,
+    unitPlayFixedCardCount: candidateControl ? 2 : runtime.reactUnitPlayFixedCardCount,
+    unitPlayInputLanguageGuard: candidateControl ? true : runtime.reactUnitPlayInputLanguageGuard === true,
+    groundingMode: runtime.reactGroundingMode,
+    ...(runtime.reactCreateId ? { createId: runtime.reactCreateId } : {}),
+    ...(runtime.reactNow ? { now: runtime.reactNow } : {})
   });
   try {
     const startedAt = Date.now();
@@ -7790,10 +7913,14 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));
-    if (runtime.reactCompositionCardScope === true) {
+    if (candidateControl || runtime.reactCompositionCardScope === true) {
       // Presentation receipt, separate from the model's citations/completion.
       result.compositionCardScope = true;
-      result.cardEvidenceIds = compositionCardEvidenceIds(result, Date.now(), request.seasonContextId);
+      result.cardEvidenceIds = compositionCardEvidenceIds(
+        result,
+        runtime.reactNow ? runtime.reactNow() : Date.now(),
+        request.seasonContextId
+      );
     }
     if (playGuidance && !controlledUnitPlay && result.terminationReason !== "deadline_exceeded") {
       const unitBuildEvidence = result.evidence?.findLast?.((entry) => (
@@ -7879,6 +8006,21 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       });
     }
     observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, payload);
+    if (candidateControl) {
+      emitAgentSkillControl(runtime, {
+        schemaVersion: "agent-skill-control.v1",
+        active: true,
+        stage: "completed",
+        skillId: candidateControl.skill.id,
+        skillVersion: candidateControl.skillVersion,
+        status: payload.status,
+        terminationReason: payload.terminationReason,
+        answerOrigin: payload.answerOrigin,
+        actualToolCalls: payload.safetyMetrics?.actualToolCalls ?? 0,
+        evidenceCount: payload.evidence?.length ?? 0,
+        compositionCardCount: payload.compositionResultGroups?.length ?? 0
+      });
+    }
     return {
       statusCode: 200,
       payload
@@ -7886,6 +8028,17 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   } catch (error) {
     const access = await publicAccessStatus();
     observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, null);
+    if (candidateControl) {
+      emitAgentSkillControl(runtime, {
+        schemaVersion: "agent-skill-control.v1",
+        active: true,
+        stage: "failed",
+        skillId: candidateControl.skill.id,
+        skillVersion: candidateControl.skillVersion,
+        errorName: error?.name ?? "Error",
+        errorCode: String(error?.code ?? "react_chat_failed")
+      });
+    }
     return {
       statusCode: Number.isInteger(error?.statusCode)
         ? error.statusCode

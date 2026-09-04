@@ -1,6 +1,6 @@
 # Unit-play guidance v6 extraction architecture review request
 
-Status: **Stage 1 implemented and verified; default off; no control or production activation**
+Status: **Stages 1 and 2 implemented and verified locally; both default off; no production activation**
 
 ## Decision being carried forward
 
@@ -69,9 +69,10 @@ Stage 1 exit gates:
 
 ### Stage 2: separately approved bounded control
 
-Only a later explicit production-control authorization may let Skill 1.5.11 affect ReAct.
-That implementation must use the existing ReAct runtime and registered Tool handlers. It
-must not create a parallel Agent runtime or let the Skill authorize Tools.
+Only a later explicit production-control authorization may let Skill 1.5.11 affect ReAct
+on a running deployment. The locally implemented path uses the existing ReAct runtime and
+registered Tool handlers. It does not create a parallel Agent runtime or let the Skill
+authorize Tools.
 
 The controlled path would need one atomic candidate configuration containing:
 
@@ -99,9 +100,10 @@ cannot be reused.
 The user selected Stage 1 candidate metadata shadow for implementation after the scope
 was explained. This decision did not select Stage 2.
 
-Stage 2 is deliberately excluded from that choice and requires a later explicit
-production-control authorization after Stage 1 evidence and the outstanding independent
-review are considered.
+The user's subsequent instruction to continue authorized default-off Stage 2
+implementation and local testing only. Production activation still requires a later
+explicit authorization after the local evidence and outstanding independent review are
+considered.
 
 ## Stage 1 implementation record
 
@@ -117,3 +119,24 @@ enabled, it constructs a separate validated registry containing only accepted ca
 and the accepted candidate content hash. Candidate telemetry dispatch is non-blocking, so
 a pending observer cannot delay the normal response. It does not inject the Skill, call a
 Tool or model, change the response, or produce a candidate outcome claim.
+
+## Stage 2 local implementation record
+
+On 2026-09-04 the user authorized implementation and local testing of a single-user
+control mode without deployment or production activation. The control selector defaults
+to off and accepts only the exact value `unit_play_guidance@1.5.11`; generic values such
+as `on` do not activate it. Startup also verifies the accepted 1.5.11 content hash.
+
+For a deterministically selected broad single-unit request, the runtime builds the actual
+Tool intersection and activates only when the rendered candidate context matches the v6
+frozen hash. The resulting decision profile atomically enables the evaluated candidate
+guidance, action-shaped decision history, model-only Observation projection, tactical
+presentation contract, two-card completion affordance, card-owned positioning, official
+item Evidence, and current-input language guard. The model Tool catalog is reduced to the
+Skill intersection; it cannot be widened by the Skill.
+
+Invalid selectors, identity/hash drift, TaskFrame mismatch, missing Tools, context drift,
+or preparation failure leave the current path in place. Quick Task is untouched.
+Candidate control telemetry contains bounded identity, state, counts, and failure codes;
+it excludes Skill instructions and cannot block the response. Disabling the one selector
+restores the pre-candidate path without data migration.

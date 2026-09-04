@@ -52,7 +52,7 @@ fails, and returns normally even when the candidate telemetry observer never set
 ## Remaining boundary
 
 No service configuration was changed and candidate shadow was not enabled on a running
-deployment. No production control path exists for Skill 1.5.11. A one-user control mode
-would change the answer and Tool behavior, so it requires a separate implementation
-contract, bounded request/cost limits, rollback behavior, and explicit production-control
-authorization.
+deployment. A default-off one-user control path has since been implemented and verified
+locally, but it has not been deployed or activated. Activating that path would change the
+answer and Tool behavior, so it still requires bounded request/cost limits, rollback
+behavior, and explicit production-control authorization.

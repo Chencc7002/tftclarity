@@ -1,5 +1,9 @@
 import { validateReactAction } from "./react-action.js";
 import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import {
+  applyUnitPlayCandidateDecisionProfile,
+  validateUnitPlayCandidateDecisionRequest
+} from "./unit-play-candidate-projection.js";
 
 export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v5";
 export const REACT_SCOPED_TACTICAL_PROMPT_VERSION = "react-decision-contract.v5.tactical-presentation.v1";
@@ -242,7 +246,7 @@ function transcriptEventValue(event) {
   return value;
 }
 
-function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance, tacticalPresentationScope = false) {
+function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance, tacticalPresentationScope = false, guidanceOverride = null) {
   const state = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope) },
@@ -266,7 +270,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
         semanticAdvisory: state.semanticAdvisory ?? null,
-        semanticGuidance: renderGuidance(guidanceRenderer, state.semanticAdvisory),
+        semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, state.semanticAdvisory),
         historicalEvidence: historicalEvidence(state.evidence)
       })
     }
@@ -300,7 +304,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   return messages;
 }
 
-function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance, tacticalPresentationScope = false) {
+function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null, guidanceRenderer = semanticGuidance, tacticalPresentationScope = false, guidanceOverride = null) {
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope) },
@@ -312,7 +316,7 @@ function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNames
         promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : REACT_DECISION_PROMPT_VERSION,
         state: {
           ...legacyState,
-          semanticGuidance: renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
+          semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
         },
         toolCatalog: request.toolCatalog ?? [],
         ...(repairNote ? {
@@ -383,6 +387,7 @@ export function createReactDecisionProvider(options = {}) {
     if (externalSignal?.aborted) abort();
     else externalSignal?.addEventListener("abort", abort, { once: true });
     try {
+      const candidateProfile = validateUnitPlayCandidateDecisionRequest(request);
       const registryLike = {
         get(name) {
           return request.toolCatalog?.find((tool) => tool.name === name) ?? null;
@@ -392,9 +397,15 @@ export function createReactDecisionProvider(options = {}) {
       let lastError = null;
       const configuredMaxTokens = Math.max(200, Math.min(2400, Number(options.maxTokens ?? 1800)));
       for (let attempt = 1; attempt <= MAX_DECISION_ATTEMPTS; attempt += 1) {
-        const messages = options.messageLayout === "legacy_full_state"
-          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer, options.tacticalPresentationScope === true)
-          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer, options.tacticalPresentationScope === true);
+        const tacticalPresentationScope = candidateProfile?.tacticalPresentationScope === true
+          || options.tacticalPresentationScope === true;
+        const guidanceOverride = candidateProfile?.guidance ?? null;
+        const rawMessages = options.messageLayout === "legacy_full_state"
+          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
+            tacticalPresentationScope, guidanceOverride)
+          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
+            tacticalPresentationScope, guidanceOverride);
+        const messages = applyUnitPlayCandidateDecisionProfile(rawMessages, candidateProfile);
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {
