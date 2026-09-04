@@ -2,6 +2,46 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
+test("English response locale is explicit in both provider layouts", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    let observedBody;
+    const provider = createReactDecisionProvider({
+      endpoint: "https://example.test/chat/completions",
+      model: "test-model",
+      messageLayout,
+      fetchImpl: async (_url, options) => {
+        observedBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1",
+            type: "finish",
+            answer: "Patch 18.1 contains 15 numeric changes.",
+            evidenceIds: [],
+            reasonCode: "direct_answer",
+            narrative: null
+          }) } }] })
+        };
+      }
+    });
+
+    await provider({
+      state: {
+        question: "总结18.1热补丁",
+        locale: "en-US",
+        seasonContextId: "set18-live",
+        evidence: []
+      },
+      toolCatalog: []
+    });
+
+    assert.match(observedBody.messages[0].content, /runContext\.locale is authoritative/u);
+    assert.match(observedBody.messages[0].content, /For en-US, write every user-facing field in English/u);
+    const dynamicContext = JSON.parse(observedBody.messages[messageLayout === "append_only" ? 2 : 1].content);
+    assert.equal(messageLayout === "append_only" ? dynamicContext.locale : dynamicContext.state.locale, "en-US");
+  }
+});
+
 test("ordinary-only follow-ups get current scope guidance in both provider layouts", async () => {
   for (const messageLayout of ["append_only", "legacy_full_state"]) {
     for (const question of ["不含特殊装备", "修改为只包含普通装备", "改为近3天", "改为近7天"]) {

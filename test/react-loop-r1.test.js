@@ -146,6 +146,7 @@ async function runCase(options = {}) {
     input: options.input ?? "test",
     ...(Array.isArray(options.messages) ? { messages: options.messages } : {}),
     ...(options.bridgeContext ? { bridgeContext: options.bridgeContext } : {}),
+    ...(options.locale ? { locale: options.locale } : {}),
     seasonContextId: options.seasonContextId ?? "set17-live"
   }, {
     ...context,
@@ -171,6 +172,19 @@ test("R1-01 ordinary chat finishes directly without TaskFrame or tools", async (
   assert.equal(context.counters.toolCalls, 0);
   assert.equal(provider.requests.length, 1);
   assert.equal(provider.requests[0].state.taskAnchor, null);
+});
+
+test("ReAct working state preserves the requested English response locale", async () => {
+  const provider = queueProvider([
+    finish("I will answer in English.", [], "direct_answer")
+  ]);
+  const { result } = await runCase({
+    provider,
+    input: "请用当前界面语言回答",
+    locale: "en-US"
+  });
+  assert.equal(result.answer, "I will answer in English.");
+  assert.equal(provider.requests[0].state.locale, "en-US");
 });
 
 test("R1-02 one static tool produces validated evidence and ordered events", async () => {
