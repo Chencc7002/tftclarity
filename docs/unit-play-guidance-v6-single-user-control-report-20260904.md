@@ -6,8 +6,9 @@ Status: **implemented and verified locally; default off; not deployed; no produc
 
 The application is primarily owner-operated, so the control design uses one exact
 candidate selector instead of percentage cohorts. This implementation does not activate
-the candidate on a running service. It prepares a reversible one-user canary boundary for
-a later separately authorized operation.
+the candidate on a running service. The selector applies to every matching broad unit-play
+request while enabled; it is not an owner-authentication mechanism. It prepares a
+reversible low-traffic canary boundary for a later separately authorized operation.
 
 ## Activation and rollback
 
@@ -48,7 +49,9 @@ The profile also enables the exact v6 companion behavior as one unit:
 
 Skill instructions and hashes are not added to the public response or conversation
 state. Control telemetry is non-blocking and contains only bounded identity, lifecycle,
-Tool, Evidence, and card counts.
+Tool, Evidence, and card counts. Production runtime construction attaches a structured
+log observer by default; it whitelists those fields and drops questions, instructions, and
+other content.
 
 ## Local verification
 
@@ -57,7 +60,7 @@ rendered-context parity, Tool-intersection restriction, missing-Tool fail-closed
 legacy behavior for invalid selectors, negative routing for narrow questions, private
 guidance injection, action-message conversion, model-only Observation projection, and
 absence of Skill content from the public result. The focused Agent/ReAct suites completed
-with 158 passed, 0 failed.
+with 159 passed, 0 failed.
 
 A production-shape offline replay used frozen registered-tool observations and a scripted
 decision provider. It made no external Provider request and completed the evaluated eight
@@ -79,7 +82,7 @@ production control.
 
 The canonical local regression also passed:
 
-- main lane: 1,405 tests, 1,398 passed, 7 skipped, 0 failed;
+- main lane: 1,406 tests, 1,399 passed, 7 skipped, 0 failed;
 - integration lane: 236 tests, 235 passed, 1 skipped, 0 failed;
 - offline Agent evaluation: 50 of 50 cases passed.
 

@@ -4284,6 +4284,8 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
   const runtimeOptions = {
     ...options,
     env,
+    onAgentSkillControl: options.onAgentSkillControl
+      ?? createAgentSkillControlLogObserver(options.agentSkillControlLog),
     ...requestTimeouts,
     agentRunBudget: resolveSmallWindowAgentRunBudget(options, env),
     ...structuredParserRuntime,
@@ -7654,6 +7656,20 @@ function emitAgentSkillControl(runtime, event) {
   }
 }
 
+export function createAgentSkillControlLogObserver(write = console.info) {
+  const sink = typeof write === "function" ? write : console.info;
+  const permittedKeys = new Set([
+    "schemaVersion", "active", "stage", "reason", "errorName", "errorCode",
+    "skillId", "skillVersion", "skillContentSha256", "renderedContextSha256",
+    "effectiveTools", "llmCallsAdded", "status", "terminationReason", "answerOrigin",
+    "decisionCount", "actualToolCalls", "evidenceCount", "compositionCardCount"
+  ]);
+  return (value = {}) => {
+    const event = Object.fromEntries(Object.entries(value).filter(([key]) => permittedKeys.has(key)));
+    sink(JSON.stringify({ event: "agent_skill_control", ...event }));
+  };
+}
+
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
   const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
@@ -8016,6 +8032,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         status: payload.status,
         terminationReason: payload.terminationReason,
         answerOrigin: payload.answerOrigin,
+        decisionCount: payload.safetyMetrics?.decisions ?? 0,
         actualToolCalls: payload.safetyMetrics?.actualToolCalls ?? 0,
         evidenceCount: payload.evidence?.length ?? 0,
         compositionCardCount: payload.compositionResultGroups?.length ?? 0

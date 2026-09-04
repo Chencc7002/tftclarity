@@ -5,7 +5,11 @@ import test from "node:test";
 import { createStructuredToolDefinitions } from "../src/agent/tools/definitions.js";
 import { ToolExecutor } from "../src/agent/tools/executor.js";
 import { ToolRegistry } from "../src/agent/tools/registry.js";
-import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/small-window-server.js";
+import {
+  createAgentSkillControlLogObserver,
+  createSmallWindowRuntime,
+  handleReactChatRequest
+} from "../src/app/small-window-server.js";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 import { SkillRegistry } from "../src/skills/registry.js";
 import { UNIT_PLAY_GUIDANCE_SKILL_V1_5_11 } from "../src/skills/definitions/unit-play-guidance.js";
@@ -57,6 +61,31 @@ test("single-user control requires the exact candidate selector and frozen Skill
   );
   assert.equal(resolved.enabled, true);
   assert.equal(resolved.diagnostic, null);
+});
+
+test("production control log observer writes bounded structured telemetry without Skill content", () => {
+  const lines = [];
+  const observe = createAgentSkillControlLogObserver((line) => lines.push(line));
+  observe({
+    schemaVersion: "agent-skill-control.v1",
+    active: true,
+    stage: "completed",
+    skillId: "unit_play_guidance",
+    skillVersion: "1.5.11",
+    actualToolCalls: 8,
+    guidance: "must-not-be-logged",
+    question: "must-not-be-logged"
+  });
+  assert.equal(lines.length, 1);
+  assert.deepEqual(JSON.parse(lines[0]), {
+    event: "agent_skill_control",
+    schemaVersion: "agent-skill-control.v1",
+    active: true,
+    stage: "completed",
+    skillId: "unit_play_guidance",
+    skillVersion: "1.5.11",
+    actualToolCalls: 8
+  });
 });
 
 test("candidate preparation reproduces the accepted v6 hashes and exact Tool intersection", () => {
