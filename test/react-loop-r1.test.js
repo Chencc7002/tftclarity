@@ -273,6 +273,24 @@ test("ReAct working state preserves the requested English response locale", asyn
   assert.equal(provider.requests[0].state.locale, "en-US");
 });
 
+test("English response locale rejects a Chinese model answer and accepts its English repair", async () => {
+  const provider = queueProvider([
+    finish("我会继续用中文回答。", [], "direct_answer"),
+    finish("I will continue and provide the complete answer in English.", [], "direct_answer")
+  ]);
+  const { result, events } = await runCase({
+    provider,
+    input: "请总结当前版本",
+    locale: "en-US"
+  });
+  assert.equal(result.answer, "I will continue and provide the complete answer in English.", JSON.stringify(result));
+  assert.equal(provider.requests.length, 2);
+  assert.ok(events.some((event) => (
+    event.type === "decision_rejected"
+    && event.data?.errors?.some((error) => error.includes("en-US response locale"))
+  )));
+});
+
 test("R1-02 one static tool produces validated evidence and ordered events", async () => {
   const provider = queueProvider([
     call("unit_details", { apiName: "TFT18_Xayah" }, "retrieve_entity_details"),

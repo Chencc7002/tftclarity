@@ -1462,6 +1462,7 @@ export class ReactLoop {
     const onEvent = context.onEvent ?? null;
     let insufficientFinishRepairCount = 0;
     let sufficientFinishRepairCount = 0;
+    let responseLanguageRepairCount = 0;
     let consecutiveToolFailures = 0;
     let modelConclusion = null;
     const failuresByCapability = new Map();
@@ -1831,6 +1832,7 @@ export class ReactLoop {
           officialItemEvidenceV1: context.officialItemEvidenceV1,
           unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
           currentTurnInput: request.input ?? request.question,
+          responseLocale: state.locale,
           now: this.now(), seasonContextId: state.seasonContextId });
         if (context.compositionCardScope) {
           const legacyValidation = validateFinishAction(action, ledger);
@@ -1844,6 +1846,37 @@ export class ReactLoop {
             iteration: state.decisions.length,
             errors: finishValidation.errors
           });
+          const responseLanguageError = finishValidation.errors.find((error) => (
+            String(error).includes("en-US response locale")
+          ));
+          if (responseLanguageError) {
+            responseLanguageRepairCount += 1;
+            state.recordObservation({
+              type: "decision_rejected",
+              actionType: "finish",
+              reasonCode: action.reasonCode,
+              errors: [responseLanguageError],
+              repairInstruction: "Rewrite the same grounded answer in English. Preserve evidence IDs, exact numeric values, stable API names, and URLs. Do not add or remove factual claims."
+            }, { progress: false });
+            if (responseLanguageRepairCount === 1 && state.decisions.length < budget.maxDecisions) {
+              state.warn("response_language_repair_requested");
+              continue;
+            }
+            const answer = "I could not produce a valid English response for this request. No unsupported details were added.";
+            state.warn("response_language_fallback");
+            emit("answer", {
+              answer,
+              evidenceIds: [],
+              reasonCode: "insufficient_evidence",
+              narrativeAccepted: false,
+              systemFallback: true
+            });
+            return terminate("response_language_fallback", {
+              status: "completed_with_warning",
+              answer,
+              answerOrigin: "system_language_fallback"
+            });
+          }
           if (canPublishSummaryWithValidationWarnings(request, action, finishValidation, ledger)) {
             const warnings = finishValidation.errors.map(String);
             modelConclusion.status = "accepted_with_validation_warnings";

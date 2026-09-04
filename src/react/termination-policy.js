@@ -488,11 +488,13 @@ export function preferredAnswerLanguage(input) {
   return null;
 }
 
-function answerLanguageErrors(answer, input) {
-  if (preferredAnswerLanguage(input) !== "en") return [];
+function answerLanguageErrors(answer, input, responseLocale = null) {
+  const requiresEnglish = String(responseLocale ?? "").toLowerCase().startsWith("en")
+    || preferredAnswerLanguage(input) === "en";
+  if (!requiresEnglish) return [];
   const { latin, han } = scriptCounts(answer);
   if (latin >= 20 && latin >= han * 2) return [];
-  return ["English unit-play input requires an English answer; preserve the cited claims and rewrite only the answer language before finishing"];
+  return ["The en-US response locale requires an English answer; preserve the cited claims and rewrite only the user-facing language before finishing"];
 }
 
 export function validateFinishAction(action, ledger, options = {}) {
@@ -502,8 +504,9 @@ export function validateFinishAction(action, ledger, options = {}) {
   const currentLedgerEntries = typeof ledger.snapshot === "function"
     ? (ledger.snapshot()?.entries ?? []).filter((entry) => entry?.temporalStatus !== "historical")
     : entries;
-  if (options.unitPlayInputLanguageGuard === true) {
-    errors.push(...answerLanguageErrors(action.answer, options.currentTurnInput));
+  if (options.unitPlayInputLanguageGuard === true
+    || String(options.responseLocale ?? "").toLowerCase().startsWith("en")) {
+    errors.push(...answerLanguageErrors(action.answer, options.currentTurnInput, options.responseLocale));
   }
   if (entries.length !== ids.length) errors.push("finish references unknown evidenceIds");
   if (options.officialItemEvidenceV1 === true) {

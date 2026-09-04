@@ -442,7 +442,7 @@ test("default guidance renderer preserves the reviewed v7 serialized messages by
     toolCatalog: []
   });
   const hash = createHash("sha256").update(JSON.stringify(body.messages)).digest("hex");
-  assert.equal(hash, "1e893490dd7963e6298e3d590b014bc8d598a317c1791218e0c56dc8f0f55db8");
+  assert.equal(hash, "d97c06a5b1325cd1aa4071e2a6af7c5a38a2b54ab9136ad8a6cc49053cf2bf4f");
 });
 
 test("custom guidance renderer replaces only the bounded professional guidance value", async () => {

@@ -299,7 +299,7 @@ function reactDecisionMessages(
       content: stableJson({
         schemaVersion: REACT_STABLE_CONTEXT_SCHEMA_VERSION,
         promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : promptVersion,
-        responseLanguagePolicy: RESPONSE_LANGUAGE_POLICY,
+        ...(state.locale ? { responseLanguagePolicy: RESPONSE_LANGUAGE_POLICY } : {}),
         toolCatalog: request.toolCatalog ?? []
       })
     },
@@ -309,7 +309,7 @@ function reactDecisionMessages(
         schemaVersion: REACT_RUN_CONTEXT_SCHEMA_VERSION,
         question: state.question ?? "",
         seasonContextId: state.seasonContextId ?? "",
-        locale: state.locale ?? "zh-CN",
+        ...(state.locale ? { locale: state.locale } : {}),
         messages: state.messages ?? [],
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
@@ -366,7 +366,7 @@ function legacyReactDecisionMessages(
       role: "user",
       content: JSON.stringify({
         promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : promptVersion,
-        responseLanguagePolicy: RESPONSE_LANGUAGE_POLICY,
+        ...(legacyState.locale ? { responseLanguagePolicy: RESPONSE_LANGUAGE_POLICY } : {}),
         state: {
           ...legacyState,
           semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
