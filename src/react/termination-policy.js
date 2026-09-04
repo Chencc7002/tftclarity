@@ -3,6 +3,9 @@ const INSUFFICIENT_SIGNAL = /(?:数据不足|证据不足|没有可验证|无可
 const CURRENT_RANKING_SIGNAL = /(?:当前|现在|目前|最近|这版本|胜率|前四率|登顶率|平均名次|选择率|出场率|样本数|排名|最优|最好|最高|current|latest|best|highest|win\s*rate|top\s*4)/iu;
 const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*(?:奥恩)?神器|(?:含|包含|包括|加入|带上|算上|纳入|主流|推荐|首选|最强|适合).{0,8}(?:奥恩)?神器|(?:奥恩)?神器.{0,8}(?:排行|排名|推荐|首选|主流|[：:]))/u;
 
+import { hasTacticalPositionProse, scopedTacticalPositionErrors } from "./tactical-position-grounding.js";
+import { officialItemEvidenceFailure, officialItemBatchEvidenceFailure } from "../agent/official-item-evidence.js";
+
 function numericTokens(text) {
   return [...String(text ?? "").matchAll(/\d+(?:\.\d+)?%?/gu)].map((match) => match[0]);
 }
@@ -470,14 +473,65 @@ export function containsStatisticalClaim(answer) {
   return STATISTICAL_SIGNAL.test(String(answer ?? ""));
 }
 
-export function validateFinishAction(action, ledger) {
+function scriptCounts(text) {
+  const value = String(text ?? "");
+  return {
+    latin: (value.match(/[A-Za-z]/gu) ?? []).length,
+    han: (value.match(/\p{Script=Han}/gu) ?? []).length
+  };
+}
+
+export function preferredAnswerLanguage(input) {
+  const { latin, han } = scriptCounts(input);
+  if (latin >= 12 && latin > han * 2) return "en";
+  if (han >= 4 && han >= latin) return "zh";
+  return null;
+}
+
+function answerLanguageErrors(answer, input) {
+  if (preferredAnswerLanguage(input) !== "en") return [];
+  const { latin, han } = scriptCounts(answer);
+  if (latin >= 20 && latin >= han * 2) return [];
+  return ["English unit-play input requires an English answer; preserve the cited claims and rewrite only the answer language before finishing"];
+}
+
+export function validateFinishAction(action, ledger, options = {}) {
   const errors = [];
   const ids = [...new Set(action.evidenceIds ?? [])];
   const entries = ledger.resolve(ids);
   const currentLedgerEntries = typeof ledger.snapshot === "function"
     ? (ledger.snapshot()?.entries ?? []).filter((entry) => entry?.temporalStatus !== "historical")
     : entries;
+  if (options.unitPlayInputLanguageGuard === true) {
+    errors.push(...answerLanguageErrors(action.answer, options.currentTurnInput));
+  }
   if (entries.length !== ids.length) errors.push("finish references unknown evidenceIds");
+  if (options.officialItemEvidenceV1 === true) {
+    for (const entry of entries.filter(item => item.toolName === "item_details")) {
+      const reason = officialItemEvidenceFailure(entry, { now: options.now ?? Date.now(), seasonContextId: options.seasonContextId });
+      if (reason) errors.push(`current official item evidence rejected: ${reason}`);
+    }
+    for (const entry of entries.filter(item => item.toolName === "item_details_batch")) {
+      const reason = officialItemBatchEvidenceFailure(entry, { now: options.now ?? Date.now(), seasonContextId: options.seasonContextId });
+      if (reason) errors.push(`current official item batch evidence rejected: ${reason}`);
+    }
+    if (action.reasonCode === "sufficient_evidence") {
+      const officialItems = currentLedgerEntries.flatMap(entry => entry.toolName === "item_details"
+        ? [{ evidenceId: entry.evidenceId, value: entry.value }]
+        : entry.toolName === "item_details_batch"
+          ? (entry.value?.items ?? []).map(value => ({ evidenceId: entry.evidenceId, value }))
+          : []);
+      for (const item of officialItems) {
+        const aliases = [item.value?.displayName, ...currentLedgerEntries.filter(entry => entry.toolName === "unit_builds")
+          .flatMap(entry => entry.value?.cards ?? []).flatMap(card => card.items ?? [])
+          .filter(row => row.apiName === item.value?.apiName).flatMap(row => [row.name, row.displayName, row.shortName])]
+          .filter(name => typeof name === "string" && name.length >= 2);
+        if (aliases.some(name => String(action.answer ?? "").includes(name)) && !ids.includes(item.evidenceId)) {
+          errors.push(`mentioned retrieved official item requires its evidence citation: ${item.value.apiName}`);
+        }
+      }
+    }
+  }
 
   if (action.reasonCode === "direct_answer") {
     if (ids.length) errors.push("direct_answer must not cite tool evidence");
@@ -540,7 +594,12 @@ export function validateFinishAction(action, ledger) {
     if (omitsPartialContentionCoverage(action.answer, entries)) {
       errors.push("partial item contention coverage requires failed-unit and whole-composition limitations");
     }
-    errors.push(...tacticalPositionGroundingErrors(action.answer, entries));
+    if (options.compositionCardsOwnPositioning === true && hasTacticalPositionProse(action.answer)) {
+      errors.push("positioning prose is reserved for the cited composition cards");
+    }
+    errors.push(...(options.compositionCardScope === true
+      ? scopedTacticalPositionErrors(action.answer, entries)
+      : tacticalPositionGroundingErrors(action.answer, entries)));
     errors.push(...compositionTrendCoverageErrors(action, entries));
   } else if (action.reasonCode === "insufficient_evidence") {
     if (!INSUFFICIENT_SIGNAL.test(action.answer)) {

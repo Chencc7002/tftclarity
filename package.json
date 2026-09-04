@@ -62,6 +62,8 @@
     "semantic:audit": "node scripts/audit-semantic-index.mjs",
     "stats:generate": "node scripts/generate-metatft-current-stats.mjs",
     "stats:daily": "node scripts/schedule-metatft-current-stats.mjs",
+    "snapshot:capture": "node scripts/capture-metatft-daily-snapshot.mjs",
+    "snapshot:daily": "powershell -ExecutionPolicy Bypass -File scripts/run-metatft-daily-snapshot.ps1",
     "stats:scheduler": "node scripts/schedule-metatft-current-stats.mjs --daemon",
     "stats:schedule:windows": "powershell -ExecutionPolicy Bypass -File scripts/install-current-stats-task.ps1",
     "smoke:current-stats": "node scripts/smoke-metatft-current-stats-rag.mjs",

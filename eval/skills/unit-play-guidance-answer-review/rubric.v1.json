@@ -1,0 +1,87 @@
+{
+  "schemaVersion": "unit-play-answer-rubric.v1",
+  "status": "diagnostic_review_draft",
+  "automaticSemanticScoring": false,
+  "formalPairedAcceptance": false,
+  "instructions": "逐项核对最终正文和本次原始 Evidence。例句只解释判据，不是可复用的当前游戏事实。身份、引用、证据覆盖或关键词通过均不能自动给 covered=true。所有实质性断言都需核对；不是只核对示例错误。独立人工标签与分歧裁决仍是正式评估的必要条件。",
+  "criteria": [
+    {
+      "id": "constant_trigger_separation",
+      "facets": ["equipment_logic"],
+      "policy": "区分常驻属性和条件效果，不能将常驻属性归入触发条件。",
+      "exampleSource": "+45%攻击力;+300生命值;在60%生命值时，获得相当于携带者40%最大生命值的护盾值，在4秒内快速衰减。",
+      "passExample": "血手提供攻击力和生命值；在60%生命值时获得护盾，护盾在4秒内快速衰减。",
+      "failExample": "血手在低生命时提供护盾并加攻击力，提升生存与输出。",
+      "reason": "并加攻击力把常驻属性误归为低血量触发效果。"
+    },
+    {
+      "id": "threshold_duration_target",
+      "facets": ["equipment_logic"],
+      "policy": "保留被描述效果的触发阈值、叠满要求、持续或衰减、作用对象；不能以省字为由改变成立条件。允许省略整个次要效果。",
+      "exampleSource": "在攻击或承受伤害时获得2%物理加成和2%法术加成，至多可叠加25次。在叠满层数后，获得10%伤害增幅，并获得控制免疫。",
+      "passExample": "泰坦在攻击或承伤时叠层，叠满25层后获得10%伤害增幅和控制免疫。",
+      "failExample": "泰坦叠层后获得伤害增幅和控制免疫。",
+      "reason": "叠层后不是叠满后，提前赋予了满层效果。"
+    },
+    {
+      "id": "fact_inference_boundary",
+      "facets": ["unit_role", "equipment_logic", "composition_context", "positioning"],
+      "policy": "官方定位、技能和装备机制是事实；与推荐或摆位的联系是有依据的解读。不能从成员身份猜主C/主坦、从统计推出因果或将推论写成保证。加上可能二字也不能挽救无依据推论。",
+      "passExample": "解读：技能提供攻速，可能有助于更频繁普攻、触发装备的普攻回蓝。",
+      "failExample": "配合技能攻速收益明显，这套装备必然更强。",
+      "reason": "机制联系必须有双方证据；收益幅度与优劣不能从机制文本直接证实。"
+    },
+    {
+      "id": "recommended_item_binding",
+      "facets": ["equipment_logic"],
+      "policy": "组合来自目标英雄本次有效 unit_builds；解释的每件装备都有匹配身份、完整公式和当前有效详情及引用。不能用无关装备、另一英雄、其他赛季或只查两件就宣称整套机制已解释。",
+      "passExample": "已查到来源组合；其中第三件效果缺失，因此只解释已验证的两件。",
+      "failExample": "第三件没有详情，但这三件的机制都已经验证。"
+    },
+    {
+      "id": "current_evidence_only",
+      "facets": ["unit_role", "equipment_logic", "composition_context", "positioning"],
+      "policy": "按原始请求结束时间检查证据的身份、范围和真实观测凭据。历史 Bridge、过期、错误赛季和缺凭据不能支持当前机制。评审时间不能刷新证据时间；原始失效记录不能用现在重查的结果覆盖。",
+      "passExample": "该装备资料已过期，暂不能据此解释当前效果。",
+      "failExample": "虽然只有历史资料，但可以当作这次当前装备机制。"
+    },
+    {
+      "id": "composition_position_binding",
+      "facets": ["composition_context", "positioning"],
+      "policy": "保留来源候选顺序、成员及逐卡站位；核对 compositionId、clusterId、赛季与成员集合。同英雄在两套阵容的位置可能不同，不串卡、不自行挪格。",
+      "passExample": "阵容甲：目标英雄第3排第1列；阵容乙：目标英雄第1排第3列。",
+      "failExample": "两套都把目标英雄放第3排第1列。",
+      "reason": "此例仅在原始两份站位分别为3/1和1/3时适用，不能脱离来源评分。"
+    },
+    {
+      "id": "conditional_play_heuristic",
+      "facets": ["when_to_play"],
+      "policy": "有效装备推荐存在时，同时保留装备到手或来牌/升星顺这两个可选条件。不得推断用户真实装备、商店、经济或给出未授权的转型/搜牌决策。无有效出装时，说明装备条件暂无法核实，不凭空引用推荐。",
+      "passExample": "拿到来源推荐装备，或者该英雄来牌多、升星顺时可以考虑玩。",
+      "failExample": "你现在装备齐了，直接升8搜牌转这套。",
+      "omissionExample": "来牌顺可以玩。",
+      "reason": "有推荐装备时，最后一例遗漏了用户要求的另一个可选条件。"
+    },
+    {
+      "id": "qualified_missing_facets",
+      "facets": ["unit_role", "equipment_logic", "composition_context", "positioning"],
+      "policy": "工具失败、空结果、partial、过期、缺字段须指明具体缺口，保留其他可用卡片；不把未取得数据视为负面证据或以模型记忆补齐。",
+      "passExample": "第二套已返回阵容，但站位未取得，卡片保留并标注暂无可验证站位。",
+      "failExample": "站位查询失败，所以第二套阵容不值得玩。"
+    },
+    {
+      "id": "runtime_termination_boundary",
+      "facets": ["termination"],
+      "policy": "按原运行时决定 reasonCode、证据引用、预算和终止；无资料不能强制 sufficient_evidence 或 direct_answer。超时保留部分结果也不是模型已完成。不把部分缺口机械等同于必须丢弃全部有效回答。",
+      "passExample": "资料不足以支持本次请求，按运行时以 insufficient_evidence 结束并解释缺口。",
+      "failExample": "全部查询失败，仍以 sufficient_evidence 给出完整玩法。"
+    },
+    {
+      "id": "concise_requested_scope",
+      "facets": ["presentation"],
+      "policy": "正文提供解读，各卡保留各自站位；不重复统计表、全队格子或未请求的强化建议/缺失提示。字数仅是目标，不能通过删掉关键条件达标。",
+      "passExample": "正文按英雄、装备、逐卡站位和考虑玩的条件组织，详细列表保留在卡片。",
+      "failExample": "用户没问强化，但正文仍加一行强化符文推荐当前不可用。"
+    }
+  ]
+}

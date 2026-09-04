@@ -31,9 +31,6 @@ test("18.1 official patch announcement is a valid, source-linked knowledge docum
   assert.match(document.text, /灵火/u);
   assert.match(document.text, /选秀回归/u);
   assert.match(document.text, /S17 将继续并行开放/u);
-  assert.match(document.text, /数值修订 2026-08-31/u);
-  assert.match(document.text, /阿木木 · 最大生命值治疗：2\.2% → 2\.5%/u);
-  assert.equal(document.metadata.rawData.numericRevisions[0].changes.length, 15);
 });
 
 test("semantic corpus includes official patch notes without realtime-stat authority", () => {

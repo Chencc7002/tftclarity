@@ -1,6 +1,44 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
+
+test("opt-in tactical presentation changes only two presentation rules, preserving catalog, control and default prompt", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    const bodies = [];
+    const action = { schemaVersion: "react-action.v1", type: "finish", answer: "当前资料不足。",
+      evidenceIds: [], reasonCode: "insufficient_evidence", narrative: null };
+    const request = { state: { question: "沃里克怎么玩？", tacticalPresentationScope: true,
+      transcript: [{ type: "runtime_state", value: { nextActionAffordance: { recommendedAction: "finish" } } }] },
+      toolCatalog: [{ name: "unit_details", inputSchema: { type: "object", additionalProperties: false } }] };
+    for (const tacticalPresentationScope of [undefined, false, true, "true"]) {
+      const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+        tacticalPresentationScope, fetchImpl: async (_url, init) => {
+          bodies.push(JSON.parse(init.body));
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(action) } }] }) };
+        } });
+      assert.deepEqual((await provider(request)).action, action);
+    }
+    assert.deepEqual(bodies[0], bodies[1]);
+    assert.deepEqual(bodies[0], bodies[3]); // Request data and truthy strings cannot enable it.
+    const baseline = bodies[0].messages[0].content.split("\n");
+    const candidate = bodies[2].messages[0].content.split("\n");
+    const frozenV5Baseline = baseline.filter((line) => (
+      !line.startsWith("For TFT patch contents, dates, buffs, or nerfs,")
+    ));
+    assert.equal(candidate.length, frozenV5Baseline.length);
+    assert.equal(candidate.filter((line, index) => line !== frozenV5Baseline[index]).length, 2);
+    assert.match(baseline.join("\n"), /call patch_facts before summarizing/);
+    assert.doesNotMatch(candidate.join("\n"), /call patch_facts before summarizing/);
+    assert.match(candidate.join("\n"), /Missing requested formation must be disclosed/);
+    assert.match(candidate.join("\n"), /only when augments were requested/);
+    assert.match(candidate.join("\n"), /execute callTool exactly as provided/);
+    const versionNeutral = (body) => body.messages.slice(1).map(message => ({ ...message,
+      content: message.content.replaceAll("react-decision-contract.v5.tactical-presentation.v1", "react-decision-contract.v6") }));
+    assert.deepEqual(versionNeutral(bodies[0]), versionNeutral(bodies[2]));
+    assert.equal(bodies[0].max_tokens, bodies[2].max_tokens);
+  }
+});
 
 test("ordinary-only follow-ups get current scope guidance in both provider layouts", async () => {
   for (const messageLayout of ["append_only", "legacy_full_state"]) {
@@ -313,6 +351,166 @@ test("react decision provider renders bounded broad unit-play semantic guidance"
   assert.doesNotMatch(runContext.semanticGuidance, /only use these three tools/iu);
   assert.equal(Object.hasOwn(runContext.semanticAdvisory, "capabilityRequirements"), false);
   assert.equal(Object.hasOwn(runContext, "taskFrame"), false);
+});
+
+test("default guidance renderer preserves the pre-seam serialized messages byte-for-byte", async () => {
+  let body = null;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: JSON.stringify({
+              schemaVersion: "react-action.v1",
+              type: "finish",
+              answer: "ok",
+              evidenceIds: [],
+              reasonCode: "direct_answer",
+              narrative: null
+            }) } }]
+          };
+        }
+      };
+    }
+  });
+  await provider({
+    state: {
+      question: "沃里克怎么玩？",
+      messages: [],
+      seasonContextId: "set17-live",
+      taskAnchor: null,
+      bridgeContext: null,
+      semanticAdvisory: {
+        action: "recommend",
+        goal: "recommend_unit_play",
+        subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+        expectedOutput: ["unit_play_guidance"]
+      },
+      evidence: [],
+      transcript: []
+    },
+    toolCatalog: []
+  });
+  const hash = createHash("sha256").update(JSON.stringify(body.messages)).digest("hex");
+  assert.equal(hash, "5ced59923cd53c977363af8690f07bcdf065f19d7bf0fdcf693da854b8316123");
+});
+
+test("custom guidance renderer replaces only the bounded professional guidance value", async () => {
+  const bodies = [];
+  const received = [];
+  const response = {
+    ok: true,
+    async json() {
+      return {
+        choices: [{ message: { content: JSON.stringify({
+          schemaVersion: "react-action.v1",
+          type: "finish",
+          answer: "ok",
+          evidenceIds: [],
+          reasonCode: "direct_answer",
+          narrative: null
+        }) } }]
+      };
+    }
+  };
+  const options = {
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, request) => {
+      bodies.push(JSON.parse(request.body));
+      return response;
+    }
+  };
+  const baseline = createReactDecisionProvider(options);
+  const candidate = createReactDecisionProvider({
+    ...options,
+    guidanceRenderer: (advisory) => {
+      received.push(advisory);
+      return "candidate-guidance-v1";
+    }
+  });
+  const semanticAdvisory = {
+    action: "recommend",
+    goal: "recommend_unit_play",
+    subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+    expectedOutput: ["unit_play_guidance"]
+  };
+  const request = {
+    state: { question: "沃里克怎么玩？", messages: [], semanticAdvisory, evidence: [], transcript: [] },
+    toolCatalog: []
+  };
+  await baseline(request);
+  await candidate(request);
+  assert.deepEqual(received, [semanticAdvisory]);
+  const baselineRunContext = JSON.parse(bodies[0].messages[2].content);
+  const candidateRunContext = JSON.parse(bodies[1].messages[2].content);
+  assert.notEqual(baselineRunContext.semanticGuidance, candidateRunContext.semanticGuidance);
+  assert.equal(candidateRunContext.semanticGuidance, "candidate-guidance-v1");
+  baselineRunContext.semanticGuidance = candidateRunContext.semanticGuidance;
+  assert.deepEqual(candidateRunContext, baselineRunContext);
+  assert.deepEqual(bodies[1].messages.filter((_, index) => index !== 2), bodies[0].messages.filter((_, index) => index !== 2));
+});
+
+test("guidance renderer option fails closed when it is not a function", () => {
+  assert.throws(() => createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    guidanceRenderer: "candidate"
+  }), /guidanceRenderer must be a function/u);
+});
+
+test("historical prompt selection is explicit and fails closed for unknown versions", async () => {
+  const bodies = [];
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    decisionPromptVersion: "react-decision-contract.v5",
+    fetchImpl: async (_url, request) => {
+      bodies.push(JSON.parse(request.body));
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: JSON.stringify({
+              schemaVersion: "react-action.v1",
+              type: "finish",
+              answer: "ok",
+              evidenceIds: [],
+              reasonCode: "direct_answer",
+              narrative: null
+            }) } }]
+          };
+        }
+      };
+    }
+  });
+  await provider({ state: {}, toolCatalog: [] });
+  assert.equal(JSON.parse(bodies[0].messages[1].content).promptVersion, "react-decision-contract.v5");
+  assert.doesNotMatch(bodies[0].messages[0].content, /For TFT patch contents, dates, buffs, or nerfs/u);
+  assert.throws(() => createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    decisionPromptVersion: "react-decision-contract.future"
+  }), /decisionPromptVersion must be a supported prompt version/u);
+});
+
+test("guidance renderer output fails closed before transport when it is not text", async () => {
+  let transportCalls = 0;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    guidanceRenderer: () => ({ instructions: [] }),
+    fetchImpl: async () => {
+      transportCalls += 1;
+      throw new Error("transport must not run");
+    }
+  });
+  await assert.rejects(() => provider({ state: { semanticAdvisory: {} }, toolCatalog: [] }), /must return a string or null/u);
+  assert.equal(transportCalls, 0);
 });
 
 test("react decision provider maps DeepSeek cache usage and labels request telemetry", async () => {

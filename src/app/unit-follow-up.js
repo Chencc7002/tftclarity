@@ -3,6 +3,13 @@ const COMPOSITION_TYPES = new Set(["comps_rankings", "comps_analysis", "comp_ran
 const list = (value) => Array.isArray(value) ? value : [];
 const unitId = (value) => typeof value === "string" ? value : value?.apiName ?? value?.characterId;
 
+function deliveredEntries(result) {
+  const ids = new Set([...(result.evidenceIds ?? []), ...(result.cardEvidenceIds ?? [])]);
+  return list(result.evidence).filter(entry => entry.temporalStatus !== "historical"
+    && entry.metadata?.temporalStatus !== "historical"
+    && (result.compositionCardScope !== true || ids.has(entry.evidenceId)));
+}
+
 function usable(result) {
   return result && result.ok !== false && !result.clarification?.blocking
     && (!result.status || ["completed", "completed_with_warning", "ok", "success", "available"].includes(result.status))
@@ -15,7 +22,7 @@ export function unitResultCoverage(result, apiName) {
   const covered = { equipment: false, composition: false, video: false };
   if (!usable(result)) return covered;
   const entries = Array.isArray(result.evidence)
-    ? result.evidence.filter((entry) => entry.temporalStatus !== "historical")
+    ? deliveredEntries(result)
     : [{ toolName: result.type, value: result }];
   for (const entry of entries) {
     const value = entry.value;
@@ -44,7 +51,7 @@ export function unitResultCoverage(result, apiName) {
 export function singleEquipmentResultSubject(result) {
   if (!usable(result)) return null;
   const subjects = new Map();
-  for (const entry of list(result.evidence)) {
+  for (const entry of deliveredEntries(result)) {
     if (entry.temporalStatus === "historical" || entry.toolName !== "unit_builds" || !usable(entry.value)) continue;
     const value = entry.value;
     const apiName = unitId(value.unit) ?? value.query?.unit;

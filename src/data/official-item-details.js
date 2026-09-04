@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { OFFICIAL_ITEM_RETRIEVAL_VERSION } from "../agent/official-item-evidence.js";
 import {
   decodeOfficialTftHtml,
   inspectOfficialTftTokens
@@ -76,7 +78,11 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
       version: payloadMetadata?.version ?? null,
       season: payloadMetadata?.season ?? null,
       updatedAt: payloadMetadata?.time ?? payloadMetadata?.updatedAt ?? null,
-      sourceUrl
+      sourceUrl,
+      ...(options.retrieval ? { retrieval: Object.freeze({ ...options.retrieval,
+        catalogSeason: payloadMetadata?.season ?? null,
+        catalogVersion: payloadMetadata?.version ?? null,
+        publishedAt: payloadMetadata?.time ?? payloadMetadata?.updatedAt ?? null }) } : {})
     }),
     enumerable: false,
     configurable: false,
@@ -95,7 +101,13 @@ export async function fetchOfficialTftItemDetails(options = {}) {
   try {
     const response = await fetchImpl(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Official item details request failed: ${response.status} ${response.statusText}`);
-    return buildOfficialTftItemDetailsCatalog(await response.text(), { sourceUrl: url });
+    const payload = await response.text();
+    return buildOfficialTftItemDetailsCatalog(payload, { sourceUrl: url,
+      ...(options.captureRetrieval === true ? { retrieval: {
+        schemaVersion: OFFICIAL_ITEM_RETRIEVAL_VERSION, transport: "http_success",
+        sourceId: url, fetchedAt: new Date().toISOString(),
+        contentHash: createHash("sha256").update(payload).digest("hex")
+      } } : {}) });
   } catch (error) {
     if (error?.name === "AbortError") throw new Error(`Official item details request timed out after ${timeoutMs}ms`);
     throw error;

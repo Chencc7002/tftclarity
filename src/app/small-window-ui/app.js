@@ -2,6 +2,7 @@ import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
+import { hasBoundTacticalEvidence } from "./composition-card-details.js";
 import { createQuickToolLibrary } from "./quick-tool-library.js";
 import { createOnboardingTour } from "./onboarding-tour.js";
 import { createVoiceInput } from "./voice-input.js";
@@ -1244,15 +1245,17 @@ function renderCompUnit(unit, comp, expanded = false) {
 }
 
 function compDetailDescriptor(comp) {
-  const compId = String(comp?.source?.clusterId ?? "").trim();
-  const dataClusterId = String(comp?.source?.dataClusterId ?? "").trim();
+  const embeddedDetail = comp?.tacticalDetail ?? null;
+  const compId = String(embeddedDetail?.compositionId ?? comp?.source?.clusterId ?? "").trim();
+  const dataClusterId = String(embeddedDetail?.clusterId ?? comp?.source?.dataClusterId ?? "").trim();
   if (!compId || !dataClusterId) return null;
   const units = [...new Set((comp?.units ?? [])
     .map((unit) => String(unit?.apiName ?? "").trim())
     .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
-  const seasonContextId = String(state.seasonContextId ?? "").trim();
-  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|");
-  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units };
+  const seasonContextId = String(embeddedDetail?.seasonContextId ?? state.seasonContextId ?? "").trim();
+  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|")
+    + (embeddedDetail ? `|${embeddedDetail.rankingEvidenceId}|${embeddedDetail.evidenceId ?? "missing"}` : "");
+  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units, embeddedDetail };
   state.compDetailDescriptors.set(key, descriptor);
   return descriptor;
 }
@@ -1367,8 +1370,10 @@ function renderCompFormation(comp, formation, placedUnits) {
   if (!placedUnits.size) {
     return `<section class="comp-formation" data-status="unavailable"><h3>${escapeHtml(t("compFormation"))}</h3><p>${escapeHtml(t("compFormationUnavailable"))}</p></section>`;
   }
-  return `<section class="comp-formation" data-status="available">
+  const partial = formation?.status === "partial";
+  return `<section class="comp-formation" data-status="${partial ? "partial" : "available"}">
     <h3>${escapeHtml(t("compFormation"))}</h3>
+    ${partial ? `<p>${escapeHtml(t("compFormationPartial"))}</p>` : ""}
     <div class="comp-hex-board" role="group" aria-label="${escapeHtml(t("compFormation"))}">
       ${Array.from({ length: 28 }, (_, cell) => {
         const row = Math.floor(cell / 7);
@@ -1448,7 +1453,10 @@ function compDetailSourceLabel(source) {
 }
 
 function renderCompDetailContent(descriptor) {
-  const detailState = state.compDetailCache.get(descriptor.key);
+  const detailState = descriptor.embeddedDetail ?? state.compDetailCache.get(descriptor.key);
+  if (descriptor.embeddedDetail && !detailState.data) {
+    return renderCompFormation(descriptor.comp, null, new Map());
+  }
   if (!detailState || detailState.status === "loading") {
     return `<div class="comp-detail-state" data-status="loading" aria-live="polite">${escapeHtml(t("compDetailLoading"))}</div>`;
   }
@@ -1481,6 +1489,9 @@ function updateCompDetailPanels(key) {
 }
 
 async function loadCompDetail(descriptor, { retry = false } = {}) {
+  // ReAct cards render their own Ledger snapshot. Opening them must not fetch a
+  // different formation that the model never observed, or silently fill a gap.
+  if (descriptor.embeddedDetail) return;
   const cached = state.compDetailCache.get(descriptor.key);
   if (!retry && (cached?.status === "ready" || cached?.status === "unavailable" || cached?.status === "loading")) return;
   if (state.compDetailRequests.has(descriptor.key)) return state.compDetailRequests.get(descriptor.key);
@@ -2944,7 +2955,7 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
     <header>
       <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
       <small>${escapeHtml(t(systemFallback
-        ? "systemConclusionFallback"
+        ? data?.terminationReason === "deadline_exceeded" ? "systemConclusionDeadline" : "systemConclusionFallback"
         : hasGroundingWarnings
           ? "modelConclusionGroundingWarning"
           : softValidated ? "modelConclusionPendingVerification"
@@ -4041,6 +4052,11 @@ function renderCurrentResult(data) {
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details", "strategy_video_search_results"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
+  if (data.compositionResultGroups?.length && !["comp_rankings", "comp_trends", "comp_analysis"].includes(data.type)) {
+    resultContentEl.insertAdjacentHTML("beforeend", `<div class="composition-result-groups">${data.compositionResultGroups.map((group, index) =>
+      `<section class="composition-result-group" data-evidence-id="${escapeHtml(group.evidenceId)}">${compRankingsHtml(group.result, { initiallyOpen: index === 0, grouped: true })}</section>`).join("")}</div>`);
+    queueOpenCompDetailLoads();
+  }
   const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
   const knowledgeHtml = renderKnowledgeEvidence(data);
@@ -4855,6 +4871,7 @@ function normalizeReactCompositionRankings(value) {
     })),
     traits: result.traits ?? [],
     stats: result.stats ?? {},
+    tacticalDetailQueryPlan: result.tacticalDetailQueryPlan ?? null,
     source: result.source ?? value.source ?? null
   }));
   return {
@@ -4939,7 +4956,9 @@ function normalizeEndpointPayload(payload) {
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
     ? payload.answer
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
-  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  const displayIds = new Set([...(payload.evidenceIds ?? []), ...(payload.cardEvidenceIds ?? [])]);
+  const evidence = (Array.isArray(payload.evidence) ? payload.evidence : [])
+    .filter(entry => payload.compositionCardScope !== true || displayIds.has(entry.evidenceId));
   const nativeResultTypes = new Set([
     "composition_rankings",
     "comp_rankings",
@@ -4972,17 +4991,30 @@ function normalizeEndpointPayload(payload) {
     "trait_external_unit_statistics", "strategy_video_search_results",
     "unit_details", "item_details", "trait_details", "entity_catalog_results"
   ];
-  const primaryValue = primaryTypeOrder
+  let primaryValue = primaryTypeOrder
     .map((type) => evidenceValues.find((value) => value?.type === type))
     .find(Boolean)
     ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
     ?? null;
+  const compositionResultGroups = collectCompositionResultGroups(payload, normalizeReactCompositionRankings);
+  if (payload.compositionCardScope === true && compositionResultGroups.length
+    && ["composition_rankings", "comp_rankings", "composition_tactical_details"].includes(primaryValue?.type)) {
+    primaryValue = compositionResultGroups[0].result;
+  }
+  // Positioning is a field of its cited composition card, not a replacement
+  // for all the ranked cards. A standalone positioning answer keeps its view.
+  if (primaryValue?.type === "composition_tactical_details") {
+    const primaryEntry = evidence.find((entry) => entry.value === primaryValue);
+    const matchingGroup = compositionResultGroups.find((group) => hasBoundTacticalEvidence(group, primaryEntry?.evidenceId));
+    if (matchingGroup) primaryValue = matchingGroup.result;
+  }
   const officialDetailValue = primaryValue?.schemaVersion === "official-entity-detail.v1"
     ? normalizeReactOfficialDetail(primaryValue)
     : primaryValue;
-  const displayValue = officialDetailValue?.type === "composition_rankings"
+  const selectedRankingGroup = compositionResultGroups.find((group) => evidence.some((entry) => entry.evidenceId === group.evidenceId && entry.value === primaryValue));
+  const displayValue = selectedRankingGroup?.result ?? (officialDetailValue?.type === "composition_rankings"
     ? normalizeReactCompositionRankings(officialDetailValue)
-    : officialDetailValue;
+    : officialDetailValue);
   const comparisonDetails = displayValue?.type === "unit_item_comparison"
     ? new Map(evidenceValues
       .filter((value) => value?.type === "item_details")
@@ -5016,13 +5048,12 @@ function normalizeEndpointPayload(payload) {
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
-  const compositionResultGroups = ["comp_trends", "comp_rankings"].includes(displayValue?.type)
-    ? collectCompositionResultGroups(payload, normalizeReactCompositionRankings)
-    : [];
+  const supplementalCompositions = ["unit_build_rankings", "unit_build_completion", "unit_best_3_items", "unit_builds_batch_results"].includes(displayValue?.type);
   return {
     ...(hydratedDisplayValue ?? {}),
     ...payload,
-    ...(compositionResultGroups.length > 1 ? { compositionResultGroups } : {}),
+    ...((compositionResultGroups.length > 1 && ["comp_rankings", "comp_trends"].includes(displayValue?.type))
+      || (compositionResultGroups.length && supplementalCompositions) ? { compositionResultGroups } : {}),
     ...(clarification ? { clarification } : {}),
     ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
       ? { status: displayValue.status, runStatus: payload.status }

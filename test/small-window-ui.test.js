@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import vm from "node:vm";
 import { collectCompositionResultGroups } from "../src/app/small-window-ui/composition-result-groups.js";
+import { hasBoundTacticalEvidence } from "../src/app/small-window-ui/composition-card-details.js";
 import { createToolPreferences, normalizeToolPreferences, recommendQuickTools, QUICK_TOOL_STORAGE_KEY } from "../src/app/small-window-ui/quick-tool-preferences.js";
 import { setupToolMenu } from "../src/app/small-window-ui/quick-tool-library.js";
 import { normalizeOnboardingState, readOnboardingState, writeOnboardingState, ONBOARDING_STORAGE_KEY } from "../src/app/small-window-ui/onboarding-tour.js";
@@ -926,6 +927,7 @@ function compositionResultHarness() {
   let renders = 0;
   const context = vm.createContext({
     collectCompositionResultGroups,
+    hasBoundTacticalEvidence,
     conclusionDisplayText: (value) => value,
     t: (key) => key,
     escapeHtml: (value) => String(value ?? "").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "unit-play-guidance-forward-review-schema.v2",
+  "experimentId": "unit-play-guidance-forward.2026-09-01.v2",
+  "packetSchemaVersion": "unit-play-guidance-forward-blinded-packet.v2",
+  "labelSchemaVersion": "unit-play-guidance-forward-independent-labels.v2",
+  "reviewersRequired": 2,
+  "independentBeforeAdjudication": true,
+  "preserveOriginalIndependentLabels": true,
+  "adjudicationRequiredOnDisagreement": true,
+  "keywordScoringAllowed": false,
+  "facets": [
+    "unit_interpretation",
+    "equipment_logic",
+    "when_to_play",
+    "composition_cards",
+    "positioning_cards",
+    "concision"
+  ],
+  "rating": {
+    "allowed": [
+      "pass",
+      "partial",
+      "fail",
+      "not_applicable"
+    ],
+    "nullBeforeReview": true
+  },
+  "facetRules": {
+    "unit_interpretation": "Interpret only registered unit detail evidence; do not reward invented live state.",
+    "equipment_logic": "Explain the recommended equipment using the frozen statistical result and official item mechanism batch.",
+    "when_to_play": "Accept recommended equipment or favorable unit copies/upgrades as conditions; reject invented current inventory, shop, board, or economy state.",
+    "composition_cards": "Require two distinct composition cards backed by the frozen candidate snapshot and exact-card resolution.",
+    "positioning_cards": "Each composition card must own its corresponding complete formation; answer prose must not restate tactical positioning.",
+    "concision": "The prose should focus on the unit, equipment logic, and when-to-play conditions while leaving composition and positioning to cards."
+  },
+  "blinding": {
+    "excludedFromPacketEntries": [
+      "arm",
+      "repetition",
+      "pairId",
+      "providerUsage",
+      "guidanceHash",
+      "rawEvidenceId"
+    ],
+    "blindKeyStoredSeparately": true
+  },
+  "claimBoundary": "The review determines paired experimental value only. It does not authorize production control."
+}

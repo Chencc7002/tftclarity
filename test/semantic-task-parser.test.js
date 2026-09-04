@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createCatalog } from "../src/data/static-data.js";
-import { parseSemanticTask } from "../src/understanding/semantic-task-parser.js";
+import { parseSemanticTask, applyDeterministicTftSemantics } from "../src/understanding/semantic-task-parser.js";
 
 const broadPlayCatalog = createCatalog({
   units: [
@@ -130,5 +130,42 @@ test("broad unit play normalization does not override explicit facets or multipl
     });
     assert.notEqual(parsed.taskFrame.goal, "recommend_unit_play", input);
     assert.equal(parsed.taskFrame.goal, expectedGoal, input);
+  }
+});
+
+test("opt-in compound play guidance refines the original TaskFrame without changing the default", async () => {
+  for (const input of [
+    "沃里克怎么玩？请给推荐装备和多个阵容，每个阵容带对应站位。",
+    "沃里克怎么玩，装备、阵容和站位都讲一下",
+    "请说说沃里克玩法。给出装和阵容推荐。",
+    "How should I play Warwick? Explain the unit and sourced items; show two comp cards with their own positioning."
+  ]) {
+    const options = { provider: null, catalog: broadPlayCatalog, conversation: [] };
+    const legacy = (await parseSemanticTask(input, options)).taskFrame;
+    const candidate = (await parseSemanticTask(input, { ...options, compoundUnitPlayGuidance: true })).taskFrame;
+    assert.notEqual(legacy.goal, "recommend_unit_play", input);
+    assert.equal(candidate.goal, "recommend_unit_play", input);
+    assert.equal(candidate.domain, "tft", input);
+    assert.equal(candidate.understandingStatus, "understood_and_supported", input);
+    assert.deepEqual(candidate.expectedOutput, ["unit_play_guidance"], input);
+    const refined = await applyDeterministicTftSemantics(legacy, input, { compoundUnitPlayGuidance: true });
+    assert.equal(refined.goal, candidate.goal, input);
+  }
+});
+
+test("compound play opt-in preserves Quick Tasks, narrow facets, unresolved identities and unsupported decisions", async () => {
+  for (const input of [
+    "沃里克出装", "沃里克阵容和站位", "沃里克技能怎么玩，装备阵容呢？",
+    "沃里克怎么玩？只说装备和阵容。", "沃里克怎么玩？装备阵容攻略视频。",
+    "沃里克怎么玩？对比装备阵容。", "沃里克怎么玩？这阶段装备阵容该怎么转型？",
+    "沃里克怎么玩？我现在的装备适合什么阵容？",
+    "沃里克和阿狸怎么玩？装备阵容都给一下。",
+    "未知英雄怎么玩？装备阵容怎么配？"
+  ]) {
+    const options = { provider: null, catalog: broadPlayCatalog, conversation: [] };
+    const legacy = (await parseSemanticTask(input, options)).taskFrame;
+    const candidate = (await parseSemanticTask(input, { ...options, compoundUnitPlayGuidance: true })).taskFrame;
+    assert.deepEqual(candidate, legacy, input);
+    assert.notEqual(candidate.goal, "recommend_unit_play", input);
   }
 });

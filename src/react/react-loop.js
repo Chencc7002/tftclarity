@@ -10,6 +10,7 @@ import { DuplicateCallGuard } from "./duplicate-call-guard.js";
 import { EvidenceLedger } from "./evidence-ledger.js";
 import { validateFinishAction, validateGroundedBuildNarrative } from "./termination-policy.js";
 import { ReactWorkingState } from "./working-state.js";
+import { currentDeadlineEvidence } from "./deadline-evidence.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
 
@@ -356,10 +357,17 @@ function validateItemDetailsBatchAction(action, ledger, request) {
     entry.toolName === "unit_builds_batch"
     && (entry.value?.results ?? []).some((result) => result.mechanismQueryPlan?.apiNames?.length)
   ));
+  const unitPlayBuildEntry = currentEntries.find((entry) => (
+    entry.toolName === "unit_builds"
+    && entry.value?.mechanismQueryPlan?.schemaVersion === "unit-play-item-mechanism-query-plan.v1"
+    && entry.value.mechanismQueryPlan.status === "available"
+    && entry.value.mechanismQueryPlan.apiNames?.length
+  ));
   const plan = contentionEntry?.value?.itemContentionPlan
     ?? buildEntry?.value?.results?.find((result) => (
       result.mechanismQueryPlan?.apiNames?.length
-    ))?.mechanismQueryPlan;
+    ))?.mechanismQueryPlan
+    ?? unitPlayBuildEntry?.value?.mechanismQueryPlan;
   const errors = [];
   if (!plan) errors.push("item_details_batch requires a deterministic item-selection plan");
   else if (!itemDetailsBatchMatchesPlan(action.arguments?.apiNames, plan)) {
@@ -501,6 +509,33 @@ function compositionTacticalNextActionAffordance(action, toolResult, request) {
   };
 }
 
+function unitPlayFixedCardCompletionAffordance(action, addition, ledger, context) {
+  if (context?.unitPlayFixedCardCompletionAffordance !== true) return null;
+  if (action.tool !== "composition_tactical_details" || !addition?.added) return null;
+  const requiredCardCount = Number.isInteger(context.unitPlayFixedCardCount)
+    && context.unitPlayFixedCardCount > 0 ? context.unitPlayFixedCardCount : 2;
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const tacticalEntries = entries.filter((entry) => (
+    entry.toolName === "composition_tactical_details"
+    && Array.isArray(entry.value?.formation?.units)
+  ));
+  if (tacticalEntries.length < requiredCardCount) return null;
+  return {
+    schemaVersion: "react-next-action-affordance.v1",
+    resultStatus: "unit_play_fixed_composition_cards_complete",
+    recommendedAction: "finish",
+    finish: {
+      reasonCode: "sufficient_evidence",
+      requiredEvidenceIds: entries.map((entry) => entry.evidenceId).filter(Boolean)
+    },
+    compositionCards: {
+      requiredCardCount,
+      observedTacticalEvidenceCount: tacticalEntries.length,
+      positioningProseAllowed: false
+    }
+  };
+}
+
 function compositionTrendNextActionAffordance(action, toolResult, addition) {
   if (action.tool !== "comps_trends" || !addition?.added || !addition.entry?.evidenceId) return null;
   const value = toolResult?.value ?? {};
@@ -620,7 +655,11 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
     action.arguments?.performanceItem
   ].map((value) => String(value ?? "").trim()).filter(Boolean))];
   const errors = [];
-  if (!resolvedCatalogEntity(entries, "unit", unitApiName)) {
+  const controlledUnitPlayId = request.semanticAdvisory?.goal === "recommend_unit_play"
+    && request.semanticAdvisory?.action === "recommend"
+    ? String(request.semanticAdvisory?.subject?.resolvedId ?? "")
+    : "";
+  if (!resolvedCatalogEntity(entries, "unit", unitApiName) && controlledUnitPlayId !== unitApiName) {
     errors.push("unit_builds unit requires prior exact unit entity_catalog_query resolution");
   }
   for (const apiName of itemApiNames) {
@@ -1427,7 +1466,14 @@ export class ReactLoop {
     let modelConclusion = null;
     const failuresByCapability = new Map();
     let sequence = 0;
+    let recoveryClosed = false;
+    const assertRecoveryActive = () => {
+      if (!context.registerDeadlineRecovery) return;
+      context.signal?.throwIfAborted();
+      context.run?.assertActive?.();
+    };
     const emit = (type, data = {}) => {
+      if (recoveryClosed) return null;
       const event = {
         schemaVersion: REACT_STREAM_EVENT_SCHEMA_VERSION,
         runId,
@@ -1511,6 +1557,28 @@ export class ReactLoop {
       });
     };
 
+    // Registered only by an explicitly opted-in ChatAgent. Take the snapshot
+    // synchronously after the runtime stops, before any late promise can resume.
+    context.registerDeadlineRecovery?.((error) => {
+      if (recoveryClosed) return null;
+      if (error.code !== "run_timed_out" || state.terminationReason) {
+        recoveryClosed = true;
+        return null;
+      }
+      const entries = currentDeadlineEvidence(ledger.snapshot().entries, this.now(), state.seasonContextId);
+      if (!entries.length) { recoveryClosed = true; return null; }
+      const evidenceIds = entries.map((entry) => entry.evidenceId);
+      const answer = "本次查询已超时，已停止继续调用工具。仅保留截止前取得并通过校验的部分结果；完整回答的证据不足，未完成的装备解读、阵容或站位不作推断。";
+      state.warn("deadline_partial_evidence");
+      emit("answer", { answer, evidenceIds, reasonCode: "partial_evidence", narrativeAccepted: false, systemFallback: true });
+      const result = terminate("deadline_exceeded", { status: "completed_with_warning", answer,
+        evidenceIds, answerOrigin: "system_evidence_fallback" });
+      // Do not expose any unaccepted model conclusion as an alternative answer.
+      result.modelConclusion = null;
+      recoveryClosed = true;
+      return result;
+    });
+
     emit("run_started", { budget });
     for (const promoted of request.bridgeContext?.promotedEvidence ?? []) {
       const addition = ledger.addHistorical(promoted);
@@ -1570,7 +1638,9 @@ export class ReactLoop {
           signal: context.signal,
           runId
         });
+        assertRecoveryActive();
       } catch (error) {
+        assertRecoveryActive();
         const normalized = safeError(error);
         emit("error", { code: normalized.code, message: normalized.message });
         const deterministicVideoAction = deterministicStrategyVideoFallback(
@@ -1756,7 +1826,17 @@ export class ReactLoop {
           }
           continue;
         }
-        const finishValidation = validateFinishAction(action, ledger);
+        const finishValidation = validateFinishAction(action, ledger, { compositionCardScope: context.compositionCardScope,
+          compositionCardsOwnPositioning: context.compositionCardsOwnPositioning,
+          officialItemEvidenceV1: context.officialItemEvidenceV1,
+          unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
+          currentTurnInput: request.input ?? request.question,
+          now: this.now(), seasonContextId: state.seasonContextId });
+        if (context.compositionCardScope) {
+          const legacyValidation = validateFinishAction(action, ledger);
+          emit("positioning_validation_comparison", { legacyErrors: legacyValidation.errors,
+            candidateErrors: finishValidation.errors });
+        }
         if (!finishValidation.valid) {
           modelConclusion.status = "rejected";
           modelConclusion.validationErrors = finishValidation.errors.map(String);
@@ -2178,7 +2258,9 @@ export class ReactLoop {
           maxRetriesPerTool: budget.maxRetriesPerTool,
           intent: "react_chat"
         });
+        assertRecoveryActive();
       } catch (error) {
+        assertRecoveryActive();
         const normalized = safeError(error);
         consecutiveToolFailures += 1;
         failuresByCapability.set(action.tool, (failuresByCapability.get(action.tool) ?? 0) + 1);
@@ -2216,7 +2298,12 @@ export class ReactLoop {
         allowModelGeneratedStatistics: false
       };
       const addition = ledger.add({ definition, toolResult, evidenceContract });
-      const nextActionAffordance = compositionTacticalNextActionAffordance(
+      const nextActionAffordance = unitPlayFixedCardCompletionAffordance(
+        action,
+        addition,
+        ledger,
+        context
+      ) ?? compositionTacticalNextActionAffordance(
         action,
         toolResult,
         request

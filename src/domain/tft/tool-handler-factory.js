@@ -86,8 +86,15 @@ function detailCompleteness(entityType, facts) {
 function detailResult(entityType, apiName, details, record, dependencies) {
   const retrievedAt = new Date().toISOString();
   const source = detailSource(record, details, retrievedAt);
+  if (entityType === "item" && dependencies.officialItemEvidenceV1 === true && details?.meta?.retrieval) {
+    source.retrieval = structuredClone(details.meta.retrieval);
+  }
   const found = Boolean(record);
   const facts = found ? entityFacts(entityType, record) : {};
+  if (found && entityType === "item" && dependencies.officialItemEvidenceV1 === true) {
+    facts.numericFormulaComplete = record.numericFormulaComplete === true;
+    facts.unresolvedTokens = structuredClone(record.unresolvedTokens ?? []);
+  }
   const status = !found ? "not_found" : detailCompleteness(entityType, facts) ? "found" : "partial";
   const displayName = record?.name ?? record?.displayName ?? null;
   return {
@@ -186,12 +193,13 @@ export function createTftToolHandlers(dependencies = {}) {
   ) {
     handlers.entity_catalog_query = async (input) => {
       const details = await dependencies.loadOfficialEntityDetails();
-      return dependencies.queryEntityCatalog({
+      const result = await dependencies.queryEntityCatalog({
         catalog: dependencies.catalog,
         details,
         input,
         updatedAt: details?.meta?.updatedAt
       });
+      return { ...result, scope: detailScope(dependencies) };
     };
   }
 

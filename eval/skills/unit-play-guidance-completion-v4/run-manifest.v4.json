@@ -1,0 +1,94 @@
+{
+  "schemaVersion": "unit-play-guidance-completion-run-manifest.v4",
+  "experimentId": "unit-play-guidance-completion.2026-09-01.v4",
+  "classification": "adaptive candidate-only reliability; no paired efficacy claim",
+  "adaptiveDisclosure": {
+    "priorProviderAttemptsObserved": true,
+    "answerContentUsedForTuning": false,
+    "boundedActionTraceUsedForCompletionRepair": true
+  },
+  "runtime": {
+    "plannedAgentRuns": 90,
+    "concurrency": 1,
+    "providerHttpRequestHardCap": 1000,
+    "totalTokenHardCap": null,
+    "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11",
+    "minimumNativeModelCompletions": 81,
+    "minimumCasesWithTwoNativeCompletions": 27,
+    "exactToolSequenceEvaluatedSeparately": true,
+    "earlyStopWhenGatesUnreachable": true
+  },
+  "frozen": {
+    "configNormalizedSha256": "2b3994abcdeb43333cdf3b87ad639a750643cf8d0f00d6fe530a180a26657667",
+    "preflightResultNormalizedSha256": "b2da708ff8fdd343c750025269fe0b2def3784bf507a998f43f76c6a94387b3b",
+    "sourceCorpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "sourceObservationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillSha256": "8f96107e182ac0347aee7adbb57e90d89ab609d44cd18f96a7d9f593af07fb36",
+    "candidateRenderedContextSha256": "5c8ee38e76410ee27b2fec0087d6cf8958e0610bcad2ab5881fbe66381c0be6c"
+  },
+  "implementation": {
+    "preflightRawSha256": "aa5f851a9fb1b45ed999c0f3f347ed6a1cafbeaa3f6a73ea8b3f39a1b2d996b8",
+    "canonicalRawSha256": "ff20468d82455bac19dfda93fe1300568dde42c0678a1ffc3d8aded851484078",
+    "formalRunnerRawSha256": "3b3b021fb959ada1e09422a75a8409459c4a81ca1984f9af99bc50eb4eb7d7e1",
+    "dryRunnerRawSha256": "88d8c7e6342d5ca850e8efa62fea73860a0a73d50b29b8cd37f3a6d56b340ce8"
+  },
+  "scriptedDryRun": {
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 0,
+    "transportRequests": 810,
+    "nativeModelCompletions": 90,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reviewEntries": 90,
+    "resultNormalizedSha256": "620e0ec8652bb7f2aac36150e6a7f13cddd595121c38589d2ac98a027b055d82",
+    "reviewPacketNormalizedSha256": "dbec2f316b796fcdc22e38cc6632a2929d1031ecaf81b654348847219dfeb9c1"
+  },
+  "authorization": {
+    "realProviderRun": false,
+    "separateCommitBoundArtifactRequired": true,
+    "productionControl": false,
+    "credentialPersisted": false
+  },
+  "disclosedPriorProviderAttempts": [
+    {
+      "implementationCommitSha": "a198fef2d072f3622d66fe8d72cd022e31a363c4",
+      "classification": "operator-stopped diagnostic attempt with stale native-completion audit; not reliability evidence",
+      "completedAgentRuns": 3,
+      "providerHttpRequests": 33,
+      "observedTokens": 478556,
+      "completedResultProduced": false,
+      "reviewPacketProduced": false
+    },
+    {
+      "implementationCommitSha": "f76cbbb50dccaab044fce851020e71ca1364efe6",
+      "classification": "formal v3 adaptive candidate reliability attempt; stopped early inconclusive after native completion gate became unreachable",
+      "completedAgentRuns": 30,
+      "providerHttpRequests": 298,
+      "observedTokens": 4405158,
+      "status": "inconclusive",
+      "stopReason": "native_model_completion_gate_unreachable",
+      "nativeModelCompletions": 20,
+      "exactFrozenToolSequences": 30,
+      "completedResultProduced": true,
+      "reviewPacketProduced": true,
+      "reviewEntries": 20,
+      "casesWithAtLeastTwoNativeCompletions": 7
+    },
+    {
+      "implementationCommitSha": "2d93413be806b92c38eee76484c63274b1705b8c",
+      "classification": "formal v4 adaptive candidate reliability attempt; stopped early inconclusive after native completion gate became unreachable",
+      "completedAgentRuns": 37,
+      "providerHttpRequests": 360,
+      "observedTokens": 5340089,
+      "status": "inconclusive",
+      "stopReason": "native_model_completion_gate_unreachable",
+      "nativeModelCompletions": 27,
+      "nativeModelCompletionRate": 0.7297297297297297,
+      "exactFrozenToolSequences": 37,
+      "casesWithAtLeastTwoNativeCompletions": 9,
+      "completedResultProduced": true,
+      "reviewPacketProduced": true,
+      "reviewEntries": 27
+    }
+  ]
+}

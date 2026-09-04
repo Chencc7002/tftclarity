@@ -1,7 +1,13 @@
 import { validateReactAction } from "./react-action.js";
 import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import {
+  applyUnitPlayCandidateDecisionProfile,
+  validateUnitPlayCandidateDecisionRequest
+} from "./unit-play-candidate-projection.js";
 
 export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v6";
+export const REACT_DECISION_PROMPT_VERSION_V5 = "react-decision-contract.v5";
+export const REACT_SCOPED_TACTICAL_PROMPT_VERSION = "react-decision-contract.v5.tactical-presentation.v1";
 const MAX_DECISION_ATTEMPTS = 2;
 const REACT_STABLE_CONTEXT_SCHEMA_VERSION = "react-stable-context.v1";
 const REACT_RUN_CONTEXT_SCHEMA_VERSION = "react-run-context.v1";
@@ -70,6 +76,14 @@ const REACT_DECISION_CONTRACT = [
   "Keep finish.answer concise. Keep narrative text compact enough to complete the JSON within the output limit.",
   'All objects use schemaVersion "react-action.v1" and reject additional properties.'
 ].join("\n");
+
+// The accepted unit-play experiment used the v5 decision contract. Keep that
+// exact base for the candidate-only tactical profile while the default runtime
+// retains the production v6 patch-facts rule.
+const REACT_DECISION_CONTRACT_V5 = REACT_DECISION_CONTRACT
+  .split("\n")
+  .filter((line) => !line.startsWith("For TFT patch contents, dates, buffs, or nerfs,"))
+  .join("\n");
 
 function contentFromPayload(payload) {
   if (typeof payload?.output_text === "string") return payload.output_text;
@@ -149,11 +163,35 @@ function semanticGuidance(advisory) {
   ].join("\n");
 }
 
-function decisionContract(cacheNamespace) {
+function renderGuidance(guidanceRenderer, advisory) {
+  const rendered = guidanceRenderer(advisory);
+  if (rendered == null) return null;
+  if (typeof rendered !== "string") {
+    throw new TypeError("react decision guidanceRenderer must return a string or null");
+  }
+  return rendered;
+}
+
+function decisionContract(
+  cacheNamespace,
+  tacticalPresentationScope = false,
+  promptVersion = REACT_DECISION_PROMPT_VERSION
+) {
   const namespace = String(cacheNamespace ?? "").trim().slice(0, 128);
+  // Opt-in presentation correction only. All tool, prerequisite, grounding,
+  // missing-requested-data and finish policies remain in the same contract.
+  const contract = tacticalPresentationScope
+    ? REACT_DECISION_CONTRACT_V5
+      .replace("If formation or augmentRecommendations is unavailable, state that exact limitation while still presenting whichever verified part is available.",
+        "State missing-data limitations for requested facets or facts used in the answer while retaining the verified parts. Missing requested formation must be disclosed. Missing augmentRecommendations need not be discussed when augments were neither requested nor used.")
+      .replace("Format positioning and augment recommendations as two separate Markdown sections with short bullet items, and bold champion or augment names.",
+        "Keep each composition with its own verified positioning. Use a separate augment section only when augments were requested. Do not add an unrequested augment section or missing-augment notice.")
+    : promptVersion === REACT_DECISION_PROMPT_VERSION_V5
+      ? REACT_DECISION_CONTRACT_V5
+      : REACT_DECISION_CONTRACT;
   return namespace
-    ? `[cache-namespace:${namespace}]\n${REACT_DECISION_CONTRACT}`
-    : REACT_DECISION_CONTRACT;
+    ? `[cache-namespace:${namespace}]\n${contract}`
+    : contract;
 }
 
 const AFFIRMATIVE_ENTITY_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
@@ -225,17 +263,25 @@ function transcriptEventValue(event) {
   return value;
 }
 
-function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null) {
+function reactDecisionMessages(
+  request = {},
+  repairNote = null,
+  cacheNamespace = null,
+  guidanceRenderer = semanticGuidance,
+  tacticalPresentationScope = false,
+  guidanceOverride = null,
+  promptVersion = REACT_DECISION_PROMPT_VERSION
+) {
   const state = request.state ?? {};
   const messages = [
-    { role: "system", content: decisionContract(cacheNamespace) },
+    { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     {
       role: "system",
       content: stableJson({
         schemaVersion: REACT_STABLE_CONTEXT_SCHEMA_VERSION,
-        promptVersion: REACT_DECISION_PROMPT_VERSION,
+        promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : promptVersion,
         toolCatalog: request.toolCatalog ?? []
       })
     },
@@ -249,7 +295,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
         semanticAdvisory: state.semanticAdvisory ?? null,
-        semanticGuidance: semanticGuidance(state.semanticAdvisory),
+        semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, state.semanticAdvisory),
         historicalEvidence: historicalEvidence(state.evidence)
       })
     }
@@ -283,19 +329,27 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   return messages;
 }
 
-function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null) {
+function legacyReactDecisionMessages(
+  request = {},
+  repairNote = null,
+  cacheNamespace = null,
+  guidanceRenderer = semanticGuidance,
+  tacticalPresentationScope = false,
+  guidanceOverride = null,
+  promptVersion = REACT_DECISION_PROMPT_VERSION
+) {
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
-    { role: "system", content: decisionContract(cacheNamespace) },
+    { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     {
       role: "user",
       content: JSON.stringify({
-        promptVersion: REACT_DECISION_PROMPT_VERSION,
+        promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : promptVersion,
         state: {
           ...legacyState,
-          semanticGuidance: semanticGuidance(legacyState.semanticAdvisory)
+          semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
         },
         toolCatalog: request.toolCatalog ?? [],
         ...(repairNote ? {
@@ -350,6 +404,15 @@ export function createReactDecisionProvider(options = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("createReactDecisionProvider requires fetch or fetchImpl");
   }
+  const guidanceRenderer = options.guidanceRenderer ?? semanticGuidance;
+  if (typeof guidanceRenderer !== "function") {
+    throw new TypeError("createReactDecisionProvider guidanceRenderer must be a function");
+  }
+  if (options.decisionPromptVersion != null
+    && ![REACT_DECISION_PROMPT_VERSION, REACT_DECISION_PROMPT_VERSION_V5].includes(options.decisionPromptVersion)) {
+    throw new TypeError("createReactDecisionProvider decisionPromptVersion must be a supported prompt version");
+  }
+  const decisionPromptVersion = options.decisionPromptVersion ?? REACT_DECISION_PROMPT_VERSION;
 
   const provider = async function reactDecisionProvider(request = {}, context = {}) {
     const startedAt = performance.now();
@@ -362,6 +425,7 @@ export function createReactDecisionProvider(options = {}) {
     if (externalSignal?.aborted) abort();
     else externalSignal?.addEventListener("abort", abort, { once: true });
     try {
+      const candidateProfile = validateUnitPlayCandidateDecisionRequest(request);
       const registryLike = {
         get(name) {
           return request.toolCatalog?.find((tool) => tool.name === name) ?? null;
@@ -371,9 +435,15 @@ export function createReactDecisionProvider(options = {}) {
       let lastError = null;
       const configuredMaxTokens = Math.max(200, Math.min(2400, Number(options.maxTokens ?? 1800)));
       for (let attempt = 1; attempt <= MAX_DECISION_ATTEMPTS; attempt += 1) {
-        const messages = options.messageLayout === "legacy_full_state"
-          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace)
-          : reactDecisionMessages(request, repairNote, options.cacheNamespace);
+        const tacticalPresentationScope = candidateProfile?.tacticalPresentationScope === true
+          || options.tacticalPresentationScope === true;
+        const guidanceOverride = candidateProfile?.guidance ?? null;
+        const rawMessages = options.messageLayout === "legacy_full_state"
+          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
+            tacticalPresentationScope, guidanceOverride, decisionPromptVersion)
+          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
+            tacticalPresentationScope, guidanceOverride, decisionPromptVersion);
+        const messages = applyUnitPlayCandidateDecisionProfile(rawMessages, candidateProfile);
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {

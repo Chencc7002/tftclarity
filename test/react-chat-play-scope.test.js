@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createDefaultReactToolHandlerBundle,
+  compositionCardEvidenceIds,
   createSmallWindowRuntime,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
@@ -12,6 +13,77 @@ const buildEvidenceValue = (unit = "DA_Cinderling18") => ({
   type: "unit_build_rankings", unit: { apiName: unit, name: "绯红树怪" },
   cards: [{ title: "样本出装", items: [{ apiName: "TFT_Item_InfinityEdge", name: "无尽之刃" }], stats: { games: 100 } }],
   source: { provider: "metatft", updatedAt: new Date().toISOString() }, updatedAt: new Date().toISOString()
+});
+
+test("deadline partial payload keeps its warning and never claims follow-up coverage is complete", { timeout: 5000 }, async t => {
+  t.mock.timers.enable({ apis: ["setTimeout", "Date"], now: Date.now() });
+  let markBlocked, release;
+  const blocked = new Promise(resolve => { markBlocked = resolve; });
+  const late = new Promise(resolve => { release = resolve; });
+  const events = [];
+  const runtime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(),
+    reactToolHandlers: { unit_builds: async () => buildEvidenceValue(),
+      entity_catalog_query: async () => ({ type: "entity_catalog_results", entityType: "unit",
+        updatedAt: new Date().toISOString(), results: [{ apiName: "DA_Cinderling18", name: "绯红树怪" }],
+        resolution: { requests: [{ inputName: "绯红树怪", status: "resolved",
+          candidates: [{ apiName: "DA_Cinderling18", name: "绯红树怪" }] }] } }) },
+    reactDecisionProvider: async ({ state }) => {
+      if (state.evidence.some(entry => entry.toolName === "unit_builds")) { markBlocked(); return late; }
+      if (!state.evidence.length) return { schemaVersion: "react-action.v1", type: "call_tool", tool: "entity_catalog_query",
+        arguments: { entityType: "unit", filters: { names: ["绯红树怪"] } }, purposeCode: "retrieve_entity_details" };
+      return { schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
+        arguments: { unit: "DA_Cinderling18" }, purposeCode: "retrieve_current_statistics" };
+    }
+  });
+  runtime.reactDeadlineRecovery = true;
+  runtime.reactChatBudget = { ...runtime.reactChatBudget, deadlineMs: 100 };
+  const pending = handleReactChatRequest({ input: "绯红树怪怎么玩？", seasonContextId: "set18-live" }, runtime,
+    { onProgress: event => events.push(event) });
+  await Promise.race([blocked, pending.then(result => assert.fail(JSON.stringify(result)))]);
+  t.mock.timers.tick(100);
+  const { statusCode, payload } = await pending;
+  assert.equal(statusCode, 200);
+  assert.equal(payload.status, "completed_with_warning");
+  assert.equal(payload.run.status, "timed_out");
+  assert.equal(payload.terminationReason, "deadline_exceeded");
+  assert.equal(payload.answerOrigin, "system_evidence_fallback");
+  assert.match(payload.answer, /超时.*部分结果/);
+  assert.equal(payload.evidenceIds.length, 2);
+  assert.equal(payload.agentSuggestedActions, undefined);
+  const count = events.length;
+  release({ schemaVersion: "react-action.v1", type: "finish", answer: "迟到的完整结论",
+    evidenceIds: payload.evidenceIds, reasonCode: "sufficient_evidence" });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(events.length, count);
+});
+
+test("isolated follow-up coverage counts displayed card receipts, never unshown Ledger results", () => {
+  const evidence = [{ evidenceId: "builds", toolName: "unit_builds", value: buildEvidenceValue() },
+    { evidenceId: "comps", toolName: "comps_rankings", value: { results: [{ members: [{ apiName: "DA_Cinderling18" }] }] } }];
+  const result = { compositionCardScope: true, status: "completed_with_warning", evidence, evidenceIds: ["builds"] };
+  assert.deepEqual(unitResultCoverage(result, "DA_Cinderling18"), { equipment: true, composition: false, video: false });
+  assert.equal(unitResultCoverage({ ...result, cardEvidenceIds: ["comps"] }, "DA_Cinderling18").composition, true);
+  assert.equal(unitResultCoverage({ ...result, evidenceIds: [], cardEvidenceIds: [] }, "DA_Cinderling18").equipment, false);
+});
+
+test("completed model card receipt retains cited snapshots despite small upstream clock skew", () => {
+  const now = Date.now();
+  const entry = (evidenceId, toolName, offsetMs) => ({ evidenceId, toolName,
+    validatedAt: new Date(now).toISOString(), updatedAt: new Date(now + offsetMs).toISOString(),
+    source: "metatft", metadata: { source: "metatft", updatedAt: new Date(now + offsetMs).toISOString() },
+    value: { seasonContextId: "set18-live", source: { updatedAt: new Date(now + offsetMs).toISOString() } } });
+  const result = { answerOrigin: "model", terminationReason: "completed",
+    evidenceIds: ["ranking", "formation", "too-future", "wrong-season", "historical"], evidence: [
+      entry("ranking", "comps_rankings", 0), entry("formation", "composition_tactical_details", 2_000),
+      entry("uncited", "composition_tactical_details", 2_000), entry("build", "unit_builds", 0),
+      entry("too-future", "composition_tactical_details", 20_000),
+      { ...entry("wrong-season", "composition_tactical_details", 2_000), value: {
+        ...entry("wrong-season", "composition_tactical_details", 2_000).value, seasonContextId: "set17-live" } },
+      { ...entry("historical", "composition_tactical_details", 2_000), temporalStatus: "historical" }
+    ] };
+  assert.deepEqual(compositionCardEvidenceIds(result, now, "set18-live"), ["ranking", "formation"]);
+  assert.deepEqual(compositionCardEvidenceIds({ ...result, answerOrigin: "system_evidence_fallback",
+    terminationReason: "deadline_exceeded" }, now, "set18-live"), ["ranking"]);
 });
 
 test("follow-up coverage uses delivered rows and entity IDs, not wording or empty evidence", () => {

@@ -86,6 +86,36 @@ test("default react completion handler retains a carried emblem but restricts th
   assert.deepEqual(result.cards.map(card => card.items.map(item => item.apiName)), [[emblem, locked, "TFT_Item_InfinityEdge"]]);
 });
 
+test("unit-play item mechanism plan is server-derived from the leading card and default off", async () => {
+  const unit = "TFT17_Xayah";
+  const items = ["TFT_Item_InfinityEdge", "TFT_Item_GuinsoosRageblade", "TFT_Item_SpearOfShojin"];
+  const catalog = createCatalog();
+  const rows = [{ unit_builds: `${unit}&${items.join("|")}`,
+    placement_count: [150, 130, 110, 90, 70, 50, 30, 10] }];
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(), catalog,
+    cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
+    recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, response: rows }) });
+  const request = { input: "霞怎么玩？", seasonContextId: "set17-live", locale: "zh-CN",
+    semanticAdvisory: { action: "recommend", goal: "recommend_unit_play",
+      subject: { resolvedId: unit }, expectedOutput: ["unit_play_guidance"] } };
+  const legacy = await createDefaultReactToolHandlerBundle({ runtime, context: {}, request });
+  const legacyResult = await legacy.handlers.unit_builds({ unit, itemCount: 3, minSamples: 0 });
+  assert.equal(legacyResult.mechanismQueryPlan, undefined);
+  runtime.reactUnitPlayItemMechanismBatch = true;
+  const candidate = await createDefaultReactToolHandlerBundle({ runtime, context: {}, request });
+  const result = await candidate.handlers.unit_builds({ unit, itemCount: 3, minSamples: 0 });
+  assert.deepEqual(result.mechanismQueryPlan, {
+    schemaVersion: "unit-play-item-mechanism-query-plan.v1",
+    status: "available",
+    apiNames: result.cards[0].items.map((item) => item.apiName),
+    seasonContextId: "set17-live",
+    sourceCardIndex: 0
+  });
+  const unrelated = await createDefaultReactToolHandlerBundle({ runtime, context: {},
+    request: { input: "霞推荐出装", seasonContextId: "set17-live", locale: "zh-CN" } });
+  assert.equal((await unrelated.handlers.unit_builds({ unit, itemCount: 3, minSamples: 0 })).mechanismQueryPlan, undefined);
+});
+
 test("default react unit_builds handler preserves deterministic equipment intents", async () => {
   const calls = [];
   const unitApiName = "TFT18_Test";
@@ -151,6 +181,10 @@ test("default react unit_builds handler preserves deterministic equipment intent
   assert.equal(ranked.type, "unit_item_rankings");
   assert.equal(completed.type, "unit_build_completion");
   assert.equal(compared.type, "unit_item_comparison");
+  for (const value of [ranked, completed, compared]) {
+    assert.deepEqual(value.scope, { seasonContextId: "set18-live", patch: "current" });
+    assert.equal(value.source.updatedAt, "2026-08-13T00:00:00.000Z", "scope must not refresh an old source");
+  }
   assert.deepEqual(calls.map((entry) => entry.intent), [
     "unit_item_rankings",
     "unit_build_completion",

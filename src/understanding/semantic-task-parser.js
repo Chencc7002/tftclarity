@@ -549,12 +549,26 @@ function applyEntityCollectionSemantics(taskFrame, text) {
   });
 }
 
-const BROAD_UNIT_PLAY_PATTERN = /(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how\s+(?:do\s+i\s+)?play)/iu;
+const BROAD_UNIT_PLAY_PATTERN = /(?:怎么玩(?:儿)?|如何玩|玩法(?:是什么)?|怎么用|如何使用|how(?:(?:do|should)i)?play)/iu;
 const NARROW_UNIT_PLAY_FACET_PATTERN = /(?:装备|出装|给装|配装|阵容|搭配|站位|位置|视频|攻略|技能|属性|详情|效果|介绍|对比|比较|二选一|还是|为什么|为何|为啥|解释|什么意思|item|build|comp|lineup|position|video|guide|skill|ability|detail|compare|versus|why)/iu;
 
-function applyBroadUnitPlaySemantics(taskFrame, text) {
+function isCompoundUnitPlayRequest(text) {
+  // An independent broad-play clause may be followed by equipment + composition
+  // requirements. A facet's own "怎么玩" is still a narrow query. This is an
+  // opt-in refinement of the existing TaskFrame parser, not a Skill router.
+  const broadClause = text.split(/[，,。！？!?；;\n]/u).some((clause) => (
+    BROAD_UNIT_PLAY_PATTERN.test(clause) && !NARROW_UNIT_PLAY_FACET_PATTERN.test(clause)
+  ));
+  const equipment = /装备|出装|给装|配装|items?|builds?/iu.test(text);
+  const composition = /阵容|搭配|站位|comps?|lineups?|positioning/iu.test(text);
+  const otherOrLimitedTask = /视频|攻略|技能|属性|详情|效果|对比|比较|二选一|还是|为什么|为何|为啥|什么意思|只(?:要|想|需|看|说|讲|查|给)|仅|不用|不需要|不要(?:讲|说|查|给|推荐)|转型|过渡|复盘|搜牌|升人口|几级|阶段|回合|经济|连胜|连败|血量|金币|我现在|我目前|我手上|video|guide|skill|ability|detail|compare|versus|why|\bonly\b|transition|review/iu.test(text);
+  return broadClause && equipment && composition && !otherOrLimitedTask;
+}
+
+function applyBroadUnitPlaySemantics(taskFrame, text, options = {}) {
   const frame = createTaskFrame(taskFrame);
-  if (!BROAD_UNIT_PLAY_PATTERN.test(text) || NARROW_UNIT_PLAY_FACET_PATTERN.test(text)) {
+  const compound = options.compoundUnitPlayGuidance === true && isCompoundUnitPlayRequest(text);
+  if (!BROAD_UNIT_PLAY_PATTERN.test(text) || (NARROW_UNIT_PLAY_FACET_PATTERN.test(text) && !compound)) {
     return frame;
   }
   const resolvedSubjects = frame.subjects.filter((entity) => (
@@ -565,10 +579,12 @@ function applyBroadUnitPlaySemantics(taskFrame, text) {
   if (resolvedSubjects.length !== 1 || resolvedEntities.length !== 1) return frame;
   return createTaskFrame({
     ...frame,
+    domain: "tft",
     action: "recommend",
     goal: "recommend_unit_play",
     expectedOutput: ["unit_play_guidance"],
-    capabilityRequirements: []
+    capabilityRequirements: [],
+    understandingStatus: "understood_and_supported"
   });
 }
 
@@ -649,7 +665,7 @@ export async function applyDeterministicTftSemantics(taskFrame, input, options =
     ...frame,
     capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
   });
-  return applyBroadUnitPlaySemantics(frame, text);
+  return applyBroadUnitPlaySemantics(frame, text, options);
 }
 
 export async function parseSemanticTask(input, options = {}) {
@@ -829,7 +845,7 @@ export async function parseSemanticTask(input, options = {}) {
     ...frame,
     capabilityRequirements: deriveTftCapabilityRequirements(input, frame)
   });
-  frame = applyBroadUnitPlaySemantics(frame, text);
+  frame = applyBroadUnitPlaySemantics(frame, text, options);
 
   const validation = validateTaskFrame(frame);
   if (!validation.valid) {

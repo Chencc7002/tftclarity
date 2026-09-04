@@ -1,0 +1,114 @@
+{
+  "schemaVersion": "unit-play-guidance-completion-run-manifest.v5",
+  "experimentId": "unit-play-guidance-completion.2026-09-01.v5",
+  "classification": "adaptive candidate-only reliability with deterministic post-card finish affordance; no paired efficacy claim",
+  "adaptiveDisclosure": {
+    "priorProviderAttemptsObserved": true,
+    "answerContentUsedForTuning": false,
+    "boundedActionTraceUsedForCompletionRepair": true
+  },
+  "runtime": {
+    "plannedAgentRuns": 90,
+    "concurrency": 1,
+    "providerHttpRequestHardCap": 1000,
+    "totalTokenHardCap": null,
+    "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11",
+    "minimumNativeModelCompletions": 81,
+    "minimumCasesWithTwoNativeCompletions": 27,
+    "exactToolSequenceEvaluatedSeparately": true,
+    "earlyStopWhenGatesUnreachable": true,
+    "unitPlayFixedCardCompletionAffordance": true,
+    "unitPlayFixedCardCount": 2
+  },
+  "frozen": {
+    "configNormalizedSha256": "d6f3fc4e71dcb8550533b18de270e9cecdef512f8a7878550d3223cbc2f824ed",
+    "preflightResultNormalizedSha256": "478500362780c09b61b75d827b26759a21b0f9db070daff4b466564ec33a5624",
+    "sourceCorpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "sourceObservationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillSha256": "8f96107e182ac0347aee7adbb57e90d89ab609d44cd18f96a7d9f593af07fb36",
+    "candidateRenderedContextSha256": "5c8ee38e76410ee27b2fec0087d6cf8958e0610bcad2ab5881fbe66381c0be6c"
+  },
+  "implementation": {
+    "preflightRawSha256": "628a36269c929cf39323ced2b7e3e2d555159074fa67fc3b3d8deaa0012adba6",
+    "canonicalRawSha256": "c49830b8eb74fe30d6394f8a9ac3df244a6dfc9ee4de59a0fc03870795614ce8",
+    "formalRunnerRawSha256": "1a16fd4dee178a073c032fe60c257b26ea60cf23fbadbdb67f20b9fc58b01e2d",
+    "dryRunnerRawSha256": "15498e1be73177037e80116f7b9d21dad96022b08336ef7231d28e0f904af498"
+  },
+  "scriptedDryRun": {
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 0,
+    "transportRequests": 810,
+    "nativeModelCompletions": 90,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reviewEntries": 90,
+    "resultNormalizedSha256": "7a4d175b1e55c5cffe1a13ccdd46274a3377e35dab2e6896955a32ed57c69d96",
+    "reviewPacketNormalizedSha256": "0b9c25a73770bbbdb46a3740f6031a23e88e9320a6e35cdc6940166dd16de4ec"
+  },
+  "authorization": {
+    "realProviderRun": false,
+    "separateCommitBoundArtifactRequired": true,
+    "productionControl": false,
+    "credentialPersisted": false
+  },
+  "disclosedPriorProviderAttempts": [
+    {
+      "implementationCommitSha": "a198fef2d072f3622d66fe8d72cd022e31a363c4",
+      "classification": "operator-stopped diagnostic attempt with stale native-completion audit; not reliability evidence",
+      "completedAgentRuns": 3,
+      "providerHttpRequests": 33,
+      "observedTokens": 478556,
+      "completedResultProduced": false,
+      "reviewPacketProduced": false
+    },
+    {
+      "implementationCommitSha": "f76cbbb50dccaab044fce851020e71ca1364efe6",
+      "classification": "formal v3 adaptive candidate reliability attempt; stopped early inconclusive after native completion gate became unreachable",
+      "completedAgentRuns": 30,
+      "providerHttpRequests": 298,
+      "observedTokens": 4405158,
+      "status": "inconclusive",
+      "stopReason": "native_model_completion_gate_unreachable",
+      "nativeModelCompletions": 20,
+      "exactFrozenToolSequences": 30,
+      "casesWithAtLeastTwoNativeCompletions": 7,
+      "completedResultProduced": true,
+      "reviewPacketProduced": true,
+      "reviewEntries": 20
+    },
+    {
+      "implementationCommitSha": "2d93413be806b92c38eee76484c63274b1705b8c",
+      "classification": "formal v4 adaptive candidate reliability attempt; stopped early inconclusive after native completion gate became unreachable",
+      "completedAgentRuns": 37,
+      "providerHttpRequests": 360,
+      "observedTokens": 5340089,
+      "status": "inconclusive",
+      "stopReason": "native_model_completion_gate_unreachable",
+      "nativeModelCompletions": 27,
+      "nativeModelCompletionRate": 0.7297297297297297,
+      "exactFrozenToolSequences": 37,
+      "casesWithAtLeastTwoNativeCompletions": 9,
+      "completedResultProduced": true,
+      "reviewPacketProduced": true,
+      "reviewEntries": 27
+    }
+  ],
+  "formalProviderRun": {
+    "implementationCommitSha": "c80d299629a42d6d4ea2cdf848932d3d70eb42de",
+    "authorizationId": "8f489bd4-7f18-4560-b210-584e42bd3297",
+    "status": "awaiting_independent_review",
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 810,
+    "observedTokens": 11722546,
+    "nativeModelCompletions": 90,
+    "nativeModelCompletionRate": 1,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reliability": {
+      "nativeCompletionsPass": true,
+      "coveredCasesPass": true
+    },
+    "reviewEntries": 90,
+    "productionControl": false
+  }
+}
