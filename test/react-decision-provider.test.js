@@ -23,9 +23,12 @@ test("opt-in tactical presentation changes only two presentation rules, preservi
     assert.deepEqual(bodies[0], bodies[3]); // Request data and truthy strings cannot enable it.
     const baseline = bodies[0].messages[0].content.split("\n");
     const candidate = bodies[2].messages[0].content.split("\n");
-    const frozenV5Baseline = baseline.filter((line) => (
-      !line.startsWith("For TFT patch contents, dates, buffs, or nerfs,")
-    ));
+    const frozenV5Baseline = baseline
+      .filter((line) => !line.startsWith("For TFT patch contents, dates, buffs, or nerfs,"))
+      .map((line) => line.replace(
+        "Explain it in beginner-friendly language matching the requested response locale:",
+        "Explain it in beginner-friendly Chinese:"
+      ));
     assert.equal(candidate.length, frozenV5Baseline.length);
     assert.equal(candidate.filter((line, index) => line !== frozenV5Baseline[index]).length, 2);
     assert.match(baseline.join("\n"), /call patch_facts before summarizing/);
@@ -34,9 +37,52 @@ test("opt-in tactical presentation changes only two presentation rules, preservi
     assert.match(candidate.join("\n"), /only when augments were requested/);
     assert.match(candidate.join("\n"), /execute callTool exactly as provided/);
     const versionNeutral = (body) => body.messages.slice(1).map(message => ({ ...message,
-      content: message.content.replaceAll("react-decision-contract.v5.tactical-presentation.v1", "react-decision-contract.v6") }));
+      content: message.content.replaceAll("react-decision-contract.v5.tactical-presentation.v1", "react-decision-contract.v7") }));
     assert.deepEqual(versionNeutral(bodies[0]), versionNeutral(bodies[2]));
     assert.equal(bodies[0].max_tokens, bodies[2].max_tokens);
+  }
+});
+
+test("English response locale is explicit in both provider layouts", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    let observedBody;
+    const provider = createReactDecisionProvider({
+      endpoint: "https://example.test/chat/completions",
+      model: "test-model",
+      messageLayout,
+      fetchImpl: async (_url, options) => {
+        observedBody = JSON.parse(options.body);
+        return {
+          ok: true,
+          json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1",
+            type: "finish",
+            answer: "Patch 18.1 contains 15 numeric changes.",
+            evidenceIds: [],
+            reasonCode: "direct_answer",
+            narrative: null
+          }) } }] })
+        };
+      }
+    });
+
+    await provider({
+      state: {
+        question: "总结18.1热补丁",
+        locale: "en-US",
+        seasonContextId: "set18-live",
+        evidence: []
+      },
+      toolCatalog: []
+    });
+
+    const dynamicContext = JSON.parse(observedBody.messages[messageLayout === "append_only" ? 2 : 1].content);
+    assert.equal(messageLayout === "append_only" ? dynamicContext.locale : dynamicContext.state.locale, "en-US");
+    const languagePolicy = messageLayout === "append_only"
+      ? JSON.parse(observedBody.messages[1].content).responseLanguagePolicy
+      : dynamicContext.responseLanguagePolicy;
+    assert.match(languagePolicy, /runContext\.locale is authoritative/u);
+    assert.match(languagePolicy, /For en-US, write every user-facing field in English/u);
   }
 });
 
@@ -353,7 +399,7 @@ test("react decision provider renders bounded broad unit-play semantic guidance"
   assert.equal(Object.hasOwn(runContext, "taskFrame"), false);
 });
 
-test("default guidance renderer preserves the pre-seam serialized messages byte-for-byte", async () => {
+test("default guidance renderer preserves the reviewed v7 serialized messages byte-for-byte", async () => {
   let body = null;
   const provider = createReactDecisionProvider({
     endpoint: "https://example.test/chat/completions",
@@ -396,7 +442,7 @@ test("default guidance renderer preserves the pre-seam serialized messages byte-
     toolCatalog: []
   });
   const hash = createHash("sha256").update(JSON.stringify(body.messages)).digest("hex");
-  assert.equal(hash, "5ced59923cd53c977363af8690f07bcdf065f19d7bf0fdcf693da854b8316123");
+  assert.equal(hash, "1e893490dd7963e6298e3d590b014bc8d598a317c1791218e0c56dc8f0f55db8");
 });
 
 test("custom guidance renderer replaces only the bounded professional guidance value", async () => {
