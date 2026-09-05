@@ -61,7 +61,14 @@ export function createToolPreferences({ ids, storage, now = Date.now }) {
     } catch { persistent = false; }
     return { ...current, persistent };
   };
+  const reminderEligible = (id) => {
+    const record = read().tools[id];
+    if (!record || current.favorites.includes(id) || record.muted || record.snoozeUntil > now()) return false;
+    if (current.lastPromptAt && now() - current.lastPromptAt < DAY) return false;
+    return Object.keys(record.days).length >= 2 && Object.values(record.days).reduce((sum, count) => sum + count, 0) >= 3;
+  };
   return {
+    reminderEligible,
     snapshot: () => ({ ...read(), persistent }),
     setRecommendationsHidden(hidden) {
       read();
@@ -87,11 +94,7 @@ export function createToolPreferences({ ids, storage, now = Date.now }) {
       return id;
     },
     claimReminder(id) {
-      read();
-      const record = current.tools[id];
-      if (!record || current.favorites.includes(id) || record.muted || record.snoozeUntil > now()) return false;
-      if (current.lastPromptAt && now() - current.lastPromptAt < DAY) return false;
-      if (Object.keys(record.days).length < 2 || Object.values(record.days).reduce((sum, count) => sum + count, 0) < 3) return false;
+      if (!reminderEligible(id)) return false;
       current.lastPromptAt = now();
       save();
       return true;

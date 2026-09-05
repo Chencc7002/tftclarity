@@ -115,6 +115,7 @@
               </div>
             </div>
             <p id="voice-input-status" class="voice-input-status" role="status" aria-live="polite" hidden></p>
+            <aside id="voice-guidance" class="tool-reminder experience-guidance" hidden></aside>
             <p class="ai-generated-disclaimer" role="note">
               <span class="ai-generated-disclaimer-mark" aria-hidden="true">AI</span>
               <span data-i18n="aiGeneratedDisclaimer">AI 生成内容可能存在错误或不完整。统计数据、数据来源与工具证据可供核对；策略判断、原因分析与推测性建议仅供参考，请结合实际对局判断。</span>
@@ -196,6 +197,12 @@
                 <p data-i18n="onboardingSettingsBody">重新了解工具列表、收藏和自然语言提问入口。</p>
               </div>
               <button type="button" id="restart-onboarding-button" data-i18n="onboardingReplay">重新查看</button>
+            </section>
+
+            <section class="settings-section experience-guidance-settings" aria-labelledby="experience-guidance-title">
+              <h2 id="experience-guidance-title" data-i18n="guidanceSettingsTitle">体验提示</h2>
+              <label class="tool-recommendations-setting"><input type="checkbox" id="experience-guidance-toggle" checked><span data-i18n="guidanceSettingsToggle">适时提示语音输入和收藏常用工具</span></label>
+              <p data-i18n="guidanceSettingsBody">提示偏好仅保存在当前浏览器。关闭后，回答末尾的下一步按钮仍然可用。</p>
             </section>
 
             <details class="advanced-query-settings" open>

@@ -6,6 +6,8 @@ import { hasBoundTacticalEvidence } from "./composition-card-details.js";
 import { createQuickToolLibrary } from "./quick-tool-library.js";
 import { createOnboardingTour } from "./onboarding-tour.js";
 import { createVoiceInput } from "./voice-input.js";
+import { createExperienceGuidance } from "./experience-guidance.js";
+import { bindExperienceGuidance } from "./experience-guidance-ui.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
 import { CURRENT_PATCH_VERSION, getPatchNote } from "./patch-notes.js";
 import {
@@ -799,8 +801,17 @@ const QUICK_TASKS = [
   }
 ];
 
+const experienceGuidance = createExperienceGuidance({
+  storage: () => window.localStorage,
+  blocked: () => document.hidden || state.requestInFlight
+    || document.body.classList.contains("onboarding-active")
+    || Boolean(document.querySelector("dialog[open]"))
+    || (window.innerWidth < 1100 && appShell.settings.open)
+    || !queryInput.getClientRects().length
+});
 const quickToolLibrary = createQuickToolLibrary({
   tasks: quickTasksForSeason, categories: QUICK_TASK_CATEGORIES, t, escapeHtml,
+  guidance: experienceGuidance,
   launch: launchQuickTask, isRunning: () => state.requestInFlight
 });
 const onboardingTour = createOnboardingTour({
@@ -813,8 +824,10 @@ const voiceInput = createVoiceInput({
   input: queryInput,
   status: document.querySelector("#voice-input-status"),
   t,
-  getLocale
+  getLocale,
+  onStarted: () => experienceGuidance.complete("voice", "voice")
 });
+const experienceGuidanceUI = bindExperienceGuidance({ guidance: experienceGuidance, input: queryInput, voice: voiceInput, t });
 restartOnboardingButton?.addEventListener("click", () => onboardingTour.start({ force: true }));
 
 function quickTasksForSeason() {
@@ -2156,7 +2169,7 @@ function comparisonReasonText(reason) {
 function renderAgentSuggestedActions(actions = [], responseId = "") {
   if (!actions.length) return "";
   return `
-    <div class="agent-suggested-actions" aria-label="${escapeHtml(t("nextAction"))}">
+    <div class="agent-suggested-actions" data-guidance-response="${escapeHtml(responseId)}" aria-label="${escapeHtml(t("nextAction"))}">
       ${actions.map((action, index) => `
         <button type="button" data-agent-action-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(action.label ?? action.query)}</button>
       `).join("")}
@@ -3194,6 +3207,7 @@ function rerenderLocalizedState() {
   quickToolLibrary.refreshLocale();
   onboardingTour.refreshLocale();
   voiceInput.refreshLocale();
+  experienceGuidanceUI.refreshLocale();
   if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
@@ -5110,6 +5124,8 @@ function reactChatMessages() {
 
 function setRequestRunning(running) {
   state.requestInFlight = running;
+  if (running) experienceGuidanceUI.resetInput();
+  experienceGuidance.refresh();
   stopButton.classList.toggle("hidden", !running);
   refreshButton.disabled = running || !state.lastInput;
   resultRefreshButton.disabled = running || !state.lastInput;
@@ -5750,6 +5766,8 @@ async function handleResultClick(event) {
     const actions = responseRecord?.data?.agentSuggestedActions?.actions ?? [];
     const action = actions[Number(agentActionButton.dataset.agentActionIndex)];
     if (!action?.query) return;
+    if (state.requestInFlight) return;
+    experienceGuidance.contextual("accepted", `${agentActionButton.dataset.responseId}:${agentActionButton.dataset.agentActionIndex}`);
     queryInput.value = action.query;
     setMobileView("chat");
     queryInput.focus();

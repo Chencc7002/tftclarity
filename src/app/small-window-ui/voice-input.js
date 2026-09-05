@@ -17,6 +17,7 @@ export function createVoiceInput({
   status,
   t,
   getLocale,
+  onStarted = () => {},
   RecognitionConstructor = speechConstructor()
 } = {}) {
   if (!button || !input || !status) {
@@ -27,6 +28,7 @@ export function createVoiceInput({
   let active = false;
   let starting = false;
   let enabled = true;
+  let permissionBlocked = false;
   let baseText = "";
   let applyingTranscript = false;
   let statusKey = "";
@@ -124,6 +126,8 @@ export function createVoiceInput({
       active = true;
       updateButton();
       announce("voiceListening");
+      permissionBlocked = false;
+      onStarted();
     };
     recognition.onresult = (event) => {
       if (!active && !starting) return;
@@ -132,6 +136,7 @@ export function createVoiceInput({
     recognition.onerror = (event) => {
       active = false;
       starting = false;
+      if (["not-allowed", "service-not-allowed", "audio-capture"].includes(event.error)) permissionBlocked = true;
       updateButton();
       const key = ["not-allowed", "service-not-allowed"].includes(event.error) ? "voicePermissionDenied"
         : event.error === "audio-capture" ? "voiceMicrophoneUnavailable"
@@ -168,7 +173,9 @@ export function createVoiceInput({
 
   return {
     supported,
+    get available() { return supported && enabled && !permissionBlocked; },
     get active() { return active || starting; },
+    start,
     cancel,
     refreshLocale() {
       updateButton();
