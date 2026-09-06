@@ -1878,6 +1878,11 @@ function renderSuggestionButtons(suggestions = [], responseId = "") {
 
 function renderEntityCandidates(candidates = [], responseId = "") {
   if (!candidates.length) return "";
+  if (candidates.every(candidate => candidate.confirmation === true)) {
+    return `<div class="suggestions entity-confirmation-choices">${candidates.map((candidate, index) =>
+      `<button type="button" data-candidate-action="confirm" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(candidateLabel(candidate))}</button>`
+    ).join("")}</div>`;
+  }
   return `
     <div class="entity-candidates">
       ${candidates.map((candidate, index) => `
@@ -3167,7 +3172,10 @@ function recordAssistantResponse(data) {
     data,
     input: state.lastInput,
     displayInput: state.lastDisplayInput,
-    quickTask: state.lastQuickTask
+    quickTask: state.lastQuickTask,
+    conversationId: state.conversationId,
+    seasonContextId: state.seasonContextId,
+    requestSerial: state.requestSerial
   };
   const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
@@ -3547,6 +3555,8 @@ function renderCoachAnswerResult(data) {
     ${resultHeader(t("coachAnswerTitle"), response.headline ?? data?.answer?.summary ?? data?.text, t("coachAnswerTitle"))}
     <section class="coach-answer-card">
       <p>${escapeHtml(data?.assistantResponse?.text ?? data?.text ?? t("noResult"))}</p>
+      ${data?.clarification?.needsClarification ? renderEntityCandidates(data.clarification.entityCandidates ?? [], state.currentResponseId) : ""}
+      ${data?.clarification?.needsClarification ? renderSuggestionButtons(data.clarification.suggestions ?? [], state.currentResponseId) : ""}
       ${response.currentRecommendation?.label ? `<div class="coach-current-recommendation"><strong>${escapeHtml(t("currentStatsRecommendation"))}</strong><span>${escapeHtml(response.currentRecommendation.label)}</span></div>` : ""}
       ${warnings.length ? `<div class="coach-answer-warnings">${warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
     </section>
@@ -4967,6 +4977,16 @@ function normalizeEndpointPayload(payload) {
       ...(payload.clarification ?? {})
     }
     : payload.clarification;
+  if (clarification && payload.status === "clarification_required"
+    && payload.clarificationContext?.type === "entity_candidate") {
+    const context = payload.clarificationContext;
+    clarification.entityCandidates = (context.candidates ?? []).filter(candidate => candidate?.apiName && candidate?.name)
+      .map(candidate => ({ apiName: candidate.apiName, label: candidate.name,
+        queryText: context.inputName && context.originalInput?.includes(context.inputName)
+          ? context.originalInput.replaceAll(context.inputName, candidate.name)
+          : [candidate.name, context.originalInput].filter(Boolean).join("："),
+        entityType: context.entityType, inputFragment: context.inputName, confirmation: true }));
+  }
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
     ? payload.answer
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
@@ -5133,6 +5153,15 @@ function setRequestRunning(running) {
   for (const button of document.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
+  for (const button of document.querySelectorAll('[data-candidate-action="confirm"]')) {
+    button.disabled = running || !isCurrentEntityConfirmation(state.responsesById.get(button.dataset.responseId));
+  }
+}
+
+function isCurrentEntityConfirmation(record) {
+  return Boolean(record && record === state.responseRecords.at(-1)
+    && record.requestSerial === state.requestSerial
+    && record.conversationId === state.conversationId && record.seasonContextId === state.seasonContextId);
 }
 
 async function requestRecommendation(refresh = false, displayInput = null, requestOptions = {}) {
@@ -5733,6 +5762,13 @@ async function handleResultClick(event) {
     const candidates = responseRecord?.data?.clarification?.entityCandidates ?? state.lastEntityCandidates;
     const candidate = candidates[Number(candidateButton.dataset.candidateIndex)];
     if (!candidate) return;
+    if (candidateButton.dataset.candidateAction === "confirm") {
+      if (state.requestInFlight || !isCurrentEntityConfirmation(responseRecord) || candidate.confirmation !== true) return;
+      queryInput.value = candidateQueryText(candidate);
+      setMobileView("chat");
+      await requestRecommendation(false, candidateLabel(candidate));
+      return;
+    }
     if (candidateButton.dataset.candidateAction === "query") {
       queryInput.value = candidateQueryText(candidate);
       queryInput.focus();

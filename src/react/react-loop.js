@@ -11,6 +11,7 @@ import { EvidenceLedger } from "./evidence-ledger.js";
 import { validateFinishAction, validateGroundedBuildNarrative } from "./termination-policy.js";
 import { ReactWorkingState } from "./working-state.js";
 import { currentDeadlineEvidence } from "./deadline-evidence.js";
+import { selectedEntityConfirmation } from "./entity-confirmation.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
 
@@ -52,22 +53,8 @@ function currentTurnUserText(request = {}) {
     .join("\n");
 }
 
-const AFFIRMATIVE_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
-
 function entityConfirmationContext(request = {}) {
-  const pending = request.bridgeContext?.view?.pendingClarification
-    ?? request.bridgeContext?.pendingClarification
-    ?? null;
-  const context = pending?.confirmationContext;
-  if (
-    !AFFIRMATIVE_CONFIRMATION.test(currentTurnUserText(request))
-    || context?.type !== "entity_candidate"
-    || !Array.isArray(context.candidates)
-    || context.candidates.length !== 1
-  ) return null;
-  const candidate = context.candidates[0];
-  if (!candidate?.apiName || !candidate?.name || !context.entityType) return null;
-  return context;
+  return selectedEntityConfirmation(currentTurnUserText(request), request.bridgeContext);
 }
 
 function equipmentScopeUserText(request = {}) {

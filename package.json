@@ -25,6 +25,9 @@
     "eval:phase0": "node scripts/run-phase0-eval.mjs",
     "eval:phase0:check": "node scripts/run-phase0-eval.mjs --check",
     "eval:agent": "node scripts/run-agent-eval.mjs",
+    "eval:entity-names": "node scripts/eval-entity-name-candidates.mjs",
+    "audit:entity-names": "node scripts/audit-entity-name-catalog.mjs",
+    "smoke:entity-slang": "node scripts/smoke-entity-slang.mjs",
     "eval:phase2": "node scripts/run-phase2-eval.mjs",
     "eval:phase3": "node scripts/run-phase3-eval.mjs",
     "eval:phase4": "node scripts/run-phase4-eval.mjs",
@@ -107,6 +110,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "dotenv": "^17.4.2",
     "pg": "8.16.3",
+    "pinyin-pro": "3.29.3",
     "redis": "5.8.2"
   }
 }

@@ -1,3 +1,4 @@
+import { selectedEntityConfirmation } from "./entity-confirmation.js";
 import { validateReactAction } from "./react-action.js";
 import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import {
@@ -211,16 +212,10 @@ function repairInstruction(locale, legacy = false) {
     : "只返回一个完整、精简、可解析的 react-action.v1 JSON。若是 finish，answer 不超过 120 个汉字并将 narrative 设为 null。不得输出 Markdown、解释或补造事实。";
 }
 
-const AFFIRMATIVE_ENTITY_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
 
 function confirmedEntityGuidance(question, bridgeContext) {
-  const pending = bridgeContext?.pendingClarification;
-  const context = pending?.confirmationContext;
-  if (
-    !AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
-    || context?.type !== "entity_candidate"
-    || context.candidates?.length !== 1
-  ) return [];
+  const context = selectedEntityConfirmation(question, bridgeContext);
+  if (!context) return [];
   const candidate = context.candidates[0];
   return [{ role: "system", content: [
     "entity-confirmation-guidance.v1",
@@ -232,11 +227,8 @@ function confirmedEntityGuidance(question, bridgeContext) {
 }
 
 function equipmentCategoryGuidance(question, bridgeContext = null, messages = []) {
-  const confirmation = bridgeContext?.pendingClarification?.confirmationContext;
-  const inheritedInput = AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
-    && confirmation?.type === "entity_candidate"
-    ? confirmation.originalInput
-    : "";
+  const confirmation = selectedEntityConfirmation(question, bridgeContext);
+  const inheritedInput = confirmation?.originalInput ?? "";
   let scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
   if (!scope && ["modify", "continue"].includes(bridgeContext?.relation)
     && bridgeContext.records?.[0]?.operation === "unit_build_completion") {

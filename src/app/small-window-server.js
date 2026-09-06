@@ -81,6 +81,9 @@ import { normalizeAlias } from "../core/normalizer.js";
 import { compileExecutionPlan } from "../agent/execution-plan.js";
 import { createTftResultPolicyExecutor } from "../domain/tft/result-policy.js";
 import { queryEntityCatalog } from "../domain/tft/entity-catalog-query.js";
+import { createEntityNameResolutionTelemetry, normalizeEntityNameResolutionMode } from "../domain/tft/entity-name-candidates.js";
+import { createEntitySlangResolver, createEntitySlangTelemetry } from "../domain/tft/entity-slang-resolver.js";
+import { createEntitySlangProvider } from "../llm/entity-slang-provider.js";
 import { selectDifferentiatingItems } from "../domain/tft/differentiating-item-selector.js";
 import { detectItemContention } from "../domain/tft/item-contention-detector.js";
 import { createTftToolHandlers } from "../domain/tft/tool-handler-factory.js";
@@ -1122,6 +1125,11 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       agentSkillsUnitPlayControlSelector: runtime.agentSkillsUnitPlayControlSelector ?? "off",
       agentSkillsUnitPlayControlOperational: runtime.agentSkillsUnitPlayControlOperational === true,
       agentSkillsUnitPlayControlDiagnostic: runtime.agentSkillUnitPlayControlDiagnostic ?? null,
+      entityNameResolutionMode: runtime.entityNameResolutionMode ?? "off",
+      entityNameResolutionMetrics: runtime.entityNameResolutionTelemetry?.snapshot() ?? null,
+      entitySlangMode: runtime.entitySlangMode ?? "off",
+      entitySlangProviderAvailable: typeof runtime.entitySlangProvider === "function",
+      entitySlangMetrics: runtime.entitySlangTelemetry?.snapshot() ?? null,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
       conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
     },
@@ -3383,6 +3391,14 @@ export function createSmallWindowRuntime(options = {}) {
     reactNow: options.reactNow ?? null,
     reactTaskFrameShadowV1,
     reactTaskFrameControlV1,
+    entityNameResolutionMode: normalizeEntityNameResolutionMode(
+      options.entityNameResolutionMode ?? runtimeEnv.TFT_AGENT_ENTITY_NAME_RESOLUTION_MODE
+    ),
+    entityNameResolutionTelemetry: createEntityNameResolutionTelemetry(options.onEntityNameResolution),
+    entitySlangMode: normalizeEntityNameResolutionMode(options.entitySlangMode ?? runtimeEnv.TFT_AGENT_ENTITY_SLANG_MODE),
+    entitySlangProvider: options.entitySlangProvider ?? null,
+    entitySlangTimeoutMs: options.entitySlangTimeoutMs ?? 2500,
+    entitySlangTelemetry: createEntitySlangTelemetry(options.onEntitySlangObservation),
     agentSkillsShadowV1,
     agentSkillsCandidateShadowV1,
     agentSkillsUnitPlayControlV1: unitPlayCandidateControl.enabled,
@@ -4224,6 +4240,12 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
           ?? options.llmFetch
       })
       : null);
+  const entitySlangProvider = options.entitySlangProvider ?? (
+    structuredParserRuntime.structuredParserConfig?.enabled
+      ? createEntitySlangProvider({ ...structuredParserRuntime.structuredParserConfig,
+        thinkingMode: "disabled", fetchImpl: options.entitySlangFetch ?? options.structuredParserFetch ?? options.llmFetch })
+      : null
+  );
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
   const coachRuntime = createSmallWindowCoachRuntime(options, env);
   const mechanismClassificationRuntime = createSmallWindowMechanismClassificationRuntime(options, env);
@@ -4295,6 +4317,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     controlledPlannerFallback,
     reactDecisionProvider,
     quickTaskSupplementalClassifier,
+    entitySlangProvider,
     ...conclusionRuntime,
     ...coachRuntime,
     ...mechanismClassificationRuntime,
@@ -6733,6 +6756,9 @@ function attachTrustedAnalysisContext(bridgeContext, evidence) {
 }
 
 export async function createDefaultReactToolHandlerBundle({ request, runtime, context = {} }) {
+  const resolveEntitySlang = createEntitySlangResolver({ mode: runtime.entitySlangMode,
+    provider: runtime.entitySlangProvider, timeoutMs: runtime.entitySlangTimeoutMs,
+    onObservation: runtime.entitySlangTelemetry?.record });
   const seasonContext = runtime.seasonContextService.resolveForQuery(request.seasonContextId);
   const scope = context.visitor?.scope ?? null;
   const storedPreferences = await loadStoredSmallWindowPreferences(runtime, scope);
@@ -6784,9 +6810,19 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         catalog: loaded.catalog,
         details,
         input,
-        updatedAt: details?.meta?.updatedAt
+        updatedAt: details?.meta?.updatedAt,
+        // Resolve typo candidates only against the final season-scoped catalog.
+        // The immediate exact path and Quick Tasks retain their existing behavior.
+        nameResolution: {
+          mode: runtime.entityNameResolutionMode,
+          seasonContextId: seasonContext.id,
+          onObservation: runtime.entityNameResolutionTelemetry?.record
+        }
       });
-      return { ...catalogResult, scope: { seasonContextId: seasonContext.id, patch: seasonContext.currentPatch ?? seasonContext.effectivePatch ?? "current" } };
+      const resolvedCatalogResult = await resolveEntitySlang({ result: catalogResult, catalog: loaded.catalog, details, input,
+        question: request.input, messages: request.messages, seasonContextId: seasonContext.id, signal: toolContext.signal });
+      toolContext.signal?.throwIfAborted?.();
+      return { ...resolvedCatalogResult, scope: { seasonContextId: seasonContext.id, patch: seasonContext.currentPatch ?? seasonContext.effectivePatch ?? "current" } };
     };
   }
 
