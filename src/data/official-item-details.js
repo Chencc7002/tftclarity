@@ -33,6 +33,7 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
     .filter((row) => row?.englishName && row?.equipId);
   const sourceUrl = options.sourceUrl ?? OFFICIAL_TFT_EQUIPMENT_URL;
   const byEquipId = new Map(rows.map((row) => [String(row.equipId), row]));
+  const byEnglishName = new Map(rows.map((row) => [row.englishName, row]));
   const byApiName = new Map();
 
   for (const row of rows) {
@@ -40,7 +41,7 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean)
-      .map((equipId) => byEquipId.get(equipId))
+      .map((equipId) => byEquipId.get(equipId) ?? byEnglishName.get(equipId))
       .filter(Boolean)
       .map((component) => ({
         equipId: String(component.equipId),

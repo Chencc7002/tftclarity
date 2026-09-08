@@ -1,4 +1,5 @@
 import { AppShell, TitleBar } from "./app-shell.js";
+import { mountEmblemRankings } from "./emblem-rankings.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
@@ -608,6 +609,12 @@ const QUICK_TASK_CATEGORIES = [
 ];
 
 const QUICK_TASKS = [
+  {
+    category: "equipment", id: "emblem-rankings", operation: "emblem_rankings",
+    query: "查询可合成转职强度排行", promptKey: "quickTaskEmblemsPrompt",
+    titleKey: "quickTaskEmblemsTitle", bodyKey: "quickTaskEmblemsBody", exampleKey: "quickTaskEmblemsExample",
+    icon: '<path d="m12 3 7 4v5c0 4-7 9-7 9s-7-5-7-9V7z"/><path d="m8 13 3-3 2 2 3-5"/>'
+  },
   {
     category: "equipment",
     id: "unit-build",
@@ -3304,8 +3311,27 @@ function renderItemRankings(data) {
   `);
 }
 
+function renderEmblemRankings(data) {
+  setResponseHtml('<div data-emblem-root></div>');
+  mountEmblemRankings({ root: resultContentEl.querySelector("[data-emblem-root]"), data,
+    t, escapeHtml, itemPill, assetThumb, localizedName,
+    loadCarriers: async item => {
+      const response = await fetch("/api/recommend", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: t("emblemCommonCarriers"), locale: data.locale,
+          seasonContextId: data.seasonContext?.id ?? state.seasonContextId,
+          conversationId: `emblem-detail-${crypto.randomUUID()}`, startNewTask: true,
+          preferences: { days: data.query.days, rankFilter: data.query.rank, minSamples: data.query.minSamples },
+          quickTask: structuredQuickTask({ id: "emblem-carriers", operation: "emblem_carriers" }, { item }) }) });
+      const value = await response.json();
+      if (!response.ok || !value.ok || value.type !== "emblem_carriers") throw new Error(value.error ?? "emblem_carriers_failed");
+      return value;
+    } });
+}
+
 function renderItemCarrierRankings(data) {
   const carriers = data.carriers ?? [];
+  const title = t(data.query?.positiveOnly === false ? "emblemCommonCarriers" : "itemCarriers");
+  const emptyText = t(data.query?.positiveOnly === false ? "emblemNoCarriers" : "noPositiveCarriers");
   const itemLabel = localizedName(data.item, data.query?.itemName ?? t("item"));
   const detail = data.itemDetail ?? null;
   const detailFacts = detail?.facts ?? {};
@@ -3321,15 +3347,15 @@ function renderItemCarrierRankings(data) {
   </article>` : "";
   if (!carriers.length) {
     setResponseHtml(`
-      ${resultHeader(t("itemCarriers"), data.text ?? t("noPositiveCarriers"), t("noResult"))}
+      ${resultHeader(title, data.text ?? emptyText, t("noResult"))}
       ${detailHtml}
-      <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noPositiveCarriers"))}</strong></div>
+      <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? emptyText)}</strong></div>
       ${conditionPanel(data)}${sourceAndRisk(data)}
     `);
     return;
   }
   setResponseHtml(`
-    ${resultHeader(t("itemCarriers"), data.text, itemLabel)}
+    ${resultHeader(title, data.text, itemLabel)}
     ${detailHtml}
     <div class="carrier-ranking-list">
       ${carriers.map((carrier, index) => `
@@ -3337,7 +3363,7 @@ function renderItemCarrierRankings(data) {
           <div class="carrier-ranking-head">
             <div class="carrier-unit">
               ${assetThumb(carrier.unit?.iconUrl, localizedName(carrier.unit), "equipment-unit-icon")}
-              <div><strong>${index + 1}. ${escapeHtml(localizedName(carrier.unit))}</strong><small>${t("positivePlacementUplift", { value: formatNumber(carrier.placementUplift, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</small></div>
+              <div><strong>${index + 1}. ${escapeHtml(localizedName(carrier.unit))}</strong><small>${data.query?.positiveOnly === false ? escapeHtml(t("emblemByGames")) : t("positivePlacementUplift", { value: formatNumber(carrier.placementUplift, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</small></div>
             </div>
             ${data.item ? assetThumb(data.item.iconUrl, itemLabel, "tiny-item-icon") : ""}
           </div>
@@ -4072,6 +4098,7 @@ function renderCurrentResult(data) {
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
   else if (["composition_change_evaluation", "composition_replacement_evaluation"].includes(data.type)) renderCompositionChangeEvaluation(data);
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
+  else if (data.type === "emblem_rankings") renderEmblemRankings(data);
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details", "strategy_video_search_results"].includes(data.type)) renderSemanticNativeResult(data);
@@ -4766,6 +4793,7 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
 
 function hasRenderableNativeEvidence(payload) {
   const nativeTypes = new Set([
+    "emblem_rankings",
     "composition_rankings",
     "comp_rankings",
     "comp_trends",
@@ -4994,6 +5022,7 @@ function normalizeEndpointPayload(payload) {
   const evidence = (Array.isArray(payload.evidence) ? payload.evidence : [])
     .filter(entry => payload.compositionCardScope !== true || displayIds.has(entry.evidenceId));
   const nativeResultTypes = new Set([
+    "emblem_rankings",
     "composition_rankings",
     "comp_rankings",
     "comp_trends",
@@ -5018,6 +5047,7 @@ function normalizeEndpointPayload(payload) {
   ]);
   const evidenceValues = [...evidence].reverse().map((entry) => entry?.value);
   const primaryTypeOrder = [
+    "emblem_rankings",
     "composition_change_evaluation", "composition_replacement_evaluation",
     "item_carrier_rankings", "unit_item_comparison", "unit_item_rankings", "unit_emblem_rankings",
     "unit_build_completion", "unit_build_rankings", "unit_best_3_items", "unit_builds_batch_results",

@@ -179,6 +179,15 @@ function renderGuidance(guidanceRenderer, advisory) {
   return rendered;
 }
 
+function emblemRankingGuidance(toolCatalog = []) {
+  if (!toolCatalog.some(tool => tool.name === "emblem_rankings")) return [];
+  return [{ role: "system", content: [
+  "When emblem_rankings is available, use it for global emblem strength, Spatula/Frying Pan crafting choices and analysis of that ranking. No champion is required. Use recipeBase=spatula for 金铲铲, pan for 金锅锅, craftable for craftable-only, otherwise all; preserve the user's selected metric, days and filters across follow-ups. Resolve named emblems before sending apiNames. Do not replace a champion-specific unit_builds emblem ranking with global statistics.",
+  "emblem_rankings returns all selected rows, sample flags, metric leaders and server-calculated pairwise differences (left minus right; rate differences are percentage points). Explain only supported descriptive differences; do not invent causal uplift, statistical significance or a guaranteed best craft. Name low-sample limits and distinguish popularity from performance. For a previous shortcut follow-up, retrieve current emblem_rankings again; historical summaries are not current statistics. For common holders use emblem_carriers with an exact current ranking or catalog ID; for effects or mechanism explanations obtain item_details evidence separately.",
+  "Report sample counts as the full integer from evidence (for example 250240), without rounding or abbreviating to 万, 千, k or M. Use the server-calculated percentage-point gap for comparisons; retain the direction shown by the two rates.",
+  ].join("\n") }];
+}
+
 function decisionContract(
   cacheNamespace,
   tacticalPresentationScope = false,
@@ -284,6 +293,7 @@ function reactDecisionMessages(
   const state = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
+    ...emblemRankingGuidance(request.toolCatalog),
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     {
@@ -352,6 +362,7 @@ function legacyReactDecisionMessages(
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
+    ...emblemRankingGuidance(request.toolCatalog),
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     {

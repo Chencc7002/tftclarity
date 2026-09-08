@@ -50,6 +50,8 @@ test("independent react endpoint answers without entering recommendForInput", as
     "unit_builds",
     "unit_builds_batch",
     "item_carrier_rankings",
+    "emblem_rankings",
+    "emblem_carriers",
     "comps_rankings",
     "composition_tactical_details",
     "composition_replacement_evaluation",
@@ -421,6 +423,8 @@ test("default react bundle is request-scoped and exposes H1 only when its depend
     context: {}
   });
   assert.deepEqual(bundle.availableToolNames, [
+    "emblem_rankings",
+    "emblem_carriers",
     "entity_catalog_query",
     "comps_rankings",
     "comps_trends",

@@ -299,6 +299,7 @@ function publicToolCatalog(registry, availableToolNames) {
       allowedKeys: Object.keys(definition.inputSchema?.properties ?? {}),
       serverScopedKeys: definition.name === "unit_builds_batch"
         ? ["seasonContextId", "patch", "scopeKey"]
+        : definition.name.startsWith("emblem_") ? ["seasonContextId", "patch", "queue", "scopeKey"]
         : []
     },
     source: definition.source,
@@ -668,12 +669,16 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
 }
 
 function validateItemCarrierAction(action, ledger) {
-  if (action.tool !== "item_carrier_rankings") return { valid: true, errors: [] };
-  const apiName = String(action.arguments?.item ?? "");
+  if (!["item_carrier_rankings", "emblem_carriers", "emblem_rankings"].includes(action.tool)) return { valid: true, errors: [] };
+  const apiNames = action.tool === "emblem_rankings" ? action.arguments?.apiNames ?? [] : [String(action.arguments?.item ?? "")];
   const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
   const errors = [];
-  if (!resolvedCatalogItem(entries, apiName)) {
-    errors.push("item_carrier_rankings item requires prior exact item entity_catalog_query resolution");
+  for (const apiName of apiNames) {
+    const fromEmblemRanking = action.tool.startsWith("emblem_") && entries.some(entry => entry.toolName === "emblem_rankings"
+      && entry.value?.rows?.some(row => row.item.apiName === apiName));
+    if (!resolvedCatalogItem(entries, apiName) && !fromEmblemRanking) {
+      errors.push(`${action.tool} item requires prior exact item entity_catalog_query resolution or current emblem_rankings evidence`);
+    }
   }
   return { valid: errors.length === 0, errors };
 }
@@ -750,16 +755,19 @@ function validateItemCarrierWorkflowFinish(request, action, ledger) {
   if (action.reasonCode === "insufficient_evidence") {
     return { valid: true, errors: [] };
   }
-  const cited = ledger.resolve(action.evidenceIds ?? []);
-  const carrierEntries = cited.filter((entry) => entry.toolName === "item_carrier_rankings");
+  const cited = ledger.resolve(action.evidenceIds ?? []).filter(entry => entry.temporalStatus !== "historical");
+  const carrierEntries = cited.filter((entry) => ["item_carrier_rankings", "emblem_carriers"].includes(entry.toolName));
   const detailEntries = cited.filter((entry) => entry.toolName === "item_details");
   const carrierItems = new Set(carrierEntries.map((entry) => String(
     entry.value?.item?.apiName ?? entry.value?.item ?? entry.value?.query?.item ?? ""
   )).filter(Boolean));
   const matchingDetails = detailEntries.some((entry) => carrierItems.has(String(entry.value?.apiName ?? "")));
   const errors = [];
-  if (!carrierEntries.length) errors.push("item carrier request requires cited item_carrier_rankings evidence");
-  if (!matchingDetails) errors.push("item carrier request requires cited matching item_details evidence");
+  if (!carrierEntries.length) errors.push("item carrier request requires cited current carrier ranking evidence");
+  // Emblem popularity is a statistics-only contract. The existing suitability
+  // workflow still requires official effects; do not impose it on popularity.
+  const requiresDetails = carrierEntries.some(entry => entry.toolName === "item_carrier_rankings");
+  if (requiresDetails && !matchingDetails) errors.push("item carrier request requires cited matching item_details evidence");
   return { valid: errors.length === 0, errors };
 }
 
@@ -1775,7 +1783,7 @@ export class ReactLoop {
             actionType: "finish",
             reasonCode: action.reasonCode,
             errors: carrierFinishValidation.errors,
-            repairInstruction: "Continue the item-carrier workflow: cite current item_carrier_rankings evidence and retrieve matching item_details before finishing."
+            repairInstruction: "Cite current carrier ranking evidence. item_carrier_rankings suitability also requires matching item_details; emblem_carriers popularity does not require effects unless you discuss them."
           }, { progress: false });
           emit("decision_rejected", {
             iteration: state.decisions.length,
@@ -2088,7 +2096,7 @@ export class ReactLoop {
           type: "decision_rejected",
           tool: action.tool,
           errors: itemCarrierValidation.errors,
-          repairInstruction: "Resolve the named item with entity_catalog_query first, then copy its exact apiName into item_carrier_rankings."
+          repairInstruction: "Resolve each named item with entity_catalog_query first, then copy its exact apiName into the requested tool. Emblem tools may also use exact IDs from current emblem_rankings rows. Never use historical evidence as current resolution."
         }, { progress: false });
         emit("decision_rejected", {
           iteration: state.decisions.length,

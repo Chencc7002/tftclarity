@@ -26,6 +26,8 @@ const OPERATION_REGISTRY = Object.freeze({
       "buildLimit", "positiveOnly", "sort"
     ])
   }),
+  emblem_rankings: Object.freeze({ source: "metatft", params: Object.freeze(["days", "rank", "minSamples", "recipeBase", "primaryMetric", "apiNames", "limit"]) }),
+  emblem_carriers: Object.freeze({ source: "metatft", params: Object.freeze(["item", "days", "rank", "minSamples"]) }),
   comps_rankings: Object.freeze({
     source: "metatft",
     params: Object.freeze(["unit", "mention", "days", "patch", "queue", "rank", "minSamples", "metrics", "limit", "strategy"])

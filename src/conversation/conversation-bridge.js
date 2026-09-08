@@ -87,6 +87,9 @@ function compactEntityRefs(payload = {}, quickTask = {}) {
   push(payload.unit, "unit");
   push(payload.item, "item");
   push(payload.trait, "trait");
+  if (payload.type === "emblem_rankings") {
+    for (const row of array(payload.rows).slice(0, 6)) push(row.item, "item");
+  }
   for (const card of array(payload.cards).slice(0, 6)) {
     push(card.unit ?? card.entity ?? (card.apiName ? card : null), card.entityType ?? "result");
   }

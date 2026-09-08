@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { queryEmblemRankings, queryEmblemCarriers, emblemExecutionPlan, scopedEmblemQuery } from "../core/emblem-rankings.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
@@ -208,6 +209,8 @@ export const REACT_UNIT_BUILD_CACHE_TTL_MS = 30 * 60 * 1000;
 export const REACT_UNIT_BUILD_STALE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const QUICK_TASK_SCHEMA_VERSION = "quick-task.v1";
 const QUICK_TASK_DEFINITIONS = new Map([
+  ["emblem-rankings", { operation: "emblem_rankings", intent: "emblem_rankings", required: [] }],
+  ["emblem-carriers", { operation: "emblem_carriers", intent: "emblem_carriers", required: ["item"] }],
   ["unit-build", { operation: "unit_build_rankings", intent: "unit_build_rankings", required: ["champion"] }],
   ["unit-build-completion", { operation: "unit_build_completion", intent: "unit_build_completion", required: ["champion", "item1"], optional: ["item2"] }],
   ["item-performance", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "itemCategory"] }],
@@ -308,6 +311,8 @@ function normalizeQuickTask(value) {
 function quickTaskExecutionInput(task) {
   const args = task.arguments;
   switch (task.id) {
+    case "emblem-rankings": return "查询可合成转职强度排行";
+    case "emblem-carriers": return `查询${args.item}的常见携带英雄`;
     case "unit-build": return `查询${args.champion}的当前版本最稳三件装备`;
     case "unit-build-completion": return args.item2
       ? `查询${args.champion}已携带${args.item1}和${args.item2}时的推荐出装`
@@ -2618,6 +2623,9 @@ function serializeRecommendation(result, catalog, meta = {}) {
   const query = result.query ?? {};
   if (result.type === "item_carrier_rankings") {
     const itemApiName = result.item ?? query.item;
+    const carrierItem = (apiName) => ({ apiName,
+      name: itemDetails?.get?.(apiName)?.name ?? itemName(apiName, catalog),
+      iconUrl: itemDetails?.get?.(apiName)?.iconUrl ?? ASSET_RESOLVER.resolveItem(apiName).iconUrl });
     const carriers = (result.carriers ?? []).slice(0, 8).map((carrier) => ({
       unit: {
         apiName: carrier.unitApiName,
@@ -2635,9 +2643,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       placementUplift: Number(carrier.placementUplift.toFixed(3)),
       builds: (carrier.builds ?? []).map((build) => ({
         items: build.items.map((apiName) => ({
-          apiName,
-          name: itemName(apiName, catalog),
-          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
+          ...carrierItem(apiName),
           target: apiName === itemApiName
         })),
         stats: {
@@ -2655,17 +2661,15 @@ function serializeRecommendation(result, catalog, meta = {}) {
       answer: {
         summary: result.text,
         warnings: result.warnings ?? [],
-        methodology: "仅保留携带该装备后平均名次优于该棋子自身基线的棋子；默认按样本量排序。"
+        methodology: query.positiveOnly === false
+          ? "按携带样本量排序，包含平均名次未优于棋子自身基线的携带者；常见不等于最优。"
+          : "仅保留携带该装备后平均名次优于该棋子自身基线的棋子；默认按样本量排序。"
       },
-      item: {
-        apiName: itemApiName,
-        name: itemName(itemApiName, catalog),
-        iconUrl: ASSET_RESOLVER.resolveItem(itemApiName).iconUrl
-      },
+      item: carrierItem(itemApiName),
       carriers,
       query: {
         ...query,
-        itemName: itemName(itemApiName, catalog)
+        itemName: carrierItem(itemApiName).name
       },
       methodology: result.methodology,
       diagnostics: result.diagnostics,
@@ -3219,6 +3223,8 @@ export function createSmallWindowRuntime(options = {}) {
   const toolRegistry = options.toolRegistry ?? new ToolRegistry(createStructuredToolDefinitions({
     defaultTimeoutMs: requestTimeouts.compRankingsTimeoutMs,
     timeoutByTool: {
+      emblem_rankings: explorerToolTimeoutMs + requestTimeouts.catalogTimeoutMs,
+      emblem_carriers: explorerToolTimeoutMs,
       // MetaTFT may make one retry. The tool budget must cover both upstream
       // attempts plus retry/backoff overhead instead of racing a single call.
       unit_builds: explorerToolTimeoutMs,
@@ -3373,6 +3379,7 @@ export function createSmallWindowRuntime(options = {}) {
     conversationBridgeStore: options.conversationBridgeStore ?? null,
     conversationBridgeMode: String(options.conversationBridgeMode ?? "off").toLowerCase(),
     reactChatMode: String(options.reactChatMode ?? "off").toLowerCase(),
+    reactEmblemRankings: options.reactEmblemRankings ?? !["0", "false", "off", "disabled"].includes(String(runtimeEnv.TFT_AGENT_REACT_EMBLEM_RANKINGS ?? "on").toLowerCase()),
     acceptanceMode: Boolean(options.acceptanceMode),
     quickTaskSupplementalClassifier: options.quickTaskSupplementalClassifier ?? null,
     quickTaskSupplementalTimeoutMs: Math.max(1, Math.min(5000, Number(options.quickTaskSupplementalTimeoutMs ?? 4000))),
@@ -5569,6 +5576,51 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     invalidateRuntimeCatalog(runtime, runtimeCatalogKey(preferences));
   }
   const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  if (["emblem-rankings", "emblem-carriers"].includes(quickTask?.id)) {
+    if (seasonContext.environment === "pbe") {
+      return { statusCode: 400, payload: { ok: false, error: "转职强度查询暂仅支持正式服", code: "emblem_environment_unsupported" } };
+    }
+    const tool = quickTask.operation;
+    const query = { days: Number(preferences.days ?? 3), rank: [...(preferences.rankFilter ?? [])], minSamples: Number(preferences.minSamples ?? 100) };
+    if (tool === "emblem_carriers") {
+      query.item = resolveQuickTaskEntity(quickTask, "item", "item", catalog);
+      const item = catalog.itemByApiName.get(query.item);
+      if (!item || item.category !== "emblem" || item.current === false || item.obtainable === false) {
+        return { statusCode: 400, payload: { ok: false, error: "未识别到当前赛季转职", code: "invalid_emblem" } };
+      }
+    }
+    const plan = emblemExecutionPlan(tool, query);
+    const execution = await requestRuntime.executionPlanExecutor.execute(plan, {
+      run: context.agentRun, signal: context.signal, intent: tool,
+      handlers: { [tool]: async (args, toolContext) => {
+        if (tool === "emblem_rankings") {
+          const itemDetails = await loadOfficialItemDetails(requestRuntime);
+          return queryEmblemRankings({ client: requestRuntime.metaTFTClient, catalog, itemDetails, query: scopedEmblemQuery(args, preferences), signal: toolContext.signal });
+        }
+        return queryEmblemCarriers({ client: requestRuntime.metaTFTClient, compsClient: requestRuntime.compsClient,
+          catalog, query: scopedEmblemQuery(args, preferences), signal: toolContext.signal });
+      } }
+    });
+    if (execution.status !== "completed") {
+      return { statusCode: 502, payload: { ok: false, error: "转职数据查询失败，请重试", code: "emblem_query_failed" } };
+    }
+    const payload = execution.result;
+    const craftableCount = (payload.rows ?? []).filter(row => row.recipeBase).length;
+    payload.text = tool === "emblem_rankings"
+      ? displayLocale === "en-US" ? `Found ${craftableCount} craftable emblems. Compare rankings and common carriers in the results panel.`
+        : `已找到 ${craftableCount} 个可合成转职，可在结果区按金铲铲或金锅锅筛选，展开查看常见携带英雄。`
+      : displayLocale === "en-US" ? `Found ${payload.carriers?.length ?? 0} common carriers.` : `已找到 ${payload.carriers?.length ?? 0} 个常见携带英雄。`;
+    payload.answer = { summary: payload.text };
+    for (const carrier of payload.carriers ?? []) {
+      carrier.unit.iconUrl = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName).iconUrl;
+    }
+    payload.source.updatedAt = payload.updatedAt;
+    payload.meta = { deterministic: true, llmUsed: false, durationMs: Date.now() - startedAt, preferences };
+    payload.executionPlan = plan;
+    payload.executionTrace = execution.trace;
+    payload.evidenceValidation = execution.evidenceValidation;
+    return completeResponse(payload);
+  }
   const resolveQuickView = async (load, taskIds) => quickTask?.definition.staticView
     && taskIds.includes(quickTask.id)
     ? cachedQuickTaskView(runtime, {
@@ -6781,6 +6833,37 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     return details;
   };
   const handlers = {};
+
+  if (runtime.reactEmblemRankings === true && seasonContext.environment !== "pbe") {
+    const queryEmblems = async (input, toolContext, carriers) => {
+      toolContext.signal?.throwIfAborted?.();
+      const loaded = await resources();
+      const query = scopedEmblemQuery(carriers ? input : { ...input, recipeBase: input.recipeBase ?? "all" }, preferences);
+      const result = carriers
+        ? await queryEmblemCarriers({ client: runtime.metaTFTClient, compsClient: runtime.compsClient,
+          catalog: loaded.catalog, query, signal: toolContext.signal })
+        : await queryEmblemRankings({ client: runtime.metaTFTClient, catalog: loaded.catalog,
+          itemDetails: await loadOfficialItemDetails(runtime), query, signal: toolContext.signal });
+      for (const carrier of result.carriers ?? []) {
+        carrier.unit.iconUrl = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName).iconUrl;
+      }
+      const publicResult = carriers
+        ? { ...serializeRecommendation({ ...result, type: "item_carrier_rankings",
+          source: { ...result.source, updatedAt: result.updatedAt } }, loaded.catalog,
+          { entityDetails: loaded.entityDetails, itemDetails: await loadOfficialItemDetails(runtime) }),
+          updatedAt: result.updatedAt }
+        : result;
+      return { ...publicResult, scope: { seasonContextId: seasonContext.id, patch: query.patch, queue: query.queue },
+        seasonContext: runtime.seasonContextService.publicRecord(seasonContext), locale: request.locale };
+    };
+    if (typeof runtime.metaTFTClient?.getItems === "function") {
+      handlers.emblem_rankings = (input, context = {}) => queryEmblems(input, context, false);
+    }
+    if (typeof runtime.metaTFTClient?.getItemCarrierBuilds === "function"
+      && typeof runtime.compsClient?.getUnitItemsProcessed === "function") {
+      handlers.emblem_carriers = (input, context = {}) => queryEmblems(input, context, true);
+    }
+  }
 
   if (typeof runtime.fetchOfficialEntityDetails === "function") {
     handlers.entity_catalog_query = async (input, toolContext = {}) => {

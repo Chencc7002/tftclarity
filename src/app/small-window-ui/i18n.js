@@ -3,6 +3,13 @@ export const LOCALE_STORAGE_KEY = "tftagent.locale";
 
 export const messages = {
   "zh-CN": {
+    quickTaskEmblemsTitle: "转职强度查询", quickTaskEmblemsBody: "查看可合成转职排行与常见携带英雄", quickTaskEmblemsExample: "拿到金铲铲或金锅锅，先看看合哪个转职", quickTaskEmblemsPrompt: "查询可合成转职强度排行",
+    emblemEyebrow: "锅铲合成参考", emblemIntro: "先看转职表现，再选合成方向。展开卡片查看常见携带英雄。", emblemRecipeFilter: "合成材料筛选",
+    emblemBase_craftable: "可合成", emblemBase_spatula: "金铲铲", emblemBase_pan: "金锅锅", emblemBase_all: "全部转职",
+    emblemCount: "{count} 个转职", emblemSort: "排序", emblemSort_avg: "平均名次 ↑", emblemSort_top4: "前四率 ↓", emblemSort_win: "登顶率 ↓", emblemSort_games: "样本数 ↓",
+    emblemScope: "统计范围：至少持有 1 个转职的对局。平均名次越低越好，低样本排在后面；表现还受阵容影响。",
+    emblemCommonCarriers: "常见携带英雄", emblemByGames: "按携带样本排序", emblemNoCarriers: "暂无可用携带者数据", emblemLoading: "正在查询携带英雄…", emblemCarrierError: "携带者加载失败，收起后重新展开可重试。",
+    emblemEmpty: "当前筛选下暂无转职数据", emblemEmptyHint: "可以切换“全部转职”，或调整统计条件后重试。", emblemRecipeUnknown: "配方暂未确认", emblemDays: "近 {days} 天",
     toolAll: "全部工具", toolFavorites: "我的收藏", toolNavigation: "快捷工具导航", toolClose: "关闭工具面板", toolMenu: "工具与收藏",
     toolRecommendations: "推荐快捷工具", toolTryThese: "试试这些", toolRandomHint: "随机发现，也照顾你的收藏与常用", toolShuffle: "换一批",
     toolSearch: "搜索工具", toolSearchPlaceholder: "搜索阵容、装备、英雄…", toolCategories: "工具分类", toolAllCategories: "全部", toolCount: "{count} 个快捷入口",
@@ -203,6 +210,13 @@ export const messages = {
     conclusionStreaming: "AI 正在结合数据生成结论…", backToChat: "返回对话"
   },
   "en-US": {
+    quickTaskEmblemsTitle: "Emblem rankings", quickTaskEmblemsBody: "Craftable emblem stats and common carriers", quickTaskEmblemsExample: "Have a Spatula or Frying Pan? Compare your options", quickTaskEmblemsPrompt: "Show craftable emblem rankings",
+    emblemEyebrow: "CRAFTING GUIDE", emblemIntro: "Compare emblem performance, then choose a recipe. Expand a card to see common carriers.", emblemRecipeFilter: "Recipe filter",
+    emblemBase_craftable: "Craftable", emblemBase_spatula: "Spatula", emblemBase_pan: "Frying Pan", emblemBase_all: "All emblems",
+    emblemCount: "{count} emblems", emblemSort: "Sort", emblemSort_avg: "Avg. placement ↑", emblemSort_top4: "Top 4 rate ↓", emblemSort_win: "Win rate ↓", emblemSort_games: "Games ↓",
+    emblemScope: "Matches with at least 1 emblem. Lower placement is better; low samples appear last. Team composition also affects results.",
+    emblemCommonCarriers: "Common carriers", emblemByGames: "By games played", emblemNoCarriers: "No carrier data available", emblemLoading: "Loading carriers…", emblemCarrierError: "Could not load carriers. Close and reopen to retry.",
+    emblemEmpty: "No emblems for these filters", emblemEmptyHint: "Try All emblems or change the query settings.", emblemRecipeUnknown: "Recipe not confirmed", emblemDays: "Last {days} days",
     toolAll: "All tools", toolFavorites: "My favorites", toolNavigation: "Quick tool navigation", toolClose: "Close tool library", toolMenu: "Tools and favorites",
     toolRecommendations: "Recommended quick tools", toolTryThese: "Try these", toolRandomHint: "A fresh mix with favorites and frequent tools", toolShuffle: "Shuffle",
     toolSearch: "Search tools", toolSearchPlaceholder: "Search comps, items, champions…", toolCategories: "Tool categories", toolAllCategories: "All", toolCount: "{count} quick tools",

@@ -3,6 +3,8 @@ import { AGENT_TOOL_SCHEMA_VERSION } from "./registry.js";
 import { ToolError } from "./tool-errors.js";
 
 const DESCRIPTIONS = Object.freeze({
+  emblem_rankings: "Query global emblem strength and compare observed placement, top-four, win rate and samples across emblems. No champion is required. recipeBase selects craftable/spatula/pan/all; primaryMetric selects avgPlacement/top4Rate/winRate/games. Optional apiNames must be exact current emblems resolved by entity_catalog_query. Returns server-ranked rows, verified recipes and descriptive comparisons; not causal effects or one champion's item ranking. Patch, queue and season are server-scoped and forbidden in arguments. Omit filters the user did not specify.",
+  emblem_carriers: "Query common carriers of one current emblem, using an exact item ID from current emblem_rankings or entity_catalog_query evidence. Reuses item-carrier aggregation sorted by games, including negative uplift. Popularity is not optimality. Patch, queue and season are server-scoped. Use item_details separately for effect/mechanism questions.",
   unit_builds: "Use for current structured unit build statistics. Not for arbitrary URLs or model-generated facts. Input contains validated unit query constraints. Returns existing unit-build response data.",
   unit_builds_batch: "Return current structured build statistics for at most five validated units. Send only keys declared by inputSchema. seasonContextId, patch, and scopeKey are server-scoped and MUST NOT appear in arguments. Optional starLevel accepts one or more explicit levels from 1 to 3; omit it when the user did not specify a level so the server reuses the fixed-query cost-based default (1-3 cost units use 3 stars, 4-5 cost units use 2 stars). Optional constraints.lockedItems and constraints.excludedItems are deterministic query-affecting filters applied to source rows before ranking; the response echoes all effective query conditions and provenance. For composition item-contention analysis, compositionId, entities, and optionsPerUnit must exactly match the deterministic itemContentionQueryPlan from prior resolved comps_rankings evidence. The response computes itemContentionPlan internally from cross-unit build-option intersections and never assigns item priority.",
   unit_comp_candidates: "Use for validated unit composition candidates. Not for global rankings. Input contains a unit and bounded sample scope. Returns existing candidate data.",
@@ -25,6 +27,10 @@ const DESCRIPTIONS = Object.freeze({
 });
 
 const CAPABILITIES = Object.freeze({
+  emblem_rankings: Object.freeze([Object.freeze({ action: "rank", allowNoEntities: true,
+    requiredConstraints: ["emblemQuery"], allowedEntityTypes: ["patch"], goals: ["emblem_rankings"], features: ["emblem_strength_statistics"], outputs: ["ranking", "evidence"] })]),
+  emblem_carriers: Object.freeze([Object.freeze({ action: "rank", requiredEntityTypes: ["item"],
+    requiredConstraints: ["emblemQuery"], allowedEntityTypes: ["item", "patch"], goals: ["emblem_carriers"], features: ["emblem_popularity"], outputs: ["ranking", "evidence"] })]),
   unit_builds: Object.freeze([
     Object.freeze({
       action: "recommend",
@@ -367,6 +373,8 @@ const CAPABILITIES = Object.freeze({
 });
 
 const EVIDENCE_TYPES = Object.freeze({
+  emblem_rankings: "emblem_statistics",
+  emblem_carriers: "emblem_statistics",
   unit_builds: "unit_build_statistics",
   unit_builds_batch: "unit_build_batch_statistics",
   unit_comp_candidates: "composition_candidates",
@@ -438,6 +446,7 @@ const PARAMETER_SCHEMAS = Object.freeze({
     type: "string",
     enum: ["top4Rate", "winRate", "avgPlacement", "games"]
   },
+  recipeBase: { type: "string", enum: ["craftable", "spatula", "pan", "all"] },
   constraints: {
     type: "object",
     additionalProperties: false,
@@ -505,6 +514,7 @@ const PARAMETER_SCHEMAS = Object.freeze({
 });
 
 const REQUIRED_PARAMETERS = Object.freeze({
+  emblem_carriers: Object.freeze(["item"]),
   unit_builds: Object.freeze(["unit"]),
   unit_builds_batch: Object.freeze(["entities"]),
   unit_comp_candidates: Object.freeze(["unit", "mention"]),
@@ -542,7 +552,12 @@ export function createStructuredToolDefinitions(options = {}) {
       required: REQUIRED_PARAMETERS[name] ?? [],
       properties: Object.fromEntries(registration.params.map((parameter) => [
         parameter,
-        PARAMETER_SCHEMAS[parameter] ?? {}
+        name.startsWith("emblem_") && parameter === "days" ? { type: "integer", minimum: 1, maximum: 7 }
+          : name.startsWith("emblem_") && parameter === "rank" ? { type: "array", maxItems: 10, uniqueItems: true,
+            items: { type: "string", enum: ["CHALLENGER", "GRANDMASTER", "MASTER", "DIAMOND", "EMERALD", "PLATINUM", "GOLD", "SILVER", "BRONZE", "IRON"] } }
+          : name.startsWith("emblem_") && parameter === "minSamples" ? { type: "integer", minimum: 0, maximum: 1000000 }
+            : name === "emblem_rankings" && parameter === "limit" ? { type: "integer", minimum: 1, maximum: 50 }
+              : PARAMETER_SCHEMAS[parameter] ?? {}
       ]))
     },
     outputSchema: null,
