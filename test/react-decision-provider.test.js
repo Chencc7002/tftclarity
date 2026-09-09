@@ -728,3 +728,25 @@ test("react decision provider retries malformed JSON with a compact repair instr
     outputTokens: 8
   });
 });
+
+test("current trend evidence adds request-first guidance in both layouts without changing unrelated prompts", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    for (const evidence of [[], [{ toolName: "unit_builds" }], [{ toolName: "comps_trends", temporalStatus: "historical" }], [{ toolName: "comps_trends", value: { rising: [], falling: [] } }]]) {
+      let body;
+      const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+        fetchImpl: async (_url, init) => {
+          body = JSON.parse(init.body);
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1", type: "finish", answer: "ok", evidenceIds: [], reasonCode: "direct_answer", narrative: null
+          }) } }] }) };
+        } });
+      await provider({ state: { question: "简述今天阵容趋势：列出最有潜力的阵容和最卷的阵容", evidence }, toolCatalog: [] });
+      const guidance = body.messages.find(message => message.role === "system" && message.content.startsWith("composition-trend-summary-guidance.v1"));
+      assert.equal(Boolean(guidance), evidence.some(entry => entry.toolName === "comps_trends" && entry.temporalStatus !== "historical"));
+      if (guidance) {
+        assert.match(guidance.content, /Answer the user's requested points first/);
+        assert.match(guidance.content, /declining compositions are optional context/);
+      }
+    }
+  }
+});

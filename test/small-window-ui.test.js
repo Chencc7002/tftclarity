@@ -852,15 +852,12 @@ test("player pools expose share codes and one-click independent imports", () => 
   assert.match(opggStyles, /\.opgg-pool-import-row/u);
 });
 
-test("soft-validated model summaries expose trusted explanation feedback controls", () => {
-  assert.match(appJs, /model_soft_validated_summary/);
-  assert.match(appJs, /modelConclusionPendingVerification/);
+test("model conclusion bodies retain explanation feedback controls", () => {
   assert.match(appJs, /model-conclusion-feedback/);
   assert.match(appJs, /data-explanation-response-id/);
   assert.match(appJs, /responseRecord\?\.data \?\? state\.lastResult/);
   assert.match(appJs, /data-explanation-feedback="good"/);
   assert.match(appJs, /data-explanation-feedback="bad"/);
-  assert.match(styles, /\.chat-model-conclusion\.soft-validated/);
 });
 
 test("UI-07 renders deterministic build options independently from grounded narrative", () => {

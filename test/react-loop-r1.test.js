@@ -3532,3 +3532,23 @@ test("R1-12 tool calls are unbounded while the decision fuse remains", async (t)
     assert.equal(provider.requests.length, 2);
   });
 });
+
+test("brief potential-and-popularity trend answer finishes without repair or mandatory falling prose", async () => {
+  const answer = "最有潜力的是永恒之森·乐芙兰（平均名次改善0.37）；最卷的是裁决使·索拉卡（选取率59.7%）。";
+  const provider = queueProvider([call("comps_trends"), finish(answer, ["ev-1"])]);
+  const { result, events } = await runCase({ input: "简述今天阵容趋势：列出最有潜力的阵容和最卷的阵容", provider,
+    handlers: { comps_trends: async () => ({ type: "comp_trends", updatedAt: "2026-08-06T00:00:00.000Z",
+      rising: [{ name: "永恒之森 · 乐芙兰", trend: { avgPlacementChange: -0.37 } }],
+      falling: [{ name: "法师 · 卡西奥佩娅", trend: { avgPlacementChange: 0.21 } }],
+      rankings: { popularity: [{ name: "裁决使 · 索拉卡", stats: { selectionRate: 0.597 } }] }
+    }) }
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.answerOrigin, "model");
+  assert.equal(result.modelConclusion.answer, answer);
+  assert.equal(result.modelConclusion.status, "accepted");
+  assert.equal(result.safetyMetrics.actualToolCalls, 1);
+  assert.equal(provider.requests.length, 2);
+  assert.ok(!events.some(event => event.type === "decision_rejected"));
+  assert.ok(events.some(event => event.type === "answer_coverage_observed" && event.data.factualValidationPassed));
+});

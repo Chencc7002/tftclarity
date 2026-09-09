@@ -6,6 +6,16 @@ import {
   conclusionRichTextHtml
 } from "../src/app/small-window-ui/conclusion-rich-text.js";
 
+test("body-only rendering removes annotation headings without dropping facts or adding summary labels", () => {
+  for (const title of ["结论：", "### 结论\n", "**结论**：", "### 模型原始结论（未通过校验）\n", "## Conclusion\n"]) {
+    const html = conclusionRichTextHtml(`${title}最有潜力的是甲。\n\n**下降阵容**\n- 乙有所下滑。`, { bodyOnly: true });
+    assert.match(html, /最有潜力的是甲/u);
+    assert.match(html, /下降阵容/u);
+    assert.match(html, /乙有所下滑/u);
+    assert.doesNotMatch(html, /未通过校验|模型原始|结论|Conclusion|assistant-rich-text__summary/u);
+  }
+});
+
 test("tactical conclusions hide provider cell ids and become readable sections", () => {
   const source = "站位（来自MetaTFT当前数据）：千珏放角落（cell_1），易放第二排右侧（cell_22），卑尔维斯和厄加特在第二排左侧（cell_15、cell_16）。推荐强化符文（S级，金色）：秘传奥义（3-2/4-2）、飞升（3-2/4-2）。";
   const text = conclusionDisplayText(source);

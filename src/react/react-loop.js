@@ -1835,11 +1835,16 @@ export class ReactLoop {
         }
         const finishValidation = validateFinishAction(action, ledger, { compositionCardScope: context.compositionCardScope,
           compositionCardsOwnPositioning: context.compositionCardsOwnPositioning,
+          trendCoverageMode: context.trendCoverageMode,
           officialItemEvidenceV1: context.officialItemEvidenceV1,
           unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
           currentTurnInput: request.input ?? request.question,
           responseLocale: state.locale,
           now: this.now(), seasonContextId: state.seasonContextId });
+        if (finishValidation.coverageWarnings.length) {
+          emit("answer_coverage_observed", { scope: "available_trend_sections",
+            coverageWarnings: finishValidation.coverageWarnings, factualValidationPassed: finishValidation.valid });
+        }
         if (context.compositionCardScope) {
           const legacyValidation = validateFinishAction(action, ledger);
           emit("positioning_validation_comparison", { legacyErrors: legacyValidation.errors,
@@ -1920,7 +1925,7 @@ export class ReactLoop {
               reasonCode: action.reasonCode,
               errors: finishValidation.errors,
               repairInstruction: trendFallback
-                ? "趋势 Evidence 为部分可用：不得把空的上升榜或旧 officialGate 门槛解释成整个结果不可用。改用 sufficient_evidence，引用趋势 Evidence，并展示所有非空的下降榜和选取率榜；只限定空榜单。"
+                ? "趋势 Evidence 为部分可用：不得把空的上升榜或旧 officialGate 门槛解释成整个结果不可用。改用 sufficient_evidence，引用趋势 Evidence，先回答用户询问的部分；如相关榜单为空，说明该部分限制，可简短补充其他可用结果。"
                 : "明确告诉用户数据或证据不足、查询失败或来源不可用；不得补造统计、装备或结论。继续使用 insufficient_evidence。"
             }, { progress: false });
             const canRepair = (

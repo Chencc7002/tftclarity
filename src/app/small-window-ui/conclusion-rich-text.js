@@ -197,9 +197,9 @@ export function conclusionDisplayText(value) {
   return tacticalConclusionText(cleanInternalPositionIds(value));
 }
 
-export function conclusionRichTextHtml(value) {
+export function conclusionRichTextHtml(value, options = {}) {
   const displayText = conclusionDisplayText(value);
-  const lines = autoStructuredConclusionText(displayText).split("\n");
+  const lines = (options.bodyOnly ? displayText : autoStructuredConclusionText(displayText)).split("\n");
   const blocks = [];
   let listItems = [];
   let listType = "ul";
@@ -211,7 +211,12 @@ export function conclusionRichTextHtml(value) {
   };
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
+    if (options.bodyOnly) {
+      const body = line.replace(/^#{1,3}\s+/u, "").replace(/^\*\*(.*?)\*\*/u, "$1")
+        .match(/^(?:系统证据结论|模型原始结论(?:[（(][^）)]*[）)])?|模型最终结论|核心结论|最终结论|结论|summary|conclusion)\s*(?:[：:]\s*(.*)|$)/iu);
+      if (body) line = body[1] ?? "";
+    }
     if (!line) {
       flushList();
       continue;
@@ -240,7 +245,7 @@ export function conclusionRichTextHtml(value) {
       continue;
     }
     const summary = summaryLineParts(line);
-    if (summary) {
+    if (summary && !options.bodyOnly) {
       blocks.push(`<aside class="assistant-rich-text__summary"><strong>${escapeHtml(summary[1])}</strong>${summary[2] ? `<span>${inlineConclusionHtml(summary[2])}</span>` : ""}</aside>`);
       continue;
     }

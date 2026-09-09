@@ -199,9 +199,10 @@ function compositionTrendSections(entries) {
 }
 
 function answerMentionsTrendRow(answer, rows) {
-  const text = String(answer ?? "");
+  const normalize = (value) => String(value ?? "").normalize("NFKC").replace(/\s+/gu, "").replace(/[・•·]/gu, "·");
+  const text = normalize(answer);
   const names = rows
-    .map((row) => String(row?.name ?? row?.compositionRef?.name ?? "").trim())
+    .map((row) => normalize(row?.name ?? row?.compositionRef?.name))
     .filter(Boolean);
   return names.length === 0 || names.some((name) => text.includes(name));
 }
@@ -499,6 +500,7 @@ function answerLanguageErrors(answer, input, responseLocale = null) {
 
 export function validateFinishAction(action, ledger, options = {}) {
   const errors = [];
+  const coverageWarnings = [];
   const ids = [...new Set(action.evidenceIds ?? [])];
   const entries = ledger.resolve(ids);
   const currentLedgerEntries = typeof ledger.snapshot === "function"
@@ -603,7 +605,20 @@ export function validateFinishAction(action, ledger, options = {}) {
     errors.push(...(options.compositionCardScope === true
       ? scopedTacticalPositionErrors(action.answer, entries)
       : tacticalPositionGroundingErrors(action.answer, entries)));
-    errors.push(...compositionTrendCoverageErrors(action, entries));
+    const coverageErrors = compositionTrendCoverageErrors(action, entries);
+    for (const section of compositionTrendSections(entries)) {
+      const rows = [...section.rising, ...section.falling, ...section.popularity];
+      if (!section.requestedDirection && rows.length && !answerMentionsTrendRow(action.answer, rows)) {
+        errors.push("composition trend answer must mention an available result");
+      }
+    }
+    // Tools may return more sections than a concise answer needs. Keep the old
+    // coverage gate available for comparison; omission is not a factual error.
+    for (const error of coverageErrors) {
+      if (options.trendCoverageMode !== "strict" && error.startsWith("composition trend overview")) {
+        coverageWarnings.push(error);
+      } else errors.push(error);
+    }
   } else if (action.reasonCode === "insufficient_evidence") {
     if (!INSUFFICIENT_SIGNAL.test(action.answer)) {
       errors.push("insufficient_evidence answer must explicitly state the limitation");
@@ -620,6 +635,7 @@ export function validateFinishAction(action, ledger, options = {}) {
   return {
     valid: errors.length === 0,
     errors,
+    coverageWarnings,
     evidence: entries
   };
 }

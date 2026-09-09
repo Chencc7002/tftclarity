@@ -268,6 +268,14 @@ function equipmentCategoryGuidance(question, bridgeContext = null, messages = []
   ].join("\n") }];
 }
 
+function trendSummaryGuidance(evidence = []) {
+  if (!evidence.some((entry) => entry?.toolName === "comps_trends" && entry?.temporalStatus !== "historical")) return [];
+  return [{ role: "system", content: [
+    "composition-trend-summary-guidance.v1",
+    "Answer the user's requested points first. A tool may return additional sections: those are available evidence, not a requirement to repeat every section. For a brief trend answer asking for promising and most contested compositions, summarize improving and popular results; declining compositions are optional context after the requested answer. Do not add unrelated sections merely to exhaust tool output."
+  ].join("\n") }];
+}
+
 function transcriptEventValue(event) {
   const value = event?.value ?? null;
   if (
@@ -296,6 +304,7 @@ function reactDecisionMessages(
     ...emblemRankingGuidance(request.toolCatalog),
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
+    ...trendSummaryGuidance(state.evidence),
     {
       role: "system",
       content: stableJson({
@@ -365,6 +374,7 @@ function legacyReactDecisionMessages(
     ...emblemRankingGuidance(request.toolCatalog),
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
+    ...trendSummaryGuidance(legacyState.evidence),
     {
       role: "user",
       content: JSON.stringify({

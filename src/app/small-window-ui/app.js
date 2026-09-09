@@ -2943,19 +2943,10 @@ function systemInteractionAnswerHtml(data) {
 }
 
 function reactModelConclusionHtml(data, summary, responseId = "") {
-  const answer = typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "";
+  const original = typeof data?.modelConclusion?.answer === "string"
+    ? conclusionDisplayText(data.modelConclusion.answer).trim() : "";
+  const answer = original || (typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "");
   if (!answer) return "";
-  const systemFallback = data?.answerOrigin === "system_evidence_fallback";
-  const rejectedModelAnswer = systemFallback && typeof data?.modelConclusion?.answer === "string"
-    ? conclusionDisplayText(data.modelConclusion.answer).trim()
-    : "";
-  const rejectionErrors = Array.isArray(data?.modelConclusion?.validationErrors)
-    ? data.modelConclusion.validationErrors.filter(Boolean).map(String)
-    : [];
-  const limited = data?.terminationReason === "insufficient_evidence"
-    || data?.terminationReason === "missing_required_evidence";
-  const hasGroundingWarnings = Array.isArray(data?.narrativeWarnings) && data.narrativeWarnings.length > 0;
-  const softValidated = data?.answerOrigin === "model_soft_validated_summary";
   const feedback = state.explanationFeedback;
   const feedbackHtml = data?.queryId ? `<div class="result-feedback model-conclusion-feedback" data-explanation-feedback-group data-explanation-response-id="${escapeHtml(responseId)}">
     <button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button>
@@ -2963,35 +2954,10 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
     <span class="feedback-status">${feedback ? t("recorded") : ""}</span>
     ${feedbackReasonPicker("explanation")}
   </div>` : "";
-  const rejectedCard = rejectedModelAnswer
-    ? `<details class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
-      <summary>
-        <strong>${escapeHtml(t("rejectedModelConclusion"))}</strong>
-        <small>${escapeHtml(t("rejectedModelConclusionNotice"))}</small>
-      </summary>
-      ${conclusionRichTextHtml(rejectedModelAnswer)}
-      ${rejectionErrors.length ? `<details class="model-conclusion-rejection-reasons">
-        <summary>${escapeHtml(t("rejectedModelConclusionReasons", { count: rejectionErrors.length }))}</summary>
-        <ul>${rejectionErrors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
-      </details>` : ""}
-    </details>`
-    : "";
-  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}${softValidated ? " soft-validated" : ""}" data-chat-model-conclusion>
-    <header>
-      <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
-      <small>${escapeHtml(t(systemFallback
-        ? data?.terminationReason === "deadline_exceeded" ? "systemConclusionDeadline"
-          : data?.modelConclusion?.status === "rejected" ? "systemConclusionFallback" : "systemConclusionPartial"
-        : hasGroundingWarnings
-          ? "modelConclusionGroundingWarning"
-          : softValidated ? "modelConclusionPendingVerification"
-          : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
-    </header>
-    ${chatCoreItemsHtml(data)}
-    ${conclusionRichTextHtml(answer || summary)}
+  return `<section class="chat-model-conclusion" data-chat-model-conclusion>
+    ${conclusionRichTextHtml(answer || summary, { bodyOnly: true })}
     ${feedbackHtml}
   </section>`;
-  return `${acceptedOrFallbackCard}${rejectedCard}`;
 }
 
 function rankingTierLabel(prefix, tier) {
