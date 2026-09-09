@@ -45,6 +45,8 @@ for (const slowTool of [false, true]) test(`deadline preserves validated evidenc
   assert.equal(result.evidenceIds.length, 1);
   assert.equal(result.modelConclusion, null);
   assert.match(result.answer, /超时.*部分结果/);
+  assert.match(result.answer, /source composition/u);
+  assert.ok(result.answer.indexOf("source composition") < result.answer.indexOf("还缺什么"));
   assert.ok(f.signal.aborted);
   assert.equal(f.events.filter(e => e.type === "termination").length, 1);
   const snapshot = JSON.stringify(result), eventCount = f.events.length, decisions = f.decisions;

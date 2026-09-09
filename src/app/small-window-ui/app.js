@@ -2964,23 +2964,24 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
     ${feedbackReasonPicker("explanation")}
   </div>` : "";
   const rejectedCard = rejectedModelAnswer
-    ? `<section class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
-      <header>
+    ? `<details class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
+      <summary>
         <strong>${escapeHtml(t("rejectedModelConclusion"))}</strong>
         <small>${escapeHtml(t("rejectedModelConclusionNotice"))}</small>
-      </header>
+      </summary>
       ${conclusionRichTextHtml(rejectedModelAnswer)}
       ${rejectionErrors.length ? `<details class="model-conclusion-rejection-reasons">
         <summary>${escapeHtml(t("rejectedModelConclusionReasons", { count: rejectionErrors.length }))}</summary>
         <ul>${rejectionErrors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
       </details>` : ""}
-    </section>`
+    </details>`
     : "";
   const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}${softValidated ? " soft-validated" : ""}" data-chat-model-conclusion>
     <header>
       <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
       <small>${escapeHtml(t(systemFallback
-        ? data?.terminationReason === "deadline_exceeded" ? "systemConclusionDeadline" : "systemConclusionFallback"
+        ? data?.terminationReason === "deadline_exceeded" ? "systemConclusionDeadline"
+          : data?.modelConclusion?.status === "rejected" ? "systemConclusionFallback" : "systemConclusionPartial"
         : hasGroundingWarnings
           ? "modelConclusionGroundingWarning"
           : softValidated ? "modelConclusionPendingVerification"
@@ -2990,7 +2991,7 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
     ${conclusionRichTextHtml(answer || summary)}
     ${feedbackHtml}
   </section>`;
-  return `${rejectedCard}${acceptedOrFallbackCard}`;
+  return `${acceptedOrFallbackCard}${rejectedCard}`;
 }
 
 function rankingTierLabel(prefix, tier) {

@@ -743,6 +743,28 @@ test("R1-04 later decisions observe earlier tools in a multi-tool loop", async (
   assert.equal(result.evidence.length, 2);
 });
 
+test("partial composition fallback exposes verified metrics and missing positioning in the answer event", async () => {
+  const provider = queueProvider([
+    call("comps_rankings", { patch: "current" }),
+    call("comps_rankings", { patch: "current" })
+  ]);
+  const { result, events } = await runCase({ provider, handlers: {
+    comps_rankings: async () => evidence([{
+      compositionRef: { name: "测试阵容" }, members: [{ name: "测试成员" }],
+      stats: { games: 1200, top4Rate: 0.367 },
+      tacticalDetailQueryPlan: { status: "ready", compositionId: "11", clusterId: "22", seasonContextId: "set17-live" }
+    }], { resolution: { status: "resolved" } })
+  } });
+  assert.equal(result.terminationReason, "duplicate_call");
+  assert.equal(result.answerOrigin, "system_evidence_fallback");
+  assert.match(result.answer, /测试阵容.*测试成员.*样本 1200，前四率 36.7%/u);
+  assert.match(result.answer, /尚未取得完整的站位明细/u);
+  assert.ok(result.answer.indexOf("36.7%") < result.answer.indexOf("还缺什么"));
+  assert.deepEqual(result.evidenceIds, ["ev-1"]);
+  assert.equal(events.find((event) => event.type === "answer").data.answer, result.answer);
+  assert.equal(result.safetyMetrics.actualToolCalls, 1);
+});
+
 test("R1-05 missing context asks the user and ends the current run", async () => {
   const provider = queueProvider([action("ask_user", {
     question: "你指的是哪套阵容？",
@@ -1978,7 +2000,8 @@ test("decision-provider failure preserves available build cards with a visible w
 
   assert.equal(result.status, "completed_with_warning");
   assert.equal(result.terminationReason, "decision_provider_fallback");
-  assert.match(result.answer, /1 套稳定方案和 2 套备选方案/u);
+  assert.match(result.answer, /霞返回了 3 条出装候选记录/u);
+  assert.match(result.answer, /缺少具体装备/u);
   assert.deepEqual(result.evidenceIds, ["ev-1"]);
   assert.equal(events.find((event) => event.type === "answer")?.data.systemFallback, true);
 });
@@ -2034,7 +2057,8 @@ test("repeated invalid statistics preserve deterministic build cards instead of 
 
   assert.equal(result.status, "completed_with_warning");
   assert.equal(result.terminationReason, "finish_validation_fallback");
-  assert.match(result.answer, /1 套稳定方案和 2 套备选方案/u);
+  assert.match(result.answer, /霞返回了 3 条出装候选记录/u);
+  assert.match(result.answer, /缺少具体装备/u);
   assert.doesNotMatch(result.answer, /99/u);
 });
 

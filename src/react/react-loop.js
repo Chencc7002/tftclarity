@@ -11,6 +11,7 @@ import { EvidenceLedger } from "./evidence-ledger.js";
 import { validateFinishAction, validateGroundedBuildNarrative } from "./termination-policy.js";
 import { ReactWorkingState } from "./working-state.js";
 import { currentDeadlineEvidence } from "./deadline-evidence.js";
+import { buildPartialEvidenceAnswer, partialEvidenceSummary } from "./partial-evidence-answer.js";
 import { selectedEntityConfirmation } from "./entity-confirmation.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
@@ -1093,6 +1094,8 @@ export function buildInsufficientEvidenceFallback(ledger) {
   const buildEntries = entries.filter((entry) => entry.toolName === "unit_builds_batch");
   const constrainedFallback = buildConstrainedBatchEvidenceFallback(ledger);
   if (constrainedFallback) return constrainedFallback;
+  const partialFallback = buildGeneralEvidenceFallback(ledger, "完整回答的证据仍不足，以上只覆盖本次已经确认的部分。");
+  if (partialFallback) return partialFallback;
   const unavailableResults = buildEntries.flatMap((entry) => (
     Array.isArray(entry.value?.results)
       ? entry.value.results.filter((result) => result?.available === false)
@@ -1217,6 +1220,13 @@ export function buildCompositionTrendFallback(ledger) {
   };
 }
 
+function buildGeneralEvidenceFallback(ledger, explanation) {
+  const entries = ledger.snapshot().entries;
+  return partialEvidenceSummary(entries).findings.length
+    ? buildPartialEvidenceAnswer(entries, { explanation })
+    : null;
+}
+
 function buildAvailableEvidenceFallback(ledger) {
   const entries = ledger.snapshot().entries;
   const buildEntries = entries.filter((entry) => entry.toolName === "unit_builds_batch");
@@ -1226,16 +1236,11 @@ function buildAvailableEvidenceFallback(ledger) {
       : []
   ));
   if (!results.length) return null;
-  const names = [...new Set(results.map(displayNameForBuildResult).filter(Boolean))];
-  const optionCount = Math.min(...results.map((result) => result.buildOptions.length));
-  const planText = optionCount >= 3
-    ? "1 套稳定方案和 2 套备选方案"
-    : `${optionCount} 套有统计证据的方案`;
+  const summary = partialEvidenceSummary(buildEntries);
+  if (!summary.findings.length) return null;
   return {
-    answer: `已获取${names.map((name) => `“${name}”`).join("、")}的当前出装统计，但 AI 的补充分析暂时未完成。先展示${planText}及其可验证数据；机制解读可稍后重试。`,
-    evidenceIds: entries
-      .filter((entry) => entry.temporalStatus !== "historical")
-      .map((entry) => entry.evidenceId)
+    ...buildPartialEvidenceAnswer(buildEntries, { explanation: "出装机制解读尚未完成，现有统计不能解释装备效果或完整玩法。" }),
+    findings: summary.findings
   };
 }
 
@@ -1408,12 +1413,7 @@ function buildRejectedNarrativeFallback(ledger) {
     ?? buildSingleUnitItemRankingFallback(ledger)
     ?? buildSingleUnitBuildFallback(ledger)
     ?? buildAvailableEvidenceFallback(ledger)
-    ?? {
-    answer: "已获取可验证结果，但模型生成的部分说明超出当前证据范围，已隐藏。请以结果区的证据和确定性结果为准。",
-    evidenceIds: ledger.snapshot().entries
-      .filter((entry) => entry.temporalStatus !== "historical")
-      .map((entry) => entry.evidenceId)
-  };
+    ?? buildPartialEvidenceAnswer(ledger.snapshot().entries);
 }
 
 export class ReactLoop {
@@ -1518,10 +1518,12 @@ export class ReactLoop {
     };
     const terminateForNoProgress = (reason = "no_progress") => {
       const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
-      const available = buildConstrainedBatchEvidenceFallback(ledger)
-        ?? buildItemContentionFallback(ledger)
-        ?? buildSingleUnitItemRankingFallback(ledger)
-        ?? buildAvailableEvidenceFallback(ledger);
+      const currentLedger = { snapshot: () => ({ entries }) };
+      const available = buildConstrainedBatchEvidenceFallback(currentLedger)
+        ?? buildItemContentionFallback(currentLedger)
+        ?? buildSingleUnitItemRankingFallback(currentLedger)
+        ?? buildSingleUnitBuildFallback(currentLedger)
+        ?? buildAvailableEvidenceFallback(currentLedger);
       const stopExplanation = reason === "duplicate_call"
         ? "模型尝试重复同一查询，但没有新的条件或证据可支持再次执行；系统已拦截重复调用。"
         : reason === "capability_failure_circuit_open"
@@ -1531,12 +1533,11 @@ export class ReactLoop {
             : reason === "runaway_loop_fuse"
               ? "任务在较长的决策链中仍未形成可交付结论，系统已触发异常循环熔断。"
               : "连续步骤没有产生新的有效证据或可交付结论，系统已停止继续执行。";
-      const fallback = available ?? {
-        answer: entries.length
-          ? `已取得部分有效证据。${stopExplanation}未被现有证据支持的部分不会推断。`
-          : `${stopExplanation}当前证据不足，无法可靠回答这个问题。`,
-        evidenceIds: entries.map((entry) => entry.evidenceId)
-      };
+      const fallback = buildPartialEvidenceAnswer(entries, {
+        fallback: available,
+        observations: state.observations,
+        explanation: `${stopExplanation}完整回答仍缺少经过校验的补充结论；以上信息仅覆盖本次已确认的部分。`
+      });
       state.warn(reason);
       emit("answer", {
         answer: fallback.answer,
@@ -1564,7 +1565,16 @@ export class ReactLoop {
       const entries = currentDeadlineEvidence(ledger.snapshot().entries, this.now(), state.seasonContextId);
       if (!entries.length) { recoveryClosed = true; return null; }
       const evidenceIds = entries.map((entry) => entry.evidenceId);
-      const answer = "本次查询已超时，已停止继续调用工具。仅保留截止前取得并通过校验的部分结果；完整回答的证据不足，未完成的装备解读、阵容或站位不作推断。";
+      const safeLedger = { snapshot: () => ({ entries }) };
+      const { answer } = buildPartialEvidenceAnswer(entries, {
+        observations: state.observations,
+        fallback: buildConstrainedBatchEvidenceFallback(safeLedger)
+          ?? buildItemContentionFallback(safeLedger)
+          ?? buildSingleUnitItemRankingFallback(safeLedger)
+          ?? buildSingleUnitBuildFallback(safeLedger)
+          ?? buildAvailableEvidenceFallback(safeLedger),
+        explanation: "本次查询已超时，以上为截止前取得并通过校验的部分结果；未完成的补充解读仍缺少证据，无法作为完整建议。"
+      });
       state.warn("deadline_partial_evidence");
       emit("answer", { answer, evidenceIds, reasonCode: "partial_evidence", narrativeAccepted: false, systemFallback: true });
       const result = terminate("deadline_exceeded", { status: "completed_with_warning", answer,
@@ -1651,7 +1661,8 @@ export class ReactLoop {
         const fallback = buildItemContentionFallback(ledger)
           ?? buildSingleUnitItemRankingFallback(ledger)
           ?? buildSingleUnitBuildFallback(ledger)
-          ?? buildAvailableEvidenceFallback(ledger);
+          ?? buildAvailableEvidenceFallback(ledger)
+          ?? buildGeneralEvidenceFallback(ledger, "补充解读生成中断，以上仅为本次已确认的信息，完整回答仍需补全。");
         if (fallback) {
           state.warn("decision_provider_answer_fallback");
           emit("answer", {
@@ -1946,7 +1957,8 @@ export class ReactLoop {
               ?? buildItemContentionFallback(ledger)
               ?? buildSingleUnitItemRankingFallback(ledger)
               ?? buildSingleUnitBuildFallback(ledger)
-              ?? buildAvailableEvidenceFallback(ledger);
+              ?? buildAvailableEvidenceFallback(ledger)
+              ?? buildGeneralEvidenceFallback(ledger);
             if (fallback) {
               sufficientFinishRepairCount += 1;
               state.recordObservation({
