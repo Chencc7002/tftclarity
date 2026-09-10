@@ -33,6 +33,19 @@ test("the actual S18 catalog retains the requested Master Yi aliases", () => {
   }
 });
 
+test("provider and official IDs for the same S18 unit are one entity, and short names use a verified search alias", () => {
+  const record = unitDisplayOverrideByApiName.get("DA_18_MasterYi_AD");
+  const matcher = createVideoEntityScope("易攻略", {
+    catalog: { units: [{ ...record, canonicalApiName: "TFT18_MasterYi" }] },
+    entityDetails: { units: new Map([[record.apiName, { apiName: record.apiName, name: "易" }]]) }
+  });
+  assert.equal(matcher.scope.status, "resolved");
+  assert.equal(matcher.scope.entities.length, 1);
+  assert.equal(matcher.searchQuery, "剑圣攻略");
+  assert.equal(matcher.matchTitle("三星易主C").accepted, true);
+  assert.equal(matcher.matchTitle("剑圣教学").accepted, true);
+});
+
 test("entity titles resolve canonical names, aliases, traditional Chinese and Latin boundaries", () => {
   const matcher = createVideoEntityScope("帮我找剑圣的视频", resources);
   assert.equal(matcher.scope.status, "resolved");

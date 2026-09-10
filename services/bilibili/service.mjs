@@ -390,11 +390,13 @@ export class BilibiliStrategyVideoService {
     const requestedEcosystem = ["tft_pc", "golden_spatula", "both"].includes(input.ecosystem)
       ? input.ecosystem
       : null;
+    const searchQuery = this.config.entityMatchMode === "enforce" && entityMatcher?.scope.status === "resolved"
+      ? entityMatcher.searchQuery : query;
     const scopeAwareQuery = requestedEcosystem === "both"
-      ? `${query} \u5206\u522b \u4e91\u9876\u4e4b\u5f08 \u91d1\u94f2\u94f2\u4e4b\u6218`
+      ? `${searchQuery} \u5206\u522b \u4e91\u9876\u4e4b\u5f08 \u91d1\u94f2\u94f2\u4e4b\u6218`
       : requestedEcosystem === "golden_spatula"
-        ? `${query} \u91d1\u94f2\u94f2\u4e4b\u6218`
-        : requestedEcosystem === "tft_pc" ? `${query} \u4e91\u9876\u4e4b\u5f08` : query;
+        ? `${searchQuery} \u91d1\u94f2\u94f2\u4e4b\u6218`
+        : requestedEcosystem === "tft_pc" ? `${searchQuery} \u4e91\u9876\u4e4b\u5f08` : searchQuery;
     let requestGate = gateStrategyVideoRequest(scopeAwareQuery);
     if (this.config.entityMatchMode === "enforce" && entityMatcher?.scope.status === "resolved"
       && requestGate.reason === "tft_strategy_signal_required") {

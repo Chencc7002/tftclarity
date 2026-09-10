@@ -1,6 +1,7 @@
 import { normalizeTraditionalChinese } from "../../core/normalizer.js";
 import { normalizeCompsData } from "../../data/metatft-response-adapter.js";
 import { normalizeClusterDefinitions } from "../../data/comp-response-adapter.js";
+import { canonicalUnitIdentity } from "../../data/unit-identity.js";
 
 const TYPES = { units: "unit", items: "item", traits: "trait", augments: "augment", compositions: "composition" };
 const segmenter = new Intl.Segmenter("zh-CN", { granularity: "word" });
@@ -45,9 +46,10 @@ function records(resources) {
       const rawId = record.canonicalApiName ?? record.apiName ?? record.compId;
       if (!rawId) continue;
       const id = `${type}:${type === "trait" ? String(rawId).replace(/_\d+$/u, "") : rawId}`;
-      const previous = byId.get(id);
-      byId.set(id, {
-        id, type, name: previous?.name ?? record.zhName ?? record.name ?? record.displayName ?? String(rawId),
+      const key = type === "unit" ? canonicalUnitIdentity(record) : id;
+      const previous = byId.get(key);
+      byId.set(key, {
+        id: previous?.id ?? id, type, name: previous?.name ?? record.zhName ?? record.name ?? record.displayName ?? String(rawId),
         aliases: [...new Set([...(previous?.aliases ?? []), ...aliases(record)])]
       });
     }
@@ -117,8 +119,20 @@ export function createVideoEntityScope(query, resources = {}) {
     entities: selected.map(({ id, type, name }) => ({ id, type, name })),
     queryMatches: hits.map(({ alias, entity }) => ({ entityId: entity.id, alias }))
   };
+  let searchQuery = value;
+  if (status === "resolved") {
+    // A single-character name is often treated as a common word upstream.
+    // Use a longer, verified alias for the same entity in the existing call.
+    for (const hit of [...hits].sort((a, b) => b.start - a.start)) {
+      if (!/^\p{Script=Han}$/u.test(hit.alias)) continue;
+      const alias = hit.entity.aliases.filter((entry) => /^\p{Script=Han}{2,8}$/u.test(entry))
+        .sort((a, b) => a.length - b.length)[0];
+      if (alias) searchQuery = searchQuery.slice(0, hit.start) + alias + searchQuery.slice(hit.end);
+    }
+  }
   return {
     scope,
+    searchQuery,
     matchTitle(title) {
       if (status === "catalog_unavailable" || status === "ambiguous") {
         return { accepted: false, reason: status, matches: [] };
