@@ -352,6 +352,14 @@ export function createTftToolHandlers(dependencies = {}) {
     handlers.strategy_video_search = (input, context = {}) => (
       dependencies.strategyVideoSearchService.search(input, {
         ...context,
+        loadVideoEntityResources: async ({ mode } = {}) => {
+          context.signal?.throwIfAborted?.();
+          const resources = typeof dependencies.loadVideoEntityResources === "function"
+            ? await dependencies.loadVideoEntityResources({ ...context, videoEntityMatchMode: mode })
+            : { catalog: dependencies.catalog, compsData: dependencies.compsData };
+          context.signal?.throwIfAborted?.();
+          return resources;
+        },
         currentPatch: dependencies.patchState?.currentPatch
           ?? dependencies.seasonContext?.currentPatch
           ?? dependencies.seasonContext?.effectivePatch

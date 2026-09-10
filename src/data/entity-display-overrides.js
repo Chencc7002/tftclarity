@@ -6,7 +6,7 @@ function displayOverride(apiName, zhName, enName, options = {}) {
     apiName,
     zhName,
     enName,
-    aliases: Object.freeze([zhName, enName]),
+    aliases: Object.freeze([...new Set([zhName, enName, ...(options.aliases ?? [])])]),
     ...(options.fuzzyAliases?.length ? {
       fuzzyAliases: Object.freeze([...options.fuzzyAliases])
     } : {}),
@@ -54,7 +54,9 @@ export const S18_UNIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_Rengar", "雷恩加尔", "Rengar"),
   displayOverride("DA_CrimsonRaptor18", "深红锋喙鸟", "Mama Beak"),
   displayOverride("DA_Vi18", "蔚", "Vi"),
-  displayOverride("DA_18_MasterYi_AD", "易", "Master Yi"),
+  displayOverride("DA_18_MasterYi_AD", "易", "Master Yi", {
+    aliases: ["剑圣", "无极剑圣", "masteryi", "yi"]
+  }),
   displayOverride("DA_Krug18", "远古石甲虫", "Krug"),
   displayOverride("DA_18_Ahri", "阿狸", "Ahri"),
   displayOverride("DA_Amumu18", "阿木木", "Amumu"),

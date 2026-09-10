@@ -7266,6 +7266,16 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
     patchState: runtime.patchState,
     strategyVideoSearchService: runtime.strategyVideoSearchService,
     seasonContextId: seasonContext.id,
+    loadVideoEntityResources: (toolContext = {}) => {
+      // Shadow must not trigger catalog network refreshes or hold up a video
+      // request. Observe only the same season's already loaded resources.
+      if (toolContext.videoEntityMatchMode === "shadow") {
+        return runtime.catalog
+          ? { catalog: runtime.catalog, compsData: runtime.compsData, entityDetails: runtime.officialEntityDetails }
+          : runtime.catalogCache?.get(runtimeCatalogKey(preferences)) ?? {};
+      }
+      return resources();
+    },
     locale: request.locale,
     // Keep ReAct detail tools on the same season-scoped source used to resolve
     // the entity. PBE units may exist in CommunityDragon before the live
