@@ -45,7 +45,7 @@ test('18.2 source-linked knowledge is searchable without substituting 18.1',asyn
  for(const query of ['18.2 阿狸改了什么','18.2 升级经验调整','18.2 灵火价格改动']){
   const hits=await retriever.searchEvidence(query,{seasonContextId:'set18-live',patch:'18.2',locale:'zh-CN',documentTypes:['patch_note']});
   assert.ok(hits.length,query);assert.ok(hits.every(h=>h.patch==='18.2'));
-  assert.match(hits[0].claim,/455\/685%/);assert.match(hits[0].claim,/20% → 21%/);
+  if(query.includes('阿狸')) { assert.match(hits[0].claim,/455\/685%/);assert.match(hits[0].claim,/20% → 21%/); }
  }
 });
 
@@ -63,4 +63,19 @@ test('ReAct completes an Ahri answer with validated 18.2 evidence and both direc
  assert.match(payload.answer,/455\/685%/);assert.match(payload.answer,/21%/);
  assert.deepEqual(payload.evidence.map(e=>e.toolName),['patch_facts']);
  assert.equal(payload.evidence[0].value.patch,'18.2');
+});
+
+
+test('bounded registered semantic hits retain late-release entity facts', async () => {
+ const documents=buildOfficialPatchSemanticDocuments({seasonContextId:'set18-live'});
+ const sections=documents.filter(d=>d.patch==='18.2' && d.id.includes(':section:'));
+ assert.ok(sections.length>1);assert.ok(sections.every(d=>d.content.length<=800));
+ const expected=getOfficialPatchFacts({patch:'18.2'}).revisions.flatMap(r=>r.changes.map(c=>c.id));
+ const actual=sections.flatMap(d=>d.metadata.rawData.changes.map(c=>c.id));
+ assert.deepEqual(actual.sort(),expected.sort());
+ const retriever=new KnowledgeRetriever({retriever:createTfidfSemanticRetriever({store:new MemorySemanticDocumentStore(documents)})});
+ const bundle=createTftToolHandlers({seasonContextId:'set18-live',patch:'18.2',knowledgeSearch:input=>retriever.searchEvidence(input.query,{...input,seasonContextId:'set18-live',patch:'18.2',locale:'zh-CN'})});
+ const result=await bundle.handlers.semantic_search({query:'18.2 阿狸改动',documentTypes:['patch_note'],topK:2});
+ assert.match(result.hits[0].claim,/455\/685%/);assert.match(result.hits[0].claim,/20% → 21%/);
+ assert.ok(result.hits.every(h=>h.claim.length<=800 && h.patch==='18.2' && h.claimType==='official_fact'));
 });

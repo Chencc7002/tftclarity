@@ -103,9 +103,53 @@ export function buildOfficialPatchKnowledgeDocuments(options = {}) {
 
 export function buildOfficialPatchSemanticDocuments(options = {}) {
   const seasonContextId = String(options.seasonContextId ?? "set17-live");
-  return buildOfficialPatchKnowledgeDocuments(options).map((document) => (
-    knowledgeDocumentToSemanticDocument(document, { seasonContextId })
-  ));
+  return buildOfficialPatchKnowledgeDocuments(options).flatMap((document) => {
+    const documents = [document];
+    // The registered semantic tool returns at most 800 characters per hit.
+    // Index bounded entity sections as well as the overview, so later changes
+    // in a long release remain retrievable without widening the tool budget.
+    if (document.text.length > 800) {
+      for (const revision of array(document.metadata.rawData?.numericRevisions)) {
+        const groups = new Map();
+        for (const change of revision.changes) {
+          const subject = change.entityApiNames.length
+            ? change.entityApiNames.join("|")
+            : change.label.split("·")[0].trim();
+          if (!groups.has(subject)) groups.set(subject, []);
+          groups.get(subject).push(change);
+        }
+        for (const changes of groups.values()) {
+          const header = `Patch ${document.metadata.patch} / ${revision.title} / ${revision.publishedAt}`;
+          let batch = [], lines = [];
+          const emit = () => {
+            if (!batch.length) return;
+            documents.push(createKnowledgeDocument({
+              id: `${document.id}:section:${batch[0].id}`,
+              documentType: "patch_note",
+              title: `${document.title} · ${batch[0].label.split("·")[0].trim()}`,
+              text: [header, ...lines].join("\n"),
+              metadata: {
+                ...document.metadata,
+                generatedAt: revision.publishedAt,
+                topics: ["更新公告", "版本改动", `Patch ${document.metadata.patch}`,
+                  ...batch.flatMap((change) => [change.label, ...change.entityApiNames])],
+                rawData: { ...document.metadata.rawData, changes: batch, numericRevisions: [] }
+              }
+            }));
+          };
+          for (const change of changes) {
+            const line = `【${directionLabel(change.direction)}】${change.label}：${change.before} → ${change.after}`;
+            if (batch.length && [header, ...lines, line].join("\n").length > 800) {
+              emit(); batch = []; lines = [];
+            }
+            batch.push(change); lines.push(line);
+          }
+          emit();
+        }
+      }
+    }
+    return documents.map((entry) => knowledgeDocumentToSemanticDocument(entry, { seasonContextId }));
+  });
 }
 
 export function extractPatchVersionFromQuestion(value) {
