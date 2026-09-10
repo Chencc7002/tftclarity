@@ -141,6 +141,18 @@ function detailsCards(data) {
 }
 
 function patchCards(data) {
+  if ((data.history || []).length) {
+    return data.history.slice().reverse().map((revision) => ({
+      id: revision.id,
+      badge: revision.kind || "修订",
+      title: `${revision.publishedAt || "日期未知"} · ${revision.title || revision.id}`,
+      subtitle: `${revision.id} ← ${revision.parentId || "起始节点"}`,
+      description: [revision.summary, ...(revision.changes || []).map((change) => `• ${change.text || change}`)].filter(Boolean).join("\n"),
+      units: [],
+      items: [],
+      stats: []
+    }));
+  }
   return (data.highlights || []).map((highlight, index) => ({
     id: `patch-${index}`,
     badge: String(index + 1).padStart(2, "0"),

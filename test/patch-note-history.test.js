@@ -1,10 +1,12 @@
+import { createRequire } from "node:module";
+import { createSeasonContextService } from "../src/season/season-context.js";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { getPatchNote } from "../src/app/small-window-ui/patch-notes.js";
+import { getCurrentPatchNote, getPatchNote } from "../src/app/small-window-ui/patch-notes.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ui = (name) => fs.readFileSync(path.join(here, "../src/app/small-window-ui", name), "utf8");
@@ -53,4 +55,38 @@ test("announcement renderer exposes trace anchors and buff/nerf visuals", () => 
   assert.match(styles, /\.patch-change\.is-buff/u);
   assert.match(styles, /\.patch-change\.is-nerf/u);
   assert.match(styles, /\.patch-history-groups li:target/u);
+});
+
+test("18.2 is reachable from the active season and matches the mini program", () => {
+  const season = createSeasonContextService().listPublic().find((record) => record.id === "set18-live");
+  const patch = getPatchNote(season.theme.patchNoteVersion, "zh-CN");
+  const mini = createRequire(import.meta.url)("../miniprogram/data/patch-notes.js");
+  assert.equal(patch.version, "18.2");
+  assert.deepEqual(patch, getCurrentPatchNote());
+  assert.equal(patch.publishedAt, "2026-09-09T18:00:00.000Z");
+  assert.equal(patch.updatedAt, "2026-09-09");
+  assert.match(season.notices[0], /18\.2 版本已上线/u);
+  assert.match(season.theme.subtitle["en-US"], /18\.2/u);
+  const changes = patch.history.flatMap((revision) => revision.groups.flatMap((group) => group.changes));
+  assert.equal(changes.length, 157);
+  assert.equal(new Set(changes.map((change) => change.id)).size, changes.length);
+  assert.deepEqual(mini.history.flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
+  assert.equal(mini.sourceUrl, patch.sourceUrl);
+  const en = getCurrentPatchNote("en-US");
+  assert.deepEqual(en.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).map(({ body, ...change }) => change), changes.map(({ body, ...change }) => change));
+});
+
+test("18.2 distinguishes mixed tuning and excludes tooltip-only buffs", () => {
+  const changes = getCurrentPatchNote().history.flatMap((r) => r.groups.flatMap((g) => g.changes));
+  const find = (id) => changes.find((change) => change.id === `18.2-release-2026-09-09-${id}`);
+  assert.equal(find("xp-8").after, "56");
+  assert.equal(find("ahri-damage").direction, "buff");
+  assert.equal(find("ahri-falloff").direction, "nerf");
+  assert.equal(find("edge-of-night").direction, "mixed");
+  assert.equal(find("taric-shield-base").direction, "nerf");
+  assert.equal(find("taric-shield-hp").direction, "buff");
+  assert.equal(find("combust-cost").direction, "buff");
+  assert.equal(find("combust-damage").direction, "nerf");
+  assert.equal(changes.some((change) => /veigar/iu.test(change.id)), false);
+  assert.match(ui("app.js"), /mixed: "patchNotesMixed"/u);
 });

@@ -2602,11 +2602,11 @@ function renderEmptyResult(track = true) {
 }
 
 function patchRevisionKindLabel(kind) {
-  return t(kind === "balance" ? "patchNotesBalance" : "patchNotesHotfix");
+  return t({ release: "patchNotesRelease", balance: "patchNotesBalance", hotfix: "patchNotesHotfix" }[kind] ?? "patchNotesHotfix");
 }
 
 function patchChangeDirectionLabel(direction) {
-  return t(direction === "buff" ? "patchNotesBuff" : "patchNotesNerf");
+  return t({ buff: "patchNotesBuff", nerf: "patchNotesNerf", mixed: "patchNotesMixed" }[direction]);
 }
 
 function formatPatchDate(value) {
@@ -2634,6 +2634,7 @@ function patchHistoryHtml(patch) {
       <div class="patch-change-legend" aria-label="${escapeHtml(t("patchNotesNumericSummary"))}">
         <span class="is-buff"><i aria-hidden="true">↑</i>${t("patchNotesBuff")}</span>
         <span class="is-nerf"><i aria-hidden="true">↓</i>${t("patchNotesNerf")}</span>
+        <span class="is-mixed"><i aria-hidden="true">↔</i>${t("patchNotesMixed")}</span>
         <small>${t("patchNotesNumericSummary")}</small>
       </div>
       <div class="patch-history-list">

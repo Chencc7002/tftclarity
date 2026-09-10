@@ -1,4 +1,7 @@
+import { PATCH_18_2_REVISION } from "./patch-18-2.js";
+
 const NUMERIC_REVISIONS = Object.freeze({
+  "18.2": Object.freeze([PATCH_18_2_REVISION]),
   "18.1": Object.freeze([
     Object.freeze({
       id: "18.1-balance-2026-08-31",
@@ -46,9 +49,9 @@ export function buildPatchHistory(patch, localizedPatch, locale = "zh-CN") {
     summary: localized(revision.summary, locale),
     sourceName: localizedPatch.sourceName,
     sourceUrl: localizedPatch.sourceUrl,
-    groups: [{
-      title: localized(revision.groupTitle, locale),
-      changes: revision.changes.map((change) => ({
+    groups: (revision.groups ?? [{ title: revision.groupTitle, changes: revision.changes }]).map((group) => ({
+      title: localized(group.title, locale),
+      changes: group.changes.map((change) => ({
         id: `${revision.id}-${change.id}`,
         body: localized(change.text, locale),
         direction: change.direction,
@@ -59,6 +62,6 @@ export function buildPatchHistory(patch, localizedPatch, locale = "zh-CN") {
         before: change.before,
         after: change.after
       }))
-    }]
+    }))
   }));
 }

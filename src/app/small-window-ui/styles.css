@@ -605,6 +605,10 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .patch-change.is-buff .patch-change-values strong { color: #11734f; }
 .patch-change.is-nerf .patch-change-values b { color: #b63643; background: rgba(220,67,80,.12); }
 .patch-change.is-nerf .patch-change-values strong { color: #b52f3d; }
+.patch-change-legend > .is-mixed,
+.patch-change.is-mixed .patch-change-values b { color: #755019; background: rgba(178,128,48,.13); }
+.patch-history-groups li.patch-change.is-mixed { border-color: rgba(178,128,48,.2); background: rgba(178,128,48,.05); }
+.patch-change.is-mixed .patch-change-values strong { color: #755019; }
 .patch-history-groups li:target { margin-inline: -5px; padding-inline: 5px; border-radius: 6px; background: var(--star-cyan-soft); }
 .patch-history-card > footer { padding: 8px 12px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border-top: 1px solid var(--line); background: rgba(250,252,255,.66); color: var(--muted); font-size: 8px; }
 .patch-history-card > footer a { color: var(--star-cyan-dark); font-weight: 700; text-decoration: none; }

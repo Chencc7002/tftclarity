@@ -68,3 +68,18 @@ test("mini program result view normalizes recommendation cards", () => {
   assert.equal(view.cards[0].items.length, 3);
   assert.deepEqual(view.cards[0].stats[0], { label: "前四率", value: "56.7%" });
 });
+
+test("mini program patch notes use the numeric-only traceable chain", () => {
+  const patch = require("../miniprogram/data/patch-notes.js");
+  const { buildResultView } = require("../miniprogram/utils/result-view.js");
+  const view = buildResultView({ type: "patch_notes", ...patch });
+  assert.equal(patch.version, "18.2");
+  assert.equal(patch.updatedAt, "2026-09-09");
+  assert.equal(patch.history.length, 1);
+  assert.equal(patch.history.every((revision, index) => index === 0 || revision.parentId === patch.history[index - 1].id), true);
+  assert.equal(patch.history[0].changes.length, 157);
+  assert.equal(view.cards[0].id, "18.2-release-2026-09-09");
+  assert.match(view.cards[0].subtitle, /起始节点/u);
+  assert.match(view.cards[0].description, /增强｜阿狸/u);
+  assert.match(view.cards[0].description, /削弱｜阿狸/u);
+});

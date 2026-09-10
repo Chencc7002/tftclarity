@@ -1,8 +1,28 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.1";
+export const CURRENT_PATCH_VERSION = "18.2";
 
 const PATCH_NOTES = {
+  "18.2": {
+    "version": "18.2",
+    "publishedAt": "2026-09-09T18:00:00.000Z",
+    "locales": {
+      "zh-CN": {
+        "title": "18.2 数值更新",
+        "summary": "共 157 项数值变更：升级经验与灵火价格下调，英雄、羁绊、装备和强化符文同步调整。",
+        "sourceName": "Riot Games 官方更新公告",
+        "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-2/",
+        "highlights": []
+      },
+      "en-US": {
+        "title": "Patch 18.2 numeric changes",
+        "summary": "157 numeric changes covering leveling XP, Wisp costs, champions, traits, items, and Augments.",
+        "sourceName": "Official Riot Games patch notes",
+        "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/",
+        "highlights": []
+      }
+    }
+  },
   "18.1": {
     version: "18.1",
     publishedAt: "2026-08-25T18:00:00.000Z",
