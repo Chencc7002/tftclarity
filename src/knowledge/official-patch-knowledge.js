@@ -27,7 +27,8 @@ function directionLabel(direction) {
 }
 
 function patchText(patch, facts) {
-  const changes = array(patch.changes).map(
+  const numericIds = new Set(array(facts?.revisions).flatMap((revision) => revision.changes.map((change) => change.id)));
+  const changes = array(patch.changes).filter((change) => !numericIds.has(change.id)).map(
     (change, index) => `${index + 1}. 【${directionLabel(change.direction)}】${change.summary}`
   );
   const revisionChanges = array(facts?.revisions).flatMap((revision) => [

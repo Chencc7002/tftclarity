@@ -241,8 +241,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-xp-8",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "xp_to_level_8",
           "before": "60",
           "after": "56",
           "label": "升至 8 级所需经验",
@@ -251,8 +253,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-xp-9",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "xp_to_level_9",
           "before": "68",
           "after": "64",
           "label": "升至 9 级所需经验",
@@ -261,8 +265,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-xp-10",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "xp_to_level_10",
           "before": "68",
           "after": "64",
           "label": "升至 10 级所需经验",
@@ -271,8 +277,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-blackthorn-health",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Blackthorn"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "health",
           "before": "175/300/550",
           "after": "175/350/600",
           "label": "黑荆棘 · 生命值",
@@ -281,8 +291,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-blackthorn-tank",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Blackthorn"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "tank_sacrifice_resists",
           "before": "15",
           "after": "12",
           "label": "黑荆棘 · 坦克献祭双抗",
@@ -291,8 +305,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-blackthorn-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Blackthorn"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ad_sacrifice_base_as",
           "before": "12%",
           "after": "14%",
           "label": "黑荆棘 · 物理献祭基础攻速",
@@ -301,8 +319,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-blackthorn-ap",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Blackthorn"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ap_sacrifice_base_mana_regen",
           "before": "1.7",
           "after": "2",
           "label": "黑荆棘 · 法系献祭基础法力回复",
@@ -311,8 +333,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-coven-185-gold",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Coven"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "completed_anvil_reward_gold",
           "before": "8",
           "after": "10",
           "label": "魔女 185 精华 · 成装铁砧奖励金币",
@@ -321,8 +347,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-coven-250-anvils",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Coven"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "two_completed_anvils_reward_gold",
           "before": "12",
           "after": "20",
           "label": "魔女 250 精华 · 双成装铁砧奖励金币",
@@ -331,8 +361,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-coven-250-chests",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Coven"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "two_lucky_item_chests_reward_gold",
           "before": "6",
           "after": "18",
           "label": "魔女 250 精华 · 双幸运装备宝箱奖励金币",
@@ -341,8 +375,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-coven-250-lux",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Coven"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "lux_reward_gold",
           "before": "5",
           "after": "18",
           "label": "魔女 250 精华 · 拉克丝奖励组金币",
@@ -351,8 +389,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-coven-250-artifact",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Coven"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "artifact_anvil_reward_gold",
           "before": "5",
           "after": "18",
           "label": "魔女 250 精华 · 神器铁砧奖励组金币",
@@ -361,8 +403,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-coven-365-gold",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Coven"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "additional_gold_on_all_rewards",
           "before": "0",
           "after": "12",
           "label": "魔女 365 精华 · 所有奖励额外金币",
@@ -371,8 +417,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-fae-pixies",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Fae"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "first_six_golden_pixie_thresholds",
           "before": "200000/250000/330000/420000/510000/610000",
           "after": "170000/200000/300000/400000/500000/600000",
           "label": "花仙子 · 前六只黄金皮克斯门槛",
@@ -381,8 +431,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hunter-duration",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Hunter"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "targeting_time_required_for_damage_amp_seconds",
           "before": "4",
           "after": "3",
           "label": "猎人 · 触发伤害增幅所需锁定时间（秒）",
@@ -391,8 +445,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-inferno-burn",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Inferno"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "burn_damage",
           "before": "1/1/3/3.5%",
           "after": "1/1/3.5/4.5%",
           "label": "地狱火 · 灼烧伤害",
@@ -401,8 +459,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-rapidfire-as",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Rapidfire"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "as_per_attack",
           "before": "3/5/9/15%",
           "after": "3/5/8/12%",
           "label": "迅捷射手 · 每次攻击获得攻速",
@@ -411,8 +473,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-solar-base",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Solar"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "initial_bonus_magic_damage",
           "before": "7%",
           "after": "8%",
           "label": "日蚀骑士 · 初始额外魔法伤害",
@@ -421,8 +487,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-solar-scaling",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Solar"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "bonus_per_three_star",
           "before": "1.5%",
           "after": "1%",
           "label": "日蚀骑士 · 每名三星弈子的伤害加成",
@@ -431,8 +501,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-solar-as",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Solar"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "three_three_star_as_bonus",
           "before": "18%",
           "after": "15%",
           "label": "日蚀骑士 · 三名三星弈子攻速奖励",
@@ -441,8 +515,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-solar-resists",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Solar"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "three_three_star_resists_bonus",
           "before": "15",
           "after": "12",
           "label": "日蚀骑士 · 三名三星弈子双抗奖励",
@@ -451,8 +529,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-akali-mana",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Akali_AD"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "mana",
           "before": "0/30",
           "after": "0/25",
           "label": "阿卡丽（物理形态）· 法力值",
@@ -461,8 +543,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-leona-mana",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Leona"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "mana",
           "before": "40/100",
           "after": "30/90",
           "label": "蕾欧娜 · 法力值",
@@ -471,8 +557,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-leona-resists",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Leona"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "decaying_resists",
           "before": "60/70/80/100",
           "after": "60/80/100/130",
           "label": "蕾欧娜 · 衰减双抗",
@@ -481,8 +571,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-varus-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Varus"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ad_ratio",
           "before": "385/580/925/1530%",
           "after": "415/625/1000/1700%",
           "label": "韦鲁斯 · 技能攻击力倍率",
@@ -491,8 +585,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-leblanc-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_LeBlanc"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ap_ratio",
           "before": "250/375/565/955%",
           "after": "260/390/615/1045%",
           "label": "乐芙兰 · 技能法强倍率",
@@ -501,8 +599,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-leblanc-aoe",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_LeBlanc"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "one_to_three_star_aoe_ap_ratio",
           "before": "85/130/190%",
           "after": "100/150/230%",
           "label": "乐芙兰 · 一至三星范围伤害法强倍率",
@@ -511,8 +613,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-kayle-hit",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Kayle"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "on_hit_ap_ratio",
           "before": "56/84/95%",
           "after": "62/92/105%",
           "label": "凯尔 · 攻击附带魔法伤害法强倍率",
@@ -521,8 +627,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-kayle-wave",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Kayle"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "wave_ap_ratio",
           "before": "40/40/40/50%",
           "after": "35/35/35/45%",
           "label": "凯尔 · 波浪伤害法强倍率",
@@ -531,8 +641,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-shen-shield",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Shen"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "shield_ap_ratio",
           "before": "325/400/500/600%",
           "after": "350/430/550/700%",
           "label": "慎 · 护盾法强倍率",
@@ -541,8 +655,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-warwick-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Warwick"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ad",
           "before": "40",
           "after": "45",
           "label": "沃里克 · 攻击力",
@@ -551,8 +669,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-yunara-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Yunara"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ad_ratio",
           "before": "150/225/335/570%",
           "after": "160/240/370/630%",
           "label": "芸阿娜 · 技能攻击力倍率",
@@ -561,8 +683,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-azir-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Azir"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "soldier_ability_ap_ratio",
           "before": "40/60/96/165%",
           "after": "43/65/103/175%",
           "label": "阿兹尔 · 沙兵技能法强倍率",
@@ -571,8 +697,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-diana-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Diana"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "per_orb_ap_ratio",
           "before": "70/105/170%",
           "after": "75/115/180%",
           "label": "黛安娜 · 每颗法球法强倍率",
@@ -581,8 +711,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-diana-shield",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Diana"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "shield",
           "before": "150/275/400",
           "after": "150/275/500",
           "label": "黛安娜 · 护盾",
@@ -591,8 +725,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-khazix-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_ad",
           "before": "30",
           "after": "40",
           "label": "卡兹克 · 基础攻击力",
@@ -601,8 +739,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-mama-beak-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_CrimsonRaptor18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_ad",
           "before": "50",
           "after": "55",
           "label": "深红锋喙鸟 · 基础攻击力",
@@ -611,8 +753,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-mama-beak-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_CrimsonRaptor18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ad_ratio",
           "before": "20/30/48%",
           "after": "22/33/48%",
           "label": "深红锋喙鸟 · 技能攻击力倍率",
@@ -621,8 +767,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-master-yi-ad",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_MasterYi_AD"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_ad",
           "before": "65",
           "after": "60",
           "label": "易（物理形态）· 基础攻击力",
@@ -631,8 +781,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-master-yi-ap",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_MasterYi_AP"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ap_ratio",
           "before": "140/210/335%",
           "after": "125/190/285%",
           "label": "易（法系形态）· 技能法强倍率",
@@ -641,8 +795,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-rengar-as",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Rengar"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_as",
           "before": "0.8",
           "after": "0.75",
           "label": "雷恩加尔 · 基础攻速",
@@ -651,8 +809,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ahri-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ahri"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_power_ratio",
           "before": "425/640%",
           "after": "455/685%",
           "label": "阿狸 · 技能法强倍率",
@@ -661,8 +823,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ahri-falloff",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ahri"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "damage_falloff_per_hex",
           "before": "20%",
           "after": "21%",
           "label": "阿狸 · 每格伤害衰减",
@@ -671,8 +837,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brambleback-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_ad",
           "before": "115",
           "after": "120",
           "label": "绯红印记树怪 · 基础攻击力",
@@ -681,8 +851,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brambleback-armor",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_armor_ignore",
           "before": "10%",
           "after": "15%",
           "label": "绯红印记树怪 · 基础护甲忽略",
@@ -691,8 +865,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brambleback-leap",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "leap_ad_ratio",
           "before": "170/255%",
           "after": "155/235%",
           "label": "绯红印记树怪 · 跃击攻击力倍率",
@@ -701,8 +879,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ezreal-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ezreal"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "primary_ability_ad_ratio",
           "before": "235/355%",
           "after": "250/375%",
           "label": "伊泽瑞尔 · 主目标技能攻击力倍率",
@@ -711,8 +893,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-sentinel-shield",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Sentinel18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_shield_ap_ratio",
           "before": "400/500%",
           "after": "350/450%",
           "label": "苍蓝雕纹魔像 · 技能护盾法强倍率",
@@ -721,8 +907,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-nidalee-ap",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Nidalee18_AP"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "empowered_attack_ap_ratio",
           "before": "285/425%",
           "after": "300/450%",
           "label": "奈德丽（法系形态）· 强化攻击法强倍率",
@@ -731,8 +921,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-zyra-damage",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Zyra"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ap_ratio",
           "before": "37/55%",
           "after": "35/53%",
           "label": "婕拉 · 技能法强倍率",
@@ -741,8 +935,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ashe-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "arrow_ad_ratio",
           "before": "440/660%",
           "after": "465/700%",
           "label": "艾希 · 箭矢攻击力倍率",
@@ -751,8 +949,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ivern-hexes",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ivern"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "starting_hexes",
           "before": "2",
           "after": "3",
           "label": "艾翁 · 初始格子数量",
@@ -761,8 +963,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ivern-shield",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ivern"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "shield_ap_ratio",
           "before": "165/300%",
           "after": "185/350%",
           "label": "艾翁 · 护盾法强倍率",
@@ -771,8 +977,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ivern-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ivern"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ap_ratio",
           "before": "140/210%",
           "after": "155/235%",
           "label": "艾翁 · 技能法强倍率",
@@ -781,8 +991,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-lux-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Lux18_Base"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ap_ratio",
           "before": "355/550%",
           "after": "375/565%",
           "label": "拉克丝 · 技能法强倍率",
@@ -791,8 +1005,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-maokai-mana",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Maokai"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "mana",
           "before": "40/100",
           "after": "30/90",
           "label": "茂凯 · 法力值",
@@ -801,8 +1019,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-taric-shield-base",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Taric18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "passive_shield_base",
           "before": "175/350",
           "after": "100/225",
           "label": "塔里克 · 被动护盾基础值",
@@ -811,8 +1033,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-taric-shield-hp",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Taric18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "passive_shield_max_health_ratio",
           "before": "10%",
           "after": "15%",
           "label": "塔里克 · 被动护盾最大生命值倍率",
@@ -821,8 +1047,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-taric-heal",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Taric18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "active_heal_ap_ratio",
           "before": "200/300%",
           "after": "250/375%",
           "label": "塔里克 · 主动治疗法强倍率",
@@ -831,8 +1061,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-bloodthirster-trigger",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Bloodthirster"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "trigger_health",
           "before": "40%",
           "after": "50%",
           "label": "饮血剑 · 触发血量",
@@ -841,8 +1075,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-bloodthirster-stats",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Bloodthirster"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ad_ap",
           "before": "15%",
           "after": "18%",
           "label": "饮血剑 · 攻击力 / 法强",
@@ -851,8 +1089,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-bloodthirster-shield",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Bloodthirster"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "max_health_shield",
           "before": "25%",
           "after": "30%",
           "label": "饮血剑 · 最大生命值护盾",
@@ -861,8 +1103,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-edge-of-night",
           "direction": "mixed",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_EdgeOfNight"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "trigger_health_missing_health_healing",
           "before": "60% / 20%",
           "after": "40% / 15%",
           "label": "夜之锋刃 · 触发血量 / 已损失生命治疗比例",
@@ -871,8 +1117,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hand-of-justice-stats",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_HandOfJustice"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_ad_ap",
           "before": "15%",
           "after": "18%",
           "label": "正义之手 · 基础攻击力 / 法强",
@@ -881,8 +1131,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hand-of-justice-vamp",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_HandOfJustice"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_omnivamp",
           "before": "12%",
           "after": "15%",
           "label": "正义之手 · 基础全能吸血",
@@ -891,8 +1145,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-radiant-bloodthirster-trigger",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_BloodthirsterRadiant"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "trigger_health",
           "before": "40%",
           "after": "50%",
           "label": "光明饮血剑 · 触发血量",
@@ -901,8 +1159,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-radiant-bloodthirster-stats",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_BloodthirsterRadiant"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ad_ap",
           "before": "30%",
           "after": "40%",
           "label": "光明饮血剑 · 攻击力 / 法强",
@@ -911,8 +1173,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-radiant-bloodthirster-shield",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_BloodthirsterRadiant"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "max_health_shield",
           "before": "50%",
           "after": "60%",
           "label": "光明饮血剑 · 最大生命值护盾",
@@ -921,8 +1187,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-radiant-edge-trigger",
           "direction": "mixed",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_EdgeOfNightRadiant"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "trigger_health_later_trigger",
           "before": "60%",
           "after": "40%",
           "label": "光明夜之锋刃 · 触发血量（更晚触发）",
@@ -931,8 +1201,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-radiant-hand-vamp",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_HandOfJusticeRadiant"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_omnivamp",
           "before": "24%",
           "after": "30%",
           "label": "光明正义之手 · 基础全能吸血",
@@ -941,8 +1215,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-blighting-jewel",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Artifact_BlightingJewel"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "mr_reduction",
           "before": "4",
           "after": "3",
           "label": "枯萎珠宝 · 魔抗削减",
@@ -951,8 +1229,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-flickerblades",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Artifact_NavoriFlickerblade"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "as_per_attack",
           "before": "5%",
           "after": "4%",
           "label": "烁刃· 每次攻击获得攻速",
@@ -961,8 +1243,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-forbidden-idol",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Artifact_ForbiddenIdol"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "health",
           "before": "400",
           "after": "500",
           "label": "禁忌雕像 · 生命值",
@@ -971,8 +1257,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ludens-tempest",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Artifact_LudensTempest"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "on_kill_flat_damage",
           "before": "100",
           "after": "130",
           "label": "卢登的激荡 · 击杀固定伤害",
@@ -981,8 +1271,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-silvermere-dawn",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Artifact_SilvermereDawn"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ad",
           "before": "125%",
           "after": "150%",
           "label": "银白黎明 · 攻击力",
@@ -991,8 +1285,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-wits-end",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_Artifact_WitsEnd"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "on_hit_damage",
           "before": "30/55/75/95/115",
           "after": "25/45/65/85/100",
           "label": "智慧末刃 · 攻击附带伤害",
@@ -1001,8 +1299,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brawler-emblem",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemBrawler"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "health",
           "before": "250",
           "after": "150",
           "label": "斗士纹章 · 生命值",
@@ -1011,8 +1313,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-fae-emblem-health",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemFae"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "health",
           "before": "250",
           "after": "200",
           "label": "花仙子纹章 · 生命值",
@@ -1021,8 +1327,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-fae-emblem-stats",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemFae"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ad_ap",
           "before": "15%",
           "after": "10%",
           "label": "花仙子纹章 · 攻击力 / 法强",
@@ -1031,8 +1341,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hunter-emblem",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemHunter"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_ad",
           "before": "30%",
           "after": "25%",
           "label": "猎人纹章 · 基础攻击力",
@@ -1041,8 +1355,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-invoker-emblem",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemInvoker"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ap_per_mana_spent",
           "before": "10%",
           "after": "8%",
           "label": "神谕纹章 · 消耗法力获得法强",
@@ -1051,8 +1369,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-juggernaut-emblem",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemJuggernaut"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "health",
           "before": "350",
           "after": "250",
           "label": "主宰纹章 · 生命值",
@@ -1061,8 +1383,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-primal-emblem",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemPrimal"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "as",
           "before": "25%",
           "after": "35%",
           "label": "野兽之灵纹章 · 攻速",
@@ -1071,8 +1397,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-sprykin-emblem-as",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemSprykin"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "rider_bonus_as",
           "before": "30%",
           "after": "20%",
           "label": "约德尔人纹章 · 骑乘者额外攻速",
@@ -1081,8 +1411,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-sprykin-emblem-resists",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemSprykin"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "base_resists",
           "before": "20",
           "after": "15",
           "label": "约德尔人纹章 · 基础双抗",
@@ -1091,8 +1425,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-sprykin-emblem-rider",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemSprykin"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "additional_rider_resists",
           "before": "20",
           "after": "15",
           "label": "约德尔人纹章 · 骑乘者额外双抗",
@@ -1101,8 +1439,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-vanguard-emblem",
           "direction": "nerf",
-          "entityApiNames": [],
+          "entityType": "item",
+          "entityApiNames": [
+            "DA_18_EmblemVanguard"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "armor_mr",
           "before": "30",
           "after": "25",
           "label": "重装战士纹章 · 双抗",
@@ -1111,8 +1453,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-barons-lair",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "stats",
           "before": "5%",
           "after": "4%",
           "label": "男爵巢穴（Baron's Lair）· 属性加成",
@@ -1121,8 +1465,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-capital-gains",
           "direction": "buff",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "starting_gold",
           "before": "2",
           "after": "3",
           "label": "资本利得 II · 初始金币",
@@ -1131,8 +1477,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-cursed-crown",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "durability",
           "before": "4%",
           "after": "0%",
           "label": "诅咒冠冕 · 伤害减免",
@@ -1141,8 +1489,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-consuming-flora",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "emblem_trait_effectiveness",
           "before": "200%",
           "after": "150%",
           "label": "Consuming Flora · 纹章羁绊效果",
@@ -1151,8 +1501,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-dark-ritual",
           "direction": "buff",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "ap_at_seven_cashout_tiers",
           "before": "5/12/40/60/100/175/250",
           "after": "7/15/50/75/125/200/300",
           "label": "黑暗仪式（Dark Ritual）· 七档收菜法强",
@@ -1161,8 +1513,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-dummify",
           "direction": "buff",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "hp_per_round",
           "before": "1000",
           "after": "1150",
           "label": "Dummify · 每回合生命值",
@@ -1171,8 +1525,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-gold-destiny",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "gold",
           "before": "6",
           "after": "5",
           "label": "黄金命运+ · 金币",
@@ -1181,8 +1537,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-golden-dragon",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "durability",
           "before": "20%",
           "after": "15%",
           "label": "Golden Dragon · 伤害减免",
@@ -1191,8 +1549,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hold-line-ap",
           "direction": "buff",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "ap",
           "before": "9%",
           "after": "10%",
           "label": "Hold The Line · 法强",
@@ -1201,8 +1561,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hold-line-ad",
           "direction": "buff",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "ad",
           "before": "8%",
           "after": "9%",
           "label": "Hold The Line · 攻击力",
@@ -1211,8 +1573,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-investment-strategy",
           "direction": "buff",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "hp",
           "before": "9",
           "after": "10",
           "label": "投资策略 II · 生命值",
@@ -1221,8 +1585,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-prismatic-destiny",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "gold",
           "before": "10",
           "after": "7",
           "label": "棱彩命运+ · 金币",
@@ -1231,8 +1597,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-shimmerscale-essence",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "delayed_rounds",
           "before": "7",
           "after": "8",
           "label": "Shimmerscale Essence · 等待回合",
@@ -1241,8 +1609,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-unrivaled-mana",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "mana_from_kha_zix_to_rengar",
           "before": "70%",
           "after": "50%",
           "label": "无与伦比 · 卡兹克给予雷恩加尔的法力",
@@ -1251,8 +1621,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-unrivaled-heal",
           "direction": "nerf",
+          "entityType": "augment",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "healing_from_rengar_to_kha_zix",
           "before": "50%",
           "after": "25%",
           "label": "无与伦比 · 雷恩加尔给予卡兹克的治疗",
@@ -1261,8 +1633,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-barrier",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "光盾（Barrier）· 价格",
@@ -1271,8 +1645,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-backrow-star",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "1g",
           "label": "后排巨星（Backrow Star）· 价格",
@@ -1281,8 +1657,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-bunch-o-belts",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g",
           "after": "1g",
           "label": "腰带多多（Bunch-o-Belts）· 价格",
@@ -1291,8 +1669,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-combust-cost",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "3g",
           "label": "爆发四散（Combust）· 价格",
@@ -1301,8 +1681,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-combust-damage",
           "direction": "nerf",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "max_health_damage",
           "before": "15%",
           "after": "12%",
           "label": "爆发四散（Combust）· 最大生命值伤害",
@@ -1311,8 +1693,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-downpour",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "倾盆大雨（Downpour）· 价格",
@@ -1321,8 +1705,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-infliction",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "6g",
           "after": "4g",
           "label": "施加痛苦（Infliction）· 价格",
@@ -1331,8 +1717,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-ironwood",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "铁木（Ironwood）· 价格",
@@ -1341,8 +1729,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-late-bloomer",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "6g",
           "after": "4g",
           "label": "大器晚成（Late Bloomer）· 价格",
@@ -1351,8 +1741,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-lightning-storm",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "3g",
           "label": "闪电风暴（Lightning Storm）· 价格",
@@ -1361,8 +1753,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-lightning-strike",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g",
           "after": "1g",
           "label": "天降雷霆（Lightning Strike）· 价格",
@@ -1371,8 +1765,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-blaze",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "3g",
           "label": "烈焰（Blaze）· 价格",
@@ -1381,8 +1777,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-fellowship",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "团契（Fellowship）· 价格",
@@ -1391,8 +1789,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-giants-aura",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "3g",
           "label": "巨人灵气（Giant's Aura）· 价格",
@@ -1401,8 +1801,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-heros-entrance",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "2g",
           "label": "英灵之门（Hero's Entrance）· 价格",
@@ -1411,8 +1813,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-hireling",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "2g",
           "label": "佣兵（Hireling）· 价格",
@@ -1421,8 +1825,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-iron-core",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g",
           "after": "1g",
           "label": "铁核心（Iron Core）· 价格",
@@ -1431,8 +1837,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-killing-frenzy",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "杀戮狂热（Killing Frenzy）· 价格",
@@ -1441,8 +1849,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-killers-regret",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g",
           "after": "1g",
           "label": "杀手的悔恨（Killer's Regret）· 价格",
@@ -1451,8 +1861,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-mana-rich-soil",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "法力土壤（Mana-Rich Soil）· 价格",
@@ -1461,8 +1873,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-petrify-shields",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g",
           "after": "1g",
           "label": "石化护盾（Petrify Shields）· 价格",
@@ -1471,8 +1885,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-potted-stonebark",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g/1g",
           "after": "1g/0g",
           "label": "石皮树盆栽（Potted Stonebark）· 价格",
@@ -1481,8 +1897,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-potted-lifebloom",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g/1g",
           "after": "1g/0g",
           "label": "生命花盆栽（Potted Lifebloom）· 价格",
@@ -1491,8 +1909,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-phantom-emblem",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "鬼魅纹章（Phantom Emblem）· 价格",
@@ -1501,8 +1921,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-radiantize",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "光芒万丈（Radiantize）· 价格",
@@ -1511,8 +1933,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-revenge",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "复仇（Revenge）· 价格",
@@ -1521,8 +1945,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-solitudes-cloak",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "孤寂斗篷（Solitude's Cloak）· 价格",
@@ -1531,8 +1957,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-stand-alone",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "一夫当关（Stand Alone）· 价格",
@@ -1541,8 +1969,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-supercritical",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "超级暴击（Supercritical）· 价格",
@@ -1551,8 +1981,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-treetop-archers",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "3g",
           "label": "树梢射手（Treetop Archers）· 价格",
@@ -1561,8 +1993,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-tremors",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "地动山摇（Tremors）· 价格",
@@ -1571,8 +2005,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-yordle-spirit",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "约德尔之魂（Yordle Spirit）· 价格",
@@ -1581,8 +2017,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-cutpurse-cost",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "窃贼（Cutpurse）· 价格",
@@ -1591,8 +2029,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-cutpurse-chance",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "gold_chance",
           "before": "15%",
           "after": "20%",
           "label": "窃贼（Cutpurse）· 金币概率",
@@ -1601,8 +2041,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-good-loss",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "5g",
           "after": "4g",
           "label": "策略性损失（Good Loss）· 价格",
@@ -1611,8 +2053,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-payday",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "发薪日（Payday）· 价格",
@@ -1621,8 +2065,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-slow-study",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "2g",
           "label": "慢速学习（Slow Study）· 价格",
@@ -1631,8 +2077,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-all-fives",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "10g",
           "after": "8g",
           "label": "全是五费（All Fives）· 价格",
@@ -1641,8 +2089,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-all-fours",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "全是四费（All Fours）· 价格",
@@ -1651,8 +2101,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-border-village",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "6g/4g",
           "after": "3g/2g",
           "label": "边境村庄（Border Village）· 价格",
@@ -1661,8 +2113,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-flash-fire",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "2g",
           "after": "1g",
           "label": "闪光火焰（Flash Fire）· 价格",
@@ -1671,8 +2125,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-middle-path",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "6g/4g",
           "after": "4g/3g",
           "label": "中路（Middle Path）· 价格",
@@ -1681,8 +2137,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-roly-polys",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "4g",
           "after": "3g",
           "label": "不倒翁（Roly-Polys）· 价格",
@@ -1691,8 +2149,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-search-party",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g/1g",
           "after": "1g/0g",
           "label": "搜索队（Search Party）· 价格",
@@ -1701,8 +2161,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-starting-town",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g/2g",
           "after": "2g/1g",
           "label": "起始城镇（Starting Town）· 价格",
@@ -1711,8 +2173,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-potioncraft",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "3g",
           "after": "2g",
           "label": "药水制作（Potioncraft）· 价格",
@@ -1721,8 +2185,10 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-smurfing",
           "direction": "buff",
+          "entityType": "system",
           "entityApiNames": [],
           "relatedTraitApiNames": [],
+          "stat": "cost",
           "before": "7g/6g",
           "after": "6g/5g",
           "label": "开小号（Smurfing）· 价格",
@@ -1731,8 +2197,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brambleback-three-armor",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "armor_ignore",
           "before": "10 + 50% AP",
           "after": "10 + 70% AP",
           "label": "三星绯红印记树怪 · 护甲忽略",
@@ -1741,8 +2211,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brambleback-three-leap",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "leap_ad_ratio",
           "before": "600%",
           "after": "1000%",
           "label": "三星绯红印记树怪 · 跃击攻击力倍率",
@@ -1751,8 +2225,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-brambleback-three-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "bonus_ability_ad",
           "before": "280%",
           "after": "300%",
           "label": "三星绯红印记树怪 · 技能额外攻击力",
@@ -1761,8 +2239,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-nidalee-three-ad",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_NidaleeCougar18_AD"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "ability_ad_ratio",
           "before": "2500%",
           "after": "3000%",
           "label": "三星奈德丽（物理形态）· 技能攻击力倍率",
@@ -1771,8 +2253,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-gnar-three-rage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_GnarSmall"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "rage_per_attack",
           "before": "5",
           "after": "20",
           "label": "三星纳尔 · 每次攻击获得怒气",
@@ -1781,8 +2267,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-gnar-three-resists",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_GnarSmall"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "resist_reduction",
           "before": "100",
           "after": "250",
           "label": "三星纳尔 · 双抗削减",
@@ -1791,8 +2281,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-gnar-three-health",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_GnarSmall"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "bonus_health",
           "before": "10000",
           "after": "15000",
           "label": "三星纳尔 · 额外生命值",
@@ -1801,8 +2295,12 @@ module.exports = {
         {
           "id": "18.2-release-2026-09-09-lux-three-damage",
           "direction": "buff",
-          "entityApiNames": [],
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Lux18_Base"
+          ],
           "relatedTraitApiNames": [],
+          "stat": "laser_ap_ratio",
           "before": "5000%",
           "after": "6500%",
           "label": "三星拉克丝 · 激光法强倍率",
