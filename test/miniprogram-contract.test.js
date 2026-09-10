@@ -75,11 +75,13 @@ test("mini program patch notes use the numeric-only traceable chain", () => {
   const view = buildResultView({ type: "patch_notes", ...patch });
   assert.equal(patch.version, "18.2");
   assert.equal(patch.updatedAt, "2026-09-09");
-  assert.equal(patch.history.length, 1);
+  assert.equal(patch.history.length, 2);
   assert.equal(patch.history.every((revision, index) => index === 0 || revision.parentId === patch.history[index - 1].id), true);
-  assert.equal(patch.history[0].changes.length, 157);
+  assert.equal(patch.history[0].changes.length, 15);
   assert.equal(view.cards[0].id, "18.2-release-2026-09-09");
-  assert.match(view.cards[0].subtitle, /起始节点/u);
+  assert.match(view.cards[0].subtitle, /18\.1-balance-2026-08-31/u);
+  assert.equal(view.cards[1].id, "18.1-balance-2026-08-31");
+  assert.match(view.cards[1].description, /增强｜阿木木/u);
   assert.match(view.cards[0].description, /增强｜阿狸/u);
   assert.match(view.cards[0].description, /削弱｜阿狸/u);
 });

@@ -1,12 +1,13 @@
 import { createRequire } from "node:module";
 import { createSeasonContextService } from "../src/season/season-context.js";
+import vm from "node:vm";
 import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
 
-import { getCurrentPatchNote, getPatchNote } from "../src/app/small-window-ui/patch-notes.js";
+import { getCurrentPatchNote, getPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const ui = (name) => fs.readFileSync(path.join(here, "../src/app/small-window-ui", name), "utf8");
@@ -70,7 +71,7 @@ test("18.2 is reachable from the active season and matches the mini program", ()
   const changes = patch.history.flatMap((revision) => revision.groups.flatMap((group) => group.changes));
   assert.equal(changes.length, 157);
   assert.equal(new Set(changes.map((change) => change.id)).size, changes.length);
-  assert.deepEqual(mini.history.flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
+  assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.2-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
   assert.equal(mini.sourceUrl, patch.sourceUrl);
   const en = getCurrentPatchNote("en-US");
   assert.deepEqual(en.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).map(({ body, ...change }) => change), changes.map(({ body, ...change }) => change));
@@ -89,4 +90,26 @@ test("18.2 distinguishes mixed tuning and excludes tooltip-only buffs", () => {
   assert.equal(find("combust-damage").direction, "nerf");
   assert.equal(changes.some((change) => /veigar/iu.test(change.id)), false);
   assert.match(ui("app.js"), /mixed: "patchNotesMixed"/u);
+});
+
+test("announcement timeline preserves 18.1 with its own values, anchors, and source", () => {
+  const messages = vm.runInNewContext(`${ui("i18n.js").replaceAll("export ", "")}\nmessages`, {
+    localStorage: { getItem: () => null }
+  });
+  for (const locale of ["zh-CN", "en-US"]) {
+    const timeline = getPatchNoteTimeline("18.2", locale);
+    const old = getPatchNote("18.1", locale).history;
+    assert.deepEqual(timeline.history.slice(0, old.length), old);
+    assert.equal(timeline.history.at(-1).parentId, old.at(-1).id);
+    assert.equal(timeline.history.at(-1).sourceUrl.endsWith("teamfight-tactics-patch-18-2/"), true);
+    assert.equal(timeline.history[0].sourceUrl.endsWith("teamfight-tactics-patch-18-1/"), true);
+    assert.equal(timeline.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).length, 172);
+    assert.deepEqual(getPatchNoteTimeline("18.1", locale).history, old);
+    assert.equal(getPatchNote("18.2", locale).history.length, 1);
+    for (const key of ["patchNotesRelease", "patchNotesBalance", "patchNotesHotfix", "patchNotesMixed"]) {
+      assert.ok(messages[locale][key], `${locale}: missing ${key}`);
+    }
+  }
+  assert.equal(getPatchNoteTimeline("99.1"), null);
+  assert.match(ui("app.js"), /getPatchNoteTimeline\(version, getLocale\(\)\)/u);
 });

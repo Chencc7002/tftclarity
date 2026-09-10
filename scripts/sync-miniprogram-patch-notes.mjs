@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync, writeFileSync } from "node:fs";
-import { getCurrentPatchNote } from "../src/app/small-window-ui/patch-notes.js";
+import { getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
 
-const patch = getCurrentPatchNote("zh-CN");
+const patch = getPatchNoteTimeline(undefined, "zh-CN");
 const labels = { buff: "增强", nerf: "削弱", mixed: "调整" };
 const result = {
   ...patch,

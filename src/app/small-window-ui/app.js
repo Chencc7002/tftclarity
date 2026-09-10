@@ -10,7 +10,7 @@ import { createVoiceInput } from "./voice-input.js";
 import { createExperienceGuidance } from "./experience-guidance.js";
 import { bindExperienceGuidance } from "./experience-guidance-ui.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
-import { CURRENT_PATCH_VERSION, getPatchNote } from "./patch-notes.js";
+import { CURRENT_PATCH_VERSION, getPatchNoteTimeline } from "./patch-notes.js";
 import {
   cancelOpggRequests,
   renderOpggTrends,
@@ -2693,7 +2693,7 @@ function patchHistoryHtml(patch) {
 
 function renderPatchNote(track = true) {
   const version = state.seasonContext?.theme?.patchNoteVersion ?? CURRENT_PATCH_VERSION;
-  const patch = getPatchNote(version, getLocale());
+  const patch = getPatchNoteTimeline(version, getLocale());
   if (track) state.resultView = { type: "patch-note" };
   if (!patch) {
     resultTitleEl.textContent = t("patchNotesUnavailable");

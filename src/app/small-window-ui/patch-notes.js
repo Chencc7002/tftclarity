@@ -290,3 +290,25 @@ export function getPatchNote(version, locale = "zh-CN") {
 export function getCurrentPatchNote(locale = "zh-CN") {
   return getPatchNote(CURRENT_PATCH_VERSION, locale);
 }
+
+// The announcement view keeps the season's earlier numeric revisions visible.
+// Single-patch callers continue to use getPatchNote without inherited history.
+export function getPatchNoteTimeline(version = CURRENT_PATCH_VERSION, locale = "zh-CN") {
+  const current = getPatchNote(version, locale);
+  if (!current) return null;
+  const [season, minor] = current.version.split(".").map(Number);
+  const history = Object.keys(PATCH_NOTES)
+    .filter((candidate) => {
+      const [candidateSeason, candidateMinor] = candidate.split(".").map(Number);
+      return candidateSeason === season && candidateMinor <= minor;
+    })
+    .sort((a, b) => Number(a.split(".")[1]) - Number(b.split(".")[1]))
+    .flatMap((candidate) => getPatchNote(candidate, locale).history);
+  return {
+    ...current,
+    history: history.map((revision, index) => ({
+      ...revision,
+      parentId: history[index - 1]?.id ?? null
+    }))
+  };
+}

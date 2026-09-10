@@ -5,8 +5,232 @@ module.exports = {
   "updatedAt": "2026-09-09",
   "history": [
     {
-      "id": "18.2-release-2026-09-09",
+      "id": "18.1-balance-2026-08-31",
       "parentId": null,
+      "kind": "平衡调整",
+      "publishedAt": "2026-08-31",
+      "title": "热补丁平衡调整",
+      "summary": "压低裂隙野兽与强势重抽核心，同时增强阿木木、索拉卡、德莱文、远古巨龙等弱势选择。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-1/",
+      "changes": [
+        {
+          "id": "18.1-balance-2026-08-31-riftbeast-seven-stats",
+          "direction": "nerf",
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_Riftbeast18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ad_ap_attack_speed_bonus",
+          "before": "6%",
+          "after": "5%",
+          "label": "7 裂隙野兽 · 攻击力 / 法强 / 攻速加成",
+          "text": "削弱｜7 裂隙野兽 · 攻击力 / 法强 / 攻速加成：6% → 5%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-cinderling-base-ad",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Cinderling18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "base_attack_damage",
+          "before": "45",
+          "after": "40",
+          "label": "绯红树怪 · 基础攻击力",
+          "text": "削弱｜绯红树怪 · 基础攻击力：45 → 40"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-cinderling-ability-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Cinderling18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_attack_damage_ratio",
+          "before": "340/510/765/1300%",
+          "after": "310/465/700/1200%",
+          "label": "绯红树怪 · 技能攻击力倍率",
+          "text": "削弱｜绯红树怪 · 技能攻击力倍率：340/510/765/1300% → 310/465/700/1200%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-cassiopeia-ability-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Cassiopeia"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_power_ratio",
+          "before": "440/660/1050%",
+          "after": "400/600/950%",
+          "label": "卡西奥佩娅 · 技能法强倍率",
+          "text": "削弱｜卡西奥佩娅 · 技能法强倍率：440/660/1050% → 400/600/950%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-master-yi-resists",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_MasterYi_AD"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "armor_and_magic_resist",
+          "before": "60",
+          "after": "55",
+          "label": "易 · 护甲与魔抗",
+          "text": "削弱｜易 · 护甲与魔抗：60 → 55"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-ahri-ability-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ahri"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_power_ratio",
+          "before": "450/675%",
+          "after": "425/640%",
+          "label": "阿狸 · 技能法强倍率",
+          "text": "削弱｜阿狸 · 技能法强倍率：450/675% → 425/640%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-amumu-mana",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Amumu18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "mana",
+          "before": "30/140",
+          "after": "30/125",
+          "label": "阿木木 · 法力值",
+          "text": "增强｜阿木木 · 法力值：30/140 → 30/125"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-amumu-heal",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Amumu18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "max_health_healing",
+          "before": "2.2%",
+          "after": "2.5%",
+          "label": "阿木木 · 最大生命值治疗",
+          "text": "增强｜阿木木 · 最大生命值治疗：2.2% → 2.5%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-morgana-mana",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Morgana"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "mana",
+          "before": "0/60",
+          "after": "0/65",
+          "label": "莫甘娜 · 法力值",
+          "text": "削弱｜莫甘娜 · 法力值：0/60 → 0/65"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-soraka-initial-star-damage",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Soraka"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "initial_star_ability_power_ratio",
+          "before": "190/285%",
+          "after": "225/335%",
+          "label": "索拉卡 · 初始星体法强倍率",
+          "text": "增强｜索拉卡 · 初始星体法强倍率：190/285% → 225/335%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-draven-mana",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "mana",
+          "before": "0/120",
+          "after": "0/110",
+          "label": "德莱文 · 法力值",
+          "text": "增强｜德莱文 · 法力值：0/120 → 0/110"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-draven-attack-speed",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "base_attack_speed",
+          "before": "0.8",
+          "after": "0.85",
+          "label": "德莱文 · 基础攻速",
+          "text": "增强｜德莱文 · 基础攻速：0.8 → 0.85"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-elder-dragon-base-ad",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_ElderDragon"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "base_attack_damage",
+          "before": "115",
+          "after": "125",
+          "label": "远古巨龙 · 基础攻击力",
+          "text": "增强｜远古巨龙 · 基础攻击力：115 → 125"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-lux-ability-damage",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Lux18_Base"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_power_ratio",
+          "before": "330/520%",
+          "after": "355/550%",
+          "label": "拉克丝 · 技能法强倍率",
+          "text": "增强｜拉克丝 · 技能法强倍率：330/520% → 355/550%"
+        },
+        {
+          "id": "18.1-balance-2026-08-31-lux-lunar-amp",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Lux18_Base"
+          ],
+          "relatedTraitApiNames": [
+            "DA_18_Lunar"
+          ],
+          "stat": "lunar_damage_amplification",
+          "before": "10%",
+          "after": "8%",
+          "label": "拉克丝 · 月相伤害增幅",
+          "text": "削弱｜拉克丝 · 月相伤害增幅：10% → 8%"
+        }
+      ]
+    },
+    {
+      "id": "18.2-release-2026-09-09",
+      "parentId": "18.1-balance-2026-08-31",
       "kind": "正式版本",
       "publishedAt": "2026-09-09",
       "title": "18.2 正式版本数值调整",
