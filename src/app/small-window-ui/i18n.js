@@ -3,6 +3,7 @@ export const LOCALE_STORAGE_KEY = "tftagent.locale";
 
 export const messages = {
   "zh-CN": {
+    emblemCommonBuild: "常见装备搭配（含该转职）", emblemBuildSamples: "搭配样本", emblemNoBuild: "暂无完整三件套搭配数据",
     quickTaskEmblemsTitle: "转职强度查询", quickTaskEmblemsBody: "查看可合成转职排行与常见携带英雄", quickTaskEmblemsExample: "拿到金铲铲或金锅锅，先看看合哪个转职", quickTaskEmblemsPrompt: "查询可合成转职强度排行",
     emblemEyebrow: "锅铲合成参考", emblemIntro: "先看转职表现，再选合成方向。展开卡片查看常见携带英雄。", emblemRecipeFilter: "合成材料筛选",
     emblemBase_craftable: "可合成", emblemBase_spatula: "金铲铲", emblemBase_pan: "金锅锅", emblemBase_all: "全部转职",
@@ -211,6 +212,7 @@ export const messages = {
     conclusionStreaming: "AI 正在结合数据生成结论…", backToChat: "返回对话"
   },
   "en-US": {
+    emblemCommonBuild: "Common build (with this emblem)", emblemBuildSamples: "Build games", emblemNoBuild: "No complete three-item build data available",
     quickTaskEmblemsTitle: "Emblem rankings", quickTaskEmblemsBody: "Craftable emblem stats and common carriers", quickTaskEmblemsExample: "Have a Spatula or Frying Pan? Compare your options", quickTaskEmblemsPrompt: "Show craftable emblem rankings",
     emblemEyebrow: "CRAFTING GUIDE", emblemIntro: "Compare emblem performance, then choose a recipe. Expand a card to see common carriers.", emblemRecipeFilter: "Recipe filter",
     emblemBase_craftable: "Craftable", emblemBase_spatula: "Spatula", emblemBase_pan: "Frying Pan", emblemBase_all: "All emblems",

@@ -5611,8 +5611,19 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         : `已找到 ${craftableCount} 个可合成转职，可在结果区按金铲铲或金锅锅筛选，展开查看常见携带英雄。`
       : displayLocale === "en-US" ? `Found ${payload.carriers?.length ?? 0} common carriers.` : `已找到 ${payload.carriers?.length ?? 0} 个常见携带英雄。`;
     payload.answer = { summary: payload.text };
+    const carrierItemDetails = payload.carriers?.length ? await loadOfficialItemDetails(requestRuntime) : null;
     for (const carrier of payload.carriers ?? []) {
-      carrier.unit.iconUrl = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName).iconUrl;
+      const unitAsset = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName);
+      carrier.unit.iconUrl = unitAsset.iconUrl;
+      carrier.unit.fallbackIconUrl = unitAsset.fallbackIconUrl ?? null;
+      for (const build of carrier.builds ?? []) {
+        build.displayItems = build.items.map(apiName => ({ apiName,
+          name: carrierItemDetails?.get(apiName)?.name ?? itemName(apiName, catalog),
+          enName: catalog.itemByApiName.get(apiName)?.enName,
+          iconUrl: carrierItemDetails?.get(apiName)?.iconUrl ?? ASSET_RESOLVER.resolveItem(apiName).iconUrl,
+          fallbackIconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl,
+          locked: apiName === payload.item }));
+      }
     }
     payload.source.updatedAt = payload.updatedAt;
     payload.meta = { deterministic: true, llmUsed: false, durationMs: Date.now() - startedAt, preferences };

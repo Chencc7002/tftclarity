@@ -1129,7 +1129,7 @@ function metric(label, value) {
 function itemPill(item) {
   const label = localizedName(item, t("item"));
   return `<span class="item${item.locked ? " locked" : ""}${item.compared ? " compared" : ""}" title="${escapeHtml(label)}">
-    ${assetThumb(item.iconUrl, label, "item-icon")}
+    ${assetThumb(item.iconUrl, label, "item-icon", item.fallbackIconUrl)}
     <span class="item-label">${escapeHtml(label)}</span>
   </span>`;
 }
@@ -1138,10 +1138,22 @@ function assetThumb(iconUrl, label, className = "", fallbackIconUrl = null) {
   const text = String(label ?? "?").trim();
   const fallback = text.slice(0, 1) || "?";
   const image = iconUrl
-    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"${fallbackIconUrl ? ` data-fallback-src="${escapeHtml(fallbackIconUrl)}"` : ""} onerror="if(this.dataset.fallbackSrc){this.src=this.dataset.fallbackSrc;this.dataset.fallbackSrc=''}else{this.hidden=true}">`
+    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"${fallbackIconUrl ? ` data-fallback-src="${escapeHtml(fallbackIconUrl)}"` : ""}>`
     : "";
   return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${escapeHtml(fallback)}</span>${image}</span>`;
 }
+
+// Image errors do not bubble. Capture also covers thumbnails inserted lazily,
+// without inline handlers that the production script-src policy blocks.
+function handleAssetError(event) {
+  const img = event.target;
+  if (img?.tagName !== "IMG" || !img.closest(".asset-thumb")) return;
+  const fallback = img.dataset.fallbackSrc;
+  delete img.dataset.fallbackSrc;
+  if (fallback && fallback !== img.getAttribute("src")) img.src = fallback;
+  else img.hidden = true;
+}
+document.addEventListener("error", handleAssetError, true);
 
 function hasNumericValue(value) {
   return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));

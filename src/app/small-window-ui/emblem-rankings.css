@@ -20,7 +20,14 @@
 .emblem-card summary { padding: 12px 0; cursor: pointer; font-size: 12px; font-weight: 600; }
 .emblem-card summary span { font-size: 10px; font-weight: 400; color: var(--text-muted, #73776f); margin-left: 10px; }
 [data-emblem-carrier-content] { padding: 2px 0 14px; font-size: 12px; }
-.emblem-carrier { display: flex; align-items: center; gap: 10px; padding: 8px 0; }
+.emblem-carrier { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; }
+.emblem-carrier + .emblem-carrier { border-top: 1px solid var(--border, #e8ebe4); }
+.emblem-carrier-info { flex: 1; min-width: 0; }
+.emblem-carrier-builds { margin-top: 10px; }
+.emblem-build-label { font-size: 10px; color: var(--text-muted, #73776f); }
+.emblem-build-items { display: flex; flex-wrap: wrap; gap: 5px; margin-top: 6px; }
+.emblem-build-items .item { max-width: 100%; font-size: 11px; }
+.emblem-build-items .item-label { overflow-wrap: anywhere; }
 .emblem-carrier small { display: block; margin-top: 4px; color: var(--text-muted, #73776f); }
 .emblem-source { display: flex; flex-wrap: wrap; gap: 8px 14px; font-size: 10px; color: var(--text-muted, #73776f); padding: 16px 0; }
 .emblem-source a { color: inherit; }

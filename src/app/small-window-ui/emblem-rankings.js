@@ -15,10 +15,17 @@ export function mountEmblemRankings({ root, data, t, escapeHtml: escape, itemPil
   const percent = value => `${(value * 100).toFixed(1)}%`;
   const number = value => Number(value).toLocaleString();
   const metric = (label, value) => `<div class="stat"><b>${escape(label)}</b><span>${escape(value)}</span></div>`;
+  function buildsHtml(carrier, emblem) {
+    const builds = (carrier.builds ?? []).filter(build => build.items?.length === 3
+      && build.items.includes(emblem) && build.displayItems?.length === 3);
+    return `<div class="emblem-carrier-builds"><span class="emblem-build-label">${escape(t("emblemCommonBuild"))}</span>${builds.length
+      ? builds.map(build => `<div class="emblem-carrier-build"><div class="emblem-build-items">${build.displayItems.map(itemPill).join("")}</div><small>${escape(t("emblemBuildSamples"))} ${number(build.stats.games)} · ${escape(t("avg"))} ${build.stats.avgPlacement.toFixed(2)}</small></div>`).join("")
+      : `<small>${escape(t("emblemNoBuild"))}</small>`}</div>`;
+  }
   function carrierHtml(value) {
     return value.carriers?.length ? value.carriers.map(carrier => `<div class="emblem-carrier">
-      ${assetThumb(carrier.unit?.iconUrl, localizedName(carrier.unit, carrier.unitApiName), "equipment-unit-icon")}
-      <div><strong>${escape(localizedName(carrier.unit, carrier.unitApiName))}</strong><small>${escape(t("samples"))} ${number(carrier.stats.games)} · ${escape(t("avg"))} ${carrier.stats.avgPlacement.toFixed(2)}</small></div>
+      ${assetThumb(carrier.unit?.iconUrl, localizedName(carrier.unit, carrier.unitApiName), "equipment-unit-icon", carrier.unit?.fallbackIconUrl)}
+      <div class="emblem-carrier-info"><strong>${escape(localizedName(carrier.unit, carrier.unitApiName))}</strong><small>${escape(t("samples"))} ${number(carrier.stats.games)} · ${escape(t("avg"))} ${carrier.stats.avgPlacement.toFixed(2)}</small>${buildsHtml(carrier, value.item)}</div>
     </div>`).join("") : `<p class="detail-muted">${escape(t("emblemNoCarriers"))}</p>`;
   }
   function render() {

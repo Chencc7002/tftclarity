@@ -109,3 +109,25 @@ test("carrier shortcut rejects regular equipment and unexpected arguments before
   assert.equal((await request({ item: A, url: "https://example.com" })).statusCode, 400);
   assert.equal(calls, 0);
 });
+
+test("carrier shortcut decorates existing emblem builds without changing their evidence or querying more builds", async () => {
+  const items = [A, "DA_EdgeOfNight", "DA_GuinsoosRageblade"];
+  let calls = 0;
+  const runtime = createSmallWindowRuntime({ catalog, cacheStore: new MemoryCacheStore(), fetchItems: false,
+    officialItemDetails: details, fetchOfficialItemDetails: async () => details,
+    metaTFTClient: { getItemCarrierBuilds: async () => { calls++; return { data: [
+      { unit_builds: `${UNIT}&${items.join("|")}`, placement_count: [20, 30, 40, 50, 40, 30, 20, 10] }
+    ] }; } }, compsClient: { getUnitItemsProcessed: async () => ({ units: { [UNIT]: { avg: 4.5 } } }) } });
+  const { statusCode, payload } = await handleRecommendRequest({ input: "常见携带英雄",
+    preferences: { conclusionMode: "off" }, quickTask: { schemaVersion: "quick-task.v1", requestId: "carrier-build-display",
+      id: "emblem-carriers", operation: "emblem_carriers", arguments: { item: A } } }, runtime);
+  assert.equal(statusCode, 200);
+  assert.equal(calls, 1);
+  const build = payload.carriers[0].builds[0];
+  assert.deepEqual(build.items, items);
+  assert.deepEqual(build.displayItems.map(item => item.apiName), items);
+  assert.equal(build.displayItems[0].name, "斗士纹章");
+  assert.equal(build.displayItems[0].locked, true);
+  assert.ok(build.displayItems.every(item => item.iconUrl?.startsWith("https://")));
+  assert.equal(build.stats.games, 240);
+});
