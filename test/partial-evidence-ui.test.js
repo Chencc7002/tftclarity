@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { runInNewContext } from "node:vm";
 import { conclusionDisplayText, conclusionRichTextHtml } from "../src/app/small-window-ui/conclusion-rich-text.js";
+import { denseEquipmentAnswer } from "./fixtures/dense-equipment-answer.js";
 
 // Exercise the actual card renderer without bootstrapping networked app state.
 const app = readFileSync(new URL("../src/app/small-window-ui/app.js", import.meta.url), "utf8");
@@ -33,4 +34,14 @@ test("empty model original falls back to available body and source HTML is escap
   const html = render({ ...data, modelConclusion: { answer: '<img src=x onerror="alert(1)">' } }, "");
   assert.match(html, /&lt;img/u);
   assert.doesNotMatch(html, /<img/u);
+});
+
+test("the actual ReAct card formats dense post-confirmation equipment answers", () => {
+  for (const payload of [{ reactAnswer: denseEquipmentAnswer }, { modelConclusion: { answer: denseEquipmentAnswer } }]) {
+    const html = render(payload, "");
+    assert.equal((html.match(/<h3 /gu) ?? []).length, 3);
+    assert.equal((html.match(/<li>/gu) ?? []).length, 3);
+    assert.equal((html.match(/2103场/gu) ?? []).length, 1);
+    assert.doesNotMatch(html, /assistant-rich-text__summary|<header>/u);
+  }
 });
