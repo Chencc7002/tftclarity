@@ -68,7 +68,7 @@ export function buildOfficialPatchKnowledgeDocuments(options = {}) {
           sourceTitle: patch.title ?? `Teamfight Tactics patch ${patch.version}`,
           author: "Riot Games",
           publishedAt: patch.publishedAt,
-          generatedAt: patch.publishedAt,
+          generatedAt: facts.updatedAt ?? patch.publishedAt,
           season: seasonContextId,
           patch: patch.version,
           locale,
@@ -87,7 +87,7 @@ export function buildOfficialPatchKnowledgeDocuments(options = {}) {
             ]))
           ],
           claimType: "official_fact",
-          sourceUrl: patch.sourceUrl,
+          sourceUrl: facts.source?.sourceUrl ?? patch.sourceUrl,
           namespace: "static_knowledge",
           rawData: {
             evidenceVersion: OFFICIAL_PATCH_EVIDENCE_VERSION,
@@ -131,6 +131,8 @@ export function buildOfficialPatchSemanticDocuments(options = {}) {
               metadata: {
                 ...document.metadata,
                 generatedAt: revision.publishedAt,
+                publishedAt: revision.publishedAt,
+                sourceUrl: revision.sourceUrl,
                 topics: ["更新公告", "版本改动", `Patch ${document.metadata.patch}`,
                   ...batch.flatMap((change) => [change.label, ...change.entityApiNames])],
                 rawData: { ...document.metadata.rawData, changes: batch, numericRevisions: [] }

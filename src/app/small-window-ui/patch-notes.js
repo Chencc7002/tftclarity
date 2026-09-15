@@ -9,14 +9,14 @@ const PATCH_NOTES = {
     "locales": {
       "zh-CN": {
         "title": "18.2 数值更新",
-        "summary": "共 157 项数值变更：升级经验与灵火价格下调，英雄、羁绊、装备和强化符文同步调整。",
+        "summary": "已同步 9 月 14 日热补丁；18.2 首发 157 项、热补丁 14 项数值变更均保留。",
         "sourceName": "Riot Games 官方更新公告",
         "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-2/",
         "highlights": []
       },
       "en-US": {
         "title": "Patch 18.2 numeric changes",
-        "summary": "157 numeric changes covering leveling XP, Wisp costs, champions, traits, items, and Augments.",
+        "summary": "Updated September 14: preserves 157 release changes and 14 mid-patch numeric changes.",
         "sourceName": "Official Riot Games patch notes",
         "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/",
         "highlights": []

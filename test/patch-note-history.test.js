@@ -65,11 +65,11 @@ test("18.2 is reachable from the active season and matches the mini program", ()
   assert.equal(patch.version, "18.2");
   assert.deepEqual(patch, getCurrentPatchNote());
   assert.equal(patch.publishedAt, "2026-09-09T18:00:00.000Z");
-  assert.equal(patch.updatedAt, "2026-09-09");
+  assert.equal(patch.updatedAt, "2026-09-14");
   assert.match(season.notices[0], /18\.2 版本已上线/u);
   assert.match(season.theme.subtitle["en-US"], /18\.2/u);
   const changes = patch.history.flatMap((revision) => revision.groups.flatMap((group) => group.changes));
-  assert.equal(changes.length, 157);
+  assert.equal(changes.length, 171);
   assert.equal(new Set(changes.map((change) => change.id)).size, changes.length);
   assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.2-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
   assert.equal(mini.sourceUrl, patch.sourceUrl);
@@ -100,12 +100,12 @@ test("announcement timeline preserves 18.1 with its own values, anchors, and sou
     const timeline = getPatchNoteTimeline("18.2", locale);
     const old = getPatchNote("18.1", locale).history;
     assert.deepEqual(timeline.history.slice(0, old.length), old);
-    assert.equal(timeline.history.at(-1).parentId, old.at(-1).id);
+    assert.equal(timeline.history[old.length].parentId, old.at(-1).id);
     assert.equal(timeline.history.at(-1).sourceUrl.endsWith("teamfight-tactics-patch-18-2/"), true);
     assert.equal(timeline.history[0].sourceUrl.endsWith("teamfight-tactics-patch-18-1/"), true);
-    assert.equal(timeline.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).length, 172);
+    assert.equal(timeline.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).length, 186);
     assert.deepEqual(getPatchNoteTimeline("18.1", locale).history, old);
-    assert.equal(getPatchNote("18.2", locale).history.length, 1);
+    assert.equal(getPatchNote("18.2", locale).history.length, 2);
     for (const key of ["patchNotesRelease", "patchNotesBalance", "patchNotesHotfix", "patchNotesMixed"]) {
       assert.ok(messages[locale][key], `${locale}: missing ${key}`);
     }

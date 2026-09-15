@@ -2,7 +2,7 @@
 module.exports = {
   "version": "18.2",
   "publishedAt": "2026-09-09T18:00:00.000Z",
-  "updatedAt": "2026-09-09",
+  "updatedAt": "2026-09-14",
   "history": [
     {
       "id": "18.1-balance-2026-08-31",
@@ -2307,10 +2307,214 @@ module.exports = {
           "text": "增强｜三星拉克丝 · 激光法强倍率：5000% → 6500%"
         }
       ]
+    },
+    {
+      "id": "18.2-hotfix-2026-09-14",
+      "parentId": "18.2-release-2026-09-09",
+      "kind": "热补丁",
+      "publishedAt": "2026-09-14",
+      "title": "18.2 热补丁数值调整",
+      "summary": "9 月 14 日新增 14 项数值调整：升 9、10 级经验回调，7 → 8 级仍为 56；调整卡蜜尔等弈子。英文官方公告另含强化符文开关、变形灵火限制与问题修复。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/",
+      "changes": [
+        {
+          "id": "18.2-hotfix-2026-09-14-xp-9",
+          "direction": "nerf",
+          "entityType": "system",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "xp_to_level_9",
+          "before": "64",
+          "after": "68",
+          "label": "8 → 9 级 · 所需经验",
+          "text": "削弱｜8 → 9 级 · 所需经验：64 → 68"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-xp-10",
+          "direction": "nerf",
+          "entityType": "system",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "xp_to_level_10",
+          "before": "64",
+          "after": "68",
+          "label": "9 → 10 级 · 所需经验",
+          "text": "削弱｜9 → 10 级 · 所需经验：64 → 68"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-camille-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Camille"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_ad_ratio",
+          "before": "160/240/410/700%",
+          "after": "150/225/375/640%",
+          "label": "卡蜜尔 · 技能攻击力倍率",
+          "text": "削弱｜卡蜜尔 · 技能攻击力倍率：160/240/410/700% → 150/225/375/640%"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-leblanc-clone",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_LeBlanc"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "clone_chance",
+          "before": "10/15/40%",
+          "after": "10/15/30%",
+          "label": "乐芙兰 · 复制概率",
+          "text": "削弱｜乐芙兰 · 复制概率：10/15/40% → 10/15/30%"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-teemo-small-shroom",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Teemo"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "small_shroom_ap_ratio",
+          "before": "60/90/135%",
+          "after": "55/82/130%",
+          "label": "提莫 · 小蘑菇法强倍率",
+          "text": "削弱｜提莫 · 小蘑菇法强倍率：60/90/135% → 55/82/130%"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-brambleback-armor",
+          "direction": "mixed",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "armor_ignore",
+          "before": "15 + 30% AP",
+          "after": "20 + 25% AP",
+          "label": "绯红印记树怪 · 护甲忽略（另含机制修复）",
+          "text": "调整｜绯红印记树怪 · 护甲忽略（另含机制修复）：15 + 30% AP → 20 + 25% AP"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-ashe-trail-duration",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "trail_duration",
+          "before": "4s",
+          "after": "3s",
+          "label": "艾希 · 尾迹持续时间",
+          "text": "削弱｜艾希 · 尾迹持续时间：4s → 3s"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-ashe-dot-damage",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "dot_per_second_ad_ratio",
+          "before": "5/8%",
+          "after": "9/14%",
+          "label": "艾希 · 每秒持续伤害攻击力倍率",
+          "text": "增强｜艾希 · 每秒持续伤害攻击力倍率：5/8% → 9/14%"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-draven-four-cost-casts",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_four_cost_casts",
+          "before": "5",
+          "after": "6",
+          "label": "德莱文 · 赏金猎人：四费奖励所需施法次数",
+          "text": "削弱｜德莱文 · 赏金猎人：四费奖励所需施法次数：5 → 6"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-draven-eight-casts-rerolls",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_eight_cast_rerolls",
+          "before": "10",
+          "after": "6",
+          "label": "德莱文 · 赏金猎人：施法 8 次的刷新奖励",
+          "text": "削弱｜德莱文 · 赏金猎人：施法 8 次的刷新奖励：10 → 6"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-draven-five-cost-attacks",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_five_cost_attacks",
+          "before": "50",
+          "after": "60",
+          "label": "德莱文 · 赏金猎人：五费奖励所需攻击次数",
+          "text": "削弱｜德莱文 · 赏金猎人：五费奖励所需攻击次数：50 → 60"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-draven-seven-gold-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_seven_gold_damage",
+          "before": "8000",
+          "after": "10000",
+          "label": "德莱文 · 赏金猎人：7 金币奖励所需伤害",
+          "text": "削弱｜德莱文 · 赏金猎人：7 金币奖励所需伤害：8000 → 10000"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-draven-twelve-gold-kills",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_twelve_gold_kills",
+          "before": "6",
+          "after": "8",
+          "label": "德莱文 · 赏金猎人：12 金币奖励所需击杀",
+          "text": "削弱｜德莱文 · 赏金猎人：12 金币奖励所需击杀：6 → 8"
+        },
+        {
+          "id": "18.2-hotfix-2026-09-14-maokai-mana",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Maokai"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "mana",
+          "before": "30/90",
+          "after": "30/100",
+          "label": "茂凯 · 法力值",
+          "text": "削弱｜茂凯 · 法力值：30/90 → 30/100"
+        }
+      ]
     }
   ],
   "title": "18.2 数值更新",
-  "summary": "共 157 项数值变更：升级经验与灵火价格下调，英雄、羁绊、装备和强化符文同步调整。",
+  "summary": "已同步 9 月 14 日热补丁；18.2 首发 157 项、热补丁 14 项数值变更均保留。",
   "sourceName": "Riot Games 官方更新公告",
   "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-2/",
   "highlights": []

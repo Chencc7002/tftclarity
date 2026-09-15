@@ -237,3 +237,245 @@ export const PATCH_18_2_REVISION = Object.freeze({
     },
   ]
 });
+
+// September 14 section is currently available only in the English official article.
+export const PATCH_18_2_HOTFIX = Object.freeze({
+  "id": "18.2-hotfix-2026-09-14",
+  "kind": "hotfix",
+  "publishedAt": "2026-09-14",
+  "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/",
+  "title": {
+    "zh-CN": "18.2 热补丁数值调整",
+    "en-US": "18.2 mid-patch numeric update"
+  },
+  "summary": {
+    "zh-CN": "9 月 14 日新增 14 项数值调整：升 9、10 级经验回调，7 → 8 级仍为 56；调整卡蜜尔等弈子。英文官方公告另含强化符文开关、变形灵火限制与问题修复。",
+    "en-US": "September 14: 14 numeric changes, reverting XP for levels 9 and 10 while level 8 stays at 56. The English source also covers Augment availability, Polymorph rules, and bug fixes."
+  },
+  "groups": [
+    {
+      "title": {
+        "zh-CN": "升级经验",
+        "en-US": "Leveling XP"
+      },
+      "changes": [
+        {
+          "id": "xp-9",
+          "direction": "nerf",
+          "before": "64",
+          "after": "68",
+          "text": {
+            "zh-CN": "8 → 9 级 · 所需经验",
+            "en-US": "Level 8 → 9 · XP required"
+          },
+          "entityType": "system",
+          "entityApiNames": [],
+          "stat": "xp_to_level_9"
+        },
+        {
+          "id": "xp-10",
+          "direction": "nerf",
+          "before": "64",
+          "after": "68",
+          "text": {
+            "zh-CN": "9 → 10 级 · 所需经验",
+            "en-US": "Level 9 → 10 · XP required"
+          },
+          "entityType": "system",
+          "entityApiNames": [],
+          "stat": "xp_to_level_10"
+        }
+      ]
+    },
+    {
+      "title": {
+        "zh-CN": "弈子数值",
+        "en-US": "Champion tuning"
+      },
+      "changes": [
+        {
+          "id": "camille-damage",
+          "direction": "nerf",
+          "before": "160/240/410/700%",
+          "after": "150/225/375/640%",
+          "text": {
+            "zh-CN": "卡蜜尔 · 技能攻击力倍率",
+            "en-US": "Camille · Ability AD ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Camille"
+          ],
+          "stat": "ability_ad_ratio"
+        },
+        {
+          "id": "leblanc-clone",
+          "direction": "nerf",
+          "before": "10/15/40%",
+          "after": "10/15/30%",
+          "text": {
+            "zh-CN": "乐芙兰 · 复制概率",
+            "en-US": "LeBlanc · Clone chance"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_LeBlanc"
+          ],
+          "stat": "clone_chance"
+        },
+        {
+          "id": "teemo-small-shroom",
+          "direction": "nerf",
+          "before": "60/90/135%",
+          "after": "55/82/130%",
+          "text": {
+            "zh-CN": "提莫 · 小蘑菇法强倍率",
+            "en-US": "Teemo · Small shroom AP ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Teemo"
+          ],
+          "stat": "small_shroom_ap_ratio"
+        },
+        {
+          "id": "brambleback-armor",
+          "direction": "mixed",
+          "before": "15 + 30% AP",
+          "after": "20 + 25% AP",
+          "text": {
+            "zh-CN": "绯红印记树怪 · 护甲忽略（另含机制修复）",
+            "en-US": "Brambleback · Armor ignore (with bug fixes)"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
+          "stat": "armor_ignore"
+        },
+        {
+          "id": "ashe-trail-duration",
+          "direction": "nerf",
+          "before": "4s",
+          "after": "3s",
+          "text": {
+            "zh-CN": "艾希 · 尾迹持续时间",
+            "en-US": "Ashe · Trail duration"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "stat": "trail_duration"
+        },
+        {
+          "id": "ashe-dot-damage",
+          "direction": "buff",
+          "before": "5/8%",
+          "after": "9/14%",
+          "text": {
+            "zh-CN": "艾希 · 每秒持续伤害攻击力倍率",
+            "en-US": "Ashe · DoT per-second AD ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "stat": "dot_per_second_ad_ratio"
+        },
+        {
+          "id": "draven-four-cost-casts",
+          "direction": "nerf",
+          "before": "5",
+          "after": "6",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：四费奖励所需施法次数",
+            "en-US": "Draven · Bounty Hunter: casts for 4-costs"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_four_cost_casts"
+        },
+        {
+          "id": "draven-eight-casts-rerolls",
+          "direction": "nerf",
+          "before": "10",
+          "after": "6",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：施法 8 次的刷新奖励",
+            "en-US": "Draven · Bounty Hunter: rerolls for 8 casts"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_eight_cast_rerolls"
+        },
+        {
+          "id": "draven-five-cost-attacks",
+          "direction": "nerf",
+          "before": "50",
+          "after": "60",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：五费奖励所需攻击次数",
+            "en-US": "Draven · Bounty Hunter: attacks for 5-cost"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_five_cost_attacks"
+        },
+        {
+          "id": "draven-seven-gold-damage",
+          "direction": "nerf",
+          "before": "8000",
+          "after": "10000",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：7 金币奖励所需伤害",
+            "en-US": "Draven · Bounty Hunter: damage for 7 gold"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_seven_gold_damage"
+        },
+        {
+          "id": "draven-twelve-gold-kills",
+          "direction": "nerf",
+          "before": "6",
+          "after": "8",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：12 金币奖励所需击杀",
+            "en-US": "Draven · Bounty Hunter: kills for 12 gold"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_twelve_gold_kills"
+        },
+        {
+          "id": "maokai-mana",
+          "direction": "nerf",
+          "before": "30/90",
+          "after": "30/100",
+          "text": {
+            "zh-CN": "茂凯 · 法力值",
+            "en-US": "Maokai · Mana"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Maokai"
+          ],
+          "stat": "mana"
+        }
+      ]
+    }
+  ]
+});
+
+export const PATCH_18_2_REVISIONS = Object.freeze([PATCH_18_2_REVISION, PATCH_18_2_HOTFIX]);

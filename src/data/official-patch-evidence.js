@@ -1,4 +1,4 @@
-import { PATCH_18_2_REVISION } from "../app/small-window-ui/patch-18-2.js";
+import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
@@ -6,15 +6,16 @@ const PATCHES = Object.freeze({
   "18.2": Object.freeze({
     version: "18.2",
     title: "云顶之弈 18.2 版本更新公告",
-    summary: "18.2 正式版本数值调整：升级经验与灵火价格下调，英雄、羁绊、装备和强化符文同步调整。以下收录 157 项数值变更，不含完整功能与问题修复清单。",
+    summary: "18.2 已同步 9 月 14 日热补丁：保留首发 157 项并追加 14 项数值变更。升级经验和弈子应按最新修订读取；以下不含完整功能与问题修复清单。",
     publishedAt: "2026-09-09T18:00:00.000Z",
     sourceName: "Riot Games 官方更新公告",
     sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-2/",
     // Use the same reviewed numeric records as patch_facts and the announcement UI.
-    changes: Object.freeze(PATCH_18_2_REVISION.groups.flatMap((group) => group.changes.map((change) => ({
-      id: `${PATCH_18_2_REVISION.id}-${change.id}`,
-      revisionId: PATCH_18_2_REVISION.id,
-      publishedAt: PATCH_18_2_REVISION.publishedAt,
+    changes: Object.freeze(PATCH_18_2_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl ?? "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-2/",
       direction: change.direction,
       entityType: change.entityType,
       entityApiNames: [...change.entityApiNames],
@@ -22,7 +23,7 @@ const PATCHES = Object.freeze({
       before: change.before,
       after: change.after,
       summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
-    }))))
+    })))))
   }),
   "18.1": Object.freeze({
     version: "18.1",
@@ -386,9 +387,9 @@ export function associateOfficialPatchChanges(comp = {}, version) {
   }).map((change) => ({
     ...change,
     patch: patch.version,
-    publishedAt: patch.publishedAt,
+    publishedAt: change.publishedAt ?? patch.publishedAt,
     sourceName: patch.sourceName,
-    sourceUrl: patch.sourceUrl,
+    sourceUrl: change.sourceUrl ?? patch.sourceUrl,
     evidenceVersion: OFFICIAL_PATCH_EVIDENCE_VERSION
   }));
 }

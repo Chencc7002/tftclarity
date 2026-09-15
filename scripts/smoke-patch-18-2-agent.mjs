@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import {createSmallWindowRuntimeAsync, primeSeasonPatch, createDefaultReactToolHandlerBundle, handleReactChatRequest} from '../src/app/small-window-server.js';
 
 // Run explicitly against the configured real provider. No fixture or injected answer.
-if (!process.argv.includes('--live')) throw new Error('Pass --live to run three real-model acceptance queries.');
+if (!process.argv.includes('--live')) throw new Error('Pass --live to run real-model acceptance queries.');
 const report={kind:'patch-18-2-agent-live',at:new Date().toISOString(),cases:[]};
 try {
  const runtime=await createSmallWindowRuntimeAsync();
@@ -12,11 +12,12 @@ try {
  assert.equal(report.patch,'18.2','real server patch resolution must be 18.2');
  const bundle=await createDefaultReactToolHandlerBundle({runtime,request:{input:'18.2 公告验收',seasonContextId:'set18-live',locale:'zh-CN'}});
  const facts=await bundle.handlers.patch_facts({});
- assert.equal(facts.patch,'18.2');assert.equal(facts.summary.changeCount,157);
+ assert.equal(facts.patch,'18.2');assert.equal(facts.summary.changeCount,171);
  const semantic=await bundle.handlers.semantic_search({query:'18.2 阿狸改了什么',documentTypes:['patch_note'],topK:2});
  report.semantic=semantic;
  assert.ok(JSON.stringify(semantic).includes('455/685%'),'real configured semantic index must contain the new facts');
  for (const [input,patch,values] of [
+  ['18.2 最新热补丁升 9、10 级经验和茂凯法力值怎么改？请区分首发与 9 月 14 日热补丁。','18.2',['64','68','30','90','100']],
   ['18.2 阿狸改了什么？请给出改动前后的具体数值。','18.2',['425','640','455','685','20','21']],
   ['这个版本阿狸有哪些改动？','18.2',['455','685','21']],
   ['18.1 热补丁阿狸改了什么？','18.1',['450','675','425','640']]

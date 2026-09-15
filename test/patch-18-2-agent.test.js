@@ -5,6 +5,28 @@ import { getPatchNote, CURRENT_PATCH_VERSION } from '../src/app/small-window-ui/
 import { associateOfficialPatchChanges } from '../src/data/official-patch-evidence.js';
 import { createSmallWindowRuntime, handleReactChatRequest } from '../src/app/small-window-server.js';
 
+test('September 14 hotfix appends source-dated facts and keeps release values intact', () => {
+ const facts=getOfficialPatchFacts({patch:'18.2'});
+ const [release,hotfix]=facts.revisions;
+ assert.equal(facts.updatedAt,'2026-09-14');
+ assert.equal(release.changes.length,157);assert.equal(hotfix.changes.length,14);
+ assert.equal(hotfix.kind,'hotfix');assert.equal(hotfix.parentId,release.id);
+ assert.match(hotfix.sourceUrl,/\/en-us\//);assert.match(release.sourceUrl,/\/zh-tw\//);
+ assert.equal(facts.source.sourceUrl,hotfix.sourceUrl);
+ const xp=hotfix.changes.filter(c=>c.entityType==='system');
+ assert.deepEqual(xp.map(c=>[c.before,c.after]),[['64','68'],['64','68']]);
+ assert.equal(release.changes.find(c=>c.id.endsWith('-xp-8')).after,'56');
+ assert.equal(hotfix.changes.some(c=>c.id.endsWith('-xp-8')),false);
+ const maokai=associateOfficialPatchChanges({units:['DA_18_Maokai']},'18.2').filter(c=>c.stat==='mana');
+ assert.deepEqual(maokai.map(c=>[c.before,c.after,c.publishedAt]),[['40/100','30/90','2026-09-09'],['30/90','30/100','2026-09-14']]);
+ assert.equal(maokai.at(-1).sourceUrl,hotfix.sourceUrl);
+ assert.equal(hotfix.changes.find(c=>c.id.endsWith('-brambleback-armor')).direction,'mixed');
+ const sections=buildOfficialPatchSemanticDocuments({seasonContextId:'set18-live',versions:['18.2']}).filter(d=>d.id.includes(':section:18.2-hotfix-'));
+ assert.ok(sections.length>0);
+ assert.ok(sections.every(d=>d.content.length<=800 && d.metadata.publishedAt==='2026-09-14' && d.metadata.sourceUrl===hotfix.sourceUrl));
+ assert.match(sections.find(d=>d.content.includes('茂凯')).content,/30\/90 → 30\/100/);
+});
+
 test('every displayed current patch is registered with identical official numeric facts', () => {
  for (const locale of ['zh-CN', 'en-US']) {
   const page=getPatchNote(CURRENT_PATCH_VERSION,locale);
@@ -12,7 +34,7 @@ test('every displayed current patch is registered with identical official numeri
   assert.equal(facts.status,'found');
   const expected=page.history.flatMap(r=>r.groups.flatMap(g=>g.changes));
   assert.deepEqual(facts.revisions.flatMap(r=>r.changes).map(({id,label,direction,before,after,entityApiNames})=>({id,body:label,direction,before,after,entityApiNames})),expected.map(({id,body,direction,before,after,entityApiNames})=>({id,body,direction,before,after,entityApiNames})));
-  assert.equal(facts.summary.changeCount,157);
+  assert.equal(facts.summary.changeCount,171);
   assert.equal(facts.publishedAt,'2026-09-09T18:00:00.000Z');
   assert.match(facts.source.sourceUrl,/patch-18-2\/$/);
   assert.ok(facts.revisions[0].changes.filter(c=>['unit','trait','item'].includes(c.entityType)).every(c=>c.entityApiNames.length));
@@ -28,7 +50,7 @@ test('every displayed current patch is registered with identical official numeri
 test('registered tool defaults to server patch 18.2 and retains explicit historical scope',async()=>{
  const registry=new ToolRegistry(createStructuredToolDefinitions());
  const bundle=createTftToolHandlers({registry,patchState:{currentPatch:'18.2'},seasonContext:{currentPatch:'18.1'},locale:'zh-CN'});
- for(const [args,version,count] of [[{},'18.2',157],[{patch:'18.1'},'18.1',15]]){
+ for(const [args,version,count] of [[{},'18.2',171],[{patch:'18.1'},'18.1',15]]){
   const result=await new ToolExecutor({registry}).execute('patch_facts',args,{handler:bundle.handlers.patch_facts});
   assert.equal(result.status,'completed');assert.equal(result.value.patch,version);assert.equal(result.value.summary.changeCount,count);
   assert.equal(result.metadata.source,'riot_patch_notes');assert.equal(result.metadata.evidenceType,'official_patch_facts');
