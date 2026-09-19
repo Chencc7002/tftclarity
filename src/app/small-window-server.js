@@ -6,7 +6,7 @@ import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
-import { requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
+import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
 import { loadFollowUpHistory, singleEquipmentResultSubject, unitResultCoverage } from "./unit-follow-up.js";
 import { currentDeadlineEvidence } from "../react/deadline-evidence.js";
 import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js";
@@ -7025,13 +7025,10 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
           : lockedItems.length
             ? "unit_build_completion"
             : "unit_build_rankings";
-      const itemPolicy = String(input.itemPolicy ?? (
-        itemCategories.includes("artifact") ? "include_artifact"
-          : itemCategories.includes("radiant") ? "include_radiant"
-            : itemCategories.some((category) => category !== "ordinary_completed")
-              ? "include_special"
-              : "ordinary_only"
-      ));
+      const performanceCategory = loaded.catalog.itemByApiName.get(performanceItem)?.category;
+      const itemPolicy = String(input.itemPolicy ?? itemPolicyForCategories([
+        ...itemCategories, ...(performanceCategory ? [performanceCategory] : [])
+      ]));
       const parsedInput = {
         intent,
         unit: unitApiName,

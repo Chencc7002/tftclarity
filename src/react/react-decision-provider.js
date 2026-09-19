@@ -179,10 +179,23 @@ function renderGuidance(guidanceRenderer, advisory) {
   return rendered;
 }
 
+function itemQueryGuidance(toolCatalog = [], bridgeContext = null) {
+  const hasItemTools = toolCatalog.some(tool => ["item_carrier_rankings", "emblem_carriers", "unit_builds"].includes(tool.name));
+  const hasCarrierHistory = bridgeContext?.records?.some(record => ["item_carrier_rankings", "emblem_carriers"].includes(record.operation));
+  if (!hasItemTools && !hasCarrierHistory) return [];
+  return [{ role: "system", content: [
+    "item-query-repair-guidance.v1",
+  "Historical displaySummary is a bounded excerpt, not the complete prior response. Missing names or statistics in that excerpt do not prove they were absent from the result. A completed historical record establishes that the earlier query completed, not current statistics. When explaining an earlier success, acknowledge it without claiming missing data. For requested current carrier names, samples or performance, resolve the item and re-query current tools; never promote historical evidence to current evidence.",
+  "When explaining a tool failure, use the structured observation error. A category or argument validation rejection is not a source outage or an empty dataset. Correct the tool or parameters when possible instead of repeating the same invalid call or asking the user to rephrase. Never describe emblem tools as artifact tools or offer an unsupported global artifact ranking.",
+  "Use the resolved catalog category: artifact means 神器; emblem means 转职纹章. For artifact carriers use item_carrier_rankings, never emblem_carriers. For a named artifact's performance on one champion use unit_builds.performanceItem with itemPolicy=include_artifact; do not combine a special target or category with ordinary_only. Explicit user exclusions must be respected; clarify conflicting constraints instead of silently filtering away the target. games denotes observed samples, not unique people; positive-uplift carriers do not represent every user of the item.",
+  ].join("\n") }];
+}
+
 function emblemRankingGuidance(toolCatalog = []) {
   if (!toolCatalog.some(tool => tool.name === "emblem_rankings")) return [];
   return [{ role: "system", content: [
   "When emblem_rankings is available, use it for global emblem strength, Spatula/Frying Pan crafting choices and analysis of that ranking. No champion is required. Use recipeBase=spatula for 金铲铲, pan for 金锅锅, craftable for craftable-only, otherwise all; preserve the user's selected metric, days and filters across follow-ups. Resolve named emblems before sending apiNames. Do not replace a champion-specific unit_builds emblem ranking with global statistics.",
+  "Both emblem_rankings and emblem_carriers require category=emblem (转职纹章). They never accept category=artifact (神器), radiant or ordinary equipment. For non-emblem carriers use item_carrier_rankings when available. There is no global artifact-ranking capability in these emblem tools.",
   "emblem_rankings returns all selected rows, sample flags, metric leaders and server-calculated pairwise differences (left minus right; rate differences are percentage points). Explain only supported descriptive differences; do not invent causal uplift, statistical significance or a guaranteed best craft. Name low-sample limits and distinguish popularity from performance. For a previous shortcut follow-up, retrieve current emblem_rankings again; historical summaries are not current statistics. For common holders use emblem_carriers with an exact current ranking or catalog ID; for effects or mechanism explanations obtain item_details evidence separately.",
   "Report sample counts as the full integer from evidence (for example 250240), without rounding or abbreviating to 万, 千, k or M. Use the server-calculated percentage-point gap for comparisons; retain the direction shown by the two rates.",
   ].join("\n") }];
@@ -302,6 +315,7 @@ function reactDecisionMessages(
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
     ...emblemRankingGuidance(request.toolCatalog),
+    ...itemQueryGuidance(request.toolCatalog, state.bridgeContext),
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     ...trendSummaryGuidance(state.evidence),
@@ -372,6 +386,7 @@ function legacyReactDecisionMessages(
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
     ...emblemRankingGuidance(request.toolCatalog),
+    ...itemQueryGuidance(request.toolCatalog, legacyState.bridgeContext),
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     ...trendSummaryGuidance(legacyState.evidence),

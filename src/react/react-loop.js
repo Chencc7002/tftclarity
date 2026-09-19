@@ -4,7 +4,7 @@ import { validateToolInput } from "../agent/tools/contracts.js";
 import { parseCompTrendDirection } from "../core/comp-trend-intent.js";
 import { itemDetailsBatchMatchesPlan } from "../domain/tft/differentiating-item-selector.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
-import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import { itemPolicyForCategories, requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import { validateReactAction } from "./react-action.js";
 import { DuplicateCallGuard } from "./duplicate-call-guard.js";
 import { EvidenceLedger } from "./evidence-ledger.js";
@@ -573,6 +573,30 @@ function resolvedCatalogItem(entries, apiName) {
   ));
 }
 
+function resolvedCatalogItemRecord(entries, apiName) {
+  // Category and resolution must belong to the same current evidence entry.
+  for (const entry of [...entries].reverse()) {
+    if (entry.temporalStatus === "historical" || !resolvedCatalogItem([entry], apiName)) continue;
+    const item = entry.value?.results?.find(item => item.apiName === apiName);
+    if (item) return item;
+  }
+  return null;
+}
+
+function applyNamedPerformanceItemScope(action, ledger, request) {
+  if (action.type !== "call_tool" || action.tool !== "unit_builds") return action;
+  const apiName = action.arguments?.performanceItem;
+  if (!apiName || requestedEquipmentCategoryScope(equipmentScopeUserText(request))) return action;
+  const entries = ledger.snapshot().entries.filter(entry => entry.temporalStatus !== "historical");
+  if (!currentRequestMentionsCatalogItem(entries, apiName, request)) return action;
+  const item = resolvedCatalogItemRecord(entries, apiName);
+  if (!item?.category || item.current === false || item.obtainable === false) return action;
+  // A named-item performance query must include that item's category. Model defaults
+  // are not user constraints; explicit user category restrictions remain authoritative.
+  return { ...action, arguments: { ...action.arguments,
+    itemPolicy: itemPolicyForCategories([item.category]), itemCategories: [item.category] } };
+}
+
 function resolvedCatalogEntity(entries, entityType, apiName) {
   return entries.some((entry) => (
     entry.toolName === "entity_catalog_query"
@@ -657,6 +681,12 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
     }
   }
   const performanceItem = String(action.arguments?.performanceItem ?? "").trim();
+  const performanceRecord = resolvedCatalogItemRecord(entries, performanceItem);
+  const explicitScope = requestedEquipmentCategoryScope(equipmentScopeUserText(request));
+  if (performanceRecord?.category && explicitScope
+    && !explicitScope.itemCategories.includes(performanceRecord.category)) {
+    errors.push("unit_builds performanceItem conflicts with the user's explicit equipment category; ask about conflicting_constraints instead of querying an excluded item");
+  }
   if (
     performanceItem
     && resolvedCatalogItem(entries, performanceItem)
@@ -679,6 +709,10 @@ function validateItemCarrierAction(action, ledger) {
       && entry.value?.rows?.some(row => row.item.apiName === apiName));
     if (!resolvedCatalogItem(entries, apiName) && !fromEmblemRanking) {
       errors.push(`${action.tool} item requires prior exact item entity_catalog_query resolution or current emblem_rankings evidence`);
+    }
+    const item = resolvedCatalogItemRecord(entries, apiName);
+    if (action.tool.startsWith("emblem_") && item?.category && item.category !== "emblem") {
+      errors.push(`${action.tool} requires category=emblem (转职纹章), but ${apiName} has category=${item.category}. This is a tool/category mismatch, not missing source data. Use item_carrier_rankings for non-emblem carriers; emblem_rankings cannot rank artifacts.`);
     }
   }
   return { valid: errors.length === 0, errors };
@@ -1719,7 +1753,7 @@ export class ReactLoop {
         continue;
       }
 
-      const action = applyRequestBoundEquipmentScope(
+      const action = applyNamedPerformanceItemScope(applyRequestBoundEquipmentScope(
         applyRequestBoundCompositionOverview(
           applyRequestBoundTrendDirection(
             applyRequestBoundVideoScope(validation.value, request),
@@ -1728,7 +1762,7 @@ export class ReactLoop {
           request
         ),
         request
-      );
+      ), ledger, request);
       state.recordDecision(action);
       emit("decision", decisionEventData(action, state, budget));
 
@@ -2113,7 +2147,7 @@ export class ReactLoop {
           type: "decision_rejected",
           tool: action.tool,
           errors: itemCarrierValidation.errors,
-          repairInstruction: "Resolve each named item with entity_catalog_query first, then copy its exact apiName into the requested tool. Emblem tools may also use exact IDs from current emblem_rankings rows. Never use historical evidence as current resolution."
+          repairInstruction: "Resolve each named item with entity_catalog_query first and use its category as well as its exact apiName. emblem_carriers and emblem_rankings accept only emblem (转职纹章), never artifact (神器). For non-emblem carriers use item_carrier_rankings if available, preserving supported user filters; obtain item_details for suitability. A tool/category mismatch does not mean source data is unavailable. Never use historical evidence as current resolution."
         }, { progress: false });
         emit("decision_rejected", {
           iteration: state.decisions.length,

@@ -3,6 +3,29 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
+test("item query guidance separates artifacts from emblems and treats history as a bounded excerpt", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    let body;
+    const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+      fetchImpl: async (_url, init) => {
+        body = JSON.parse(init.body);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          schemaVersion: "react-action.v1", type: "finish", answer: "ok", evidenceIds: [], reasonCode: "direct_answer", narrative: null
+        }) } }] }) };
+      } });
+    await provider({ state: { question: "这不是能查吗？", bridgeContext: { records: [{ operation: "item_carrier_rankings" }] } },
+      toolCatalog: [{ name: "item_carrier_rankings" }, { name: "emblem_rankings" }] });
+    const guidance = body.messages.find(message => message.content.startsWith("item-query-repair-guidance.v1"));
+    assert.match(guidance.content, /artifact means 神器; emblem means 转职纹章/);
+    assert.match(guidance.content, /not a source outage or an empty dataset/);
+    assert.match(guidance.content, /bounded excerpt, not the complete prior response/);
+    assert.match(guidance.content, /never promote historical evidence to current evidence/);
+    assert.match(guidance.content, /not unique people/);
+    assert.match(body.messages.find(message => message.content.startsWith("When emblem_rankings")).content, /never accept category=artifact/);
+  }
+});
+
+
 test("opt-in tactical presentation changes only two presentation rules, preserving catalog, control and default prompt", async () => {
   for (const messageLayout of ["append_only", "legacy_full_state"]) {
     const bodies = [];

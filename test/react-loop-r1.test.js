@@ -191,6 +191,49 @@ async function runCase(options = {}) {
   return { result, events, context };
 }
 
+test("named special-item performance uses current catalog scope and preserves explicit user exclusions", async (t) => {
+  for (const [category, policy] of [["artifact", "include_artifact"], ["radiant", "include_radiant"], ["emblem", "include_special"]]) {
+    for (const explicitExclusion of [false, true]) await t.test(`${category}, exclusion=${explicitExclusion}`, async () => {
+      const observed = [];
+      const item = "Test_SpecialItem", unit = "Test_Unit", itemName = "测试装备";
+      const definitions = [definition("entity_catalog_query", { inputSchema: {
+        type: "object", additionalProperties: false, required: ["entityType"],
+        properties: { entityType: { type: "string" } }
+      } }), definition("unit_builds", { inputSchema: {
+        type: "object", additionalProperties: false, required: ["unit"], properties: {
+          unit: { type: "string" }, performanceItem: { type: "string" }, itemPolicy: { type: "string" },
+          itemCategories: { type: "array", items: { type: "string" } }
+        }
+      } })];
+      const provider = queueProvider([
+        call("entity_catalog_query", { entityType: "unit" }), call("entity_catalog_query", { entityType: "item" }),
+        call("unit_builds", { unit, performanceItem: item, itemPolicy: "ordinary_only", itemCategories: [category] }),
+        explicitExclusion
+          ? action("ask_user", { question: "目标装备与普通装备范围冲突，要修改范围吗？", missingFields: ["itemPolicy"], reasonCode: "conflicting_constraints" })
+          : finish("已取得目标装备数据。", ["ev-3"])
+      ]);
+      const { result, events } = await runCase({ input: `测试英雄的${itemName}表现怎么样？${explicitExclusion ? "只要普通装备" : ""}`,
+        definitions, provider, handlers: {
+          entity_catalog_query: async ({ entityType }) => ({ type: "entity_catalog_results", entityType,
+            updatedAt: "2026-09-18T00:00:00Z", resolution: { requests: [{ status: "resolved", inputName: entityType === "item" ? itemName : "测试英雄",
+              candidates: [{ apiName: entityType === "item" ? item : unit, name: entityType === "item" ? itemName : "测试英雄" }] }] },
+            results: [{ apiName: entityType === "item" ? item : unit, ...(entityType === "item" ? { category, current: true, obtainable: true } : {}) }] }),
+          unit_builds: async input => { observed.push(input); return { type: "unit_item_rankings", query: input,
+            updatedAt: "2026-09-18T00:00:00Z", itemRankings: [{ apiName: item, category }] }; }
+        } });
+      if (explicitExclusion) {
+        assert.equal(observed.length, 0);
+        assert.ok(events.some(event => event.data?.errors?.some(error => error.includes("conflicts with the user's explicit"))));
+      } else {
+        assert.equal(result.terminationReason, "completed");
+        assert.equal(observed.length, 1);
+        assert.equal(observed[0].itemPolicy, policy);
+        assert.deepEqual(observed[0].itemCategories, [category]);
+      }
+    });
+  }
+});
+
 test("controlled unit-play reuses the exact TaskFrame subject for unit build grounding", async () => {
   let buildCalls = 0;
   const provider = queueProvider([

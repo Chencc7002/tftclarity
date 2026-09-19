@@ -88,6 +88,63 @@ test("default react completion handler retains a carried emblem but restricts th
   assert.deepEqual(result.cards.map(card => card.items.map(item => item.apiName)), [[emblem, locked, "TFT_Item_InfinityEdge"]]);
 });
 
+test("named artifact performance without model category uses a compatible policy and real build aggregation", async () => {
+  const unit = "TFT17_Xayah", item = "Test_Fishbones";
+  const catalog = createCatalog({ items: [...createCatalog().items, {
+    apiName: item, zhName: "鱼骨头", aliases: ["鱼骨头"], category: "artifact", current: true, obtainable: true
+  }] });
+  const rows = [{ unit_builds: `${unit}&${item}|TFT_Item_GuinsoosRageblade|TFT_Item_InfinityEdge`,
+    placement_count: [150, 130, 110, 90, 70, 50, 30, 10] }];
+  const runtime = createSmallWindowRuntime({ seasonContextService: createLegacySeasonFixture(), catalog, cacheStore: new MemoryCacheStore(), officialItemDetails: new Map(),
+    recommendForInputImpl: (input, options) => recommendForInput(input, { ...options, response: rows }) });
+  const bundle = await createDefaultReactToolHandlerBundle({ runtime, context: {},
+    request: { input: "霞的鱼骨头表现怎么样？", seasonContextId: "set17-live", locale: "zh-CN" } });
+  const value = await bundle.handlers.unit_builds({ unit, performanceItem: item, minSamples: 0 });
+  assert.equal(value.query.itemPolicy, "include_artifact");
+  assert.equal(value.itemPerformance.item.apiName, item);
+  assert.ok(value.itemPerformance.item.stats.games > 0);
+  const excluded = await bundle.handlers.unit_builds({ unit, performanceItem: item, itemPolicy: "ordinary_only", minSamples: 0 });
+  assert.match(excluded.text, /目标装备.*范围冲突/);
+  assert.equal(excluded.itemPerformance, undefined);
+});
+
+test("artifact carrier questions recover from emblem-tool selection before executing the wrong handler", async () => {
+  for (const input of ["鱼骨头谁用比较好？", "查鱼骨头的常见携带者（谁用比较好、使用人数）", "鱼骨头最适合哪些英雄携带"]) {
+    const calls = [];
+    const item = "DA_Artifact_Fishbones";
+    let attemptedWrongTool = false;
+    const runtime = createSmallWindowRuntime({ reactGroundingMode: "strict", reactToolHandlers: {
+      entity_catalog_query: async () => { calls.push("catalog"); return { type: "entity_catalog_results", source: "official_tft_catalog",
+        updatedAt: new Date().toISOString(), entityType: "item",
+        resolution: { requests: [{ status: "resolved", candidates: [{ apiName: item, name: "鱼骨头" }] }] },
+        results: [{ apiName: item, name: "鱼骨头", category: "artifact", current: true, obtainable: true }] }; },
+      emblem_carriers: async () => { calls.push("WRONG"); throw new Error("must not execute"); },
+      item_carrier_rankings: async () => { calls.push("carriers"); return { type: "item_carrier_rankings", updatedAt: new Date().toISOString(),
+        item: { apiName: item, name: "鱼骨头" }, query: { item }, carriers: [{ unit: { name: "凯特琳", apiName: "DA_18_Caitlyn" }, stats: { games: 1007 } }] }; },
+      item_details: async () => { calls.push("details"); return { type: "item_details", status: "found", apiName: item,
+        entityType: "item", facts: { effect: "官方装备效果" }, updatedAt: new Date().toISOString() }; }
+    }, reactDecisionProvider: async ({ state }) => {
+      const evidence = state.evidence;
+      const callTool = (tool, args) => ({ schemaVersion: "react-action.v1", type: "call_tool", tool, arguments: args, purposeCode: "retrieve_current_statistics" });
+      if (!evidence.length) return callTool("entity_catalog_query", { entityType: "item", filters: { names: ["鱼骨头"] } });
+      if (!attemptedWrongTool) { attemptedWrongTool = true; return callTool("emblem_carriers", { item }); }
+      const carriers = evidence.find(entry => entry.toolName === "item_carrier_rankings");
+      if (!carriers) {
+        assert.ok(state.observations.some(observation => observation.errors?.some(error => error.includes("tool/category mismatch"))));
+        return callTool("item_carrier_rankings", { item });
+      }
+      const details = evidence.find(entry => entry.toolName === "item_details");
+      if (!details) return callTool("item_details", { apiName: item });
+      return { schemaVersion: "react-action.v1", type: "finish", reasonCode: "sufficient_evidence",
+        answer: "凯特琳有 1007 个携带样本。", evidenceIds: [carriers.evidenceId, details.evidenceId] };
+    } });
+    const { payload } = await handleReactChatRequest({ input, conversationId: `artifact-${input}` }, runtime);
+    assert.equal(payload.terminationReason, "completed", JSON.stringify(payload));
+    assert.deepEqual(calls, ["catalog", "carriers", "details"]);
+    assert.equal(payload.run.toolCallCount, 3);
+  }
+});
+
 test("unit-play item mechanism plan is server-derived from the leading card and default off", async () => {
   const unit = "TFT17_Xayah";
   const items = ["TFT_Item_InfinityEdge", "TFT_Item_GuinsoosRageblade", "TFT_Item_SpearOfShojin"];
