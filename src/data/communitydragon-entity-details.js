@@ -1,3 +1,5 @@
+import { normalizeTraitStyle } from "./trait-style.js";
+
 export const COMMUNITYDRAGON_PBE_TEAMPLANNER_URL =
   "https://raw.communitydragon.org/pbe/plugins/rcp-be-lol-game-data/global/zh_cn/v1/tftchampions-teamplanner.json";
 export const COMMUNITYDRAGON_PBE_TRAITS_URL =
@@ -201,7 +203,9 @@ export function buildCommunityDragonEntityDetails(payloads = {}, options = {}) {
       const communityText = renderCommunityDragonText(rows[index] ?? row.tooltip_text, constants);
       return {
         units,
-        effect: communityText.replace(/^\s*\(\d+\)/, `(${units})`)
+        effect: communityText.replace(/^\s*\(\d+\)/, `(${units})`),
+        style: normalizeTraitStyle(tier.style_name),
+        styleIndex: finite(tier.style_idx)
       };
     }).filter((level) => level.units !== null);
     traits.set(apiName, {

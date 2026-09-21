@@ -19,6 +19,26 @@
     <link rel="stylesheet" href="/opgg-panel.css">
   </head>
   <body>
+    <svg class="svg-filter-definitions" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="trait-chromatic-gradient" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stop-color="#ff6b6b"/>
+          <stop offset="0.24" stop-color="#ffd166"/>
+          <stop offset="0.48" stop-color="#4dd7b0"/>
+          <stop offset="0.72" stop-color="#62a7ff"/>
+          <stop offset="1" stop-color="#c77dff"/>
+        </linearGradient>
+        <rect id="trait-chromatic-source" width="1" height="1" fill="url(#trait-chromatic-gradient)"/>
+        <filter id="trait-color-bronze" color-interpolation-filters="sRGB"><feFlood flood-color="#b87333" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-silver" color-interpolation-filters="sRGB"><feFlood flood-color="#78909c" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-gold" color-interpolation-filters="sRGB"><feFlood flood-color="#d6a62e" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-unique" color-interpolation-filters="sRGB"><feFlood flood-color="#d86b4b" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-chromatic" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+          <feImage href="#trait-chromatic-source" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="color"/>
+          <feComposite in="color" in2="SourceAlpha" operator="in"/>
+        </filter>
+      </defs>
+    </svg>
     <main class="shell" id="app-shell">
       <div class="wallpaper-layer" aria-hidden="true"></div>
       <canvas class="particle-layer" id="particle-layer" aria-hidden="true"></canvas>

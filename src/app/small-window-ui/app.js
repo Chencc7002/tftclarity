@@ -1140,7 +1140,7 @@ function assetThumb(iconUrl, label, className = "", fallbackIconUrl = null) {
   const image = iconUrl
     ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"${fallbackIconUrl ? ` data-fallback-src="${escapeHtml(fallbackIconUrl)}"` : ""}>`
     : "";
-  return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${escapeHtml(fallback)}</span>${image}</span>`;
+  return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}">${image}<span class="asset-thumb-fallback">${escapeHtml(fallback)}</span></span>`;
 }
 
 // Image errors do not bubble. Capture also covers thumbnails inserted lazily,
@@ -1191,6 +1191,19 @@ function compTraitLabel(trait) {
   const tier = Number(trait?.tier);
   const name = localizedName(trait);
   return Number.isInteger(tier) && tier > 0 ? `${name} · ${tier}` : name;
+}
+
+function compTraitStyle(trait) {
+  const style = String(trait?.style ?? "").trim().toLowerCase();
+  if (["bronze", "silver", "gold", "chromatic", "unique"].includes(style)) return style;
+  const tier = Number(trait?.tier);
+  return ({ 1: "bronze", 2: "silver", 3: "gold", 4: "chromatic" })[tier] ?? null;
+}
+
+function traitThumb(trait) {
+  const style = compTraitStyle(trait);
+  const className = `trait-icon${style ? ` trait-style-${style}` : ""}`;
+  return assetThumb(trait?.iconUrl, compTraitLabel(trait), className, trait?.fallbackIconUrl);
 }
 
 function compRankLabel(rankFilter = []) {
@@ -1617,7 +1630,7 @@ function renderCompCard(comp, metricKey, initiallyOpen = false) {
           <strong>${escapeHtml(localizedName(comp))}</strong>
           ${comp.lowSample ? `<span class="low-sample-label">${t("lowSample")}</span>` : ""}
           ${metricKey === "popularity" && comp.contested ? `<span class="contested-label">${t("contested")}</span>` : ""}
-          <div class="trait-row">${mainTraits.map((trait) => assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")).join("")}</div>
+          <div class="trait-row">${mainTraits.map((trait) => traitThumb(trait)).join("")}</div>
           <div class="unit-row">${foldedUnits.map((unit) => renderCompUnit(unit, comp)).join("")}</div>
         </div>
         <div class="comp-summary-metric">
@@ -1636,7 +1649,7 @@ function renderCompCard(comp, metricKey, initiallyOpen = false) {
         ${metricKey === "trend" || metricKey === "trendDown" ? `<div class="trend-model-line"><span>${escapeHtml(compTrendSourceLabel(comp))}</span><small>${t("trendWindow")}</small></div>` : ""}
         ${renderCompDetailPanel(detailDescriptor)}
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, comp, true)).join("")}</div>
-        <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
+        <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${traitThumb(trait)}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
         <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
       </div>
     </details>`;

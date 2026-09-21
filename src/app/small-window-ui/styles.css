@@ -633,11 +633,19 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .item.locked.compared { box-shadow: inset 0 0 0 1px var(--star-gold); }
 
 .asset-thumb { position: relative; width: 30px; height: 30px; flex: 0 0 30px; display: inline-grid; place-items: center; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 7px; color: var(--muted); background: linear-gradient(145deg, #eef3f8, #e4eaf2); font-size: 11px; font-weight: 800; }
-.asset-thumb img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.asset-thumb img { position: absolute; z-index: 1; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.asset-thumb-fallback { position: relative; z-index: 0; }
+.asset-thumb img:not([hidden]) + .asset-thumb-fallback { visibility: hidden; }
 .equipment-unit-icon { width: 38px; height: 38px; flex-basis: 38px; }
 .item-icon { width: 30px; height: 30px; flex-basis: 30px; }
 .unit-icon { width: 32px; height: 32px; flex-basis: 32px; }
 .trait-icon { width: 22px; height: 22px; flex-basis: 22px; border-radius: 50%; }
+.trait-icon img { object-fit: contain; }
+.trait-icon.trait-style-bronze img { filter: url("#trait-color-bronze"); }
+.trait-icon.trait-style-silver img { filter: url("#trait-color-silver"); }
+.trait-icon.trait-style-gold img { filter: url("#trait-color-gold"); }
+.trait-icon.trait-style-chromatic img { filter: url("#trait-color-chromatic"); }
+.trait-icon.trait-style-unique img { filter: url("#trait-color-unique"); }
 .tiny-item-icon { width: 20px; height: 20px; flex-basis: 20px; border-radius: 5px; }
 
 .stats { min-width: 0; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 7px; }

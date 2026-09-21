@@ -13,6 +13,7 @@ import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
 import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
+import { resolveTraitStyle } from "../data/trait-style.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import { createPlayerMatchApiRouter } from "../../services/metatft-player/api-router.mjs";
 import { createPlayerPoolApiRouter } from "../../services/player-pools/api-router.mjs";
@@ -3060,6 +3061,7 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
         filterId: trait.filterId,
         name: trait.name,
         tier: Number.isInteger(trait.tier) ? trait.tier : null,
+        style: resolveTraitStyle(trait, entityDetails),
         iconUrl: trait.iconUrl ?? null,
         assetFallback: Boolean(trait.assetFallback)
       })),
