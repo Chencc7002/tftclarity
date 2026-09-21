@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "unit-play-guidance-forward-run-manifest.v2",
+  "experimentId": "unit-play-guidance-forward.2026-09-01.v2",
+  "mode": "canonical_implementation_ready_provider_locked",
+  "runtime": {
+    "schemaVersion": "unit-play-guidance-forward-canonical.v2",
+    "runtimeVersion": "unit-play-guidance-forward-canonical-runtime.v2",
+    "pairOrderSha256": "2ad4596d97eacc7cfe77e5460fbe3ed14014988fe7906f5118c2daa4e6719f65",
+    "pairConcurrency": 1,
+    "plannedPairs": 90,
+    "plannedAgentRuns": 180,
+    "totalTokenHardCap": null,
+    "providerHttpRequestHardCap": 1800,
+    "frozenReplayClock": "observation_frozen_at_plus_1ms",
+    "expectedToolSequence": [
+      "unit_details",
+      "unit_builds",
+      "item_details_batch",
+      "comps_rankings",
+      "comps_rankings",
+      "composition_tactical_details",
+      "comps_rankings",
+      "composition_tactical_details"
+    ],
+    "analyzability": {
+      "minimumValidPairedRepetitions": 81,
+      "minimumCasesWithTwoValidPairs": 27,
+      "invalidArmsExcludedFromBlindReview": true,
+      "nativeModelCompletionRequired": true,
+      "exactToolSequenceEvaluatedAsOutcome": true
+    }
+  },
+  "frozen": {
+    "corpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "observationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillSha256": "a71442c1b012d49f36ab14cabaf8810f4e2fe7689a498ebeaff5d3218047beb8",
+    "preflightResultNormalizedSha256": "7868114c56ba6a64c18822c3464789d60439361633f62c2d379f669ddaf6b58e",
+    "reviewSchemaNormalizedSha256": "19cc05dc1a8bb1a02f19471efc263330b2357c3b0b696241f7a8175cc1d29e07"
+  },
+  "implementation": {
+    "canonicalRuntimeRawSha256": "d485e0a254fb3916b1569d0837786575769bb4aaea48a8f2cb8b7617d201fed1",
+    "scriptedTransportRawSha256": "7f9ef8aa58781749450e5b5ec73dcde14390337b5b5c6a8db43ea68ce6aa6d0c",
+    "dryRunScriptRawSha256": "a9a909c78291322f383feb1c06dfd088ebaaf93dd26e409cd7aac54675fc6859",
+    "formalRunnerRawSha256": "0d9a1798c4ab2f749d20bfd756374e9048853544ba59574bdc2baed7710c2c92"
+  },
+  "scriptedDryRun": {
+    "completed": true,
+    "plannedAgentRuns": 180,
+    "completedAgentRuns": 180,
+    "transportRequests": 1620,
+    "observedScriptedTokens": 19440,
+    "maxConcurrentTransportRequests": 1,
+    "actualProviderModelCalls": 0,
+    "blindedEntries": 180,
+    "reviewerLabelCounts": [
+      1080,
+      1080
+    ],
+    "resultNormalizedSha256": "703def59cd4cacf0b8b42490f80e8fca2601393bb74cedc5fc9f15342830951c",
+    "packetNormalizedSha256": "ce4b3deeffe9e5619dd3583ade70046a1ae5edd0373b0c460980868635f69bbf",
+    "classification": "local scripted transport only; no efficacy claim"
+  },
+  "review": {
+    "reviewersRequired": 2,
+    "independentBeforeAdjudication": true,
+    "blindKeySeparated": true,
+    "originalLabelsPreserved": true
+  },
+  "disclosedIncompleteAttempts": [
+    {
+      "implementationCommitSha": "40e4c1286a8bcaf5170801103972de0ef7c33205",
+      "classification": "operator-stopped diagnostic attempt; not efficacy evidence",
+      "completedAgentRuns": 7,
+      "providerHttpRequests": 56,
+      "observedTokens": 693199,
+      "nativeModelCompletions": 1,
+      "duplicateCallFallbacks": 1,
+      "noProgressFallbacks": 5,
+      "completedResultProduced": false,
+      "blindPacketProduced": false
+    },
+    {
+      "implementationCommitSha": "842579f2b3a16944770f02a5af96f4e8db7efdfc",
+      "classification": "operator-stopped mathematically unanalyzable attempt; not efficacy evidence",
+      "completedAgentRuns": 26,
+      "providerHttpRequests": 207,
+      "observedTokens": 2449197,
+      "nativeModelCompletions": 4,
+      "baselineNativeModelCompletions": 0,
+      "candidateExactToolSequences": 13,
+      "candidateNativeModelCompletions": 4,
+      "coveredCasesObserved": 5,
+      "casesWithValidPairs": 0,
+      "stopReason": "four completed cases had zero valid pairs, making the 27-of-30 case gate unreachable",
+      "completedResultProduced": false,
+      "blindPacketProduced": false
+    }
+  ],
+  "authorization": {
+    "realProviderPairedRun": false,
+    "productionControl": false,
+    "credentialPersisted": false,
+    "separateAuthorizationArtifactRequired": true,
+    "authorizationScope": "one_formal_paired_run",
+    "authorizationBinds": [
+      "implementationCommitSha",
+      "configNormalizedSha256",
+      "maxAgentRuns=180",
+      "providerHttpRequestHardCap=1800",
+      "totalTokenHardCap=null",
+      "provider.hostname",
+      "provider.model"
+    ]
+  },
+  "claimBoundary": "The canonical implementation and its local scripted dry run are ready. Real Provider calls and production control remain unauthorized."
+}

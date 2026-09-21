@@ -1,0 +1,80 @@
+{
+  "schemaVersion": "unit-play-guidance-forward-config.v2",
+  "experimentId": "unit-play-guidance-forward.2026-09-01.v2",
+  "mode": "zero_provider_call_preflight",
+  "authorization": {
+    "observationCapture": true,
+    "preflight": true,
+    "realProviderPairedRun": false,
+    "productionControl": false
+  },
+  "provider": {
+    "runtimeProviderConfig": "chat",
+    "protocol": "openai-compatible-chat",
+    "endpointClass": "chat_completions",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "implementation": "createReactDecisionProvider",
+    "decisionPromptVersion": "react-decision-contract.v5.tactical-presentation.v1",
+    "messageLayout": "append_only",
+    "decisionMessageShape": "action",
+    "temperature": 0,
+    "topP": "omitted_provider_default",
+    "maxOutputTokens": 1800,
+    "repairMaxOutputTokens": 700,
+    "responseFormat": "json_object",
+    "thinkingMode": "disabled",
+    "timeoutMs": 25000,
+    "maxActionAttempts": 2,
+    "transportRetries": 0,
+    "cacheNamespace": null,
+    "clientResponseCache": false
+  },
+  "agent": {
+    "deadlineMs": 30000,
+    "maxDecisions": 24,
+    "maxRetriesPerTool": 1,
+    "groundingMode": "strict"
+  },
+  "commonRuntimeBothArms": {
+    "toolMode": "frozen_observation_replay_only",
+    "replayClock": "observation_frozen_at_plus_1ms",
+    "liveToolRetrieval": false,
+    "taskFrameIdentityReuse": true,
+    "compositionSnapshotReuse": true,
+    "compositionCardScope": true,
+    "compositionCardsOwnPositioning": true,
+    "tacticalPresentationScope": true,
+    "modelObservationProjection": true,
+    "cardsOnlyAnswerContract": true,
+    "exactCardQueryContract": true,
+    "unitPlayItemMechanismBatch": true,
+    "officialItemEvidenceV1": true
+  },
+  "arms": {
+    "A": "current semanticGuidance only",
+    "B": "Skill 1.5.7 rendered guidance only"
+  },
+  "execution": {
+    "eligibleCases": 30,
+    "arms": ["A", "B"],
+    "repetitions": 3,
+    "plannedPairs": 90,
+    "plannedAgentRuns": 180,
+    "negativeDeterministicCases": 20,
+    "boundaryDeterministicCases": 10,
+    "pairConcurrency": 1
+  },
+  "frozen": {
+    "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+    "corpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "observationVersion": "unit-play-guidance-forward-observations.2026-09-01.v2",
+    "observationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillVersion": "1.5.7",
+    "candidateSkillSha256": "a71442c1b012d49f36ab14cabaf8810f4e2fe7689a498ebeaff5d3218047beb8",
+    "baselineGuidanceSha256": "2c92d3db9898725d98acb303831fa9e863b045009a1bcfa6ba6e6b6f46b1182f",
+    "candidateRenderedContextSha256": "26283e7abff27244ee659db81de1e30211cef06e356d63106cee4e78497d7be7",
+    "defaultProviderMessagesSha256": "c34df4d9955a853b69b4593a7a77290cfd36d000a15e72ade4ac361c72b9a19e"
+  },
+  "claimBoundary": "Forward zero-call readiness only. Prior non-formal candidate diagnostics are disclosed; no formal paired result, provider-call authorization, or production authorization is implied."
+}

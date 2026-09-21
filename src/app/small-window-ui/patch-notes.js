@@ -1,8 +1,28 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.1";
+export const CURRENT_PATCH_VERSION = "18.2";
 
 const PATCH_NOTES = {
+  "18.2": {
+    "version": "18.2",
+    "publishedAt": "2026-09-09T18:00:00.000Z",
+    "locales": {
+      "zh-CN": {
+        "title": "18.2 数值更新",
+        "summary": "已同步 9 月 14 日热补丁；18.2 首发 157 项、热补丁 14 项数值变更均保留。",
+        "sourceName": "Riot Games 官方更新公告",
+        "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-2/",
+        "highlights": []
+      },
+      "en-US": {
+        "title": "Patch 18.2 numeric changes",
+        "summary": "Updated September 14: preserves 157 release changes and 14 mid-patch numeric changes.",
+        "sourceName": "Official Riot Games patch notes",
+        "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-2/",
+        "highlights": []
+      }
+    }
+  },
   "18.1": {
     version: "18.1",
     publishedAt: "2026-08-25T18:00:00.000Z",
@@ -269,4 +289,26 @@ export function getPatchNote(version, locale = "zh-CN") {
 
 export function getCurrentPatchNote(locale = "zh-CN") {
   return getPatchNote(CURRENT_PATCH_VERSION, locale);
+}
+
+// The announcement view keeps the season's earlier numeric revisions visible.
+// Single-patch callers continue to use getPatchNote without inherited history.
+export function getPatchNoteTimeline(version = CURRENT_PATCH_VERSION, locale = "zh-CN") {
+  const current = getPatchNote(version, locale);
+  if (!current) return null;
+  const [season, minor] = current.version.split(".").map(Number);
+  const history = Object.keys(PATCH_NOTES)
+    .filter((candidate) => {
+      const [candidateSeason, candidateMinor] = candidate.split(".").map(Number);
+      return candidateSeason === season && candidateMinor <= minor;
+    })
+    .sort((a, b) => Number(a.split(".")[1]) - Number(b.split(".")[1]))
+    .flatMap((candidate) => getPatchNote(candidate, locale).history);
+  return {
+    ...current,
+    history: history.map((revision, index) => ({
+      ...revision,
+      parentId: history[index - 1]?.id ?? null
+    }))
+  };
 }

@@ -1,0 +1,148 @@
+{
+  "schemaVersion": "unit-play-guidance-forward-preflight.v2",
+  "status": "passed",
+  "experimentId": "unit-play-guidance-forward.2026-09-01.v2",
+  "claimBoundary": "zero-call forward-evaluation readiness only; no formal paired result or production authorization",
+  "hashes": {
+    "corpus": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "observations": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkill": "a71442c1b012d49f36ab14cabaf8810f4e2fe7689a498ebeaff5d3218047beb8",
+    "baselineGuidance": "2c92d3db9898725d98acb303831fa9e863b045009a1bcfa6ba6e6b6f46b1182f",
+    "candidateRenderedContext": "26283e7abff27244ee659db81de1e30211cef06e356d63106cee4e78497d7be7",
+    "defaultMessages": "c34df4d9955a853b69b4593a7a77290cfd36d000a15e72ade4ac361c72b9a19e"
+  },
+  "plan": {
+    "pairCount": 90,
+    "plannedAgentRuns": 180,
+    "orderSha256": "2ad4596d97eacc7cfe77e5460fbe3ed14014988fe7906f5118c2daa4e6719f65",
+    "actualProviderModelCalls": 0
+  },
+  "routing": {
+    "positiveSelected": 30,
+    "negativeFalseTakeover": 0,
+    "boundaryForcedTakeover": 0,
+    "skillRoutingModelCalls": 0,
+    "secondTaskFrameParses": 0
+  },
+  "observationsAudit": {
+    "unitChecks": [
+      {
+        "apiName": "DA_18_Varus",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_Shen",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_Diana",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_Zyra",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_GnarSmall",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_Rakan",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_LeBlanc",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_Cassiopeia",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_Amumu18",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      },
+      {
+        "apiName": "DA_18_Kennen",
+        "exactItemPlan": true,
+        "officialBatchValid": true,
+        "twoDistinctCandidates": true,
+        "cardsValid": true
+      }
+    ],
+    "costDistribution": {
+      "1": 2,
+      "2": 2,
+      "3": 2,
+      "4": 2,
+      "5": 2
+    },
+    "allValid": true
+  },
+  "seam": {
+    "localCaptureRequests": 2,
+    "actualProviderModelCalls": 0,
+    "defaultMessagesSha256": "c34df4d9955a853b69b4593a7a77290cfd36d000a15e72ade4ac361c72b9a19e",
+    "baselineGuidanceSha256": "2c92d3db9898725d98acb303831fa9e863b045009a1bcfa6ba6e6b6f46b1182f",
+    "candidateRenderedContextSha256": "26283e7abff27244ee659db81de1e30211cef06e356d63106cee4e78497d7be7",
+    "candidateSkillSha256": "a71442c1b012d49f36ab14cabaf8810f4e2fe7689a498ebeaff5d3218047beb8",
+    "onlyGuidanceDiffers": true
+  },
+  "projection": {
+    "originalUnchanged": true,
+    "deterministic": true,
+    "projectedSha256": "1b8ecb0063d24f79aae16ab7f9d8ce740fd097951c29db76308b04e016dd12fc",
+    "projectedBytes": 2299,
+    "originalBytes": 31201
+  },
+  "productionAudit": {
+    "experimentImports": []
+  },
+  "gates": {
+    "disclosedForwardDesign": true,
+    "exactPopulation": true,
+    "currentFrozenObservations": true,
+    "routingIsolation": true,
+    "plan180": true,
+    "zeroProviderCalls": true,
+    "providerCallsLocked": true,
+    "frozenReplayClock": true,
+    "onlyGuidanceDiffers": true,
+    "commonProjectionDeterministic": true,
+    "productionDefaultUnchanged": true,
+    "noProductionExperimentImports": true,
+    "corpusHash": true,
+    "observationHash": true,
+    "candidateSkillHash": true,
+    "baselineGuidanceHash": true,
+    "candidateRenderedHash": true,
+    "defaultMessagesHash": true
+  }
+}

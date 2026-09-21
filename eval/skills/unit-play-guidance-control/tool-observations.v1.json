@@ -1,0 +1,117 @@
+{
+  "schemaVersion": "unit-play-guidance-tool-fixtures.v1",
+  "fixtureVersion": "unit-play-guidance-frozen-observations.2026-08-18.v1",
+  "replayToolLatencyMs": 20,
+  "units": {
+    "TFT18_Ahri": {
+      "role": "后排法系主输出，依赖启动后的连续技能伤害",
+      "equipmentLogic": "优先法强、回蓝与法术穿透，保证启动速度和持续输出",
+      "items": ["TFT_Item_JeweledGauntlet", "TFT_Item_BlueBuff", "TFT_Item_StatikkShiv"],
+      "compositionId": "set17-comp-ahri-01",
+      "clusterId": "set17-cluster-ahri-a",
+      "compositionName": "灵能阿狸",
+      "compositionContext": "以阿狸为后排主输出，由前排争取多次施法时间",
+      "whenToPlay": "已有法系装备且阿狸来牌稳定时考虑",
+      "positioning": "置于后排安全侧，避开对位切入并让技能覆盖密集区域"
+    },
+    "TFT18_Warwick": {
+      "role": "近战持续输出与残局收割单位",
+      "equipmentLogic": "优先攻速、续航与抗性，延长贴身输出时间",
+      "items": ["TFT_Item_GuinsoosRageblade", "TFT_Item_Bloodthirster", "TFT_Item_TitansResolve"],
+      "compositionId": "set17-comp-warwick-01",
+      "clusterId": "set17-cluster-warwick-a",
+      "compositionName": "斗士沃里克",
+      "compositionContext": "由前排共同承伤，让沃里克在中后段持续叠加输出",
+      "whenToPlay": "物理装备集中且中期沃里克数量较多时考虑",
+      "positioning": "放在第二排侧翼，避免第一时间承受集火"
+    },
+    "TFT18_Garen": {
+      "role": "主坦与前排控制承载位",
+      "equipmentLogic": "优先生命、双抗和减伤，提升第一轮承伤稳定性",
+      "items": ["TFT_Item_WarmogsArmor", "TFT_Item_GargoyleStoneplate", "TFT_Item_DragonsClaw"],
+      "compositionId": "set17-comp-garen-01",
+      "clusterId": "set17-cluster-garen-a",
+      "compositionName": "重装盖伦",
+      "compositionContext": "盖伦承担主坦职责并为后排争取启动窗口",
+      "whenToPlay": "前排装备完整且阵容需要单点主坦时考虑",
+      "positioning": "放在第一排主要火力交汇处，根据对手输出类型调整对位"
+    },
+    "TFT18_Jinx": {
+      "role": "后排物理主输出与残局收割位",
+      "equipmentLogic": "优先攻速、暴击与破甲，维持稳定的远程输出",
+      "items": ["TFT_Item_InfinityEdge", "TFT_Item_LastWhisper", "TFT_Item_GuinsoosRageblade"],
+      "compositionId": "set17-comp-jinx-01",
+      "clusterId": "set17-cluster-jinx-a",
+      "compositionName": "枪手金克丝",
+      "compositionContext": "围绕金克丝配置前排和辅助增益，争取安全输出时间",
+      "whenToPlay": "物理后排装备充足且金克丝能够稳定升星时考虑",
+      "positioning": "沉底角站位并用辅助单位保护，避开刺客或直线控制"
+    },
+    "TFT18_Leona": {
+      "role": "前排主坦与减伤承载位",
+      "equipmentLogic": "优先双抗、生命与持续减伤，吸收首轮爆发",
+      "items": ["TFT_Item_BrambleVest", "TFT_Item_DragonsClaw", "TFT_Item_Redemption"],
+      "compositionId": "set17-comp-leona-01",
+      "clusterId": "set17-cluster-leona-a",
+      "compositionName": "护卫蕾欧娜",
+      "compositionContext": "蕾欧娜作为核心前排保护后排输出单位",
+      "whenToPlay": "防御装备集中且需要稳定主坦时考虑",
+      "positioning": "顶在对手主输出一侧吸收伤害，避免被单独绕开"
+    },
+    "TFT18_Lux": {
+      "role": "远程法系副输出与控制补充",
+      "equipmentLogic": "优先回蓝和法强，缩短首次施法并提高技能收益",
+      "items": ["TFT_Item_SpearOfShojin", "TFT_Item_ArchangelsStaff", "TFT_Item_JeweledGauntlet"],
+      "compositionId": "set17-comp-lux-01",
+      "clusterId": "set17-cluster-lux-a",
+      "compositionName": "法师拉克丝",
+      "compositionContext": "拉克丝补充后排法术伤害，并与主输出共享法系增益",
+      "whenToPlay": "已有回蓝装且需要补充法系伤害时考虑",
+      "positioning": null
+    },
+    "TFT18_Vayne": {
+      "role": "单体物理持续输出位",
+      "equipmentLogic": "优先攻速、破甲与生存，保证持续处理前排",
+      "items": ["TFT_Item_GuinsoosRageblade", "TFT_Item_LastWhisper", "TFT_Item_Quicksilver"],
+      "compositionId": "set17-comp-vayne-01",
+      "clusterId": "set17-cluster-vayne-a",
+      "compositionName": "游侠薇恩",
+      "compositionContext": "由前排拖延战斗，薇恩负责持续单体输出",
+      "whenToPlay": "攻速装备较多且需要稳定打前排能力时考虑",
+      "positioning": "后排分散站位，利用保护单位隔开切入路径"
+    },
+    "TFT18_Yasuo": {
+      "role": "近战副输出与前排补充",
+      "equipmentLogic": "优先续航、攻速和抗性，兼顾输出与存活",
+      "items": ["TFT_Item_HandOfJustice", "TFT_Item_TitansResolve", "TFT_Item_Quicksilver"],
+      "compositionId": "set17-comp-yasuo-01",
+      "clusterId": "set17-cluster-yasuo-a",
+      "compositionName": "决斗亚索",
+      "compositionContext": "亚索从侧翼切入并作为中期副输出分担压力",
+      "whenToPlay": "近战装备适配且阵容缺少中期战力时考虑",
+      "positioning": "第二排边侧入场，避免直接面对对手主坦控制"
+    },
+    "TFT18_Zed": {
+      "role": "侧翼切入型物理输出位",
+      "equipmentLogic": "优先爆发、穿透和保命，确保切入后完成击杀",
+      "items": ["TFT_Item_InfinityEdge", "TFT_Item_HandOfJustice", "TFT_Item_EdgeOfNight"],
+      "compositionId": "set17-comp-zed-01",
+      "clusterId": "set17-cluster-zed-a",
+      "compositionName": "刺客劫",
+      "compositionContext": "通过对位让劫威胁后排，并由正面阵容吸引火力",
+      "whenToPlay": "物理爆发装备适配且对手后排集中时考虑",
+      "positioning": "根据对手核心换边，避开控制并对准脆弱后排"
+    },
+    "TFT18_Sona": {
+      "role": "团队辅助与续航增益位",
+      "equipmentLogic": "优先回蓝与团队功能装备，提高技能覆盖频率",
+      "items": ["TFT_Item_SpearOfShojin", "TFT_Item_StatikkShiv", "TFT_Item_Morellonomicon"],
+      "compositionId": "set17-comp-sona-01",
+      "clusterId": "set17-cluster-sona-a",
+      "compositionName": "辅助娑娜",
+      "compositionContext": "娑娜为核心输出提供持续增益并补充功能性",
+      "whenToPlay": "阵容已有主输出且需要辅助与功能装备承载者时考虑",
+      "positioning": null
+    }
+  }
+}

@@ -79,7 +79,7 @@ export function getOfficialPatchFacts(options = {}) {
       sourceType: "riot_games",
       sourceId: `tft-patch-${patch.version}`,
       sourceName: localizedPatch.sourceName,
-      sourceUrl: localizedPatch.sourceUrl
+      sourceUrl: revisions.at(-1)?.sourceUrl ?? localizedPatch.sourceUrl
     },
     summary: summaryFor(revisions),
     revisions,

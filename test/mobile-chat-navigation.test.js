@@ -52,25 +52,14 @@ test("mobile web requests fast results and consumes independent conclusion strea
   assert.match(css, /@media \(max-width: 759px\)[\s\S]*\.chat-core-conclusion \{/u);
 });
 
-test("ReAct final free text is visibly labeled as the model conclusion in chat", () => {
+test("ReAct chat renders one conclusion body without system or model annotation headers", () => {
   const app = readUi("app.js");
-  const css = readUi("styles.css");
-  const i18n = readUi("i18n.js");
-
-  assert.match(app, /function reactModelConclusionHtml\(data, summary, responseId = ""\)/u);
-  assert.match(app, /typeof data\?\.reactAnswer === "string"/u);
-  assert.match(app, /data-chat-model-conclusion/u);
-  assert.match(app, /data\?\.answerOrigin === "system_evidence_fallback"/u);
-  assert.match(app, /data\?\.modelConclusion\?\.answer/u);
-  assert.match(app, /data-chat-rejected-model-conclusion/u);
-  assert.match(app, /if \(modelConclusion\)[\s\S]*\$\{modelConclusion\}/u);
-  assert.match(css, /\.chat-model-conclusion \{/u);
-  assert.match(i18n, /modelFinalConclusion: "模型最终结论"/u);
-  assert.match(i18n, /systemEvidenceConclusion: "系统证据结论"/u);
-  assert.match(i18n, /rejectedModelConclusion: "模型原始结论（未通过校验）"/u);
-  assert.match(i18n, /modelConclusionEvidenceLimited/u);
-  assert.match(app, /modelConclusionGroundingWarning/u);
-  assert.match(app, /data\?\.terminationReason === "insufficient_evidence"/u);
+  const start = app.indexOf("function reactModelConclusionHtml(");
+  const renderer = app.slice(start, app.indexOf("function rankingTierLabel(", start));
+  assert.match(renderer, /data-chat-model-conclusion/u);
+  assert.match(renderer, /modelConclusion\?\.answer/u);
+  assert.match(renderer, /bodyOnly: true/u);
+  assert.doesNotMatch(renderer, /<header>|data-chat-rejected-model-conclusion|systemEvidenceConclusion|modelFinalConclusion/u);
 });
 
 test("model conclusions render safe rich text without exposing Markdown markers", () => {
@@ -79,7 +68,7 @@ test("model conclusions render safe rich text without exposing Markdown markers"
   const css = readUi("styles.css");
 
   assert.match(app, /import \{[^}]*conclusionRichTextHtml[^}]*\} from "\.\/conclusion-rich-text\.js"/u);
-  assert.match(app, /conclusionRichTextHtml\(answer \|\| summary\)/u);
+  assert.match(app, /conclusionRichTextHtml\(answer \|\| summary, \{ bodyOnly: true \}\)/u);
   assert.match(formatter, /replaceAll\("\*\*", ""\)/u);
   assert.match(formatter, /assistant-rich-text__section-title/u);
   assert.match(formatter, /assistant-rich-text__summary/u);

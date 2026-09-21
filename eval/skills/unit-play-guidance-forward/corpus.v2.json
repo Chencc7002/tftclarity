@@ -1,0 +1,822 @@
+{
+  "schemaVersion": "unit-play-guidance-forward-corpus.v2",
+  "experimentId": "unit-play-guidance-forward.2026-09-01.v2",
+  "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+  "frozenAt": "2026-09-01T02:33:25.467Z",
+  "frozenBeforeFormalPairedResults": true,
+  "diagnosticDisclosure": {
+    "formalPairResultsObservedBeforeFreeze": false,
+    "priorNonFormalHttpDiagnosticsObserved": true,
+    "diagnosticScope": "two Warwick localhost HTTP requests for candidate 1.5.7",
+    "populationSelectedIndependently": "ten units selected by predeclared SHA-256 round-robin across costs",
+    "claimBoundary": "forward evaluation; not a pristine pre-candidate corpus"
+  },
+  "positive": [
+    {
+      "unitApiName": "DA_18_Varus",
+      "unitName": "韦鲁斯",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-01",
+      "language": "zh-CN",
+      "input": "韦鲁斯怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Varus",
+      "unitName": "韦鲁斯",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-02",
+      "language": "zh-CN",
+      "input": "韦鲁斯的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Varus",
+      "unitName": "Varus",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-03",
+      "language": "en",
+      "input": "How should I play Varus? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_Shen",
+      "unitName": "慎",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-04",
+      "language": "zh-CN",
+      "input": "慎怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Shen",
+      "unitName": "慎",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-05",
+      "language": "zh-CN",
+      "input": "慎的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Shen",
+      "unitName": "Shen",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-06",
+      "language": "en",
+      "input": "How should I play Shen? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_Diana",
+      "unitName": "黛安娜",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-07",
+      "language": "zh-CN",
+      "input": "黛安娜怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Diana",
+      "unitName": "黛安娜",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-08",
+      "language": "zh-CN",
+      "input": "黛安娜的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Diana",
+      "unitName": "Diana",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-09",
+      "language": "en",
+      "input": "How should I play Diana? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_Zyra",
+      "unitName": "婕拉",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-10",
+      "language": "zh-CN",
+      "input": "婕拉怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Zyra",
+      "unitName": "婕拉",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-11",
+      "language": "zh-CN",
+      "input": "婕拉的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Zyra",
+      "unitName": "Zyra",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-12",
+      "language": "en",
+      "input": "How should I play Zyra? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_GnarSmall",
+      "unitName": "纳尔",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-13",
+      "language": "zh-CN",
+      "input": "纳尔怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_GnarSmall",
+      "unitName": "纳尔",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-14",
+      "language": "zh-CN",
+      "input": "纳尔的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_GnarSmall",
+      "unitName": "Gnar",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-15",
+      "language": "en",
+      "input": "How should I play Gnar? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_Rakan",
+      "unitName": "洛",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-16",
+      "language": "zh-CN",
+      "input": "洛怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Rakan",
+      "unitName": "洛",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-17",
+      "language": "zh-CN",
+      "input": "洛的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Rakan",
+      "unitName": "Rakan",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-18",
+      "language": "en",
+      "input": "How should I play Rakan? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_LeBlanc",
+      "unitName": "乐芙兰",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-19",
+      "language": "zh-CN",
+      "input": "乐芙兰怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_LeBlanc",
+      "unitName": "乐芙兰",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-20",
+      "language": "zh-CN",
+      "input": "乐芙兰的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_LeBlanc",
+      "unitName": "LeBlanc",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-21",
+      "language": "en",
+      "input": "How should I play LeBlanc? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_Cassiopeia",
+      "unitName": "卡西奥佩娅",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-22",
+      "language": "zh-CN",
+      "input": "卡西奥佩娅怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Cassiopeia",
+      "unitName": "卡西奥佩娅",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-23",
+      "language": "zh-CN",
+      "input": "卡西奥佩娅的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Cassiopeia",
+      "unitName": "Cassiopeia",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-24",
+      "language": "en",
+      "input": "How should I play Cassiopeia? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_Amumu18",
+      "unitName": "阿木木",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-25",
+      "language": "zh-CN",
+      "input": "阿木木怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_Amumu18",
+      "unitName": "阿木木",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-26",
+      "language": "zh-CN",
+      "input": "阿木木的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_Amumu18",
+      "unitName": "Amumu",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-27",
+      "language": "en",
+      "input": "How should I play Amumu? Explain the unit and sourced items; show two comp cards with their own positioning."
+    },
+    {
+      "unitApiName": "DA_18_Kennen",
+      "unitName": "凯南",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-28",
+      "language": "zh-CN",
+      "input": "凯南怎么玩？只解释英雄和推荐装备，阵容与站位用多张对应卡片展示。"
+    },
+    {
+      "unitApiName": "DA_18_Kennen",
+      "unitName": "凯南",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-29",
+      "language": "zh-CN",
+      "input": "凯南的推荐装备是什么，什么时候适合玩？请给两个阵容卡片，每张带自己的站位。"
+    },
+    {
+      "unitApiName": "DA_18_Kennen",
+      "unitName": "Kennen",
+      "positioningSupported": true,
+      "whenToPlaySupported": true,
+      "expectedCompositionCards": 2,
+      "positioningPresentation": "cards_only",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2",
+      "caseId": "pos-30",
+      "language": "en",
+      "input": "How should I play Kennen? Explain the unit and sourced items; show two comp cards with their own positioning."
+    }
+  ],
+  "negative": [
+    {
+      "input": "韦鲁斯最强出装排名",
+      "unitApiName": "DA_18_Varus",
+      "unitName": "韦鲁斯",
+      "taskFrame": {
+        "goal": "unit_build_rankings"
+      },
+      "caseId": "neg-01",
+      "expectedExclusionReason": "excluded_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "韦鲁斯和慎谁更好？",
+      "unitApiName": "DA_18_Varus",
+      "unitName": "韦鲁斯",
+      "taskFrame": {
+        "goal": "recommend_best_option"
+      },
+      "caseId": "neg-02",
+      "expectedExclusionReason": "excluded_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "搜索黛安娜资料",
+      "unitApiName": "DA_18_Diana",
+      "unitName": "黛安娜",
+      "taskFrame": {
+        "action": "search"
+      },
+      "caseId": "neg-03",
+      "expectedExclusionReason": "wrong_action",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "解释装备机制",
+      "taskFrame": {
+        "action": "explain",
+        "goal": "explain_item_mechanism",
+        "expectedOutput": [
+          "mechanism_explanation"
+        ]
+      },
+      "caseId": "neg-04",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "推荐一个阵容",
+      "taskFrame": {
+        "goal": "recommend_composition",
+        "expectedOutput": [
+          "composition_recommendation"
+        ]
+      },
+      "caseId": "neg-05",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "找一个教学视频",
+      "taskFrame": {
+        "action": "find_video",
+        "goal": "find_video",
+        "expectedOutput": [
+          "video"
+        ]
+      },
+      "caseId": "neg-06",
+      "expectedExclusionReason": "wrong_action",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "总结这段对局",
+      "taskFrame": {
+        "action": "summarize",
+        "goal": "summarize_match",
+        "expectedOutput": [
+          "summary"
+        ]
+      },
+      "caseId": "neg-07",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "分析当前局势",
+      "taskFrame": {
+        "action": "analyze",
+        "goal": "analyze_game_state",
+        "expectedOutput": [
+          "analysis"
+        ]
+      },
+      "caseId": "neg-08",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "婕拉技能是什么？",
+      "unitApiName": "DA_18_Zyra",
+      "unitName": "婕拉",
+      "taskFrame": {
+        "action": "explain",
+        "goal": "explain_unit_ability",
+        "expectedOutput": [
+          "ability_explanation"
+        ]
+      },
+      "caseId": "neg-09",
+      "expectedExclusionReason": "wrong_action",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "装备合成表",
+      "taskFrame": {
+        "action": "search",
+        "goal": "search_item_recipe",
+        "expectedOutput": [
+          "item_recipe"
+        ]
+      },
+      "caseId": "neg-10",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "现实中的纳尔怎么玩？",
+      "unitApiName": "DA_18_GnarSmall",
+      "unitName": "纳尔",
+      "taskFrame": {
+        "domain": "out_of_domain",
+        "understandingStatus": "out_of_domain"
+      },
+      "caseId": "neg-11",
+      "expectedExclusionReason": "wrong_domain",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "洛怎么玩？",
+      "unitApiName": "DA_18_Rakan",
+      "unitName": "洛",
+      "taskFrame": {
+        "expectedOutput": [
+          "unit_build_statistics"
+        ]
+      },
+      "caseId": "neg-12",
+      "expectedExclusionReason": "wrong_output",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "这个英雄怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "这个英雄",
+            "expectedType": "champion",
+            "resolvedId": null,
+            "confidence": 0.2
+          }
+        ]
+      },
+      "caseId": "neg-13",
+      "expectedExclusionReason": "unresolved_entity",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "乐芙兰和卡西奥佩娅分别怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "乐芙兰",
+            "expectedType": "champion",
+            "resolvedId": "DA_18_LeBlanc",
+            "canonicalName": "乐芙兰",
+            "confidence": 1
+          },
+          {
+            "rawText": "卡西奥佩娅",
+            "expectedType": "champion",
+            "resolvedId": "DA_18_Cassiopeia",
+            "canonicalName": "卡西奥佩娅",
+            "confidence": 1
+          }
+        ]
+      },
+      "caseId": "neg-14",
+      "expectedExclusionReason": "multiple_entities",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "离子火花怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "离子火花",
+            "expectedType": "item",
+            "resolvedId": "DA_IonicSpark",
+            "confidence": 1
+          }
+        ]
+      },
+      "caseId": "neg-15",
+      "expectedExclusionReason": "wrong_entity_type",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "某羁绊怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "某羁绊",
+            "expectedType": "trait",
+            "resolvedId": "DA_18_TestTrait",
+            "confidence": 1
+          }
+        ]
+      },
+      "caseId": "neg-16",
+      "expectedExclusionReason": "wrong_entity_type",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "某阵容怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "某阵容",
+            "expectedType": "composition",
+            "resolvedId": "cluster:test",
+            "confidence": 1
+          }
+        ]
+      },
+      "caseId": "neg-17",
+      "expectedExclusionReason": "wrong_entity_type",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "阿木木补丁改动",
+      "unitApiName": "DA_Amumu18",
+      "unitName": "阿木木",
+      "taskFrame": {
+        "action": "summarize",
+        "goal": "summarize_patch",
+        "expectedOutput": [
+          "patch_summary"
+        ]
+      },
+      "caseId": "neg-18",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "按胜率排列所有单位",
+      "taskFrame": {
+        "action": "rank",
+        "goal": "rank_units",
+        "expectedOutput": [
+          "unit_rankings"
+        ]
+      },
+      "caseId": "neg-19",
+      "expectedExclusionReason": "wrong_action",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "解释经济运营",
+      "taskFrame": {
+        "action": "explain",
+        "goal": "explain_economy",
+        "expectedOutput": [
+          "economy_explanation"
+        ]
+      },
+      "caseId": "neg-20",
+      "expectedExclusionReason": "different_goal",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    }
+  ],
+  "boundary": [
+    {
+      "input": "韦鲁斯还是那个怎么玩？",
+      "unitApiName": "DA_18_Varus",
+      "unitName": "韦鲁斯",
+      "taskFrame": {
+        "understandingStatus": "ambiguous"
+      },
+      "caseId": "bnd-01",
+      "expectedExclusionReason": "ambiguous",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "她怎么玩？",
+      "taskFrame": {
+        "understandingStatus": "understood_but_missing_context"
+      },
+      "caseId": "bnd-02",
+      "expectedExclusionReason": "missing_context",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "未知赛季单位怎么玩？",
+      "taskFrame": {
+        "understandingStatus": "understood_but_unsupported"
+      },
+      "caseId": "bnd-03",
+      "expectedExclusionReason": "unsupported",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "现实中的慎怎么玩？",
+      "unitApiName": "DA_18_Shen",
+      "unitName": "慎",
+      "taskFrame": {
+        "domain": "out_of_domain",
+        "understandingStatus": "out_of_domain"
+      },
+      "caseId": "bnd-04",
+      "expectedExclusionReason": "out_of_domain",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "黛安娜怎么玩，参考刚才没提供的阵容？",
+      "unitApiName": "DA_18_Diana",
+      "unitName": "黛安娜",
+      "taskFrame": {
+        "ambiguities": [
+          {
+            "code": "missing_context_reference",
+            "affectsResult": true
+          }
+        ]
+      },
+      "caseId": "bnd-05",
+      "expectedExclusionReason": "blocking_ambiguity",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "婕拉还是纳尔怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "婕拉",
+            "expectedType": "champion",
+            "resolvedId": "DA_18_Zyra",
+            "canonicalName": "婕拉",
+            "confidence": 0.5
+          },
+          {
+            "rawText": "纳尔",
+            "expectedType": "champion",
+            "resolvedId": "DA_18_GnarSmall",
+            "canonicalName": "纳尔",
+            "confidence": 0.5
+          }
+        ],
+        "ambiguities": [
+          {
+            "code": "multiple_unit_candidates",
+            "affectsToolSelection": true
+          }
+        ]
+      },
+      "caseId": "bnd-06",
+      "expectedExclusionReason": "blocking_ambiguity",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "这个单位怎么玩？",
+      "taskFrame": {
+        "subjects": [
+          {
+            "rawText": "这个单位",
+            "expectedType": "champion",
+            "resolvedId": null,
+            "confidence": 0.1
+          }
+        ],
+        "ambiguities": [
+          {
+            "code": "unresolved_subject",
+            "affectsResult": true
+          }
+        ]
+      },
+      "caseId": "bnd-07",
+      "expectedExclusionReason": "blocking_ambiguity",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "洛怎么玩，数据源不确定？",
+      "unitApiName": "DA_18_Rakan",
+      "unitName": "洛",
+      "taskFrame": {
+        "ambiguities": [
+          {
+            "code": "source_scope_unclear",
+            "affectsToolSelection": true
+          }
+        ]
+      },
+      "caseId": "bnd-08",
+      "expectedExclusionReason": "blocking_ambiguity",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "上一局的乐芙兰怎么玩？",
+      "unitApiName": "DA_18_LeBlanc",
+      "unitName": "乐芙兰",
+      "taskFrame": {
+        "understandingStatus": "understood_but_missing_context"
+      },
+      "caseId": "bnd-09",
+      "expectedExclusionReason": "historical_context_missing",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    },
+    {
+      "input": "卡西奥佩娅怎么玩但我不知道是哪套规则？",
+      "unitApiName": "DA_18_Cassiopeia",
+      "unitName": "卡西奥佩娅",
+      "taskFrame": {
+        "ambiguities": [
+          {
+            "code": "ruleset_ambiguous",
+            "affectsResult": true
+          }
+        ]
+      },
+      "caseId": "bnd-10",
+      "expectedExclusionReason": "blocking_ambiguity",
+      "corpusVersion": "unit-play-guidance-forward-corpus.2026-09-01.v2"
+    }
+  ],
+  "defaults": {
+    "expectedEligibility": false,
+    "positiveExpectedEligibility": true,
+    "expectedTaskFramePredicate": {
+      "domain": "tft",
+      "action": "recommend",
+      "goal": "recommend_unit_play",
+      "understandingStatus": "understood_and_supported",
+      "resolvedChampionCount": 1
+    }
+  }
+}

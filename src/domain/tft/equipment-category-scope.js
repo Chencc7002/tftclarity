@@ -5,6 +5,15 @@ const ADDITIVE_PREFIX = /(?:加入|加上|包含|包括|带上|算上|纳入|inc
 const EXCLUSIVE_SCOPE = /(?:只|仅)(?:看|查|查询|要|用|包括|包含)?\s*(?:(?:奥恩)?神器|光明|artifacts?|radiant)|(?:only|just)\s+(?:artifacts?|radiant)/iu;
 const EXCLUSIVE_ORDINARY_PREFIX = /(?:(?:只|仅)(?:看|查|查询|要|用|包括|包含|允许)?|only|just)\s*$/iu;
 
+// Callers supply categories from the validated current catalog, never guessed IDs.
+export function itemPolicyForCategories(categories = []) {
+  const special = [...new Set(categories)].filter(category => category !== "ordinary_completed");
+  if (!special.length) return "ordinary_only";
+  if (special.length === 1 && special[0] === "artifact") return "include_artifact";
+  if (special.length === 1 && special[0] === "radiant") return "include_radiant";
+  return "include_special";
+}
+
 // This selects the target of a category restriction, never equipment identity.
 export function requestedEquipmentPolicyScope(input) {
   const text = String(input ?? "");

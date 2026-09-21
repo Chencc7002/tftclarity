@@ -78,6 +78,12 @@ export function validateQueryContext(query, options = {}) {
       warnings.push(`“${item.shortName ?? item.zhName}”当前版本不属于可用装备`);
     }
     const retainedLock = query.itemPolicyScope === "remaining_items" && lockedItems.includes(itemApiName);
+    if (query.performanceItem === itemApiName && (
+      !POLICY_CATEGORIES[query.itemPolicy]?.has(item.category)
+      || (query.itemCategories?.length && !query.itemCategories.includes(item.category))
+    )) {
+      errors.push(`目标装备“${item.shortName ?? item.zhName}”与当前装备范围冲突，请修改装备范围`);
+    }
     if (query.itemPolicy === "ordinary_only" && item.category !== "ordinary_completed" && !excludedOnly && !retainedLock) {
       warnings.push(`普通装备查询中不会混入“${item.shortName ?? item.zhName}”这类 ${item.category} 装备`);
     }

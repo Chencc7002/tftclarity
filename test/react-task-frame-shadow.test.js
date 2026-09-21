@@ -175,6 +175,30 @@ test("control on sends the original broad-play request and bounded advisory to n
   assert.match(payload.answer, /运营/u);
 });
 
+test("compound guidance is server opt-in and reuses the original single TaskFrame parse", async () => {
+  for (const enabled of [false, true]) {
+    let parses = 0, decisionState;
+    const runtime = createSmallWindowRuntime({
+      cacheStore: new MemoryCacheStore(), reactTaskFrameControlV1: true,
+      parseSemanticTask: async (input, options) => {
+        parses += 1;
+        assert.equal(options.compoundUnitPlayGuidance, enabled);
+        return parseSemanticTask(input, options);
+      },
+      reactDecisionProvider: finishDecision((state) => { decisionState = state; })
+    });
+    runtime.reactCompoundUnitPlayGuidance = enabled;
+    const { statusCode } = await handleReactChatRequest({
+      input: "沃里克怎么玩？请给推荐装备和多个阵容，每个阵容带对应站位。",
+      seasonContextId: "set18-live", locale: "zh-CN",
+      compoundUnitPlayGuidance: true, reactCompoundUnitPlayGuidance: true
+    }, runtime);
+    assert.equal(statusCode, 200);
+    assert.equal(parses, 1);
+    assert.equal(decisionState.semanticAdvisory?.goal === "recommend_unit_play", enabled);
+  }
+});
+
 test("ReAct shadow parses the original broad-play input without changing production state", async () => {
   let parserRequest = null;
   let shadowEvent = null;

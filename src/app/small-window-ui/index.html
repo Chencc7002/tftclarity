@@ -19,6 +19,26 @@
     <link rel="stylesheet" href="/opgg-panel.css">
   </head>
   <body>
+    <svg class="svg-filter-definitions" width="0" height="0" aria-hidden="true" focusable="false">
+      <defs>
+        <linearGradient id="trait-chromatic-gradient" x1="0" y1="1" x2="1" y2="0">
+          <stop offset="0" stop-color="#ff6b6b"/>
+          <stop offset="0.24" stop-color="#ffd166"/>
+          <stop offset="0.48" stop-color="#4dd7b0"/>
+          <stop offset="0.72" stop-color="#62a7ff"/>
+          <stop offset="1" stop-color="#c77dff"/>
+        </linearGradient>
+        <rect id="trait-chromatic-source" width="1" height="1" fill="url(#trait-chromatic-gradient)"/>
+        <filter id="trait-color-bronze" color-interpolation-filters="sRGB"><feFlood flood-color="#b87333" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-silver" color-interpolation-filters="sRGB"><feFlood flood-color="#78909c" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-gold" color-interpolation-filters="sRGB"><feFlood flood-color="#d6a62e" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-unique" color-interpolation-filters="sRGB"><feFlood flood-color="#d86b4b" result="color"/><feComposite in="color" in2="SourceAlpha" operator="in"/></filter>
+        <filter id="trait-color-chromatic" primitiveUnits="objectBoundingBox" color-interpolation-filters="sRGB">
+          <feImage href="#trait-chromatic-source" x="0" y="0" width="1" height="1" preserveAspectRatio="none" result="color"/>
+          <feComposite in="color" in2="SourceAlpha" operator="in"/>
+        </filter>
+      </defs>
+    </svg>
     <main class="shell" id="app-shell">
       <div class="wallpaper-layer" aria-hidden="true"></div>
       <canvas class="particle-layer" id="particle-layer" aria-hidden="true"></canvas>
@@ -115,6 +135,7 @@
               </div>
             </div>
             <p id="voice-input-status" class="voice-input-status" role="status" aria-live="polite" hidden></p>
+            <aside id="voice-guidance" class="tool-reminder experience-guidance" hidden></aside>
             <p class="ai-generated-disclaimer" role="note">
               <span class="ai-generated-disclaimer-mark" aria-hidden="true">AI</span>
               <span data-i18n="aiGeneratedDisclaimer">AI 生成内容可能存在错误或不完整。统计数据、数据来源与工具证据可供核对；策略判断、原因分析与推测性建议仅供参考，请结合实际对局判断。</span>
@@ -196,6 +217,12 @@
                 <p data-i18n="onboardingSettingsBody">重新了解工具列表、收藏和自然语言提问入口。</p>
               </div>
               <button type="button" id="restart-onboarding-button" data-i18n="onboardingReplay">重新查看</button>
+            </section>
+
+            <section class="settings-section experience-guidance-settings" aria-labelledby="experience-guidance-title">
+              <h2 id="experience-guidance-title" data-i18n="guidanceSettingsTitle">体验提示</h2>
+              <label class="tool-recommendations-setting"><input type="checkbox" id="experience-guidance-toggle" checked><span data-i18n="guidanceSettingsToggle">适时提示语音输入和收藏常用工具</span></label>
+              <p data-i18n="guidanceSettingsBody">提示偏好仅保存在当前浏览器。关闭后，回答末尾的下一步按钮仍然可用。</p>
             </section>
 
             <details class="advanced-query-settings" open>

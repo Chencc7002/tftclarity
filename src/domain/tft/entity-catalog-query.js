@@ -1,4 +1,5 @@
 import { normalizeAlias } from "../../core/normalizer.js";
+import { applyEntityNameCandidates, normalizeEntityNameResolutionMode } from "./entity-name-candidates.js";
 
 const ENTITY_TYPES = new Set(["unit", "item", "trait"]);
 const MAX_LIMIT = 200;
@@ -180,7 +181,7 @@ function traitRecords(catalog, details) {
   return [...grouped.values()];
 }
 
-export function queryEntityCatalog({ catalog, details, input = {}, updatedAt } = {}) {
+export function queryEntityCatalog({ catalog, details, input = {}, updatedAt, nameResolution = {} } = {}) {
   const entityType = String(input.entityType ?? "");
   if (!ENTITY_TYPES.has(entityType)) throw new TypeError("entityType must be unit, item or trait");
   const filters = input.filters && typeof input.filters === "object" ? input.filters : {};
@@ -190,12 +191,9 @@ export function queryEntityCatalog({ catalog, details, input = {}, updatedAt } =
   if (requestedNames.length && array(filters.apiNames).length) {
     throw new TypeError("filters.names and filters.apiNames are mutually exclusive");
   }
-  const resolution = requestedNames.length
+  let resolution = requestedNames.length
     ? exactAliasResolution(catalog, entityType, requestedNames)
     : null;
-  const resolvedApiNames = new Set(
-    resolution?.requests.flatMap((request) => request.candidates.map((candidate) => candidate.apiName)) ?? []
-  );
   let results = entityType === "unit"
     ? unitRecords(catalog, details)
     : entityType === "item"
@@ -204,12 +202,23 @@ export function queryEntityCatalog({ catalog, details, input = {}, updatedAt } =
   results = results.filter((record) => {
     if (filters.cost !== undefined && !array(filters.cost).map(Number).includes(Number(record.cost))) return false;
     if (filters.apiNames && !array(filters.apiNames).map(String).includes(record.apiName)) return false;
-    if (resolution && !resolvedApiNames.has(record.apiName)) return false;
     if (filters.categories && !array(filters.categories).map(String).includes(record.category)) return false;
     if (filters.current !== undefined && record.current !== filters.current) return false;
     if (filters.obtainable !== undefined && record.obtainable !== filters.obtainable) return false;
     return entityType !== "unit" || matchesRequestedTraits(record, requestedTraitIds, requestedTraitNames);
   });
+  if (resolution && normalizeEntityNameResolutionMode(nameResolution.mode) !== "off") {
+    const eligibleIds = new Set(results.filter(record => record.current !== false).map(record => record.apiName));
+    const entries = catalogRecords(catalog, entityType)
+      .filter(record => record.current !== false && eligibleIds.has(canonicalApiName(record, entityType)))
+      .map(record => ({ apiName: canonicalApiName(record, entityType), name: String(displayName(record)),
+        aliases: recordAliases(record, entityType) }));
+    resolution = applyEntityNameCandidates({ catalog, entityType, entries, resolution, options: nameResolution });
+  }
+  if (resolution) {
+    const resolvedApiNames = new Set(resolution.requests.flatMap(request => request.candidates.map(candidate => candidate.apiName)));
+    results = results.filter(record => resolvedApiNames.has(record.apiName));
+  }
   results.sort(compare(input.sort));
   const limit = Math.max(1, Math.min(MAX_LIMIT, Number.isInteger(input.limit) ? input.limit : MAX_LIMIT));
   results = results.slice(0, limit).map((record) => project(record, input.projection));

@@ -1,0 +1,170 @@
+{
+  "schemaVersion": "comp-guide-snapshot.v1",
+  "capturedAt": "2026-08-18T04:07:32.041Z",
+  "identity": {
+    "compId": "metatft:8f70cb1746c944432780fafdd55622fc9f649ed01c33c917ac0d6193f59b8a1e",
+    "identityVersion": "metatft-comp-signature.v1",
+    "set": "TFTSet17",
+    "queue": "1100",
+    "sourceAliases": {
+      "clusterId": "409",
+      "sourceCompId": "409000"
+    },
+    "signature": {
+      "normalizationRule": "sort_unique_exact_api_names_utf8_json_v1",
+      "units": [
+        "TFT17_Aatrox",
+        "TFT17_Jax",
+        "TFT17_Lulu",
+        "TFT17_Maokai",
+        "TFT17_Milio",
+        "TFT17_Pantheon",
+        "TFT17_TwistedFate"
+      ],
+      "traits": [
+        "TFT17_APTrait_1",
+        "TFT17_DRX_1",
+        "TFT17_Fateweaver_1",
+        "TFT17_HPTank_1",
+        "TFT17_ResistTank_1",
+        "TFT17_Stargazer_Wolf_1",
+        "TFT17_Timebreaker_1"
+      ],
+      "hashInput": "{\"identityVersion\":\"metatft-comp-signature.v1\",\"set\":\"TFTSet17\",\"traits\":[\"TFT17_APTrait_1\",\"TFT17_DRX_1\",\"TFT17_Fateweaver_1\",\"TFT17_HPTank_1\",\"TFT17_ResistTank_1\",\"TFT17_Stargazer_Wolf_1\",\"TFT17_Timebreaker_1\"],\"units\":[\"TFT17_Aatrox\",\"TFT17_Jax\",\"TFT17_Lulu\",\"TFT17_Maokai\",\"TFT17_Milio\",\"TFT17_Pantheon\",\"TFT17_TwistedFate\"]}"
+    }
+  },
+  "statistics": {
+    "binding": "patch",
+    "patch": "17.8",
+    "bPatch": "",
+    "patchRole": "previous",
+    "status": "observed",
+    "games": 8549,
+    "averagePlacement": 4.383670604749094,
+    "placementCounts": [
+      1192,
+      1239,
+      1086,
+      940,
+      970,
+      988,
+      1062,
+      1072
+    ],
+    "source": {
+      "provider": "MetaTFT",
+      "endpoint": "/tft-comps-api/comps_stats",
+      "url": "https://api-hc.metatft.com/tft-comps-api/comps_stats?queue=1100&patch=17.8&b_patch=",
+      "responseSha256": "27cd1b51fcd391f180782ef128940cb292380d428f18e69ba0a109b2c82e76c1",
+      "binding": "explicit_patch_query"
+    },
+    "verification": {
+      "status": "verified",
+      "mechanism": "comps_stats_patch_query",
+      "patchDiscovery": {
+        "patch": "17.9",
+        "bPatch": "",
+        "start": "2026-08-11T21:08:01.306Z"
+      },
+      "statsRequestUrl": "https://api-hc.metatft.com/tft-comps-api/comps_stats?queue=1100&patch=17.8&b_patch=",
+      "statsResponseSha256": "27cd1b51fcd391f180782ef128940cb292380d428f18e69ba0a109b2c82e76c1",
+      "totalPatchMatches": 2636298,
+      "pairEvidenceSha256": "735dc97eba5f1ac23dfa34f58d50648c37613a8df0b636f8308f06546d06d33f"
+    }
+  },
+  "guide": {
+    "binding": "unavailable_for_requested_patch",
+    "observedDuringPatch": null,
+    "facets": {
+      "earlyBoards": {
+        "binding": "unavailable_for_requested_patch",
+        "status": "not_available",
+        "data": [],
+        "reason": "source_endpoint_not_patch_bound",
+        "source": {
+          "provider": "MetaTFT",
+          "binding": "unavailable_for_requested_patch",
+          "currentCanonicalResponseSha256": "3e1e4dea6cec9ecd8102ea92017db0acce20b7947eef8d59da734389b8510ba3"
+        }
+      },
+      "leveling": {
+        "binding": "unavailable_for_requested_patch",
+        "status": "not_available",
+        "data": [],
+        "reason": "source_endpoint_not_patch_bound",
+        "source": {
+          "provider": "MetaTFT",
+          "binding": "unavailable_for_requested_patch",
+          "currentCanonicalResponseSha256": "3e1e4dea6cec9ecd8102ea92017db0acce20b7947eef8d59da734389b8510ba3"
+        }
+      },
+      "reroll": {
+        "binding": "unavailable_for_requested_patch",
+        "status": "not_available",
+        "data": [],
+        "reason": "source_endpoint_not_patch_bound",
+        "source": {
+          "provider": "MetaTFT",
+          "binding": "unavailable_for_requested_patch",
+          "currentCanonicalResponseSha256": "3e1e4dea6cec9ecd8102ea92017db0acce20b7947eef8d59da734389b8510ba3"
+        }
+      },
+      "firstCarouselComponents": {
+        "binding": "unavailable_for_requested_patch",
+        "status": "not_available",
+        "data": [],
+        "reason": "source_endpoint_not_patch_bound",
+        "source": {
+          "provider": "MetaTFT",
+          "binding": "unavailable_for_requested_patch",
+          "currentCanonicalResponseSha256": "3e1e4dea6cec9ecd8102ea92017db0acce20b7947eef8d59da734389b8510ba3"
+        }
+      },
+      "recommendedAugments": {
+        "binding": "unavailable_for_requested_patch",
+        "status": "not_available",
+        "data": [],
+        "reason": "source_endpoint_not_patch_bound",
+        "source": {
+          "provider": "MetaTFT",
+          "binding": "unavailable_for_requested_patch",
+          "currentCanonicalResponseSha256": "76c385f01375560c14fdf91136c3b237586b5f374cc2f30d86e50793e6a41e5b"
+        }
+      },
+      "positioning": {
+        "binding": "unavailable_for_requested_patch",
+        "status": "not_available",
+        "data": [],
+        "reason": "source_endpoint_not_patch_bound",
+        "source": {
+          "provider": "MetaTFT",
+          "binding": "unavailable_for_requested_patch",
+          "currentCanonicalResponseSha256": "3e1e4dea6cec9ecd8102ea92017db0acce20b7947eef8d59da734389b8510ba3"
+        }
+      }
+    }
+  },
+  "entityMappings": [],
+  "sourceMetadata": {
+    "provider": "MetaTFT",
+    "pageUrl": "https://www.metatft.com/comps",
+    "queue": "1100",
+    "tftSet": "TFTSet17",
+    "rawSchemaVersion": "metatft-comp-guide-probe-raw.v1",
+    "normalizerVersion": "metatft-comp-guide-normalizer.v2",
+    "rawIdentity": {
+      "stableCompId": "metatft:9b8eee6b1c201debbb210c3ea668795cf52db5de2938d33ad19c2c354a369995",
+      "signatureVersion": "metatft-lineup-signature-v1"
+    },
+    "nameTokens": [
+      "TFT17_Timebreaker",
+      "TFT17_Jax"
+    ]
+  },
+  "safety": {
+    "crossPatchDetailReuse": false,
+    "guessedEntityMappings": 0,
+    "answerReady": false,
+    "probeOnly": true
+  }
+}

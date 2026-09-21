@@ -2,6 +2,7 @@ import { BilibiliMcpAdapter } from "./adapter.mjs";
 import { createBilibiliMcpHttpClient } from "./mcp-client.mjs";
 import { createOnlinePatchWindowProvider } from "./patch-window-provider.mjs";
 import { filterStrategyVideoDomain, gateStrategyVideoRequest } from "./domain-filter.mjs";
+import { createVideoEntityScope } from "../../src/domain/tft/video-entity-scope.js";
 import {
   attachRankingSignals,
   classifyPatchTime,
@@ -53,6 +54,8 @@ export function resolveBilibiliMcpConfig(options = {}, env = process.env) {
     detailLimit: integer(options.detailLimit ?? env.BILIBILI_DETAIL_CANDIDATE_LIMIT, 5, 0, 10),
     resultLimit: integer(options.resultLimit ?? env.BILIBILI_RESULT_LIMIT, 5, 1, 10),
     minCurrentResults: integer(options.minCurrentResults ?? env.BILIBILI_MIN_CURRENT_RESULTS, 3, 1, 10),
+    entityMatchMode: ["off", "shadow", "enforce"].includes(options.entityMatchMode ?? env.BILIBILI_ENTITY_MATCH_MODE)
+      ? options.entityMatchMode ?? env.BILIBILI_ENTITY_MATCH_MODE : "shadow",
     tftPatchWindows,
     patchWindows: tftPatchWindows,
     goldenSpatulaPatchWindows: normalizePatchWindows(
@@ -201,7 +204,7 @@ export class BilibiliStrategyVideoService {
     this.patchWindowProvider = options.patchWindowProvider ?? null;
   }
 
-  async searchGroup(plan, input, context, userQuery, retrievedAt, ecosystemSource) {
+  async searchGroup(plan, input, context, userQuery, retrievedAt, ecosystemSource, entityMatcher) {
     let onlinePatchContext = null;
     let patchDiscoveryWarning = null;
     if (this.patchWindowProvider) {
@@ -233,9 +236,18 @@ export class BilibiliStrategyVideoService {
       .filter((video) => video.videoId && video.url && video.title)
       .map((video) => ({ ...video, detailStatus: "unavailable" }));
     const domainFiltered = filterStrategyVideoDomain(normalized, userQuery, plan.ecosystem);
+    const entityMode = this.config.entityMatchMode ?? "shadow";
+    const titleMatches = new Map();
+    const matchesEntity = (video) => {
+      if (!titleMatches.has(video.title)) titleMatches.set(video.title, entityMatcher?.matchTitle(video.title)
+        ?? { accepted: true, reason: "off", matches: [] });
+      return titleMatches.get(video.title);
+    };
+    const observed = domainFiltered.accepted.map((video) => ({ video, match: matchesEntity(video) }));
     const candidates = domainFiltered.accepted
       .map((video) => ({ ...video, ...patchFields(video, patch) }))
-      .filter((video) => relevanceScore(video, userQuery) >= 0.08);
+      .filter((video) => entityMode === "enforce" && entityMatcher?.scope.status !== "unscoped"
+        ? matchesEntity(video).accepted : relevanceScore(video, userQuery) >= 0.08);
     const preliminary = sortRankedVideos(attachRankingSignals(candidates, { query: userQuery, now: this.now() }));
     const detailCandidates = preliminary
       .filter((video) => video.videoId)
@@ -259,7 +271,11 @@ export class BilibiliStrategyVideoService {
       : detailFailureById.has(candidate.videoId)
         ? { ...candidate, detailFailureCode: detailFailureById.get(candidate.videoId) }
         : candidate);
-    const reranked = sortRankedVideos(attachRankingSignals(enriched.map((video) => ({
+    // Details can replace the title. Recheck it before selection and every
+    // patch/ecosystem fallback; popularity and freshness cannot bypass scope.
+    const finalCandidates = entityMode === "enforce"
+      ? enriched.filter((video) => matchesEntity(video).accepted) : enriched;
+    const reranked = sortRankedVideos(attachRankingSignals(finalCandidates.map((video) => ({
       ...video,
       ...patchFields(video, patch)
     })), { query: userQuery, now: this.now() }));
@@ -296,7 +312,18 @@ export class BilibiliStrategyVideoService {
       detailRequested,
       patch
     };
-    const videos = selected.videos.map((video) => publicVideo(video, evidence));
+    const videos = selected.videos.map((video) => {
+      const result = publicVideo(video, evidence);
+      if (entityMode === "enforce") result.evidence.titleEntityMatch = matchesEntity(video);
+      return result;
+    });
+    if (entityMode === "enforce" && entityMatcher) {
+      if (["ambiguous", "catalog_unavailable"].includes(entityMatcher.scope.status)) {
+        warnings.push(`video_entity_scope_${entityMatcher.scope.status}`);
+      } else if (entityMatcher.scope.status === "resolved" && !videos.length) {
+        warnings.push("no_title_entity_match");
+      }
+    }
     return {
       ecosystem: plan.ecosystem,
       status: videos.length ? "found" : "no_results",
@@ -319,6 +346,16 @@ export class BilibiliStrategyVideoService {
         rejected: domainFiltered.rejected.length,
         rejectionCounts: domainFiltered.rejectionCounts
       },
+      ...(entityMatcher ? { entityFilter: {
+        mode: entityMode,
+        ...entityMatcher.scope,
+        accepted: observed.filter(({ match }) => match.accepted).length,
+        rejected: observed.filter(({ match }) => !match.accepted).length,
+        rejections: observed.filter(({ match }) => !match.accepted)
+          .map(({ video, match }) => ({ videoId: video.videoId, reason: match.reason })),
+        returnedOutsideScope: videos.filter((video) => !matchesEntity(video).accepted).map((video) => video.videoId),
+        detailTitleRejected: enriched.length - finalCandidates.length
+      } } : {}),
       fallbackUsed: selected.fallbackUsed,
       fallbackType: selected.fallbackType,
       resultShortage: videos.length < resultLimit,
@@ -335,15 +372,36 @@ export class BilibiliStrategyVideoService {
     if (query.length < 1 || query.length > 240) {
       throw new TypeError("Bilibili video query must contain 1 to 240 characters");
     }
+    context.signal?.throwIfAborted?.();
+    let entityMatcher = null;
+    if ((this.config.entityMatchMode ?? "shadow") !== "off") {
+      let resources;
+      try {
+        resources = typeof context.loadVideoEntityResources === "function"
+          ? await context.loadVideoEntityResources({ mode: this.config.entityMatchMode ?? "shadow" }) : context;
+        context.signal?.throwIfAborted?.();
+        entityMatcher = createVideoEntityScope(query, resources ?? {});
+      } catch {
+        context.signal?.throwIfAborted?.();
+        entityMatcher = createVideoEntityScope(query, {});
+      }
+      context.signal?.throwIfAborted?.();
+    }
     const requestedEcosystem = ["tft_pc", "golden_spatula", "both"].includes(input.ecosystem)
       ? input.ecosystem
       : null;
+    const searchQuery = this.config.entityMatchMode === "enforce" && entityMatcher?.scope.status === "resolved"
+      ? entityMatcher.searchQuery : query;
     const scopeAwareQuery = requestedEcosystem === "both"
-      ? `${query} \u5206\u522b \u4e91\u9876\u4e4b\u5f08 \u91d1\u94f2\u94f2\u4e4b\u6218`
+      ? `${searchQuery} \u5206\u522b \u4e91\u9876\u4e4b\u5f08 \u91d1\u94f2\u94f2\u4e4b\u6218`
       : requestedEcosystem === "golden_spatula"
-        ? `${query} \u91d1\u94f2\u94f2\u4e4b\u6218`
-        : requestedEcosystem === "tft_pc" ? `${query} \u4e91\u9876\u4e4b\u5f08` : query;
-    const requestGate = gateStrategyVideoRequest(scopeAwareQuery);
+        ? `${searchQuery} \u91d1\u94f2\u94f2\u4e4b\u6218`
+        : requestedEcosystem === "tft_pc" ? `${searchQuery} \u4e91\u9876\u4e4b\u5f08` : searchQuery;
+    let requestGate = gateStrategyVideoRequest(scopeAwareQuery);
+    if (this.config.entityMatchMode === "enforce" && entityMatcher?.scope.status === "resolved"
+      && requestGate.reason === "tft_strategy_signal_required") {
+      requestGate = gateStrategyVideoRequest(`${scopeAwareQuery} 云顶之弈`);
+    }
     const retrievedAt = new Date(this.now()).toISOString();
     if (!requestGate.allowed) {
       return {
@@ -366,7 +424,7 @@ export class BilibiliStrategyVideoService {
     }
 
     const groups = await Promise.all(requestGate.searchPlans.map((plan) => (
-      this.searchGroup(plan, input, context, query, retrievedAt, requestGate.ecosystemSource)
+      this.searchGroup(plan, input, context, query, retrievedAt, requestGate.ecosystemSource, entityMatcher)
     )));
     if (requestGate.requestedEcosystem === "both") {
       const nativeGroups = groups.map((group) => ({

@@ -1,12 +1,16 @@
 import { AppShell, TitleBar } from "./app-shell.js";
+import { mountEmblemRankings } from "./emblem-rankings.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
+import { hasBoundTacticalEvidence } from "./composition-card-details.js";
 import { createQuickToolLibrary } from "./quick-tool-library.js";
 import { createOnboardingTour } from "./onboarding-tour.js";
 import { createVoiceInput } from "./voice-input.js";
+import { createExperienceGuidance } from "./experience-guidance.js";
+import { bindExperienceGuidance } from "./experience-guidance-ui.js";
 import { applyI18n, formatDate, formatNumber, getLocale, localizedName, setLocale, t } from "./i18n.js";
-import { CURRENT_PATCH_VERSION, getPatchNote } from "./patch-notes.js";
+import { CURRENT_PATCH_VERSION, getPatchNoteTimeline } from "./patch-notes.js";
 import {
   cancelOpggRequests,
   renderOpggTrends,
@@ -606,6 +610,12 @@ const QUICK_TASK_CATEGORIES = [
 
 const QUICK_TASKS = [
   {
+    category: "equipment", id: "emblem-rankings", operation: "emblem_rankings",
+    query: "查询可合成转职强度排行", promptKey: "quickTaskEmblemsPrompt",
+    titleKey: "quickTaskEmblemsTitle", bodyKey: "quickTaskEmblemsBody", exampleKey: "quickTaskEmblemsExample",
+    icon: '<path d="m12 3 7 4v5c0 4-7 9-7 9s-7-5-7-9V7z"/><path d="m8 13 3-3 2 2 3-5"/>'
+  },
+  {
     category: "equipment",
     id: "unit-build",
     operation: "unit_build_rankings",
@@ -798,8 +808,17 @@ const QUICK_TASKS = [
   }
 ];
 
+const experienceGuidance = createExperienceGuidance({
+  storage: () => window.localStorage,
+  blocked: () => document.hidden || state.requestInFlight
+    || document.body.classList.contains("onboarding-active")
+    || Boolean(document.querySelector("dialog[open]"))
+    || (window.innerWidth < 1100 && appShell.settings.open)
+    || !queryInput.getClientRects().length
+});
 const quickToolLibrary = createQuickToolLibrary({
   tasks: quickTasksForSeason, categories: QUICK_TASK_CATEGORIES, t, escapeHtml,
+  guidance: experienceGuidance,
   launch: launchQuickTask, isRunning: () => state.requestInFlight
 });
 const onboardingTour = createOnboardingTour({
@@ -812,8 +831,10 @@ const voiceInput = createVoiceInput({
   input: queryInput,
   status: document.querySelector("#voice-input-status"),
   t,
-  getLocale
+  getLocale,
+  onStarted: () => experienceGuidance.complete("voice", "voice")
 });
+const experienceGuidanceUI = bindExperienceGuidance({ guidance: experienceGuidance, input: queryInput, voice: voiceInput, t });
 restartOnboardingButton?.addEventListener("click", () => onboardingTour.start({ force: true }));
 
 function quickTasksForSeason() {
@@ -1108,7 +1129,7 @@ function metric(label, value) {
 function itemPill(item) {
   const label = localizedName(item, t("item"));
   return `<span class="item${item.locked ? " locked" : ""}${item.compared ? " compared" : ""}" title="${escapeHtml(label)}">
-    ${assetThumb(item.iconUrl, label, "item-icon")}
+    ${assetThumb(item.iconUrl, label, "item-icon", item.fallbackIconUrl)}
     <span class="item-label">${escapeHtml(label)}</span>
   </span>`;
 }
@@ -1117,10 +1138,22 @@ function assetThumb(iconUrl, label, className = "", fallbackIconUrl = null) {
   const text = String(label ?? "?").trim();
   const fallback = text.slice(0, 1) || "?";
   const image = iconUrl
-    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"${fallbackIconUrl ? ` data-fallback-src="${escapeHtml(fallbackIconUrl)}"` : ""} onerror="if(this.dataset.fallbackSrc){this.src=this.dataset.fallbackSrc;this.dataset.fallbackSrc=''}else{this.hidden=true}">`
+    ? `<img src="${escapeHtml(iconUrl)}" alt="" loading="lazy"${fallbackIconUrl ? ` data-fallback-src="${escapeHtml(fallbackIconUrl)}"` : ""}>`
     : "";
-  return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}"><span>${escapeHtml(fallback)}</span>${image}</span>`;
+  return `<span class="asset-thumb ${escapeHtml(className)}" role="img" aria-label="${escapeHtml(text)}" title="${escapeHtml(text)}">${image}<span class="asset-thumb-fallback">${escapeHtml(fallback)}</span></span>`;
 }
+
+// Image errors do not bubble. Capture also covers thumbnails inserted lazily,
+// without inline handlers that the production script-src policy blocks.
+function handleAssetError(event) {
+  const img = event.target;
+  if (img?.tagName !== "IMG" || !img.closest(".asset-thumb")) return;
+  const fallback = img.dataset.fallbackSrc;
+  delete img.dataset.fallbackSrc;
+  if (fallback && fallback !== img.getAttribute("src")) img.src = fallback;
+  else img.hidden = true;
+}
+document.addEventListener("error", handleAssetError, true);
 
 function hasNumericValue(value) {
   return value !== null && value !== undefined && value !== "" && Number.isFinite(Number(value));
@@ -1158,6 +1191,19 @@ function compTraitLabel(trait) {
   const tier = Number(trait?.tier);
   const name = localizedName(trait);
   return Number.isInteger(tier) && tier > 0 ? `${name} · ${tier}` : name;
+}
+
+function compTraitStyle(trait) {
+  const style = String(trait?.style ?? "").trim().toLowerCase();
+  if (["bronze", "silver", "gold", "chromatic", "unique"].includes(style)) return style;
+  const tier = Number(trait?.tier);
+  return ({ 1: "bronze", 2: "silver", 3: "gold", 4: "chromatic" })[tier] ?? null;
+}
+
+function traitThumb(trait) {
+  const style = compTraitStyle(trait);
+  const className = `trait-icon${style ? ` trait-style-${style}` : ""}`;
+  return assetThumb(trait?.iconUrl, compTraitLabel(trait), className, trait?.fallbackIconUrl);
 }
 
 function compRankLabel(rankFilter = []) {
@@ -1244,15 +1290,17 @@ function renderCompUnit(unit, comp, expanded = false) {
 }
 
 function compDetailDescriptor(comp) {
-  const compId = String(comp?.source?.clusterId ?? "").trim();
-  const dataClusterId = String(comp?.source?.dataClusterId ?? "").trim();
+  const embeddedDetail = comp?.tacticalDetail ?? null;
+  const compId = String(embeddedDetail?.compositionId ?? comp?.source?.clusterId ?? "").trim();
+  const dataClusterId = String(embeddedDetail?.clusterId ?? comp?.source?.dataClusterId ?? "").trim();
   if (!compId || !dataClusterId) return null;
   const units = [...new Set((comp?.units ?? [])
     .map((unit) => String(unit?.apiName ?? "").trim())
     .filter((apiName) => /^(?:TFT|DA_)[\w-]+$/i.test(apiName)))];
-  const seasonContextId = String(state.seasonContextId ?? "").trim();
-  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|");
-  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units };
+  const seasonContextId = String(embeddedDetail?.seasonContextId ?? state.seasonContextId ?? "").trim();
+  const key = [seasonContextId, compId, dataClusterId, units.join(",")].join("|")
+    + (embeddedDetail ? `|${embeddedDetail.rankingEvidenceId}|${embeddedDetail.evidenceId ?? "missing"}` : "");
+  const descriptor = { key, comp, compId, dataClusterId, seasonContextId, units, embeddedDetail };
   state.compDetailDescriptors.set(key, descriptor);
   return descriptor;
 }
@@ -1367,8 +1415,10 @@ function renderCompFormation(comp, formation, placedUnits) {
   if (!placedUnits.size) {
     return `<section class="comp-formation" data-status="unavailable"><h3>${escapeHtml(t("compFormation"))}</h3><p>${escapeHtml(t("compFormationUnavailable"))}</p></section>`;
   }
-  return `<section class="comp-formation" data-status="available">
+  const partial = formation?.status === "partial";
+  return `<section class="comp-formation" data-status="${partial ? "partial" : "available"}">
     <h3>${escapeHtml(t("compFormation"))}</h3>
+    ${partial ? `<p>${escapeHtml(t("compFormationPartial"))}</p>` : ""}
     <div class="comp-hex-board" role="group" aria-label="${escapeHtml(t("compFormation"))}">
       ${Array.from({ length: 28 }, (_, cell) => {
         const row = Math.floor(cell / 7);
@@ -1448,7 +1498,10 @@ function compDetailSourceLabel(source) {
 }
 
 function renderCompDetailContent(descriptor) {
-  const detailState = state.compDetailCache.get(descriptor.key);
+  const detailState = descriptor.embeddedDetail ?? state.compDetailCache.get(descriptor.key);
+  if (descriptor.embeddedDetail && !detailState.data) {
+    return renderCompFormation(descriptor.comp, null, new Map());
+  }
   if (!detailState || detailState.status === "loading") {
     return `<div class="comp-detail-state" data-status="loading" aria-live="polite">${escapeHtml(t("compDetailLoading"))}</div>`;
   }
@@ -1481,6 +1534,9 @@ function updateCompDetailPanels(key) {
 }
 
 async function loadCompDetail(descriptor, { retry = false } = {}) {
+  // ReAct cards render their own Ledger snapshot. Opening them must not fetch a
+  // different formation that the model never observed, or silently fill a gap.
+  if (descriptor.embeddedDetail) return;
   const cached = state.compDetailCache.get(descriptor.key);
   if (!retry && (cached?.status === "ready" || cached?.status === "unavailable" || cached?.status === "loading")) return;
   if (state.compDetailRequests.has(descriptor.key)) return state.compDetailRequests.get(descriptor.key);
@@ -1574,7 +1630,7 @@ function renderCompCard(comp, metricKey, initiallyOpen = false) {
           <strong>${escapeHtml(localizedName(comp))}</strong>
           ${comp.lowSample ? `<span class="low-sample-label">${t("lowSample")}</span>` : ""}
           ${metricKey === "popularity" && comp.contested ? `<span class="contested-label">${t("contested")}</span>` : ""}
-          <div class="trait-row">${mainTraits.map((trait) => assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")).join("")}</div>
+          <div class="trait-row">${mainTraits.map((trait) => traitThumb(trait)).join("")}</div>
           <div class="unit-row">${foldedUnits.map((unit) => renderCompUnit(unit, comp)).join("")}</div>
         </div>
         <div class="comp-summary-metric">
@@ -1593,7 +1649,7 @@ function renderCompCard(comp, metricKey, initiallyOpen = false) {
         ${metricKey === "trend" || metricKey === "trendDown" ? `<div class="trend-model-line"><span>${escapeHtml(compTrendSourceLabel(comp))}</span><small>${t("trendWindow")}</small></div>` : ""}
         ${renderCompDetailPanel(detailDescriptor)}
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, comp, true)).join("")}</div>
-        <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${assetThumb(trait.iconUrl, compTraitLabel(trait), "trait-icon")}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
+        <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${traitThumb(trait)}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
         <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
       </div>
     </details>`;
@@ -1854,6 +1910,11 @@ function renderSuggestionButtons(suggestions = [], responseId = "") {
 
 function renderEntityCandidates(candidates = [], responseId = "") {
   if (!candidates.length) return "";
+  if (candidates.every(candidate => candidate.confirmation === true)) {
+    return `<div class="suggestions entity-confirmation-choices">${candidates.map((candidate, index) =>
+      `<button type="button" data-candidate-action="confirm" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(candidateLabel(candidate))}</button>`
+    ).join("")}</div>`;
+  }
   return `
     <div class="entity-candidates">
       ${candidates.map((candidate, index) => `
@@ -2145,7 +2206,7 @@ function comparisonReasonText(reason) {
 function renderAgentSuggestedActions(actions = [], responseId = "") {
   if (!actions.length) return "";
   return `
-    <div class="agent-suggested-actions" aria-label="${escapeHtml(t("nextAction"))}">
+    <div class="agent-suggested-actions" data-guidance-response="${escapeHtml(responseId)}" aria-label="${escapeHtml(t("nextAction"))}">
       ${actions.map((action, index) => `
         <button type="button" data-agent-action-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(action.label ?? action.query)}</button>
       `).join("")}
@@ -2566,11 +2627,11 @@ function renderEmptyResult(track = true) {
 }
 
 function patchRevisionKindLabel(kind) {
-  return t(kind === "balance" ? "patchNotesBalance" : "patchNotesHotfix");
+  return t({ release: "patchNotesRelease", balance: "patchNotesBalance", hotfix: "patchNotesHotfix" }[kind] ?? "patchNotesHotfix");
 }
 
 function patchChangeDirectionLabel(direction) {
-  return t(direction === "buff" ? "patchNotesBuff" : "patchNotesNerf");
+  return t({ buff: "patchNotesBuff", nerf: "patchNotesNerf", mixed: "patchNotesMixed" }[direction]);
 }
 
 function formatPatchDate(value) {
@@ -2598,6 +2659,7 @@ function patchHistoryHtml(patch) {
       <div class="patch-change-legend" aria-label="${escapeHtml(t("patchNotesNumericSummary"))}">
         <span class="is-buff"><i aria-hidden="true">↑</i>${t("patchNotesBuff")}</span>
         <span class="is-nerf"><i aria-hidden="true">↓</i>${t("patchNotesNerf")}</span>
+        <span class="is-mixed"><i aria-hidden="true">↔</i>${t("patchNotesMixed")}</span>
         <small>${t("patchNotesNumericSummary")}</small>
       </div>
       <div class="patch-history-list">
@@ -2656,7 +2718,7 @@ function patchHistoryHtml(patch) {
 
 function renderPatchNote(track = true) {
   const version = state.seasonContext?.theme?.patchNoteVersion ?? CURRENT_PATCH_VERSION;
-  const patch = getPatchNote(version, getLocale());
+  const patch = getPatchNoteTimeline(version, getLocale());
   if (track) state.resultView = { type: "patch-note" };
   if (!patch) {
     resultTitleEl.textContent = t("patchNotesUnavailable");
@@ -2907,19 +2969,10 @@ function systemInteractionAnswerHtml(data) {
 }
 
 function reactModelConclusionHtml(data, summary, responseId = "") {
-  const answer = typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "";
+  const original = typeof data?.modelConclusion?.answer === "string"
+    ? conclusionDisplayText(data.modelConclusion.answer).trim() : "";
+  const answer = original || (typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "");
   if (!answer) return "";
-  const systemFallback = data?.answerOrigin === "system_evidence_fallback";
-  const rejectedModelAnswer = systemFallback && typeof data?.modelConclusion?.answer === "string"
-    ? conclusionDisplayText(data.modelConclusion.answer).trim()
-    : "";
-  const rejectionErrors = Array.isArray(data?.modelConclusion?.validationErrors)
-    ? data.modelConclusion.validationErrors.filter(Boolean).map(String)
-    : [];
-  const limited = data?.terminationReason === "insufficient_evidence"
-    || data?.terminationReason === "missing_required_evidence";
-  const hasGroundingWarnings = Array.isArray(data?.narrativeWarnings) && data.narrativeWarnings.length > 0;
-  const softValidated = data?.answerOrigin === "model_soft_validated_summary";
   const feedback = state.explanationFeedback;
   const feedbackHtml = data?.queryId ? `<div class="result-feedback model-conclusion-feedback" data-explanation-feedback-group data-explanation-response-id="${escapeHtml(responseId)}">
     <button type="button" class="feedback-button${feedback === "good" ? " selected" : ""}" data-explanation-feedback="good">${t("explanationHelpful")}</button>
@@ -2927,34 +2980,10 @@ function reactModelConclusionHtml(data, summary, responseId = "") {
     <span class="feedback-status">${feedback ? t("recorded") : ""}</span>
     ${feedbackReasonPicker("explanation")}
   </div>` : "";
-  const rejectedCard = rejectedModelAnswer
-    ? `<section class="chat-model-conclusion rejected" data-chat-rejected-model-conclusion>
-      <header>
-        <strong>${escapeHtml(t("rejectedModelConclusion"))}</strong>
-        <small>${escapeHtml(t("rejectedModelConclusionNotice"))}</small>
-      </header>
-      ${conclusionRichTextHtml(rejectedModelAnswer)}
-      ${rejectionErrors.length ? `<details class="model-conclusion-rejection-reasons">
-        <summary>${escapeHtml(t("rejectedModelConclusionReasons", { count: rejectionErrors.length }))}</summary>
-        <ul>${rejectionErrors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul>
-      </details>` : ""}
-    </section>`
-    : "";
-  const acceptedOrFallbackCard = `<section class="chat-model-conclusion${systemFallback ? " system-fallback" : ""}${softValidated ? " soft-validated" : ""}" data-chat-model-conclusion>
-    <header>
-      <strong>${systemFallback ? "" : `<span class="ai-generated-label">${escapeHtml(t("aiGeneratedLabel"))}</span>`}${escapeHtml(t(systemFallback ? "systemEvidenceConclusion" : "modelFinalConclusion"))}</strong>
-      <small>${escapeHtml(t(systemFallback
-        ? "systemConclusionFallback"
-        : hasGroundingWarnings
-          ? "modelConclusionGroundingWarning"
-          : softValidated ? "modelConclusionPendingVerification"
-          : limited ? "modelConclusionEvidenceLimited" : "modelConclusionFromAgent"))}</small>
-    </header>
-    ${chatCoreItemsHtml(data)}
-    ${conclusionRichTextHtml(answer || summary)}
+  return `<section class="chat-model-conclusion" data-chat-model-conclusion>
+    ${conclusionRichTextHtml(answer || summary, { bodyOnly: true })}
     ${feedbackHtml}
   </section>`;
-  return `${rejectedCard}${acceptedOrFallbackCard}`;
 }
 
 function rankingTierLabel(prefix, tier) {
@@ -3143,7 +3172,10 @@ function recordAssistantResponse(data) {
     data,
     input: state.lastInput,
     displayInput: state.lastDisplayInput,
-    quickTask: state.lastQuickTask
+    quickTask: state.lastQuickTask,
+    conversationId: state.conversationId,
+    seasonContextId: state.seasonContextId,
+    requestSerial: state.requestSerial
   };
   const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
@@ -3183,6 +3215,7 @@ function rerenderLocalizedState() {
   quickToolLibrary.refreshLocale();
   onboardingTour.refreshLocale();
   voiceInput.refreshLocale();
+  experienceGuidanceUI.refreshLocale();
   if (activeQuickTask) quickTaskFormTitle.textContent = t(activeQuickTask.titleKey);
   for (const record of state.responseRecords) {
     rerenderAssistantRecord(record);
@@ -3271,8 +3304,27 @@ function renderItemRankings(data) {
   `);
 }
 
+function renderEmblemRankings(data) {
+  setResponseHtml('<div data-emblem-root></div>');
+  mountEmblemRankings({ root: resultContentEl.querySelector("[data-emblem-root]"), data,
+    t, escapeHtml, itemPill, assetThumb, localizedName,
+    loadCarriers: async item => {
+      const response = await fetch("/api/recommend", { method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ input: t("emblemCommonCarriers"), locale: data.locale,
+          seasonContextId: data.seasonContext?.id ?? state.seasonContextId,
+          conversationId: `emblem-detail-${crypto.randomUUID()}`, startNewTask: true,
+          preferences: { days: data.query.days, rankFilter: data.query.rank, minSamples: data.query.minSamples },
+          quickTask: structuredQuickTask({ id: "emblem-carriers", operation: "emblem_carriers" }, { item }) }) });
+      const value = await response.json();
+      if (!response.ok || !value.ok || value.type !== "emblem_carriers") throw new Error(value.error ?? "emblem_carriers_failed");
+      return value;
+    } });
+}
+
 function renderItemCarrierRankings(data) {
   const carriers = data.carriers ?? [];
+  const title = t(data.query?.positiveOnly === false ? "emblemCommonCarriers" : "itemCarriers");
+  const emptyText = t(data.query?.positiveOnly === false ? "emblemNoCarriers" : "noPositiveCarriers");
   const itemLabel = localizedName(data.item, data.query?.itemName ?? t("item"));
   const detail = data.itemDetail ?? null;
   const detailFacts = detail?.facts ?? {};
@@ -3288,15 +3340,15 @@ function renderItemCarrierRankings(data) {
   </article>` : "";
   if (!carriers.length) {
     setResponseHtml(`
-      ${resultHeader(t("itemCarriers"), data.text ?? t("noPositiveCarriers"), t("noResult"))}
+      ${resultHeader(title, data.text ?? emptyText, t("noResult"))}
       ${detailHtml}
-      <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? t("noPositiveCarriers"))}</strong></div>
+      <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? emptyText)}</strong></div>
       ${conditionPanel(data)}${sourceAndRisk(data)}
     `);
     return;
   }
   setResponseHtml(`
-    ${resultHeader(t("itemCarriers"), data.text, itemLabel)}
+    ${resultHeader(title, data.text, itemLabel)}
     ${detailHtml}
     <div class="carrier-ranking-list">
       ${carriers.map((carrier, index) => `
@@ -3304,7 +3356,7 @@ function renderItemCarrierRankings(data) {
           <div class="carrier-ranking-head">
             <div class="carrier-unit">
               ${assetThumb(carrier.unit?.iconUrl, localizedName(carrier.unit), "equipment-unit-icon")}
-              <div><strong>${index + 1}. ${escapeHtml(localizedName(carrier.unit))}</strong><small>${t("positivePlacementUplift", { value: formatNumber(carrier.placementUplift, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</small></div>
+              <div><strong>${index + 1}. ${escapeHtml(localizedName(carrier.unit))}</strong><small>${data.query?.positiveOnly === false ? escapeHtml(t("emblemByGames")) : t("positivePlacementUplift", { value: formatNumber(carrier.placementUplift, { minimumFractionDigits: 2, maximumFractionDigits: 2 }) })}</small></div>
             </div>
             ${data.item ? assetThumb(data.item.iconUrl, itemLabel, "tiny-item-icon") : ""}
           </div>
@@ -3522,6 +3574,8 @@ function renderCoachAnswerResult(data) {
     ${resultHeader(t("coachAnswerTitle"), response.headline ?? data?.answer?.summary ?? data?.text, t("coachAnswerTitle"))}
     <section class="coach-answer-card">
       <p>${escapeHtml(data?.assistantResponse?.text ?? data?.text ?? t("noResult"))}</p>
+      ${data?.clarification?.needsClarification ? renderEntityCandidates(data.clarification.entityCandidates ?? [], state.currentResponseId) : ""}
+      ${data?.clarification?.needsClarification ? renderSuggestionButtons(data.clarification.suggestions ?? [], state.currentResponseId) : ""}
       ${response.currentRecommendation?.label ? `<div class="coach-current-recommendation"><strong>${escapeHtml(t("currentStatsRecommendation"))}</strong><span>${escapeHtml(response.currentRecommendation.label)}</span></div>` : ""}
       ${warnings.length ? `<div class="coach-answer-warnings">${warnings.map((warning) => `<span>${escapeHtml(warning)}</span>`).join("")}</div>` : ""}
     </section>
@@ -4037,10 +4091,16 @@ function renderCurrentResult(data) {
   else if (data.type === "unit_item_comparison") renderItemComparison(data);
   else if (["composition_change_evaluation", "composition_replacement_evaluation"].includes(data.type)) renderCompositionChangeEvaluation(data);
   else if (data.type === CompRankingResult.type || data.type === "comp_trends" || data.type === "comp_analysis") renderCompRankings(data);
+  else if (data.type === "emblem_rankings") renderEmblemRankings(data);
   else if (data.type === "item_carrier_rankings") renderItemCarrierRankings(data);
   else if (data.type === ItemRankingResult.type || data.type === "unit_emblem_rankings") renderItemRankings(data);
   else if (["entity_catalog_results", "unit_builds_batch_results", "trait_external_unit_statistics", "composition_tactical_details", "strategy_video_search_results"].includes(data.type)) renderSemanticNativeResult(data);
   else renderRecommendationResult(data);
+  if (data.compositionResultGroups?.length && !["comp_rankings", "comp_trends", "comp_analysis"].includes(data.type)) {
+    resultContentEl.insertAdjacentHTML("beforeend", `<div class="composition-result-groups">${data.compositionResultGroups.map((group, index) =>
+      `<section class="composition-result-group" data-evidence-id="${escapeHtml(group.evidenceId)}">${compRankingsHtml(group.result, { initiallyOpen: index === 0, grouped: true })}</section>`).join("")}</div>`);
+    queueOpenCompDetailLoads();
+  }
   const currentStatsScopeHtml = renderCurrentStatsScopeStatus(data);
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
   const knowledgeHtml = renderKnowledgeEvidence(data);
@@ -4726,6 +4786,7 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
 
 function hasRenderableNativeEvidence(payload) {
   const nativeTypes = new Set([
+    "emblem_rankings",
     "composition_rankings",
     "comp_rankings",
     "comp_trends",
@@ -4855,6 +4916,7 @@ function normalizeReactCompositionRankings(value) {
     })),
     traits: result.traits ?? [],
     stats: result.stats ?? {},
+    tacticalDetailQueryPlan: result.tacticalDetailQueryPlan ?? null,
     source: result.source ?? value.source ?? null
   }));
   return {
@@ -4936,11 +4998,24 @@ function normalizeEndpointPayload(payload) {
       ...(payload.clarification ?? {})
     }
     : payload.clarification;
+  if (clarification && payload.status === "clarification_required"
+    && payload.clarificationContext?.type === "entity_candidate") {
+    const context = payload.clarificationContext;
+    clarification.entityCandidates = (context.candidates ?? []).filter(candidate => candidate?.apiName && candidate?.name)
+      .map(candidate => ({ apiName: candidate.apiName, label: candidate.name,
+        queryText: context.inputName && context.originalInput?.includes(context.inputName)
+          ? context.originalInput.replaceAll(context.inputName, candidate.name)
+          : [candidate.name, context.originalInput].filter(Boolean).join("："),
+        entityType: context.entityType, inputFragment: context.inputName, confirmation: true }));
+  }
   const answerText = conclusionDisplayText(typeof payload.answer === "string"
     ? payload.answer
     : String(payload.question ?? payload.error ?? payload.partialFailure?.message ?? t("noResult")));
-  const evidence = Array.isArray(payload.evidence) ? payload.evidence : [];
+  const displayIds = new Set([...(payload.evidenceIds ?? []), ...(payload.cardEvidenceIds ?? [])]);
+  const evidence = (Array.isArray(payload.evidence) ? payload.evidence : [])
+    .filter(entry => payload.compositionCardScope !== true || displayIds.has(entry.evidenceId));
   const nativeResultTypes = new Set([
+    "emblem_rankings",
     "composition_rankings",
     "comp_rankings",
     "comp_trends",
@@ -4965,6 +5040,7 @@ function normalizeEndpointPayload(payload) {
   ]);
   const evidenceValues = [...evidence].reverse().map((entry) => entry?.value);
   const primaryTypeOrder = [
+    "emblem_rankings",
     "composition_change_evaluation", "composition_replacement_evaluation",
     "item_carrier_rankings", "unit_item_comparison", "unit_item_rankings", "unit_emblem_rankings",
     "unit_build_completion", "unit_build_rankings", "unit_best_3_items", "unit_builds_batch_results",
@@ -4972,17 +5048,30 @@ function normalizeEndpointPayload(payload) {
     "trait_external_unit_statistics", "strategy_video_search_results",
     "unit_details", "item_details", "trait_details", "entity_catalog_results"
   ];
-  const primaryValue = primaryTypeOrder
+  let primaryValue = primaryTypeOrder
     .map((type) => evidenceValues.find((value) => value?.type === type))
     .find(Boolean)
     ?? evidenceValues.find((value) => value && typeof value === "object" && value.type)
     ?? null;
+  const compositionResultGroups = collectCompositionResultGroups(payload, normalizeReactCompositionRankings);
+  if (payload.compositionCardScope === true && compositionResultGroups.length
+    && ["composition_rankings", "comp_rankings", "composition_tactical_details"].includes(primaryValue?.type)) {
+    primaryValue = compositionResultGroups[0].result;
+  }
+  // Positioning is a field of its cited composition card, not a replacement
+  // for all the ranked cards. A standalone positioning answer keeps its view.
+  if (primaryValue?.type === "composition_tactical_details") {
+    const primaryEntry = evidence.find((entry) => entry.value === primaryValue);
+    const matchingGroup = compositionResultGroups.find((group) => hasBoundTacticalEvidence(group, primaryEntry?.evidenceId));
+    if (matchingGroup) primaryValue = matchingGroup.result;
+  }
   const officialDetailValue = primaryValue?.schemaVersion === "official-entity-detail.v1"
     ? normalizeReactOfficialDetail(primaryValue)
     : primaryValue;
-  const displayValue = officialDetailValue?.type === "composition_rankings"
+  const selectedRankingGroup = compositionResultGroups.find((group) => evidence.some((entry) => entry.evidenceId === group.evidenceId && entry.value === primaryValue));
+  const displayValue = selectedRankingGroup?.result ?? (officialDetailValue?.type === "composition_rankings"
     ? normalizeReactCompositionRankings(officialDetailValue)
-    : officialDetailValue;
+    : officialDetailValue);
   const comparisonDetails = displayValue?.type === "unit_item_comparison"
     ? new Map(evidenceValues
       .filter((value) => value?.type === "item_details")
@@ -5016,13 +5105,12 @@ function normalizeEndpointPayload(payload) {
   const semanticHits = evidence
     .filter((entry) => entry?.toolName === "semantic_search")
     .flatMap((entry) => entry?.value?.hits ?? []);
-  const compositionResultGroups = ["comp_trends", "comp_rankings"].includes(displayValue?.type)
-    ? collectCompositionResultGroups(payload, normalizeReactCompositionRankings)
-    : [];
+  const supplementalCompositions = ["unit_build_rankings", "unit_build_completion", "unit_best_3_items", "unit_builds_batch_results"].includes(displayValue?.type);
   return {
     ...(hydratedDisplayValue ?? {}),
     ...payload,
-    ...(compositionResultGroups.length > 1 ? { compositionResultGroups } : {}),
+    ...((compositionResultGroups.length > 1 && ["comp_rankings", "comp_trends"].includes(displayValue?.type))
+      || (compositionResultGroups.length && supplementalCompositions) ? { compositionResultGroups } : {}),
     ...(clarification ? { clarification } : {}),
     ...(nativeResultTypes.has(primaryValue?.type) && displayValue?.status
       ? { status: displayValue.status, runStatus: payload.status }
@@ -5079,6 +5167,8 @@ function reactChatMessages() {
 
 function setRequestRunning(running) {
   state.requestInFlight = running;
+  if (running) experienceGuidanceUI.resetInput();
+  experienceGuidance.refresh();
   stopButton.classList.toggle("hidden", !running);
   refreshButton.disabled = running || !state.lastInput;
   resultRefreshButton.disabled = running || !state.lastInput;
@@ -5086,6 +5176,15 @@ function setRequestRunning(running) {
   for (const button of document.querySelectorAll("[data-quick-task]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-comp]")) button.disabled = running;
   for (const button of resultContentEl.querySelectorAll("[data-return-catalog], [data-entity-detail]")) button.disabled = running;
+  for (const button of document.querySelectorAll('[data-candidate-action="confirm"]')) {
+    button.disabled = running || !isCurrentEntityConfirmation(state.responsesById.get(button.dataset.responseId));
+  }
+}
+
+function isCurrentEntityConfirmation(record) {
+  return Boolean(record && record === state.responseRecords.at(-1)
+    && record.requestSerial === state.requestSerial
+    && record.conversationId === state.conversationId && record.seasonContextId === state.seasonContextId);
 }
 
 async function requestRecommendation(refresh = false, displayInput = null, requestOptions = {}) {
@@ -5686,6 +5785,13 @@ async function handleResultClick(event) {
     const candidates = responseRecord?.data?.clarification?.entityCandidates ?? state.lastEntityCandidates;
     const candidate = candidates[Number(candidateButton.dataset.candidateIndex)];
     if (!candidate) return;
+    if (candidateButton.dataset.candidateAction === "confirm") {
+      if (state.requestInFlight || !isCurrentEntityConfirmation(responseRecord) || candidate.confirmation !== true) return;
+      queryInput.value = candidateQueryText(candidate);
+      setMobileView("chat");
+      await requestRecommendation(false, candidateLabel(candidate));
+      return;
+    }
     if (candidateButton.dataset.candidateAction === "query") {
       queryInput.value = candidateQueryText(candidate);
       queryInput.focus();
@@ -5719,6 +5825,8 @@ async function handleResultClick(event) {
     const actions = responseRecord?.data?.agentSuggestedActions?.actions ?? [];
     const action = actions[Number(agentActionButton.dataset.agentActionIndex)];
     if (!action?.query) return;
+    if (state.requestInFlight) return;
+    experienceGuidance.contextual("accepted", `${agentActionButton.dataset.responseId}:${agentActionButton.dataset.agentActionIndex}`);
     queryInput.value = action.query;
     setMobileView("chat");
     queryInput.focus();

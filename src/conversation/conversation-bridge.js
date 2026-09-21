@@ -34,6 +34,9 @@ const MODIFY_SIGNAL_ZH = /(?:改成|换成|只看|不要|排除|加入|如果|�
 const SAME_OPERATION_SIGNAL_ZH = /(?:也查|再查|换个(?:英雄|棋子|装备|羁绊|阵容)|同样|另一个)/u;
 const TFT_TASK_SIGNAL_ZH = /(?:英雄|棋子|装备|羁绊|阵容|出装|攻略|版本|胜率|云顶)/u;
 const ELLIPTICAL_FOLLOW_UP_SIGNAL = /^(?:上升(?:的|阵容)?|下降(?:的|阵容)?|上涨(?:的)?|下跌(?:的)?|前者|后者|第[一二三四五六七八九十\d]+个?)$/u;
+// A bare demonstrative followed by a predicate refers to the preceding result;
+// exclude noun phrases such as 这个版本, which may introduce an independent task.
+const RESULT_DEICTIC_SIGNAL = /^(?:这|那)(?=不|就|也|还|明明|居然|竟然|能|可以|怎么|为何|为什么)/u;
 
 function array(value) {
   return Array.isArray(value) ? value : [];
@@ -87,6 +90,10 @@ function compactEntityRefs(payload = {}, quickTask = {}) {
   push(payload.unit, "unit");
   push(payload.item, "item");
   push(payload.trait, "trait");
+  for (const carrier of array(payload.carriers).slice(0, 8)) push(carrier.unit, "unit");
+  if (payload.type === "emblem_rankings") {
+    for (const row of array(payload.rows).slice(0, 6)) push(row.item, "item");
+  }
   for (const card of array(payload.cards).slice(0, 6)) {
     push(card.unit ?? card.entity ?? (card.apiName ? card : null), card.entityType ?? "result");
   }
@@ -114,7 +121,7 @@ function sourceTimes(payload = {}) {
 }
 
 function displaySummary(payload = {}) {
-  return sanitizeBridgeText(
+  const summary = sanitizeBridgeText(
     payload.assistantResponse?.text
       ?? payload.answer?.summary
       ?? payload.text
@@ -123,6 +130,17 @@ function displaySummary(payload = {}) {
       ?? "",
     800
   );
+  if (!["item_carrier_rankings", "emblem_carriers"].includes(payload.type) || !payload.carriers?.length) return summary;
+  const carriers = payload.carriers.slice(0, 8);
+  const names = carriers.map(carrier => carrier.unit?.name ?? carrier.unit?.apiName).filter(Boolean)
+    .map(name => sanitizeBridgeText(name, 40));
+  const fields = [
+    carriers.some(carrier => Number.isFinite(carrier.stats?.games)) ? "样本数" : null,
+    carriers.some(carrier => Number.isFinite(carrier.stats?.avg)) ? "平均名次" : null,
+    carriers.some(carrier => Number.isFinite(carrier.placementUplift)) ? "相对基线差异" : null
+  ].filter(Boolean);
+  // Describe historical field availability, not raw statistics or a current ranking.
+  return sanitizeBridgeText(`历史响应已返回携带者：${names.join("、")}。${fields.length ? `含${fields.join("、")}；数值需重新查询当前工具。` : ""}${summary}`, 800);
 }
 
 function claims(payload = {}) {
@@ -274,6 +292,7 @@ export function isHistoryDependentInput(input) {
     || HISTORY_REFERENCE_SIGNAL.test(value)
     || DEPENDENT_REFERENCE_SIGNAL_ZH.test(value)
     || HISTORY_REFERENCE_SIGNAL_ZH.test(value)
+    || RESULT_DEICTIC_SIGNAL.test(value)
     || ELLIPTICAL_FOLLOW_UP_SIGNAL.test(value);
 }
 
@@ -293,6 +312,7 @@ export function resolveConversationBridgeRelation(input, bridge = {}, options = 
   if (SAME_OPERATION_SIGNAL.test(text) || SAME_OPERATION_SIGNAL_ZH.test(text)) return "same_operation_new_subject";
   if (DEPENDENT_REFERENCE_SIGNAL.test(text) || DEPENDENT_REFERENCE_SIGNAL_ZH.test(text)) return "continue";
   if (ELLIPTICAL_FOLLOW_UP_SIGNAL.test(text)) return "continue";
+  if (RESULT_DEICTIC_SIGNAL.test(text)) return "continue";
   const active = records.find((record) => record.recordId === bridge.activeRecordId) ?? records.at(-1);
   const mentionsActiveArgument = Object.values(active?.normalizedArguments ?? {})
     .some((value) => value && text.includes(String(value)));

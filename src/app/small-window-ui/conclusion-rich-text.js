@@ -47,10 +47,14 @@ function sentenceSegments(value) {
   const text = String(value ?? "").trim();
   const segments = [];
   let current = "";
+  let depth = 0;
   for (let index = 0; index < text.length; index += 1) {
     const character = text[index];
     const next = text[index + 1] ?? "";
     current += character;
+    if (/[（(【\[]/u.test(character)) depth += 1;
+    if (/[）)】\]]/u.test(character)) depth = Math.max(0, depth - 1);
+    if (depth) continue;
     const strongBoundary = /[。！？；]/u.test(character);
     const spacedBoundary = /[.!?;]/u.test(character) && (!next || /\s/u.test(next));
     if (!strongBoundary && !spacedBoundary) continue;
@@ -59,6 +63,48 @@ function sentenceSegments(value) {
   }
   if (current.trim()) segments.push(current.trim());
   return segments;
+}
+
+// Presentation only: recognize explicit section labels, never infer advice or
+// split the metrics inside parentheses. Keep the original words and punctuation.
+function equipmentSectionsText(value) {
+  const text = String(value ?? "").trim();
+  if (text.includes("\n") || hasExplicitLineStructure(text) || text.includes("**")) return null;
+  const label = /^(主流出装|常见出装|推荐出装|核心装备|好用神器|推荐神器|备选装备|注意事项|数据限制|Main builds|Core items|Recommended artifacts)\s*[：:]/iu;
+  const sections = [];
+  let depth = 0;
+  for (let index = 0; index < text.length; index += 1) {
+    const character = text[index];
+    if (/[（(【\[]/u.test(character)) depth += 1;
+    if (/[）)】\]]/u.test(character)) depth = Math.max(0, depth - 1);
+    if (depth || (index && !/[。！？；.!?;]$/u.test(text.slice(0, index).trimEnd()))) continue;
+    const match = text.slice(index).match(label);
+    if (match) { sections.push({ start: index, end: index + match[0].length, title: match[0] }); index += match[0].length - 1; }
+  }
+  if (sections.length < 2) return null;
+  const blocks = [text.slice(0, sections[0].start).trim()].filter(Boolean);
+  sections.forEach((section, index) => {
+    const body = text.slice(section.end, sections[index + 1]?.start ?? text.length).trim();
+    blocks.push(`### ${section.title}`);
+    const sentences = sentenceSegments(body);
+    for (const sentence of sentences) {
+      // Only enumerate explicit complete build candidates. Commas in statistics
+      // and ordinary prose remain untouched, including English thousands commas.
+      const candidates = [];
+      let start = 0, nested = 0;
+      for (let position = 0; position < sentence.length; position += 1) {
+        const char = sentence[position];
+        if (/[（(【\[]/u.test(char)) nested += 1;
+        if (/[）)】\]]/u.test(char)) nested = Math.max(0, nested - 1);
+        if (char === "、" && !nested) { candidates.push(sentence.slice(start, position + 1)); start = position + 1; }
+      }
+      candidates.push(sentence.slice(start));
+      const isBuildList = /出装|builds/iu.test(section.title) && candidates.length > 1
+        && candidates.every(candidate => /[+＋]/u.test(candidate));
+      blocks.push(isBuildList ? candidates.map(candidate => `- ${candidate.trim()}`).join("\n") : sentence);
+    }
+  });
+  return blocks.join("\n\n");
 }
 
 function hasExplicitLineStructure(value) {
@@ -197,9 +243,10 @@ export function conclusionDisplayText(value) {
   return tacticalConclusionText(cleanInternalPositionIds(value));
 }
 
-export function conclusionRichTextHtml(value) {
+export function conclusionRichTextHtml(value, options = {}) {
   const displayText = conclusionDisplayText(value);
-  const lines = autoStructuredConclusionText(displayText).split("\n");
+  // bodyOnly removes annotation labels; it must not disable readable layout.
+  const lines = (equipmentSectionsText(displayText) ?? autoStructuredConclusionText(displayText)).split("\n");
   const blocks = [];
   let listItems = [];
   let listType = "ul";
@@ -211,7 +258,12 @@ export function conclusionRichTextHtml(value) {
   };
 
   for (const rawLine of lines) {
-    const line = rawLine.trim();
+    let line = rawLine.trim();
+    if (options.bodyOnly) {
+      const body = line.replace(/^#{1,3}\s+/u, "").replace(/^\*\*(.*?)\*\*/u, "$1")
+        .match(/^(?:系统证据结论|模型原始结论(?:[（(][^）)]*[）)])?|模型最终结论|核心结论|最终结论|结论|summary|conclusion)\s*(?:[：:]\s*(.*)|$)/iu);
+      if (body) line = body[1] ?? "";
+    }
     if (!line) {
       flushList();
       continue;
@@ -240,7 +292,7 @@ export function conclusionRichTextHtml(value) {
       continue;
     }
     const summary = summaryLineParts(line);
-    if (summary) {
+    if (summary && !options.bodyOnly) {
       blocks.push(`<aside class="assistant-rich-text__summary"><strong>${escapeHtml(summary[1])}</strong>${summary[2] ? `<span>${inlineConclusionHtml(summary[2])}</span>` : ""}</aside>`);
       continue;
     }

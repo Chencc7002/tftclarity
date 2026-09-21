@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "unit-play-guidance-completion-config.v3",
+  "experimentId": "unit-play-guidance-completion.2026-09-01.v3",
+  "mode": "adaptive_candidate_reliability_preflight",
+  "adaptiveDisclosure": {
+    "priorAttemptsObserved": true,
+    "sourceAttemptCommits": [
+      "40e4c1286a8bcaf5170801103972de0ef7c33205",
+      "842579f2b3a16944770f02a5af96f4e8db7efdfc"
+    ],
+    "answerContentUsedForTuning": false,
+    "boundedActionTraceUsedForCompletionRepair": true,
+    "pairedEfficacyClaimAllowed": false
+  },
+  "authorization": {
+    "realProviderRun": false,
+    "productionControl": false
+  },
+  "provider": {
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "timeoutMs": 25000,
+    "temperature": 0,
+    "maxOutputTokens": 1800,
+    "thinkingMode": "disabled",
+    "messageLayout": "append_only"
+  },
+  "agent": {
+    "deadlineMs": 30000,
+    "maxDecisions": 24,
+    "maxRetriesPerTool": 1,
+    "groundingMode": "strict"
+  },
+  "execution": {
+    "eligibleCases": 30,
+    "repetitions": 3,
+    "plannedAgentRuns": 90,
+    "concurrency": 1,
+    "providerHttpRequestHardCap": 1000,
+    "totalTokenHardCap": null,
+    "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11"
+  },
+  "frozen": {
+    "sourceCorpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "sourceObservationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillVersion": "1.5.8",
+    "candidateSkillSha256": "7d2e6ca88c8c8300ab6bdbf28d3a5a567198993c489e0d3a73984a29d48ff405",
+    "candidateRenderedContextSha256": "27697c0547bb802985dabe0ec5a53c9156b30abc54d71e1d218e8ee8ea83f75d"
+  },
+  "claimBoundary": "Adaptive candidate-only reliability evaluation; no paired efficacy or production authorization."
+}

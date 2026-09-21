@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "unit-play-guidance-completion-run-manifest.v6",
+  "experimentId": "unit-play-guidance-completion.2026-09-02.v6",
+  "classification": "adaptive candidate-only answer-quality and reliability evaluation; no paired efficacy claim",
+  "adaptiveDisclosure": {
+    "priorProviderAttemptsObserved": true,
+    "answerContentUsedForTuning": true,
+    "boundedActionTraceUsedForCompletionRepair": true,
+    "reviewedDefectsUsedForRepair": [
+      "unsupported_mainstream_wording_for_low_sample_recommendations",
+      "unit_effect_condition_reversal",
+      "answer_language_mismatch"
+    ]
+  },
+  "runtime": {
+    "plannedAgentRuns": 90,
+    "concurrency": 1,
+    "providerHttpRequestHardCap": 1000,
+    "totalTokenHardCap": null,
+    "orderSha256": "f3565d2c83e62da70f542b03c2a9481bee0a38b7a5d853738e584fe0b8c14c11",
+    "minimumNativeModelCompletions": 81,
+    "minimumCasesWithTwoNativeCompletions": 27,
+    "exactToolSequenceEvaluatedSeparately": true,
+    "earlyStopWhenGatesUnreachable": true,
+    "unitPlayFixedCardCompletionAffordance": true,
+    "unitPlayFixedCardCount": 2,
+    "unitPlayInputLanguageGuard": true,
+    "reviewFacets": [
+      "unit_interpretation",
+      "equipment_logic",
+      "when_to_play",
+      "composition_cards",
+      "positioning_cards",
+      "concision",
+      "answer_language"
+    ]
+  },
+  "frozen": {
+    "configNormalizedSha256": "b341ce23896030c9ae51af455f651af5b012f1d7875cfbb54f85cfc9f72b119f",
+    "preflightResultNormalizedSha256": "87474a3345af308c63afef5ccb8e8a17327c7a7531483bd6ef690b057c17c563",
+    "sourceCorpusNormalizedSha256": "b02792c1aa541048d7a56c0cfeacb8a6f7fa94c6124caf298d7d0aa0f6322ce6",
+    "sourceObservationNormalizedSha256": "a947e591138a317dece306c0226e590f3278dbbd5e3bc85b0ccde7b6a9a54de5",
+    "candidateSkillSha256": "7df0d4830a8221150a49ecf251e86ad7c25980e2468650cba4b4e718cd95be8a",
+    "candidateRenderedContextSha256": "730f637d005537e023b9c92e56c18f93798e8b67a69c84853f004819bb2cd80b"
+  },
+  "implementation": {
+    "preflightRawSha256": "de0f0e7b404c63e870799d3d8d12f9ce989d7209ef838231c73695f8c03a54d2",
+    "canonicalRawSha256": "ebe384e5a0e2b63d6cf4daa25b8a33a07f22a95232147306edd8431f17f298ab",
+    "formalRunnerRawSha256": "edc7d1a9e8dc4c32af5c322ff3f5d25e107dff4f15eb56211175d1fd23df12b2",
+    "dryRunnerRawSha256": "50508703833da1ed848ba5702bbaa80c82168179082499545a52ce657fc649de"
+  },
+  "scriptedDryRun": {
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 0,
+    "transportRequests": 810,
+    "nativeModelCompletions": 90,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reviewEntries": 90,
+    "reviewFacetRatingsPerReviewer": 630,
+    "resultNormalizedSha256": "fb470ec4f58e3b37706789f30c9b5bb2c3f152f583597797ee55d8b263e8a24c",
+    "reviewPacketNormalizedSha256": "2a2ac3e45254abf1f3ae48a6238d6ddd85e95ba68af2f77e7e37c86bc9cc0166"
+  },
+  "authorization": {
+    "realProviderRun": false,
+    "separateCommitBoundArtifactRequired": true,
+    "productionControl": false,
+    "credentialPersisted": false
+  },
+  "disclosedPriorProviderAttempts": [
+    {
+      "implementationCommitSha": "c80d299629a42d6d4ea2cdf848932d3d70eb42de",
+      "classification": "formal v5 adaptive candidate reliability run; answer outputs were subsequently reviewed for v6 defects",
+      "completedAgentRuns": 90,
+      "providerHttpRequests": 810,
+      "observedTokens": 11722546,
+      "status": "awaiting_independent_review",
+      "nativeModelCompletions": 90,
+      "exactFrozenToolSequences": 90
+    },
+    {
+      "implementationCommitSha": "1577039799e91ef0559d74a025af1ab187180223",
+      "classification": "authorized one-run BrowserUse validation; event-envelope diagnostic added avoidable action-shape repairs and is not the frozen v6 transport",
+      "completedAgentRuns": 1,
+      "providerHttpRequests": 18,
+      "observedTokens": 351335,
+      "finalAnswerLanguage": "en",
+      "compositionCardsWithBoundPositioning": 2,
+      "productionControl": false
+    }
+  ],
+  "formalProviderRun": {
+    "implementationCommitSha": "5ce0bef26165873ed82170958a12895014a3368e",
+    "authorizationId": "30a11477-1887-481e-a8c6-324897495ca8",
+    "authorizationConfigNormalizedSha256": "b341ce23896030c9ae51af455f651af5b012f1d7875cfbb54f85cfc9f72b119f",
+    "status": "awaiting_independent_review",
+    "completedAgentRuns": 90,
+    "actualProviderModelCalls": 840,
+    "observedTokens": 12487457,
+    "nativeModelCompletions": 90,
+    "nativeModelCompletionRate": 1,
+    "exactFrozenToolSequences": 90,
+    "casesWithAtLeastTwoNativeCompletions": 30,
+    "reliability": {
+      "nativeCompletionsPass": true,
+      "coveredCasesPass": true
+    },
+    "providerIdentity": {
+      "model": "deepseek-v4-flash",
+      "systemFingerprint": "a26a7955944dc5c60445bff77fac9c8e"
+    },
+    "reviewEntries": 90,
+    "artifacts": {
+      "resultNormalizedSha256": "e945443d7fbf2a2f7c3cdfd300a97299d4dcbf9880b2e08520dce10ab87aa131",
+      "reviewPacketNormalizedSha256": "bc275a0672cbe8957e05fa96d7be13894b33825f4400e936a35287f03e8d6271",
+      "reviewKeyNormalizedSha256": "6423200302bc8f9a8d8d3fcc6bcd80d8c6d2731f20fa4ed8c53f97d4d32f5a7f",
+      "reviewerOneTemplateNormalizedSha256": "595514db02ee07ebcb8d74337f9f0481b99575ac6d2515a25ff89bfdf355e69b",
+      "reviewerTwoTemplateNormalizedSha256": "e09391e4640494f522385c2f980b30541d28483d9e29f0a2392e6c97c14efa4b",
+      "preliminaryReviewRawSha256": "fad65b4e0be8d9d2e8fc28cad5745a6df0415a42aa49b4191611c7e8b46b54c6"
+    },
+    "preliminaryOperatorReview": {
+      "status": "complete",
+      "ratingCounts": {
+        "pass": 605,
+        "partial": 16,
+        "fail": 9
+      },
+      "independentReviewComplete": false
+    },
+    "productDisposition": {
+      "status": "accepted_with_known_limitations",
+      "decidedBy": "user",
+      "decidedAt": "2026-09-03T07:31:03.1768817Z",
+      "basis": "The user stated that the preliminary findings are acceptable and do not require another candidate revision.",
+      "noFurtherCandidateRevisionRequested": true,
+      "independentReviewWaived": false,
+      "productionControl": false
+    },
+    "productionControl": false
+  }
+}

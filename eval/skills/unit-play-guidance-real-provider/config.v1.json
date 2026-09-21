@@ -1,0 +1,52 @@
+{
+  "schemaVersion": "unit-play-guidance-real-provider-config.v1",
+  "experimentId": "unit-play-guidance-real-provider-offline.2026-08-18.v1",
+  "mode": "dry_run_zero_provider_calls",
+  "provider": {
+    "runtimeProviderConfig": "chat",
+    "protocol": "openai-compatible-chat",
+    "endpointClass": "chat_completions",
+    "endpoint": "https://api.deepseek.com/chat/completions",
+    "model": "deepseek-v4-flash",
+    "implementation": "createReactDecisionProvider",
+    "providerKind": "react_decision_llm",
+    "decisionPromptVersion": "react-decision-contract.v5",
+    "messageLayout": "append_only",
+    "temperature": 0,
+    "topP": "omitted_provider_default",
+    "maxOutputTokens": 1800,
+    "repairMaxOutputTokens": 700,
+    "responseFormat": "json_object",
+    "thinkingMode": "disabled",
+    "timeoutMs": 25000,
+    "maxActionAttempts": 2,
+    "transportRetries": 0,
+    "cacheNamespace": null,
+    "clientResponseCache": false
+  },
+  "agent": {
+    "deadlineMs": 30000,
+    "maxDecisions": 24,
+    "maxRetriesPerTool": 1,
+    "groundingMode": "strict"
+  },
+  "execution": {
+    "eligibleCases": 30,
+    "arms": ["A", "B"],
+    "repetitions": 3,
+    "plannedPairs": 90,
+    "plannedAgentRuns": 180,
+    "negativeDeterministicCases": 20,
+    "boundaryDeterministicCases": 10
+  },
+  "frozen": {
+    "corpusVersion": "unit-play-guidance-control-corpus.2026-08-18.v1",
+    "corpusNormalizedSha256": "49f74b710b3bb1bbad04c2aa9656752738b55ba80c22e0aa4f5bd3d68929ee7a",
+    "fixtureVersion": "unit-play-guidance-frozen-observations.2026-08-18.v1",
+    "fixtureNormalizedSha256": "7c4ef33836284b0970fa241f1ba9151512e4b78a45f535a3f8464c99f5a1f338",
+    "baselineGuidanceSha256": "7a20b6a579e279cfbf5cbdd778de21ee757c1d4bb2c9d13b54df8d3ae0734123",
+    "candidateContentSha256": "8a28b75dcb32909970aaf7b63681b6acf4ccf7d1ee440e300412363a01e5ccfc",
+    "candidateRenderedContextSha256": "c0f5395e9266b65ecb50eccde93112eb964cd1cf3e1df9993d21b960eb2637f9",
+    "defaultProviderMessagesSha256": "45eb4dd0b17540e2aa5cb5284c42862da6336f8d3601c8af8ce71102e4007cb0"
+  }
+}

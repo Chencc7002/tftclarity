@@ -4,12 +4,15 @@ import { validateToolInput } from "../agent/tools/contracts.js";
 import { parseCompTrendDirection } from "../core/comp-trend-intent.js";
 import { itemDetailsBatchMatchesPlan } from "../domain/tft/differentiating-item-selector.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
-import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import { itemPolicyForCategories, requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import { validateReactAction } from "./react-action.js";
 import { DuplicateCallGuard } from "./duplicate-call-guard.js";
 import { EvidenceLedger } from "./evidence-ledger.js";
 import { validateFinishAction, validateGroundedBuildNarrative } from "./termination-policy.js";
 import { ReactWorkingState } from "./working-state.js";
+import { currentDeadlineEvidence } from "./deadline-evidence.js";
+import { buildPartialEvidenceAnswer, partialEvidenceSummary } from "./partial-evidence-answer.js";
+import { selectedEntityConfirmation } from "./entity-confirmation.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
 
@@ -51,22 +54,8 @@ function currentTurnUserText(request = {}) {
     .join("\n");
 }
 
-const AFFIRMATIVE_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
-
 function entityConfirmationContext(request = {}) {
-  const pending = request.bridgeContext?.view?.pendingClarification
-    ?? request.bridgeContext?.pendingClarification
-    ?? null;
-  const context = pending?.confirmationContext;
-  if (
-    !AFFIRMATIVE_CONFIRMATION.test(currentTurnUserText(request))
-    || context?.type !== "entity_candidate"
-    || !Array.isArray(context.candidates)
-    || context.candidates.length !== 1
-  ) return null;
-  const candidate = context.candidates[0];
-  if (!candidate?.apiName || !candidate?.name || !context.entityType) return null;
-  return context;
+  return selectedEntityConfirmation(currentTurnUserText(request), request.bridgeContext);
 }
 
 function equipmentScopeUserText(request = {}) {
@@ -311,6 +300,7 @@ function publicToolCatalog(registry, availableToolNames) {
       allowedKeys: Object.keys(definition.inputSchema?.properties ?? {}),
       serverScopedKeys: definition.name === "unit_builds_batch"
         ? ["seasonContextId", "patch", "scopeKey"]
+        : definition.name.startsWith("emblem_") ? ["seasonContextId", "patch", "queue", "scopeKey"]
         : []
     },
     source: definition.source,
@@ -356,10 +346,17 @@ function validateItemDetailsBatchAction(action, ledger, request) {
     entry.toolName === "unit_builds_batch"
     && (entry.value?.results ?? []).some((result) => result.mechanismQueryPlan?.apiNames?.length)
   ));
+  const unitPlayBuildEntry = currentEntries.find((entry) => (
+    entry.toolName === "unit_builds"
+    && entry.value?.mechanismQueryPlan?.schemaVersion === "unit-play-item-mechanism-query-plan.v1"
+    && entry.value.mechanismQueryPlan.status === "available"
+    && entry.value.mechanismQueryPlan.apiNames?.length
+  ));
   const plan = contentionEntry?.value?.itemContentionPlan
     ?? buildEntry?.value?.results?.find((result) => (
       result.mechanismQueryPlan?.apiNames?.length
-    ))?.mechanismQueryPlan;
+    ))?.mechanismQueryPlan
+    ?? unitPlayBuildEntry?.value?.mechanismQueryPlan;
   const errors = [];
   if (!plan) errors.push("item_details_batch requires a deterministic item-selection plan");
   else if (!itemDetailsBatchMatchesPlan(action.arguments?.apiNames, plan)) {
@@ -501,6 +498,33 @@ function compositionTacticalNextActionAffordance(action, toolResult, request) {
   };
 }
 
+function unitPlayFixedCardCompletionAffordance(action, addition, ledger, context) {
+  if (context?.unitPlayFixedCardCompletionAffordance !== true) return null;
+  if (action.tool !== "composition_tactical_details" || !addition?.added) return null;
+  const requiredCardCount = Number.isInteger(context.unitPlayFixedCardCount)
+    && context.unitPlayFixedCardCount > 0 ? context.unitPlayFixedCardCount : 2;
+  const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
+  const tacticalEntries = entries.filter((entry) => (
+    entry.toolName === "composition_tactical_details"
+    && Array.isArray(entry.value?.formation?.units)
+  ));
+  if (tacticalEntries.length < requiredCardCount) return null;
+  return {
+    schemaVersion: "react-next-action-affordance.v1",
+    resultStatus: "unit_play_fixed_composition_cards_complete",
+    recommendedAction: "finish",
+    finish: {
+      reasonCode: "sufficient_evidence",
+      requiredEvidenceIds: entries.map((entry) => entry.evidenceId).filter(Boolean)
+    },
+    compositionCards: {
+      requiredCardCount,
+      observedTacticalEvidenceCount: tacticalEntries.length,
+      positioningProseAllowed: false
+    }
+  };
+}
+
 function compositionTrendNextActionAffordance(action, toolResult, addition) {
   if (action.tool !== "comps_trends" || !addition?.added || !addition.entry?.evidenceId) return null;
   const value = toolResult?.value ?? {};
@@ -547,6 +571,30 @@ function resolvedCatalogItem(entries, apiName) {
       && String(resolution.candidates[0]?.apiName ?? "") === apiName
     ))
   ));
+}
+
+function resolvedCatalogItemRecord(entries, apiName) {
+  // Category and resolution must belong to the same current evidence entry.
+  for (const entry of [...entries].reverse()) {
+    if (entry.temporalStatus === "historical" || !resolvedCatalogItem([entry], apiName)) continue;
+    const item = entry.value?.results?.find(item => item.apiName === apiName);
+    if (item) return item;
+  }
+  return null;
+}
+
+function applyNamedPerformanceItemScope(action, ledger, request) {
+  if (action.type !== "call_tool" || action.tool !== "unit_builds") return action;
+  const apiName = action.arguments?.performanceItem;
+  if (!apiName || requestedEquipmentCategoryScope(equipmentScopeUserText(request))) return action;
+  const entries = ledger.snapshot().entries.filter(entry => entry.temporalStatus !== "historical");
+  if (!currentRequestMentionsCatalogItem(entries, apiName, request)) return action;
+  const item = resolvedCatalogItemRecord(entries, apiName);
+  if (!item?.category || item.current === false || item.obtainable === false) return action;
+  // A named-item performance query must include that item's category. Model defaults
+  // are not user constraints; explicit user category restrictions remain authoritative.
+  return { ...action, arguments: { ...action.arguments,
+    itemPolicy: itemPolicyForCategories([item.category]), itemCategories: [item.category] } };
 }
 
 function resolvedCatalogEntity(entries, entityType, apiName) {
@@ -620,7 +668,11 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
     action.arguments?.performanceItem
   ].map((value) => String(value ?? "").trim()).filter(Boolean))];
   const errors = [];
-  if (!resolvedCatalogEntity(entries, "unit", unitApiName)) {
+  const controlledUnitPlayId = request.semanticAdvisory?.goal === "recommend_unit_play"
+    && request.semanticAdvisory?.action === "recommend"
+    ? String(request.semanticAdvisory?.subject?.resolvedId ?? "")
+    : "";
+  if (!resolvedCatalogEntity(entries, "unit", unitApiName) && controlledUnitPlayId !== unitApiName) {
     errors.push("unit_builds unit requires prior exact unit entity_catalog_query resolution");
   }
   for (const apiName of itemApiNames) {
@@ -629,6 +681,12 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
     }
   }
   const performanceItem = String(action.arguments?.performanceItem ?? "").trim();
+  const performanceRecord = resolvedCatalogItemRecord(entries, performanceItem);
+  const explicitScope = requestedEquipmentCategoryScope(equipmentScopeUserText(request));
+  if (performanceRecord?.category && explicitScope
+    && !explicitScope.itemCategories.includes(performanceRecord.category)) {
+    errors.push("unit_builds performanceItem conflicts with the user's explicit equipment category; ask about conflicting_constraints instead of querying an excluded item");
+  }
   if (
     performanceItem
     && resolvedCatalogItem(entries, performanceItem)
@@ -642,12 +700,20 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
 }
 
 function validateItemCarrierAction(action, ledger) {
-  if (action.tool !== "item_carrier_rankings") return { valid: true, errors: [] };
-  const apiName = String(action.arguments?.item ?? "");
+  if (!["item_carrier_rankings", "emblem_carriers", "emblem_rankings"].includes(action.tool)) return { valid: true, errors: [] };
+  const apiNames = action.tool === "emblem_rankings" ? action.arguments?.apiNames ?? [] : [String(action.arguments?.item ?? "")];
   const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
   const errors = [];
-  if (!resolvedCatalogItem(entries, apiName)) {
-    errors.push("item_carrier_rankings item requires prior exact item entity_catalog_query resolution");
+  for (const apiName of apiNames) {
+    const fromEmblemRanking = action.tool.startsWith("emblem_") && entries.some(entry => entry.toolName === "emblem_rankings"
+      && entry.value?.rows?.some(row => row.item.apiName === apiName));
+    if (!resolvedCatalogItem(entries, apiName) && !fromEmblemRanking) {
+      errors.push(`${action.tool} item requires prior exact item entity_catalog_query resolution or current emblem_rankings evidence`);
+    }
+    const item = resolvedCatalogItemRecord(entries, apiName);
+    if (action.tool.startsWith("emblem_") && item?.category && item.category !== "emblem") {
+      errors.push(`${action.tool} requires category=emblem (转职纹章), but ${apiName} has category=${item.category}. This is a tool/category mismatch, not missing source data. Use item_carrier_rankings for non-emblem carriers; emblem_rankings cannot rank artifacts.`);
+    }
   }
   return { valid: errors.length === 0, errors };
 }
@@ -724,16 +790,19 @@ function validateItemCarrierWorkflowFinish(request, action, ledger) {
   if (action.reasonCode === "insufficient_evidence") {
     return { valid: true, errors: [] };
   }
-  const cited = ledger.resolve(action.evidenceIds ?? []);
-  const carrierEntries = cited.filter((entry) => entry.toolName === "item_carrier_rankings");
+  const cited = ledger.resolve(action.evidenceIds ?? []).filter(entry => entry.temporalStatus !== "historical");
+  const carrierEntries = cited.filter((entry) => ["item_carrier_rankings", "emblem_carriers"].includes(entry.toolName));
   const detailEntries = cited.filter((entry) => entry.toolName === "item_details");
   const carrierItems = new Set(carrierEntries.map((entry) => String(
     entry.value?.item?.apiName ?? entry.value?.item ?? entry.value?.query?.item ?? ""
   )).filter(Boolean));
   const matchingDetails = detailEntries.some((entry) => carrierItems.has(String(entry.value?.apiName ?? "")));
   const errors = [];
-  if (!carrierEntries.length) errors.push("item carrier request requires cited item_carrier_rankings evidence");
-  if (!matchingDetails) errors.push("item carrier request requires cited matching item_details evidence");
+  if (!carrierEntries.length) errors.push("item carrier request requires cited current carrier ranking evidence");
+  // Emblem popularity is a statistics-only contract. The existing suitability
+  // workflow still requires official effects; do not impose it on popularity.
+  const requiresDetails = carrierEntries.some(entry => entry.toolName === "item_carrier_rankings");
+  if (requiresDetails && !matchingDetails) errors.push("item carrier request requires cited matching item_details evidence");
   return { valid: errors.length === 0, errors };
 }
 
@@ -1059,6 +1128,8 @@ export function buildInsufficientEvidenceFallback(ledger) {
   const buildEntries = entries.filter((entry) => entry.toolName === "unit_builds_batch");
   const constrainedFallback = buildConstrainedBatchEvidenceFallback(ledger);
   if (constrainedFallback) return constrainedFallback;
+  const partialFallback = buildGeneralEvidenceFallback(ledger, "完整回答的证据仍不足，以上只覆盖本次已经确认的部分。");
+  if (partialFallback) return partialFallback;
   const unavailableResults = buildEntries.flatMap((entry) => (
     Array.isArray(entry.value?.results)
       ? entry.value.results.filter((result) => result?.available === false)
@@ -1183,6 +1254,13 @@ export function buildCompositionTrendFallback(ledger) {
   };
 }
 
+function buildGeneralEvidenceFallback(ledger, explanation) {
+  const entries = ledger.snapshot().entries;
+  return partialEvidenceSummary(entries).findings.length
+    ? buildPartialEvidenceAnswer(entries, { explanation })
+    : null;
+}
+
 function buildAvailableEvidenceFallback(ledger) {
   const entries = ledger.snapshot().entries;
   const buildEntries = entries.filter((entry) => entry.toolName === "unit_builds_batch");
@@ -1192,16 +1270,11 @@ function buildAvailableEvidenceFallback(ledger) {
       : []
   ));
   if (!results.length) return null;
-  const names = [...new Set(results.map(displayNameForBuildResult).filter(Boolean))];
-  const optionCount = Math.min(...results.map((result) => result.buildOptions.length));
-  const planText = optionCount >= 3
-    ? "1 套稳定方案和 2 套备选方案"
-    : `${optionCount} 套有统计证据的方案`;
+  const summary = partialEvidenceSummary(buildEntries);
+  if (!summary.findings.length) return null;
   return {
-    answer: `已获取${names.map((name) => `“${name}”`).join("、")}的当前出装统计，但 AI 的补充分析暂时未完成。先展示${planText}及其可验证数据；机制解读可稍后重试。`,
-    evidenceIds: entries
-      .filter((entry) => entry.temporalStatus !== "historical")
-      .map((entry) => entry.evidenceId)
+    ...buildPartialEvidenceAnswer(buildEntries, { explanation: "出装机制解读尚未完成，现有统计不能解释装备效果或完整玩法。" }),
+    findings: summary.findings
   };
 }
 
@@ -1374,12 +1447,7 @@ function buildRejectedNarrativeFallback(ledger) {
     ?? buildSingleUnitItemRankingFallback(ledger)
     ?? buildSingleUnitBuildFallback(ledger)
     ?? buildAvailableEvidenceFallback(ledger)
-    ?? {
-    answer: "已获取可验证结果，但模型生成的部分说明超出当前证据范围，已隐藏。请以结果区的证据和确定性结果为准。",
-    evidenceIds: ledger.snapshot().entries
-      .filter((entry) => entry.temporalStatus !== "historical")
-      .map((entry) => entry.evidenceId)
-  };
+    ?? buildPartialEvidenceAnswer(ledger.snapshot().entries);
 }
 
 export class ReactLoop {
@@ -1423,11 +1491,19 @@ export class ReactLoop {
     const onEvent = context.onEvent ?? null;
     let insufficientFinishRepairCount = 0;
     let sufficientFinishRepairCount = 0;
+    let responseLanguageRepairCount = 0;
     let consecutiveToolFailures = 0;
     let modelConclusion = null;
     const failuresByCapability = new Map();
     let sequence = 0;
+    let recoveryClosed = false;
+    const assertRecoveryActive = () => {
+      if (!context.registerDeadlineRecovery) return;
+      context.signal?.throwIfAborted();
+      context.run?.assertActive?.();
+    };
     const emit = (type, data = {}) => {
+      if (recoveryClosed) return null;
       const event = {
         schemaVersion: REACT_STREAM_EVENT_SCHEMA_VERSION,
         runId,
@@ -1476,10 +1552,12 @@ export class ReactLoop {
     };
     const terminateForNoProgress = (reason = "no_progress") => {
       const entries = ledger.snapshot().entries.filter((entry) => entry.temporalStatus !== "historical");
-      const available = buildConstrainedBatchEvidenceFallback(ledger)
-        ?? buildItemContentionFallback(ledger)
-        ?? buildSingleUnitItemRankingFallback(ledger)
-        ?? buildAvailableEvidenceFallback(ledger);
+      const currentLedger = { snapshot: () => ({ entries }) };
+      const available = buildConstrainedBatchEvidenceFallback(currentLedger)
+        ?? buildItemContentionFallback(currentLedger)
+        ?? buildSingleUnitItemRankingFallback(currentLedger)
+        ?? buildSingleUnitBuildFallback(currentLedger)
+        ?? buildAvailableEvidenceFallback(currentLedger);
       const stopExplanation = reason === "duplicate_call"
         ? "模型尝试重复同一查询，但没有新的条件或证据可支持再次执行；系统已拦截重复调用。"
         : reason === "capability_failure_circuit_open"
@@ -1489,12 +1567,11 @@ export class ReactLoop {
             : reason === "runaway_loop_fuse"
               ? "任务在较长的决策链中仍未形成可交付结论，系统已触发异常循环熔断。"
               : "连续步骤没有产生新的有效证据或可交付结论，系统已停止继续执行。";
-      const fallback = available ?? {
-        answer: entries.length
-          ? `已取得部分有效证据。${stopExplanation}未被现有证据支持的部分不会推断。`
-          : `${stopExplanation}当前证据不足，无法可靠回答这个问题。`,
-        evidenceIds: entries.map((entry) => entry.evidenceId)
-      };
+      const fallback = buildPartialEvidenceAnswer(entries, {
+        fallback: available,
+        observations: state.observations,
+        explanation: `${stopExplanation}完整回答仍缺少经过校验的补充结论；以上信息仅覆盖本次已确认的部分。`
+      });
       state.warn(reason);
       emit("answer", {
         answer: fallback.answer,
@@ -1510,6 +1587,37 @@ export class ReactLoop {
         answerOrigin: "system_evidence_fallback"
       });
     };
+
+    // Registered only by an explicitly opted-in ChatAgent. Take the snapshot
+    // synchronously after the runtime stops, before any late promise can resume.
+    context.registerDeadlineRecovery?.((error) => {
+      if (recoveryClosed) return null;
+      if (error.code !== "run_timed_out" || state.terminationReason) {
+        recoveryClosed = true;
+        return null;
+      }
+      const entries = currentDeadlineEvidence(ledger.snapshot().entries, this.now(), state.seasonContextId);
+      if (!entries.length) { recoveryClosed = true; return null; }
+      const evidenceIds = entries.map((entry) => entry.evidenceId);
+      const safeLedger = { snapshot: () => ({ entries }) };
+      const { answer } = buildPartialEvidenceAnswer(entries, {
+        observations: state.observations,
+        fallback: buildConstrainedBatchEvidenceFallback(safeLedger)
+          ?? buildItemContentionFallback(safeLedger)
+          ?? buildSingleUnitItemRankingFallback(safeLedger)
+          ?? buildSingleUnitBuildFallback(safeLedger)
+          ?? buildAvailableEvidenceFallback(safeLedger),
+        explanation: "本次查询已超时，以上为截止前取得并通过校验的部分结果；未完成的补充解读仍缺少证据，无法作为完整建议。"
+      });
+      state.warn("deadline_partial_evidence");
+      emit("answer", { answer, evidenceIds, reasonCode: "partial_evidence", narrativeAccepted: false, systemFallback: true });
+      const result = terminate("deadline_exceeded", { status: "completed_with_warning", answer,
+        evidenceIds, answerOrigin: "system_evidence_fallback" });
+      // Do not expose any unaccepted model conclusion as an alternative answer.
+      result.modelConclusion = null;
+      recoveryClosed = true;
+      return result;
+    });
 
     emit("run_started", { budget });
     for (const promoted of request.bridgeContext?.promotedEvidence ?? []) {
@@ -1570,7 +1678,9 @@ export class ReactLoop {
           signal: context.signal,
           runId
         });
+        assertRecoveryActive();
       } catch (error) {
+        assertRecoveryActive();
         const normalized = safeError(error);
         emit("error", { code: normalized.code, message: normalized.message });
         const deterministicVideoAction = deterministicStrategyVideoFallback(
@@ -1585,7 +1695,8 @@ export class ReactLoop {
         const fallback = buildItemContentionFallback(ledger)
           ?? buildSingleUnitItemRankingFallback(ledger)
           ?? buildSingleUnitBuildFallback(ledger)
-          ?? buildAvailableEvidenceFallback(ledger);
+          ?? buildAvailableEvidenceFallback(ledger)
+          ?? buildGeneralEvidenceFallback(ledger, "补充解读生成中断，以上仅为本次已确认的信息，完整回答仍需补全。");
         if (fallback) {
           state.warn("decision_provider_answer_fallback");
           emit("answer", {
@@ -1642,7 +1753,7 @@ export class ReactLoop {
         continue;
       }
 
-      const action = applyRequestBoundEquipmentScope(
+      const action = applyNamedPerformanceItemScope(applyRequestBoundEquipmentScope(
         applyRequestBoundCompositionOverview(
           applyRequestBoundTrendDirection(
             applyRequestBoundVideoScope(validation.value, request),
@@ -1651,7 +1762,7 @@ export class ReactLoop {
           request
         ),
         request
-      );
+      ), ledger, request);
       state.recordDecision(action);
       emit("decision", decisionEventData(action, state, budget));
 
@@ -1717,7 +1828,7 @@ export class ReactLoop {
             actionType: "finish",
             reasonCode: action.reasonCode,
             errors: carrierFinishValidation.errors,
-            repairInstruction: "Continue the item-carrier workflow: cite current item_carrier_rankings evidence and retrieve matching item_details before finishing."
+            repairInstruction: "Cite current carrier ranking evidence. item_carrier_rankings suitability also requires matching item_details; emblem_carriers popularity does not require effects unless you discuss them."
           }, { progress: false });
           emit("decision_rejected", {
             iteration: state.decisions.length,
@@ -1756,7 +1867,23 @@ export class ReactLoop {
           }
           continue;
         }
-        const finishValidation = validateFinishAction(action, ledger);
+        const finishValidation = validateFinishAction(action, ledger, { compositionCardScope: context.compositionCardScope,
+          compositionCardsOwnPositioning: context.compositionCardsOwnPositioning,
+          trendCoverageMode: context.trendCoverageMode,
+          officialItemEvidenceV1: context.officialItemEvidenceV1,
+          unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
+          currentTurnInput: request.input ?? request.question,
+          responseLocale: state.locale,
+          now: this.now(), seasonContextId: state.seasonContextId });
+        if (finishValidation.coverageWarnings.length) {
+          emit("answer_coverage_observed", { scope: "available_trend_sections",
+            coverageWarnings: finishValidation.coverageWarnings, factualValidationPassed: finishValidation.valid });
+        }
+        if (context.compositionCardScope) {
+          const legacyValidation = validateFinishAction(action, ledger);
+          emit("positioning_validation_comparison", { legacyErrors: legacyValidation.errors,
+            candidateErrors: finishValidation.errors });
+        }
         if (!finishValidation.valid) {
           modelConclusion.status = "rejected";
           modelConclusion.validationErrors = finishValidation.errors.map(String);
@@ -1764,6 +1891,37 @@ export class ReactLoop {
             iteration: state.decisions.length,
             errors: finishValidation.errors
           });
+          const responseLanguageError = finishValidation.errors.find((error) => (
+            String(error).includes("en-US response locale")
+          ));
+          if (responseLanguageError) {
+            responseLanguageRepairCount += 1;
+            state.recordObservation({
+              type: "decision_rejected",
+              actionType: "finish",
+              reasonCode: action.reasonCode,
+              errors: [responseLanguageError],
+              repairInstruction: "Rewrite the same grounded answer in English. Preserve evidence IDs, exact numeric values, stable API names, and URLs. Do not add or remove factual claims."
+            }, { progress: false });
+            if (responseLanguageRepairCount === 1 && state.decisions.length < budget.maxDecisions) {
+              state.warn("response_language_repair_requested");
+              continue;
+            }
+            const answer = "I could not produce a valid English response for this request. No unsupported details were added.";
+            state.warn("response_language_fallback");
+            emit("answer", {
+              answer,
+              evidenceIds: [],
+              reasonCode: "insufficient_evidence",
+              narrativeAccepted: false,
+              systemFallback: true
+            });
+            return terminate("response_language_fallback", {
+              status: "completed_with_warning",
+              answer,
+              answerOrigin: "system_language_fallback"
+            });
+          }
           if (canPublishSummaryWithValidationWarnings(request, action, finishValidation, ledger)) {
             const warnings = finishValidation.errors.map(String);
             modelConclusion.status = "accepted_with_validation_warnings";
@@ -1801,7 +1959,7 @@ export class ReactLoop {
               reasonCode: action.reasonCode,
               errors: finishValidation.errors,
               repairInstruction: trendFallback
-                ? "趋势 Evidence 为部分可用：不得把空的上升榜或旧 officialGate 门槛解释成整个结果不可用。改用 sufficient_evidence，引用趋势 Evidence，并展示所有非空的下降榜和选取率榜；只限定空榜单。"
+                ? "趋势 Evidence 为部分可用：不得把空的上升榜或旧 officialGate 门槛解释成整个结果不可用。改用 sufficient_evidence，引用趋势 Evidence，先回答用户询问的部分；如相关榜单为空，说明该部分限制，可简短补充其他可用结果。"
                 : "明确告诉用户数据或证据不足、查询失败或来源不可用；不得补造统计、装备或结论。继续使用 insufficient_evidence。"
             }, { progress: false });
             const canRepair = (
@@ -1838,7 +1996,8 @@ export class ReactLoop {
               ?? buildItemContentionFallback(ledger)
               ?? buildSingleUnitItemRankingFallback(ledger)
               ?? buildSingleUnitBuildFallback(ledger)
-              ?? buildAvailableEvidenceFallback(ledger);
+              ?? buildAvailableEvidenceFallback(ledger)
+              ?? buildGeneralEvidenceFallback(ledger);
             if (fallback) {
               sufficientFinishRepairCount += 1;
               state.recordObservation({
@@ -1988,7 +2147,7 @@ export class ReactLoop {
           type: "decision_rejected",
           tool: action.tool,
           errors: itemCarrierValidation.errors,
-          repairInstruction: "Resolve the named item with entity_catalog_query first, then copy its exact apiName into item_carrier_rankings."
+          repairInstruction: "Resolve each named item with entity_catalog_query first and use its category as well as its exact apiName. emblem_carriers and emblem_rankings accept only emblem (转职纹章), never artifact (神器). For non-emblem carriers use item_carrier_rankings if available, preserving supported user filters; obtain item_details for suitability. A tool/category mismatch does not mean source data is unavailable. Never use historical evidence as current resolution."
         }, { progress: false });
         emit("decision_rejected", {
           iteration: state.decisions.length,
@@ -2178,7 +2337,9 @@ export class ReactLoop {
           maxRetriesPerTool: budget.maxRetriesPerTool,
           intent: "react_chat"
         });
+        assertRecoveryActive();
       } catch (error) {
+        assertRecoveryActive();
         const normalized = safeError(error);
         consecutiveToolFailures += 1;
         failuresByCapability.set(action.tool, (failuresByCapability.get(action.tool) ?? 0) + 1);
@@ -2216,7 +2377,12 @@ export class ReactLoop {
         allowModelGeneratedStatistics: false
       };
       const addition = ledger.add({ definition, toolResult, evidenceContract });
-      const nextActionAffordance = compositionTacticalNextActionAffordance(
+      const nextActionAffordance = unitPlayFixedCardCompletionAffordance(
+        action,
+        addition,
+        ledger,
+        context
+      ) ?? compositionTacticalNextActionAffordance(
         action,
         toolResult,
         request

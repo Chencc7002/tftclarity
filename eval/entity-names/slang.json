@@ -1,0 +1,32 @@
+{
+  "schemaVersion": "entity-slang-eval.v1",
+  "description": "Manually specified smoke cases for the historical set18-live snapshot. Not production accuracy labels; existing aliases are never masked.",
+  "seasonContextId": "set18-live",
+  "cases": [
+    { "type": "unit", "input": "狐狸", "expected": ["DA_18_Ahri"] },
+    { "type": "unit", "input": "牛头", "expected": ["DA_18_Alistar"] },
+    { "type": "unit", "input": "女警", "expected": ["DA_18_Caitlyn"] },
+    { "type": "unit", "input": "妖姬", "expected": ["DA_18_LeBlanc"] },
+    { "type": "unit", "input": "剑圣", "expected": ["DA_18_MasterYi_AD"] },
+    { "type": "unit", "input": "石头人", "expected": ["DA_18_Malphite"] },
+    { "type": "unit", "input": "大树", "expected": ["DA_18_Maokai"] },
+    { "type": "unit", "input": "人马", "expected": ["DA_18_Hecarim"] },
+    { "type": "unit", "input": "挖掘机", "expected": ["DA_18_RekSai"] },
+    { "type": "unit", "input": "猪妹", "expected": ["DA_18_Sejuani"] },
+    { "type": "unit", "input": "螳螂", "expected": ["DA_18_KhaZix"] },
+    { "type": "unit", "input": "日女", "expected": ["DA_18_Leona"] },
+    { "type": "unit", "input": "狼人", "expected": ["DA_18_Warwick"] },
+    { "type": "unit", "input": "龙龟", "expected": ["DA_18_Rammus"] },
+    { "type": "unit", "input": "青钢影", "expected": ["DA_18_Camille"] },
+    { "type": "unit", "input": "蛇女", "expected": ["DA_18_Cassiopeia"] },
+    { "type": "unit", "input": "蜘蛛", "expected": ["DA_18_Elise"] },
+    { "type": "unit", "input": "小法", "expected": ["DA_18_Veigar"] },
+    { "type": "unit", "input": "稻草人", "expected": ["DA_Fiddlesticks18"] },
+    { "type": "unit", "input": "盲僧", "expected": [], "group": "absent_from_snapshot" },
+    { "type": "unit", "input": "测试路人甲", "expected": [], "group": "unknown" },
+    { "type": "item", "input": "大帽", "expected": ["DA_RabadonsDeathcap"], "filters": { "categories": ["ordinary_completed"] } },
+    { "type": "item", "input": "破甲弓", "expected": ["DA_LastWhisper"], "filters": { "categories": ["ordinary_completed"] } },
+    { "type": "item", "input": "吸血剑", "expected": ["DA_Bloodthirster"], "filters": { "categories": ["ordinary_completed"] } },
+    { "type": "item", "input": "回蓝刀", "expected": ["DA_SpearOfShojin"], "filters": { "categories": ["ordinary_completed"] } }
+  ]
+}

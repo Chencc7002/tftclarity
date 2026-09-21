@@ -78,6 +78,32 @@ async function reserveAndCommit(store, requestId, options = {}) {
   return { reservation, committed, task, input };
 }
 
+test("carrier follow-ups retain historical field availability without promoting current statistics", () => {
+  const artifact = createQuickToolBridgeArtifacts({ scopeKey: "scope-a", conversationId: "conversation-a",
+    requestId: "carrier", turnOrdinal: 1, contextEpoch: 0, seasonContextId: "set17-live",
+    quickTask: { id: "item-carriers", operation: "item_carrier_rankings", arguments: { item: "鱼骨头" } },
+    payload: { type: "item_carrier_rankings", item: { apiName: "Test_Fishbones", name: "鱼骨头" },
+      text: "鱼骨头共找到 8 个正向提升携带者。", carriers: [
+        { unit: { name: "凯特琳", apiName: "Test_Caitlyn" }, stats: { games: 1007, avg: 4.69 }, placementUplift: 0.1 }
+      ] } });
+  const bridge = { contextEpoch: 0, activeRecordId: artifact.record.recordId, records: [artifact.record], snapshots: [artifact.snapshot] };
+  const options = { scopeKey: "scope-a", conversationId: "conversation-a", seasonContextId: "set17-live" };
+  for (const input of ["这不是能查吗？", "那为什么说查不到？", "这明明有结果啊"]) {
+    const history = buildConversationBridgeContextView(input, bridge, options);
+    assert.equal(history.relation, "continue");
+    assert.equal(history.promotedEvidence[0].temporalStatus, "historical");
+    assert.match(history.view.records[0].displaySummary, /凯特琳/);
+    assert.match(history.view.records[0].displaySummary, /样本数、平均名次、相对基线差异/);
+    assert.doesNotMatch(JSON.stringify(history.view), /1007|4\.69/);
+    assert.ok(history.estimatedTokens <= MAX_CONVERSATION_BRIDGE_CONTEXT_TOKENS);
+  }
+  const current = buildConversationBridgeContextView("这不是能查吗？现在平均名次是多少", bridge, options);
+  assert.equal(current.promotedEvidence.length, 0);
+  assert.match(current.view.records[0].displaySummary, /数值需重新查询当前工具/);
+  assert.equal(resolveConversationBridgeRelation("这个版本什么阵容好", bridge), "continue"); // existing deictic rule
+  assert.equal(buildConversationBridgeContextView("这不是能查吗？", bridge, { ...options, startNewTask: true }).promotedEvidence.length, 0);
+});
+
 test("bridge relation resolver covers the eight product relations", () => {
   const artifact = createQuickToolBridgeArtifacts({
     scopeKey: "scope-a",

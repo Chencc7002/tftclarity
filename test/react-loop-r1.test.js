@@ -11,7 +11,7 @@ import {
   enrichMetricLeaderInterpretations,
   ReactLoop
 } from "../src/react/react-loop.js";
-import { validateFinishAction } from "../src/react/termination-policy.js";
+import { preferredAnswerLanguage, validateFinishAction } from "../src/react/termination-policy.js";
 import { requestedEquipmentCategoryScope } from "../src/domain/tft/equipment-category-scope.js";
 
 function definition(name, options = {}) {
@@ -62,6 +62,40 @@ function definition(name, options = {}) {
     execute: async (input, context) => context.handler(input, context)
   };
 }
+
+test("unit-play input-language guard rejects a Chinese answer for a clear English turn", () => {
+  const ledger = { resolve: () => [], snapshot: () => ({ entries: [] }) };
+  assert.equal(preferredAnswerLanguage("How should I play Amumu?"), "en");
+  assert.equal(preferredAnswerLanguage("阿木木怎么玩？"), "zh");
+
+  const rejected = validateFinishAction({
+    reasonCode: "direct_answer",
+    evidenceIds: [],
+    answer: "阿木木是一名魔法坦克，可以在来牌顺时考虑。"
+  }, ledger, {
+    unitPlayInputLanguageGuard: true,
+    currentTurnInput: "How should I play Amumu?"
+  });
+  assert.equal(rejected.valid, false);
+  assert.match(rejected.errors.join("\n"), /requires an English answer/u);
+
+  const accepted = validateFinishAction({
+    reasonCode: "direct_answer",
+    evidenceIds: [],
+    answer: "Amumu is a magic tank. Consider playing him when his recommended items or upgrades come naturally."
+  }, ledger, {
+    unitPlayInputLanguageGuard: true,
+    currentTurnInput: "How should I play Amumu?"
+  });
+  assert.equal(accepted.valid, true);
+
+  const legacy = validateFinishAction({
+    reasonCode: "direct_answer",
+    evidenceIds: [],
+    answer: "阿木木是一名魔法坦克，可以在来牌顺时考虑。"
+  }, ledger);
+  assert.equal(legacy.valid, true, "legacy completion remains unchanged");
+});
 
 function action(type, value = {}) {
   return { schemaVersion: "react-action.v1", type, ...value };
@@ -146,14 +180,109 @@ async function runCase(options = {}) {
     input: options.input ?? "test",
     ...(Array.isArray(options.messages) ? { messages: options.messages } : {}),
     ...(options.bridgeContext ? { bridgeContext: options.bridgeContext } : {}),
+    ...(options.semanticAdvisory ? { semanticAdvisory: options.semanticAdvisory } : {}),
     ...(options.locale ? { locale: options.locale } : {}),
     seasonContextId: options.seasonContextId ?? "set17-live"
   }, {
     ...context,
+    ...(options.contextOverrides ?? {}),
     onEvent: (event) => events.push(event)
   });
   return { result, events, context };
 }
+
+test("named special-item performance uses current catalog scope and preserves explicit user exclusions", async (t) => {
+  for (const [category, policy] of [["artifact", "include_artifact"], ["radiant", "include_radiant"], ["emblem", "include_special"]]) {
+    for (const explicitExclusion of [false, true]) await t.test(`${category}, exclusion=${explicitExclusion}`, async () => {
+      const observed = [];
+      const item = "Test_SpecialItem", unit = "Test_Unit", itemName = "测试装备";
+      const definitions = [definition("entity_catalog_query", { inputSchema: {
+        type: "object", additionalProperties: false, required: ["entityType"],
+        properties: { entityType: { type: "string" } }
+      } }), definition("unit_builds", { inputSchema: {
+        type: "object", additionalProperties: false, required: ["unit"], properties: {
+          unit: { type: "string" }, performanceItem: { type: "string" }, itemPolicy: { type: "string" },
+          itemCategories: { type: "array", items: { type: "string" } }
+        }
+      } })];
+      const provider = queueProvider([
+        call("entity_catalog_query", { entityType: "unit" }), call("entity_catalog_query", { entityType: "item" }),
+        call("unit_builds", { unit, performanceItem: item, itemPolicy: "ordinary_only", itemCategories: [category] }),
+        explicitExclusion
+          ? action("ask_user", { question: "目标装备与普通装备范围冲突，要修改范围吗？", missingFields: ["itemPolicy"], reasonCode: "conflicting_constraints" })
+          : finish("已取得目标装备数据。", ["ev-3"])
+      ]);
+      const { result, events } = await runCase({ input: `测试英雄的${itemName}表现怎么样？${explicitExclusion ? "只要普通装备" : ""}`,
+        definitions, provider, handlers: {
+          entity_catalog_query: async ({ entityType }) => ({ type: "entity_catalog_results", entityType,
+            updatedAt: "2026-09-18T00:00:00Z", resolution: { requests: [{ status: "resolved", inputName: entityType === "item" ? itemName : "测试英雄",
+              candidates: [{ apiName: entityType === "item" ? item : unit, name: entityType === "item" ? itemName : "测试英雄" }] }] },
+            results: [{ apiName: entityType === "item" ? item : unit, ...(entityType === "item" ? { category, current: true, obtainable: true } : {}) }] }),
+          unit_builds: async input => { observed.push(input); return { type: "unit_item_rankings", query: input,
+            updatedAt: "2026-09-18T00:00:00Z", itemRankings: [{ apiName: item, category }] }; }
+        } });
+      if (explicitExclusion) {
+        assert.equal(observed.length, 0);
+        assert.ok(events.some(event => event.data?.errors?.some(error => error.includes("conflicts with the user's explicit"))));
+      } else {
+        assert.equal(result.terminationReason, "completed");
+        assert.equal(observed.length, 1);
+        assert.equal(observed[0].itemPolicy, policy);
+        assert.deepEqual(observed[0].itemCategories, [category]);
+      }
+    });
+  }
+});
+
+test("controlled unit-play reuses the exact TaskFrame subject for unit build grounding", async () => {
+  let buildCalls = 0;
+  const provider = queueProvider([
+    call("unit_builds", { unit: "DA_18_Warwick" }),
+    finish("来源装备已经取得。", ["ev-1"])
+  ]);
+  const { result, events } = await runCase({
+    input: "沃里克推荐装备",
+    semanticAdvisory: {
+      action: "recommend",
+      goal: "recommend_unit_play",
+      subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+      expectedOutput: ["unit_play_guidance"]
+    },
+    provider,
+    definitions: [definition("unit_builds")],
+    handlers: { unit_builds: async () => {
+      buildCalls += 1;
+      return { type: "unit_build_rankings", unit: { apiName: "DA_18_Warwick" },
+        cards: [{ items: [] }], updatedAt: "2026-08-30T00:00:00.000Z" };
+    } }
+  });
+  assert.equal(result.terminationReason, "completed", JSON.stringify({ result, events }, null, 2));
+  assert.equal(buildCalls, 1);
+  assert.ok(!events.some((event) => event.type === "decision_rejected"));
+});
+
+test("controlled unit-play cannot reuse a different TaskFrame subject for unit build grounding", async () => {
+  let buildCalls = 0;
+  const provider = queueProvider([
+    call("unit_builds", { unit: "DA_18_Xayah" }),
+    finish("无法取得装备。", [], "insufficient_evidence")
+  ]);
+  const { events } = await runCase({
+    input: "沃里克推荐装备",
+    semanticAdvisory: {
+      action: "recommend",
+      goal: "recommend_unit_play",
+      subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+      expectedOutput: ["unit_play_guidance"]
+    },
+    provider,
+    definitions: [definition("unit_builds")],
+    handlers: { unit_builds: async () => { buildCalls += 1; return {}; } }
+  });
+  assert.equal(buildCalls, 0);
+  assert.ok(events.some((event) => event.type === "decision_rejected"
+    && event.data?.code === "ungrounded_unit_build_query"));
+});
 
 const evidence = (results, extra = {}) => ({
   updatedAt: "2026-08-06T00:00:00.000Z",
@@ -187,6 +316,23 @@ test("ReAct working state preserves the requested English response locale", asyn
   assert.equal(provider.requests[0].state.locale, "en-US");
 });
 
+test("English response locale rejects a Chinese model answer and accepts its English repair", async () => {
+  const provider = queueProvider([
+    finish("我会继续用中文回答。", [], "direct_answer"),
+    finish("I will continue and provide the complete answer in English.", [], "direct_answer")
+  ]);
+  const { result, events } = await runCase({
+    provider,
+    input: "请总结当前版本",
+    locale: "en-US"
+  });
+  assert.equal(result.answer, "I will continue and provide the complete answer in English.", JSON.stringify(result));
+  assert.equal(provider.requests.length, 2);
+  assert.ok(events.some((event) => (
+    event.type === "decision_rejected"
+    && event.data?.errors?.some((error) => error.includes("en-US response locale"))
+  )));
+});
 test("R1-02 one static tool produces validated evidence and ordered events", async () => {
   const provider = queueProvider([
     call("unit_details", { apiName: "TFT18_Xayah" }, "retrieve_entity_details"),
@@ -563,6 +709,65 @@ test("UI-07D item mechanism batch is constrained to the deterministic difference
   )));
 });
 
+test("unit-play item mechanism batch must exactly copy the server plan", async () => {
+  const buildValue = {
+    type: "unit_build_rankings",
+    unit: { apiName: "DA_18_Warwick" },
+    mechanismQueryPlan: {
+      schemaVersion: "unit-play-item-mechanism-query-plan.v1",
+      status: "available",
+      apiNames: ["Shojin", "Sterak", "Titans"],
+      seasonContextId: "set18-live",
+      sourceCardIndex: 0
+    },
+    cards: [{ items: [{ apiName: "Shojin" }, { apiName: "Sterak" }, { apiName: "Titans" }] }],
+    updatedAt: "2026-08-30T00:00:00.000Z"
+  };
+  const definitions = [definition("unit_builds"), definition("item_details_batch", { evidenceType: "official_item_batch" })];
+  let batchCalls = 0;
+  const valid = await runCase({
+    input: "沃里克怎么玩？",
+    seasonContextId: "set18-live",
+    semanticAdvisory: { action: "recommend", goal: "recommend_unit_play",
+      subject: { resolvedId: "DA_18_Warwick" }, expectedOutput: ["unit_play_guidance"] },
+    definitions,
+    provider: queueProvider([
+      call("unit_builds", { unit: "DA_18_Warwick" }),
+      call("item_details_batch", { apiNames: ["Shojin", "Sterak", "Titans"], seasonContextId: "set18-live" }, "retrieve_entity_details"),
+      finish("三件来源装备机制已取得。", ["ev-1", "ev-2"])
+    ]),
+    handlers: {
+      unit_builds: async () => buildValue,
+      item_details_batch: async () => { batchCalls += 1; return { type: "item_details_batch",
+        updatedAt: "2026-08-30T00:00:00.000Z", items: [{ apiName: "Shojin", status: "found" }] }; }
+    }
+  });
+  assert.equal(valid.result.status, "completed", JSON.stringify(valid.result));
+  assert.equal(batchCalls, 1);
+
+  for (const argumentsValue of [
+    { apiNames: ["Shojin", "Titans", "Sterak"], seasonContextId: "set18-live" },
+    { apiNames: ["Shojin", "Sterak"], seasonContextId: "set18-live" },
+    { apiNames: ["Shojin", "Sterak", "Titans"], seasonContextId: "set17-live" }
+  ]) {
+    const invalid = await runCase({
+      input: "沃里克怎么玩？", seasonContextId: "set18-live",
+      semanticAdvisory: { action: "recommend", goal: "recommend_unit_play",
+        subject: { resolvedId: "DA_18_Warwick" }, expectedOutput: ["unit_play_guidance"] },
+      definitions,
+      provider: queueProvider([
+        call("unit_builds", { unit: "DA_18_Warwick" }),
+        call("item_details_batch", argumentsValue, "retrieve_entity_details"),
+        finish("只保留来源装备统计。", ["ev-1"])
+      ]),
+      handlers: { unit_builds: async () => buildValue,
+        item_details_batch: async () => assert.fail("invalid batch plan must not execute") }
+    });
+    assert.ok(invalid.events.some((event) => event.type === "decision_rejected"
+      && event.data?.code === "invalid_differentiating_item_selection"), JSON.stringify(argumentsValue));
+  }
+});
+
 test("R1-04 later decisions observe earlier tools in a multi-tool loop", async () => {
   const provider = queueProvider([
     call("comps_trends", { patch: "current" }),
@@ -578,6 +783,28 @@ test("R1-04 later decisions observe earlier tools in a multi-tool loop", async (
   });
   assert.equal(provider.requests[1].state.observations.length, 1);
   assert.equal(result.evidence.length, 2);
+});
+
+test("partial composition fallback exposes verified metrics and missing positioning in the answer event", async () => {
+  const provider = queueProvider([
+    call("comps_rankings", { patch: "current" }),
+    call("comps_rankings", { patch: "current" })
+  ]);
+  const { result, events } = await runCase({ provider, handlers: {
+    comps_rankings: async () => evidence([{
+      compositionRef: { name: "测试阵容" }, members: [{ name: "测试成员" }],
+      stats: { games: 1200, top4Rate: 0.367 },
+      tacticalDetailQueryPlan: { status: "ready", compositionId: "11", clusterId: "22", seasonContextId: "set17-live" }
+    }], { resolution: { status: "resolved" } })
+  } });
+  assert.equal(result.terminationReason, "duplicate_call");
+  assert.equal(result.answerOrigin, "system_evidence_fallback");
+  assert.match(result.answer, /测试阵容.*测试成员.*样本 1200，前四率 36.7%/u);
+  assert.match(result.answer, /尚未取得完整的站位明细/u);
+  assert.ok(result.answer.indexOf("36.7%") < result.answer.indexOf("还缺什么"));
+  assert.deepEqual(result.evidenceIds, ["ev-1"]);
+  assert.equal(events.find((event) => event.type === "answer").data.answer, result.answer);
+  assert.equal(result.safetyMetrics.actualToolCalls, 1);
 });
 
 test("R1-05 missing context asks the user and ends the current run", async () => {
@@ -1815,7 +2042,8 @@ test("decision-provider failure preserves available build cards with a visible w
 
   assert.equal(result.status, "completed_with_warning");
   assert.equal(result.terminationReason, "decision_provider_fallback");
-  assert.match(result.answer, /1 套稳定方案和 2 套备选方案/u);
+  assert.match(result.answer, /霞返回了 3 条出装候选记录/u);
+  assert.match(result.answer, /缺少具体装备/u);
   assert.deepEqual(result.evidenceIds, ["ev-1"]);
   assert.equal(events.find((event) => event.type === "answer")?.data.systemFallback, true);
 });
@@ -1871,7 +2099,8 @@ test("repeated invalid statistics preserve deterministic build cards instead of 
 
   assert.equal(result.status, "completed_with_warning");
   assert.equal(result.terminationReason, "finish_validation_fallback");
-  assert.match(result.answer, /1 套稳定方案和 2 套备选方案/u);
+  assert.match(result.answer, /霞返回了 3 条出装候选记录/u);
+  assert.match(result.answer, /缺少具体装备/u);
   assert.doesNotMatch(result.answer, /99/u);
 });
 
@@ -2678,6 +2907,21 @@ test("tactical finish validation rejects prose that moves units to a different b
     answer: "**前排（第1排）**：**易**、**菲奥娜**位于边角，方便切入。\n**中排（第2排）**：**厄加特**、**卑尔维斯**利用2格攻击距离输出。"
   }, ledger);
   assert.equal(valid.valid, true, valid.errors.join("; "));
+
+  const cardOnly = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "易放在前排。"
+  }, ledger, { compositionCardScope: true, compositionCardsOwnPositioning: true });
+  assert.equal(cardOnly.valid, false);
+  assert.ok(cardOnly.errors.includes("positioning prose is reserved for the cited composition cards"));
+
+  const cardsOwnPositioning = validateFinishAction({
+    reasonCode: "sufficient_evidence",
+    evidenceIds: [entry.evidenceId],
+    answer: "阵容与站位请查看对应来源卡片。"
+  }, ledger, { compositionCardScope: true, compositionCardsOwnPositioning: true });
+  assert.equal(cardsOwnPositioning.valid, true, cardsOwnPositioning.errors.join("; "));
 });
 
 test("G4-A rejects model-selected composition members outside the deterministic candidate plan", async () => {
@@ -2930,6 +3174,108 @@ test("G5 constrained batch requires and reuses an unconstrained baseline for the
   assert.equal(affordance.recommendedAction, "finish");
   assert.equal(affordance.mechanismLookup.required, false);
   assert.deepEqual(affordance.finish.requiredEvidenceIds, ["ev-1", "ev-2"]);
+});
+
+test("unit-play fixed card affordance recommends finish after required tactical cards", async () => {
+  const compsDefinition = definition("comps_rankings", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["mention"],
+      properties: { mention: { type: "string" } }
+    }
+  });
+  const tacticalDefinition = definition("composition_tactical_details", {
+    inputSchema: {
+      type: "object",
+      additionalProperties: false,
+      required: ["compositionId", "clusterId", "units", "seasonContextId"],
+      properties: {
+        compositionId: { type: "string" },
+        clusterId: { type: "string" },
+        units: { type: "array", items: { type: "string" } },
+        seasonContextId: { type: "string" }
+      }
+    }
+  });
+  const provider = queueProvider([
+    call("comps_rankings", { mention: "cluster:one" }),
+    call("composition_tactical_details", {
+      compositionId: "comp-one",
+      clusterId: "cluster-one",
+      units: ["TFT_Alpha"],
+      seasonContextId: "set17-live"
+    }),
+    call("comps_rankings", { mention: "cluster:two" }),
+    call("composition_tactical_details", {
+      compositionId: "comp-two",
+      clusterId: "cluster-two",
+      units: ["TFT_Alpha"],
+      seasonContextId: "set17-live"
+    }),
+    finish("已取得装备和两张阵容卡；拿到推荐装备，或者来牌多、升星顺时可以考虑玩。",
+      ["ev-1", "ev-2", "ev-3", "ev-4"])
+  ]);
+  const tacticalPlan = (id) => ({
+    status: "ready",
+    compositionId: `comp-${id}`,
+    clusterId: `cluster-${id}`,
+    units: ["TFT_Alpha"],
+    seasonContextId: "set17-live"
+  });
+  const { result } = await runCase({
+    provider,
+    input: "Alpha 怎么玩？阵容与站位用卡片展示。",
+    definitions: [compsDefinition, tacticalDefinition],
+    contextOverrides: {
+      compositionCardScope: true,
+      compositionCardsOwnPositioning: true,
+      unitPlayFixedCardCompletionAffordance: true,
+      unitPlayFixedCardCount: 2
+    },
+    handlers: {
+      comps_rankings: async (input) => {
+        const id = input.mention?.includes("two") ? "two" : "one";
+        return {
+          type: "composition_rankings",
+          resolution: { status: "resolved" },
+          results: [{
+            compositionRef: { name: `Comp ${id}` },
+            tacticalDetailQueryPlan: tacticalPlan(id)
+          }],
+          source: { updatedAt: "2026-08-08T00:00:00.000Z" },
+          updatedAt: "2026-08-08T00:00:00.000Z"
+        };
+      },
+      composition_tactical_details: async (input) => ({
+        type: "composition_tactical_details",
+        ok: true,
+        compId: input.compositionId,
+        clusterId: input.clusterId,
+        seasonContextId: input.seasonContextId,
+        formation: {
+          units: [{
+            apiName: "TFT_Alpha",
+            name: "Alpha",
+            boardPosition: { rowFromFront: 1, columnFromLeft: 1 }
+          }]
+        },
+        source: { updatedAt: "2026-08-08T00:00:00.000Z" },
+        updatedAt: "2026-08-08T00:00:00.000Z"
+      })
+    }
+  });
+  assert.equal(result.terminationReason, "completed");
+  const firstTacticalObservation = provider.requests[2].state.observations.at(-1);
+  assert.equal(firstTacticalObservation.tool, "composition_tactical_details");
+  assert.equal(firstTacticalObservation.nextActionAffordance, undefined);
+  const secondTacticalObservation = provider.requests[4].state.observations.at(-1);
+  const affordance = secondTacticalObservation.nextActionAffordance;
+  assert.equal(affordance.schemaVersion, "react-next-action-affordance.v1");
+  assert.equal(affordance.resultStatus, "unit_play_fixed_composition_cards_complete");
+  assert.equal(affordance.recommendedAction, "finish");
+  assert.deepEqual(affordance.finish.requiredEvidenceIds, ["ev-1", "ev-2", "ev-3", "ev-4"]);
+  assert.equal(affordance.compositionCards.positioningProseAllowed, false);
 });
 
 test("G5 lets the model repair one repeated baseline by adding the requested nested constraint", async () => {
@@ -3227,4 +3573,24 @@ test("R1-12 tool calls are unbounded while the decision fuse remains", async (t)
     assert.match(result.answer, /连续步骤|有效证据/u);
     assert.equal(provider.requests.length, 2);
   });
+});
+
+test("brief potential-and-popularity trend answer finishes without repair or mandatory falling prose", async () => {
+  const answer = "最有潜力的是永恒之森·乐芙兰（平均名次改善0.37）；最卷的是裁决使·索拉卡（选取率59.7%）。";
+  const provider = queueProvider([call("comps_trends"), finish(answer, ["ev-1"])]);
+  const { result, events } = await runCase({ input: "简述今天阵容趋势：列出最有潜力的阵容和最卷的阵容", provider,
+    handlers: { comps_trends: async () => ({ type: "comp_trends", updatedAt: "2026-08-06T00:00:00.000Z",
+      rising: [{ name: "永恒之森 · 乐芙兰", trend: { avgPlacementChange: -0.37 } }],
+      falling: [{ name: "法师 · 卡西奥佩娅", trend: { avgPlacementChange: 0.21 } }],
+      rankings: { popularity: [{ name: "裁决使 · 索拉卡", stats: { selectionRate: 0.597 } }] }
+    }) }
+  });
+  assert.equal(result.status, "completed");
+  assert.equal(result.answerOrigin, "model");
+  assert.equal(result.modelConclusion.answer, answer);
+  assert.equal(result.modelConclusion.status, "accepted");
+  assert.equal(result.safetyMetrics.actualToolCalls, 1);
+  assert.equal(provider.requests.length, 2);
+  assert.ok(!events.some(event => event.type === "decision_rejected"));
+  assert.ok(events.some(event => event.type === "answer_coverage_observed" && event.data.factualValidationPassed));
 });

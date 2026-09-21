@@ -58,7 +58,7 @@ export function setupToolMenu({ button, menu, anchor, root = document }) {
   return { close };
 }
 
-export function createQuickToolLibrary({ tasks, categories, t, escapeHtml: escape, launch, isRunning, storage = () => window.localStorage, now = Date.now }) {
+export function createQuickToolLibrary({ tasks, categories, t, escapeHtml: escape, launch, isRunning, guidance, storage = () => window.localStorage, now = Date.now }) {
   const preferences = createToolPreferences({ ids: tasks().map(task => task.id), storage, now });
   const dialog = document.querySelector("#tool-library");
   const search = dialog.querySelector("input");
@@ -126,7 +126,10 @@ export function createQuickToolLibrary({ tasks, categories, t, escapeHtml: escap
       button.title = label;
       button.querySelector("span").textContent = saved ? "★" : "☆";
     });
-    if (reminderId && snapshot.favorites.includes(reminderId)) hideReminder();
+    if (reminderId && snapshot.favorites.includes(reminderId)) {
+      guidance?.cancel(`favorite:${reminderId}`);
+      hideReminder();
+    }
   }
 
   function hideReminder() {
@@ -166,6 +169,7 @@ export function createQuickToolLibrary({ tasks, categories, t, escapeHtml: escap
 
   function toggleFavorite(id) {
     const snapshot = preferences.toggleFavorite(id);
+    if (snapshot.favorites.includes(id)) guidance?.complete(`favorite:${id}`, "favorite");
     syncFavorites();
     if (dialog.open) {
       renderLibrary();
@@ -193,9 +197,11 @@ export function createQuickToolLibrary({ tasks, categories, t, escapeHtml: escap
       return;
     }
     if (target.matches("[data-tool-reminder]")) {
+      const id = reminderId;
+      guidance?.respond(`favorite:${id}`, target.dataset.toolReminder === "save" ? "accepted" : target.dataset.toolReminder);
       if (target.dataset.toolReminder === "save") {
-        if (!preferences.snapshot().favorites.includes(reminderId)) toggleFavorite(reminderId);
-      } else preferences.dismissReminder(reminderId, target.dataset.toolReminder === "never");
+        if (!preferences.snapshot().favorites.includes(id)) toggleFavorite(id);
+      } else preferences.dismissReminder(id, target.dataset.toolReminder === "never");
       hideReminder();
       return;
     }
@@ -233,12 +239,27 @@ export function createQuickToolLibrary({ tasks, categories, t, escapeHtml: escap
     welcomeHtml,
     recordUse(id) {
       preferences.recordUse(id);
+      if (guidance) {
+        if (preferences.reminderEligible(id)) guidance.offer({
+          id: `favorite:${id}`, family: "favorite", priority: 10,
+          eligible: () => !isRunning() && !preferences.snapshot().favorites.includes(id),
+          show() {
+            if (!preferences.claimReminder(id)) return false;
+            reminderId = id; renderReminder();
+          },
+          hide: hideReminder
+        });
+        return;
+      }
       if (!reminderId && preferences.claimReminder(id)) {
         reminderId = id;
         renderReminder();
       }
     },
-    reset() { hideReminder(); toolMenu.close(); },
+    reset() {
+      for (const task of tasks()) guidance?.cancel(`favorite:${task.id}`);
+      hideReminder(); toolMenu.close();
+    },
     refreshLocale() {
       const section = document.querySelector(".tool-recommendations");
       if (section) section.outerHTML = welcomeHtml({ reshuffle: false });

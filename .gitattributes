@@ -1,0 +1,4 @@
+eval/skills/** text eol=lf
+src/experiments/** text eol=lf
+scripts/*unit-play-guidance*.mjs text eol=lf
+test/fixtures/metatft-comp-guide/** text eol=lf

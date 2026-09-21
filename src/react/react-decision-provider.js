@@ -1,7 +1,14 @@
+import { selectedEntityConfirmation } from "./entity-confirmation.js";
 import { validateReactAction } from "./react-action.js";
 import { requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import {
+  applyUnitPlayCandidateDecisionProfile,
+  validateUnitPlayCandidateDecisionRequest
+} from "./unit-play-candidate-projection.js";
 
 export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v7";
+export const REACT_DECISION_PROMPT_VERSION_V5 = "react-decision-contract.v5";
+export const REACT_SCOPED_TACTICAL_PROMPT_VERSION = "react-decision-contract.v5.tactical-presentation.v1";
 const MAX_DECISION_ATTEMPTS = 2;
 const REACT_STABLE_CONTEXT_SCHEMA_VERSION = "react-stable-context.v1";
 const REACT_RUN_CONTEXT_SCHEMA_VERSION = "react-run-context.v1";
@@ -71,6 +78,20 @@ const REACT_DECISION_CONTRACT = [
   "Keep finish.answer concise. Keep narrative text compact enough to complete the JSON within the output limit.",
   'All objects use schemaVersion "react-action.v1" and reject additional properties.'
 ].join("\n");
+
+// The accepted unit-play experiment used the v5 decision contract. Keep that
+// exact base for the candidate-only tactical profile while the default runtime
+// retains the production v6 patch-facts rule.
+const REACT_DECISION_CONTRACT_V5 = REACT_DECISION_CONTRACT
+  .replace(
+    "player_pool_stats evidence is a server-refreshed snapshot of the active single-Pool dashboard. Explain it in beginner-friendly language matching the requested response locale:",
+    "player_pool_stats evidence is a server-refreshed snapshot of the active single-Pool dashboard. Explain it in beginner-friendly Chinese:"
+  )
+  .split("\n")
+  .filter((line) => !line.startsWith("For TFT patch contents, dates, buffs, or nerfs,"))
+  .join("\n");
+
+const RESPONSE_LANGUAGE_POLICY = "runContext.locale is authoritative for response language. For en-US, write every user-facing field in English, including finish.answer, narrative text, and ask_user.question, even when the query, history, entity names, or evidence are Chinese. For zh-CN, write those fields in Simplified Chinese. Never translate stable API names, evidence IDs, URLs, numeric values, schema fields, or exact tool arguments.";
 
 function contentFromPayload(payload) {
   if (typeof payload?.output_text === "string") return payload.output_text;
@@ -150,11 +171,57 @@ function semanticGuidance(advisory) {
   ].join("\n");
 }
 
-function decisionContract(cacheNamespace) {
+function renderGuidance(guidanceRenderer, advisory) {
+  const rendered = guidanceRenderer(advisory);
+  if (rendered == null) return null;
+  if (typeof rendered !== "string") {
+    throw new TypeError("react decision guidanceRenderer must return a string or null");
+  }
+  return rendered;
+}
+
+function itemQueryGuidance(toolCatalog = [], bridgeContext = null) {
+  const hasItemTools = toolCatalog.some(tool => ["item_carrier_rankings", "emblem_carriers", "unit_builds"].includes(tool.name));
+  const hasCarrierHistory = bridgeContext?.records?.some(record => ["item_carrier_rankings", "emblem_carriers"].includes(record.operation));
+  if (!hasItemTools && !hasCarrierHistory) return [];
+  return [{ role: "system", content: [
+    "item-query-repair-guidance.v1",
+  "Historical displaySummary is a bounded excerpt, not the complete prior response. Missing names or statistics in that excerpt do not prove they were absent from the result. A completed historical record establishes that the earlier query completed, not current statistics. When explaining an earlier success, acknowledge it without claiming missing data. For requested current carrier names, samples or performance, resolve the item and re-query current tools; never promote historical evidence to current evidence.",
+  "When explaining a tool failure, use the structured observation error. A category or argument validation rejection is not a source outage or an empty dataset. Correct the tool or parameters when possible instead of repeating the same invalid call or asking the user to rephrase. Never describe emblem tools as artifact tools or offer an unsupported global artifact ranking.",
+  "Use the resolved catalog category: artifact means 神器; emblem means 转职纹章. For artifact carriers use item_carrier_rankings, never emblem_carriers. For a named artifact's performance on one champion use unit_builds.performanceItem with itemPolicy=include_artifact; do not combine a special target or category with ordinary_only. Explicit user exclusions must be respected; clarify conflicting constraints instead of silently filtering away the target. games denotes observed samples, not unique people; positive-uplift carriers do not represent every user of the item.",
+  ].join("\n") }];
+}
+
+function emblemRankingGuidance(toolCatalog = []) {
+  if (!toolCatalog.some(tool => tool.name === "emblem_rankings")) return [];
+  return [{ role: "system", content: [
+  "When emblem_rankings is available, use it for global emblem strength, Spatula/Frying Pan crafting choices and analysis of that ranking. No champion is required. Use recipeBase=spatula for 金铲铲, pan for 金锅锅, craftable for craftable-only, otherwise all; preserve the user's selected metric, days and filters across follow-ups. Resolve named emblems before sending apiNames. Do not replace a champion-specific unit_builds emblem ranking with global statistics.",
+  "Both emblem_rankings and emblem_carriers require category=emblem (转职纹章). They never accept category=artifact (神器), radiant or ordinary equipment. For non-emblem carriers use item_carrier_rankings when available. There is no global artifact-ranking capability in these emblem tools.",
+  "emblem_rankings returns all selected rows, sample flags, metric leaders and server-calculated pairwise differences (left minus right; rate differences are percentage points). Explain only supported descriptive differences; do not invent causal uplift, statistical significance or a guaranteed best craft. Name low-sample limits and distinguish popularity from performance. For a previous shortcut follow-up, retrieve current emblem_rankings again; historical summaries are not current statistics. For common holders use emblem_carriers with an exact current ranking or catalog ID; for effects or mechanism explanations obtain item_details evidence separately.",
+  "Report sample counts as the full integer from evidence (for example 250240), without rounding or abbreviating to 万, 千, k or M. Use the server-calculated percentage-point gap for comparisons; retain the direction shown by the two rates.",
+  ].join("\n") }];
+}
+
+function decisionContract(
+  cacheNamespace,
+  tacticalPresentationScope = false,
+  promptVersion = REACT_DECISION_PROMPT_VERSION
+) {
   const namespace = String(cacheNamespace ?? "").trim().slice(0, 128);
+  // Opt-in presentation correction only. All tool, prerequisite, grounding,
+  // missing-requested-data and finish policies remain in the same contract.
+  const contract = tacticalPresentationScope
+    ? REACT_DECISION_CONTRACT_V5
+      .replace("If formation or augmentRecommendations is unavailable, state that exact limitation while still presenting whichever verified part is available.",
+        "State missing-data limitations for requested facets or facts used in the answer while retaining the verified parts. Missing requested formation must be disclosed. Missing augmentRecommendations need not be discussed when augments were neither requested nor used.")
+      .replace("Format positioning and augment recommendations as two separate Markdown sections with short bullet items, and bold champion or augment names.",
+        "Keep each composition with its own verified positioning. Use a separate augment section only when augments were requested. Do not add an unrequested augment section or missing-augment notice.")
+    : promptVersion === REACT_DECISION_PROMPT_VERSION_V5
+      ? REACT_DECISION_CONTRACT_V5
+      : REACT_DECISION_CONTRACT;
   return namespace
-    ? `[cache-namespace:${namespace}]\n${REACT_DECISION_CONTRACT}`
-    : REACT_DECISION_CONTRACT;
+    ? `[cache-namespace:${namespace}]\n${contract}`
+    : contract;
 }
 
 function repairInstruction(locale, legacy = false) {
@@ -168,16 +235,10 @@ function repairInstruction(locale, legacy = false) {
     : "只返回一个完整、精简、可解析的 react-action.v1 JSON。若是 finish，answer 不超过 120 个汉字并将 narrative 设为 null。不得输出 Markdown、解释或补造事实。";
 }
 
-const AFFIRMATIVE_ENTITY_CONFIRMATION = /^(?:是(?:的|这个|它)?|对(?:的|没错)?|没错|就是(?:这个|它)?|确认|可以|嗯|好(?:的)?|yes|yeah|yep|correct)[\s。.!！]*$/iu;
 
 function confirmedEntityGuidance(question, bridgeContext) {
-  const pending = bridgeContext?.pendingClarification;
-  const context = pending?.confirmationContext;
-  if (
-    !AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
-    || context?.type !== "entity_candidate"
-    || context.candidates?.length !== 1
-  ) return [];
+  const context = selectedEntityConfirmation(question, bridgeContext);
+  if (!context) return [];
   const candidate = context.candidates[0];
   return [{ role: "system", content: [
     "entity-confirmation-guidance.v1",
@@ -189,11 +250,8 @@ function confirmedEntityGuidance(question, bridgeContext) {
 }
 
 function equipmentCategoryGuidance(question, bridgeContext = null, messages = []) {
-  const confirmation = bridgeContext?.pendingClarification?.confirmationContext;
-  const inheritedInput = AFFIRMATIVE_ENTITY_CONFIRMATION.test(String(question ?? "").trim())
-    && confirmation?.type === "entity_candidate"
-    ? confirmation.originalInput
-    : "";
+  const confirmation = selectedEntityConfirmation(question, bridgeContext);
+  const inheritedInput = confirmation?.originalInput ?? "";
   let scope = requestedEquipmentCategoryScope(`${question ?? ""}\n${inheritedInput ?? ""}`);
   if (!scope && ["modify", "continue"].includes(bridgeContext?.relation)
     && bridgeContext.records?.[0]?.operation === "unit_build_completion") {
@@ -224,6 +282,14 @@ function equipmentCategoryGuidance(question, bridgeContext = null, messages = []
   ].join("\n") }];
 }
 
+function trendSummaryGuidance(evidence = []) {
+  if (!evidence.some((entry) => entry?.toolName === "comps_trends" && entry?.temporalStatus !== "historical")) return [];
+  return [{ role: "system", content: [
+    "composition-trend-summary-guidance.v1",
+    "Answer the user's requested points first. A tool may return additional sections: those are available evidence, not a requirement to repeat every section. For a brief trend answer asking for promising and most contested compositions, summarize improving and popular results; declining compositions are optional context after the requested answer. Do not add unrelated sections merely to exhaust tool output."
+  ].join("\n") }];
+}
+
 function transcriptEventValue(event) {
   const value = event?.value ?? null;
   if (
@@ -237,17 +303,29 @@ function transcriptEventValue(event) {
   return value;
 }
 
-function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null) {
+function reactDecisionMessages(
+  request = {},
+  repairNote = null,
+  cacheNamespace = null,
+  guidanceRenderer = semanticGuidance,
+  tacticalPresentationScope = false,
+  guidanceOverride = null,
+  promptVersion = REACT_DECISION_PROMPT_VERSION
+) {
   const state = request.state ?? {};
   const messages = [
-    { role: "system", content: decisionContract(cacheNamespace) },
+    { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
+    ...emblemRankingGuidance(request.toolCatalog),
+    ...itemQueryGuidance(request.toolCatalog, state.bridgeContext),
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
+    ...trendSummaryGuidance(state.evidence),
     {
       role: "system",
       content: stableJson({
         schemaVersion: REACT_STABLE_CONTEXT_SCHEMA_VERSION,
-        promptVersion: REACT_DECISION_PROMPT_VERSION,
+        promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : promptVersion,
+        ...(state.locale ? { responseLanguagePolicy: RESPONSE_LANGUAGE_POLICY } : {}),
         toolCatalog: request.toolCatalog ?? []
       })
     },
@@ -262,7 +340,7 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
         semanticAdvisory: state.semanticAdvisory ?? null,
-        semanticGuidance: semanticGuidance(state.semanticAdvisory),
+        semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, state.semanticAdvisory),
         historicalEvidence: historicalEvidence(state.evidence)
       })
     }
@@ -296,19 +374,31 @@ function reactDecisionMessages(request = {}, repairNote = null, cacheNamespace =
   return messages;
 }
 
-function legacyReactDecisionMessages(request = {}, repairNote = null, cacheNamespace = null) {
+function legacyReactDecisionMessages(
+  request = {},
+  repairNote = null,
+  cacheNamespace = null,
+  guidanceRenderer = semanticGuidance,
+  tacticalPresentationScope = false,
+  guidanceOverride = null,
+  promptVersion = REACT_DECISION_PROMPT_VERSION
+) {
   const { transcript: _appendOnlyTranscript, ...legacyState } = request.state ?? {};
   const messages = [
-    { role: "system", content: decisionContract(cacheNamespace) },
+    { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
+    ...emblemRankingGuidance(request.toolCatalog),
+    ...itemQueryGuidance(request.toolCatalog, legacyState.bridgeContext),
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
+    ...trendSummaryGuidance(legacyState.evidence),
     {
       role: "user",
       content: JSON.stringify({
-        promptVersion: REACT_DECISION_PROMPT_VERSION,
+        promptVersion: tacticalPresentationScope ? REACT_SCOPED_TACTICAL_PROMPT_VERSION : promptVersion,
+        ...(legacyState.locale ? { responseLanguagePolicy: RESPONSE_LANGUAGE_POLICY } : {}),
         state: {
           ...legacyState,
-          semanticGuidance: semanticGuidance(legacyState.semanticAdvisory)
+          semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, legacyState.semanticAdvisory)
         },
         toolCatalog: request.toolCatalog ?? [],
         ...(repairNote ? {
@@ -363,6 +453,15 @@ export function createReactDecisionProvider(options = {}) {
   if (typeof fetchImpl !== "function") {
     throw new TypeError("createReactDecisionProvider requires fetch or fetchImpl");
   }
+  const guidanceRenderer = options.guidanceRenderer ?? semanticGuidance;
+  if (typeof guidanceRenderer !== "function") {
+    throw new TypeError("createReactDecisionProvider guidanceRenderer must be a function");
+  }
+  if (options.decisionPromptVersion != null
+    && ![REACT_DECISION_PROMPT_VERSION, REACT_DECISION_PROMPT_VERSION_V5].includes(options.decisionPromptVersion)) {
+    throw new TypeError("createReactDecisionProvider decisionPromptVersion must be a supported prompt version");
+  }
+  const decisionPromptVersion = options.decisionPromptVersion ?? REACT_DECISION_PROMPT_VERSION;
 
   const provider = async function reactDecisionProvider(request = {}, context = {}) {
     const startedAt = performance.now();
@@ -375,6 +474,7 @@ export function createReactDecisionProvider(options = {}) {
     if (externalSignal?.aborted) abort();
     else externalSignal?.addEventListener("abort", abort, { once: true });
     try {
+      const candidateProfile = validateUnitPlayCandidateDecisionRequest(request);
       const registryLike = {
         get(name) {
           return request.toolCatalog?.find((tool) => tool.name === name) ?? null;
@@ -384,9 +484,15 @@ export function createReactDecisionProvider(options = {}) {
       let lastError = null;
       const configuredMaxTokens = Math.max(200, Math.min(2400, Number(options.maxTokens ?? 1800)));
       for (let attempt = 1; attempt <= MAX_DECISION_ATTEMPTS; attempt += 1) {
-        const messages = options.messageLayout === "legacy_full_state"
-          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace)
-          : reactDecisionMessages(request, repairNote, options.cacheNamespace);
+        const tacticalPresentationScope = candidateProfile?.tacticalPresentationScope === true
+          || options.tacticalPresentationScope === true;
+        const guidanceOverride = candidateProfile?.guidance ?? null;
+        const rawMessages = options.messageLayout === "legacy_full_state"
+          ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
+            tacticalPresentationScope, guidanceOverride, decisionPromptVersion)
+          : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
+            tacticalPresentationScope, guidanceOverride, decisionPromptVersion);
+        const messages = applyUnitPlayCandidateDecisionProfile(rawMessages, candidateProfile);
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {

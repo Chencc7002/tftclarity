@@ -39,7 +39,7 @@ test("V2 production template enables the public-beta runtime without committing 
   assert.match(productionEnv, /^TFT_AGENT_ADMIN_TOKEN=CHANGE_ME_TOO$/mu);
 });
 
-test("public chat visibly discloses AI output without relabeling the evidence fallback", () => {
+test("public chat retains the global AI disclosure while displaying conclusion body only", () => {
   assert.match(indexHtml, /class="ai-generated-disclaimer"[^>]*role="note"/u);
   assert.match(indexHtml, /data-i18n="aiGeneratedDisclaimer"/u);
   assert.match(styles, /\.ai-generated-disclaimer/u);
@@ -48,8 +48,9 @@ test("public chat visibly discloses AI output without relabeling the evidence fa
   assert.match(i18n, /aiGeneratedLabel: "AI-generated"/u);
   assert.match(i18n, /AI 生成内容可能存在错误或不完整/u);
   assert.match(i18n, /AI-generated content may be incorrect or incomplete/u);
-  assert.match(appJs, /systemFallback \? "" : `<span class="ai-generated-label">/u);
-  assert.match(appJs, /t\(systemFallback \? "systemEvidenceConclusion" : "modelFinalConclusion"\)/u);
+  const conclusion = appJs.slice(appJs.indexOf("function reactModelConclusionHtml("), appJs.indexOf("function rankingTierLabel("));
+  assert.doesNotMatch(conclusion, /ai-generated-label|systemEvidenceConclusion|modelFinalConclusion|chat-model-conclusion-head/u);
+  assert.match(conclusion, /bodyOnly: true/u);
 });
 
 test("Privacy Policy matches player-data and Conversation Bridge retention contracts", () => {

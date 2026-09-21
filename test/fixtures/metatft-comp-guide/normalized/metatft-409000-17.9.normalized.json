@@ -1,0 +1,1543 @@
+{
+  "schemaVersion": "comp-guide-snapshot.v1",
+  "capturedAt": "2026-08-18T04:07:32.041Z",
+  "identity": {
+    "compId": "metatft:8f70cb1746c944432780fafdd55622fc9f649ed01c33c917ac0d6193f59b8a1e",
+    "identityVersion": "metatft-comp-signature.v1",
+    "set": "TFTSet17",
+    "queue": "1100",
+    "sourceAliases": {
+      "clusterId": "409",
+      "sourceCompId": "409000"
+    },
+    "signature": {
+      "normalizationRule": "sort_unique_exact_api_names_utf8_json_v1",
+      "units": [
+        "TFT17_Aatrox",
+        "TFT17_Jax",
+        "TFT17_Lulu",
+        "TFT17_Maokai",
+        "TFT17_Milio",
+        "TFT17_Pantheon",
+        "TFT17_TwistedFate"
+      ],
+      "traits": [
+        "TFT17_APTrait_1",
+        "TFT17_DRX_1",
+        "TFT17_Fateweaver_1",
+        "TFT17_HPTank_1",
+        "TFT17_ResistTank_1",
+        "TFT17_Stargazer_Wolf_1",
+        "TFT17_Timebreaker_1"
+      ],
+      "hashInput": "{\"identityVersion\":\"metatft-comp-signature.v1\",\"set\":\"TFTSet17\",\"traits\":[\"TFT17_APTrait_1\",\"TFT17_DRX_1\",\"TFT17_Fateweaver_1\",\"TFT17_HPTank_1\",\"TFT17_ResistTank_1\",\"TFT17_Stargazer_Wolf_1\",\"TFT17_Timebreaker_1\"],\"units\":[\"TFT17_Aatrox\",\"TFT17_Jax\",\"TFT17_Lulu\",\"TFT17_Maokai\",\"TFT17_Milio\",\"TFT17_Pantheon\",\"TFT17_TwistedFate\"]}"
+    }
+  },
+  "statistics": {
+    "binding": "patch",
+    "patch": "17.9",
+    "bPatch": "",
+    "patchRole": "current",
+    "status": "observed",
+    "games": 52886,
+    "averagePlacement": 4.219680066558257,
+    "placementCounts": [
+      9006,
+      7848,
+      6298,
+      5816,
+      5625,
+      5906,
+      6355,
+      6032
+    ],
+    "source": {
+      "provider": "MetaTFT",
+      "endpoint": "/tft-comps-api/comps_stats",
+      "url": "https://api-hc.metatft.com/tft-comps-api/comps_stats?queue=1100",
+      "responseSha256": "26fdd913cf58ce33be73641eada6d2d1d29fb98e00e4a41d214fa5d44b93342e",
+      "binding": "current_patch_pointer"
+    },
+    "verification": {
+      "status": "verified",
+      "mechanism": "current_patch_pointer",
+      "patchDiscovery": {
+        "patch": "17.9",
+        "bPatch": "",
+        "start": "2026-08-11T21:08:01.306Z"
+      },
+      "statsRequestUrl": "https://api-hc.metatft.com/tft-comps-api/comps_stats?queue=1100",
+      "statsResponseSha256": "26fdd913cf58ce33be73641eada6d2d1d29fb98e00e4a41d214fa5d44b93342e",
+      "totalPatchMatches": 13387044,
+      "pairEvidenceSha256": "735dc97eba5f1ac23dfa34f58d50648c37613a8df0b636f8308f06546d06d33f"
+    }
+  },
+  "guide": {
+    "binding": "current_unversioned",
+    "observedDuringPatch": "17.9",
+    "facets": {
+      "earlyBoards": {
+        "binding": "current_unversioned",
+        "status": "observed",
+        "data": [
+          {
+            "level": 4,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Talon",
+              "TFT17_TwistedFate"
+            ],
+            "count": 1033,
+            "averagePlacement": 4.4501,
+            "winRate": 0.5673
+          },
+          {
+            "level": 4,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Lulu",
+              "TFT17_TwistedFate"
+            ],
+            "count": 281,
+            "averagePlacement": 4.5552,
+            "winRate": 0.573
+          },
+          {
+            "level": 5,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Milio",
+              "TFT17_Talon",
+              "TFT17_TwistedFate"
+            ],
+            "count": 362,
+            "averagePlacement": 3.9917,
+            "winRate": 0.7044
+          },
+          {
+            "level": 5,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Caitlyn",
+              "TFT17_Jax",
+              "TFT17_Talon",
+              "TFT17_TwistedFate"
+            ],
+            "count": 292,
+            "averagePlacement": 4.7329,
+            "winRate": 0.7397
+          },
+          {
+            "level": 6,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Lulu",
+              "TFT17_Milio",
+              "TFT17_Pantheon",
+              "TFT17_TwistedFate"
+            ],
+            "count": 3440,
+            "averagePlacement": 4.7971,
+            "winRate": 0.5116
+          },
+          {
+            "level": 6,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Lulu",
+              "TFT17_Maokai",
+              "TFT17_Pantheon",
+              "TFT17_TwistedFate"
+            ],
+            "count": 1376,
+            "averagePlacement": 4.5189,
+            "winRate": 0.5901
+          },
+          {
+            "level": 7,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Lulu",
+              "TFT17_Maokai",
+              "TFT17_Milio",
+              "TFT17_Pantheon",
+              "TFT17_TwistedFate"
+            ],
+            "count": 5601,
+            "averagePlacement": 3.7799,
+            "winRate": 0.5854
+          },
+          {
+            "level": 7,
+            "units": [
+              "TFT17_Aatrox",
+              "TFT17_Jax",
+              "TFT17_Lulu",
+              "TFT17_Maokai",
+              "TFT17_Milio",
+              "TFT17_Pantheon",
+              "TFT17_TwistedFate",
+              "TFT_TrainingDummy"
+            ],
+            "count": 195,
+            "averagePlacement": 3.3333,
+            "winRate": 0.6205
+          }
+        ],
+        "source": {
+          "provider": "MetaTFT",
+          "endpoint": "/tft-comps-api/comp_details",
+          "url": "https://api-hc.metatft.com/tft-comps-api/comp_details?comp=409000&cluster_id=409",
+          "responseSha256": "36cdc3e9a35da870de8ad36464a58ec27757d975d5550a9eb2498a600ee501ff",
+          "binding": "current_unversioned"
+        },
+        "selection": "top_2_by_observed_count_per_level"
+      },
+      "leveling": {
+        "binding": "current_unversioned",
+        "status": "observed",
+        "data": [
+          {
+            "level": 3,
+            "stage": null,
+            "round": null,
+            "count": 18
+          },
+          {
+            "level": 4,
+            "stage": "2",
+            "round": "2",
+            "count": 1228
+          },
+          {
+            "level": 5,
+            "stage": "3",
+            "round": "1",
+            "count": 1308
+          },
+          {
+            "level": 6,
+            "stage": "3",
+            "round": "2",
+            "count": 1254
+          },
+          {
+            "level": 7,
+            "stage": "4",
+            "round": "5",
+            "count": 1256
+          },
+          {
+            "level": 8,
+            "stage": "6",
+            "round": "1",
+            "count": 621
+          },
+          {
+            "level": 9,
+            "stage": "7",
+            "round": "1",
+            "count": 68
+          }
+        ],
+        "source": {
+          "provider": "MetaTFT",
+          "endpoint": "/tft-comps-api/comp_details",
+          "url": "https://api-hc.metatft.com/tft-comps-api/comp_details?comp=409000&cluster_id=409",
+          "responseSha256": "36cdc3e9a35da870de8ad36464a58ec27757d975d5550a9eb2498a600ee501ff",
+          "binding": "current_unversioned"
+        },
+        "semantics": "observed_level_reach_timing"
+      },
+      "reroll": {
+        "binding": "current_unversioned",
+        "status": "observed",
+        "data": [
+          {
+            "level": 2,
+            "rerolls": 0,
+            "matches": 61,
+            "count": 62,
+            "rerollsPerObservedMatch": 0
+          },
+          {
+            "level": 3,
+            "rerolls": 212,
+            "matches": 233,
+            "count": 340,
+            "rerollsPerObservedMatch": 0.9098712446351931
+          },
+          {
+            "level": 4,
+            "rerolls": 97,
+            "matches": 343,
+            "count": 1100,
+            "rerollsPerObservedMatch": 0.282798833819242
+          },
+          {
+            "level": 5,
+            "rerolls": 7,
+            "matches": 341,
+            "count": 958,
+            "rerollsPerObservedMatch": 0.020527859237536656
+          },
+          {
+            "level": 6,
+            "rerolls": 12413,
+            "matches": 348,
+            "count": 2557,
+            "rerollsPerObservedMatch": 35.66954022988506
+          },
+          {
+            "level": 7,
+            "rerolls": 7680,
+            "matches": 301,
+            "count": 1792,
+            "rerollsPerObservedMatch": 25.514950166112957
+          },
+          {
+            "level": 8,
+            "rerolls": 2083,
+            "matches": 143,
+            "count": 582,
+            "rerollsPerObservedMatch": 14.566433566433567
+          },
+          {
+            "level": 9,
+            "rerolls": 356,
+            "matches": 39,
+            "count": 100,
+            "rerollsPerObservedMatch": 9.128205128205128
+          },
+          {
+            "level": 10,
+            "rerolls": 103,
+            "matches": 6,
+            "count": 19,
+            "rerollsPerObservedMatch": 17.166666666666668
+          }
+        ],
+        "source": {
+          "provider": "MetaTFT",
+          "endpoint": "/tft-comps-api/comp_details",
+          "url": "https://api-hc.metatft.com/tft-comps-api/comp_details?comp=409000&cluster_id=409",
+          "responseSha256": "36cdc3e9a35da870de8ad36464a58ec27757d975d5550a9eb2498a600ee501ff",
+          "binding": "current_unversioned"
+        },
+        "semantics": "observed_reroll_distribution",
+        "excludedSourceKeys": [
+          "-1"
+        ]
+      },
+      "firstCarouselComponents": {
+        "binding": "current_unversioned",
+        "status": "observed",
+        "data": [
+          {
+            "apiName": "TFT_Item_NeedlesslyLargeRod",
+            "count": 2,
+            "averagePlacement": 2,
+            "observedFrequency": 0.18181818181818182
+          },
+          {
+            "apiName": "TFT_Item_ChainVest",
+            "count": 2,
+            "averagePlacement": 6.5,
+            "observedFrequency": 0.18181818181818182
+          },
+          {
+            "apiName": "TFT_Item_TearOfTheGoddess",
+            "count": 2,
+            "averagePlacement": 6.5,
+            "observedFrequency": 0.18181818181818182
+          },
+          {
+            "apiName": "TFT_Item_BFSword",
+            "count": 1,
+            "averagePlacement": 1,
+            "observedFrequency": 0.09090909090909091
+          },
+          {
+            "apiName": "TFT_Item_RecurveBow",
+            "count": 1,
+            "averagePlacement": 1,
+            "observedFrequency": 0.09090909090909091
+          },
+          {
+            "apiName": "TFT_Item_SparringGloves",
+            "count": 1,
+            "averagePlacement": 2,
+            "observedFrequency": 0.09090909090909091
+          },
+          {
+            "apiName": "TFT_Item_GiantsBelt",
+            "count": 1,
+            "averagePlacement": 6,
+            "observedFrequency": 0.09090909090909091
+          },
+          {
+            "apiName": "TFT_Item_NegatronCloak",
+            "count": 1,
+            "averagePlacement": 8,
+            "observedFrequency": 0.09090909090909091
+          }
+        ],
+        "source": {
+          "provider": "MetaTFT",
+          "endpoint": "/tft-comps-api/comp_details",
+          "url": "https://api-hc.metatft.com/tft-comps-api/comp_details?comp=409000&cluster_id=409",
+          "responseSha256": "36cdc3e9a35da870de8ad36464a58ec27757d975d5550a9eb2498a600ee501ff",
+          "binding": "current_unversioned"
+        },
+        "semantics": "observed_frequency",
+        "totalObservedCount": 11
+      },
+      "recommendedAugments": {
+        "binding": "current_unversioned",
+        "status": "observed",
+        "data": [
+          {
+            "apiName": "TFT_Augment_AwakenedSoul",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_ExclusiveCustomization",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_HeroicGrabBagPlus",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_HeroicGrabBagPlusPlus",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_HomeCooking",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_JustHit",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_MagicRollMinus",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_PatienceIsAVirtue",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT17_Augment_JaxCarry",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT6_Augment_SecondWind1",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT6_Augment_TradeSector2",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT9_Augment_ArmyBuilding",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT9_Augment_Commander_RollingForDays",
+            "tier": "S"
+          },
+          {
+            "apiName": "TFT_Augment_AdvancedLoan",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_AdvancedLoanPlus",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_BoosterPackPlusPlus",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_ComebackStory",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_GainGold",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_MagicRoll",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_MirroredMonetization",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_MoneyMonsoon",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_Replication",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_RestartMission",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_SmallGrabBag",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_Waverider",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT11_Augment_Calltochaos",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT6_Augment_BandOfThieves2Plus",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT6_Augment_BandOfThieves2PlusPlus",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT6_Augment_SalvageBin",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT6_Augment_SecondWind2",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT6_Augment_TradeSector",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT8_Augment_SalvageBinPlus",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT9_Augment_BigGrabBag",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT9_Augment_BuildingACollectionPlusPlus",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT9_Augment_Commander_TeamingUp1",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT9_Augment_MissedConnections",
+            "tier": "A"
+          },
+          {
+            "apiName": "TFT_Augment_BronzeForLife2",
+            "tier": "B"
+          },
+          {
+            "apiName": "TFT_Augment_BronzeForLifeI",
+            "tier": "B"
+          },
+          {
+            "apiName": "TFT_Augment_PlotArmor",
+            "tier": "B"
+          },
+          {
+            "apiName": "TFT11_Augment_EpochPlus",
+            "tier": "B"
+          },
+          {
+            "apiName": "TFT7_Augment_LuckyGlovesPlus",
+            "tier": "B"
+          },
+          {
+            "apiName": "TFT9_Augment_HealingOrbsII",
+            "tier": "B"
+          },
+          {
+            "apiName": "TFT_Augment_BodyguardTraining",
+            "tier": "D"
+          }
+        ],
+        "source": {
+          "provider": "MetaTFT",
+          "endpoint": "/tft-comps-api/comp_augment_tiers",
+          "url": "https://api-hc.metatft.com/tft-comps-api/comp_augment_tiers?cluster_id=409",
+          "responseSha256": "40fbfabf293c389bbfe3d946053871b3ad36d89e7300868d5c6ffc685659867c",
+          "binding": "current_unversioned"
+        },
+        "semantics": "source_recommendation",
+        "sourceClaim": "observed_comp_compatibility_tier"
+      },
+      "positioning": {
+        "binding": "current_unversioned",
+        "status": "observed",
+        "data": [
+          {
+            "apiName": "TFT17_Aatrox",
+            "cell": 24,
+            "cellKey": "cell_24",
+            "observedCount": 2414
+          },
+          {
+            "apiName": "TFT17_Jax",
+            "cell": 20,
+            "cellKey": "cell_20",
+            "observedCount": 2748
+          },
+          {
+            "apiName": "TFT17_Lulu",
+            "cell": 1,
+            "cellKey": "cell_1",
+            "observedCount": 4768
+          },
+          {
+            "apiName": "TFT17_Maokai",
+            "cell": 26,
+            "cellKey": "cell_26",
+            "observedCount": 2507
+          },
+          {
+            "apiName": "TFT17_Milio",
+            "cell": 2,
+            "cellKey": "cell_2",
+            "observedCount": 2929
+          },
+          {
+            "apiName": "TFT17_Pantheon",
+            "cell": 25,
+            "cellKey": "cell_25",
+            "observedCount": 3038
+          },
+          {
+            "apiName": "TFT17_TwistedFate",
+            "cell": 6,
+            "cellKey": "cell_6",
+            "observedCount": 2666
+          }
+        ],
+        "source": {
+          "provider": "MetaTFT",
+          "endpoint": "/tft-comps-api/comp_details",
+          "url": "https://api-hc.metatft.com/tft-comps-api/comp_details?comp=409000&cluster_id=409",
+          "responseSha256": "36cdc3e9a35da870de8ad36464a58ec27757d975d5550a9eb2498a600ee501ff",
+          "binding": "current_unversioned"
+        },
+        "partial": false,
+        "missingUnitApiNames": [],
+        "reasons": []
+      }
+    }
+  },
+  "entityMappings": [
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_AdvancedLoan"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_AdvancedLoanPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_AwakenedSoul"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_BodyguardTraining"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_BoosterPackPlusPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_BronzeForLife2"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_BronzeForLifeI"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_ComebackStory"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_ExclusiveCustomization"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_GainGold"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_HeroicGrabBagPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_HeroicGrabBagPlusPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_HomeCooking"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_JustHit"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_MagicRoll"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_MagicRollMinus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_MirroredMonetization"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_MoneyMonsoon"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_PatienceIsAVirtue"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_PlotArmor"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_Replication"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_RestartMission"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_SmallGrabBag"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Augment_Waverider"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT11_Augment_Calltochaos"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT11_Augment_EpochPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Augment_JaxCarry"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_BandOfThieves2Plus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_BandOfThieves2PlusPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_SalvageBin"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_SecondWind1"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_SecondWind2"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_TradeSector"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT6_Augment_TradeSector2"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT7_Augment_LuckyGlovesPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT8_Augment_SalvageBinPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_ArmyBuilding"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_BigGrabBag"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_BuildingACollectionPlusPlus"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_Commander_RollingForDays"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_Commander_TeamingUp1"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_HealingOrbsII"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "augment",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT9_Augment_MissedConnections"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_BFSword"
+      },
+      "canonicalId": "TFT_Item_BFSword",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_ChainVest"
+      },
+      "canonicalId": "TFT_Item_ChainVest",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_GiantsBelt"
+      },
+      "canonicalId": "TFT_Item_GiantsBelt",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_NeedlesslyLargeRod"
+      },
+      "canonicalId": "TFT_Item_NeedlesslyLargeRod",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_NegatronCloak"
+      },
+      "canonicalId": "TFT_Item_NegatronCloak",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_RecurveBow"
+      },
+      "canonicalId": "TFT_Item_RecurveBow",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_SparringGloves"
+      },
+      "canonicalId": "TFT_Item_SparringGloves",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "item",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_Item_TearOfTheGoddess"
+      },
+      "canonicalId": "TFT_Item_TearOfTheGoddess",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT_TrainingDummy"
+      },
+      "canonicalId": null,
+      "status": "explicitly_unmapped",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "reason": "exact_api_name_not_present"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Aatrox"
+      },
+      "canonicalId": "TFT17_Aatrox",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Caitlyn"
+      },
+      "canonicalId": "TFT17_Caitlyn",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Jax"
+      },
+      "canonicalId": "TFT17_Jax",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Lulu"
+      },
+      "canonicalId": "TFT17_Lulu",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Maokai"
+      },
+      "canonicalId": "TFT17_Maokai",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Milio"
+      },
+      "canonicalId": "TFT17_Milio",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Pantheon"
+      },
+      "canonicalId": "TFT17_Pantheon",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_Talon"
+      },
+      "canonicalId": "TFT17_Talon",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    },
+    {
+      "entityType": "unit",
+      "providerRef": {
+        "provider": "MetaTFT",
+        "apiName": "TFT17_TwistedFate"
+      },
+      "canonicalId": "TFT17_TwistedFate",
+      "status": "resolved",
+      "guessed": false,
+      "source": {
+        "catalog": "src/data/generated/asset-manifest.json",
+        "source": "Riot Data Dragon",
+        "sourcePatch": "16.13.1"
+      }
+    }
+  ],
+  "sourceMetadata": {
+    "provider": "MetaTFT",
+    "pageUrl": "https://www.metatft.com/comps",
+    "queue": "1100",
+    "tftSet": "TFTSet17",
+    "rawSchemaVersion": "metatft-comp-guide-probe-raw.v1",
+    "normalizerVersion": "metatft-comp-guide-normalizer.v2",
+    "rawIdentity": {
+      "stableCompId": "metatft:9b8eee6b1c201debbb210c3ea668795cf52db5de2938d33ad19c2c354a369995",
+      "signatureVersion": "metatft-lineup-signature-v1"
+    },
+    "nameTokens": [
+      "TFT17_Timebreaker",
+      "TFT17_Jax"
+    ]
+  },
+  "safety": {
+    "crossPatchDetailReuse": false,
+    "guessedEntityMappings": 0,
+    "answerReady": false,
+    "probeOnly": true
+  }
+}

@@ -1,6 +1,70 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
+
+test("item query guidance separates artifacts from emblems and treats history as a bounded excerpt", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    let body;
+    const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+      fetchImpl: async (_url, init) => {
+        body = JSON.parse(init.body);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          schemaVersion: "react-action.v1", type: "finish", answer: "ok", evidenceIds: [], reasonCode: "direct_answer", narrative: null
+        }) } }] }) };
+      } });
+    await provider({ state: { question: "这不是能查吗？", bridgeContext: { records: [{ operation: "item_carrier_rankings" }] } },
+      toolCatalog: [{ name: "item_carrier_rankings" }, { name: "emblem_rankings" }] });
+    const guidance = body.messages.find(message => message.content.startsWith("item-query-repair-guidance.v1"));
+    assert.match(guidance.content, /artifact means 神器; emblem means 转职纹章/);
+    assert.match(guidance.content, /not a source outage or an empty dataset/);
+    assert.match(guidance.content, /bounded excerpt, not the complete prior response/);
+    assert.match(guidance.content, /never promote historical evidence to current evidence/);
+    assert.match(guidance.content, /not unique people/);
+    assert.match(body.messages.find(message => message.content.startsWith("When emblem_rankings")).content, /never accept category=artifact/);
+  }
+});
+
+
+test("opt-in tactical presentation changes only two presentation rules, preserving catalog, control and default prompt", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    const bodies = [];
+    const action = { schemaVersion: "react-action.v1", type: "finish", answer: "当前资料不足。",
+      evidenceIds: [], reasonCode: "insufficient_evidence", narrative: null };
+    const request = { state: { question: "沃里克怎么玩？", tacticalPresentationScope: true,
+      transcript: [{ type: "runtime_state", value: { nextActionAffordance: { recommendedAction: "finish" } } }] },
+      toolCatalog: [{ name: "unit_details", inputSchema: { type: "object", additionalProperties: false } }] };
+    for (const tacticalPresentationScope of [undefined, false, true, "true"]) {
+      const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+        tacticalPresentationScope, fetchImpl: async (_url, init) => {
+          bodies.push(JSON.parse(init.body));
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(action) } }] }) };
+        } });
+      assert.deepEqual((await provider(request)).action, action);
+    }
+    assert.deepEqual(bodies[0], bodies[1]);
+    assert.deepEqual(bodies[0], bodies[3]); // Request data and truthy strings cannot enable it.
+    const baseline = bodies[0].messages[0].content.split("\n");
+    const candidate = bodies[2].messages[0].content.split("\n");
+    const frozenV5Baseline = baseline
+      .filter((line) => !line.startsWith("For TFT patch contents, dates, buffs, or nerfs,"))
+      .map((line) => line.replace(
+        "Explain it in beginner-friendly language matching the requested response locale:",
+        "Explain it in beginner-friendly Chinese:"
+      ));
+    assert.equal(candidate.length, frozenV5Baseline.length);
+    assert.equal(candidate.filter((line, index) => line !== frozenV5Baseline[index]).length, 2);
+    assert.match(baseline.join("\n"), /call patch_facts before summarizing/);
+    assert.doesNotMatch(candidate.join("\n"), /call patch_facts before summarizing/);
+    assert.match(candidate.join("\n"), /Missing requested formation must be disclosed/);
+    assert.match(candidate.join("\n"), /only when augments were requested/);
+    assert.match(candidate.join("\n"), /execute callTool exactly as provided/);
+    const versionNeutral = (body) => body.messages.slice(1).map(message => ({ ...message,
+      content: message.content.replaceAll("react-decision-contract.v5.tactical-presentation.v1", "react-decision-contract.v7") }));
+    assert.deepEqual(versionNeutral(bodies[0]), versionNeutral(bodies[2]));
+    assert.equal(bodies[0].max_tokens, bodies[2].max_tokens);
+  }
+});
 
 test("English response locale is explicit in both provider layouts", async () => {
   for (const messageLayout of ["append_only", "legacy_full_state"]) {
@@ -35,10 +99,15 @@ test("English response locale is explicit in both provider layouts", async () =>
       toolCatalog: []
     });
 
-    assert.match(observedBody.messages[0].content, /runContext\.locale is authoritative/u);
-    assert.match(observedBody.messages[0].content, /For en-US, write every user-facing field in English/u);
     const dynamicContext = JSON.parse(observedBody.messages[messageLayout === "append_only" ? 2 : 1].content);
     assert.equal(messageLayout === "append_only" ? dynamicContext.locale : dynamicContext.state.locale, "en-US");
+    const languagePolicy = messageLayout === "append_only"
+      ? JSON.parse(observedBody.messages[1].content).responseLanguagePolicy
+      : dynamicContext.responseLanguagePolicy;
+    assert.match(languagePolicy, /runContext\.locale is authoritative/u);
+    assert.match(languagePolicy, /For en-US, write every user-facing field in English/u);
+    assert.match(observedBody.messages[0].content, /runContext\.locale is authoritative/u);
+    assert.match(observedBody.messages[0].content, /For en-US, write every user-facing field in English/u);
   }
 });
 
@@ -355,6 +424,166 @@ test("react decision provider renders bounded broad unit-play semantic guidance"
   assert.equal(Object.hasOwn(runContext, "taskFrame"), false);
 });
 
+test("default guidance renderer preserves the reviewed v7 serialized messages byte-for-byte", async () => {
+  let body = null;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, options) => {
+      body = JSON.parse(options.body);
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: JSON.stringify({
+              schemaVersion: "react-action.v1",
+              type: "finish",
+              answer: "ok",
+              evidenceIds: [],
+              reasonCode: "direct_answer",
+              narrative: null
+            }) } }]
+          };
+        }
+      };
+    }
+  });
+  await provider({
+    state: {
+      question: "沃里克怎么玩？",
+      messages: [],
+      seasonContextId: "set17-live",
+      taskAnchor: null,
+      bridgeContext: null,
+      semanticAdvisory: {
+        action: "recommend",
+        goal: "recommend_unit_play",
+        subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+        expectedOutput: ["unit_play_guidance"]
+      },
+      evidence: [],
+      transcript: []
+    },
+    toolCatalog: []
+  });
+  const hash = createHash("sha256").update(JSON.stringify(body.messages)).digest("hex");
+  assert.equal(hash, "8ff2fb30d9434a23d5d04b633cdfe41a84fd88c008e91af94ed1ad191beb541b");
+});
+
+test("custom guidance renderer replaces only the bounded professional guidance value", async () => {
+  const bodies = [];
+  const received = [];
+  const response = {
+    ok: true,
+    async json() {
+      return {
+        choices: [{ message: { content: JSON.stringify({
+          schemaVersion: "react-action.v1",
+          type: "finish",
+          answer: "ok",
+          evidenceIds: [],
+          reasonCode: "direct_answer",
+          narrative: null
+        }) } }]
+      };
+    }
+  };
+  const options = {
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    fetchImpl: async (_url, request) => {
+      bodies.push(JSON.parse(request.body));
+      return response;
+    }
+  };
+  const baseline = createReactDecisionProvider(options);
+  const candidate = createReactDecisionProvider({
+    ...options,
+    guidanceRenderer: (advisory) => {
+      received.push(advisory);
+      return "candidate-guidance-v1";
+    }
+  });
+  const semanticAdvisory = {
+    action: "recommend",
+    goal: "recommend_unit_play",
+    subject: { resolvedId: "DA_18_Warwick", canonicalName: "沃里克" },
+    expectedOutput: ["unit_play_guidance"]
+  };
+  const request = {
+    state: { question: "沃里克怎么玩？", messages: [], semanticAdvisory, evidence: [], transcript: [] },
+    toolCatalog: []
+  };
+  await baseline(request);
+  await candidate(request);
+  assert.deepEqual(received, [semanticAdvisory]);
+  const baselineRunContext = JSON.parse(bodies[0].messages[2].content);
+  const candidateRunContext = JSON.parse(bodies[1].messages[2].content);
+  assert.notEqual(baselineRunContext.semanticGuidance, candidateRunContext.semanticGuidance);
+  assert.equal(candidateRunContext.semanticGuidance, "candidate-guidance-v1");
+  baselineRunContext.semanticGuidance = candidateRunContext.semanticGuidance;
+  assert.deepEqual(candidateRunContext, baselineRunContext);
+  assert.deepEqual(bodies[1].messages.filter((_, index) => index !== 2), bodies[0].messages.filter((_, index) => index !== 2));
+});
+
+test("guidance renderer option fails closed when it is not a function", () => {
+  assert.throws(() => createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    guidanceRenderer: "candidate"
+  }), /guidanceRenderer must be a function/u);
+});
+
+test("historical prompt selection is explicit and fails closed for unknown versions", async () => {
+  const bodies = [];
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    decisionPromptVersion: "react-decision-contract.v5",
+    fetchImpl: async (_url, request) => {
+      bodies.push(JSON.parse(request.body));
+      return {
+        ok: true,
+        async json() {
+          return {
+            choices: [{ message: { content: JSON.stringify({
+              schemaVersion: "react-action.v1",
+              type: "finish",
+              answer: "ok",
+              evidenceIds: [],
+              reasonCode: "direct_answer",
+              narrative: null
+            }) } }]
+          };
+        }
+      };
+    }
+  });
+  await provider({ state: {}, toolCatalog: [] });
+  assert.equal(JSON.parse(bodies[0].messages[1].content).promptVersion, "react-decision-contract.v5");
+  assert.doesNotMatch(bodies[0].messages[0].content, /For TFT patch contents, dates, buffs, or nerfs/u);
+  assert.throws(() => createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    decisionPromptVersion: "react-decision-contract.future"
+  }), /decisionPromptVersion must be a supported prompt version/u);
+});
+
+test("guidance renderer output fails closed before transport when it is not text", async () => {
+  let transportCalls = 0;
+  const provider = createReactDecisionProvider({
+    endpoint: "https://example.test/chat/completions",
+    model: "test-model",
+    guidanceRenderer: () => ({ instructions: [] }),
+    fetchImpl: async () => {
+      transportCalls += 1;
+      throw new Error("transport must not run");
+    }
+  });
+  await assert.rejects(() => provider({ state: { semanticAdvisory: {} }, toolCatalog: [] }), /must return a string or null/u);
+  assert.equal(transportCalls, 0);
+});
+
 test("react decision provider maps DeepSeek cache usage and labels request telemetry", async () => {
   const events = [];
   const provider = createReactDecisionProvider({
@@ -523,4 +752,26 @@ test("react decision provider retries malformed JSON with a compact repair instr
     uncachedInputTokens: 128,
     outputTokens: 8
   });
+});
+
+test("current trend evidence adds request-first guidance in both layouts without changing unrelated prompts", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    for (const evidence of [[], [{ toolName: "unit_builds" }], [{ toolName: "comps_trends", temporalStatus: "historical" }], [{ toolName: "comps_trends", value: { rising: [], falling: [] } }]]) {
+      let body;
+      const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+        fetchImpl: async (_url, init) => {
+          body = JSON.parse(init.body);
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1", type: "finish", answer: "ok", evidenceIds: [], reasonCode: "direct_answer", narrative: null
+          }) } }] }) };
+        } });
+      await provider({ state: { question: "简述今天阵容趋势：列出最有潜力的阵容和最卷的阵容", evidence }, toolCatalog: [] });
+      const guidance = body.messages.find(message => message.role === "system" && message.content.startsWith("composition-trend-summary-guidance.v1"));
+      assert.equal(Boolean(guidance), evidence.some(entry => entry.toolName === "comps_trends" && entry.temporalStatus !== "historical"));
+      if (guidance) {
+        assert.match(guidance.content, /Answer the user's requested points first/);
+        assert.match(guidance.content, /declining compositions are optional context/);
+      }
+    }
+  }
 });

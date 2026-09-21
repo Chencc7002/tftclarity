@@ -1,0 +1,3 @@
+{"id":"historical-not-current","relation":"continue","evidence":{"evidenceId":"bridge-1","temporalStatus":"historical"},"claimEvidenceUse":{"claimId":"claim-current-1","tier":"A","claimKind":"current_fact","role":"context","freshnessStatus":"historical"},"expectedCanSupportCurrentClaim":false}
+{"id":"same-scope-reuse","relation":"continue","evidence":{"evidenceId":"bridge-2","temporalStatus":"historical","scope":"same"},"claimEvidenceUse":{"claimId":"claim-context-1","tier":"A","claimKind":"mechanism","role":"context","freshnessStatus":"historical"},"expectedDuplicateRetrieval":false}
+{"id":"independent-turn-no-promotion","relation":"independent","evidence":{"evidenceId":"bridge-3","temporalStatus":"historical"},"expectedPromoted":false}

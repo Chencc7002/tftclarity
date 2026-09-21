@@ -1,3 +1,5 @@
+import { createHash } from "node:crypto";
+import { OFFICIAL_ITEM_RETRIEVAL_VERSION } from "../agent/official-item-evidence.js";
 import {
   decodeOfficialTftHtml,
   inspectOfficialTftTokens
@@ -31,6 +33,7 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
     .filter((row) => row?.englishName && row?.equipId);
   const sourceUrl = options.sourceUrl ?? OFFICIAL_TFT_EQUIPMENT_URL;
   const byEquipId = new Map(rows.map((row) => [String(row.equipId), row]));
+  const byEnglishName = new Map(rows.map((row) => [row.englishName, row]));
   const byApiName = new Map();
 
   for (const row of rows) {
@@ -38,7 +41,7 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
       .split(",")
       .map((value) => value.trim())
       .filter(Boolean)
-      .map((equipId) => byEquipId.get(equipId))
+      .map((equipId) => byEquipId.get(equipId) ?? byEnglishName.get(equipId))
       .filter(Boolean)
       .map((component) => ({
         equipId: String(component.equipId),
@@ -76,7 +79,11 @@ export function buildOfficialTftItemDetailsCatalog(payload, options = {}) {
       version: payloadMetadata?.version ?? null,
       season: payloadMetadata?.season ?? null,
       updatedAt: payloadMetadata?.time ?? payloadMetadata?.updatedAt ?? null,
-      sourceUrl
+      sourceUrl,
+      ...(options.retrieval ? { retrieval: Object.freeze({ ...options.retrieval,
+        catalogSeason: payloadMetadata?.season ?? null,
+        catalogVersion: payloadMetadata?.version ?? null,
+        publishedAt: payloadMetadata?.time ?? payloadMetadata?.updatedAt ?? null }) } : {})
     }),
     enumerable: false,
     configurable: false,
@@ -95,7 +102,13 @@ export async function fetchOfficialTftItemDetails(options = {}) {
   try {
     const response = await fetchImpl(url, { signal: controller.signal });
     if (!response.ok) throw new Error(`Official item details request failed: ${response.status} ${response.statusText}`);
-    return buildOfficialTftItemDetailsCatalog(await response.text(), { sourceUrl: url });
+    const payload = await response.text();
+    return buildOfficialTftItemDetailsCatalog(payload, { sourceUrl: url,
+      ...(options.captureRetrieval === true ? { retrieval: {
+        schemaVersion: OFFICIAL_ITEM_RETRIEVAL_VERSION, transport: "http_success",
+        sourceId: url, fetchedAt: new Date().toISOString(),
+        contentHash: createHash("sha256").update(payload).digest("hex")
+      } } : {}) });
   } catch (error) {
     if (error?.name === "AbortError") throw new Error(`Official item details request timed out after ${timeoutMs}ms`);
     throw error;

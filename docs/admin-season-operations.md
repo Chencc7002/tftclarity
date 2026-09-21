@@ -37,7 +37,7 @@
 ## SeasonContext 运维边界
 
 - 普通用户只提交稳定的 `seasonContextId`；`patch`、`queue`、provider 和 URL 始终由服务端注册表决定。
-- 当前默认空间为 `set18-live`，固定使用正式服 `queue=1100`、`TFTSet18` 与 `latest/zh_cn` lookup。`set17-live` 继续可选；公开注册表不再包含 `set18-pbe`。
+- 当前默认空间为 `set18-live`，固定使用正式服 `queue=1100`、`TFTSet18` 与 `latest/zh_cn` lookup。`set17-live` 自 2026-09-01 暂时停用（保留目录与历史数据），服务端与入口均禁止新查询；公开注册表不再包含 `set18-pbe`。见 [S17 停用发布记录](disable-s17-release-20260901.md)。
 - 跨赛季切换必须使用全新会话。浏览器会按旧赛季清理原 `conversationId`，后续每个查询携带新赛季 ID。
 - 缓存、目录、别名、语义文档、趋势快照、Profile 与绑定都必须带 `season_context_id`；禁止直接复制 provider 事实或查询缓存。
 - `buildSeasonContentPromotionPlan` 目前仅生成 `design_only` 的 PBE→Live 审核计划，不执行写入。真实提升流程必须在受保护管理端中增加显式审批、逐项预览和审计后才能开放。

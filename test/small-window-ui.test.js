@@ -3,6 +3,7 @@ import assert from "node:assert/strict";
 import { readFileSync, statSync } from "node:fs";
 import vm from "node:vm";
 import { collectCompositionResultGroups } from "../src/app/small-window-ui/composition-result-groups.js";
+import { hasBoundTacticalEvidence } from "../src/app/small-window-ui/composition-card-details.js";
 import { createToolPreferences, normalizeToolPreferences, recommendQuickTools, QUICK_TOOL_STORAGE_KEY } from "../src/app/small-window-ui/quick-tool-preferences.js";
 import { setupToolMenu } from "../src/app/small-window-ui/quick-tool-library.js";
 import { normalizeOnboardingState, readOnboardingState, writeOnboardingState, ONBOARDING_STORAGE_KEY } from "../src/app/small-window-ui/onboarding-tour.js";
@@ -249,9 +250,9 @@ test("welcome recommendations and searchable tool library reuse deterministic qu
   assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "18\.1"/);
-  assert.match(patchNotes, /publishedAt: "2026-08-25T18:00:00\.000Z"/);
-  assert.match(patchNotes, /teamfight-tactics-patch-18-1/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "18\.2"/);
+  assert.match(patchNotes, /2026-09-09T18:00:00\.000Z/);
+  assert.match(patchNotes, /teamfight-tactics-patch-18-2/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
@@ -851,15 +852,12 @@ test("player pools expose share codes and one-click independent imports", () => 
   assert.match(opggStyles, /\.opgg-pool-import-row/u);
 });
 
-test("soft-validated model summaries expose trusted explanation feedback controls", () => {
-  assert.match(appJs, /model_soft_validated_summary/);
-  assert.match(appJs, /modelConclusionPendingVerification/);
+test("model conclusion bodies retain explanation feedback controls", () => {
   assert.match(appJs, /model-conclusion-feedback/);
   assert.match(appJs, /data-explanation-response-id/);
   assert.match(appJs, /responseRecord\?\.data \?\? state\.lastResult/);
   assert.match(appJs, /data-explanation-feedback="good"/);
   assert.match(appJs, /data-explanation-feedback="bad"/);
-  assert.match(styles, /\.chat-model-conclusion\.soft-validated/);
 });
 
 test("UI-07 renders deterministic build options independently from grounded narrative", () => {
@@ -926,6 +924,7 @@ function compositionResultHarness() {
   let renders = 0;
   const context = vm.createContext({
     collectCompositionResultGroups,
+    hasBoundTacticalEvidence,
     conclusionDisplayText: (value) => value,
     t: (key) => key,
     escapeHtml: (value) => String(value ?? "").replaceAll('"', "&quot;").replaceAll("<", "&lt;"),
