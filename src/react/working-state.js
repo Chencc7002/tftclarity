@@ -4,11 +4,9 @@ export class ReactWorkingState {
   constructor(request = {}, budget = {}) {
     this.question = String(request.input ?? request.question ?? "");
     this.seasonContextId = String(request.seasonContextId ?? "");
-    this.locale = request.locale == null
-      ? null
-      : String(request.locale).toLowerCase().startsWith("en")
-        ? "en-US"
-        : "zh-CN";
+    this.locale = String(request.locale ?? "").toLowerCase().startsWith("en")
+      ? "en-US"
+      : "zh-CN";
     this.messages = Array.isArray(request.messages) ? structuredClone(request.messages) : [];
     this.taskAnchor = request.taskAnchor ? structuredClone(request.taskAnchor) : null;
     this.bridgeContext = request.bridgeContext ? structuredClone(request.bridgeContext.view ?? request.bridgeContext) : null;
@@ -88,7 +86,7 @@ export class ReactWorkingState {
       schemaVersion: REACT_WORKING_STATE_SCHEMA_VERSION,
       question: this.question,
       seasonContextId: this.seasonContextId,
-      ...(this.locale ? { locale: this.locale } : {}),
+      locale: this.locale,
       messages: structuredClone(this.messages),
       taskAnchor: this.taskAnchor ? structuredClone(this.taskAnchor) : null,
       bridgeContext: this.bridgeContext ? structuredClone(this.bridgeContext) : null,

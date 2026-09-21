@@ -106,6 +106,8 @@ test("English response locale is explicit in both provider layouts", async () =>
       : dynamicContext.responseLanguagePolicy;
     assert.match(languagePolicy, /runContext\.locale is authoritative/u);
     assert.match(languagePolicy, /For en-US, write every user-facing field in English/u);
+    assert.match(observedBody.messages[0].content, /runContext\.locale is authoritative/u);
+    assert.match(observedBody.messages[0].content, /For en-US, write every user-facing field in English/u);
   }
 });
 
@@ -465,7 +467,7 @@ test("default guidance renderer preserves the reviewed v7 serialized messages by
     toolCatalog: []
   });
   const hash = createHash("sha256").update(JSON.stringify(body.messages)).digest("hex");
-  assert.equal(hash, "d97c06a5b1325cd1aa4071e2a6af7c5a38a2b54ab9136ad8a6cc49053cf2bf4f");
+  assert.equal(hash, "8ff2fb30d9434a23d5d04b633cdfe41a84fd88c008e91af94ed1ad191beb541b");
 });
 
 test("custom guidance renderer replaces only the bounded professional guidance value", async () => {

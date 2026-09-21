@@ -333,7 +333,6 @@ test("English response locale rejects a Chinese model answer and accepts its Eng
     && event.data?.errors?.some((error) => error.includes("en-US response locale"))
   )));
 });
-
 test("R1-02 one static tool produces validated evidence and ordered events", async () => {
   const provider = queueProvider([
     call("unit_details", { apiName: "TFT18_Xayah" }, "retrieve_entity_details"),
