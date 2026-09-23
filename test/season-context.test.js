@@ -42,7 +42,7 @@ test("SeasonContext registry exposes only safe public records", () => {
   assert.equal(set17.themeId, "set17");
   assert.equal(set18.theme.documentTitle, "TFTClarity｜云顶数据智答");
   assert.equal(set18.theme.wallpaper.seasonId, "set-18");
-  assert.equal(set18.theme.patchNoteVersion, "18.2");
+  assert.equal(set18.theme.patchNoteVersion, "18.3");
   assert.equal(set17.theme.patchNoteVersion, "17.9");
   assert.equal(records.some((record) => record.id === "set18-pbe"), false);
   assert.equal("source" in set18, false);

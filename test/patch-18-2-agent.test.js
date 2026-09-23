@@ -34,9 +34,9 @@ test('every displayed current patch is registered with identical official numeri
   assert.equal(facts.status,'found');
   const expected=page.history.flatMap(r=>r.groups.flatMap(g=>g.changes));
   assert.deepEqual(facts.revisions.flatMap(r=>r.changes).map(({id,label,direction,before,after,entityApiNames})=>({id,body:label,direction,before,after,entityApiNames})),expected.map(({id,body,direction,before,after,entityApiNames})=>({id,body,direction,before,after,entityApiNames})));
-  assert.equal(facts.summary.changeCount,171);
-  assert.equal(facts.publishedAt,'2026-09-09T18:00:00.000Z');
-  assert.match(facts.source.sourceUrl,/patch-18-2\/$/);
+  assert.equal(facts.summary.changeCount,74);
+  assert.equal(facts.publishedAt,'2026-09-22T18:00:00.000Z');
+  assert.match(facts.source.sourceUrl,/patch-18-3\/$/);
   assert.ok(facts.revisions[0].changes.filter(c=>['unit','trait','item'].includes(c.entityType)).every(c=>c.entityApiNames.length));
  }
  const changes=associateOfficialPatchChanges({units:[{apiName:'DA_18_Ahri'}]},'18.2');

@@ -1,8 +1,28 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.2";
+export const CURRENT_PATCH_VERSION = "18.3";
 
 const PATCH_NOTES = {
+  "18.3": {
+  "version": "18.3",
+  "publishedAt": "2026-09-22T18:00:00.000Z",
+  "locales": {
+    "zh-CN": {
+      "title": "18.3 数值更新",
+      "summary": "共 74 项数值调整：强化部分重抽弈子与战斗强化符文，调整羁绊、神器、纹章和灵火。奈德丽穿透说明前后矛盾且标注无功能变化，未计入数值清单；完整机制与修复见官方原文。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+      "highlights": []
+    },
+    "en-US": {
+      "title": "Patch 18.3 numeric changes",
+      "summary": "74 numeric changes across champions, traits, Artifacts, Emblems, Augments, and Wisps. Conflicting Nidalee penetration notes marked no functional change are excluded; see the official article for rules and fixes.",
+      "sourceName": "Official Riot Games patch notes",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+      "highlights": []
+    }
+  }
+},
   "18.2": {
     "version": "18.2",
     "publishedAt": "2026-09-09T18:00:00.000Z",

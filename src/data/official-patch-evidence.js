@@ -1,8 +1,33 @@
 import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 
+import { PATCH_18_3_REVISION } from "../app/small-window-ui/patch-18-3.js";
+
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.3": Object.freeze({
+    version: "18.3",
+    title: "云顶之弈 18.3 版本更新公告",
+    summary: "共 74 项数值调整：强化部分重抽弈子与战斗强化符文，调整羁绊、神器、纹章和灵火。奈德丽穿透说明前后矛盾且标注无功能变化，未计入数值清单；完整机制与修复见官方原文。",
+    publishedAt: "2026-09-22T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+    // Use the same reviewed numeric records as patch_facts and the announcement UI.
+    changes: Object.freeze([PATCH_18_3_REVISION].flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl ?? "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+      direction: change.direction,
+      entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames],
+      stat: change.stat,
+      before: change.before,
+      after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    })))))
+  }),
+
   "18.2": Object.freeze({
     version: "18.2",
     title: "云顶之弈 18.2 版本更新公告",
