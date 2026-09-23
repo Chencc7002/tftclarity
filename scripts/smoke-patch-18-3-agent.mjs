@@ -24,8 +24,8 @@ try {
  ]) {
   const started=Date.now();
   const {statusCode,payload}=await handleReactChatRequest({input,seasonContextId:'set18-live',locale:'zh-CN',conversationId:`patch-agent-${crypto.randomUUID()}`},runtime);
-  const evidence=payload.evidence?.find(e=>e.toolName==='patch_facts');
-  const row={input,statusCode,durationMs:Date.now()-started,termination:payload.terminationReason,answer:payload.answer,evidence:payload.evidence};
+  const evidence=payload.evidence?.find(e=>e.toolName==='patch_facts' && e.value?.patch===patch && payload.evidenceIds?.includes(e.evidenceId));
+  const row={input,statusCode,durationMs:Date.now()-started,termination:payload.terminationReason,answer:payload.answer,evidence:payload.evidence?.map(e=>({evidenceId:e.evidenceId,toolName:e.toolName,patch:e.value?.patch})),citedEvidenceIds:payload.evidenceIds};
   report.cases.push(row);console.log(JSON.stringify({input,statusCode,durationMs:row.durationMs,termination:row.termination,answer:row.answer,tools:payload.evidence?.map(e=>e.toolName)}));
   assert.equal(statusCode,200);assert.equal(payload.terminationReason,'completed');
   assert.equal(evidence?.value?.patch,patch);assert.equal(evidence?.value?.status,'found');
