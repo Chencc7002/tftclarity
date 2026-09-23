@@ -1,7 +1,9 @@
 const STATISTICAL_SIGNAL = /(?:平均名次|均名|前四率|登顶率|胜率|选择率|出场率|样本|场次|排名变化|top\s*4|win\s*rate|pick\s*rate|sample|games?|\d+(?:\.\d+)?\s*%)/iu;
 const INSUFFICIENT_SIGNAL = /(?:数据不足|证据不足|没有可验证|无可验证|工具不可用|查询失败|结果为空|没有结果|无法可靠判断|暂时无法判断|当前样本门槛下没有|insufficient|unavailable|failed|no reliable|no verifiable)/iu;
 const CURRENT_RANKING_SIGNAL = /(?:当前|现在|目前|最近|这版本|胜率|前四率|登顶率|平均名次|选择率|出场率|样本数|排名|最优|最好|最高|current|latest|best|highest|win\s*rate|top\s*4)/iu;
-const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*(?:奥恩)?神器|(?:含|包含|包括|加入|带上|算上|纳入|主流|推荐|首选|最强|适合).{0,8}(?:奥恩)?神器|(?:奥恩)?神器.{0,8}(?:排行|排名|推荐|首选|主流|[：:]))/u;
+// A parenthetical item category, e.g. “电刃（神器）：法强”, is not a ranking header.
+// Explicit ranking/recommendation words still require Artifact-scoped statistics.
+const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*(?:奥恩)?神器|(?:含|包含|包括|加入|带上|算上|纳入|主流|推荐|首选|最强|适合).{0,8}(?:奥恩)?神器|(?:奥恩)?神器.{0,8}(?:排行|排名|推荐|首选|主流)|(?:奥恩)?神器[^。；\n（）()]{0,8}[：:])/u;
 
 import { hasTacticalPositionProse, scopedTacticalPositionErrors } from "./tactical-position-grounding.js";
 import { officialItemEvidenceFailure, officialItemBatchEvidenceFailure } from "../agent/official-item-evidence.js";

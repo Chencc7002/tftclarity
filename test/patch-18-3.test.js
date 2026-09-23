@@ -5,6 +5,20 @@ import { getOfficialPatchFacts } from '../src/data/official-patch-facts.js';
 import { associateOfficialPatchChanges } from '../src/data/official-patch-evidence.js';
 import { buildOfficialPatchSemanticDocuments } from '../src/knowledge/official-patch-knowledge.js';
 import { createTftToolHandlers } from '../src/domain/tft/tool-handler-factory.js';
+import { validateFinishAction } from '../src/react/termination-policy.js';
+
+test('Artifact category labels in patch facts are not mistaken for statistical rankings', () => {
+ const entry={evidenceId:'patch-18-3',toolName:'patch_facts',type:'official_patch_facts',value:getOfficialPatchFacts({patch:'18.3'})};
+ const ledger={resolve:ids=>ids.includes(entry.evidenceId)?[entry]:[],snapshot:()=>({entries:[entry]})};
+ const check=answer=>validateFinishAction({reasonCode:'sufficient_evidence',evidenceIds:[entry.evidenceId],answer},ledger);
+ for (const answer of ['斯塔缇克电刃（神器）：基础法强 15% → 25%。','**斯塔缇克电刃(神器)**：基础法强 15% → 25%。']) {
+  assert.equal(check(answer).valid,true,JSON.stringify(check(answer)));
+ }
+ for (const answer of ['神器：斯塔缇克电刃。','斯塔缇克电刃（神器）排名最高。','推荐神器：斯塔缇克电刃。','神器排名：斯塔缇克电刃。']) {
+  assert.ok(check(answer).errors.some(e=>e.includes('artifact scope')),answer);
+ }
+ assert.equal(check('斯塔缇克电刃（神器）：基础法强 999% → 9999%。').valid,false);
+});
 
 test('18.3 appends a fourth revision without changing previous patch history', () => {
  const timeline=getPatchNoteTimeline();
