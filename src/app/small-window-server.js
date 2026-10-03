@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createJevIntentObserver } from "../understanding/jev-intent-observer.js";
 import { queryEmblemRankings, queryEmblemCarriers, emblemExecutionPlan, scopedEmblemQuery } from "../core/emblem-rankings.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -3406,6 +3407,13 @@ export function createSmallWindowRuntime(options = {}) {
     toolExecutor,
     executionPlanExecutor,
     reactDecisionProvider: options.reactDecisionProvider ?? null,
+    jevIntentObserver: createJevIntentObserver({
+      env: runtimeEnv,
+      mode: options.jevIntentMode ?? runtimeEnv.TFT_AGENT_JEV_INTENT_MODE ?? "off",
+      fetchImpl: options.jevIntentFetch,
+      onObservation: options.onJevIntentObservation
+        ?? (event => console.info("[jev-intent-shadow]", JSON.stringify(event)))
+    }),
     reactCreateId: options.reactCreateId ?? null,
     reactNow: options.reactNow ?? null,
     reactTaskFrameShadowV1,
@@ -7822,6 +7830,11 @@ export function createAgentSkillControlLogObserver(write = console.info) {
 
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
+  // Optional, bounded observation only. It never changes the ReAct request,
+  // TaskFrame, tools, Evidence, response or deadline-critical path.
+  if (runtime.reactDecisionProvider) {
+    void runtime.jevIntentObserver?.observe(normalizedRequest, { signal: context.signal });
+  }
   const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
   const playGuidance = broadUnitPlayGuidance(normalizedRequest, runtime);
   const getTaskFrameParse = createReactTaskFrameParse(normalizedRequest, runtime);

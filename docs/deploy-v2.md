@@ -5,8 +5,9 @@
 [R1 Release Readiness](r1-release-readiness.md)，并确认 Final Release Image Gate
 使用的是准备发布的最终 Git SHA 和镜像。
 
-本文只使用占位符。`.env.production`、数据库密码、Redis 密码、访客密钥、管理令牌、
-模型 endpoint/model/API key 和真实域名不得提交到仓库、工单或验收报告。
+本文只使用占位符。`.env.production`、`.env.jev.production`、数据库密码、Redis 密码、
+访客密钥、管理令牌、模型 endpoint/model/API key 和真实域名不得提交到仓库、工单或
+验收报告。
 
 ## 1. 当前生产拓扑
 
@@ -35,6 +36,18 @@
    Copy-Item .env.production.example .env.production
    ```
 
+   Jev 意图观察是可选的独立 app 配置。没有这个文件时仍为 off；首次旁路发布需要创建它：
+
+   ```powershell
+   Copy-Item .env.jev.production.example .env.jev.production
+   ```
+
+   在该本机文件中写入 TypeSafe key，并把 `TFT_AGENT_JEV_INTENT_MODE` 改为 `shadow`。
+   初始边界保持 `TFT_AGENT_JEV_INTENT_SAMPLE_RATE=0.05`、
+   `TFT_AGENT_JEV_INTENT_MAX_REQUESTS=100` 和 1500ms timeout。不得配置或实现 control；
+   Jev 结果只写旁路观测，不改变 TaskFrame、ExecutionPlan、ReAct、工具选择或用户回答。
+   Compose 只把此文件加载给 `app`，不加载给 worker、migrate 或数据库服务。
+
 4. 替换模板中的所有 `CHANGE_ME`、`replace-me`、示例 endpoint/model 和域名；为每个
    PostgreSQL 角色、Redis、访客签名和管理入口生成不同 secret。不要打印或提交配置。
 5. 确认 V2 Beta 需要的 real model provider 已配置，且 `TFT_AGENT_REACT_CHAT_MODE=on`、
@@ -49,6 +62,17 @@
 
 `docker compose config` 必须成功，并人工确认 PostgreSQL、Redis、app 和 MCP 没有新增公网端口，
 真实 secret 没有进入日志或版本控制。不要把该命令的完整渲染结果粘贴到公开报告。
+
+启用 Jev shadow 时还要做零调用预检和凭据隔离检查。命令只输出布尔值和边界，不输出 key：
+
+```powershell
+docker compose run --rm --no-deps app node scripts/check-jev-readiness.mjs
+docker compose run --rm --no-deps worker node -e "if(process.env.TYPESAFE_API_KEY)process.exit(1);console.log('worker key absent')"
+docker compose run --rm --no-deps migrate node -e "if(process.env.TYPESAFE_API_KEY)process.exit(1);console.log('migrate key absent')"
+```
+
+app 预检必须显示 ready=true、mode=shadow、keyPresent=true、sampleRate=0.05、maxRequests=100、
+calls=0、controlSupported=false；另外两条必须成功并显示 key absent。
 
 ## 3. 语义索引发布物
 
@@ -140,6 +164,7 @@ docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/health').t
 docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/ready').then(async r=>{console.log(r.status,await r.text());if(!r.ok)process.exit(1)})"
 docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/runtime').then(async r=>{console.log(r.status,await r.text());if(!r.ok)process.exit(1)})"
 docker compose run --rm migrate npm run db:status
+docker compose exec -T app node scripts/check-jev-readiness.mjs
 ```
 
 随后从公网入口检查 `https://<production-domain>/api/health`、`/api/ready` 和浏览器矩阵。
@@ -149,6 +174,12 @@ storage 为 PostgreSQL + Redis。还要确认 HTTPS 证书、安全响应头、�
 
 只有 [R1 Release Readiness](r1-release-readiness.md) 中的 Final Release Image Gate 被记录为
 PASS 后，才能把该 SHA/镜像作为 Public Beta release。
+
+Jev shadow 开启后，只审查 `[jev-intent-shadow]` 结构化日志。日志不得含原始用户输入或 key；
+前 100 次尝试达到进程生命周期上限后停止调用。记录 observed、timeout、unavailable、skipped、
+candidate disposition、action agreement、tokens 和延迟分布。出现回答延迟/错误率变化、凭据泄漏、
+预算异常或日志包含用户原文时，立即按第 8 节关闭 Jev。Jev 的候选不得参与生产路由，且一次
+进程重启会重置 100 次上限，因此运维应同时用 TypeSafe 账单上限约束总成本。
 
 ## 6. PostgreSQL 备份
 
@@ -214,6 +245,19 @@ docker compose ps
 ```
 
 ### 回滚
+
+Jev shadow 没有数据库 migration，也不影响生产答案。只关闭它时，不需要回滚镜像或数据库：
+
+```powershell
+# 编辑本机 .env.jev.production：TFT_AGENT_JEV_INTENT_MODE=off
+docker compose up -d --no-deps --force-recreate app
+docker compose exec -T app node scripts/check-jev-readiness.mjs
+docker compose ps app
+```
+
+预检必须显示 ready=true、mode=off、calls=0。`restart` 不会重新读取 env_file，所以必须 recreate
+app。关闭后再确认新日志不出现 observed 事件；旧结构化日志可以保留供审计。若 app 本身未通过
+readiness，则按下面的一般应用回滚流程处理。
 
 当前 migration runner 只支持按文件名顺序执行 forward migration、记录 checksum 和拒绝被修改的
 已应用 migration。仓库没有 down migration 命令，也没有自动 schema rollback。不得编造任何
