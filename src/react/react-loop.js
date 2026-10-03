@@ -1871,6 +1871,7 @@ export class ReactLoop {
           compositionCardsOwnPositioning: context.compositionCardsOwnPositioning,
           trendCoverageMode: context.trendCoverageMode,
           officialItemEvidenceV1: context.officialItemEvidenceV1,
+          patchNumericSeriesGroundingMode: context.patchNumericSeriesGroundingMode,
           unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
           currentTurnInput: request.input ?? request.question,
           responseLocale: state.locale,
@@ -1878,6 +1879,13 @@ export class ReactLoop {
         if (finishValidation.coverageWarnings.length) {
           emit("answer_coverage_observed", { scope: "available_trend_sections",
             coverageWarnings: finishValidation.coverageWarnings, factualValidationPassed: finishValidation.valid });
+        }
+        if (finishValidation.groundingWarnings.length) {
+          emit("answer_grounding_observed", {
+            scope: "patch_numeric_series",
+            warnings: finishValidation.groundingWarnings,
+            enforced: false
+          });
         }
         if (context.compositionCardScope) {
           const legacyValidation = validateFinishAction(action, ledger);

@@ -19,7 +19,8 @@ try {
  for (const [input,patch,values] of [
   ['18.3 在 9 月 24 日的热补丁中，卡兹克的普通与孤立技能伤害怎么改？给出前后数值。','18.3',['285','400','580','265','370','535','310','445','660','410','605']],
   ['18.3 在 9 月 28 日对 Major Polymorph 灵火做了什么？截至 10 月 4 日恢复了吗？','18.3',['禁用']],
-  ['18.3 B 补丁临时禁用了哪些强化符文？请保留英文名称。','18.3',['Challenger','Dark Ritual','Infinity Protection','Nesting Dolls']],
+ ['18.3 B 补丁临时禁用了哪些强化符文？请保留英文名称。','18.3',['Challenger','Dark Ritual','Infinity Protection','Nesting Dolls']],
+  ['请总结 18.3 截至 10 月 4 日的两次热补丁：给出卡兹克两组前后数值、列出临时禁用的 4 个强化，并说明 Major Polymorph 的状态。','18.3',['265/370/535','285/410/605','Challenger','Dark Ritual','Infinity Protection','Nesting Dolls','Major Polymorph']],
   ['18.2 热补丁升 9、10 级经验和茂凯法力值怎么改？','18.2',['64','68','30','90','100']]
  ]) {
   const started=Date.now();
@@ -30,6 +31,7 @@ try {
   assert.equal(statusCode,200);assert.equal(payload.terminationReason,'completed');
   assert.equal(evidence?.value?.patch,patch);assert.equal(evidence?.value?.status,'found');
   for(const v of values)assert.ok(payload.answer.includes(v),`missing value ${v}`);
+  assert.equal(payload.answer.includes('→ 285/370/535'),false,'must not cross-splice old and new Kha’Zix values');
  }
  report.passed=true;console.log(JSON.stringify(report));process.exit(0);
 } catch(error) {

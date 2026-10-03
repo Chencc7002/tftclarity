@@ -1137,7 +1137,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       entitySlangProviderAvailable: typeof runtime.entitySlangProvider === "function",
       entitySlangMetrics: runtime.entitySlangTelemetry?.snapshot() ?? null,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
-      conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
+      conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore),
+      patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode ?? "off"
     },
     acceptanceProvenance: {
       decisionProviderMode: runtime.reactDecisionProvider?.providerKind === "react_decision_llm"
@@ -3145,6 +3146,15 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 
 export function createSmallWindowRuntime(options = {}) {
   const runtimeEnv = options.env ?? process.env;
+  const patchNumericSeriesGroundingMode = ["off", "observe", "enforce"].includes(String(
+    options.patchNumericSeriesGroundingMode
+      ?? runtimeEnv.TFT_AGENT_PATCH_NUMERIC_SERIES_GROUNDING_MODE
+      ?? "enforce"
+  ).trim().toLowerCase())
+    ? String(options.patchNumericSeriesGroundingMode
+      ?? runtimeEnv.TFT_AGENT_PATCH_NUMERIC_SERIES_GROUNDING_MODE
+      ?? "enforce").trim().toLowerCase()
+    : "enforce";
   const reactTaskFrameShadowV1 = ["1", "true", "on", "enabled"].includes(String(
     options.reactTaskFrameShadowV1
       ?? runtimeEnv.TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1
@@ -3427,6 +3437,7 @@ export function createSmallWindowRuntime(options = {}) {
     reactCompositionCardScope: options.reactCompositionCardScope === true,
     reactCompositionCardsOwnPositioning: options.reactCompositionCardsOwnPositioning === true,
     reactOfficialItemEvidenceV1: options.reactOfficialItemEvidenceV1 === true,
+    patchNumericSeriesGroundingMode,
     reactUnitPlayFixedCardCompletionAffordance: options.reactUnitPlayFixedCardCompletionAffordance === true,
     reactUnitPlayFixedCardCount: Number.isInteger(options.reactUnitPlayFixedCardCount)
       && options.reactUnitPlayFixedCardCount > 0 ? options.reactUnitPlayFixedCardCount : 2,
@@ -8048,6 +8059,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     compositionCardScope: candidateControl ? true : runtime.reactCompositionCardScope === true,
     compositionCardsOwnPositioning: candidateControl ? true : runtime.reactCompositionCardsOwnPositioning === true,
     officialItemEvidenceV1: candidateControl ? true : runtime.reactOfficialItemEvidenceV1 === true,
+    patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode,
     unitPlayFixedCardCompletionAffordance: candidateControl
       ? true : runtime.reactUnitPlayFixedCardCompletionAffordance === true,
     unitPlayFixedCardCount: candidateControl ? 2 : runtime.reactUnitPlayFixedCardCount,
