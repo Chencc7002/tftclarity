@@ -1,6 +1,6 @@
 import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 
-import { PATCH_18_3_REVISION } from "../app/small-window-ui/patch-18-3.js";
+import { PATCH_18_3_REVISIONS } from "../app/small-window-ui/patch-18-3.js";
 
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
@@ -8,12 +8,13 @@ const PATCHES = Object.freeze({
   "18.3": Object.freeze({
     version: "18.3",
     title: "云顶之弈 18.3 版本更新公告",
-    summary: "共 74 项数值调整：强化部分重抽弈子与战斗强化符文，调整羁绊、神器、纹章和灵火。奈德丽穿透说明前后矛盾且标注无功能变化，未计入数值清单；完整机制与修复见官方原文。",
+    summary: "已核实至 2026 年 10 月 4 日：保留首发 74 项，追加 9 月 24 日 B 补丁 13 项数值记录及四个强化符文临时禁用；9 月 28 日大型变形术灵火临时禁用。共 87 项数值记录，恢复的旧调整不应叠加计算。18.4 尚未发布。 9 月 24 日追加 13 项数值记录：削弱黑荆棘法系献祭与卡兹克，并恢复 18.3 意外回退的 10 项 18.2 B 调整。绯红印记树怪（Brambleback）施法略微加快，未公布具体数值。临时禁用 Challenger’s Grace、Dark Ritual、Infinity Protection、Nesting Dolls 四个强化符文。官方同时确认 18.3 已主动回退 18.2 的目标选择改动。日期采用英文公告章节日期。 9 月 28 日：大型变形术灵火（Major Polymorph，官方说明段落称 Greater Polymorph）因漏洞可过早稳定获得二星五费弈子，已临时禁用。官方计划在 18.4 修复，截止 10 月 4 日未见恢复公告；计划不代表已经恢复。本次没有公布前后数值，故仅记录状态，不计入数值变更。日期采用英文公告章节日期。",
+    updatedAt: "2026-09-28",
     publishedAt: "2026-09-22T18:00:00.000Z",
     sourceName: "Riot Games 官方更新公告",
-    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
     // Use the same reviewed numeric records as patch_facts and the announcement UI.
-    changes: Object.freeze([PATCH_18_3_REVISION].flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+    changes: Object.freeze(PATCH_18_3_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
       id: `${revision.id}-${change.id}`,
       revisionId: revision.id,
       publishedAt: revision.publishedAt,

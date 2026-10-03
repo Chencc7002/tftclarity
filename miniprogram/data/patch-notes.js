@@ -2,7 +2,7 @@
 module.exports = {
   "version": "18.3",
   "publishedAt": "2026-09-22T18:00:00.000Z",
-  "updatedAt": "2026-09-23",
+  "updatedAt": "2026-09-28",
   "history": [
     {
       "id": "18.1-balance-2026-08-31",
@@ -2520,7 +2520,7 @@ module.exports = {
       "title": "18.3 正式版本数值调整",
       "summary": "共 74 项数值调整：强化部分重抽弈子与战斗强化符文，调整羁绊、神器、纹章和灵火。奈德丽穿透说明前后矛盾且标注无功能变化，未计入数值清单；完整机制与修复见官方原文。",
       "sourceName": "Riot Games 官方更新公告",
-      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
       "changes": [
         {
           "id": "18.3-release-2026-09-23-blossom-animate",
@@ -3511,11 +3511,216 @@ module.exports = {
           "text": "削弱｜三个我（Three Me）· 价格：9g → 10g"
         }
       ]
+    },
+    {
+      "id": "18.3-hotfix-2026-09-24",
+      "parentId": "18.3-release-2026-09-23",
+      "kind": "热补丁",
+      "publishedAt": "2026-09-24",
+      "title": "18.3 B 补丁：平衡调整与临时禁用",
+      "summary": "9 月 24 日追加 13 项数值记录：削弱黑荆棘法系献祭与卡兹克，并恢复 18.3 意外回退的 10 项 18.2 B 调整。绯红印记树怪（Brambleback）施法略微加快，未公布具体数值。临时禁用 Challenger’s Grace、Dark Ritual、Infinity Protection、Nesting Dolls 四个强化符文。官方同时确认 18.3 已主动回退 18.2 的目标选择改动。日期采用英文公告章节日期。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+      "changes": [
+        {
+          "id": "18.3-hotfix-2026-09-24-blackthorn-ap-amp",
+          "direction": "nerf",
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Blackthorn"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ap_sacrifice_base_damage_amp",
+          "before": "14%",
+          "after": "12%",
+          "label": "黑荆棘 · 法系献祭基础伤害增幅",
+          "text": "削弱｜黑荆棘 · 法系献祭基础伤害增幅：14% → 12%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-khazix-base",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_base_ap_ratio",
+          "before": "285/400/580%",
+          "after": "265/370/535%",
+          "label": "卡兹克 · 基础技能法强倍率",
+          "text": "削弱｜卡兹克 · 基础技能法强倍率：285/400/580% → 265/370/535%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-khazix-isolation",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_isolation_ap_ratio",
+          "before": "310/445/660%",
+          "after": "285/410/605%",
+          "label": "卡兹克 · 孤立技能法强倍率",
+          "text": "削弱｜卡兹克 · 孤立技能法强倍率：310/445/660% → 285/410/605%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-camille-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Camille"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "ability_ad_ratio",
+          "before": "160/240/410/700%",
+          "after": "150/225/375/640%",
+          "label": "卡蜜尔 · 技能攻击力倍率",
+          "text": "削弱｜卡蜜尔 · 技能攻击力倍率：160/240/410/700% → 150/225/375/640%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-leblanc-clone",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_LeBlanc"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "clone_chance",
+          "before": "10/15/40%",
+          "after": "10/15/30%",
+          "label": "乐芙兰 · 复制概率",
+          "text": "削弱｜乐芙兰 · 复制概率：10/15/40% → 10/15/30%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-teemo-small-shroom",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Teemo"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "small_shroom_ap_ratio",
+          "before": "60/90/135%",
+          "after": "55/82/130%",
+          "label": "提莫 · 小蘑菇法强倍率",
+          "text": "削弱｜提莫 · 小蘑菇法强倍率：60/90/135% → 55/82/130%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-ashe-trail-duration",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "trail_duration",
+          "before": "4s",
+          "after": "3s",
+          "label": "艾希 · 尾迹持续时间",
+          "text": "削弱｜艾希 · 尾迹持续时间：4s → 3s"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-ashe-dot-damage",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "dot_per_second_ad_ratio",
+          "before": "5/8%",
+          "after": "9/14%",
+          "label": "艾希 · 每秒持续伤害攻击力倍率",
+          "text": "增强｜艾希 · 每秒持续伤害攻击力倍率：5/8% → 9/14%"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-draven-four-cost-casts",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_four_cost_casts",
+          "before": "5",
+          "after": "6",
+          "label": "德莱文 · 赏金猎人：四费奖励所需施法次数",
+          "text": "削弱｜德莱文 · 赏金猎人：四费奖励所需施法次数：5 → 6"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-draven-eight-casts-rerolls",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_eight_cast_rerolls",
+          "before": "10",
+          "after": "6",
+          "label": "德莱文 · 赏金猎人：施法 8 次的刷新奖励",
+          "text": "削弱｜德莱文 · 赏金猎人：施法 8 次的刷新奖励：10 → 6"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-draven-five-cost-attacks",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_five_cost_attacks",
+          "before": "50",
+          "after": "60",
+          "label": "德莱文 · 赏金猎人：五费奖励所需攻击次数",
+          "text": "削弱｜德莱文 · 赏金猎人：五费奖励所需攻击次数：50 → 60"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-draven-seven-gold-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_seven_gold_damage",
+          "before": "8000",
+          "after": "10000",
+          "label": "德莱文 · 赏金猎人：7 金币奖励所需伤害",
+          "text": "削弱｜德莱文 · 赏金猎人：7 金币奖励所需伤害：8000 → 10000"
+        },
+        {
+          "id": "18.3-hotfix-2026-09-24-draven-twelve-gold-kills",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "bounty_twelve_gold_kills",
+          "before": "6",
+          "after": "8",
+          "label": "德莱文 · 赏金猎人：12 金币奖励所需击杀",
+          "text": "削弱｜德莱文 · 赏金猎人：12 金币奖励所需击杀：6 → 8"
+        }
+      ]
+    },
+    {
+      "id": "18.3-hotfix-2026-09-28",
+      "parentId": "18.3-hotfix-2026-09-24",
+      "kind": "热补丁",
+      "publishedAt": "2026-09-28",
+      "title": "18.3 热补丁：大型变形术灵火临时禁用",
+      "summary": "9 月 28 日：大型变形术灵火（Major Polymorph，官方说明段落称 Greater Polymorph）因漏洞可过早稳定获得二星五费弈子，已临时禁用。官方计划在 18.4 修复，截止 10 月 4 日未见恢复公告；计划不代表已经恢复。本次没有公布前后数值，故仅记录状态，不计入数值变更。日期采用英文公告章节日期。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+      "changes": []
     }
   ],
-  "title": "18.3 数值更新",
-  "summary": "共 74 项数值调整：强化部分重抽弈子与战斗强化符文，调整羁绊、神器、纹章和灵火。奈德丽穿透说明前后矛盾且标注无功能变化，未计入数值清单；完整机制与修复见官方原文。",
+  "title": "18.3 更新与热补丁",
+  "summary": "已核实至 2026 年 10 月 4 日：保留首发 74 项，追加 9 月 24 日 B 补丁 13 项数值记录及四个强化符文临时禁用；9 月 28 日大型变形术灵火临时禁用。共 87 项数值记录，恢复的旧调整不应叠加计算。18.4 尚未发布。",
   "sourceName": "Riot Games 官方更新公告",
-  "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+  "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
   "highlights": []
 };

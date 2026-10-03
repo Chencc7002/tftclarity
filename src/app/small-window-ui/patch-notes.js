@@ -8,15 +8,15 @@ const PATCH_NOTES = {
   "publishedAt": "2026-09-22T18:00:00.000Z",
   "locales": {
     "zh-CN": {
-      "title": "18.3 数值更新",
-      "summary": "共 74 项数值调整：强化部分重抽弈子与战斗强化符文，调整羁绊、神器、纹章和灵火。奈德丽穿透说明前后矛盾且标注无功能变化，未计入数值清单；完整机制与修复见官方原文。",
+      "title": "18.3 更新与热补丁",
+      "summary": "已核实至 2026 年 10 月 4 日：保留首发 74 项，追加 9 月 24 日 B 补丁 13 项数值记录及四个强化符文临时禁用；9 月 28 日大型变形术灵火临时禁用。共 87 项数值记录，恢复的旧调整不应叠加计算。18.4 尚未发布。",
       "sourceName": "Riot Games 官方更新公告",
-      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
       "highlights": []
     },
     "en-US": {
-      "title": "Patch 18.3 numeric changes",
-      "summary": "74 numeric changes across champions, traits, Artifacts, Emblems, Augments, and Wisps. Conflicting Nidalee penetration notes marked no functional change are excluded; see the official article for rules and fixes.",
+      "title": "Patch 18.3 updates and hotfixes",
+      "summary": "Verified through October 4, 2026: 74 release changes, 13 September 24 B-patch numeric records, four Augment disables, and the September 28 Major Polymorph disable. 87 numeric records in total; restored changes must not be applied twice. Patch 18.4 is not yet released.",
       "sourceName": "Official Riot Games patch notes",
       "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
       "highlights": []

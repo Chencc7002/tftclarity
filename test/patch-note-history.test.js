@@ -65,11 +65,11 @@ test("18.3 is reachable from the active season and matches the mini program", ()
   assert.equal(patch.version, "18.3");
   assert.deepEqual(patch, getCurrentPatchNote());
   assert.equal(patch.publishedAt, "2026-09-22T18:00:00.000Z");
-  assert.equal(patch.updatedAt, "2026-09-23");
+  assert.equal(patch.updatedAt, "2026-09-28");
   assert.match(season.notices[0], /18\.3 版本已上线/u);
   assert.match(season.theme.subtitle["en-US"], /18\.3/u);
   const changes = patch.history.flatMap((revision) => revision.groups.flatMap((group) => group.changes));
-  assert.equal(changes.length, 74);
+  assert.equal(changes.length, 87);
   assert.equal(new Set(changes.map((change) => change.id)).size, changes.length);
   assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.3-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
   assert.equal(mini.sourceUrl, patch.sourceUrl);

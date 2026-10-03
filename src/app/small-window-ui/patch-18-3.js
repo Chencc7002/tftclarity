@@ -105,3 +105,248 @@ export const PATCH_18_3_REVISION = Object.freeze({
     ] },
   ]
 });
+
+// Mid-patch source verified through 2026-10-04; localized article has not incorporated these updates.
+export const PATCH_18_3_HOTFIX = Object.freeze({
+  "id": "18.3-hotfix-2026-09-24",
+  "publishedAt": "2026-09-24",
+  "kind": "hotfix",
+  "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+  "title": {
+    "zh-CN": "18.3 B 补丁：平衡调整与临时禁用",
+    "en-US": "18.3 B patch: balance and temporary disables"
+  },
+  "summary": {
+    "zh-CN": "9 月 24 日追加 13 项数值记录：削弱黑荆棘法系献祭与卡兹克，并恢复 18.3 意外回退的 10 项 18.2 B 调整。绯红印记树怪（Brambleback）施法略微加快，未公布具体数值。临时禁用 Challenger’s Grace、Dark Ritual、Infinity Protection、Nesting Dolls 四个强化符文。官方同时确认 18.3 已主动回退 18.2 的目标选择改动。日期采用英文公告章节日期。",
+    "en-US": "September 24 adds 13 numeric records, including 10 restored 18.2 B changes. Brambleback casts slightly faster; no timing was published. Challenger’s Grace, Dark Ritual, Infinity Protection and Nesting Dolls are temporarily disabled. Riot also confirms the intentional targeting revert in 18.3. Dates follow the English source headings."
+  },
+  "groups": [
+    {
+      "title": {
+        "zh-CN": "新增平衡调整",
+        "en-US": "New balance changes"
+      },
+      "changes": [
+        {
+          "id": "blackthorn-ap-amp",
+          "direction": "nerf",
+          "before": "14%",
+          "after": "12%",
+          "text": {
+            "zh-CN": "黑荆棘 · 法系献祭基础伤害增幅",
+            "en-US": "Blackthorn · AP sacrifice base damage amp"
+          },
+          "entityType": "trait",
+          "entityApiNames": [
+            "DA_18_Blackthorn"
+          ],
+          "stat": "ap_sacrifice_base_damage_amp"
+        },
+        {
+          "id": "khazix-base",
+          "direction": "nerf",
+          "before": "285/400/580%",
+          "after": "265/370/535%",
+          "text": {
+            "zh-CN": "卡兹克 · 基础技能法强倍率",
+            "en-US": "Kha’Zix · Ability base AP ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
+          "stat": "ability_base_ap_ratio"
+        },
+        {
+          "id": "khazix-isolation",
+          "direction": "nerf",
+          "before": "310/445/660%",
+          "after": "285/410/605%",
+          "text": {
+            "zh-CN": "卡兹克 · 孤立技能法强倍率",
+            "en-US": "Kha’Zix · Isolation AP ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
+          "stat": "ability_isolation_ap_ratio"
+        }
+      ]
+    },
+    {
+      "title": {
+        "zh-CN": "恢复被意外回退的 18.2 B 调整（非重复削弱）",
+        "en-US": "Restored 18.2 B changes (not an additional nerf)"
+      },
+      "changes": [
+        {
+          "id": "camille-damage",
+          "direction": "nerf",
+          "before": "160/240/410/700%",
+          "after": "150/225/375/640%",
+          "text": {
+            "zh-CN": "卡蜜尔 · 技能攻击力倍率",
+            "en-US": "Camille · Ability AD ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Camille"
+          ],
+          "stat": "ability_ad_ratio"
+        },
+        {
+          "id": "leblanc-clone",
+          "direction": "nerf",
+          "before": "10/15/40%",
+          "after": "10/15/30%",
+          "text": {
+            "zh-CN": "乐芙兰 · 复制概率",
+            "en-US": "LeBlanc · Clone chance"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_LeBlanc"
+          ],
+          "stat": "clone_chance"
+        },
+        {
+          "id": "teemo-small-shroom",
+          "direction": "nerf",
+          "before": "60/90/135%",
+          "after": "55/82/130%",
+          "text": {
+            "zh-CN": "提莫 · 小蘑菇法强倍率",
+            "en-US": "Teemo · Small shroom AP ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Teemo"
+          ],
+          "stat": "small_shroom_ap_ratio"
+        },
+        {
+          "id": "ashe-trail-duration",
+          "direction": "nerf",
+          "before": "4s",
+          "after": "3s",
+          "text": {
+            "zh-CN": "艾希 · 尾迹持续时间",
+            "en-US": "Ashe · Trail duration"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "stat": "trail_duration"
+        },
+        {
+          "id": "ashe-dot-damage",
+          "direction": "buff",
+          "before": "5/8%",
+          "after": "9/14%",
+          "text": {
+            "zh-CN": "艾希 · 每秒持续伤害攻击力倍率",
+            "en-US": "Ashe · DoT per-second AD ratio"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_Ashe"
+          ],
+          "stat": "dot_per_second_ad_ratio"
+        },
+        {
+          "id": "draven-four-cost-casts",
+          "direction": "nerf",
+          "before": "5",
+          "after": "6",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：四费奖励所需施法次数",
+            "en-US": "Draven · Bounty Hunter: casts for 4-costs"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_four_cost_casts"
+        },
+        {
+          "id": "draven-eight-casts-rerolls",
+          "direction": "nerf",
+          "before": "10",
+          "after": "6",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：施法 8 次的刷新奖励",
+            "en-US": "Draven · Bounty Hunter: rerolls for 8 casts"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_eight_cast_rerolls"
+        },
+        {
+          "id": "draven-five-cost-attacks",
+          "direction": "nerf",
+          "before": "50",
+          "after": "60",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：五费奖励所需攻击次数",
+            "en-US": "Draven · Bounty Hunter: attacks for 5-cost"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_five_cost_attacks"
+        },
+        {
+          "id": "draven-seven-gold-damage",
+          "direction": "nerf",
+          "before": "8000",
+          "after": "10000",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：7 金币奖励所需伤害",
+            "en-US": "Draven · Bounty Hunter: damage for 7 gold"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_seven_gold_damage"
+        },
+        {
+          "id": "draven-twelve-gold-kills",
+          "direction": "nerf",
+          "before": "6",
+          "after": "8",
+          "text": {
+            "zh-CN": "德莱文 · 赏金猎人：12 金币奖励所需击杀",
+            "en-US": "Draven · Bounty Hunter: kills for 12 gold"
+          },
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Draven18"
+          ],
+          "stat": "bounty_twelve_gold_kills"
+        }
+      ]
+    }
+  ]
+});
+export const PATCH_18_3_DISABLE = Object.freeze({
+  "id": "18.3-hotfix-2026-09-28",
+  "publishedAt": "2026-09-28",
+  "kind": "hotfix",
+  "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+  "title": {
+    "zh-CN": "18.3 热补丁：大型变形术灵火临时禁用",
+    "en-US": "18.3 hotfix: Major Polymorph temporarily disabled"
+  },
+  "summary": {
+    "zh-CN": "9 月 28 日：大型变形术灵火（Major Polymorph，官方说明段落称 Greater Polymorph）因漏洞可过早稳定获得二星五费弈子，已临时禁用。官方计划在 18.4 修复，截止 10 月 4 日未见恢复公告；计划不代表已经恢复。本次没有公布前后数值，故仅记录状态，不计入数值变更。日期采用英文公告章节日期。",
+    "en-US": "September 28: Major Polymorph (called Greater Polymorph in the explanatory paragraph) is temporarily disabled because a bug enabled early two-star five-cost units. A fix is planned for 18.4; no reenablement was announced as of October 4. This is a status update, with no numeric change. Date follows the English source heading."
+  },
+  "groups": []
+});
+export const PATCH_18_3_REVISIONS = Object.freeze([PATCH_18_3_REVISION, PATCH_18_3_HOTFIX, PATCH_18_3_DISABLE]);

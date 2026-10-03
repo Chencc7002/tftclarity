@@ -20,20 +20,20 @@ test('Artifact category labels in patch facts are not mistaken for statistical r
  assert.equal(check('斯塔缇克电刃（神器）：基础法强 999% → 9999%。').valid,false);
 });
 
-test('18.3 appends a fourth revision without changing previous patch history', () => {
+test('18.3 preserves release and appends two hotfix revisions without changing previous patch history', () => {
  const timeline=getPatchNoteTimeline();
  assert.equal(timeline.version,'18.3');
- assert.deepEqual(timeline.history.slice(0,-1),getPatchNoteTimeline('18.2').history);
- assert.equal(timeline.history.length,4);
- assert.equal(timeline.history.at(-1).parentId,'18.2-hotfix-2026-09-14');
- assert.equal(timeline.history.flatMap(r=>r.groups.flatMap(g=>g.changes)).length,260);
+ assert.deepEqual(timeline.history.slice(0,3),getPatchNoteTimeline('18.2').history);
+ assert.equal(timeline.history.length,6);
+ assert.equal(timeline.history[3].parentId,'18.2-hotfix-2026-09-14');
+ assert.equal(timeline.history.flatMap(r=>r.groups.flatMap(g=>g.changes)).length,273);
  assert.equal(getCurrentPatchNote().publishedAt,'2026-09-22T18:00:00.000Z');
- assert.equal(getCurrentPatchNote().updatedAt,'2026-09-23');
+ assert.equal(getCurrentPatchNote().updatedAt,'2026-09-28');
 });
 
 test('18.3 numeric facts distinguish forms, enhanced Wisps, and ambiguous official wording', () => {
  const facts=getOfficialPatchFacts({patch:'18.3'});
- assert.equal(facts.summary.changeCount,74);assert.match(facts.source.sourceUrl,/patch-18-3\/$/);
+ assert.equal(facts.summary.changeCount,87);assert.match(facts.source.sourceUrl,/patch-18-3\/$/);
  const changes=facts.revisions[0].changes;
  const byId=id=>changes.find(c=>c.id.endsWith('-'+id));
  assert.deepEqual(['215/325/500%','230/345/535%'],[byId('warwick-damage').before,byId('warwick-damage').after]);
@@ -56,15 +56,15 @@ test('18.3 numeric facts distinguish forms, enhanced Wisps, and ambiguous offici
 test('all 18.3 semantic sections carry current bounded source evidence', () => {
  const docs=buildOfficialPatchSemanticDocuments({seasonContextId:'set18-live',versions:['18.3']});
  const sections=docs.filter(d=>d.id.includes(':section:'));
- assert.ok(sections.every(d=>d.content.length<=800 && d.patch==='18.3' && d.metadata.publishedAt==='2026-09-23' && d.metadata.sourceUrl.endsWith('patch-18-3/')));
+ assert.ok(sections.every(d=>d.content.length<=800 && d.patch==='18.3' && ['2026-09-23','2026-09-24'].includes(d.metadata.publishedAt) && d.metadata.sourceUrl.endsWith('patch-18-3/')));
  const actual=sections.flatMap(d=>d.metadata.rawData.changes.map(c=>c.id)).sort();
- const expected=getOfficialPatchFacts({patch:'18.3'}).revisions[0].changes.map(c=>c.id).sort();
+ const expected=getOfficialPatchFacts({patch:'18.3'}).revisions.flatMap(r=>r.changes).map(c=>c.id).sort();
  assert.deepEqual(actual,expected);
  assert.match(sections.find(d=>d.content.includes('沃里克')).content,/230\/345\/535%/);
 });
 
 test('registered patch facts use current 18.3 while retaining explicit 18.2 requests', async () => {
  const {handlers}=createTftToolHandlers({patchState:{currentPatch:'18.3'},seasonContext:{currentPatch:'18.1'},locale:'zh-CN'});
- assert.equal((await handlers.patch_facts({})).summary.changeCount,74);
+ assert.equal((await handlers.patch_facts({})).summary.changeCount,87);
  assert.equal((await handlers.patch_facts({patch:'18.2'})).summary.changeCount,171);
 });

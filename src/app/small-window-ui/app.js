@@ -2680,7 +2680,7 @@ function patchHistoryHtml(patch) {
                   <span><b>${t("patchNotesRevision")}</b><code>${escapeHtml(revision.id)}</code></span>
                   <span><b>${t("patchNotesParent")}</b><code>${escapeHtml(revision.parentId ?? t("patchNotesRoot"))}</code></span>
                 </div>
-                <details${isLatest ? " open" : ""}>
+                ${changeCount ? `<details${isLatest ? " open" : ""}>
                   <summary>${t("patchNotesShowChanges", { count: changeCount })}</summary>
                   <div class="patch-history-groups">
                     ${(revision.groups ?? []).map((group) => `
@@ -2705,7 +2705,7 @@ function patchHistoryHtml(patch) {
                       </section>
                     `).join("")}
                   </div>
-                </details>
+                </details>` : ""}
                 <footer><span>${escapeHtml(revision.sourceName)}</span><a href="${escapeHtml(revision.sourceUrl)}" target="_blank" rel="noopener noreferrer">${t("patchNotesOfficialLink")} <span aria-hidden="true">↗</span></a></footer>
               </div>
             </article>
