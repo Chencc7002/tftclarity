@@ -14,7 +14,7 @@ const opts = fetchImpl => ({ mode: "shadow", apiKey: "test-secret", fetchImpl })
 
 test("invalid response diagnostics retain fixed failure codes without provider text", async () => {
   const value = fixture();
-  value.answers.action.probabilities.unknown = 0.01;
+  value.answers.action.probabilities.unknown = 0.02;
   assert.equal(diagnoseJevIntentResponse(value), "action_probability_sum");
   const result = await createJevIntentShadow(opts(async () => ({ ok: true, json: async () => value })))({ input: "x" });
   assert.equal(result.validationFailure, "action_probability_sum");
@@ -22,6 +22,19 @@ test("invalid response diagnostics retain fixed failure codes without provider t
   const malformed = await createJevIntentShadow(opts(async () => ({ ok: true, json: async () => { throw new Error("sensitive-response"); } })))({ input: "x" });
   assert.equal(malformed.validationFailure, "invalid_json");
   assert.ok(!JSON.stringify(malformed).includes("sensitive-response"));
+});
+
+test("provider probability rounding is bounded and normalized before observation", async () => {
+  const value = fixture();
+  value.answers.domain.probabilities.tft = 0.99;
+  assert.equal(validateJevIntentResponse(value), true);
+  const result = await createJevIntentShadow(opts(async () => ({ ok: true, json: async () => value })))({ input: "x" });
+  assert.equal(result.status, "observed");
+  const sum = Object.values(result.answers.domain.probabilities).reduce((total, number) => total + number, 0);
+  assert.ok(Math.abs(sum - 1) < Number.EPSILON * 4);
+  const invalid = fixture();
+  invalid.answers.domain.probabilities.tft = 0.98;
+  assert.equal(diagnoseJevIntentResponse(invalid), "domain_probability_sum");
 });
 
 test("off, missing credentials and invalid input never access the network", async () => {
@@ -51,6 +64,13 @@ test("shadow restricts destination and input projection; returns only advisory c
   assert.equal(calls, 1);
   assert.equal(JSON.stringify(result).includes("test-secret"), false);
   assert.equal(Object.hasOwn(result, "taskFrame"), false);
+});
+
+test("domain question explicitly inherits the domain of resolved contextual follow-ups", () => {
+  const { domain } = buildJevIntentRequest({ input: "那这个呢？", conversationSummary: "earlier TFT turn" }).questions;
+  assert.match(domain.instructions, /inherit the domain established by conversationSummary/u);
+  assert.match(domain.criteria.tft, /inherits TFT/u);
+  assert.match(domain.criteria.out_of_domain, /Do not choose this only because/u);
 });
 
 test("strict response validation rejects invented options, tools, types and invalid probabilities", () => {
