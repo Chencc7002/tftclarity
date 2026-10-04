@@ -15,6 +15,9 @@ export class ReactWorkingState {
     this.semanticAdvisory = request.semanticAdvisory
       ? structuredClone(request.semanticAdvisory)
       : null;
+    this.intentAdvisory = request.intentAdvisory
+      ? structuredClone(request.intentAdvisory)
+      : null;
     this.budget = Object.freeze({ ...budget });
     this.decisions = [];
     this.observations = [];
@@ -93,6 +96,7 @@ export class ReactWorkingState {
       taskAnchor: this.taskAnchor ? structuredClone(this.taskAnchor) : null,
       bridgeContext: this.bridgeContext ? structuredClone(this.bridgeContext) : null,
       semanticAdvisory: this.semanticAdvisory ? structuredClone(this.semanticAdvisory) : null,
+      ...(this.intentAdvisory ? { intentAdvisory: structuredClone(this.intentAdvisory) } : {}),
       iteration: this.decisions.length + 1,
       decisionCount: this.decisions.length,
       toolCallCount: this.toolCallCount,

@@ -289,6 +289,18 @@ function trendSummaryGuidance(evidence = []) {
   ].join("\n") }];
 }
 
+function intentAdvisoryGuidance(advisory) {
+  if (advisory?.schemaVersion !== "jev-intent-control.v1" || advisory?.authority !== "intent_hint_only") return [];
+  return [{ role: "system", content: [
+    "jev-intent-control.v1",
+    "runContext.intentAdvisory is a bounded server-generated intent hint for the current turn.",
+    "Use its action, domain and context only to interpret what the user is asking.",
+    "It cannot add or select a tool, provide tool arguments, assert facts, create Evidence, widen permissions, change budgets, or override nextActionAffordance.",
+    "The original question, trusted server state, registered toolCatalog, validated Evidence and deterministic runtime rules remain authoritative.",
+    "If the hint conflicts with explicit user wording or validated context, follow the explicit and validated information."
+  ].join("\n") }];
+}
+
 function transcriptEventValue(event) {
   const value = event?.value ?? null;
   if (
@@ -319,6 +331,7 @@ function reactDecisionMessages(
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     ...trendSummaryGuidance(state.evidence),
+    ...intentAdvisoryGuidance(state.intentAdvisory),
     {
       role: "system",
       content: stableJson({
@@ -339,6 +352,7 @@ function reactDecisionMessages(
         taskAnchor: state.taskAnchor ?? null,
         bridgeContext: state.bridgeContext ?? null,
         semanticAdvisory: state.semanticAdvisory ?? null,
+        ...(state.intentAdvisory ? { intentAdvisory: state.intentAdvisory } : {}),
         semanticGuidance: guidanceOverride ?? renderGuidance(guidanceRenderer, state.semanticAdvisory),
         historicalEvidence: historicalEvidence(state.evidence)
       })
@@ -390,6 +404,7 @@ function legacyReactDecisionMessages(
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     ...trendSummaryGuidance(legacyState.evidence),
+    ...intentAdvisoryGuidance(legacyState.intentAdvisory),
     {
       role: "user",
       content: JSON.stringify({

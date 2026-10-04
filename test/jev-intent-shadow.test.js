@@ -42,7 +42,7 @@ test("off, missing credentials and invalid input never access the network", asyn
   assert.equal((await createJevIntentShadow({ fetchImpl, apiKey: "x" })({ input: "查装备" })).status, "disabled");
   assert.equal((await createJevIntentShadow({ mode: "shadow", fetchImpl })({ input: "x" })).reason, "missing_api_key");
   assert.equal((await createJevIntentShadow(opts(fetchImpl))({ input: "x".repeat(4001) })).reason, "invalid_input");
-  assert.throws(() => createJevIntentShadow({ mode: "control" }));
+  assert.throws(() => createJevIntentShadow({ mode: "invalid" }));
 });
 
 test("shadow restricts destination and input projection; returns only advisory comparison", async () => {

@@ -82,4 +82,10 @@ node --env-file=.env.jev.local scripts/eval-jev-intent.mjs --live --case=outside
 
 验证结果：原失败样本连续 5/5 直接返回 action=compare、domain=tft、context=contextual；修复后的完整16条集为16/16，action 11/11、domain 16/16、context 16/16、abstain 5/5。Jev 专项与部署测试20/20，integration 238通过/1跳过，Agent eval 50/50。main 为1602通过、2失败、7跳过；失败仍是已在干净 `origin/main` 复现的两个 `defaultMessagesHash` 基线问题。
 
+## 2026-10-04 control 接入
+
+生产 shadow 稳定上线后，用户根据低流量明确要求正式启用。control 仅作用于自由对话 ReAct：Jev 的 action/domain/context 通过 0.70 置信度门槛后，以 `jev-intent-control.v1`、`authority=intent_hint_only` 注入现有 decision provider。它不生成 TaskFrame、不直接选择工具、不改变 Tool Catalog、参数、Evidence、预算、权限或确定性 `nextActionAffordance`；Quick Task 保持确定性原路径。超时、低置信、域外、缺上下文、无效响应、未采样或达到进程上限都不注入提示，并自动回退原 ReAct。
+
+真实 16 条合成开发集再次得到 16/16；最低选中置信/概率为 0.42。0.70 门槛会让 `follow-more` 的 action 和 `follow-video` 的 context 回退旧路径，域外注入样本也不会获得控制提示。该门槛牺牲部分覆盖率以避免低置信结果影响工具决策。聚焦控制/提示测试 42/42，integration 238 通过/1 跳过，main 1616 通过/7 跳过，Agent eval 50/50。
+
 这次结果证明已覆盖已知多轮领域继承缺陷和 Provider 概率舍入兼容性，但样本仍是开发集合，shadow-only 和生产接管门槛不变。

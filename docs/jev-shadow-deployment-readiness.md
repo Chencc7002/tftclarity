@@ -179,3 +179,9 @@ size: 112324427 bytes
 只重建 app 后，生产容器镜像为 `sha256:eea88ff10a4322badd5aa7665c40006ddd828040b6d2c9998661d9d0e0e3832e`，健康状态为 healthy。容器内 Jev 预检再次确认 ready=true、mode=shadow、keyPresent=true、sampleRate=0.05、maxRequests=100、calls=0、controlSupported=false；运行中的 worker 和一次性 migrate 均确认没有 TypeSafe key。镜像顶层没有 `.env*`，镜像 history 没有 `TYPESAFE_API_KEY` 或示例 key。发布后 app 日志的 error/fatal 行数为 0，数据库三条迁移均为 applied。
 
 公网 `https://tftclarity.cn/api/health` 与 `/api/ready` 返回 ok，Postgres/Redis 均正常；首页、隐私页和条款页均返回 HTTP 200。`/api/runtime` 确认真实 ReAct provider、ConversationState v2、Postgres/Redis 和现有工具注册正常。服务器中原有未跟踪的 `" -b"` 与 `backups/` 均保留。Jev 仍只记录脱敏旁路观察，不改变 TaskFrame、工具选择、LLM 输入或用户响应；后续需要基于最多 100 次、5% 采样日志决定是否扩大实验，当前发布不授权控制路由。
+
+### 2026-10-04 control 发布候选
+
+用户根据网站低流量明确要求正式启用 Jev。候选保持同一生产基线，只新增可回滚的 ReAct 意图提示：全量自由对话先请求 Jev，只有通过 TFT 领域、可解析上下文和 0.70 置信度门槛的 action 才进入 `intentAdvisory`。Jev 没有工具字段，也不能改变 Tool Catalog、工具参数、Evidence、权限、预算、TaskFrame、ConversationState 或 Quick Task；任何失败和低置信均自动走原 ReAct。
+
+发布前验证为：真实 Jev 合成集 16/16；聚焦控制/提示测试 42/42；integration 238 通过/1 跳过；main 1616 通过/7 跳过；Agent eval 50/50。计划生产配置为 mode=control、sampleRate=1、maxRequests=100、controlMinConfidence=0.70、timeout=1500ms。运行时 `/api/runtime` 只暴露安全统计：attempted、controlApplied、fallback reason 计数和状态计数，不暴露 key 或用户输入。

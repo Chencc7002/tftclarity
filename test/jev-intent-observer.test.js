@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createJevIntentObserver, inferJevInheritedDomain, projectJevIntentInput, projectJevIntentCandidate } from "../src/understanding/jev-intent-observer.js";
+import { createJevIntentObserver, inferJevInheritedDomain, projectJevIntentInput, projectJevIntentCandidate, projectJevIntentControl } from "../src/understanding/jev-intent-observer.js";
 import { buildJevIntentRequest } from "../src/understanding/jev-intent-shadow.js";
 import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
@@ -94,13 +94,36 @@ test("context projection is bounded, user-only and resets for a new task", () =>
   assert.equal(projectJevIntentInput({ ...request, startNewTask: true }).conversationSummary, "");
 });
 
-test("observer is off by default and invalid control mode fails closed", async () => {
+test("observer is off by default and invalid modes fail closed", async () => {
   let calls = 0;
   const observer = createJevIntentObserver({ env: { TYPESAFE_API_KEY: "secret" }, fetchImpl: () => { calls++; } });
   await observer.observe({ input: "x" });
   assert.equal(calls, 0);
   assert.deepEqual(observer.snapshot().counts, {});
-  assert.throws(() => createJevIntentObserver({ mode: "control" }));
+  assert.throws(() => createJevIntentObserver({ mode: "invalid" }));
+});
+
+test("control projection is confidence-gated and contains no tool authority", () => {
+  const observed = { status: "observed", ...response({ action: "compare" }) };
+  assert.deepEqual(projectJevIntentControl(observed), {
+    disposition: "control_eligible",
+    advisory: {
+      schemaVersion: "jev-intent-control.v1",
+      action: "compare",
+      domain: "tft",
+      context: "self_contained",
+      confidence: { action: 1, domain: 1, context: 1 },
+      domainResolution: "jev_direct",
+      authority: "intent_hint_only"
+    }
+  });
+  const low = structuredClone(observed);
+  low.answers.action.confidence = 0.6;
+  low.answers.action.probabilities.compare = 0.6;
+  low.answers.action.probabilities.unknown = 0.4;
+  assert.equal(projectJevIntentControl(low).disposition, "low_action_confidence");
+  assert.equal(projectJevIntentControl(low).advisory, null);
+  assert.equal(Object.hasOwn(projectJevIntentControl(observed).advisory, "tool"), false);
 });
 
 test("observer bounds concurrency, survives telemetry failures and releases timed out slots", async () => {
@@ -149,4 +172,54 @@ test("ReAct shadow is parallel, observes original input and cannot change LLM in
   assert.equal(event.candidate.action, null);
   assert.equal(event.actionAgreement, null); // No invented baseline comparison.
   assert.ok(!JSON.stringify(event).includes(input.input));
+});
+
+test("ReAct control passes only a bounded intent hint and preserves the registered tool catalog", async () => {
+  let decisionRequest;
+  let baselineToolNames;
+  const input = { input: "找一个云顶教学视频", locale: "zh-CN", seasonContextId: DEFAULT_SEASON_CONTEXT_ID };
+  const baselineRuntime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(), env: {},
+    reactDecisionProvider: async request => {
+      baselineToolNames = request.toolCatalog.map(tool => tool.name);
+      return { schemaVersion: "react-action.v1", type: "finish", answer: "原有回答", evidenceIds: [], reasonCode: "direct_answer" };
+    } });
+  await handleReactChatRequest(input, baselineRuntime);
+  const runtime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(),
+    env: { TYPESAFE_API_KEY: "secret", TFT_AGENT_JEV_INTENT_MODE: "control",
+      TFT_AGENT_JEV_INTENT_SAMPLE_RATE: "1", TFT_AGENT_JEV_INTENT_CONTROL_MIN_CONFIDENCE: "0.7" },
+    jevIntentFetch: async () => ({ ok: true, json: async () => response({ action: "find_video" }) }),
+    onJevIntentObservation: () => {},
+    reactDecisionProvider: async request => {
+      decisionRequest = structuredClone(request);
+      return { schemaVersion: "react-action.v1", type: "finish", answer: "原有回答", evidenceIds: [], reasonCode: "direct_answer" };
+    } });
+  const result = await handleReactChatRequest(input, runtime);
+  assert.equal(result.statusCode, 200);
+  assert.equal(decisionRequest.state.intentAdvisory.action, "find_video");
+  assert.equal(decisionRequest.state.intentAdvisory.authority, "intent_hint_only");
+  assert.equal(Object.hasOwn(decisionRequest.state.intentAdvisory, "tool"), false);
+  assert.deepEqual(decisionRequest.toolCatalog.map(tool => tool.name), baselineToolNames);
+  assert.equal(runtime.jevIntentObserver.snapshot().controlApplied, 1);
+});
+
+test("ReAct control falls back unchanged when Jev confidence is below the gate", async () => {
+  let decisionState;
+  const low = response({ action: "recommend" });
+  low.answers.action.confidence = 0.6;
+  low.answers.action.probabilities.recommend = 0.6;
+  low.answers.action.probabilities.unknown = 0.4;
+  const runtime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(),
+    env: { TYPESAFE_API_KEY: "secret", TFT_AGENT_JEV_INTENT_MODE: "control",
+      TFT_AGENT_JEV_INTENT_SAMPLE_RATE: "1", TFT_AGENT_JEV_INTENT_CONTROL_MIN_CONFIDENCE: "0.7" },
+    jevIntentFetch: async () => ({ ok: true, json: async () => low }),
+    onJevIntentObservation: () => {},
+    reactDecisionProvider: async request => {
+      decisionState = structuredClone(request.state);
+      return { schemaVersion: "react-action.v1", type: "finish", answer: "回退回答", evidenceIds: [], reasonCode: "direct_answer" };
+    } });
+  const result = await handleReactChatRequest({ input: "你好", locale: "zh-CN",
+    seasonContextId: DEFAULT_SEASON_CONTEXT_ID }, runtime);
+  assert.equal(result.payload.answer, "回退回答");
+  assert.equal(Object.hasOwn(decisionState, "intentAdvisory"), false);
+  assert.deepEqual(runtime.jevIntentObserver.snapshot().controlFallbacks, { low_action_confidence: 1 });
 });

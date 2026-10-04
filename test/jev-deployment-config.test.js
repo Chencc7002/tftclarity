@@ -19,6 +19,7 @@ test("Jev production template is bounded, off by default and cannot be committed
   assert.match(template, /^TFT_AGENT_JEV_INTENT_TIMEOUT_MS=1500$/mu);
   assert.match(template, /^TFT_AGENT_JEV_INTENT_SAMPLE_RATE=0\.05$/mu);
   assert.match(template, /^TFT_AGENT_JEV_INTENT_MAX_REQUESTS=100$/mu);
+  assert.match(template, /^TFT_AGENT_JEV_INTENT_CONTROL_MIN_CONFIDENCE=0\.70$/mu);
   const gitignore = read(".gitignore");
   const dockerignore = read(".dockerignore");
   assert.match(gitignore, /^\.env\.\*$/mu);

@@ -1090,6 +1090,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
     };
   }
 
+  const jevSnapshot = runtime.jevIntentObserver?.snapshot?.() ?? null;
+
   return {
     processRole: runtime.processRole ?? "all",
     acceptanceMode: Boolean(runtime.acceptanceMode),
@@ -1139,7 +1141,17 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       entitySlangMetrics: runtime.entitySlangTelemetry?.snapshot() ?? null,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
       conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore),
-      patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode ?? "off"
+      patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode ?? "off",
+      jevIntent: jevSnapshot ? {
+        mode: jevSnapshot.mode,
+        attempted: jevSnapshot.attempted,
+        maxRequests: jevSnapshot.maxRequests,
+        sampleRate: jevSnapshot.sampleRate,
+        controlMinConfidence: jevSnapshot.controlMinConfidence,
+        controlApplied: jevSnapshot.controlApplied,
+        controlFallbacks: jevSnapshot.controlFallbacks,
+        counts: jevSnapshot.counts
+      } : null
     },
     acceptanceProvenance: {
       decisionProviderMode: runtime.reactDecisionProvider?.providerKind === "react_decision_llm"
@@ -3412,7 +3424,7 @@ export function createSmallWindowRuntime(options = {}) {
       mode: options.jevIntentMode ?? runtimeEnv.TFT_AGENT_JEV_INTENT_MODE ?? "off",
       fetchImpl: options.jevIntentFetch,
       onObservation: options.onJevIntentObservation
-        ?? (event => console.info("[jev-intent-shadow]", JSON.stringify(event)))
+        ?? (event => console.info(event.mode === "control" ? "[jev-intent-control]" : "[jev-intent-shadow]", JSON.stringify(event)))
     }),
     reactCreateId: options.reactCreateId ?? null,
     reactNow: options.reactNow ?? null,
@@ -7830,11 +7842,6 @@ export function createAgentSkillControlLogObserver(write = console.info) {
 
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
-  // Optional, bounded observation only. It never changes the ReAct request,
-  // TaskFrame, tools, Evidence, response or deadline-critical path.
-  if (runtime.reactDecisionProvider) {
-    void runtime.jevIntentObserver?.observe(normalizedRequest, { signal: context.signal });
-  }
   const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
   const playGuidance = broadUnitPlayGuidance(normalizedRequest, runtime);
   const getTaskFrameParse = createReactTaskFrameParse(normalizedRequest, runtime);
@@ -7880,6 +7887,18 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     };
   }
+  let jevIntentAdvisory = null;
+  if (runtime.jevIntentObserver?.mode === "control") {
+    try {
+      const observation = await runtime.jevIntentObserver.observe(normalizedRequest, { signal: context.signal });
+      jevIntentAdvisory = observation.control?.advisory ?? null;
+    } catch {
+      // Any control-classifier failure falls back to the unchanged ReAct path.
+    }
+  } else {
+    // Optional bounded shadow observation. It never changes the request or critical path.
+    void runtime.jevIntentObserver?.observe(normalizedRequest, { signal: context.signal });
+  }
   let candidateTaskFrame = null;
   if (runtime.agentSkillsUnitPlayControlOperational && runtime.candidateSkillRegistry) {
     try {
@@ -7900,10 +7919,11 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       });
     }
   }
-  const requestFor = (advisory) => advisory
-    ? { ...normalizedRequest, semanticAdvisory: advisory }
-    : playGuidance
-      ? {
+  const requestFor = (advisory) => {
+    const requestValue = advisory
+      ? { ...normalizedRequest, semanticAdvisory: advisory }
+      : playGuidance
+        ? {
         ...normalizedRequest,
         input: playGuidance.initialQuery,
         messages: [
@@ -7913,8 +7933,12 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
             content: `当前首答范围仅为“${playGuidance.initialQuery}”。本轮只完成当前版本的出装数据查询，工具范围限制为 entity_catalog_query、unit_builds 和必要的 item_details_batch。`
           }
         ]
-      }
-      : normalizedRequest;
+        }
+        : normalizedRequest;
+    return jevIntentAdvisory
+      ? { ...requestValue, intentAdvisory: jevIntentAdvisory }
+      : requestValue;
+  };
   const injectedHandlers = runtime.reactToolHandlers ?? {};
   const createHandlerBundle = async (requestValue) => typeof runtime.createReactToolHandlers === "function"
     ? runtime.createReactToolHandlers({ request: requestValue, runtime, context })

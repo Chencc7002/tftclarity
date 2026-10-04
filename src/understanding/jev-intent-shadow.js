@@ -76,7 +76,7 @@ export function diagnoseJevIntentResponse(value) {
 // Advisory-only adapter. It cannot produce a TaskFrame, arguments, tools or Evidence.
 // Default off: even possessing a key must not cause network calls.
 export function createJevIntentShadow({ mode = "off", apiKey = "", model = "jev-1.13.0", timeoutMs = 1500, fetchImpl = globalThis.fetch } = {}) {
-  if (!["off", "shadow"].includes(mode)) throw new TypeError("Only off/shadow modes are supported");
+  if (!["off", "shadow", "control"].includes(mode)) throw new TypeError("Only off/shadow/control modes are supported");
   if (typeof model !== "string" || !/^jev-[a-zA-Z0-9.\-]{1,60}$/.test(model)) throw new TypeError("Invalid model");
   if (!Number.isInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 15000) throw new TypeError("Invalid timeout");
   return async function classify(request, { signal, baselineAction } = {}) {
