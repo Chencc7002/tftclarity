@@ -2,7 +2,10 @@ services:
   app:
     build: .
     restart: unless-stopped
-    env_file: [.env.production]
+    env_file:
+      - .env.production
+      - path: .env.jev.production
+        required: false
     environment:
       NODE_ENV: production
       HOST: 0.0.0.0
