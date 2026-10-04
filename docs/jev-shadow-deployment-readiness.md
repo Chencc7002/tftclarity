@@ -165,3 +165,17 @@ size: 112324427 bytes
 - 镜像内未发现 `.env*`，镜像 history 未发现 `TYPESAFE_API_KEY` 或示例 key；临时容器已删除。
 
 该候选已具备本地审阅、构建和旁路启动条件。发布到目标服务器前仍需明确部署主机与编排入口，在目标环境备份数据库，注入真实生产配置后验证 provider/runtime、公网 HTTPS 和回滚命令。控制路由保持未实现、未启用。
+
+### 2026-10-04 生产 shadow 发布
+
+生产机实际运行基线不是当时的 `origin/main`，而是热修复提交 `a7c0408735d8b2fcf37e4860b46e9c1e84b984dc`。因此没有直接发布 PR #77，而是从该生产提交建立 `codex/jev-production-a7c040`，依次叠加 Jev 的三个已审阅提交。实际发布提交为 `d24a9cc7369f7425fc3c6849b15ed97ae0fb61c2`。
+
+该生产基线候选在本地通过：Jev 专项 20/20、integration 238 通过/1 跳过、main 1612 通过/7 跳过、Agent eval 50/50。Compose 展开结果确认 app 为 shadow、5% 采样、进程生命周期最多 100 次、1500ms 超时；`TYPESAFE_API_KEY` 只进入 app，不进入 worker、migrate 或 postgres。
+
+发布前在 `/root/tftclarity/backups/jev-shadow-20261004-033928` 保存了当前提交、Compose 状态、数据库状态、环境配置和 PostgreSQL custom dump。数据库转储为 4.1 MB，SHA-256 为 `caaa33d0c1f7888cf7aa04fcfdf6fc35c16c91f31be6876194f44209d64e3dba`，`pg_restore --list` 和 `sha256sum -c` 均通过。旧应用镜像保留为 `tftclarity-app:pre-jev-shadow-20261004-033928`。备份阶段第一次执行 `docker compose run migrate` 未带 `--no-deps`，Compose 重建了 postgres，app 随数据库短暂重启；随后公网 `/api/ready`、Postgres 与 Redis 均恢复 healthy，数据迁移状态完整。后续临时检查均改为 `--no-deps`。
+
+第一次切流前冒烟使用 `scripts/eval-jev-intent.mjs`，因生产镜像按设计不复制 `eval/` 而以 ENOENT 停止；当时运行中的 app 仍是旧镜像 `sha256:7dead712311523525bd96241b7fc8078ecaa2ef16e0051594bfa4974abd71603`。改用镜像内 `createJevIntentShadow` 对固定合成请求直接分类后通过：模型 `jev-1.13.0`，status=observed，action=recommend，domain=tft，context=self_contained，和旧路径 action 一致，耗时 297ms，input/output tokens=913/166。该结果保存在备份目录的 `jev-live-smoke.json`，不含 key。
+
+只重建 app 后，生产容器镜像为 `sha256:eea88ff10a4322badd5aa7665c40006ddd828040b6d2c9998661d9d0e0e3832e`，健康状态为 healthy。容器内 Jev 预检再次确认 ready=true、mode=shadow、keyPresent=true、sampleRate=0.05、maxRequests=100、calls=0、controlSupported=false；运行中的 worker 和一次性 migrate 均确认没有 TypeSafe key。镜像顶层没有 `.env*`，镜像 history 没有 `TYPESAFE_API_KEY` 或示例 key。发布后 app 日志的 error/fatal 行数为 0，数据库三条迁移均为 applied。
+
+公网 `https://tftclarity.cn/api/health` 与 `/api/ready` 返回 ok，Postgres/Redis 均正常；首页、隐私页和条款页均返回 HTTP 200。`/api/runtime` 确认真实 ReAct provider、ConversationState v2、Postgres/Redis 和现有工具注册正常。服务器中原有未跟踪的 `" -b"` 与 `backups/` 均保留。Jev 仍只记录脱敏旁路观察，不改变 TaskFrame、工具选择、LLM 输入或用户响应；后续需要基于最多 100 次、5% 采样日志决定是否扩大实验，当前发布不授权控制路由。
