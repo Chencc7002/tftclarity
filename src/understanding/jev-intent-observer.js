@@ -1,24 +1,43 @@
 import { createJevIntentShadow } from "./jev-intent-shadow.js";
+import { classifyDomain } from "../domain/tft/domain-gate.js";
 
 // This is an observation policy, not a calibrated production routing threshold.
-export function projectJevIntentCandidate(result) {
+export function projectJevIntentCandidate(result, { inheritedDomain = null } = {}) {
   if (result.status !== "observed") return { action: null, disposition: "unavailable" };
   const { action, domain, context } = result.answers;
-  if (domain.choice !== "tft") return { action: null, disposition: "domain_unresolved" };
+  if (domain.choice !== "tft") {
+    if (context.choice === "contextual" && inheritedDomain === "tft" && action.choice !== "unknown") {
+      return { action: action.choice, disposition: "candidate_only", domainResolution: "inherited_tft_context" };
+    }
+    return { action: null, disposition: "domain_unresolved" };
+  }
   if (context.choice === "missing") return { action: null, disposition: "context_missing" };
   if (action.choice === "unknown") return { action: null, disposition: "action_unknown" };
   return { action: action.choice, disposition: "candidate_only" };
 }
 
+function previousUserTurns(request) {
+  if (request.startNewTask) return [];
+  const previous = (request.messages ?? [])
+    .filter(message => message.role === "user" && typeof message.content === "string")
+    .map(message => ({ role: "user", content: message.content.slice(0, 1500) }));
+  if (previous.at(-1)?.content === request.input) previous.pop();
+  return previous.slice(-3);
+}
+
+export function inferJevInheritedDomain(request) {
+  const previous = previousUserTurns(request);
+  if (!previous.length) return null;
+  const result = classifyDomain("", { conversation: previous, defaultDomain: "out_of_domain" });
+  return result.domain === "tft" ? "tft" : null;
+}
+
 // Request-local user turns only: no second conversation store, assistant claims,
 // tool results, Evidence, credentials or client-supplied summary are projected.
 export function projectJevIntentInput(request) {
-  const previous = request.startNewTask ? [] : (request.messages ?? [])
-    .filter(message => message.role === "user" && typeof message.content === "string")
-    .slice(-3).map(message => message.content.slice(0, 1500));
-  if (previous.at(-1) === request.input) previous.pop();
+  const previous = previousUserTurns(request);
   return { input: request.input, conversationSummary: previous.length
-    ? JSON.stringify({ untrustedPreviousUserTurns: previous }) : "" };
+    ? JSON.stringify({ untrustedPreviousUserTurns: previous.map(message => message.content) }) : "" };
 }
 
 export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INTENT_MODE ?? "off",
@@ -52,7 +71,8 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
       const observationId = ++attempted;
       try {
         const result = await classify(projectJevIntentInput(request), { signal });
-        return publish({ ...result, observationId, candidate: projectJevIntentCandidate(result) });
+        const inheritedDomain = inferJevInheritedDomain(request);
+        return publish({ ...result, observationId, candidate: projectJevIntentCandidate(result, { inheritedDomain }) });
       } catch {
         return publish({ status: "unavailable", reason: "observation_failed" });
       } finally { inFlight--; }

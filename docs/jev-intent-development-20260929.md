@@ -70,3 +70,16 @@ node --env-file=.env.jev.local scripts/eval-jev-intent.mjs --live --case=outside
 该次 16 条运行消耗 13066 input tokens、2661 output tokens；平均 315ms，中位数 286ms，p95 766ms。开发集由实现方编写，不是独立盲测或生产流量，因此不能据此批准控制路由。
 
 工程判断：Jev 已证明可显著降低意图分类组件延迟，并在紧时限下减少旧解析器的预算/格式失败；尚未证明成功返回后的语义判断优于现有 LLM。继续保持 shadow-only。接管前至少需要独立标注的中文真实样本、与旧路径相同上下文输入的配对评测、领域/上下文误判分层，以及生产旁路 5%/100 次观测。
+
+## 2026-10-04 多轮领域继承修复
+
+`follow-compare` 的输入投影包含上一条用户消息，Jev 也正确返回 action=compare、context=contextual，因此原问题不是 ConversationState 丢失，而是 domain 没有按上下文继承。修复分为两层：
+
+- Jev domain 题目明确要求依赖型续问继承 `conversationSummary` 已建立的领域，不能因为当前输入只有“这两个/哪个好”等泛指词就判为域外。
+- observer 复用已有确定性 `classifyDomain`，只读取同一批最多三条历史用户消息。当 Jev 返回 context=contextual、动作已知、历史明确为 TFT，但 domain 仍非 TFT 时，仅在 advisory candidate 上标记 `domainResolution=inherited_tft_context` 并继承 TFT；原始 Jev answers 保留。该候选仍不控制路由、工具或答案。
+
+同时发现 TypeSafe 偶尔因显示精度把三项概率返回为总和 0.99。适配器现在只接受与 1 相差不超过 0.0101 的有限概率，并在观测结果中归一化；0.98 等更大偏差继续 fail closed。没有增加重试。
+
+验证结果：原失败样本连续 5/5 直接返回 action=compare、domain=tft、context=contextual；修复后的完整16条集为16/16，action 11/11、domain 16/16、context 16/16、abstain 5/5。Jev 专项与部署测试20/20，integration 238通过/1跳过，Agent eval 50/50。main 为1602通过、2失败、7跳过；失败仍是已在干净 `origin/main` 复现的两个 `defaultMessagesHash` 基线问题。
+
+这次结果证明已覆盖已知多轮领域继承缺陷和 Provider 概率舍入兼容性，但样本仍是开发集合，shadow-only 和生产接管门槛不变。

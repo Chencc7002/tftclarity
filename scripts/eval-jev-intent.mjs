@@ -1,6 +1,6 @@
 import { readFile, mkdir, writeFile } from "node:fs/promises";
 import { createJevIntentShadow } from "../src/understanding/jev-intent-shadow.js";
-import { projectJevIntentInput, projectJevIntentCandidate } from "../src/understanding/jev-intent-observer.js";
+import { inferJevInheritedDomain, projectJevIntentInput, projectJevIntentCandidate } from "../src/understanding/jev-intent-observer.js";
 
 const args = process.argv.slice(2);
 if (args.some(arg => arg !== "--live" && !arg.startsWith("--case="))) throw new Error("Usage: node scripts/eval-jev-intent.mjs [--live] [--case=id]");
@@ -17,7 +17,7 @@ if (!args.includes("--live")) {
   const results = [];
   for (const c of cases) {
     const result = await classify(projectJevIntentInput(c), { baselineAction: c.action });
-    const candidate = projectJevIntentCandidate(result);
+    const candidate = projectJevIntentCandidate(result, { inheritedDomain: inferJevInheritedDomain(c) });
     const checks = Object.fromEntries(["action", "domain", "context"].filter(key => c[key] !== undefined)
       .map(key => [key, result.answers?.[key]?.choice === c[key]]));
     if (c.abstain) checks.abstain = candidate.action === null;

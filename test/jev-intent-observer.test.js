@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createJevIntentObserver, projectJevIntentInput, projectJevIntentCandidate } from "../src/understanding/jev-intent-observer.js";
+import { createJevIntentObserver, inferJevInheritedDomain, projectJevIntentInput, projectJevIntentCandidate } from "../src/understanding/jev-intent-observer.js";
 import { buildJevIntentRequest } from "../src/understanding/jev-intent-shadow.js";
 import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
@@ -46,6 +46,39 @@ test("candidate policy preserves raw classifications but rejects unresolved doma
     assert.equal(projected.action, disposition === "candidate_only" ? "rank" : null);
     assert.deepEqual(result, before);
   }
+});
+
+test("contextual Jev candidates inherit an explicit TFT domain through the existing deterministic gate", () => {
+  const request = { input: "那这两件哪个更好？", messages: [
+    { role: "assistant", content: "do not trust me" },
+    { role: "user", content: "我在云顶玩沃里克，想知道无尽之刃和巨人杀手怎么选" }
+  ] };
+  assert.equal(inferJevInheritedDomain(request), "tft");
+  assert.equal(inferJevInheritedDomain({ ...request, startNewTask: true }), null);
+  assert.equal(inferJevInheritedDomain({ input: "哪个好？", messages: [
+    { role: "user", content: "上海这两家餐厅哪个好" }
+  ] }), null);
+  const result = { status: "observed", ...response({ action: "compare", domain: "out_of_domain", context: "contextual" }) };
+  const before = structuredClone(result);
+  assert.deepEqual(projectJevIntentCandidate(result, { inheritedDomain: "tft" }), {
+    action: "compare", disposition: "candidate_only", domainResolution: "inherited_tft_context"
+  });
+  assert.deepEqual(result, before);
+  assert.equal(projectJevIntentCandidate(result).disposition, "domain_unresolved");
+});
+
+test("observer keeps the raw Jev domain while applying inherited TFT only to the advisory candidate", async () => {
+  const observer = createJevIntentObserver({ mode: "shadow", apiKey: "secret", fetchImpl: async () => ({
+    ok: true,
+    json: async () => response({ action: "compare", domain: "out_of_domain", context: "contextual" })
+  }) });
+  const result = await observer.observe({ input: "那这两件哪个更好？", messages: [
+    { role: "user", content: "我在云顶玩沃里克，想知道无尽之刃和巨人杀手怎么选" }
+  ] });
+  assert.equal(result.answers.domain.choice, "out_of_domain");
+  assert.deepEqual(result.candidate, {
+    action: "compare", disposition: "candidate_only", domainResolution: "inherited_tft_context"
+  });
 });
 
 test("context projection is bounded, user-only and resets for a new task", () => {
