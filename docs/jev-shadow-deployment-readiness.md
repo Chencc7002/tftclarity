@@ -185,3 +185,13 @@ size: 112324427 bytes
 用户根据网站低流量明确要求正式启用 Jev。候选保持同一生产基线，只新增可回滚的 ReAct 意图提示：全量自由对话先请求 Jev，只有通过 TFT 领域、可解析上下文和 0.70 置信度门槛的 action 才进入 `intentAdvisory`。Jev 没有工具字段，也不能改变 Tool Catalog、工具参数、Evidence、权限、预算、TaskFrame、ConversationState 或 Quick Task；任何失败和低置信均自动走原 ReAct。
 
 发布前验证为：真实 Jev 合成集 16/16；聚焦控制/提示测试 42/42；integration 238 通过/1 跳过；main 1616 通过/7 跳过；Agent eval 50/50。计划生产配置为 mode=control、sampleRate=1、maxRequests=100、controlMinConfidence=0.70、timeout=1500ms。运行时 `/api/runtime` 只暴露安全统计：attempted、controlApplied、fallback reason 计数和状态计数，不暴露 key 或用户输入。
+
+### 2026-10-04 control 正式发布
+
+生产已检出 `ce212e4ba3ac702087715623487c16d81d4b1e16` 并只重建 app。新镜像为 `sha256:7ba125d1f352e0f9058b12900a086a129fbfa73e9e0297d0dd60349bdfb72c1a`，容器 healthy、RestartCount=0，发布后 app 日志 error/fatal 为 0。运行配置预检为 ready=true、mode=control、sampleRate=1、maxRequests=100、controlMinConfidence=0.7、controlSupported=true、controlAuthority=intent_hint_only；worker 和 migrate 仍无 TypeSafe key。
+
+本次发布前备份位于 `/root/tftclarity/backups/jev-control-20261004-052257`，shadow 回滚镜像为 `tftclarity-app:pre-jev-control-20261004-052257`。PostgreSQL custom dump 为 4.1 MB，SHA-256 为 `1c24c54eb16ce75fc7d053988804c8fd7e6d294612f9394c472d68b7b82a2f18`；dump、`.env.production` 和旧 `.env.jev.production` 的 `sha256sum -c` 均通过。本轮备份的 migrate 状态检查使用 `--no-deps`，没有重建 postgres。
+
+切流前真实 control 冒烟通过。切流后通过公网 `/api/react-chat/stream` 发送固定合成道具效果问题，返回 HTTP 200，Jev runtime 从 attempted=0 变为 attempted=1、controlApplied=1、fallback=0、observed=1；ReAct 只调用已注册的 `entity_catalog_query` 和 `item_details`。当前赛季官方详情返回 not_found，因此最终答案按 Evidence 规则明确披露证据不足，没有编造效果数值。`/`、`/privacy`、`/terms`、`/api/health` 和 `/api/ready` 均返回 200，Postgres/Redis 正常。
+
+日志审计确认 `[jev-intent-control]` 事件 1 条，未出现 TypeSafe key 或合成原始输入。服务器原有未跟踪的 `" -b"` 与 `backups/` 继续保留。若需要只撤销控制，不必回滚数据库：把 `.env.jev.production` 的 mode 改回 shadow 或 off，并 `docker compose up -d --no-deps --force-recreate app`；完整应用回滚可使用上述 pre-control 镜像标签。
