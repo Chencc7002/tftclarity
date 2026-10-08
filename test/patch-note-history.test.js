@@ -58,20 +58,20 @@ test("announcement renderer exposes trace anchors and buff/nerf visuals", () => 
   assert.match(styles, /\.patch-history-groups li:target/u);
 });
 
-test("18.3 is reachable from the active season and matches the mini program", () => {
+test("18.4 is reachable from the active season and matches the mini program", () => {
   const season = createSeasonContextService().listPublic().find((record) => record.id === "set18-live");
   const patch = getPatchNote(season.theme.patchNoteVersion, "zh-CN");
   const mini = createRequire(import.meta.url)("../miniprogram/data/patch-notes.js");
-  assert.equal(patch.version, "18.3");
+  assert.equal(patch.version, "18.4");
   assert.deepEqual(patch, getCurrentPatchNote());
-  assert.equal(patch.publishedAt, "2026-09-22T18:00:00.000Z");
-  assert.equal(patch.updatedAt, "2026-09-28");
-  assert.match(season.notices[0], /18\.3 版本已上线/u);
-  assert.match(season.theme.subtitle["en-US"], /18\.3/u);
+  assert.equal(patch.publishedAt, "2026-10-06T18:00:00.000Z");
+  assert.equal(patch.updatedAt, "2026-10-07");
+  assert.match(season.notices[0], /18\.4 版本/u);
+  assert.match(season.theme.subtitle["en-US"], /18\.4/u);
   const changes = patch.history.flatMap((revision) => revision.groups.flatMap((group) => group.changes));
-  assert.equal(changes.length, 87);
+  assert.equal(changes.length, 119);
   assert.equal(new Set(changes.map((change) => change.id)).size, changes.length);
-  assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.3-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
+  assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.4-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
   assert.equal(mini.sourceUrl, patch.sourceUrl);
   const en = getCurrentPatchNote("en-US");
   assert.deepEqual(en.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).map(({ body, ...change }) => change), changes.map(({ body, ...change }) => change));

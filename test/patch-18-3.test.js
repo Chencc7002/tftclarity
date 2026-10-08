@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { getCurrentPatchNote, getPatchNoteTimeline } from '../src/app/small-window-ui/patch-notes.js';
+import { getPatchNote, getPatchNoteTimeline } from '../src/app/small-window-ui/patch-notes.js';
 import { getOfficialPatchFacts } from '../src/data/official-patch-facts.js';
 import { associateOfficialPatchChanges } from '../src/data/official-patch-evidence.js';
 import { buildOfficialPatchSemanticDocuments } from '../src/knowledge/official-patch-knowledge.js';
@@ -21,14 +21,14 @@ test('Artifact category labels in patch facts are not mistaken for statistical r
 });
 
 test('18.3 preserves release and appends two hotfix revisions without changing previous patch history', () => {
- const timeline=getPatchNoteTimeline();
+ const timeline=getPatchNoteTimeline('18.3');
  assert.equal(timeline.version,'18.3');
  assert.deepEqual(timeline.history.slice(0,3),getPatchNoteTimeline('18.2').history);
  assert.equal(timeline.history.length,6);
  assert.equal(timeline.history[3].parentId,'18.2-hotfix-2026-09-14');
  assert.equal(timeline.history.flatMap(r=>r.groups.flatMap(g=>g.changes)).length,273);
- assert.equal(getCurrentPatchNote().publishedAt,'2026-09-22T18:00:00.000Z');
- assert.equal(getCurrentPatchNote().updatedAt,'2026-09-28');
+ assert.equal(getPatchNote('18.3').publishedAt,'2026-09-22T18:00:00.000Z');
+ assert.equal(getPatchNote('18.3').updatedAt,'2026-09-28');
 });
 
 test('18.3 numeric facts distinguish forms, enhanced Wisps, and ambiguous official wording', () => {

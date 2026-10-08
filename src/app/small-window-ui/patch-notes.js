@@ -1,8 +1,28 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.3";
+export const CURRENT_PATCH_VERSION = "18.4";
 
 const PATCH_NOTES = {
+  "18.4": {
+    version: "18.4",
+    publishedAt: "2026-10-06T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "18.4 更新与 B 补丁",
+        summary: "已核实至 2026 年 10 月 8 日：首发 91 项、10 月 7 日 B 补丁 28 项，共 119 项数值记录。钢铁之心和三个竞技场暂时禁用；B 补丁先推送 PC，移动端随后跟进。重复公布的数值按最终落点读取，不应叠加计算。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-4/",
+        highlights: []
+      },
+      "en-US": {
+        title: "Patch 18.4 and B-patch",
+        summary: "Verified through October 8, 2026: 91 release records and 28 October 7 B-patch records, 119 numeric records total. Heart of Steel and three Arenas are temporarily disabled. The B-patch rolls out on PC first with mobile to follow. Repeated values are final endpoints and must not be compounded.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-4/",
+        highlights: []
+      }
+    }
+  },
   "18.3": {
   "version": "18.3",
   "publishedAt": "2026-09-22T18:00:00.000Z",

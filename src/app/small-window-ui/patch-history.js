@@ -1,8 +1,10 @@
 import { PATCH_18_2_REVISIONS } from "./patch-18-2.js";
 
 import { PATCH_18_3_REVISIONS } from "./patch-18-3.js";
+import { PATCH_18_4_REVISIONS } from "./patch-18-4.js";
 
 const NUMERIC_REVISIONS = Object.freeze({
+  "18.4": PATCH_18_4_REVISIONS,
   "18.3": PATCH_18_3_REVISIONS,
   "18.2": PATCH_18_2_REVISIONS,
   "18.1": Object.freeze([

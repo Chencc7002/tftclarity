@@ -1,10 +1,33 @@
 import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 
 import { PATCH_18_3_REVISIONS } from "../app/small-window-ui/patch-18-3.js";
+import { PATCH_18_4_REVISIONS } from "../app/small-window-ui/patch-18-4.js";
 
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.4": Object.freeze({
+    version: "18.4",
+    title: "云顶之弈 18.4 版本更新公告",
+    summary: "已核实至 2026 年 10 月 8 日：首发 91 项、10 月 7 日 B 补丁 28 项，共 119 项数值记录。钢铁之心和三个竞技场暂时禁用；B 补丁先推送 PC，移动端随后跟进。重复公布的数值按最终落点读取，不应叠加计算。 " + PATCH_18_4_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    updatedAt: "2026-10-07",
+    publishedAt: "2026-10-06T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-4/",
+    changes: Object.freeze(PATCH_18_4_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl,
+      direction: change.direction,
+      entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames],
+      stat: change.stat,
+      before: change.before,
+      after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    })))))
+  }),
   "18.3": Object.freeze({
     version: "18.3",
     title: "云顶之弈 18.3 版本更新公告",

@@ -1,12 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {getCurrentPatchNote,getPatchNoteTimeline} from '../src/app/small-window-ui/patch-notes.js';
+import {getPatchNote,getPatchNoteTimeline} from '../src/app/small-window-ui/patch-notes.js';
 import {PATCH_18_3_REVISION,PATCH_18_3_HOTFIX} from '../src/app/small-window-ui/patch-18-3.js';
 import {getOfficialPatchFacts} from '../src/data/official-patch-facts.js';
 import {buildOfficialPatchKnowledgeDocuments} from '../src/knowledge/official-patch-knowledge.js';
 import {validateFinishAction} from '../src/react/termination-policy.js';
 test('October 4 catch-up retains history and all thirteen verified numeric changes',()=>{
- const p=getCurrentPatchNote(),timeline=getPatchNoteTimeline();
+ const p=getPatchNote('18.3'),timeline=getPatchNoteTimeline('18.3');
  assert.equal(p.updatedAt,'2026-09-28');assert.equal(p.version,'18.3');
  assert.deepEqual(p.history.map(r=>r.id),['18.3-release-2026-09-23','18.3-hotfix-2026-09-24','18.3-hotfix-2026-09-28']);
  assert.deepEqual(timeline.history.slice(0,3),getPatchNoteTimeline('18.2').history);
