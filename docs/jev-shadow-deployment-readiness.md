@@ -199,3 +199,15 @@ size: 112324427 bytes
 ### 2026-10-09 结果可观测性补充
 
 新增 `jev-intent-outcome.v1` 脱敏结果事件，以进程内 `observationId` 关联 `[jev-intent-control]`。它记录 ReAct 最终状态、终止原因、首末决策类型、注册工具名和数量，不含输入、回答、参数、Evidence 内容或用户标识。分类事件同时记录现有确定性领域门的只读结果和一致性；该结果不能参与控制。运行时公开聚合新增 `domainComparisons` 与 `outcomes`，用于判断低覆盖来自域外流量、领域分歧还是低置信回退。
+
+生产发布记录：
+
+- 代码提交：`953604b7ee9f3957589f33fca907d98d25236b1d`，基于已上线的 18.4 提交 `7dd9a2f1f7335c755da22073ec24c12913377ed9`；
+- 回归：Jev/ReAct 聚焦 41/41，main 1624/1624（7 skipped），integration 238/238（1 skipped），Agent eval 50/50；
+- 备份目录：`/root/tftclarity/backups/jev-outcome-20261009-024930`，PostgreSQL dump SHA-256 `33801f0d7b2f3e15c7e2a671640f958f7c7d3a69e9503e93664c3f150a81fa69`；
+- 回滚镜像：`tftclarity-app:pre-jev-outcome-20261009-024930`，原镜像 `sha256:610c6a756964b6546ddffa466319499bfbbfffe99e2cfd5389395da9d2883db9`；
+- 新镜像：`sha256:df184423c2d9f7776531b01b8a45ac3875be4df84ad187c0852fdc2cf4c22d52`，app healthy、restart count 0；
+- `/api/health`、`/api/ready`、`db:status` 与 `check-jev-readiness` 全部通过；mode=`control`、sampleRate=1、maxRequests=100、minConfidence=0.70；
+- 公网合成请求返回 HTTP 200、`completed_with_warning/insufficient_evidence`，执行 `entity_catalog_query` 与 `item_details`，产生 2 条 Evidence；
+- `[jev-intent-control]` 与 `[jev-intent-outcome]` 均为 `observationId=1`。Jev `explain/tft/self_contained` 三项置信度均为 1，确定性领域门为 TFT 且一致；结果事件记录首决策 `entity_catalog_query`、末决策 `finish`、2 次工具调用与 2 条 Evidence，未记录请求原文、回答、参数或凭据；
+- `/api/runtime` 聚合为 attempted=1、controlApplied=1、domain agreement=1、outcome recorded=1、withTools=1。
