@@ -8210,6 +8210,17 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
       type: "react_chat_result",
       ...result,
+      ...(result.clarificationContext?.type === "entity_candidate" ? {
+        clarificationContext: {
+          ...result.clarificationContext,
+          candidates: (result.clarificationContext.candidates ?? []).map(candidate => {
+            const resolve = { unit: ASSET_RESOLVER.resolveUnit, item: ASSET_RESOLVER.resolveItem,
+              trait: ASSET_RESOLVER.resolveTrait }[result.clarificationContext.entityType];
+            const asset = resolve?.(candidate.apiName);
+            return { ...candidate, iconUrl: asset?.iconUrl ?? null, fallbackIconUrl: asset?.fallbackIconUrl ?? null };
+          })
+        }
+      } : {}),
       ...(contextualGuidance ? { agentSuggestedActions: contextualGuidance } : {}),
       ...(bridgeContext ? {
         conversationBridge: {

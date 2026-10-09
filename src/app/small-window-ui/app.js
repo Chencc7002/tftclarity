@@ -1912,7 +1912,7 @@ function renderEntityCandidates(candidates = [], responseId = "") {
   if (!candidates.length) return "";
   if (candidates.every(candidate => candidate.confirmation === true)) {
     return `<div class="suggestions entity-confirmation-choices">${candidates.map((candidate, index) =>
-      `<button type="button" data-candidate-action="confirm" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(candidateLabel(candidate))}</button>`
+      `<button type="button" data-candidate-action="confirm" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${candidate.iconUrl ? assetThumb(candidate.iconUrl, candidateLabel(candidate), "entity-confirmation-icon", candidate.fallbackIconUrl) : ""}<span>${escapeHtml(candidateLabel(candidate))}</span></button>`
     ).join("")}</div>`;
   }
   return `
@@ -5039,6 +5039,7 @@ function normalizeEndpointPayload(payload) {
     const context = payload.clarificationContext;
     clarification.entityCandidates = (context.candidates ?? []).filter(candidate => candidate?.apiName && candidate?.name)
       .map(candidate => ({ apiName: candidate.apiName, label: candidate.name,
+        iconUrl: candidate.iconUrl ?? null, fallbackIconUrl: candidate.fallbackIconUrl ?? null,
         queryText: context.inputName && context.originalInput?.includes(context.inputName)
           ? context.originalInput.replaceAll(context.inputName, candidate.name)
           : [candidate.name, context.originalInput].filter(Boolean).join("："),
