@@ -3423,6 +3423,22 @@ function recommendationCard(data, card, index) {
   </article>`;
 }
 
+// Result cards own the statistics; the conversation owns the full model answer.
+// Build this overview only from structured query fields, never answer.summary.
+function recommendationOverview(data) {
+  const query = data.query ?? {};
+  const unit = localizedName(data.unit, getLocale() === "en-US"
+    ? query.unit : query.unitName ?? query.unit);
+  const title = [unit, t("equipmentBuilds")].filter(Boolean).join(" · ");
+  const scope = [
+    query.patch && query.patch !== "current" ? t("conditionPatch", { value: query.patch }) : null,
+    query.starLevel?.length ? t("starLevel", { value: query.starLevel.join("/") }) : null,
+    query.days ? t("daysRecent", { value: query.days }) : null,
+    query.rankFilter?.length ? rankChip(query.rankFilter) : null
+  ].filter(Boolean).join(" · ");
+  return resultHeader(title, scope, t("equipmentBuilds"));
+}
+
 function renderRecommendationResult(data) {
   if (data.clarification?.needsClarification) {
     setResponseHtml(`${resultHeader(t("clarification"), data.clarification.question, t("clarification"))}<div class="clarification-state"><div class="state-orbit" aria-hidden="true">?</div><strong>${escapeHtml(data.clarification.question)}</strong>${renderEntityCandidates(data.clarification.entityCandidates ?? [], state.currentResponseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], state.currentResponseId)}</div>${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
@@ -3439,15 +3455,17 @@ function renderRecommendationResult(data) {
   }
   const locked = data.lockedItems?.length ? data.lockedItems.map((item) => localizedName(item)).join(" + ") : t("none");
   const coreSummary = data.coreItemSummary ?? data.answer?.coreConclusion;
-  const commonCore = coreSummary?.items?.length ? coreSummary.items.map((item) => localizedName(item)).join(" + ") : null;
+  const commonCore = coreSummary?.items?.length ? coreSummary.items.map(itemPill).join("") : null;
   const [best, ...alternatives] = data.cards;
-  setResponseHtml(`${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
-    <div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>
-    ${commonCore ? `<div class="core-line">${t("frequentCore")}：${escapeHtml(commonCore)}（${t("coreFrequencyRule", { count: coreSummary.recommendationCount, required: coreSummary.requiredAppearances })}）</div>` : ""}
+  const interpretation = generatedConclusionCard(data);
+  setResponseHtml(`<div class="equipment-results">${recommendationOverview(data)}
+    ${data.lockedItems?.length ? `<div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>` : ""}
+    ${commonCore ? `<details class="equipment-core"><summary><span>${t("frequentCore")}</span><span class="equipment-core-items">${commonCore}</span></summary><p>${t("coreFrequencyRule", { count: coreSummary.recommendationCount, required: coreSummary.requiredAppearances })}</p></details>` : ""}
     ${recommendationCard(data, best, 0)}
     ${alternatives.length ? `<details class="alternatives" ${window.innerWidth >= 520 ? "open" : ""}><summary>${t("alternatives")} · ${alternatives.length}</summary><div class="alternatives-grid">${alternatives.slice(0, 2).map((card, index) => recommendationCard(data, card, index + 1)).join("")}</div></details>` : ""}
-    ${generatedConclusionCard(data)}
-    ${conditionPanel(data)}${sourceAndRisk(data)}`);
+    ${interpretation ? `<details class="equipment-detail"><summary>${t("dataInterpretation")}</summary>${interpretation}</details>` : ""}
+    ${Object.keys(data.query?.constraints ?? {}).length ? `<details class="equipment-detail"><summary>${t("conditions")}</summary>${conditionPanel(data)}</details>` : ""}
+    ${sourceAndRisk(data)}</div>`);
 }
 
 function safeKnowledgeSourceUrl(value, timestampStart = null) {

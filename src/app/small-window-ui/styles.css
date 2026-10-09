@@ -666,6 +666,29 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .alternatives-grid .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .alternatives-grid .stat span { font-size: 14px; }
 
+/* Keep build evidence compact; progressive disclosure holds supporting detail. */
+.equipment-results .result-header-card { margin-bottom: 10px; }
+.equipment-core { margin: 0 0 12px; padding: 9px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--panel-soft); }
+.equipment-core summary { cursor: pointer; color: var(--muted); font-size: 11px; line-height: 1.6; }
+.equipment-core-items { display: inline-flex; flex-wrap: wrap; gap: 6px; max-width: 100%; margin-left: 8px; vertical-align: middle; }
+.equipment-core-items .item { padding: 3px 6px 3px 3px; color: var(--ink); background: var(--panel); }
+.equipment-core-items .item-icon { width: 24px; height: 24px; flex-basis: 24px; border-radius: 5px; }
+.equipment-core p { margin: 7px 0 0; color: var(--muted); font-size: 11px; line-height: 1.5; }
+.equipment-detail { margin: 12px 0; border-top: 1px solid var(--line); padding-top: 12px; }
+.equipment-detail > summary { cursor: pointer; color: var(--muted); font-size: 12px; font-weight: 700; }
+.equipment-results > .alternatives { padding: 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft); margin-bottom: 16px; }
+.equipment-results > .alternatives > summary { margin-bottom: 0; }
+.equipment-results > .alternatives[open] > summary { margin-bottom: 12px; }
+.equipment-results .locked-line { margin-bottom: 10px; }
+@media (max-width: 519px) {
+  .equipment-results .result-card { padding: 12px; gap: 12px; }
+  .equipment-results .stats { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 5px; }
+  .equipment-results .stat { padding: 9px 2px; border: 0; background: var(--panel-soft); }
+  .equipment-results .stat b { font-size: 10px; }
+  .equipment-results .stat span { font-size: 15px; }
+  .equipment-results .result-feedback { padding-top: 7px; border-top: 1px solid var(--line); }
+}
+
 .result-feedback { min-height: 29px; display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 6px; }
 .feedback-button { min-height: 29px; padding: 0 9px; display: inline-flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); background: #fff; font-size: 11px; }
 .feedback-button:hover:not(:disabled), .feedback-button.selected { border-color: #98d3ec; color: var(--star-cyan-dark); background: var(--star-cyan-soft); }
