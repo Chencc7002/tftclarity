@@ -32,7 +32,7 @@ test("S18 live display overrides remove internal form and unique-trait tokens", 
     apiName: "DA_18_Elise",
     zhName: "伊莉丝",
     enName: "Elise",
-    aliases: ["伊莉丝", "Elise"],
+    aliases: ["伊莉丝", "Elise", "蜘蛛", "蜘蛛女皇"],
     source: "metatft_live_2026_08_27_bilingual"
   });
   assert.equal(unitDisplayOverrideByApiName.get("DA_Nidalee18_AP").enName, "Nidalee");

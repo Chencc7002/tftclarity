@@ -512,7 +512,7 @@ test("Set 18 catalog merge removes a persisted TFT18 alias when the DA unit arri
     { apiName: "DA_18_Kayle", zhName: "凯尔", aliases: ["Kayle"] }
   ]);
   assert.deepEqual(merged.map((unit) => unit.apiName), ["DA_18_Kayle"]);
-  assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
+  assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle", "天使", "正义天使"]));
 });
 
 test("Set 18 catalog prefers Nidalee's populated embedded-set provider id", () => {
@@ -558,7 +558,7 @@ test("catalog merge still lets a refreshed record replace the same provider id",
   ]);
   assert.equal(merged[0].source, "remote");
   assert.equal(merged[0].zhName, "凯尔");
-  assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle"]));
+  assert.deepEqual(new Set(merged[0].aliases), new Set(["凯尔", "Kayle", "天使", "正义天使"]));
 });
 
 test("Set 18 adaptive units collapse official and provider ids onto the populated AD identity", () => {
