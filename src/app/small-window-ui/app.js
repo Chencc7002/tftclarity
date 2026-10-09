@@ -3271,7 +3271,7 @@ function renderItemRankings(data) {
       ? `同条件装备排行榜（前 ${rankingCards.length} / 共 ${allRankings.length}）`
       : `同条件装备 Top ${rankingCards.length}`;
     setResponseHtml(`
-      ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", performance.conclusion ?? data.answer?.summary ?? data.text, "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
+      ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", structuredQueryScope(data), "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
       ${target ? `<section class="item-ranking-list"><h2>\u6307\u5b9a\u88c5\u5907</h2><article class="item-ranking-card best"><div class="item-ranking-head">${assetThumb(target.iconUrl, localizedName(target), "tiny-item-icon")}<strong>${escapeHtml(localizedName(target))}</strong><span>${performance.rank ? `#${performance.rank}` : t("lowSample")}</span></div><div class="stats">${metric(t("top4"), `${formatNumber(target.stats.top4)}%`)}${metric(t("win"), `${formatNumber(target.stats.win)}%`)}${metric(t("avg"), formatNumber(target.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(target.stats.games))}</div></article></section>` : ""}
       ${itemRankingModeControl(data)}
       <section class="item-ranking-list"><h2>${escapeHtml(rankingTitle)}</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
@@ -3288,7 +3288,7 @@ function renderItemRankings(data) {
     state.itemRankingCategoryBeforeMixed = data.query.itemCategories[0];
   }
   setResponseHtml(`
-    ${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text, t("itemRanking"))}
+    ${resultHeader(t("itemRanking"), structuredQueryScope(data), t("itemRanking"))}
     ${itemRankingModeControl(data)}
     <div class="item-ranking-list">
       ${rankings.slice(0, itemRankingDisplayLimit(data)).map((item, index) => `
@@ -3354,7 +3354,7 @@ function renderItemCarrierRankings(data) {
   </article>` : "";
   if (!carriers.length) {
     setResponseHtml(`
-      ${resultHeader(title, data.text ?? emptyText, t("noResult"))}
+      ${resultHeader(title, structuredQueryScope(data), t("noResult"))}
       ${detailHtml}
       <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? emptyText)}</strong></div>
       ${conditionPanel(data)}${sourceAndRisk(data)}
@@ -3362,7 +3362,7 @@ function renderItemCarrierRankings(data) {
     return;
   }
   setResponseHtml(`
-    ${resultHeader(title, data.text, itemLabel)}
+    ${resultHeader(title, structuredQueryScope(data), itemLabel)}
     ${detailHtml}
     <div class="carrier-ranking-list">
       ${carriers.map((carrier, index) => `
@@ -3439,18 +3439,22 @@ function recommendationCard(data, card, index) {
 
 // Result cards own the statistics; the conversation owns the full model answer.
 // Build this overview only from structured query fields, never answer.summary.
-function recommendationOverview(data) {
+function structuredQueryScope(data) {
   const query = data.query ?? {};
-  const unit = localizedName(data.unit, getLocale() === "en-US"
-    ? query.unit : query.unitName ?? query.unit);
-  const title = [unit, t("equipmentBuilds")].filter(Boolean).join(" · ");
-  const scope = [
+  return [
     query.patch && query.patch !== "current" ? t("conditionPatch", { value: query.patch }) : null,
     query.starLevel?.length ? t("starLevel", { value: query.starLevel.join("/") }) : null,
     query.days ? t("daysRecent", { value: query.days }) : null,
     query.rankFilter?.length ? rankChip(query.rankFilter) : null
   ].filter(Boolean).join(" · ");
-  return resultHeader(title, scope, t("equipmentBuilds"));
+}
+
+function recommendationOverview(data) {
+  const query = data.query ?? {};
+  const unit = localizedName(data.unit, getLocale() === "en-US"
+    ? query.unit : query.unitName ?? query.unit);
+  const title = [unit, t("equipmentBuilds")].filter(Boolean).join(" · ");
+  return resultHeader(title, structuredQueryScope(data), t("equipmentBuilds"));
 }
 
 function renderRecommendationResult(data) {
@@ -3675,7 +3679,7 @@ function renderMechanismClassification(data) {
   const cacheLabel = data?.classificationMeta?.cache === "hit" ? t("mechanismCacheHit") : t("mechanismCacheScan");
   const rawModelOutput = data?.modelOutput ? JSON.stringify(data.modelOutput, null, 2) : "";
   setResponseHtml(`
-    ${resultHeader(t("mechanismTitle"), data?.answer?.summary ?? data?.text, "MECHANISM")}
+    ${resultHeader(t("mechanismTitle"), structuredQueryScope(data), "MECHANISM")}
     <section class="knowledge-evidence mechanism-classification-results">
       <header class="knowledge-evidence-head">
         <div><span>${escapeHtml(cacheLabel)}</span><h2>${escapeHtml(t("mechanismResultCount", { count: entries.length }))}</h2></div>
@@ -4102,7 +4106,7 @@ function renderSemanticNativeResult(data) {
     </article>`;
   }).join("");
   setResponseHtml(`
-    ${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
+    ${resultHeader(t("recommendation"), structuredQueryScope(data), t("recommendation"))}
     ${cards ? `<section class="ranking-section">${cards}</section>` : `<div class="empty-state"><strong>${escapeHtml(data.text ?? t("noResult"))}</strong></div>`}
     ${data.query ? conditionPanel(data) : ""}
     ${data.source ? sourceAndRisk(data) : ""}
