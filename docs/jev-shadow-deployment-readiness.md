@@ -195,3 +195,7 @@ size: 112324427 bytes
 切流前真实 control 冒烟通过。切流后通过公网 `/api/react-chat/stream` 发送固定合成道具效果问题，返回 HTTP 200，Jev runtime 从 attempted=0 变为 attempted=1、controlApplied=1、fallback=0、observed=1；ReAct 只调用已注册的 `entity_catalog_query` 和 `item_details`。当前赛季官方详情返回 not_found，因此最终答案按 Evidence 规则明确披露证据不足，没有编造效果数值。`/`、`/privacy`、`/terms`、`/api/health` 和 `/api/ready` 均返回 200，Postgres/Redis 正常。
 
 日志审计确认 `[jev-intent-control]` 事件 1 条，未出现 TypeSafe key 或合成原始输入。服务器原有未跟踪的 `" -b"` 与 `backups/` 继续保留。若需要只撤销控制，不必回滚数据库：把 `.env.jev.production` 的 mode 改回 shadow 或 off，并 `docker compose up -d --no-deps --force-recreate app`；完整应用回滚可使用上述 pre-control 镜像标签。
+
+### 2026-10-09 结果可观测性补充
+
+新增 `jev-intent-outcome.v1` 脱敏结果事件，以进程内 `observationId` 关联 `[jev-intent-control]`。它记录 ReAct 最终状态、终止原因、首末决策类型、注册工具名和数量，不含输入、回答、参数、Evidence 内容或用户标识。分类事件同时记录现有确定性领域门的只读结果和一致性；该结果不能参与控制。运行时公开聚合新增 `domainComparisons` 与 `outcomes`，用于判断低覆盖来自域外流量、领域分歧还是低置信回退。

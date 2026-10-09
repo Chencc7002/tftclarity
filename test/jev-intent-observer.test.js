@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { createJevIntentObserver, inferJevInheritedDomain, projectJevIntentInput, projectJevIntentCandidate, projectJevIntentControl } from "../src/understanding/jev-intent-observer.js";
+import { createJevIntentObserver, inferJevDeterministicDomain, inferJevInheritedDomain, projectJevIntentInput, projectJevIntentCandidate, projectJevIntentControl } from "../src/understanding/jev-intent-observer.js";
 import { buildJevIntentRequest } from "../src/understanding/jev-intent-shadow.js";
 import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
@@ -26,6 +26,7 @@ test("canary sampling and request cap prevent calls and cannot be bypassed by co
   assert.equal(calls, 2);
   assert.equal(capped.snapshot().attempted, 2);
   assert.equal(results.filter(r => r.reason === "request_limit").length, 3);
+  assert.deepEqual(results.map(result => result.observationId), [1, 2, 3, 4, 5]);
   for (const invalid of [{ sampleRate: NaN }, { sampleRate: 2 }, { maxRequests: -1 }, { maxRequests: 1.5 }]) {
     assert.throws(() => createJevIntentObserver(invalid));
   }
@@ -103,6 +104,21 @@ test("observer is off by default and invalid modes fail closed", async () => {
   assert.throws(() => createJevIntentObserver({ mode: "invalid" }));
 });
 
+test("deterministic domain comparison is observational and contains no user text", async () => {
+  assert.deepEqual(inferJevDeterministicDomain({ input: "云顶之弈羊刀有什么效果？" }), {
+    domain: "tft", confidence: 0.99, source: "tft_domain_pattern"
+  });
+  const events = [];
+  const observer = createJevIntentObserver({ mode: "shadow", apiKey: "secret",
+    fetchImpl: async () => ({ ok: true, json: async () => response({ domain: "out_of_domain" }) }),
+    onObservation: event => events.push(event) });
+  await observer.observe({ input: "云顶之弈羊刀有什么效果？" });
+  assert.equal(events[0].domainAgreement, false);
+  assert.equal(events[0].deterministicDomain.domain, "tft");
+  assert.deepEqual(observer.snapshot().domainComparisons, { agreement: 0, disagreement: 1, unavailable: 0 });
+  assert.ok(!JSON.stringify(events[0]).includes("羊刀"));
+});
+
 test("control projection is confidence-gated and contains no tool authority", () => {
   const observed = { status: "observed", ...response({ action: "compare" }) };
   assert.deepEqual(projectJevIntentControl(observed), {
@@ -174,9 +190,34 @@ test("ReAct shadow is parallel, observes original input and cannot change LLM in
   assert.ok(!JSON.stringify(event).includes(input.input));
 });
 
+test("outcome projection keeps only bounded execution metadata", async () => {
+  const outcomes = [];
+  const observer = createJevIntentObserver({ mode: "control", apiKey: "secret",
+    fetchImpl: async () => ({ ok: true, json: async () => response({ action: "explain" }) }),
+    onOutcome: event => outcomes.push(event) });
+  const observation = await observer.observe({ input: "云顶之弈羊刀有什么效果？" });
+  observer.recordOutcome(observation, {
+    status: "completed", terminationReason: "completed", answerOrigin: "model",
+    answer: "sensitive answer", evidence: [{ value: "sensitive evidence" }],
+    safetyMetrics: { decisions: 2, actualToolCalls: 1 }
+  }, [
+    { type: "call_tool", tool: "item_details", purposeCode: "retrieve_entity_details",
+      arguments: { item: "sensitive argument" } },
+    { type: "finish", answer: "sensitive answer" }
+  ]);
+  assert.equal(outcomes.length, 1);
+  assert.deepEqual(outcomes[0].toolNames, ["item_details"]);
+  assert.equal(outcomes[0].firstDecision.tool, "item_details");
+  assert.equal(outcomes[0].finalDecision.type, "finish");
+  assert.equal(outcomes[0].actualToolCalls, 1);
+  assert.equal(outcomes[0].evidenceCount, 1);
+  assert.ok(!/sensitive/u.test(JSON.stringify(outcomes[0])));
+});
+
 test("ReAct control passes only a bounded intent hint and preserves the registered tool catalog", async () => {
   let decisionRequest;
   let baselineToolNames;
+  const outcomes = [];
   const input = { input: "找一个云顶教学视频", locale: "zh-CN", seasonContextId: DEFAULT_SEASON_CONTEXT_ID };
   const baselineRuntime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(), env: {},
     reactDecisionProvider: async request => {
@@ -189,6 +230,7 @@ test("ReAct control passes only a bounded intent hint and preserves the register
       TFT_AGENT_JEV_INTENT_SAMPLE_RATE: "1", TFT_AGENT_JEV_INTENT_CONTROL_MIN_CONFIDENCE: "0.7" },
     jevIntentFetch: async () => ({ ok: true, json: async () => response({ action: "find_video" }) }),
     onJevIntentObservation: () => {},
+    onJevIntentOutcome: event => outcomes.push(event),
     reactDecisionProvider: async request => {
       decisionRequest = structuredClone(request);
       return { schemaVersion: "react-action.v1", type: "finish", answer: "原有回答", evidenceIds: [], reasonCode: "direct_answer" };
@@ -200,6 +242,17 @@ test("ReAct control passes only a bounded intent hint and preserves the register
   assert.equal(Object.hasOwn(decisionRequest.state.intentAdvisory, "tool"), false);
   assert.deepEqual(decisionRequest.toolCatalog.map(tool => tool.name), baselineToolNames);
   assert.equal(runtime.jevIntentObserver.snapshot().controlApplied, 1);
+  assert.equal(outcomes.length, 1);
+  assert.equal(outcomes[0].schemaVersion, "jev-intent-outcome.v1");
+  assert.equal(outcomes[0].observationId, 1);
+  assert.equal(outcomes[0].controlApplied, true);
+  assert.equal(outcomes[0].status, "completed");
+  assert.equal(outcomes[0].firstDecision.type, "finish");
+  assert.deepEqual(outcomes[0].toolNames, []);
+  assert.ok(!JSON.stringify(outcomes[0]).includes(input.input));
+  assert.deepEqual(runtime.jevIntentObserver.snapshot().outcomes, {
+    recorded: 1, applied: 1, fallback: 0, withTools: 0, statuses: { completed: 1 }
+  });
 });
 
 test("ReAct control falls back unchanged when Jev confidence is below the gate", async () => {

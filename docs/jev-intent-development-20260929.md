@@ -86,6 +86,19 @@ node --env-file=.env.jev.local scripts/eval-jev-intent.mjs --live --case=outside
 
 生产 shadow 稳定上线后，用户根据低流量明确要求正式启用。control 仅作用于自由对话 ReAct：Jev 的 action/domain/context 通过 0.70 置信度门槛后，以 `jev-intent-control.v1`、`authority=intent_hint_only` 注入现有 decision provider。它不生成 TaskFrame、不直接选择工具、不改变 Tool Catalog、参数、Evidence、预算、权限或确定性 `nextActionAffordance`；Quick Task 保持确定性原路径。超时、低置信、域外、缺上下文、无效响应、未采样或达到进程上限都不注入提示，并自动回退原 ReAct。
 
+## 2026-10-09 线上结果关联
+
+为区分“真实域外流量”和“Jev 漏判 TFT”，每次完成的 Jev 分类新增现有确定性领域门的只读对照：`deterministicDomain` 与 `domainAgreement`。该对照只用于观测，不能覆盖 Jev、放宽控制门槛或授权工具。
+
+control 请求完成后另写一条 `[jev-intent-outcome]` / `jev-intent-outcome.v1` 事件，用同一进程内的 `observationId` 关联分类事件。事件只记录控制处置、最终状态、终止原因、回答来源、首末决策类型、已注册工具名、决策/工具/证据数量；不记录原问题、回答正文、工具参数、Evidence 内容、会话 ID、用户 ID 或凭据。跳过、达到请求上限、并发保护与 provider 失败也有独立 `observationId`，因此 control 结果覆盖率可以完整核对。
+
+`/api/runtime` 的 `routing.jevIntent` 新增：
+
+- `domainComparisons`：确定性领域门与 Jev 原始 domain 的一致、分歧和不可比较计数；
+- `outcomes`：已关联结果、实际应用、回退、有工具调用及最终状态计数。
+
+这些数据能回答 Jev 是否漏掉明显 TFT 请求，以及应用/回退请求最后执行了哪些注册工具、是否完成。它仍不是准确率标签：确定性领域门不是人工真值；control 请求的 ReAct 决策已经可能受到 Jev 提示影响，也不是 legacy 反事实。语义提升仍需独立标注或成对 shadow 实验。
+
 真实 16 条合成开发集再次得到 16/16；最低选中置信/概率为 0.42。0.70 门槛会让 `follow-more` 的 action 和 `follow-video` 的 context 回退旧路径，域外注入样本也不会获得控制提示。该门槛牺牲部分覆盖率以避免低置信结果影响工具决策。聚焦控制/提示测试 42/42，integration 238 通过/1 跳过，main 1616 通过/7 跳过，Agent eval 50/50。
 
 这次结果证明已覆盖已知多轮领域继承缺陷和 Provider 概率舍入兼容性，但样本仍是开发集合，shadow-only 和生产接管门槛不变。

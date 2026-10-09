@@ -179,6 +179,8 @@ storage 为 PostgreSQL + Redis。还要确认 HTTPS 证书、安全响应头、�
 PASS 后，才能把该 SHA/镜像作为 Public Beta release。
 
 Jev shadow/control 开启后，只审查 `[jev-intent-shadow]` 或 `[jev-intent-control]` 结构化日志。
+
+Jev control 结果关联使用 `[jev-intent-outcome]`。通过同一 `observationId` 与 `[jev-intent-control]` 配对；只允许检查分类/控制处置、确定性领域对照、最终状态、决策类型、注册工具名和计数。日志不得包含原始输入、回答正文、工具参数、Evidence 内容、用户标识或 `TYPESAFE_API_KEY`。
 日志不得含原始用户输入或 key；前 100 次尝试达到进程生命周期上限后停止调用。control 还要记录
 controlApplied、controlFallbacks、tokens 和延迟分布。出现回答延迟/错误率变化、凭据泄漏、预算异常
 或日志包含用户原文时，立即按第 8 节切回 shadow/off。一次进程重启会重置 100 次上限，因此运维

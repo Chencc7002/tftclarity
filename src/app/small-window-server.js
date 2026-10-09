@@ -1150,7 +1150,9 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
         controlMinConfidence: jevSnapshot.controlMinConfidence,
         controlApplied: jevSnapshot.controlApplied,
         controlFallbacks: jevSnapshot.controlFallbacks,
-        counts: jevSnapshot.counts
+        counts: jevSnapshot.counts,
+        domainComparisons: jevSnapshot.domainComparisons,
+        outcomes: jevSnapshot.outcomes
       } : null
     },
     acceptanceProvenance: {
@@ -3424,7 +3426,9 @@ export function createSmallWindowRuntime(options = {}) {
       mode: options.jevIntentMode ?? runtimeEnv.TFT_AGENT_JEV_INTENT_MODE ?? "off",
       fetchImpl: options.jevIntentFetch,
       onObservation: options.onJevIntentObservation
-        ?? (event => console.info(event.mode === "control" ? "[jev-intent-control]" : "[jev-intent-shadow]", JSON.stringify(event)))
+        ?? (event => console.info(event.mode === "control" ? "[jev-intent-control]" : "[jev-intent-shadow]", JSON.stringify(event))),
+      onOutcome: options.onJevIntentOutcome
+        ?? (event => console.info("[jev-intent-outcome]", JSON.stringify(event)))
     }),
     reactCreateId: options.reactCreateId ?? null,
     reactNow: options.reactNow ?? null,
@@ -7888,9 +7892,11 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     };
   }
   let jevIntentAdvisory = null;
+  let jevIntentObservation = null;
   if (runtime.jevIntentObserver?.mode === "control") {
     try {
       const observation = await runtime.jevIntentObserver.observe(normalizedRequest, { signal: context.signal });
+      jevIntentObservation = observation;
       jevIntentAdvisory = observation.control?.advisory ?? null;
     } catch {
       // Any control-classifier failure falls back to the unchanged ReAct path.
@@ -8105,6 +8111,24 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     ...(runtime.reactCreateId ? { createId: runtime.reactCreateId } : {}),
     ...(runtime.reactNow ? { now: runtime.reactNow } : {})
   });
+  const jevDecisionTrace = [];
+  const onReactEvent = event => {
+    if (event?.type === "decision" && jevDecisionTrace.length < 24) {
+      jevDecisionTrace.push({
+        type: event.data?.type ?? null,
+        tool: event.data?.tool ?? null,
+        purposeCode: event.data?.purposeCode ?? null
+      });
+    }
+    context.onProgress?.(event);
+  };
+  const recordJevOutcome = result => {
+    try {
+      runtime.jevIntentObserver?.recordOutcome?.(jevIntentObservation, result, jevDecisionTrace);
+    } catch {
+      // Outcome telemetry cannot change the user's result.
+    }
+  };
   try {
     const startedAt = Date.now();
     const result = hydrateReactResultKnowledgeSignals(await agent.chat({
@@ -8113,7 +8137,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       principalId: context.visitor?.scope ?? "anonymous"
     }, {
       signal: context.signal,
-      onEvent: context.onProgress,
+      onEvent: jevIntentObservation ? onReactEvent : context.onProgress,
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));
@@ -8210,6 +8234,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       });
     }
     observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, payload);
+    recordJevOutcome(result);
     if (candidateControl) {
       emitAgentSkillControl(runtime, {
         schemaVersion: "agent-skill-control.v1",
@@ -8233,6 +8258,10 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   } catch (error) {
     const access = await publicAccessStatus();
     observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, null);
+    recordJevOutcome({
+      status: "failed",
+      terminationReason: String(error?.code ?? "react_chat_failed")
+    });
     if (candidateControl) {
       emitAgentSkillControl(runtime, {
         schemaVersion: "agent-skill-control.v1",
