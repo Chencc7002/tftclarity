@@ -3123,10 +3123,24 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
         ? t("currentCompRanking")
         : t("noResult"));
   const modelConclusion = reactModelConclusionHtml(data, summary, responseId);
+  const resultPreview = chatBuildPreview(data, responseId)
+    || `${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   if (modelConclusion) {
-    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${resultPreview}${followUpGuidance}`;
   }
-  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${chatCoreItemsHtml(data)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${resultPreview}${followUpGuidance}`;
+}
+
+function chatBuildPreview(data, responseId) {
+  if (!EQUIPMENT_CORE_RESULT_TYPES.has(data?.type) || !data.cards?.length) return "";
+  const card = data.cards[0];
+  const unit = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? "");
+  return `<section class="chat-build-preview">
+    <header>${assetThumb(data.unit?.iconUrl ?? data.query?.unitIconUrl, unit, "equipment-unit-icon")}<strong>${escapeHtml(unit)}</strong><span>${escapeHtml(data.query?.starLevel?.length ? t("starLevel", { value: data.query.starLevel.join("/") }) : "")}</span>${card.lowSample ? `<span class="risk">${t("lowSample")}</span>` : ""}</header>
+    <div class="items">${card.items.map(itemPill).join("")}</div>
+    <div class="chat-build-metrics"><span>${t("top4")}<b>${formatNumber(card.stats.top4)}%</b></span><span>${t("avg")}<b>${formatNumber(card.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span><span>${t("samples")}<b>${formatNumber(card.stats.games)}</b></span></div>
+    <footer><span>${escapeHtml(data.query?.days ? t("daysRecent", { value: data.query.days }) : "")}</span><button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} ↗</button></footer>
+  </section>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -5956,6 +5970,33 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
 clearButton.addEventListener("click", () => {
   void resetConversation();
 });
+
+const navigationToggle = document.querySelector("#navigation-toggle");
+function closeNavigation() {
+  shellEl.classList.remove("navigation-open");
+  navigationToggle.setAttribute("aria-expanded", String(!mobileLayoutQuery.matches && !shellEl.classList.contains("navigation-collapsed")));
+  document.querySelector(".navigation-backdrop").hidden = true;
+}
+navigationToggle.addEventListener("click", () => {
+  if (!mobileLayoutQuery.matches) {
+    const collapsed = shellEl.classList.toggle("navigation-collapsed");
+    navigationToggle.setAttribute("aria-expanded", String(!collapsed));
+    return;
+  }
+  const open = shellEl.classList.toggle("navigation-open");
+  navigationToggle.setAttribute("aria-expanded", String(open));
+  document.querySelector(".navigation-backdrop").hidden = !open;
+});
+mobileLayoutQuery.addEventListener?.("change", closeNavigation);
+document.querySelector("[data-nav-close]").addEventListener("click", closeNavigation);
+document.querySelector("#app-navigation").addEventListener("click", event => {
+  if (!event.target.closest("button")) return;
+  closeNavigation();
+  if (event.target.closest("[data-nav-new]")) { void resetConversation(); queryInput.focus(); }
+  if (event.target.closest("[data-nav-patch]")) { renderPatchNote(); openMobileResult(); }
+  if (event.target.closest("[data-nav-settings]")) document.querySelector("#settings-button").click();
+});
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeNavigation(); });
 
 seasonContextSelect.addEventListener("change", () => {
   const requested = state.seasonContexts.find((context) => context.id === seasonContextSelect.value);

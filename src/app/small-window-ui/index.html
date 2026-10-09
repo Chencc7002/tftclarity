@@ -17,6 +17,7 @@
     <link rel="stylesheet" href="/quick-tools.css">
     <link rel="stylesheet" href="/onboarding-tour.css">
     <link rel="stylesheet" href="/opgg-panel.css">
+    <link rel="stylesheet" href="/chat-layout.css">
   </head>
   <body>
     <svg class="svg-filter-definitions" width="0" height="0" aria-hidden="true" focusable="false">
@@ -39,10 +40,11 @@
         </filter>
       </defs>
     </svg>
-    <main class="shell" id="app-shell">
+    <main class="shell navigation-collapsed" id="app-shell">
       <div class="wallpaper-layer" aria-hidden="true"></div>
       <canvas class="particle-layer" id="particle-layer" aria-hidden="true"></canvas>
       <header class="topbar" id="title-bar">
+        <button type="button" id="navigation-toggle" class="navigation-toggle" aria-controls="app-navigation" aria-expanded="false" data-i18n-aria="navigation" aria-label="导航"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="3"/><path d="M9 4v16"/></svg></button>
         <span class="topbar-starfield" id="topbar-starfield" aria-hidden="true"></span>
         <div class="brand" aria-label="tftclarity">
           <span class="brand-mark" aria-hidden="true">
@@ -86,7 +88,18 @@
       </header>
 
       <div class="workspace" id="workspace">
+        <aside id="app-navigation" class="app-navigation" aria-label="导航">
+          <div class="navigation-brand"><img src="/favicon.png?v=20260727" alt="">tftclarity</div>
+          <nav>
+            <button type="button" data-nav-new><span aria-hidden="true">＋</span><span data-i18n="newChat">新对话</span></button>
+            <button type="button" data-open-tools="all"><span aria-hidden="true">▦</span><span data-i18n="quickTaskFormEyebrow">快捷查询</span></button>
+            <button type="button" data-nav-patch><span aria-hidden="true">▤</span><span data-i18n="versionUpdates">版本更新</span></button>
+          </nav>
+          <div class="navigation-bottom"><button type="button" data-nav-settings><span aria-hidden="true">⚙</span><span data-i18n="settings">设置</span></button><small data-i18n="navigationTagline">云顶数据与战术助手</small></div>
+        </aside>
+        <button type="button" class="navigation-backdrop" data-nav-close aria-label="关闭导航" hidden></button>
         <section class="conversation-pane" id="conversation-pane" aria-labelledby="conversation-title">
+          <h2 class="welcome-title" data-i18n="welcomePrompt">这局想查什么？</h2>
           <div class="pane-heading conversation-heading">
             <div>
               <span class="eyebrow" data-i18n="conversationEyebrow">对话</span>
