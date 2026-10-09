@@ -3109,7 +3109,8 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
     ? `<div class="answer-follow-up"><span>${escapeHtml(data.agentSuggestedActions.prompt ?? "")}</span>${renderAgentSuggestedActions(data.agentSuggestedActions.actions, responseId)}</div>`
     : "";
   if (compactVideoSummary) {
-    return `${understanding}<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div>${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+    const videoConclusion = reactModelConclusionHtml(data, compactVideoSummary, responseId);
+    return `${understanding}${videoConclusion || `<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div>`}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
   if (data?.clarification?.needsClarification) {
     return `${understanding}<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
