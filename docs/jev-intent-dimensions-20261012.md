@@ -2,7 +2,7 @@
 
 实现日期：2026-10-12；收尾记录：2026-10-13（北京时间）。
 
-状态：本地实现和回归完成；真实模型对照因 Jev HTTP 451 中止；未部署、未启用新 control，不能报告准确率提升。
+状态（2026-10-13 23:35 北京时间）：新版本已部署，5%/25 次 shadow 已启用，旧 control 保留。新 control 尚未启用；本地真实模型对照因 HTTP 451 中止，不能报告准确率提升。
 
 ## 基线与范围
 
@@ -26,7 +26,7 @@
 
 ## 开关、预算与回滚
 
-示例文件默认关闭，实际环境未修改：
+示例文件默认关闭；生产于下述发布中仅将新策略 mode 改为 shadow：
 
 ```dotenv
 TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE=off
@@ -86,3 +86,20 @@ node scripts/eval-jev-dimensions.mjs --live
 北京时间 23:18 只读检查：线上仍为 `5ab8ff2`，app healthy，原 Jev control、sampleRate=1、进程上限 100、阈值 0.70。最近 72 小时 Jev 日志有 38 条 observed，无 unavailable/HTTP error；最近一次成功为北京时间 2026-10-13 11:53:54，186ms。关联 ReAct 结果为 completed 14、clarification_required 12、completed_with_warning 8、failed 4；这些状态不能当作分类准确率。
 
 因此，已证实的 451 发生在本地对照环境，不能表述为整个 Jev 服务或线上旧路径不可用。日志也不保证此刻新请求必然成功。本次没有额外线上模型调用、改动部署或读取用户内容。具体原因尚未确认。
+
+## 2026-10-13 生产 shadow 发布
+
+用户授权上线新策略后，按 shadow-first 约束发布，保持阈值 0.70；没有启用新 control。
+
+- 应用提交：`19851d0da568f726148f822c84d82faf443b6c18`，基于原线上 `5ab8ff2`，通过 git bundle 传输，不含主工作区无关修改或凭据。
+- 生产备份：`/root/tftclarity/backups/jev-dimensions-20261013-19851d0`；包含原配置、基线及 PostgreSQL custom dump。dump 3,856,082 bytes，SHA-256 `c55ff98fec685c748f9a67badd3021315d1fc73d2c4a91ec3a4502651196a6f7`，`pg_restore --list` 通过。
+- 回滚镜像：`tftclarity-app:pre-jev-dimensions-20261013`；原镜像 `sha256:eed486acdd678ffb5aa53bc944e6b5af5d5f7fd63993f400071c88861eb4bac8`。
+- 新镜像：`tftclarity-app:jev-dimensions-19851d0`，运行镜像 `sha256:9fb873620a0c98ed56168e520e4a3201fca5878abed60c30343f1cd3e366a680`。
+- 原 Jev 仍为 control/sampleRate=1/maxRequests=100；新策略为 shadow/sampleRate=0.05/maxRequests=25；共用阈值 0.70。不修改工具执行、充值设置或数据库 schema。
+- 候选在 network=none 下通过零调用配置预检；只对 app 执行 `compose up --no-deps --no-build --wait`，未重建数据库/worker。
+- 23:34:58 公网 `/`、`/api/health`、`/api/ready`、`/api/runtime` 均 HTTP 200；app healthy、RestartCount=0，启动日志 error/fatal 计数 0。runtime 确认上述两套策略配置，新旧 attempted 均为 0，因此尚无发布后效果样本。
+- 首次 bundle fetch 使用了不存在的分支引用，失败于检出前；改为 bundle 实际 HEAD 引用后构建成功。未因此切换或中断运行中的服务。
+
+只撤回新策略时将 `.env.jev.production` 中 `TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE=off`，仅 recreate app。完整回滚可恢复备份中的 `.env.jev.production`，将旧镜像重新标记 `tftclarity-app:latest`，检出 `5ab8ff2`，再执行 `docker compose up -d --no-deps --no-build --wait app`。切换后的健康检查失败处理已在本次部署脚本中配置，但此次未触发回滚。
+
+本次上线证明构建、配置和健康正常，不证明意图质量提升。没有为了获得 shadow 命中而发送大量合成请求，也没有通过改变访问路径重跑受 HTTP 451 阻断的本地测试。
