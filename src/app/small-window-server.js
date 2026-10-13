@@ -1153,7 +1153,11 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
         counts: jevSnapshot.counts,
         domainComparisons: jevSnapshot.domainComparisons,
         outcomes: jevSnapshot.outcomes
-      } : null
+      } : null,
+      jevIntentDimensions: runtime.jevIntentDimensionsObserver ? (() => {
+        const { last, ...metrics } = runtime.jevIntentDimensionsObserver.snapshot();
+        return metrics;
+      })() : null
     },
     acceptanceProvenance: {
       decisionProviderMode: runtime.reactDecisionProvider?.providerKind === "react_decision_llm"
@@ -3429,6 +3433,17 @@ export function createSmallWindowRuntime(options = {}) {
         ?? (event => console.info(event.mode === "control" ? "[jev-intent-control]" : "[jev-intent-shadow]", JSON.stringify(event))),
       onOutcome: options.onJevIntentOutcome
         ?? (event => console.info("[jev-intent-outcome]", JSON.stringify(event)))
+    }),
+    jevIntentDimensionsObserver: createJevIntentObserver({
+      env: runtimeEnv, policy: "dimensions",
+      mode: options.jevIntentDimensionsMode ?? runtimeEnv.TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE ?? "off",
+      maxRequests: Number(runtimeEnv.TFT_AGENT_JEV_INTENT_DIMENSIONS_MAX_REQUESTS ?? 25),
+      sampleRate: Number(runtimeEnv.TFT_AGENT_JEV_INTENT_DIMENSIONS_SAMPLE_RATE ?? 0.05),
+      fetchImpl: options.jevIntentDimensionsFetch ?? options.jevIntentFetch,
+      onObservation: options.onJevIntentDimensionsObservation
+        ?? (event => console.info("[jev-intent-dimensions]", JSON.stringify(event))),
+      onOutcome: options.onJevIntentDimensionsOutcome
+        ?? (event => console.info("[jev-intent-dimensions-outcome]", JSON.stringify(event)))
     }),
     reactCreateId: options.reactCreateId ?? null,
     reactNow: options.reactNow ?? null,
@@ -7893,7 +7908,10 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   }
   let jevIntentAdvisory = null;
   let jevIntentObservation = null;
-  if (runtime.jevIntentObserver?.mode === "control") {
+  let jevDimensionObservationPromise = null;
+  const dimensionObserver = runtime.jevIntentDimensionsObserver;
+  const dimensionControl = dimensionObserver?.mode === "control";
+  if (!dimensionControl && runtime.jevIntentObserver?.mode === "control") {
     try {
       const observation = await runtime.jevIntentObserver.observe(normalizedRequest, { signal: context.signal });
       jevIntentObservation = observation;
@@ -7901,7 +7919,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     } catch {
       // Any control-classifier failure falls back to the unchanged ReAct path.
     }
-  } else {
+  } else if (!dimensionControl) {
     // Optional bounded shadow observation. It never changes the request or critical path.
     void runtime.jevIntentObserver?.observe(normalizedRequest, { signal: context.signal });
   }
@@ -7991,7 +8009,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }
   }
   const controlledUnitPlay = Boolean(semanticAdvisory);
-  const request = requestFor(semanticAdvisory);
+  let request = requestFor(semanticAdvisory);
   const bridgeScopeKey = String(context.visitor?.scope ?? "local");
   let bridgeContext = null;
   let loadedBridgeState = null;
@@ -8031,6 +8049,24 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }
   }
   bridgeContext = attachTrustedAnalysisContext(bridgeContext, context.trustedAnalysisContext);
+  if (dimensionObserver && dimensionObserver.mode !== "off") {
+    try {
+      const season = runtime.seasonContextService.resolveForQuery(normalizedRequest.seasonContextId);
+      const { catalog } = immediateReactEntityCatalog(runtime, entityCatalogPreferences(runtime, season));
+      // Reuse the same scoped Bridge load as ReAct; never accept a body-supplied summary.
+      const pending = dimensionObserver.observe(normalizedRequest, {
+        signal: context.signal, serverContext: { bridgeContext, catalog }
+      });
+      if (dimensionControl) {
+        jevIntentObservation = await pending;
+        jevIntentAdvisory = jevIntentObservation.control?.advisory ?? null;
+        if (jevIntentAdvisory) request = { ...request, intentAdvisory: jevIntentAdvisory };
+      } else {
+        // Separate bounded shadow request; no candidate data enters the live decision input.
+        jevDimensionObservationPromise = pending.catch(() => null);
+      }
+    } catch { /* New policy failure falls back to the existing LLM without a retry. */ }
+  }
   if (!handlerBundle) handlerBundle = await createHandlerBundle(request);
   const reserveLlmUseForRequest = createTransportRetryQuotaReservation({
     body,
@@ -8124,7 +8160,10 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   };
   const recordJevOutcome = result => {
     try {
-      runtime.jevIntentObserver?.recordOutcome?.(jevIntentObservation, result, jevDecisionTrace);
+      (dimensionControl ? dimensionObserver : runtime.jevIntentObserver)?.recordOutcome?.(jevIntentObservation, result, jevDecisionTrace);
+      if (jevDimensionObservationPromise) {
+        void jevDimensionObservationPromise.then(observation => dimensionObserver.recordOutcome(observation, result, jevDecisionTrace)).catch(() => {});
+      }
     } catch {
       // Outcome telemetry cannot change the user's result.
     }
@@ -8137,7 +8176,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       principalId: context.visitor?.scope ?? "anonymous"
     }, {
       signal: context.signal,
-      onEvent: jevIntentObservation ? onReactEvent : context.onProgress,
+      onEvent: jevIntentObservation || jevDimensionObservationPromise ? onReactEvent : context.onProgress,
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));

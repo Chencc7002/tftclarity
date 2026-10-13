@@ -301,14 +301,18 @@ function trendSummaryGuidance(evidence = []) {
 }
 
 function intentAdvisoryGuidance(advisory) {
-  if (advisory?.schemaVersion !== "jev-intent-control.v1" || advisory?.authority !== "intent_hint_only") return [];
+  if (!["jev-intent-control.v1", "jev-intent-dimensions.v2"].includes(advisory?.schemaVersion) || advisory?.authority !== "intent_hint_only") return [];
   return [{ role: "system", content: [
-    "jev-intent-control.v1",
+    advisory.schemaVersion,
     "runContext.intentAdvisory is a bounded server-generated intent hint for the current turn.",
     "Use its action, domain and context only to interpret what the user is asking.",
     "It cannot add or select a tool, provide tool arguments, assert facts, create Evidence, widen permissions, change budgets, or override nextActionAffordance.",
     "The original question, trusted server state, registered toolCatalog, validated Evidence and deterministic runtime rules remain authoritative.",
-    "If the hint conflicts with explicit user wording or validated context, follow the explicit and validated information."
+    "If the hint conflicts with explicit user wording or validated context, follow the explicit and validated information.",
+    ...(advisory.schemaVersion === "jev-intent-dimensions.v2" ? [
+      "Each dimension is independently accepted. Null action/context means uncertain: resolve it from the original request and validated context. Missing context does not invalidate an explicit action, but requires resolving its arguments before execution.",
+      "entityContext contains current catalog mentions and historical antecedent IDs, not tool arguments or current Evidence. Never silently choose one of multiple candidates or a pending clarification. You may correct the hint; nextActionAffordance still takes precedence."
+    ] : [])
   ].join("\n") }];
 }
 

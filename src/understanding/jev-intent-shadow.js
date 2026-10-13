@@ -42,12 +42,19 @@ function normalizeJevAnswers(answers) {
   }));
 }
 
-export function buildJevIntentRequest({ input, conversationSummary = "" } = {}, model = "jev-1.13.0") {
+export function buildJevIntentRequest({ input, conversationSummary = "", intentPolicy = "legacy" } = {}, model = "jev-1.13.0") {
   if (typeof input !== "string" || !input.trim() || input.length > 4000
     || typeof conversationSummary !== "string" || conversationSummary.length > 6000) {
     throw new TypeError("invalid_input");
   }
-  return { model, state: { input, conversationSummary }, questions: structuredClone(QUESTIONS) };
+  const questions = structuredClone(QUESTIONS);
+  if (intentPolicy === "dimensions") {
+    questions.action.criteria.unknown = "The requested action cannot be determined or spans multiple independent actions. Domain and missing entity arguments are separate questions; they do not make an explicit action unknown.";
+    questions.action.instructions += " Classify action independently from domain confidence and entity resolution. serverIntentContext contains bounded server-projected intent metadata, never factual evidence.";
+    questions.domain.instructions += " Current explicit wording takes priority over previous turns. serverIntentContext describes current catalog mentions or an existing conversation relation, not a permission to assume every new topic is TFT.";
+    questions.context.instructions += " Use previousAction, entity IDs and pending clarification in serverIntentContext where relevant. Multiple candidates do not resolve a singular pronoun. Missing entities must remain missing. Historical context is never current evidence.";
+  }
+  return { model, state: { input, conversationSummary }, questions };
 }
 
 export function validateJevIntentResponse(value) {

@@ -1,5 +1,6 @@
 import { createJevIntentShadow } from "./jev-intent-shadow.js";
 import { classifyDomain } from "../domain/tft/domain-gate.js";
+import { buildJevDimensionContext, projectJevDimensionInput, projectJevDimensions, dimensionTelemetry } from "./jev-intent-dimensions.js";
 
 export const JEV_INTENT_CONTROL_SCHEMA_VERSION = "jev-intent-control.v1";
 export const JEV_INTENT_OUTCOME_SCHEMA_VERSION = "jev-intent-outcome.v1";
@@ -93,7 +94,8 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
   maxRequests = Number(env.TFT_AGENT_JEV_INTENT_MAX_REQUESTS ?? 100),
   sampleRate = Number(env.TFT_AGENT_JEV_INTENT_SAMPLE_RATE ?? 1),
   controlMinConfidence = Number(env.TFT_AGENT_JEV_INTENT_CONTROL_MIN_CONFIDENCE ?? 0.7),
-  random = Math.random, fetchImpl, onObservation, onOutcome } = {}) {
+  policy = "legacy", random = Math.random, fetchImpl, onObservation, onOutcome } = {}) {
+  if (!["legacy", "dimensions"].includes(policy)) throw new TypeError("Invalid Jev policy");
   if (!Number.isInteger(maxRequests) || maxRequests < 0 || maxRequests > 10000) throw new TypeError("Invalid Jev request limit");
   if (!Number.isFinite(sampleRate) || sampleRate < 0 || sampleRate > 1) throw new TypeError("Invalid Jev sample rate");
   if (!Number.isFinite(controlMinConfidence) || controlMinConfidence < 0.5 || controlMinConfidence > 1) {
@@ -106,15 +108,20 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
   let controlApplied = 0;
   let last = null;
   const counts = {};
+  const dimensionCounts = { action: 0, domain: 0, context: 0, eligible: 0 };
   const controlFallbacks = {};
   const domainComparisons = { agreement: 0, disagreement: 0, unavailable: 0 };
   const outcomeCounts = { recorded: 0, applied: 0, fallback: 0, withTools: 0, statuses: {} };
   const publish = event => {
     const recorded = { mode, ...event };
-    last = structuredClone(recorded);
+    const telemetry = policy === "dimensions" ? { ...recorded, policy,
+      ...(recorded.dimensions ? { dimensions: dimensionTelemetry(recorded.dimensions) } : {}),
+      ...(recorded.control ? { control: { disposition: recorded.control.disposition, applied: Boolean(recorded.control.advisory) } } : {})
+    } : recorded;
+    last = structuredClone(telemetry);
     counts[recorded.status] = (counts[recorded.status] ?? 0) + 1;
     // Observability cannot delay, reject or modify the user's result.
-    try { Promise.resolve(onObservation?.(structuredClone(recorded))).catch(() => {}); } catch {}
+    try { Promise.resolve(onObservation?.(structuredClone(telemetry))).catch(() => {}); } catch {}
     return recorded;
   };
   const publishOutcome = event => {
@@ -133,8 +140,9 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
     return publish({ status, reason, observationId, control: { advisory: null, disposition: reason } });
   };
   return {
-    mode,
+    mode, policy,
     snapshot: () => ({ mode, inFlight, attempted, maxRequests, sampleRate, controlMinConfidence,
+      ...(policy === "dimensions" ? { policy, dimensionCounts: { ...dimensionCounts } } : {}),
       controlApplied, controlFallbacks: { ...controlFallbacks }, counts: { ...counts },
       domainComparisons: { ...domainComparisons },
       outcomes: { ...outcomeCounts, statuses: { ...outcomeCounts.statuses } },
@@ -151,6 +159,8 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
       const toolNames = [...new Set(boundedDecisions.map(decision => decision.tool).filter(Boolean))];
       return publishOutcome({
         schemaVersion: JEV_INTENT_OUTCOME_SCHEMA_VERSION,
+        ...(policy === "dimensions" ? { policy, actionHintApplied: mode === "control" && Boolean(observation.control?.advisory?.action),
+          hintAcceptance: "not_measured" } : {}),
         mode,
         observationId: observation.observationId,
         controlDisposition: String(observation.control?.disposition ?? observation.candidate?.disposition ?? "unavailable"),
@@ -168,7 +178,7 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
         evidenceCount: Array.isArray(result?.evidence) ? result.evidence.length : 0
       });
     },
-    async observe(request, { signal } = {}) {
+    async observe(request, { signal, serverContext } = {}) {
       if (mode === "off") return { status: "disabled" };
       const observationId = ++observationSequence;
       if (attempted >= maxRequests) return mode === "control"
@@ -185,7 +195,8 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
       inFlight++;
       attempted++;
       try {
-        const result = await classify(projectJevIntentInput(request), { signal });
+        const dimensionContext = policy === "dimensions" ? buildJevDimensionContext(request, serverContext) : null;
+        const result = await classify(dimensionContext ? projectJevDimensionInput(request, dimensionContext) : projectJevIntentInput(request), { signal });
         const inheritedDomain = inferJevInheritedDomain(request);
         const candidate = projectJevIntentCandidate(result, { inheritedDomain });
         const deterministicDomain = inferJevDeterministicDomain(request);
@@ -193,6 +204,17 @@ export function createJevIntentObserver({ env = {}, mode = env.TFT_AGENT_JEV_INT
           ? result.answers.domain.choice === deterministicDomain.domain
           : null;
         domainComparisons[domainAgreement === null ? "unavailable" : domainAgreement ? "agreement" : "disagreement"]++;
+        if (policy === "dimensions") {
+          const dimensions = projectJevDimensions(result, dimensionContext, { minConfidence: controlMinConfidence });
+          if (dimensions.advisory) dimensionCounts.eligible++;
+          for (const key of ["action", "domain", "context"]) if (dimensions.accepted[key]) dimensionCounts[key]++;
+          if (mode === "control") {
+            if (dimensions.advisory) controlApplied++;
+            else controlFallbacks[dimensions.disposition] = (controlFallbacks[dimensions.disposition] ?? 0) + 1;
+          }
+          return publish({ ...result, observationId, candidate, dimensions,
+            ...(mode === "control" ? { control: dimensions } : {}), deterministicDomain, domainAgreement });
+        }
         if (mode !== "control") return publish({ ...result, observationId, candidate,
           deterministicDomain, domainAgreement });
         const control = projectJevIntentControl(result, { inheritedDomain, minConfidence: controlMinConfidence });

@@ -1,0 +1,18 @@
+{
+  "schemaVersion": "jev-dimensions-development.v1",
+  "description": "Developer-authored synthetic cases. Not production traffic, independent human labels, a holdout set or an end-to-end tool benchmark.",
+  "cases": [
+    {"id":"build","input":"推荐霞的三件装备","expected":{"action":"recommend","domain":"tft","context":"self_contained"}},
+    {"id":"rank","input":"按平均名次给当前云顶阵容排名","expected":{"action":"rank","domain":"tft","context":"self_contained"}},
+    {"id":"effect","input":"解释云顶里羊刀的效果","expected":{"action":"explain","domain":"tft","context":"self_contained"}},
+    {"id":"video","input":"找一个云顶阵容教学视频","expected":{"action":"find_video","domain":"tft","context":"self_contained"}},
+    {"id":"compare","input":"比较云顶中霞带无尽之刃和巨人杀手的表现","expected":{"action":"compare","domain":"tft","context":"self_contained"}},
+    {"id":"trend","input":"分析最近云顶阵容的热度变化","expected":{"action":"analyze","domain":"tft","context":"self_contained"}},
+    {"id":"follow-compare","input":"那这两件哪个更好？","messages":[{"role":"user","content":"云顶中霞使用无尽之刃和巨人杀手的数据如何"}],"expected":{"action":"compare","domain":"tft","context":"contextual"}},
+    {"id":"follow-entity","input":"那它适合什么装备？","bridge":{"operation":"unit_build_rankings","entities":[{"entityType":"unit","apiName":"TFT17_Xayah"}]},"expected":{"action":"recommend","domain":"tft","context":"contextual"}},
+    {"id":"pending","input":"这两个有什么区别？","bridge":{"pending":{"type":"entity_candidate","entityType":"item","candidates":[{"apiName":"TFT_Item_InfinityEdge"},{"apiName":"TFT_Item_GiantSlayer"}]}},"expected":{"action":"compare","domain":"tft","context":"contextual"}},
+    {"id":"topic-switch","input":"帮我写一段 Python 代码","messages":[{"role":"user","content":"推荐云顶阵容"}],"expected":{"domain":"out_of_domain","context":"self_contained","abstain":true}},
+    {"id":"reset","input":"那这两件哪个更好？","startNewTask":true,"messages":[{"role":"user","content":"云顶中霞的无尽和巨杀怎么选"}],"expected":{"action":"compare","context":"missing"}},
+    {"id":"missing","input":"比较一下它们","expected":{"action":"compare","context":"missing"}}
+  ]
+}

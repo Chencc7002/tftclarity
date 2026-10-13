@@ -13,6 +13,12 @@ const TFT_PATTERNS = [
   /样本|樣本|場|场|数据源|數據源|接口|接囗|新榜|最新|阵荣|玩家.*(?:数据|資料|数据库|資料庫|信息)|数剧库|數劇庫/u
 ];
 
+// Generic cues such as "latest", "data" or "hero" are useful for the legacy
+// gate but are not authoritative domain anchors for overriding a classifier.
+export function hasExplicitTftDomain(input) {
+  return /云顶|金铲铲|\btft\b|teamfight\s+tactics/iu.test(normalizeText(input));
+}
+
 export function classifyDomain(input, options = {}) {
   const text = normalizeText(input);
   const contextText = (options.conversation ?? [])

@@ -7,6 +7,11 @@ test("Jev preflight is secret-free and rejects unusable shadow/control configura
   const script = fileURLToPath(new URL("../scripts/check-jev-readiness.mjs", import.meta.url));
   for (const [config, expected] of [
     [{ TFT_AGENT_JEV_INTENT_MODE: "off" }, 0],
+    [{ TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE: "invalid" }, 1],
+    [{ TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE: "shadow" }, 1],
+    [{ TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE: "shadow", TYPESAFE_API_KEY: "test-private-key" }, 0],
+    [{ TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE: "control", TYPESAFE_API_KEY: "test-private-key" }, 0],
+    [{ TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE: "shadow", TYPESAFE_API_KEY: "test-private-key", TFT_AGENT_JEV_INTENT_DIMENSIONS_MAX_REQUESTS: "0" }, 1],
     [{ TFT_AGENT_JEV_INTENT_MODE: "shadow" }, 1],
     [{ TFT_AGENT_JEV_INTENT_MODE: "shadow", TYPESAFE_API_KEY: "test-private-key" }, 0],
     [{ TFT_AGENT_JEV_INTENT_MODE: "control", TYPESAFE_API_KEY: "test-private-key" }, 0],
