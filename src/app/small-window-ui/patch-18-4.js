@@ -1,4 +1,5 @@
-// Verified against Riot's Traditional Chinese release notes and English October 7 B-patch.
+// Numeric facts are verified against Riot's Traditional Chinese release notes and English October 7 B-patch.
+// zh-CN entity and trait names follow the current simplified-Chinese client catalog; do not copy zh-TW display names verbatim.
 // Official timestamp: 2026-10-06T18:00:00.000Z = October 7 02:00 Asia/Shanghai.
 const t = (zh, en) => Object.freeze({ "zh-CN": zh, "en-US": en });
 const c = (id, direction, before, after, zh, en, entityType = "system", entityApiNames = [], stat = id) => Object.freeze({
@@ -8,26 +9,26 @@ const g = (zh, en, changes) => Object.freeze({ title: t(zh, en), changes: Object
 
 const releaseGroups = Object.freeze([
   g("羁绊", "Traits", [
-    c("blossom-ad-ap", "buff", "12/30/45/50%", "12/30/50/55%", "盛放繁花 · 攻击力 / 法强", "Blossom · AD / AP", "trait", ["DA_18_Blossom"]),
-    c("coven-130-components", "nerf", "2 components", "1 component + 6g", "女巫 130 精华 · 组件奖励", "Coven 130 Essence · Component reward", "trait", ["DA_18_Coven"]),
-    c("coven-130-elise", "nerf", "1 component + 2-star Elise + 1-star Cassiopeia", "1 component + 2-star Elise", "女巫 130 精华 · 伊莉丝奖励", "Coven 130 Essence · Elise reward", "trait", ["DA_18_Coven"]),
-    c("coven-130-random-item", "nerf", "1 random item", "1 component + 2-star Camille + 3g", "女巫 130 精华 · 随机物品奖励", "Coven 130 Essence · Random item reward", "trait", ["DA_18_Coven"]),
-    c("coven-130-caitlyn", "nerf", "2-star Caitlyn + 1 component + 3g", "2-star Caitlyn + 1 component", "女巫 130 精华 · 凯特琳奖励", "Coven 130 Essence · Caitlyn reward", "trait", ["DA_18_Coven"]),
+    c("blossom-ad-ap", "buff", "12/30/45/50%", "12/30/50/55%", "灵魂莲华 · 攻击力 / 法强", "Blossom · AD / AP", "trait", ["DA_18_Blossom"]),
+    c("coven-130-components", "nerf", "2 components", "1 component + 6g", "魔女 130 精华 · 组件奖励", "Coven 130 Essence · Component reward", "trait", ["DA_18_Coven"]),
+    c("coven-130-elise", "nerf", "1 component + 2-star Elise + 1-star Cassiopeia", "1 component + 2-star Elise", "魔女 130 精华 · 伊莉丝奖励", "Coven 130 Essence · Elise reward", "trait", ["DA_18_Coven"]),
+    c("coven-130-random-item", "nerf", "1 random item", "1 component + 2-star Camille + 3g", "魔女 130 精华 · 随机物品奖励", "Coven 130 Essence · Random item reward", "trait", ["DA_18_Coven"]),
+    c("coven-130-caitlyn", "nerf", "2-star Caitlyn + 1 component + 3g", "2-star Caitlyn + 1 component", "魔女 130 精华 · 凯特琳奖励", "Coven 130 Essence · Caitlyn reward", "trait", ["DA_18_Coven"]),
     c("eclipse-delay", "buff", "10s", "8s", "日蚀 · 首次处决延迟", "Eclipse · Initial execute delay", "trait", ["DA_18_Eclipse"]),
-    c("elderwood-mana", "buff", "20/70", "20/60", "神木精灵（7）· 深林保护者法力", "Elderwood (7) · Deepwood Protector Mana", "trait", ["DA_18_Elderwood"]),
-    c("elderwood-resists", "buff", "65", "70", "神木精灵（7）· 深林保护者双抗", "Elderwood (7) · Deepwood Protector resists", "trait", ["DA_18_Elderwood"]),
-    c("elderwood-plant-health", "nerf", "155%", "140%", "神木精灵（9）· 植物升星生命倍率", "Elderwood (9) · Plant star-up Health multiplier", "trait", ["DA_18_Elderwood"]),
+    c("elderwood-mana", "buff", "20/70", "20/60", "永恒之森（7）· 深林保护者法力", "Elderwood (7) · Deepwood Protector Mana", "trait", ["DA_18_Elderwood"]),
+    c("elderwood-resists", "buff", "65", "70", "永恒之森（7）· 深林保护者双抗", "Elderwood (7) · Deepwood Protector resists", "trait", ["DA_18_Elderwood"]),
+    c("elderwood-plant-health", "nerf", "155%", "140%", "永恒之森（9）· 植物升星生命倍率", "Elderwood (9) · Plant star-up Health multiplier", "trait", ["DA_18_Elderwood"]),
     c("executioner-bleed", "nerf", "30/40%", "25/35%", "处刑者（3/4）· 流血伤害", "Executioner (3/4) · Bleed damage", "trait", ["DA_18_Executioner"]),
-    c("fae-pixie-stats", "nerf", "5/8%", "4.5/7%", "妖精 · 每个皮克斯提供的攻击力 / 法强", "Fae · AD / AP per Pixie", "trait", ["DA_18_Fae"]),
+    c("fae-pixie-stats", "nerf", "5/8%", "4.5/7%", "花仙子 · 每个皮克斯提供的攻击力 / 法强", "Fae · AD / AP per Pixie", "trait", ["DA_18_Fae"]),
     c("juggernaut-durability", "nerf", "20/33/45%", "20/30/42%", "重装战士 · 续战力", "Juggernaut · Durability", "trait", ["DA_18_Vanguard"]),
-    c("lunar-ap", "buff", "7/10/14/18%", "7/12/16/20%", "月华 · 法强", "Lunar · Ability Power", "trait", ["DA_18_Lunar"]),
-    c("riftbeast-seven-stats", "buff", "5%", "6%", "峡谷巨兽（7）· 每 5 秒攻击力 / 法强 / 攻速", "Riftbeast (7) · AD / AP / AS every 5 seconds", "trait", ["DA_Riftbeast18"]),
-    c("sprykin-seven-stats", "buff", "45% HP + 45% AS", "55% HP + 55% AS", "百战老兵（7）· 生命值与攻速", "Sprykin (7) · Health and Attack Speed", "trait", ["DA_18_Sprykin"])
+    c("lunar-ap", "buff", "7/10/14/18%", "7/12/16/20%", "月蚀骑士 · 法强", "Lunar · Ability Power", "trait", ["DA_18_Lunar"]),
+    c("riftbeast-seven-stats", "buff", "5%", "6%", "峡谷野怪（7）· 每 5 秒攻击力 / 法强 / 攻速", "Riftbeast (7) · AD / AP / AS every 5 seconds", "trait", ["DA_Riftbeast18"]),
+    c("sprykin-seven-stats", "buff", "45% HP + 45% AS", "55% HP + 55% AS", "约德尔人和朋友（7）· 生命值与攻速", "Sprykin (7) · Health and Attack Speed", "trait", ["DA_18_Sprykin"])
   ]),
   g("一费弈子", "Tier 1 champions", [
     c("camille-damage", "buff", "150/225/375/640", "150/225/400/665", "卡蜜尔 · 技能攻击力倍率", "Camille · Ability AD ratio", "unit", ["DA_18_Camille"]),
-    c("kobuko-heal", "buff", "265/315/460/575", "285/335/480/595", "柯布柯 · 治疗法强倍率", "Kobuko · Heal AP ratio", "unit", ["DA_18_Kobuko"]),
-    c("rakan-shield", "buff", "270/320/415/490", "290/340/435/510", "锐空 · 护盾", "Rakan · Shield", "unit", ["DA_18_Rakan"]),
+    c("kobuko-heal", "buff", "265/315/460/575", "285/335/480/595", "可酷伯 · 治疗法强倍率", "Kobuko · Heal AP ratio", "unit", ["DA_18_Kobuko"]),
+    c("rakan-shield", "buff", "270/320/415/490", "290/340/435/510", "洛 · 护盾", "Rakan · Shield", "unit", ["DA_18_Rakan"]),
     c("xayah-damage", "buff", "68/102/155/165", "73/108/165/175", "霞 · 技能伤害", "Xayah · Ability damage", "unit", ["DA_18_Xayah"]),
     c("varus-attack-speed", "buff", "0.7", "0.75", "韦鲁斯 · 攻速", "Varus · Attack Speed", "unit", ["DA_18_Varus"]),
     c("veigar-damage", "nerf", "200/300/450/765", "190/285/430/725", "维迦 · 技能伤害", "Veigar · Ability damage", "unit", ["DA_18_Veigar"]),
@@ -43,14 +44,14 @@ const releaseGroups = Object.freeze([
   ]),
   g("三费弈子", "Tier 3 champions", [
     c("hecarim-mana", "buff", "30/110", "50/110", "赫卡里姆 · 法力", "Hecarim · Mana", "unit", ["DA_18_Hecarim"]),
-    c("mama-beak-damage", "buff", "22/30/48 AD", "22/30/52 AD", "巨喙鸟妈妈 · 技能攻击力倍率", "Mama Beak · Ability AD ratio", "unit", ["DA_CrimsonRaptor18"]),
+    c("mama-beak-damage", "buff", "22/30/48 AD", "22/30/52 AD", "深红锋喙鸟 · 技能攻击力倍率", "Mama Beak · Ability AD ratio", "unit", ["DA_CrimsonRaptor18"]),
     c("rammus-shield", "nerf", "400/550/725 AP", "400/550/700 AP", "拉莫斯 · 护盾法强倍率", "Rammus · Shield AP ratio", "unit", ["DA_18_Rammus"]),
     c("rengar-damage", "buff", "255/385/615 AD", "255/385/650 AD", "雷恩加尔 · 技能攻击力倍率", "Rengar · Ability AD ratio", "unit", ["DA_18_Rengar"]),
     c("tristana-damage", "buff", "160/240/385 AD", "175/265/420 AD", "崔丝塔娜 · 技能攻击力倍率", "Tristana · Ability AD ratio", "unit", ["DA_18_Tristana"])
   ]),
   g("四费弈子", "Tier 4 champions", [
-    c("brambleback-bonus-ad", "buff", "80% AD", "100% AD", "树精长老 · 技能额外攻击力", "Brambleback · Ability bonus AD", "unit", ["DA_Brambleback18"]),
-    c("brambleback-leap", "nerf", "155/235 AD", "135/205 AD", "树精长老 · 跃击伤害", "Brambleback · Leap damage", "unit", ["DA_Brambleback18"]),
+    c("brambleback-bonus-ad", "buff", "80% AD", "100% AD", "绯红印记树怪（Brambleback）· 技能额外攻击力", "Brambleback · Ability bonus AD", "unit", ["DA_Brambleback18"]),
+    c("brambleback-leap", "nerf", "155/235 AD", "135/205 AD", "绯红印记树怪（Brambleback）· 跃击伤害", "Brambleback · Leap damage", "unit", ["DA_Brambleback18"]),
     c("ezreal-small-cast", "buff", "250/375 AD", "270/405 AD", "伊泽瑞尔 · 小型施法伤害", "Ezreal · Small cast damage", "unit", ["DA_18_Ezreal"]),
     c("nidalee-ap-small-spear", "buff", "170/255 AP", "185/275 AP", "奈德丽（法系）· 小矛伤害", "Nidalee AP form · Small spear damage", "unit", ["DA_Nidalee18_AP"]),
     c("nidalee-ad-damage", "nerf", "210/315 AD", "200/300 AD", "奈德丽（物理）· 技能伤害", "Nidalee AD form · Ability damage", "unit", ["DA_Nidalee18_AD"]),
@@ -69,7 +70,7 @@ const releaseGroups = Object.freeze([
     c("crownguard-ap", "nerf", "25", "20", "皇冠卫士 · 护盾结束后的额外法强", "Crownguard · AP after shield expires", "item", ["TFT_Item_Crownguard"]),
     c("spirit-visage-durability", "buff", "8%", "10%", "振奋盔甲 · 续航能力", "Spirit Visage · Durability", "item", ["TFT_Item_Redemption"]),
     c("radiant-spirit-visage-durability", "buff", "15%", "18%", "光明振奋盔甲 · 续航能力", "Radiant Spirit Visage · Durability", "item", ["TFT5_Item_RedemptionRadiant"]),
-    c("elderwood-emblem-resists", "nerf", "35", "25", "神木精灵纹章 · 双抗", "Elderwood Emblem · Resists", "item", ["DA_18_EmblemElderwood"])
+    c("elderwood-emblem-resists", "nerf", "35", "25", "永恒之森纹章 · 双抗", "Elderwood Emblem · Resists", "item", ["DA_18_EmblemElderwood"])
   ]),
   g("强化符文", "Augments", [
     c("dark-ritual-cashout-2", "nerf", "15", "12", "暗黑仪式 · 第 2 次兑现法强", "Dark Ritual · Cashout 2 AP", "augment"),
@@ -100,21 +101,21 @@ const releaseGroups = Object.freeze([
   ]),
   g("灵火", "Wisps", [
     c("backrow-star-as", "buff", "85%", "100%", "后排巨星 · 额外攻速", "Backrow Star · Bonus Attack Speed", "wisp"),
-    c("backrow-star-blossom-as", "buff", "115%", "130%", "后排巨星 · 盛放繁花强化攻速", "Backrow Star · Blossom-upgraded Attack Speed", "wisp"),
+    c("backrow-star-blossom-as", "buff", "115%", "130%", "后排巨星 · 灵魂莲华强化攻速", "Backrow Star · Blossom-upgraded Attack Speed", "wisp"),
     c("forest-guide-cost", "nerf", "5g", "6g", "森林向导 · 价格", "Forest Guide · Cost", "wisp"),
-    c("forest-guide-blossom-cost", "nerf", "4g", "5g", "森林向导 · 盛放繁花强化价格", "Forest Guide · Blossom-upgraded cost", "wisp"),
+    c("forest-guide-blossom-cost", "nerf", "4g", "5g", "森林向导 · 灵魂莲华强化价格", "Forest Guide · Blossom-upgraded cost", "wisp"),
     c("giants-growth-health", "buff", "750", "800", "巨大成长 · 生命值", "Giant's Growth · Health", "wisp"),
-    c("giants-growth-blossom-health", "buff", "750", "800", "巨大成长 · 盛放繁花强化生命值", "Giant's Growth · Blossom-upgraded Health", "wisp"),
+    c("giants-growth-blossom-health", "buff", "750", "800", "巨大成长 · 灵魂莲华强化生命值", "Giant's Growth · Blossom-upgraded Health", "wisp"),
     c("improved-reach-cost", "buff", "2g", "1g", "提升攻击距离 · 价格", "Improved Reach · Cost", "wisp"),
-    c("improved-reach-blossom-cost", "buff", "2g", "1g", "提升攻击距离 · 盛放繁花强化价格", "Improved Reach · Blossom-upgraded cost", "wisp"),
+    c("improved-reach-blossom-cost", "buff", "2g", "1g", "提升攻击距离 · 灵魂莲华强化价格", "Improved Reach · Blossom-upgraded cost", "wisp"),
     c("killing-frenzy-as", "buff", "115%", "130%", "杀戮狂热 · 击杀后攻速", "Killing Frenzy · Attack Speed after a kill", "wisp"),
-    c("killing-frenzy-blossom-as", "buff", "140%", "160%", "杀戮狂热 · 盛放繁花强化攻速", "Killing Frenzy · Blossom-upgraded Attack Speed", "wisp"),
+    c("killing-frenzy-blossom-as", "buff", "140%", "160%", "杀戮狂热 · 灵魂莲华强化攻速", "Killing Frenzy · Blossom-upgraded Attack Speed", "wisp"),
     c("mana-potion-restore", "nerf", "80", "70", "法力药水 · 法力回复", "Mana Potion · Mana restored", "wisp"),
     c("mana-potion-start", "nerf", "20", "10", "法力药水 · 起始法力", "Mana Potion · Starting Mana", "wisp"),
     c("mana-potion-radiant-restore", "nerf", "90", "80", "光明法力药水 · 法力回复", "Radiant Mana Potion · Mana restored", "wisp"),
     c("mana-potion-radiant-start", "nerf", "20", "10", "光明法力药水 · 起始法力", "Radiant Mana Potion · Starting Mana", "wisp"),
     c("stealthy-duration", "buff", "6s", "8s", "隐密行动 · 持续时间", "Stealthy · Duration", "wisp"),
-    c("stealthy-blossom-duration", "buff", "10s", "12s", "隐密行动 · 盛放繁花强化持续时间", "Stealthy · Blossom-upgraded duration", "wisp")
+    c("stealthy-blossom-duration", "buff", "10s", "12s", "隐密行动 · 灵魂莲华强化持续时间", "Stealthy · Blossom-upgraded duration", "wisp")
   ])
 ]);
 
@@ -130,7 +131,7 @@ const hotfixGroups = Object.freeze([
     c("murkwolf-damage", "buff", "60/90/135 AD", "65/100/160 AD", "暗影狼 · 强化攻击伤害", "Murkwolf · Empowered attack damage", "unit", ["DA_Murkwolf18"]),
     c("warwick-damage", "buff", "215/325/500 AD", "230/345/535 AD", "沃里克 · 技能伤害", "Warwick · Spell damage", "unit", ["DA_18_Warwick"]),
     c("warwick-healing", "buff", "20%", "25%", "沃里克 · 技能治疗", "Warwick · Spell healing", "unit", ["DA_18_Warwick"]),
-    c("mama-beak-base-ad", "buff", "55", "60", "巨喙鸟妈妈 · 基础攻击力", "Mama Beak · Base AD", "unit", ["DA_CrimsonRaptor18"])
+    c("mama-beak-base-ad", "buff", "55", "60", "深红锋喙鸟 · 基础攻击力", "Mama Beak · Base AD", "unit", ["DA_CrimsonRaptor18"])
   ]),
   g("灵火", "Wisps", [
     c("stat-boosters-resists", "nerf", "10", "8", "能力值强化 · 护甲与魔抗", "Stat Boosters · Armor and Magic Resist", "wisp"),

@@ -91,7 +91,7 @@ function unitRecord(apiName, options = {}, dynamicSource = null) {
   const lookupName = String(lookup?.name ?? lookup?.displayName ?? "").trim() || null;
   const token = apiToken(apiName);
   const metadata = unitMetadataResolver.resolveUnit(apiName);
-  const cost = Number(lookup?.cost ?? metadata.cost);
+  const cost = Number(lookup?.cost ?? metadata.cost ?? displayOverride?.cost);
   const providerSampleCount = Number(options.providerSampleCount);
   return {
     apiName,

@@ -7,6 +7,7 @@ function displayOverride(apiName, zhName, enName, options = {}) {
     zhName,
     enName,
     aliases: Object.freeze([...new Set([zhName, enName, ...(options.aliases ?? [])])]),
+    ...(Number.isInteger(options.cost) ? { cost: options.cost } : {}),
     ...(options.fuzzyAliases?.length ? {
       fuzzyAliases: Object.freeze([...options.fuzzyAliases])
     } : {}),
@@ -64,7 +65,10 @@ export const S18_UNIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_Aphelios", "厄斐琉斯", "Aphelios", {
     fuzzyAliases: ["月男", "efls"]
   }),
-  displayOverride("DA_Brambleback18", "绯红印记树怪", "Brambleback"),
+  displayOverride("DA_Brambleback18", "绯红印记树怪", "Brambleback", {
+    aliases: ["树精长老"],
+    cost: 4
+  }),
   displayOverride("DA_18_Zyra", "婕拉", "Zyra"),
   displayOverride("DA_18_Lillia", "莉莉娅", "Lillia"),
   displayOverride("DA_18_Morgana", "莫甘娜", "Morgana"),
@@ -80,7 +84,7 @@ export const S18_UNIT_DISPLAY_OVERRIDES = Object.freeze([
   displayOverride("DA_18_Kennen", "凯南", "Kennen"),
   displayOverride("DA_Lux18_Base", "拉克丝", "Lux"),
   displayOverride("DA_18_Alune", "拉露恩", "Alune"),
-  displayOverride("DA_18_Maokai", "茂凯", "Maokai"),
+  displayOverride("DA_18_Maokai", "茂凯", "Maokai", { aliases: ["大树"], cost: 5 }),
   displayOverride("DA_18_GnarSmall", "纳尔", "Gnar"),
   displayOverride("DA_Taric18", "塔里克", "Taric"),
   displayOverride("DA_18_ElderDragon", "远古巨龙", "Elder Dragon")

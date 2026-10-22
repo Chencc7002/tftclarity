@@ -3738,8 +3738,8 @@ module.exports = {
           "stat": "blossom-ad-ap",
           "before": "12/30/45/50%",
           "after": "12/30/50/55%",
-          "label": "盛放繁花 · 攻击力 / 法强",
-          "text": "增强｜盛放繁花 · 攻击力 / 法强：12/30/45/50% → 12/30/50/55%"
+          "label": "灵魂莲华 · 攻击力 / 法强",
+          "text": "增强｜灵魂莲华 · 攻击力 / 法强：12/30/45/50% → 12/30/50/55%"
         },
         {
           "id": "18.4-release-2026-10-07-coven-130-components",
@@ -3752,8 +3752,8 @@ module.exports = {
           "stat": "coven-130-components",
           "before": "2 components",
           "after": "1 component + 6g",
-          "label": "女巫 130 精华 · 组件奖励",
-          "text": "削弱｜女巫 130 精华 · 组件奖励：2 components → 1 component + 6g"
+          "label": "魔女 130 精华 · 组件奖励",
+          "text": "削弱｜魔女 130 精华 · 组件奖励：2 components → 1 component + 6g"
         },
         {
           "id": "18.4-release-2026-10-07-coven-130-elise",
@@ -3766,8 +3766,8 @@ module.exports = {
           "stat": "coven-130-elise",
           "before": "1 component + 2-star Elise + 1-star Cassiopeia",
           "after": "1 component + 2-star Elise",
-          "label": "女巫 130 精华 · 伊莉丝奖励",
-          "text": "削弱｜女巫 130 精华 · 伊莉丝奖励：1 component + 2-star Elise + 1-star Cassiopeia → 1 component + 2-star Elise"
+          "label": "魔女 130 精华 · 伊莉丝奖励",
+          "text": "削弱｜魔女 130 精华 · 伊莉丝奖励：1 component + 2-star Elise + 1-star Cassiopeia → 1 component + 2-star Elise"
         },
         {
           "id": "18.4-release-2026-10-07-coven-130-random-item",
@@ -3780,8 +3780,8 @@ module.exports = {
           "stat": "coven-130-random-item",
           "before": "1 random item",
           "after": "1 component + 2-star Camille + 3g",
-          "label": "女巫 130 精华 · 随机物品奖励",
-          "text": "削弱｜女巫 130 精华 · 随机物品奖励：1 random item → 1 component + 2-star Camille + 3g"
+          "label": "魔女 130 精华 · 随机物品奖励",
+          "text": "削弱｜魔女 130 精华 · 随机物品奖励：1 random item → 1 component + 2-star Camille + 3g"
         },
         {
           "id": "18.4-release-2026-10-07-coven-130-caitlyn",
@@ -3794,8 +3794,8 @@ module.exports = {
           "stat": "coven-130-caitlyn",
           "before": "2-star Caitlyn + 1 component + 3g",
           "after": "2-star Caitlyn + 1 component",
-          "label": "女巫 130 精华 · 凯特琳奖励",
-          "text": "削弱｜女巫 130 精华 · 凯特琳奖励：2-star Caitlyn + 1 component + 3g → 2-star Caitlyn + 1 component"
+          "label": "魔女 130 精华 · 凯特琳奖励",
+          "text": "削弱｜魔女 130 精华 · 凯特琳奖励：2-star Caitlyn + 1 component + 3g → 2-star Caitlyn + 1 component"
         },
         {
           "id": "18.4-release-2026-10-07-eclipse-delay",
@@ -3822,8 +3822,8 @@ module.exports = {
           "stat": "elderwood-mana",
           "before": "20/70",
           "after": "20/60",
-          "label": "神木精灵（7）· 深林保护者法力",
-          "text": "增强｜神木精灵（7）· 深林保护者法力：20/70 → 20/60"
+          "label": "永恒之森（7）· 深林保护者法力",
+          "text": "增强｜永恒之森（7）· 深林保护者法力：20/70 → 20/60"
         },
         {
           "id": "18.4-release-2026-10-07-elderwood-resists",
@@ -3836,8 +3836,8 @@ module.exports = {
           "stat": "elderwood-resists",
           "before": "65",
           "after": "70",
-          "label": "神木精灵（7）· 深林保护者双抗",
-          "text": "增强｜神木精灵（7）· 深林保护者双抗：65 → 70"
+          "label": "永恒之森（7）· 深林保护者双抗",
+          "text": "增强｜永恒之森（7）· 深林保护者双抗：65 → 70"
         },
         {
           "id": "18.4-release-2026-10-07-elderwood-plant-health",
@@ -3850,8 +3850,8 @@ module.exports = {
           "stat": "elderwood-plant-health",
           "before": "155%",
           "after": "140%",
-          "label": "神木精灵（9）· 植物升星生命倍率",
-          "text": "削弱｜神木精灵（9）· 植物升星生命倍率：155% → 140%"
+          "label": "永恒之森（9）· 植物升星生命倍率",
+          "text": "削弱｜永恒之森（9）· 植物升星生命倍率：155% → 140%"
         },
         {
           "id": "18.4-release-2026-10-07-executioner-bleed",
@@ -3878,8 +3878,8 @@ module.exports = {
           "stat": "fae-pixie-stats",
           "before": "5/8%",
           "after": "4.5/7%",
-          "label": "妖精 · 每个皮克斯提供的攻击力 / 法强",
-          "text": "削弱｜妖精 · 每个皮克斯提供的攻击力 / 法强：5/8% → 4.5/7%"
+          "label": "花仙子 · 每个皮克斯提供的攻击力 / 法强",
+          "text": "削弱｜花仙子 · 每个皮克斯提供的攻击力 / 法强：5/8% → 4.5/7%"
         },
         {
           "id": "18.4-release-2026-10-07-juggernaut-durability",
@@ -3906,8 +3906,8 @@ module.exports = {
           "stat": "lunar-ap",
           "before": "7/10/14/18%",
           "after": "7/12/16/20%",
-          "label": "月华 · 法强",
-          "text": "增强｜月华 · 法强：7/10/14/18% → 7/12/16/20%"
+          "label": "月蚀骑士 · 法强",
+          "text": "增强｜月蚀骑士 · 法强：7/10/14/18% → 7/12/16/20%"
         },
         {
           "id": "18.4-release-2026-10-07-riftbeast-seven-stats",
@@ -3920,8 +3920,8 @@ module.exports = {
           "stat": "riftbeast-seven-stats",
           "before": "5%",
           "after": "6%",
-          "label": "峡谷巨兽（7）· 每 5 秒攻击力 / 法强 / 攻速",
-          "text": "增强｜峡谷巨兽（7）· 每 5 秒攻击力 / 法强 / 攻速：5% → 6%"
+          "label": "峡谷野怪（7）· 每 5 秒攻击力 / 法强 / 攻速",
+          "text": "增强｜峡谷野怪（7）· 每 5 秒攻击力 / 法强 / 攻速：5% → 6%"
         },
         {
           "id": "18.4-release-2026-10-07-sprykin-seven-stats",
@@ -3934,8 +3934,8 @@ module.exports = {
           "stat": "sprykin-seven-stats",
           "before": "45% HP + 45% AS",
           "after": "55% HP + 55% AS",
-          "label": "百战老兵（7）· 生命值与攻速",
-          "text": "增强｜百战老兵（7）· 生命值与攻速：45% HP + 45% AS → 55% HP + 55% AS"
+          "label": "约德尔人和朋友（7）· 生命值与攻速",
+          "text": "增强｜约德尔人和朋友（7）· 生命值与攻速：45% HP + 45% AS → 55% HP + 55% AS"
         },
         {
           "id": "18.4-release-2026-10-07-camille-damage",
@@ -3962,8 +3962,8 @@ module.exports = {
           "stat": "kobuko-heal",
           "before": "265/315/460/575",
           "after": "285/335/480/595",
-          "label": "柯布柯 · 治疗法强倍率",
-          "text": "增强｜柯布柯 · 治疗法强倍率：265/315/460/575 → 285/335/480/595"
+          "label": "可酷伯 · 治疗法强倍率",
+          "text": "增强｜可酷伯 · 治疗法强倍率：265/315/460/575 → 285/335/480/595"
         },
         {
           "id": "18.4-release-2026-10-07-rakan-shield",
@@ -3976,8 +3976,8 @@ module.exports = {
           "stat": "rakan-shield",
           "before": "270/320/415/490",
           "after": "290/340/435/510",
-          "label": "锐空 · 护盾",
-          "text": "增强｜锐空 · 护盾：270/320/415/490 → 290/340/435/510"
+          "label": "洛 · 护盾",
+          "text": "增强｜洛 · 护盾：270/320/415/490 → 290/340/435/510"
         },
         {
           "id": "18.4-release-2026-10-07-xayah-damage",
@@ -4144,8 +4144,8 @@ module.exports = {
           "stat": "mama-beak-damage",
           "before": "22/30/48 AD",
           "after": "22/30/52 AD",
-          "label": "巨喙鸟妈妈 · 技能攻击力倍率",
-          "text": "增强｜巨喙鸟妈妈 · 技能攻击力倍率：22/30/48 AD → 22/30/52 AD"
+          "label": "深红锋喙鸟 · 技能攻击力倍率",
+          "text": "增强｜深红锋喙鸟 · 技能攻击力倍率：22/30/48 AD → 22/30/52 AD"
         },
         {
           "id": "18.4-release-2026-10-07-rammus-shield",
@@ -4200,8 +4200,8 @@ module.exports = {
           "stat": "brambleback-bonus-ad",
           "before": "80% AD",
           "after": "100% AD",
-          "label": "树精长老 · 技能额外攻击力",
-          "text": "增强｜树精长老 · 技能额外攻击力：80% AD → 100% AD"
+          "label": "绯红印记树怪（Brambleback）· 技能额外攻击力",
+          "text": "增强｜绯红印记树怪（Brambleback）· 技能额外攻击力：80% AD → 100% AD"
         },
         {
           "id": "18.4-release-2026-10-07-brambleback-leap",
@@ -4214,8 +4214,8 @@ module.exports = {
           "stat": "brambleback-leap",
           "before": "155/235 AD",
           "after": "135/205 AD",
-          "label": "树精长老 · 跃击伤害",
-          "text": "削弱｜树精长老 · 跃击伤害：155/235 AD → 135/205 AD"
+          "label": "绯红印记树怪（Brambleback）· 跃击伤害",
+          "text": "削弱｜绯红印记树怪（Brambleback）· 跃击伤害：155/235 AD → 135/205 AD"
         },
         {
           "id": "18.4-release-2026-10-07-ezreal-small-cast",
@@ -4424,8 +4424,8 @@ module.exports = {
           "stat": "elderwood-emblem-resists",
           "before": "35",
           "after": "25",
-          "label": "神木精灵纹章 · 双抗",
-          "text": "削弱｜神木精灵纹章 · 双抗：35 → 25"
+          "label": "永恒之森纹章 · 双抗",
+          "text": "削弱｜永恒之森纹章 · 双抗：35 → 25"
         },
         {
           "id": "18.4-release-2026-10-07-dark-ritual-cashout-2",
@@ -4748,8 +4748,8 @@ module.exports = {
           "stat": "backrow-star-blossom-as",
           "before": "115%",
           "after": "130%",
-          "label": "后排巨星 · 盛放繁花强化攻速",
-          "text": "增强｜后排巨星 · 盛放繁花强化攻速：115% → 130%"
+          "label": "后排巨星 · 灵魂莲华强化攻速",
+          "text": "增强｜后排巨星 · 灵魂莲华强化攻速：115% → 130%"
         },
         {
           "id": "18.4-release-2026-10-07-forest-guide-cost",
@@ -4772,8 +4772,8 @@ module.exports = {
           "stat": "forest-guide-blossom-cost",
           "before": "4g",
           "after": "5g",
-          "label": "森林向导 · 盛放繁花强化价格",
-          "text": "削弱｜森林向导 · 盛放繁花强化价格：4g → 5g"
+          "label": "森林向导 · 灵魂莲华强化价格",
+          "text": "削弱｜森林向导 · 灵魂莲华强化价格：4g → 5g"
         },
         {
           "id": "18.4-release-2026-10-07-giants-growth-health",
@@ -4796,8 +4796,8 @@ module.exports = {
           "stat": "giants-growth-blossom-health",
           "before": "750",
           "after": "800",
-          "label": "巨大成长 · 盛放繁花强化生命值",
-          "text": "增强｜巨大成长 · 盛放繁花强化生命值：750 → 800"
+          "label": "巨大成长 · 灵魂莲华强化生命值",
+          "text": "增强｜巨大成长 · 灵魂莲华强化生命值：750 → 800"
         },
         {
           "id": "18.4-release-2026-10-07-improved-reach-cost",
@@ -4820,8 +4820,8 @@ module.exports = {
           "stat": "improved-reach-blossom-cost",
           "before": "2g",
           "after": "1g",
-          "label": "提升攻击距离 · 盛放繁花强化价格",
-          "text": "增强｜提升攻击距离 · 盛放繁花强化价格：2g → 1g"
+          "label": "提升攻击距离 · 灵魂莲华强化价格",
+          "text": "增强｜提升攻击距离 · 灵魂莲华强化价格：2g → 1g"
         },
         {
           "id": "18.4-release-2026-10-07-killing-frenzy-as",
@@ -4844,8 +4844,8 @@ module.exports = {
           "stat": "killing-frenzy-blossom-as",
           "before": "140%",
           "after": "160%",
-          "label": "杀戮狂热 · 盛放繁花强化攻速",
-          "text": "增强｜杀戮狂热 · 盛放繁花强化攻速：140% → 160%"
+          "label": "杀戮狂热 · 灵魂莲华强化攻速",
+          "text": "增强｜杀戮狂热 · 灵魂莲华强化攻速：140% → 160%"
         },
         {
           "id": "18.4-release-2026-10-07-mana-potion-restore",
@@ -4916,8 +4916,8 @@ module.exports = {
           "stat": "stealthy-blossom-duration",
           "before": "10s",
           "after": "12s",
-          "label": "隐密行动 · 盛放繁花强化持续时间",
-          "text": "增强｜隐密行动 · 盛放繁花强化持续时间：10s → 12s"
+          "label": "隐密行动 · 灵魂莲华强化持续时间",
+          "text": "增强｜隐密行动 · 灵魂莲华强化持续时间：10s → 12s"
         }
       ]
     },
@@ -5082,8 +5082,8 @@ module.exports = {
           "stat": "mama-beak-base-ad",
           "before": "55",
           "after": "60",
-          "label": "巨喙鸟妈妈 · 基础攻击力",
-          "text": "增强｜巨喙鸟妈妈 · 基础攻击力：55 → 60"
+          "label": "深红锋喙鸟 · 基础攻击力",
+          "text": "增强｜深红锋喙鸟 · 基础攻击力：55 → 60"
         },
         {
           "id": "18.4-hotfix-2026-10-07-stat-boosters-resists",
@@ -5297,7 +5297,7 @@ module.exports = {
       "kind": "正式版本",
       "publishedAt": "2026-10-21",
       "title": "18.5 正式版本数值调整",
-      "summary": "共 71 项数值记录。官方还调整了物理 / 法系强化符文的出现倾向，缩短巨喙鸟妈妈约 1 秒的法力锁定；钢铁之心因漏洞再次停用，道具抽取不再给予维迦，新增潘朵拉的装备 II+ / II++；灵火筛选改看备战区与上一场战斗，并包含错误、稳定性修复和 52 款风格装饰回归。上述规则、状态与新增内容没有完整前后数值，未计入数值清单。",
+      "summary": "共 71 项数值记录。官方还调整了物理 / 法系强化符文的出现倾向，缩短深红锋喙鸟约 1 秒的法力锁定；钢铁之心因漏洞再次停用，道具抽取不再给予维迦，新增潘朵拉的装备 II+ / II++；灵火筛选改看备战区与上一场战斗，并包含错误、稳定性修复和 52 款风格装饰回归。上述规则、状态与新增内容没有完整前后数值，未计入数值清单。",
       "sourceName": "Riot Games 官方更新公告",
       "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
       "changes": [
@@ -5340,8 +5340,8 @@ module.exports = {
           "stat": "elderwood-nine-health",
           "before": "140%",
           "after": "125%",
-          "label": "神木精灵（9）· 召唤物额外生命",
-          "text": "削弱｜神木精灵（9）· 召唤物额外生命：140% → 125%"
+          "label": "永恒之森（9）· 召唤物额外生命",
+          "text": "削弱｜永恒之森（9）· 召唤物额外生命：140% → 125%"
         },
         {
           "id": "18.5-release-2026-10-21-fae-heal",
@@ -5354,8 +5354,8 @@ module.exports = {
           "stat": "fae-heal",
           "before": "2.5/4%",
           "after": "3/5%",
-          "label": "妖精（2/4）· 治疗量",
-          "text": "增强｜妖精（2/4）· 治疗量：2.5/4% → 3/5%"
+          "label": "花仙子（2/4）· 治疗量",
+          "text": "增强｜花仙子（2/4）· 治疗量：2.5/4% → 3/5%"
         },
         {
           "id": "18.5-release-2026-10-21-fae-fourth-pixie",
@@ -5368,8 +5368,8 @@ module.exports = {
           "stat": "fae-fourth-pixie",
           "before": "30,000",
           "after": "25,000",
-          "label": "妖精 · 第四个黄金皮克斯门槛",
-          "text": "增强｜妖精 · 第四个黄金皮克斯门槛：30,000 → 25,000"
+          "label": "花仙子 · 第四个黄金皮克斯门槛",
+          "text": "增强｜花仙子 · 第四个黄金皮克斯门槛：30,000 → 25,000"
         },
         {
           "id": "18.5-release-2026-10-21-fae-fifth-pixie",
@@ -5382,8 +5382,8 @@ module.exports = {
           "stat": "fae-fifth-pixie",
           "before": "70,000",
           "after": "60,000",
-          "label": "妖精 · 第五个黄金皮克斯门槛",
-          "text": "增强｜妖精 · 第五个黄金皮克斯门槛：70,000 → 60,000"
+          "label": "花仙子 · 第五个黄金皮克斯门槛",
+          "text": "增强｜花仙子 · 第五个黄金皮克斯门槛：70,000 → 60,000"
         },
         {
           "id": "18.5-release-2026-10-21-fae-sixth-pixie",
@@ -5396,8 +5396,8 @@ module.exports = {
           "stat": "fae-sixth-pixie",
           "before": "110,000",
           "after": "100,000",
-          "label": "妖精 · 第六个黄金皮克斯门槛",
-          "text": "增强｜妖精 · 第六个黄金皮克斯门槛：110,000 → 100,000"
+          "label": "花仙子 · 第六个黄金皮克斯门槛",
+          "text": "增强｜花仙子 · 第六个黄金皮克斯门槛：110,000 → 100,000"
         },
         {
           "id": "18.5-release-2026-10-21-flora-fatalis-heal",
@@ -5410,8 +5410,8 @@ module.exports = {
           "stat": "flora-fatalis-heal",
           "before": "8%",
           "after": "7%",
-          "label": "绝命花华 · 最大生命值治疗",
-          "text": "削弱｜绝命花华 · 最大生命值治疗：8% → 7%"
+          "label": "绝命花妖 · 最大生命值治疗",
+          "text": "削弱｜绝命花妖 · 最大生命值治疗：8% → 7%"
         },
         {
           "id": "18.5-release-2026-10-21-rapidfire-as",
@@ -5424,8 +5424,8 @@ module.exports = {
           "stat": "rapidfire-as",
           "before": "3/5/8/12%",
           "after": "3/5/7/10%",
-          "label": "速射 · 每次攻击获得攻速",
-          "text": "削弱｜速射 · 每次攻击获得攻速：3/5/8/12% → 3/5/7/10%"
+          "label": "迅捷射手 · 每次攻击获得攻速",
+          "text": "削弱｜迅捷射手 · 每次攻击获得攻速：3/5/8/12% → 3/5/7/10%"
         },
         {
           "id": "18.5-release-2026-10-21-riftbeast-seven-ad-ap",
@@ -5438,8 +5438,8 @@ module.exports = {
           "stat": "riftbeast-seven-ad-ap",
           "before": "6%",
           "after": "5%",
-          "label": "峡谷巨兽（7）· 攻击力 / 法强",
-          "text": "削弱｜峡谷巨兽（7）· 攻击力 / 法强：6% → 5%"
+          "label": "峡谷野怪（7）· 攻击力 / 法强",
+          "text": "削弱｜峡谷野怪（7）· 攻击力 / 法强：6% → 5%"
         },
         {
           "id": "18.5-release-2026-10-21-caitlyn-empowered-auto",
@@ -5508,8 +5508,8 @@ module.exports = {
           "stat": "mama-beak-damage",
           "before": "22/33/52 AD",
           "after": "20/30/50 AD",
-          "label": "巨喙鸟妈妈 · 技能攻击力倍率",
-          "text": "削弱｜巨喙鸟妈妈 · 技能攻击力倍率：22/33/52 AD → 20/30/50 AD"
+          "label": "深红锋喙鸟 · 技能攻击力倍率",
+          "text": "削弱｜深红锋喙鸟 · 技能攻击力倍率：22/33/52 AD → 20/30/50 AD"
         },
         {
           "id": "18.5-release-2026-10-21-master-yi-ad-starting-ad",
@@ -5522,8 +5522,8 @@ module.exports = {
           "stat": "master-yi-ad-starting-ad",
           "before": "60",
           "after": "63",
-          "label": "易大师（物理）· 初始攻击力",
-          "text": "增强｜易大师（物理）· 初始攻击力：60 → 63"
+          "label": "易（物理）· 初始攻击力",
+          "text": "增强｜易（物理）· 初始攻击力：60 → 63"
         },
         {
           "id": "18.5-release-2026-10-21-master-yi-ap-damage",
@@ -5536,8 +5536,8 @@ module.exports = {
           "stat": "master-yi-ap-damage",
           "before": "125/190/285 AP",
           "after": "135/200/320 AP",
-          "label": "易大师（法系）· 技能伤害",
-          "text": "增强｜易大师（法系）· 技能伤害：125/190/285 AP → 135/200/320 AP"
+          "label": "易（法系）· 技能伤害",
+          "text": "增强｜易（法系）· 技能伤害：125/190/285 AP → 135/200/320 AP"
         },
         {
           "id": "18.5-release-2026-10-21-tristana-mana",
@@ -5578,8 +5578,8 @@ module.exports = {
           "stat": "brambleback-heal",
           "before": "4%",
           "after": "5%",
-          "label": "树精长老 · 首领标记治疗",
-          "text": "增强｜树精长老 · 首领标记治疗：4% → 5%"
+          "label": "绯红印记树怪（Brambleback）· 首领标记治疗",
+          "text": "增强｜绯红印记树怪（Brambleback）· 首领标记治疗：4% → 5%"
         },
         {
           "id": "18.5-release-2026-10-21-brambleback-armor-ignore",
@@ -5592,8 +5592,8 @@ module.exports = {
           "stat": "brambleback-armor-ignore",
           "before": "20% + 25% AP",
           "after": "25% + 25% AP",
-          "label": "树精长老 · 无视护甲",
-          "text": "增强｜树精长老 · 无视护甲：20% + 25% AP → 25% + 25% AP"
+          "label": "绯红印记树怪（Brambleback）· 无视护甲",
+          "text": "增强｜绯红印记树怪（Brambleback）· 无视护甲：20% + 25% AP → 25% + 25% AP"
         },
         {
           "id": "18.5-release-2026-10-21-malphite-shield",
