@@ -1,8 +1,28 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.4";
+export const CURRENT_PATCH_VERSION = "18.5";
 
 const PATCH_NOTES = {
+  "18.5": {
+    version: "18.5",
+    publishedAt: "2026-10-20T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "18.5 版本更新",
+        summary: "已核实至 2026 年 10 月 22 日：正式版共 71 项数值记录。另有强化符文出现倾向、灵火筛选、钢铁之心停用、新增潘朵拉的装备变体、错误与稳定性修复，以及 52 款风格装饰回归；目前官方公告没有 B 补丁章节。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
+        highlights: []
+      },
+      "en-US": {
+        title: "Patch 18.5",
+        summary: "Verified through October 22, 2026: 71 release numeric records, plus Augment-tailoring and Wisp-filtering rules, the Heart of Steel disable, new Pandora's Items variants, bug and stability fixes, and 52 restored cosmetics. Riot's article currently has no B-patch section.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-5/",
+        highlights: []
+      }
+    }
+  },
   "18.4": {
     version: "18.4",
     publishedAt: "2026-10-06T18:00:00.000Z",

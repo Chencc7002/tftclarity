@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PATCH_18_4_HOTFIX, PATCH_18_4_REVISION } from "../src/app/small-window-ui/patch-18-4.js";
-import { getCurrentPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
+import { getPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
 import { associateOfficialPatchChanges } from "../src/data/official-patch-evidence.js";
 import { getOfficialPatchFacts } from "../src/data/official-patch-facts.js";
 import { createTftToolHandlers } from "../src/domain/tft/tool-handler-factory.js";
@@ -10,8 +10,8 @@ import { buildOfficialPatchSemanticDocuments } from "../src/knowledge/official-p
 const flatten = (revision) => revision.groups.flatMap((group) => group.changes);
 
 test("18.4 appends release and B-patch revisions while retaining all prior history", () => {
-  const current = getCurrentPatchNote();
-  const timeline = getPatchNoteTimeline();
+  const current = getPatchNote("18.4");
+  const timeline = getPatchNoteTimeline("18.4");
   assert.equal(current.version, "18.4");
   assert.equal(current.publishedAt, "2026-10-06T18:00:00.000Z");
   assert.equal(current.updatedAt, "2026-10-07");

@@ -2,10 +2,33 @@ import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 
 import { PATCH_18_3_REVISIONS } from "../app/small-window-ui/patch-18-3.js";
 import { PATCH_18_4_REVISIONS } from "../app/small-window-ui/patch-18-4.js";
+import { PATCH_18_5_REVISIONS } from "../app/small-window-ui/patch-18-5.js";
 
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.5": Object.freeze({
+    version: "18.5",
+    title: "云顶之弈 18.5 版本更新公告",
+    summary: "已核实至 2026 年 10 月 22 日：正式版共 71 项数值记录，目前官方公告没有 B 补丁章节。强化符文出现倾向、灵火筛选、钢铁之心停用、新增潘朵拉的装备变体、错误与稳定性修复，以及 52 款风格装饰回归均保留在版本摘要中。 " + PATCH_18_5_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    updatedAt: "2026-10-21",
+    publishedAt: "2026-10-20T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
+    changes: Object.freeze(PATCH_18_5_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl,
+      direction: change.direction,
+      entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames],
+      stat: change.stat,
+      before: change.before,
+      after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    })))))
+  }),
   "18.4": Object.freeze({
     version: "18.4",
     title: "云顶之弈 18.4 版本更新公告",
