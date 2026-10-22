@@ -1,7 +1,9 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PATCH_18_4_REVISION } from "../src/app/small-window-ui/patch-18-4.js";
 import { PATCH_18_5_REVISION } from "../src/app/small-window-ui/patch-18-5.js";
 import { getCurrentPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
+import { unitDisplayOverrideByApiName } from "../src/data/entity-display-overrides.js";
 import { associateOfficialPatchChanges } from "../src/data/official-patch-evidence.js";
 import { getOfficialPatchFacts } from "../src/data/official-patch-facts.js";
 import { createTftToolHandlers } from "../src/domain/tft/tool-handler-factory.js";
@@ -38,6 +40,25 @@ test("18.5 facts preserve exact endpoints and non-numeric status", () => {
   assert.equal(bySuffix("master-yi-ap-damage").after, "135/200/320 AP");
   assert.equal(bySuffix("soraka-additional-star").after, "110/165 AP");
   assert.equal(bySuffix("hand-of-baron-stats").after, "22/33 HP + 2/3% stats");
+});
+
+test("simplified-Chinese patch labels distinguish four-cost Brambleback from five-cost Maokai", () => {
+  assert.equal(unitDisplayOverrideByApiName.get("DA_Brambleback18")?.zhName, "绯红印记树怪");
+  assert.equal(unitDisplayOverrideByApiName.get("DA_18_Maokai")?.zhName, "茂凯");
+
+  const tierFour = PATCH_18_5_REVISION.groups.find((group) => group.title["zh-CN"] === "四费弈子");
+  const brambleback = tierFour.changes.filter((change) => change.entityApiNames.includes("DA_Brambleback18"));
+  assert.equal(brambleback.length, 2);
+  assert.ok(brambleback.every((change) => change.text["zh-CN"].startsWith("绯红印记树怪（Brambleback）")));
+  assert.deepEqual(brambleback.map(({ before, after }) => [before, after]), [
+    ["4%", "5%"],
+    ["20% + 25% AP", "25% + 25% AP"]
+  ]);
+
+  const recentLabels = [PATCH_18_4_REVISION, PATCH_18_5_REVISION]
+    .flatMap(flatten)
+    .map((change) => change.text["zh-CN"]);
+  assert.ok(recentLabels.every((label) => !label.includes("树精长老")));
 });
 
 test("18.5 entity evidence and semantic documents are available to the Agent", async () => {

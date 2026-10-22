@@ -1,4 +1,5 @@
-// Verified against Riot's Traditional Chinese and English 18.5 release notes.
+// Numeric facts are verified against Riot's Traditional Chinese and English 18.5 release notes.
+// zh-CN entity and trait names follow the current simplified-Chinese client catalog; do not copy zh-TW display names verbatim.
 // Official timestamp: 2026-10-20T18:00:00.000Z = October 21 02:00 Asia/Shanghai.
 const t = (zh, en) => Object.freeze({ "zh-CN": zh, "en-US": en });
 const c = (id, direction, before, after, zh, en, entityType = "system", entityApiNames = [], stat = id) => Object.freeze({
@@ -10,14 +11,14 @@ const releaseGroups = Object.freeze([
   g("羁绊", "Traits", [
     c("blackthorn-six-enhanced", "nerf", "60%", "50%", "黑荆棘（6）· 强化加成", "Blackthorn (6) · Enhanced bonus", "trait", ["DA_18_Blackthorn"]),
     c("blackthorn-ap-sacrifice", "nerf", "12% Damage Amp + 2 Mana Regen", "10% Damage Amp + 2 Mana Regen", "黑荆棘 · 基础法系献祭", "Blackthorn · Base AP sacrifice", "trait", ["DA_18_Blackthorn"]),
-    c("elderwood-nine-health", "nerf", "140%", "125%", "神木精灵（9）· 召唤物额外生命", "Elderwood (9) · Summon bonus Health", "trait", ["DA_18_Elderwood"]),
-    c("fae-heal", "buff", "2.5/4%", "3/5%", "妖精（2/4）· 治疗量", "Fae (2/4) · Heal", "trait", ["DA_18_Fae"]),
-    c("fae-fourth-pixie", "buff", "30,000", "25,000", "妖精 · 第四个黄金皮克斯门槛", "Fae · Fourth Golden Pixie threshold", "trait", ["DA_18_Fae"]),
-    c("fae-fifth-pixie", "buff", "70,000", "60,000", "妖精 · 第五个黄金皮克斯门槛", "Fae · Fifth Golden Pixie threshold", "trait", ["DA_18_Fae"]),
-    c("fae-sixth-pixie", "buff", "110,000", "100,000", "妖精 · 第六个黄金皮克斯门槛", "Fae · Sixth Golden Pixie threshold", "trait", ["DA_18_Fae"]),
-    c("flora-fatalis-heal", "nerf", "8%", "7%", "绝命花华 · 最大生命值治疗", "Flora Fatalis · Max-Health healing", "trait", ["DA_FloraFatalis18"]),
-    c("rapidfire-as", "nerf", "3/5/8/12%", "3/5/7/10%", "速射 · 每次攻击获得攻速", "Rapidfire · Attack Speed per attack", "trait", ["DA_18_Rapidfire"]),
-    c("riftbeast-seven-ad-ap", "nerf", "6%", "5%", "峡谷巨兽（7）· 攻击力 / 法强", "Riftbeast (7) · AD / AP", "trait", ["DA_Riftbeast18"])
+    c("elderwood-nine-health", "nerf", "140%", "125%", "永恒之森（9）· 召唤物额外生命", "Elderwood (9) · Summon bonus Health", "trait", ["DA_18_Elderwood"]),
+    c("fae-heal", "buff", "2.5/4%", "3/5%", "花仙子（2/4）· 治疗量", "Fae (2/4) · Heal", "trait", ["DA_18_Fae"]),
+    c("fae-fourth-pixie", "buff", "30,000", "25,000", "花仙子 · 第四个黄金皮克斯门槛", "Fae · Fourth Golden Pixie threshold", "trait", ["DA_18_Fae"]),
+    c("fae-fifth-pixie", "buff", "70,000", "60,000", "花仙子 · 第五个黄金皮克斯门槛", "Fae · Fifth Golden Pixie threshold", "trait", ["DA_18_Fae"]),
+    c("fae-sixth-pixie", "buff", "110,000", "100,000", "花仙子 · 第六个黄金皮克斯门槛", "Fae · Sixth Golden Pixie threshold", "trait", ["DA_18_Fae"]),
+    c("flora-fatalis-heal", "nerf", "8%", "7%", "绝命花妖 · 最大生命值治疗", "Flora Fatalis · Max-Health healing", "trait", ["DA_FloraFatalis18"]),
+    c("rapidfire-as", "nerf", "3/5/8/12%", "3/5/7/10%", "迅捷射手 · 每次攻击获得攻速", "Rapidfire · Attack Speed per attack", "trait", ["DA_18_Rapidfire"]),
+    c("riftbeast-seven-ad-ap", "nerf", "6%", "5%", "峡谷野怪（7）· 攻击力 / 法强", "Riftbeast (7) · AD / AP", "trait", ["DA_Riftbeast18"])
   ]),
   g("二费弈子", "Tier 2 champions", [
     c("caitlyn-empowered-auto", "buff", "190/285/470 AD", "200/300/490 AD", "凯特琳 · 强化普攻伤害", "Caitlyn · Empowered attack damage", "unit", ["DA_18_Caitlyn"])
@@ -26,15 +27,15 @@ const releaseGroups = Object.freeze([
     c("azir-damage", "nerf", "46/69/110 AP", "43/65/105 AP", "阿兹尔 · 技能伤害", "Azir · Ability damage", "unit", ["DA_18_Azir"]),
     c("khazix-unisolated", "nerf", "255/360/515 AP", "250/345/500 AP", "卡兹克 · 非孤立目标伤害", "Kha'Zix · Unisolated damage", "unit", ["DA_18_KhaZix"]),
     c("khazix-isolated", "nerf", "285/410/605 AP", "280/390/590 AP", "卡兹克 · 孤立目标伤害", "Kha'Zix · Isolated damage", "unit", ["DA_18_KhaZix"]),
-    c("mama-beak-damage", "nerf", "22/33/52 AD", "20/30/50 AD", "巨喙鸟妈妈 · 技能攻击力倍率", "Mama Beak · Ability AD ratio", "unit", ["DA_CrimsonRaptor18"]),
-    c("master-yi-ad-starting-ad", "buff", "60", "63", "易大师（物理）· 初始攻击力", "Master Yi AD form · Starting AD", "unit", ["DA_18_MasterYi_AD"]),
-    c("master-yi-ap-damage", "buff", "125/190/285 AP", "135/200/320 AP", "易大师（法系）· 技能伤害", "Master Yi AP form · Ability damage", "unit", ["DA_18_MasterYi_AP"]),
+    c("mama-beak-damage", "nerf", "22/33/52 AD", "20/30/50 AD", "深红锋喙鸟 · 技能攻击力倍率", "Mama Beak · Ability AD ratio", "unit", ["DA_CrimsonRaptor18"]),
+    c("master-yi-ad-starting-ad", "buff", "60", "63", "易（物理）· 初始攻击力", "Master Yi AD form · Starting AD", "unit", ["DA_18_MasterYi_AD"]),
+    c("master-yi-ap-damage", "buff", "125/190/285 AP", "135/200/320 AP", "易（法系）· 技能伤害", "Master Yi AP form · Ability damage", "unit", ["DA_18_MasterYi_AP"]),
     c("tristana-mana", "buff", "0/60", "0/50", "崔丝塔娜 · 法力", "Tristana · Mana", "unit", ["DA_18_Tristana"]),
     c("tristana-damage-per-attack", "buff", "10/15/25 AD", "12/18/28 AD", "崔丝塔娜 · 每次攻击技能伤害", "Tristana · Ability damage per attack", "unit", ["DA_18_Tristana"])
   ]),
   g("四费弈子", "Tier 4 champions", [
-    c("brambleback-heal", "buff", "4%", "5%", "树精长老 · 首领标记治疗", "Brambleback · Alpha Mark heal", "unit", ["DA_Brambleback18"]),
-    c("brambleback-armor-ignore", "buff", "20% + 25% AP", "25% + 25% AP", "树精长老 · 无视护甲", "Brambleback · Armor ignore", "unit", ["DA_Brambleback18"]),
+    c("brambleback-heal", "buff", "4%", "5%", "绯红印记树怪（Brambleback）· 首领标记治疗", "Brambleback · Alpha Mark heal", "unit", ["DA_Brambleback18"]),
+    c("brambleback-armor-ignore", "buff", "20% + 25% AP", "25% + 25% AP", "绯红印记树怪（Brambleback）· 无视护甲", "Brambleback · Armor ignore", "unit", ["DA_Brambleback18"]),
     c("malphite-shield", "buff", "700/850 AP", "735/885 AP", "墨菲特 · 护盾", "Malphite · Shield", "unit", ["DA_18_Malphite"]),
     c("morgana-initial-curse", "buff", "60/90 AP", "70/105 AP", "莫甘娜 · 初始诅咒伤害", "Morgana · Initial curse damage", "unit", ["DA_18_Morgana"]),
     c("morgana-curse-bonus", "buff", "22/33 AP", "25/38 AP", "莫甘娜 · 诅咒额外伤害", "Morgana · Curse bonus damage", "unit", ["DA_18_Morgana"]),
@@ -102,7 +103,7 @@ export const PATCH_18_5_REVISION = Object.freeze({
   kind: "release",
   title: t("18.5 正式版本数值调整", "18.5 release numeric changes"),
   summary: t(
-    "共 71 项数值记录。官方还调整了物理 / 法系强化符文的出现倾向，缩短巨喙鸟妈妈约 1 秒的法力锁定；钢铁之心因漏洞再次停用，道具抽取不再给予维迦，新增潘朵拉的装备 II+ / II++；灵火筛选改看备战区与上一场战斗，并包含错误、稳定性修复和 52 款风格装饰回归。上述规则、状态与新增内容没有完整前后数值，未计入数值清单。",
+    "共 71 项数值记录。官方还调整了物理 / 法系强化符文的出现倾向，缩短深红锋喙鸟约 1 秒的法力锁定；钢铁之心因漏洞再次停用，道具抽取不再给予维迦，新增潘朵拉的装备 II+ / II++；灵火筛选改看备战区与上一场战斗，并包含错误、稳定性修复和 52 款风格装饰回归。上述规则、状态与新增内容没有完整前后数值，未计入数值清单。",
     "71 numeric records. Riot also adjusts AD/AP Augment tailoring, shortens Mama Beak's Mana lock by about one second, re-disables Heart of Steel, removes Veigar from Item Extraction, adds Pandora's Items II+ and II++, revises Wisp filtering, fixes bugs and stability issues, and restores 52 cosmetics. Rules, statuses, and new content without complete endpoints are summarized but excluded from the numeric list."
   ),
   sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
