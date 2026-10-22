@@ -6,6 +6,7 @@ import { associateOfficialPatchChanges } from "../src/data/official-patch-eviden
 import { getOfficialPatchFacts } from "../src/data/official-patch-facts.js";
 import { createTftToolHandlers } from "../src/domain/tft/tool-handler-factory.js";
 import { buildOfficialPatchSemanticDocuments } from "../src/knowledge/official-patch-knowledge.js";
+import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/small-window-server.js";
 
 const flatten = (revision) => revision.groups.flatMap((group) => group.changes);
 
@@ -64,4 +65,50 @@ test("18.5 entity evidence and semantic documents are available to the Agent", a
   });
   assert.equal((await handlers.patch_facts({})).summary.changeCount, 71);
   assert.equal((await handlers.patch_facts({ patch: "18.4" })).summary.changeCount, 119);
+});
+
+test("generic patch summaries recover deterministically when compressed model series fail grounding", async () => {
+  const runtime = createSmallWindowRuntime({
+    patchNumericSeriesGroundingMode: "enforce",
+    reactDecisionProvider: async (request) => {
+      const evidence = request.state.evidence.find((entry) => entry.toolName === "patch_facts");
+      if (!evidence) {
+        return {
+          schemaVersion: "react-action.v1",
+          type: "call_tool",
+          tool: "patch_facts",
+          arguments: { patch: "18.5", locale: "zh-CN" },
+          purposeCode: "retrieve_supporting_knowledge"
+        };
+      }
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "妖精门槛 30000/70000/110000→25000/60000/100000。",
+        evidenceIds: [evidence.evidenceId],
+        reasonCode: "sufficient_evidence"
+      };
+    }
+  });
+
+  const { statusCode, payload } = await handleReactChatRequest({
+    input: "简述版本更新",
+    seasonContextId: "set18-live",
+    locale: "zh-CN",
+    conversationId: "patch-18-5-summary-fallback"
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.ok, true);
+  assert.equal(payload.status, "completed_with_warning");
+  assert.equal(payload.terminationReason, "finish_validation_fallback");
+  assert.equal(payload.answerOrigin, "system_patch_summary_fallback");
+  assert.match(payload.answer, /71 项/u);
+  assert.match(payload.answer, /增强 33 项、削弱 38 项/u);
+  assert.match(payload.answer, /钢铁之心/u);
+  assert.match(payload.answer, /Riot Games 官方更新公告/u);
+  assert.doesNotMatch(payload.answer, /30000\/70000/u);
+  assert.deepEqual(payload.evidence.map((entry) => entry.toolName), ["patch_facts"]);
+  assert.equal(payload.modelConclusion.status, "rejected");
+  assert.ok(payload.warnings.includes("patch_summary_validation_fallback"));
 });

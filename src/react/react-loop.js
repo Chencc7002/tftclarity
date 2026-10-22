@@ -13,6 +13,7 @@ import { ReactWorkingState } from "./working-state.js";
 import { currentDeadlineEvidence } from "./deadline-evidence.js";
 import { buildPartialEvidenceAnswer, partialEvidenceSummary } from "./partial-evidence-answer.js";
 import { selectedEntityConfirmation } from "./entity-confirmation.js";
+import { buildPatchSummaryAnswer } from "./patch-summary-answer.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
 
@@ -1928,6 +1929,40 @@ export class ReactLoop {
               status: "completed_with_warning",
               answer,
               answerOrigin: "system_language_fallback"
+            });
+          }
+          const patchSummaryFallback = buildPatchSummaryAnswer({
+            request,
+            action,
+            validation: finishValidation,
+            ledger,
+            locale: state.locale
+          });
+          if (patchSummaryFallback) {
+            const warnings = finishValidation.errors.map(String);
+            state.warn("patch_summary_validation_fallback");
+            emit("answer", {
+              answer: patchSummaryFallback.answer,
+              evidenceIds: patchSummaryFallback.evidenceIds,
+              reasonCode: "sufficient_evidence",
+              narrativeAccepted: false,
+              systemFallback: true,
+              validationWarnings: warnings
+            });
+            return terminate("finish_validation_fallback", {
+              status: "completed_with_warning",
+              answer: patchSummaryFallback.answer,
+              evidenceIds: patchSummaryFallback.evidenceIds,
+              narrativeWarnings: warnings,
+              groundingAudit: {
+                schemaVersion: "grounding-audit.v1",
+                mode: "deterministic_patch_summary_fallback",
+                narrativeAccepted: false,
+                qualitativeOutputPreserved: true,
+                violationCount: warnings.length,
+                violations: warnings
+              },
+              answerOrigin: "system_patch_summary_fallback"
             });
           }
           if (canPublishSummaryWithValidationWarnings(request, action, finishValidation, ledger)) {
