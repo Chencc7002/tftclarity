@@ -24,3 +24,17 @@ Strict numeric grounding remains enabled. Unknown Evidence, unrelated finish err
 - offline Agent evaluation: 50/50 passed.
 
 The first main-CI attempt ran in the restricted Windows sandbox and produced six environment failures involving loopback sockets, temporary-file atomic rename, and test resource resolution. The unchanged lane passed when rerun with normal local permissions.
+
+## Production deployment
+
+The fix was deployed to `tftclarity.cn` on 2026-10-22 from commit `1fe28e42a641097156167238482dfb3bdd63b787`, based on the previously deployed 18.5 announcement commit `a28a3046`. Only the `app` service was rebuilt and recreated; PostgreSQL, Redis, and the remaining services were left running.
+
+- previous app image: `sha256:1f4117cd...` (tagged `tftclarity-app:pre-patch-summary-fix-20261022`);
+- deployed app image: `sha256:458e944b7b64e1adc4865ad7b0da45ebfc3394b236ac9caa410b856e21d7dffd`;
+- backup directory: `/root/tftclarity/backups/patch-summary-fix-20261022`;
+- PostgreSQL custom dump: 3,264,159 bytes, validated with `pg_restore --list`;
+- dump SHA-256: `41ba719fe1004cb2c232f687a9c96e2f355f7f0fdc726ea13ae6cbabdf227840`.
+
+After deployment, `/api/health` and `/api/ready` both returned HTTP 200, with PostgreSQL and Redis ready. A public streaming request using the exact text `简述版本更新` returned HTTP 200 and a grounded 18.5 summary. The fallback path reported 71 adjustments, 33 buffs, and 38 nerfs with `status=completed_with_warning`, `terminationReason=finish_validation_fallback`, `answerOrigin=system_patch_summary_fallback`, and current `patch_facts` Evidence. A separate end-to-end browser check submitted the same text through the production chat UI and rendered the 18.5 answer with its Evidence and feedback controls without a frontend error.
+
+Existing untracked production files (`-b` and `backups/`) were preserved.
