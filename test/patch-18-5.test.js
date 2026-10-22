@@ -45,6 +45,10 @@ test("18.5 facts preserve exact endpoints and non-numeric status", () => {
 test("simplified-Chinese patch labels distinguish four-cost Brambleback from five-cost Maokai", () => {
   assert.equal(unitDisplayOverrideByApiName.get("DA_Brambleback18")?.zhName, "绯红印记树怪");
   assert.equal(unitDisplayOverrideByApiName.get("DA_18_Maokai")?.zhName, "茂凯");
+  assert.ok(unitDisplayOverrideByApiName.get("DA_Brambleback18")?.aliases.includes("树精长老"));
+  assert.ok(unitDisplayOverrideByApiName.get("DA_18_Maokai")?.aliases.includes("大树"));
+  assert.equal(unitDisplayOverrideByApiName.get("DA_Brambleback18")?.cost, 4);
+  assert.equal(unitDisplayOverrideByApiName.get("DA_18_Maokai")?.cost, 5);
 
   const tierFour = PATCH_18_5_REVISION.groups.find((group) => group.title["zh-CN"] === "四费弈子");
   const brambleback = tierFour.changes.filter((change) => change.entityApiNames.includes("DA_Brambleback18"));
