@@ -8,15 +8,15 @@ const PATCH_NOTES = {
     publishedAt: "2026-10-20T18:00:00.000Z",
     locales: {
       "zh-CN": {
-        title: "18.5 版本更新",
-        summary: "已核实至 2026 年 10 月 22 日：正式版共 71 项数值记录。另有强化符文出现倾向、灵火筛选、钢铁之心停用、新增潘朵拉的装备变体、错误与稳定性修复，以及 52 款风格装饰回归；目前官方公告没有 B 补丁章节。",
+        title: "18.5 更新与热补丁",
+        summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。最新调整削弱卡兹克、绯红印记树怪的法强型穿甲，以及正义之手的全能吸血；10 月 27 日章节目前仅见于英文官方公告。",
         sourceName: "Riot Games 官方更新公告",
         sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
         highlights: []
       },
       "en-US": {
-        title: "Patch 18.5",
-        summary: "Verified through October 22, 2026: 71 release numeric records, plus Augment-tailoring and Wisp-filtering rules, the Heart of Steel disable, new Pandora's Items variants, bug and stability fixes, and 52 restored cosmetics. Riot's article currently has no B-patch section.",
+        title: "Patch 18.5 and mid-patch updates",
+        summary: "Verified through October 29, 2026: 71 release records, seven October 22 B-patch records, and six October 27 records, 84 numeric records total. The latest update nerfs Kha'Zix, Brambleback's AP-scaled Armor Ignore, and Hand of Justice Omnivamp.",
         sourceName: "Official Riot Games patch notes",
         sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-5/",
         highlights: []

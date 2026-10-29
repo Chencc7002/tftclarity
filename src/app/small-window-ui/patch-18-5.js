@@ -110,4 +110,63 @@ export const PATCH_18_5_REVISION = Object.freeze({
   groups: releaseGroups
 });
 
-export const PATCH_18_5_REVISIONS = Object.freeze([PATCH_18_5_REVISION]);
+const october22Groups = Object.freeze([
+  g("四费弈子", "Tier 4 champions", [
+    c("brambleback-heal", "nerf", "5%", "4%", "绯红印记树怪（Brambleback）· 命中治疗", "Brambleback · Healing on-hit", "unit", ["DA_Brambleback18"], "alpha_mark_heal")
+  ]),
+  g("灵火", "Wisps", [
+    c("die-roll-upgrade-cost", "buff", "3g", "2g", "掷骰（Die Roll）· 升级价格", "Die Roll · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("downpour-upgrade-cost", "buff", "3g", "2g", "倾盆大雨（Downpour）· 升级价格", "Downpour · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("heros-entrance-upgrade-cost", "buff", "4g", "2g", "英灵之门（Hero's Entrance）· 升级价格", "Hero's Entrance · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("hireling-base-cost", "nerf", "2g", "5g", "佣兵（Hireling）· 基础价格", "Hireling · Base cost", "wisp", [], "base_cost"),
+    c("knick-knack-bag-upgrade-cost", "buff", "2g", "1g", "小玩意包（Knick-Knack Bag）· 升级价格", "Knick-Knack Bag · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("moonlight-ritual-base-cost", "nerf", "2g", "3g", "月光仪式（Moonlight Ritual）· 基础价格", "Moonlight Ritual · Base cost", "wisp", [], "base_cost")
+  ])
+]);
+
+const october27Groups = Object.freeze([
+  g("三费弈子", "Tier 3 champions", [
+    c("khazix-base-damage", "nerf", "250/345/500 AP", "230/310/450 AP", "卡兹克 · 基础技能伤害", "Kha'Zix · Base damage", "unit", ["DA_18_KhaZix"], "base_damage"),
+    c("khazix-isolated-damage", "nerf", "280/390/590 AP", "250/350/530 AP", "卡兹克 · 孤立目标伤害", "Kha'Zix · Isolated damage", "unit", ["DA_18_KhaZix"], "isolated_damage")
+  ]),
+  g("四费弈子", "Tier 4 champions", [
+    c("brambleback-armor-ignore-ap", "nerf", "25%", "10%", "绯红印记树怪（Brambleback）· 无视护甲法强系数", "Brambleback · Armor Ignore AP ratio", "unit", ["DA_Brambleback18"], "armor_ignore_ap_ratio"),
+    c("brambleback-armor-ignore-base", "buff", "25%", "30%", "绯红印记树怪（Brambleback）· 基础无视护甲", "Brambleback · Base Armor Ignore", "unit", ["DA_Brambleback18"], "base_armor_ignore")
+  ]),
+  g("装备", "Items", [
+    c("hand-of-justice-omnivamp", "nerf", "15%", "12%", "正义之手 · 全能吸血", "Hand of Justice · Omnivamp", "item", ["TFT_Item_HandOfJustice"], "omnivamp"),
+    c("radiant-hand-of-justice-omnivamp", "nerf", "30%", "25%", "光明正义之手 · 全能吸血", "Radiant Hand of Justice · Omnivamp", "item", ["TFT5_Item_HandOfJusticeRadiant"], "omnivamp")
+  ])
+]);
+
+export const PATCH_18_5_B_PATCH = Object.freeze({
+  id: "18.5-hotfix-2026-10-22",
+  publishedAt: "2026-10-22",
+  kind: "hotfix",
+  title: t("18.5 B 补丁", "18.5 B-patch"),
+  summary: t(
+    "10 月 22 日 B 补丁追加 7 项数值记录：撤回绯红印记树怪的命中治疗增强，并清理 6 项灵火价格。官方同时修正永恒之森纹章数值、订购奢侈品、阿福快打、荆棘蔓延与弃船升级价格等问题；错误修复未计入数值清单。重复出现的灵火价格按本次最终落点读取，不重复叠加。",
+    "The October 22 B-patch adds seven numeric records: Brambleback's healing buff is reverted and six Wisp prices are cleaned up. Riot also fixes Elderwood Emblem stats, Luxury Subscription, U.R.F., Spreading Roots, and Abandon Ship. Bug fixes are excluded from the numeric list; repeated Wisp prices are final endpoints and must not be compounded."
+  ),
+  sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
+  groups: october22Groups
+});
+
+export const PATCH_18_5_OCTOBER_27_HOTFIX = Object.freeze({
+  id: "18.5-hotfix-2026-10-27",
+  publishedAt: "2026-10-27",
+  kind: "hotfix",
+  title: t("18.5 10 月 27 日热补丁", "18.5 October 27 mid-patch update"),
+  summary: t(
+    "10 月 27 日热补丁追加 6 项数值记录：削弱卡兹克的基础与孤立伤害；绯红印记树怪的无视护甲从偏重法强系数改为更高基础值；正义之手及其光明版本降低全能吸血。该章节截至 10 月 29 日仅见于 Riot 英文官方公告。",
+    "The October 27 update adds six numeric records: Kha'Zix loses base and isolated damage, Brambleback shifts Armor Ignore from AP scaling into a higher base value, and Hand of Justice plus its Radiant version lose Omnivamp. As of October 29, this section appears only in Riot's English article."
+  ),
+  sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-5/",
+  groups: october27Groups
+});
+
+export const PATCH_18_5_REVISIONS = Object.freeze([
+  PATCH_18_5_REVISION,
+  PATCH_18_5_B_PATCH,
+  PATCH_18_5_OCTOBER_27_HOTFIX
+]);

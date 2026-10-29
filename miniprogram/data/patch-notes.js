@@ -2,7 +2,7 @@
 module.exports = {
   "version": "18.5",
   "publishedAt": "2026-10-20T18:00:00.000Z",
-  "updatedAt": "2026-10-21",
+  "updatedAt": "2026-10-27",
   "history": [
     {
       "id": "18.1-balance-2026-08-31",
@@ -6234,10 +6234,204 @@ module.exports = {
           "text": "削弱｜英勇牺牲 · 额外生命值：1200/1500 → 1000/1250"
         }
       ]
+    },
+    {
+      "id": "18.5-hotfix-2026-10-22",
+      "parentId": "18.5-release-2026-10-21",
+      "kind": "热补丁",
+      "publishedAt": "2026-10-22",
+      "title": "18.5 B 补丁",
+      "summary": "10 月 22 日 B 补丁追加 7 项数值记录：撤回绯红印记树怪的命中治疗增强，并清理 6 项灵火价格。官方同时修正永恒之森纹章数值、订购奢侈品、阿福快打、荆棘蔓延与弃船升级价格等问题；错误修复未计入数值清单。重复出现的灵火价格按本次最终落点读取，不重复叠加。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
+      "changes": [
+        {
+          "id": "18.5-hotfix-2026-10-22-brambleback-heal",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "alpha_mark_heal",
+          "before": "5%",
+          "after": "4%",
+          "label": "绯红印记树怪（Brambleback）· 命中治疗",
+          "text": "削弱｜绯红印记树怪（Brambleback）· 命中治疗：5% → 4%"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-22-die-roll-upgrade-cost",
+          "direction": "buff",
+          "entityType": "wisp",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "upgrade_cost",
+          "before": "3g",
+          "after": "2g",
+          "label": "掷骰（Die Roll）· 升级价格",
+          "text": "增强｜掷骰（Die Roll）· 升级价格：3g → 2g"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-22-downpour-upgrade-cost",
+          "direction": "buff",
+          "entityType": "wisp",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "upgrade_cost",
+          "before": "3g",
+          "after": "2g",
+          "label": "倾盆大雨（Downpour）· 升级价格",
+          "text": "增强｜倾盆大雨（Downpour）· 升级价格：3g → 2g"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-22-heros-entrance-upgrade-cost",
+          "direction": "buff",
+          "entityType": "wisp",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "upgrade_cost",
+          "before": "4g",
+          "after": "2g",
+          "label": "英灵之门（Hero's Entrance）· 升级价格",
+          "text": "增强｜英灵之门（Hero's Entrance）· 升级价格：4g → 2g"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-22-hireling-base-cost",
+          "direction": "nerf",
+          "entityType": "wisp",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "base_cost",
+          "before": "2g",
+          "after": "5g",
+          "label": "佣兵（Hireling）· 基础价格",
+          "text": "削弱｜佣兵（Hireling）· 基础价格：2g → 5g"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-22-knick-knack-bag-upgrade-cost",
+          "direction": "buff",
+          "entityType": "wisp",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "upgrade_cost",
+          "before": "2g",
+          "after": "1g",
+          "label": "小玩意包（Knick-Knack Bag）· 升级价格",
+          "text": "增强｜小玩意包（Knick-Knack Bag）· 升级价格：2g → 1g"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-22-moonlight-ritual-base-cost",
+          "direction": "nerf",
+          "entityType": "wisp",
+          "entityApiNames": [],
+          "relatedTraitApiNames": [],
+          "stat": "base_cost",
+          "before": "2g",
+          "after": "3g",
+          "label": "月光仪式（Moonlight Ritual）· 基础价格",
+          "text": "削弱｜月光仪式（Moonlight Ritual）· 基础价格：2g → 3g"
+        }
+      ]
+    },
+    {
+      "id": "18.5-hotfix-2026-10-27",
+      "parentId": "18.5-hotfix-2026-10-22",
+      "kind": "热补丁",
+      "publishedAt": "2026-10-27",
+      "title": "18.5 10 月 27 日热补丁",
+      "summary": "10 月 27 日热补丁追加 6 项数值记录：削弱卡兹克的基础与孤立伤害；绯红印记树怪的无视护甲从偏重法强系数改为更高基础值；正义之手及其光明版本降低全能吸血。该章节截至 10 月 29 日仅见于 Riot 英文官方公告。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-5/",
+      "changes": [
+        {
+          "id": "18.5-hotfix-2026-10-27-khazix-base-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "base_damage",
+          "before": "250/345/500 AP",
+          "after": "230/310/450 AP",
+          "label": "卡兹克 · 基础技能伤害",
+          "text": "削弱｜卡兹克 · 基础技能伤害：250/345/500 AP → 230/310/450 AP"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-27-khazix-isolated-damage",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_18_KhaZix"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "isolated_damage",
+          "before": "280/390/590 AP",
+          "after": "250/350/530 AP",
+          "label": "卡兹克 · 孤立目标伤害",
+          "text": "削弱｜卡兹克 · 孤立目标伤害：280/390/590 AP → 250/350/530 AP"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-27-brambleback-armor-ignore-ap",
+          "direction": "nerf",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "armor_ignore_ap_ratio",
+          "before": "25%",
+          "after": "10%",
+          "label": "绯红印记树怪（Brambleback）· 无视护甲法强系数",
+          "text": "削弱｜绯红印记树怪（Brambleback）· 无视护甲法强系数：25% → 10%"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-27-brambleback-armor-ignore-base",
+          "direction": "buff",
+          "entityType": "unit",
+          "entityApiNames": [
+            "DA_Brambleback18"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "base_armor_ignore",
+          "before": "25%",
+          "after": "30%",
+          "label": "绯红印记树怪（Brambleback）· 基础无视护甲",
+          "text": "增强｜绯红印记树怪（Brambleback）· 基础无视护甲：25% → 30%"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-27-hand-of-justice-omnivamp",
+          "direction": "nerf",
+          "entityType": "item",
+          "entityApiNames": [
+            "TFT_Item_HandOfJustice"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "omnivamp",
+          "before": "15%",
+          "after": "12%",
+          "label": "正义之手 · 全能吸血",
+          "text": "削弱｜正义之手 · 全能吸血：15% → 12%"
+        },
+        {
+          "id": "18.5-hotfix-2026-10-27-radiant-hand-of-justice-omnivamp",
+          "direction": "nerf",
+          "entityType": "item",
+          "entityApiNames": [
+            "TFT5_Item_HandOfJusticeRadiant"
+          ],
+          "relatedTraitApiNames": [],
+          "stat": "omnivamp",
+          "before": "30%",
+          "after": "25%",
+          "label": "光明正义之手 · 全能吸血",
+          "text": "削弱｜光明正义之手 · 全能吸血：30% → 25%"
+        }
+      ]
     }
   ],
-  "title": "18.5 版本更新",
-  "summary": "已核实至 2026 年 10 月 22 日：正式版共 71 项数值记录。另有强化符文出现倾向、灵火筛选、钢铁之心停用、新增潘朵拉的装备变体、错误与稳定性修复，以及 52 款风格装饰回归；目前官方公告没有 B 补丁章节。",
+  "title": "18.5 更新与热补丁",
+  "summary": "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。最新调整削弱卡兹克、绯红印记树怪的法强型穿甲，以及正义之手的全能吸血；10 月 27 日章节目前仅见于英文官方公告。",
   "sourceName": "Riot Games 官方更新公告",
   "sourceUrl": "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
   "highlights": []

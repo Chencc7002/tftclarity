@@ -10,8 +10,8 @@ const PATCHES = Object.freeze({
   "18.5": Object.freeze({
     version: "18.5",
     title: "云顶之弈 18.5 版本更新公告",
-    summary: "已核实至 2026 年 10 月 22 日：正式版共 71 项数值记录，目前官方公告没有 B 补丁章节。强化符文出现倾向、灵火筛选、钢铁之心停用、新增潘朵拉的装备变体、错误与稳定性修复，以及 52 款风格装饰回归均保留在版本摘要中。 " + PATCH_18_5_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
-    updatedAt: "2026-10-21",
+    summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。10 月 27 日章节目前仅见于英文官方公告。强化符文出现倾向、灵火筛选、状态变化和错误修复均保留在各修订摘要中。 " + PATCH_18_5_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    updatedAt: "2026-10-27",
     publishedAt: "2026-10-20T18:00:00.000Z",
     sourceName: "Riot Games 官方更新公告",
     sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",

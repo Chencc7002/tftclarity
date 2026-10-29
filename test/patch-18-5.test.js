@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PATCH_18_4_REVISION } from "../src/app/small-window-ui/patch-18-4.js";
-import { PATCH_18_5_REVISION } from "../src/app/small-window-ui/patch-18-5.js";
+import {
+  PATCH_18_5_B_PATCH,
+  PATCH_18_5_OCTOBER_27_HOTFIX,
+  PATCH_18_5_REVISION
+} from "../src/app/small-window-ui/patch-18-5.js";
 import { getCurrentPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
 import { unitDisplayOverrideByApiName } from "../src/data/entity-display-overrides.js";
 import { associateOfficialPatchChanges } from "../src/data/official-patch-evidence.js";
@@ -12,27 +16,38 @@ import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/sma
 
 const flatten = (revision) => revision.groups.flatMap((group) => group.changes);
 
-test("18.5 appends one verified release while retaining all prior history", () => {
+test("18.5 appends release and both mid-patch revisions while retaining prior history", () => {
   const current = getCurrentPatchNote();
   const timeline = getPatchNoteTimeline();
   assert.equal(current.version, "18.5");
   assert.equal(current.publishedAt, "2026-10-20T18:00:00.000Z");
-  assert.equal(current.updatedAt, "2026-10-21");
-  assert.deepEqual(current.history.map((revision) => revision.id), ["18.5-release-2026-10-21"]);
+  assert.equal(current.updatedAt, "2026-10-27");
+  assert.deepEqual(current.history.map((revision) => revision.id), [
+    "18.5-release-2026-10-21",
+    "18.5-hotfix-2026-10-22",
+    "18.5-hotfix-2026-10-27"
+  ]);
   assert.deepEqual(timeline.history.slice(0, 8), getPatchNoteTimeline("18.4").history);
-  assert.equal(timeline.history.length, 9);
+  assert.equal(timeline.history.length, 11);
   assert.equal(timeline.history[8].parentId, "18.4-hotfix-2026-10-07");
+  assert.equal(timeline.history[9].parentId, "18.5-release-2026-10-21");
+  assert.equal(timeline.history[10].parentId, "18.5-hotfix-2026-10-22");
   assert.equal(flatten(PATCH_18_5_REVISION).length, 71);
-  assert.equal(timeline.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).length, 463);
+  assert.equal(flatten(PATCH_18_5_B_PATCH).length, 7);
+  assert.equal(flatten(PATCH_18_5_OCTOBER_27_HOTFIX).length, 6);
+  assert.equal(timeline.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).length, 476);
 });
 
 test("18.5 facts preserve exact endpoints and non-numeric status", () => {
   const facts = getOfficialPatchFacts({ patch: "18.5" });
-  assert.deepEqual(facts.summary, { revisionCount: 1, changeCount: 71, buffs: 33, nerfs: 38 });
-  assert.equal(facts.updatedAt, "2026-10-21");
+  assert.deepEqual(facts.summary, { revisionCount: 3, changeCount: 84, buffs: 38, nerfs: 46 });
+  assert.equal(facts.updatedAt, "2026-10-27");
   assert.match(facts.source.sourceUrl, /patch-18-5\/$/u);
   assert.match(facts.revisions[0].summary, /钢铁之心/u);
   assert.match(facts.revisions[0].summary, /71/u);
+  assert.match(facts.revisions[1].summary, /7 项/u);
+  assert.match(facts.revisions[1].summary, /不得|不重复叠加/u);
+  assert.match(facts.revisions[2].summary, /英文官方公告/u);
 
   const changes = facts.revisions[0].changes;
   const bySuffix = (id) => changes.find((change) => change.id.endsWith(`-${id}`));
@@ -40,6 +55,28 @@ test("18.5 facts preserve exact endpoints and non-numeric status", () => {
   assert.equal(bySuffix("master-yi-ap-damage").after, "135/200/320 AP");
   assert.equal(bySuffix("soraka-additional-star").after, "110/165 AP");
   assert.equal(bySuffix("hand-of-baron-stats").after, "22/33 HP + 2/3% stats");
+
+  const october22 = facts.revisions[1].changes;
+  const october27 = facts.revisions[2].changes;
+  const byRevisionSuffix = (changes, id) => changes.find((change) => change.id.endsWith(`-${id}`));
+  assert.deepEqual(
+    [byRevisionSuffix(october22, "brambleback-heal").before, byRevisionSuffix(october22, "brambleback-heal").after],
+    ["5%", "4%"]
+  );
+  assert.equal(byRevisionSuffix(october22, "hireling-base-cost").after, "5g");
+  assert.deepEqual(
+    [byRevisionSuffix(october27, "khazix-base-damage").before, byRevisionSuffix(october27, "khazix-base-damage").after],
+    ["250/345/500 AP", "230/310/450 AP"]
+  );
+  assert.deepEqual(
+    [byRevisionSuffix(october27, "brambleback-armor-ignore-ap").after, byRevisionSuffix(october27, "brambleback-armor-ignore-base").after],
+    ["10%", "30%"]
+  );
+  assert.deepEqual(
+    [byRevisionSuffix(october27, "hand-of-justice-omnivamp").after, byRevisionSuffix(october27, "radiant-hand-of-justice-omnivamp").after],
+    ["12%", "25%"]
+  );
+  assert.match(facts.revisions[2].sourceUrl, /en-us/u);
 });
 
 test("simplified-Chinese patch labels distinguish four-cost Brambleback from five-cost Maokai", () => {
@@ -88,7 +125,7 @@ test("18.5 entity evidence and semantic documents are available to the Agent", a
     seasonContext: { currentPatch: "18.1" },
     locale: "zh-CN"
   });
-  assert.equal((await handlers.patch_facts({})).summary.changeCount, 71);
+  assert.equal((await handlers.patch_facts({})).summary.changeCount, 84);
   assert.equal((await handlers.patch_facts({ patch: "18.4" })).summary.changeCount, 119);
 });
 
@@ -128,9 +165,10 @@ test("generic patch summaries recover deterministically when compressed model se
   assert.equal(payload.status, "completed_with_warning");
   assert.equal(payload.terminationReason, "finish_validation_fallback");
   assert.equal(payload.answerOrigin, "system_patch_summary_fallback");
-  assert.match(payload.answer, /71 项/u);
-  assert.match(payload.answer, /增强 33 项、削弱 38 项/u);
-  assert.match(payload.answer, /钢铁之心/u);
+  assert.match(payload.answer, /84 项/u);
+  assert.match(payload.answer, /增强 38 项、削弱 46 项/u);
+  assert.match(payload.answer, /卡兹克/u);
+  assert.match(payload.answer, /正义之手/u);
   assert.match(payload.answer, /Riot Games 官方更新公告/u);
   assert.doesNotMatch(payload.answer, /30000\/70000/u);
   assert.deepEqual(payload.evidence.map((entry) => entry.toolName), ["patch_facts"]);
