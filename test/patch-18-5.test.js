@@ -175,3 +175,54 @@ test("generic patch summaries recover deterministically when compressed model se
   assert.equal(payload.modelConclusion.status, "rejected");
   assert.ok(payload.warnings.includes("patch_summary_validation_fallback"));
 });
+
+test("cross-patch summaries retain every cited patch after numeric grounding fallback", async () => {
+  const runtime = createSmallWindowRuntime({
+    patchNumericSeriesGroundingMode: "enforce",
+    reactDecisionProvider: async (request) => {
+      const patchEvidence = request.state.evidence.filter((entry) => entry.toolName === "patch_facts");
+      const missingPatch = ["18.3", "18.5"].find((patch) => (
+        !patchEvidence.some((entry) => entry.value?.patch === patch)
+      ));
+      if (missingPatch) {
+        return {
+          schemaVersion: "react-action.v1",
+          type: "call_tool",
+          tool: "patch_facts",
+          arguments: { patch: missingPatch, locale: "zh-CN" },
+          purposeCode: "retrieve_supporting_knowledge"
+        };
+      }
+      return {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "两个版本的门槛都是 30000/70000/110000→25000/60000/100000。",
+        evidenceIds: patchEvidence.map((entry) => entry.evidenceId),
+        reasonCode: "sufficient_evidence"
+      };
+    }
+  });
+
+  const { statusCode, payload } = await handleReactChatRequest({
+    input: "对比一下 18.5 和 18.3 的版本更新，分别有多少项数值调整，主要改了什么？",
+    seasonContextId: "set18-live",
+    locale: "zh-CN",
+    conversationId: "patch-18-5-vs-18-3-summary-fallback"
+  }, runtime);
+
+  assert.equal(statusCode, 200);
+  assert.equal(payload.status, "completed_with_warning");
+  assert.equal(payload.terminationReason, "finish_validation_fallback");
+  assert.equal(payload.answerOrigin, "system_patch_summary_fallback");
+  assert.match(payload.answer, /18\.5 与 18\.3 版本更新对比/u);
+  assert.match(payload.answer, /18\.3 比 18\.5 多 3 项/u);
+  assert.match(payload.answer, /版本 18\.5[\s\S]*84 项/u);
+  assert.match(payload.answer, /版本 18\.3[\s\S]*87 项/u);
+  assert.match(payload.answer, /卡兹克/u);
+  assert.match(payload.answer, /大型变形术/u);
+  assert.doesNotMatch(payload.answer, /30000\/70000/u);
+  const patchByEvidenceId = new Map(payload.evidence.map((entry) => [entry.evidenceId, entry.value.patch]));
+  assert.deepEqual(payload.evidenceIds.map((evidenceId) => patchByEvidenceId.get(evidenceId)), ["18.5", "18.3"]);
+  assert.equal(payload.modelConclusion.status, "rejected");
+  assert.ok(payload.warnings.includes("patch_summary_validation_fallback"));
+});
