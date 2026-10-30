@@ -1,6 +1,7 @@
 import { AppShell, TitleBar } from "./app-shell.js";
 import { mountEmblemRankings } from "./emblem-rankings.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
+import { composeQuotedInput, createSelectionQuote } from "./selection-quote.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
 import { hasBoundTacticalEvidence } from "./composition-card-details.js";
@@ -44,6 +45,7 @@ const state = {
   rankFilter: [],
   lastInput: "",
   lastDisplayInput: "",
+  lastQuotedReplies: [],
   lastQuickTask: null,
   lastSupplementalText: "",
   lastResult: null,
@@ -163,6 +165,10 @@ let activeQuickTask = null;
 
 const conversationPane = new ConversationPane(resultEl);
 const composer = new Composer({ form, input: queryInput });
+const selectionQuote = createSelectionQuote({
+  root: resultEl, form, input: queryInput, t,
+  onAdded: () => closeQuickTaskForm()
+});
 const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
 const wallpaperController = new WallpaperController({
   shell: shellEl,
@@ -177,6 +183,7 @@ const titleBar = new TitleBar({
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
+    selectionQuote.refreshLocale();
     applySeasonTheme(state.seasonContext, { refreshWallpaper: false });
     wallpaperController.refreshLocale();
     rerenderLocalizedState();
@@ -289,6 +296,7 @@ function captureCompNavigationSnapshot(compName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuotedReplies: state.lastQuotedReplies,
     lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
@@ -311,6 +319,7 @@ function captureEntityCatalogNavigationSnapshot(catalogName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuotedReplies: state.lastQuotedReplies,
     lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
@@ -330,6 +339,7 @@ function restorePreviousCatalogResult() {
   state.resultNavigation.pop();
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuotedReplies = snapshot.lastQuotedReplies ?? [];
   state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
@@ -355,6 +365,7 @@ function restorePreviousCompResult() {
 
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuotedReplies = snapshot.lastQuotedReplies ?? [];
   state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
@@ -3187,6 +3198,7 @@ function recordAssistantResponse(data) {
     data,
     input: state.lastInput,
     displayInput: state.lastDisplayInput,
+    quotedReplies: [...(state.lastQuotedReplies ?? [])],
     quickTask: state.lastQuickTask,
     conversationId: state.conversationId,
     seasonContextId: state.seasonContextId,
@@ -3206,6 +3218,7 @@ function activateResponseResult(record) {
   state.currentConclusionController = null;
   state.lastInput = record.input ?? state.lastInput;
   state.lastDisplayInput = record.displayInput ?? record.input ?? state.lastDisplayInput;
+  state.lastQuotedReplies = record.quotedReplies ?? [];
   state.lastQuickTask = record.quickTask ?? null;
   state.lastResult = record.data;
   state.lastResultId = record.data.queryId ?? null;
@@ -4633,6 +4646,13 @@ function appendUserMessage(input) {
   conversationPane.appendUser(escapeHtml(input), `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
 }
 
+function appendQuotedUserMessage(input, quotes) {
+  if (!quotes.length) return appendUserMessage(input);
+  const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const html = quotes.map(text => `<blockquote class="message-quote" aria-label="${escapeHtml(t("quoteLabel"))}">${escapeHtml(text)}</blockquote>`).join("");
+  conversationPane.appendUser(`${html}${escapeHtml(input)}`, `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
+}
+
 function appendAssistantMessage(progress = null) {
   const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   return conversationPane.appendAssistant(
@@ -5202,7 +5222,7 @@ function reactChatMessages() {
       ?? record.data?.text
       ?? record.data?.reactAnswer;
     return [
-      { role: "user", content: String(record.displayInput ?? record.input ?? "").slice(0, 8000) },
+      { role: "user", content: String((record.quotedReplies?.length ? record.input : record.displayInput ?? record.input) ?? "").slice(0, 8000) },
       { role: "assistant", content: String(assistant ?? "").slice(0, 8000) }
     ].filter((message) => message.content);
   }).slice(-20);
@@ -5243,9 +5263,18 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
     return;
   }
-  const input = reuseLastInput ? state.lastInput : queryInput.value.trim();
+  const draftInput = queryInput.value.trim();
+  const quotedReplies = reuseLastInput ? state.lastQuotedReplies : quickTask ? [] : normalizedRequestOptions.quotedReplies ?? [];
+  let input = reuseLastInput ? state.lastInput : draftInput;
   if (!input) {
     renderError("enterQuery", "enterQuery");
+    return;
+  }
+  try {
+    if (!reuseLastInput) input = composeQuotedInput(input, quotedReplies);
+  } catch (error) {
+    selectionQuote.reportError(error.message);
+    queryInput.focus();
     return;
   }
 
@@ -5255,16 +5284,19 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   const requestId = ++state.requestSerial;
   state.progressIndex = 0;
   state.lastInput = input;
-  state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? input;
+  state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? draftInput;
+  state.lastQuotedReplies = [...quotedReplies];
   state.lastQuickTask = reuseLastInput ? state.lastQuickTask : quickTask;
   state.lastSupplementalText = reuseLastInput ? state.lastSupplementalText : supplementalText;
-  appendUserMessage(state.lastDisplayInput);
+  appendQuotedUserMessage(state.lastDisplayInput, quotedReplies);
   const recommendationProgress = createRecommendationProgressState();
   activeRecommendationProgress = recommendationProgress;
   activeResponseEl = appendAssistantMessage(recommendationProgress);
   const assistantTarget = activeResponseEl;
   startRecommendationProgressClock(assistantTarget, recommendationProgress);
   if (!reuseLastInput) composer.clear();
+  if (!reuseLastInput && quotedReplies.length) selectionQuote.clear();
+  const quoteRevisionAfterSend = selectionQuote.revision;
   scrollConversation();
   setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
   const controller = new AbortController();
@@ -5388,6 +5420,10 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     );
   } catch (error) {
     if (requestId !== state.requestSerial) return;
+    if (!reuseLastInput && quotedReplies.length && !queryInput.value && selectionQuote.revision === quoteRevisionAfterSend) {
+      queryInput.value = draftInput;
+      selectionQuote.restore(quotedReplies);
+    }
     if (error.name === "AbortError") {
       renderStoppedResult();
       if (activeResponseEl) activeResponseEl.innerHTML = `<div>${t("stoppedBody")}</div>`;
@@ -5524,6 +5560,12 @@ rankControl.addEventListener("change", () => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.requestInFlight) return;
+  const quotedReplies = selectionQuote.getQuotes();
+  if (quotedReplies.length && !activeQuickTask) {
+    await requestRecommendation(false, null, { quotedReplies });
+    return;
+  }
   if (await submitQuickTaskForm()) return;
   if (!state.activeAnalysisContext && await routeNaturalLanguageQuickTask(queryInput.value)) return;
   requestRecommendation(false);
@@ -5603,6 +5645,7 @@ async function routeNaturalLanguageQuickTask(input) {
   appendUserMessage(text);
   state.lastInput = text;
   state.lastDisplayInput = text;
+  state.lastQuotedReplies = [];
   queryInput.value = "";
   await launchQuickTask(taskId);
   scrollConversation();
@@ -5939,6 +5982,8 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   state.lastInput = "";
   state.lastDisplayInput = "";
+  state.lastQuotedReplies = [];
+  selectionQuote.clear();
   state.lastQuickTask = null;
   state.lastResult = null;
   state.lastResultId = null;

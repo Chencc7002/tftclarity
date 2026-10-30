@@ -3,6 +3,11 @@ export const LOCALE_STORAGE_KEY = "tftagent.locale";
 
 export const messages = {
   "zh-CN": {
+    quoteAdd: "添加到对话", quoteLabel: "引用回复", quoteRemove: "移除引用",
+    quoteCountOne: "1 条注释", quoteCount: "{count} 条注释", quoteSelectedText: "所选文本：",
+    quoteClear: "清除全部注释", quoteEdit: "编辑引用", quoteSave: "保存", quoteCancel: "取消", quoteEmpty: "引用内容不能为空。",
+    quoteDuplicate: "这段文字已经添加。", quoteLimit: "最多添加 3 段引用，每段不超过 2000 字。请缩小选择范围。",
+    quoteInputLimit: "提问和引用合计过长，请缩短内容后再发送（最多 8000 字符）。",
     emblemCommonBuild: "常见装备搭配（含该转职）", emblemBuildSamples: "搭配样本", emblemNoBuild: "暂无完整三件套搭配数据",
     quickTaskEmblemsTitle: "转职强度查询", quickTaskEmblemsBody: "查看可合成转职排行与常见携带英雄", quickTaskEmblemsExample: "拿到金铲铲或金锅锅，先看看合哪个转职", quickTaskEmblemsPrompt: "查询可合成转职强度排行",
     emblemEyebrow: "锅铲合成参考", emblemIntro: "先看转职表现，再选合成方向。展开卡片查看常见携带英雄。", emblemRecipeFilter: "合成材料筛选",
@@ -215,6 +220,11 @@ export const messages = {
     conclusionStreaming: "AI 正在结合数据生成结论…", backToChat: "返回对话"
   },
   "en-US": {
+    quoteAdd: "Add to conversation", quoteLabel: "Quoted reply", quoteRemove: "Remove quote",
+    quoteCountOne: "1 annotation", quoteCount: "{count} annotations", quoteSelectedText: "Selected text:",
+    quoteClear: "Clear all annotations", quoteEdit: "Edit quote", quoteSave: "Save", quoteCancel: "Cancel", quoteEmpty: "Quote text cannot be empty.",
+    quoteDuplicate: "This text is already attached.", quoteLimit: "Add up to 3 quotes, each at most 2000 characters. Select a shorter passage.",
+    quoteInputLimit: "Your question and quotes are too long. Shorten them before sending (8000 characters maximum).",
     emblemCommonBuild: "Common build (with this emblem)", emblemBuildSamples: "Build games", emblemNoBuild: "No complete three-item build data available",
     quickTaskEmblemsTitle: "Emblem rankings", quickTaskEmblemsBody: "Craftable emblem stats and common carriers", quickTaskEmblemsExample: "Have a Spatula or Frying Pan? Compare your options", quickTaskEmblemsPrompt: "Show craftable emblem rankings",
     emblemEyebrow: "CRAFTING GUIDE", emblemIntro: "Compare emblem performance, then choose a recipe. Expand a card to see common carriers.", emblemRecipeFilter: "Recipe filter",

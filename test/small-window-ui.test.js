@@ -1225,7 +1225,9 @@ test("all existing real interactions and endpoints remain wired", () => {
 
 test("request lifecycle isolates refreshes, retries, clears, and stale abort completions", () => {
   assert.match(appJs, /const reuseLastInput = refresh \|\| normalizedRequestOptions\.reuseLastInput === true/);
-  assert.match(appJs, /const input = reuseLastInput \? state\.lastInput : queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /const draftInput = queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /let input = reuseLastInput \? state\.lastInput : draftInput/);
+  assert.match(appJs, /if \(!reuseLastInput\) input = composeQuotedInput\(input, quotedReplies\)/);
   assert.match(appJs, /if \(!reuseLastInput\) composer\.clear\(\)/);
   assert.match(appJs, /requestRecommendation\(false, null, \{ reuseLastInput: true \}\)/);
   assert.match(appJs, /const requestId = \+\+state\.requestSerial/);
