@@ -9,6 +9,7 @@ import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
 import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
 import {
+  attachSessionEvidenceSnapshotHashes,
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
   singleEquipmentResultSubject,
@@ -5149,6 +5150,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
       model: responseSnapshot.answer.generatedConclusion.model ?? null
     };
   }
+  attachSessionEvidenceSnapshotHashes(responseSnapshot);
   payload.queryId = queryId;
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,

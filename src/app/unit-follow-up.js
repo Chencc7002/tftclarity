@@ -97,13 +97,39 @@ export function isSessionEvidenceExplanationFollowUp(input) {
     && !CURRENT_DATA_REQUEST.test(text);
 }
 
-function hasValidStoredEvidenceFingerprint(entry) {
-  const expected = createHash("sha256").update(JSON.stringify({
+function canonicalJsonValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalJsonValue);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalJsonValue(value[key])]));
+}
+
+function sessionEvidenceSnapshotHash(entry) {
+  return createHash("sha256").update(JSON.stringify(canonicalJsonValue({
+    evidenceId: entry?.evidenceId,
+    toolCallId: entry?.toolCallId,
     toolName: entry?.toolName,
+    type: entry?.type,
+    source: entry?.source,
+    updatedAt: entry?.updatedAt ?? null,
     value: entry?.value,
-    metadata: entry?.metadata
-  })).digest("hex");
-  return typeof entry?.fingerprint === "string" && entry.fingerprint === expected;
+    metadata: entry?.metadata,
+    fingerprint: entry?.fingerprint,
+    validatedAt: entry?.validatedAt
+  }))).digest("hex");
+}
+
+export function attachSessionEvidenceSnapshotHashes(response) {
+  for (const entry of list(response?.evidence)) {
+    entry.sessionSnapshotHash = sessionEvidenceSnapshotHash(entry);
+  }
+  return response;
+}
+
+function hasValidStoredEvidenceSnapshot(entry) {
+  return typeof entry?.fingerprint === "string"
+    && /^[a-f0-9]{64}$/u.test(entry.fingerprint)
+    && typeof entry?.sessionSnapshotHash === "string"
+    && entry.sessionSnapshotHash === sessionEvidenceSnapshotHash(entry);
 }
 
 // A query event is a server-owned, scoped receipt. For an explanation-only
@@ -128,7 +154,7 @@ export async function loadSessionEvidenceCarryover(request, runtime, scope, opti
     if (!citedIds.has(entry?.evidenceId)
       || entry?.temporalStatus === "historical"
       || entry?.metadata?.temporalStatus === "historical"
-      || !hasValidStoredEvidenceFingerprint(entry)) continue;
+      || !hasValidStoredEvidenceSnapshot(entry)) continue;
     const valueBytes = Buffer.byteLength(JSON.stringify(entry.value ?? null), "utf8");
     if (valueBytes <= 0 || totalBytes + valueBytes > MAX_SESSION_EVIDENCE_BYTES) continue;
     totalBytes += valueBytes;
@@ -148,7 +174,9 @@ export async function loadSessionEvidenceCarryover(request, runtime, scope, opti
         sessionCarryover: true,
         originQueryId: record.queryId,
         originEvidenceId: entry.evidenceId,
-        originCreatedAt: record.createdAt
+        originCreatedAt: record.createdAt,
+        originFingerprint: entry.fingerprint,
+        sessionSnapshotHash: entry.sessionSnapshotHash
       }
     });
   }

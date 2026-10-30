@@ -9,6 +9,7 @@ import {
 } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
 import {
+  attachSessionEvidenceSnapshotHashes,
   isSessionEvidenceExplanationFollowUp,
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
@@ -262,7 +263,7 @@ test("session evidence carryover rejects current-data requests, uncited evidence
       conversationId: "chat",
       seasonContextId: "set18-live",
       createdAt: "2026-10-29T00:00:00.000Z",
-      response: { status: "completed", evidenceIds: ["cited"], evidence: [evidence] },
+      response: attachSessionEvidenceSnapshotHashes({ status: "completed", evidenceIds: ["cited"], evidence: [structuredClone(evidence)] }),
       ...changes
     });
   }
