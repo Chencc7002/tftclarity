@@ -1,3 +1,4 @@
+import { companionPrompt } from '../conversation/companion-personas.js';
 import { validateReactAction } from "./react-action.js";
 
 export const REACT_DECISION_PROMPT_VERSION = "react-decision-contract.v5";
@@ -325,6 +326,8 @@ export function createReactDecisionProvider(options = {}) {
         const messages = options.messageLayout === "legacy_full_state"
           ? legacyReactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer)
           : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer);
+        const voice = companionPrompt(context.companionPersona);
+        if (voice) messages.splice(1, 0, { role: 'system', content: voice });
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {

@@ -1,3 +1,4 @@
+import { companionRequestContext } from './companion-context.js';
 import { AppShell, TitleBar } from "./app-shell.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
@@ -983,6 +984,7 @@ function toggleQuickTaskCategory(button) {
 }
 
 function welcomeConversationHtml(messageKey = "newConversation") {
+  if (new URLSearchParams(location.search).get('companion') === 'gwen-companion.v1') return '<article class="message assistant-message welcome-message"><div class="message-meta">格温</div><div class="message-body">你好</div></article>';
   return `
     <article class="message assistant-message welcome-message">
       <div class="message-meta"><span class="assistant-avatar" aria-hidden="true"><img src="/favicon.png?v=20260727" alt=""></span><strong data-i18n="assistant">${escapeHtml(t("assistant"))}</strong></div>
@@ -5075,6 +5077,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
       ?? `request-${Date.now()}-${requestId}`;
     const requestBody = {
       input,
+      ...companionRequestContext(location.search, Boolean(state.lastQuickTask)),
       locale: getLocale(),
       requestId: transportRequestId,
       conversationId: state.conversationId,

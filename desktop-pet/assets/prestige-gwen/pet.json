@@ -1,0 +1,101 @@
+{
+  "id": "prestige-gwen",
+  "displayName": "至臻 咖啡甜心 小小格温",
+  "renderer": "glb",
+  "license": "Riot Games game asset; local personal use only; not covered by application code license",
+  "model": "model.glb",
+  "camera": {
+    "azimuth": 0,
+    "elevation": 38,
+    "padding": 1.35,
+    "hideMaterials": [
+      "Smears"
+    ],
+    "materialOverrides": {
+      "Face": {
+        "renderOrder": -1,
+        "depthWrite": true
+      },
+      "Hair": {
+        "depthWrite": true
+      }
+    },
+    "actionHiddenMaterials": {
+      "Celebrate": [
+        "Scissors",
+        "ScissorsBlade"
+      ]
+    }
+  },
+  "actions": {
+    "idle": "Idle_Base",
+    "running": "Run",
+    "running-right": "Run",
+    "running-left": "Run",
+    "waving": "Interact",
+    "jumping": "Celebrate",
+    "failed": "Damage_Hurt",
+    "waiting": "Idle_Base",
+    "review": "Idle_Base"
+  },
+  "animationReview": {
+    "approved": [
+      "Idle_Base",
+      "Interact",
+      "Celebrate",
+      "Damage_Hurt",
+      "Run"
+    ],
+    "rejected": {
+      "Cast_Cycle": "Source upward displacement clips the head with shared camera; use Run for processing instead."
+    },
+    "fallbacks": {
+      "waiting": "Calm idle; no distinct asking pose is claimed.",
+      "review": "Calm idle; no distinct reading pose is claimed."
+    }
+  },
+  "provenance": {
+    "page": "https://modelviewer.lol/model-viewer?group=tft&id=68003",
+    "sha256": "2bc25f36fb8a07d6d3b00d31893a6bfe958bdb814076efbc6533cbb7ede7f462",
+    "visualSource": "Original GLB geometry, textures and animations rendered locally with Three.js",
+    "imagegen": false
+  },
+  "narration": {
+    "greeting": "你好",
+    "thinking": [
+      "让我看看，这次要研究什么呀？",
+      "好呀，让我想一想～",
+      "嗯嗯，我来看看你的问题。"
+    ],
+    "querying": [
+      "我来查一查，你等我一下哦。",
+      "我还在认真看，稍等一下呀。",
+      "让我把这些线索理一理～"
+    ],
+    "review": [
+      "我把线索整理清楚，再告诉你～",
+      "正在收好最后几根线头。",
+      "稍等，马上整理给你看。"
+    ],
+    "slow": [
+      "这次要花久一点，我还在处理呢。",
+      "线索有点多，再等我一下好吗？",
+      "还没结束哦，我在这儿陪你等。"
+    ],
+    "done": [
+      "整理好啦，一起看看吧！",
+      "回答准备好了，点我看看呀。",
+      "好啦，打开聊天看看吧～"
+    ],
+    "failed": [
+      "线好像打了个结……这次没完成，再试一次好吗？",
+      "这次没能完成，打开聊天看看原因吧。",
+      "遇到一点小麻烦，我们稍后再试试吧。"
+    ],
+    "stopped": [
+      "好呀，先收起针线，等你想好了再继续。",
+      "停下来啦，我在这里陪你。",
+      "嗯嗯，等你想继续了再叫我呀。"
+    ]
+  }
+}

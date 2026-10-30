@@ -1,0 +1,23 @@
+:root { font: 12px/1.4 "Microsoft YaHei UI", "Segoe UI", sans-serif; color: #f4f4ff; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+main { width: 100%; height: 100%; display: flex; align-items: center; flex-direction: column; padding-top: 10px; }
+button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+.bubble { height: 64px; flex-shrink: 0; line-height: 16px; text-align: left; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow-wrap: anywhere; max-width: 298px; border: 1px solid #e9dcff45; background: #232338ed; border-radius: 18px; padding: 7px 13px; overflow: hidden; white-space: normal; text-overflow: ellipsis; box-shadow: 0 3px 12px #0002; }
+#pet { width: 192px; height: 208px; touch-action: none; cursor: grab; }
+.bubble { display: flex; align-items: center; }
+#bubble-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-height: 48px; }
+#pet.dragging { cursor: grabbing; }
+.panel { width: 234px; border-radius: 17px; padding: 12px; background: #20202fee; border: 1px solid #dfd5ff3d; box-shadow: 0 5px 18px #0002; }
+.identity { display: flex; align-items: center; gap: 6px; margin-bottom: 9px; }
+.identity strong { font-size: 12px; font-weight: 600; }
+.identity #affinity { margin-left: auto; font-size: 10px; color: #bdb4d1; }
+.dot { width: 6px; height: 6px; background: #c3a5f8; border-radius: 50%; }
+.actions { display: flex; gap: 6px; }
+.actions button { background: #ffffff0d; border-radius: 9px; padding: 7px 10px; transition: background .15s; }
+.actions button:hover { background: #ffffff24; }
+.actions .primary { background: #cfb3f6; color: #2e2048; font-weight: 700; flex: 1; text-align: left; }
+.primary span { float: right; }
+.actions .primary:hover { background: #dfc8ff; }
+.hint { margin-top: 8px; color: #a39bb4; font-size: 10px; text-align: center; }
+button:focus-visible { outline: 2px solid #dfc8ff; outline-offset: 2px; }

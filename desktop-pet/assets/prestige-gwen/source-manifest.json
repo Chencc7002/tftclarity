@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "requested": {
+    "type": "url",
+    "value": "https://modelviewer.lol/model-viewer?group=tft&id=68003"
+  },
+  "resolved": {
+    "id": "68003",
+    "group": "tft",
+    "alias": "petchibigwen",
+    "name": "至臻 咖啡甜心 小小格温",
+    "page_url": "https://modelviewer.lol/model-viewer?group=tft&id=68003",
+    "asset_url": "https://cdn.modelviewer.lol/tft/models/petchibigwen/68003/model.glb",
+    "base_url": "https://cdn.modelviewer.lol",
+    "variants": [
+      {
+        "id": "68001",
+        "name": "小小格温"
+      },
+      {
+        "id": "68002",
+        "name": "斗魂觉醒 小小格温"
+      },
+      {
+        "id": "68003",
+        "name": "至臻 咖啡甜心 小小格温"
+      },
+      {
+        "id": "68004",
+        "name": "水晶玫瑰 小小格温"
+      }
+    ]
+  },
+  "candidate_ranking": [],
+  "downloaded": {
+    "path": "source/model.glb",
+    "bytes": 8078732,
+    "sha256": "2bc25f36fb8a07d6d3b00d31893a6bfe958bdb814076efbc6533cbb7ede7f462",
+    "etag": "\"b18334998545784142900a36ea828484\"",
+    "last_modified": "Wed, 19 Nov 2025 03:19:25 GMT"
+  },
+  "discovered_at_unix": 1793354080,
+  "provenance": "modelviewer.lol page metadata and canonical animated GLB",
+  "rights": {
+    "asset_owner": "Riot Games and/or its licensors",
+    "repository_license": "not covered by Apache-2.0",
+    "distribution_default": "local-only; do not mirror source or derived binaries",
+    "riot_policy": "https://www.riotgames.com/en/legal",
+    "riot_terms": "https://www.riotgames.com/en/terms-of-service",
+    "source_terms": "https://modelviewer.lol/privacy/terms-of-use"
+  }
+}

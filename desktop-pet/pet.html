@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' blob:; connect-src 'self' blob:; object-src 'none'; base-uri 'none'">
+  <title>TFTClarity 随身伙伴</title>
+  <link rel="stylesheet" href="pet.css">
+</head>
+<body>
+  <main>
+    <button id="bubble" class="bubble hit" title="点击打开完整聊天"><span id="bubble-text">你好</span></button>
+    <canvas id="pet" width="192" height="208" aria-label="角色：点击摸头，按住拖动"></canvas>
+    <section class="panel hit" aria-label="伙伴操作">
+      <div class="identity"><span class="dot"></span><strong id="pet-name">至臻咖啡甜心格温</strong><span id="affinity">初次见面</span></div>
+      <div class="actions">
+        <button id="chat" class="primary" title="Ctrl+Shift+Space">聊攻略 <span>↗</span></button>
+        <button id="feed" title="喂食，30 秒冷却">喂食</button>
+        <button id="menu" aria-label="更多选项">···</button>
+      </div>
+      <div class="hint" id="hint">摸摸头 · 拖动换位置</div>
+    </section>
+  </main>
+  <script type="module" src="pet.mjs"></script>
+</body>
+</html>
