@@ -48,6 +48,19 @@ function canPublishSummaryWithValidationWarnings(request, action, validation, le
     && validation.errors.every((error) => SOFT_SUMMARY_VALIDATION_ERROR.test(String(error)));
 }
 
+function isSessionCarryoverTemporalValidation(action, validation, ledger) {
+  if (action?.reasonCode !== "sufficient_evidence" || !action.evidenceIds?.length) return false;
+  if (!validation?.errors?.length || !validation.errors.every((error) => (
+    String(error) === "historical quick-tool evidence cannot support a current statistical or best-ranking claim"
+  ))) return false;
+  const entries = ledger.resolve(action.evidenceIds);
+  return entries.length === action.evidenceIds.length
+    && entries.every((entry) => (
+      entry.temporalStatus === "historical"
+      && entry.metadata?.sessionCarryover === true
+    ));
+}
+
 function currentTurnUserText(request = {}) {
   return [request.input, request.question]
     .map((value) => String(value ?? "").trim())
@@ -2033,6 +2046,20 @@ export class ReactLoop {
             });
           }
           if (action.reasonCode === "sufficient_evidence") {
+            if (isSessionCarryoverTemporalValidation(action, finishValidation, ledger)) {
+              sufficientFinishRepairCount += 1;
+              state.recordObservation({
+                type: "decision_rejected",
+                actionType: "finish",
+                reasonCode: action.reasonCode,
+                errors: finishValidation.errors,
+                repairInstruction: "本轮只能通俗解释上一条结果。保留相同 Evidence 引用与已支持事实，但删除‘当前、现在、目前、最近、最新、这版本、排名、最好、最高’等实时或排名表述；不要把历史快照说成当前证据。技能中的‘当前目标’请改写为‘正在攻击的目标’。"
+              }, { progress: false });
+              if (sufficientFinishRepairCount === 1 && state.decisions.length < budget.maxDecisions) {
+                state.warn("session_evidence_temporal_repair_requested");
+                continue;
+              }
+            }
             const fallback = buildCompositionTrendFallback(ledger)
               ?? buildCompositionReplacementFallback(ledger)
               ?? buildConstrainedBatchEvidenceFallback(ledger)

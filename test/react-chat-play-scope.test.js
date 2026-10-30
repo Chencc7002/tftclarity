@@ -180,10 +180,15 @@ test("explanation follow-ups reuse only cited validated session evidence without
         const carried = state.evidence.filter((entry) => entry.metadata?.sessionCarryover === true);
         assert.equal(carried.length, 1, JSON.stringify(state.evidence));
         assert.equal(carried[0].temporalStatus, "historical");
+        const repairingTemporalClaim = state.transcript?.some((event) => (
+          event.type === "observation" && event.value?.type === "decision_rejected"
+        ));
         return {
           schemaVersion: "react-action.v1",
           type: "finish",
-          answer: "通俗说，它击败目标后会跳向下一个目标，并短暂强化自己。",
+          answer: repairingTemporalClaim
+            ? "通俗说，它击败正在攻击的目标后会跳向下一个目标，并短暂强化自己。这是在解释上一条结果。"
+            : "通俗说，它击败当前目标后会跳向下一个目标，并短暂强化自己。以上是当前赛季数据。",
           evidenceIds: [carried[0].evidenceId],
           reasonCode: "sufficient_evidence"
         };
@@ -223,12 +228,13 @@ test("explanation follow-ups reuse only cited validated session evidence without
       { role: "assistant", content: first.payload.answer }
     ]
   }, runtime, { visitor });
-  assert.equal(second.payload.status, "completed", JSON.stringify(second.payload));
+  assert.equal(second.payload.status, "completed_with_warning", JSON.stringify(second.payload));
   assert.equal(second.payload.safetyMetrics.actualToolCalls, 0);
   assert.equal(handlerCalls, 1);
   assert.equal(second.payload.evidence.length, 1);
   assert.equal(second.payload.evidence[0].metadata.sessionCarryover, true);
   assert.equal(second.payload.evidence[0].temporalStatus, "historical");
+  assert.ok(second.payload.warnings.includes("session_evidence_temporal_repair_requested"));
   assert.match(second.payload.answer, /通俗说/u);
 });
 
