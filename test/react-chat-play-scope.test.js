@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import test from "node:test";
 import {
   createDefaultReactToolHandlerBundle,
@@ -7,7 +8,13 @@ import {
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
 import { MemoryCacheStore } from "../src/index.js";
-import { unitResultCoverage, singleEquipmentResultSubject, loadFollowUpHistory } from "../src/app/unit-follow-up.js";
+import {
+  isSessionEvidenceExplanationFollowUp,
+  loadFollowUpHistory,
+  loadSessionEvidenceCarryover,
+  singleEquipmentResultSubject,
+  unitResultCoverage
+} from "../src/app/unit-follow-up.js";
 
 const buildEvidenceValue = (unit = "DA_Cinderling18") => ({
   type: "unit_build_rankings", unit: { apiName: unit, name: "绯红树怪" },
@@ -150,6 +157,121 @@ test("follow-up history is read from stored results and isolated by owner, conve
   const request = { historyQueryIds: ["valid", "owner", "conversation", "season", "missing"], conversationId: "chat", seasonContextId: "set18-live" };
   assert.equal((await loadFollowUpHistory(request, { cacheStore }, "me")).length, 1);
   assert.deepEqual(await loadFollowUpHistory({ ...request, startNewTask: true }, { cacheStore }, "me"), []);
+});
+
+test("explanation follow-ups reuse only cited validated session evidence without another tool call", async () => {
+  const cacheStore = new MemoryCacheStore();
+  let handlerCalls = 0;
+  const runtime = createSmallWindowRuntime({
+    cacheStore,
+    reactToolHandlers: {
+      unit_details: async () => {
+        handlerCalls += 1;
+        return {
+          type: "unit_details",
+          updatedAt: "2026-10-29T15:00:00.000Z",
+          results: [{ apiName: "TFT18_CrimsonMarkTreant", name: "绯红印记树怪", spell: "猩红之怒" }]
+        };
+      }
+    },
+    reactDecisionProvider: async ({ state }) => {
+      if (state.question.includes("通俗")) {
+        const carried = state.evidence.filter((entry) => entry.metadata?.sessionCarryover === true);
+        assert.equal(carried.length, 1, JSON.stringify(state.evidence));
+        assert.equal(carried[0].temporalStatus, "historical");
+        return {
+          schemaVersion: "react-action.v1",
+          type: "finish",
+          answer: "通俗说，它击败目标后会跳向下一个目标，并短暂强化自己。",
+          evidenceIds: [carried[0].evidenceId],
+          reasonCode: "sufficient_evidence"
+        };
+      }
+      const evidence = state.evidence.find((entry) => entry.toolName === "unit_details");
+      return evidence ? {
+        schemaVersion: "react-action.v1",
+        type: "finish",
+        answer: "绯红印记树怪的技能是猩红之怒。",
+        evidenceIds: [evidence.evidenceId],
+        reasonCode: "sufficient_evidence"
+      } : {
+        schemaVersion: "react-action.v1",
+        type: "call_tool",
+        tool: "unit_details",
+        arguments: { apiName: "TFT18_CrimsonMarkTreant" },
+        purposeCode: "retrieve_entity_details"
+      };
+    }
+  });
+  const visitor = { scope: "session-owner" };
+  const first = await handleReactChatRequest({
+    input: "绯红印记树怪的技能是什么？",
+    conversationId: "session-chat",
+    seasonContextId: "set18-live"
+  }, runtime, { visitor });
+  assert.equal(first.payload.status, "completed");
+  assert.equal(handlerCalls, 1);
+
+  const second = await handleReactChatRequest({
+    input: "你不能通俗地解释一下吗？",
+    conversationId: "session-chat",
+    seasonContextId: "set18-live",
+    historyQueryIds: [first.payload.queryId],
+    messages: [
+      { role: "user", content: "绯红印记树怪的技能是什么？" },
+      { role: "assistant", content: first.payload.answer }
+    ]
+  }, runtime, { visitor });
+  assert.equal(second.payload.status, "completed", JSON.stringify(second.payload));
+  assert.equal(second.payload.safetyMetrics.actualToolCalls, 0);
+  assert.equal(handlerCalls, 1);
+  assert.equal(second.payload.evidence.length, 1);
+  assert.equal(second.payload.evidence[0].metadata.sessionCarryover, true);
+  assert.equal(second.payload.evidence[0].temporalStatus, "historical");
+  assert.match(second.payload.answer, /通俗说/u);
+});
+
+test("session evidence carryover rejects current-data requests, uncited evidence, wrong scope and expired receipts", async () => {
+  assert.equal(isSessionEvidenceExplanationFollowUp("你不能通俗的解释一下吗"), true);
+  assert.equal(isSessionEvidenceExplanationFollowUp("请解释一下它现在的最新胜率"), false);
+
+  const cacheStore = new MemoryCacheStore();
+  const now = Date.parse("2026-10-30T00:00:00.000Z");
+  const evidence = {
+    evidenceId: "cited",
+    toolCallId: "call-1",
+    toolName: "unit_details",
+    type: "unit_details",
+    source: "official_catalog",
+    updatedAt: "2026-10-29T00:00:00.000Z",
+    value: { type: "unit_details", results: [{ apiName: "TFT18_Test" }] },
+    metadata: { source: "official_catalog", updatedAt: "2026-10-29T00:00:00.000Z" }
+  };
+  evidence.fingerprint = createHash("sha256").update(JSON.stringify({
+    toolName: evidence.toolName, value: evidence.value, metadata: evidence.metadata
+  })).digest("hex");
+  for (const [queryId, changes] of Object.entries({
+    valid: {},
+    uncited: { response: { status: "completed", evidenceIds: [], evidence: [evidence] } },
+    expired: { createdAt: "2026-10-20T00:00:00.000Z" }
+  })) {
+    cacheStore.addQueryEvent({
+      queryId,
+      input: "test",
+      visitorScope: "owner",
+      conversationId: "chat",
+      seasonContextId: "set18-live",
+      createdAt: "2026-10-29T00:00:00.000Z",
+      response: { status: "completed", evidenceIds: ["cited"], evidence: [evidence] },
+      ...changes
+    });
+  }
+  const request = { input: "再通俗解释一下", historyQueryIds: ["valid"], conversationId: "chat", seasonContextId: "set18-live" };
+  assert.equal((await loadSessionEvidenceCarryover(request, { cacheStore }, "owner", { now })).length, 1);
+  assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, input: "解释一下当前胜率" }, { cacheStore }, "owner", { now }), []);
+  assert.deepEqual(await loadSessionEvidenceCarryover(request, { cacheStore }, "other", { now }), []);
+  assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, historyQueryIds: ["uncited"] }, { cacheStore }, "owner", { now }), []);
+  assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, historyQueryIds: ["expired"] }, { cacheStore }, "owner", { now }), []);
 });
 
 test("successful equipment evidence suppresses duplicate items even for a how-to-equip query", async () => {

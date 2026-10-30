@@ -4810,13 +4810,18 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
   if (code === "missing_required_evidence") {
     const hasVideoEvidence = Array.isArray(failure?.evidence)
       && failure.evidence.some((entry) => entry?.value?.type === "strategy_video_search_results");
+    const hasNativeEvidence = hasRenderableNativeEvidence(failure);
     return getLocale().startsWith("zh")
       ? hasVideoEvidence
         ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
-        : "\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u6570\u636e\u7ed3\u679c\u3002"
+        : hasNativeEvidence
+          ? "\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u6570\u636e\u7ed3\u679c\u3002"
+          : "\u672c\u8f6e\u672a\u53d6\u5f97\u53ef\u7528\u4e8e\u56de\u7b54\u7684\u8bc1\u636e\uff0c\u8bf7\u91cd\u8bd5\u6216\u8bf4\u660e\u5e0c\u671b\u89e3\u91ca\u7684\u4e0a\u4e00\u6761\u7ed3\u679c\u3002"
       : hasVideoEvidence
         ? "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below."
-        : "The generated summary did not pass evidence validation. The verifiable data results are shown below.";
+        : hasNativeEvidence
+          ? "The generated summary did not pass evidence validation. The verifiable data results are shown below."
+          : "No evidence usable for this answer was obtained. Please retry or identify the previous result you want explained.";
   }
   return rawMessage || fallback;
 }

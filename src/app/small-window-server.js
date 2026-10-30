@@ -8,7 +8,12 @@ import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
 import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
-import { loadFollowUpHistory, singleEquipmentResultSubject, unitResultCoverage } from "./unit-follow-up.js";
+import {
+  loadFollowUpHistory,
+  loadSessionEvidenceCarryover,
+  singleEquipmentResultSubject,
+  unitResultCoverage
+} from "./unit-follow-up.js";
 import { currentDeadlineEvidence } from "../react/deadline-evidence.js";
 import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
@@ -8047,6 +8052,29 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         } : {})
       };
     }
+  }
+  try {
+    const carriedEvidence = await loadSessionEvidenceCarryover(
+      normalizedRequest,
+      runtime,
+      bridgeScopeKey,
+      { now: runtime.reactNow ? runtime.reactNow() : Date.now() }
+    );
+    if (carriedEvidence.length) {
+      bridgeContext ??= {
+        relation: "continue",
+        view: null,
+        promotedEvidence: [],
+        estimatedTokens: 0
+      };
+      bridgeContext.promotedEvidence = [
+        ...(bridgeContext.promotedEvidence ?? []),
+        ...carriedEvidence
+      ];
+    }
+  } catch {
+    // Session carryover is an optimization. Any cache/read/validation failure
+    // leaves the normal current-turn tool path unchanged.
   }
   bridgeContext = attachTrustedAnalysisContext(bridgeContext, context.trustedAnalysisContext);
   if (dimensionObserver && dimensionObserver.mode !== "off") {
