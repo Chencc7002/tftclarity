@@ -79,6 +79,9 @@ controlAuthority=intent_hint_only；另外两条必须成功并显示 key absent
 
 ## 3. 语义索引发布物
 
+公告/人工知识的增量发布与启动只读迁移见 [静态知识向量发布](static-knowledge-publication.md)。
+可选 Compose override 会在 app 启动前执行向量构建和审计门禁；旧启动自动写入文本不代表向量更新成功。
+
 Docker build context 会排除 `.cache` 和 `*.sqlite*`，因此镜像本身不包含生产语义索引；
 Compose 只负责提供持久 volume，不会自动构建完整索引。若 Public Beta 要启用知识检索，
 Final Release Image Gate 必须同时准备并审计一个与当前 patch/locale 匹配的

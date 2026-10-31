@@ -415,7 +415,7 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
   async upsert(documents, options = {}) {
     const result = { inserted: 0, updated: 0, unchanged: 0 };
     const select = this.database.prepare(`
-      SELECT content_hash, record_hash, embedding_model, embedding IS NOT NULL AS has_embedding
+      SELECT content_hash, record_hash, embedding_model, embedding, embedding IS NOT NULL AS has_embedding
       FROM semantic_documents WHERE season_context_id = ? AND id = ?
     `);
     const upsert = this.database.prepare(`
@@ -462,7 +462,8 @@ export class SQLiteSemanticDocumentStore extends SemanticDocumentStore {
       const sameRecord = existing?.record_hash === document.recordHash;
       const preservesExistingEmbedding = sameContent && !document.embedding && Boolean(existing?.has_embedding);
       const sameVectorState = existing?.embedding_model === document.embeddingModel
-        && Boolean(existing?.has_embedding) === Boolean(document.embedding);
+        && Boolean(existing?.has_embedding) === Boolean(document.embedding)
+        && (!document.embedding || Buffer.from(existing?.embedding ?? []).equals(encodeEmbedding(document.embedding)));
       if (existing && sameRecord && (preservesExistingEmbedding || sameVectorState)) {
         result.unchanged += 1;
         continue;

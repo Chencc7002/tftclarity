@@ -968,7 +968,10 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
-  if (typeof store.upsert === "function") {
+  const staticMode = String(options.staticKnowledgeMode ?? env.TFT_AGENT_STATIC_KNOWLEDGE_MODE ?? "legacy");
+  if (!["legacy", "shadow", "published"].includes(staticMode)) throw new Error("Invalid static knowledge mode");
+  config.staticKnowledgeMode = staticMode;
+  if (typeof store.upsert === "function" && staticMode !== "published") {
     await store.upsert(buildOfficialPatchSemanticDocuments({
       seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
       locale: config.locale
@@ -987,6 +990,16 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
         fetchImpl: options.embeddingFetch
       })
     : null;
+  if (staticMode !== "legacy") {
+    const { inspectStaticKnowledge } = await import("../knowledge/static-knowledge-release.js");
+    const seasonContextId = options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID;
+    config.staticKnowledgeHealth = await inspectStaticKnowledge(store, {
+      seasonContextId, locale: config.locale, model: config.model,
+      dimensions: config.dimensions ?? (config.model === "bge-m3" ? 1024 : null),
+      documents: [...buildOfficialPatchSemanticDocuments({ seasonContextId, locale: config.locale }),
+        ...buildUserStrategySemanticDocuments({ seasonContextId, locale: config.locale })]
+    });
+  }
   return {
     semanticRetriever: createPersistentSemanticRetriever({ store, provider }),
     semanticDocumentStore: store,
@@ -1068,7 +1081,9 @@ function summarizeSemanticConfig(config = {}, store = null) {
     model: config.model ? String(config.model) : null,
     indexConfigured: Boolean(config.indexPath),
     endpointConfigured: Boolean(config.endpoint),
-    apiKeyConfigured: Boolean(config.apiKey)
+    apiKeyConfigured: Boolean(config.apiKey),
+    staticKnowledgeMode: config.staticKnowledgeMode ?? "legacy",
+    staticKnowledgeHealth: config.staticKnowledgeHealth ?? null
   };
 }
 
@@ -1128,7 +1143,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       runtime.mechanismClassificationConfig ?? {},
       runtime.mechanismClassificationCache
     ),
-    semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
+    semanticIndex: { ...summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
+      retrieval: runtime.semanticRetriever?.getRetrievalStatus?.() ?? null },
     routing: {
       reactChatMode: runtime.reactChatMode ?? "off",
       reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
