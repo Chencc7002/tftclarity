@@ -91,7 +91,7 @@ function mentions(value, entries, query = false) {
   )));
 }
 
-export function createVideoEntityScope(query, resources = {}) {
+export function createVideoEntityScope(query, resources = {}, options = {}) {
   const entries = records(resources);
   const value = text(query);
   const hits = mentions(value, entries, true);
@@ -114,10 +114,26 @@ export function createVideoEntityScope(query, resources = {}) {
   const status = ambiguous || unsupportedRelation || (selected.length > 1 && hasOr && hasAnd)
     ? "ambiguous" : selected.length ? "resolved" : entries.length ? "unscoped" : "catalog_unavailable";
   const operator = hasOr ? "any" : "all";
+  // Only mixed-type descriptive requests may soften secondary entities. Named
+  // compositions, same-type lists, OR, and explicit conjunctions stay exact.
+  const balanced = options.policy === "balanced";
+  const explicitAll = /同时|都要|都包含|必须|标题.*(?:包含|含有)|\band\b|和|以及|并且|与|及/iu.test(value);
+  const inOrder = [...new Map(ordered.map((hit) => [hit.entity.id, hit.entity])).values()];
+  let required = selected;
+  if (balanced && status === "resolved" && selected.length > 1 && !hasOr && !explicitAll
+      && new Set(selected.map((entity) => entity.type)).size > 1
+      && !selected.some((entity) => entity.type === "composition" || entity.type === "augment")) {
+    const first = inOrder[0];
+    const coreType = first.type === "trait" && selected.some((entity) => entity.type === "unit") ? "unit" : first.type;
+    required = selected.filter((entity) => entity.type === coreType);
+  }
+  const requiredIds = new Set(required.map((entity) => entity.id));
   const scope = {
     schemaVersion: "video-entity-scope.v1", status, operator,
     entities: selected.map(({ id, type, name }) => ({ id, type, name })),
-    queryMatches: hits.map(({ alias, entity }) => ({ entityId: entity.id, alias }))
+    queryMatches: hits.map(({ alias, entity }) => ({ entityId: entity.id, alias })),
+    ...(balanced ? { policy: "balanced", requiredEntityIds: [...requiredIds],
+      preferredEntityIds: selected.filter((entity) => !requiredIds.has(entity.id)).map((entity) => entity.id) } : {})
   };
   let searchQuery = value;
   if (status === "resolved") {
@@ -133,6 +149,13 @@ export function createVideoEntityScope(query, resources = {}) {
   return {
     scope,
     searchQuery,
+    // Short verified aliases improve upstream recall without changing the
+    // title identity check. No fuzzy or model-generated alias is promoted.
+    ...(balanced ? { recallQueries: status === "resolved" ? [0, 1].map((index) => required.map((entity) => {
+      const candidates = entity.aliases.filter((alias) => /^\p{Script=Han}{2,12}$/u.test(alias))
+        .sort((a, b) => a.length - b.length);
+      return candidates[index] ?? candidates[0] ?? hits.find((hit) => hit.entity.id === entity.id)?.alias;
+    }).join(operator === "any" ? " 或 " : " ")) : [] } : {}),
     matchTitle(title) {
       if (status === "catalog_unavailable" || status === "ambiguous") {
         return { accepted: false, reason: status, matches: [] };
@@ -145,8 +168,11 @@ export function createVideoEntityScope(query, resources = {}) {
             && other.entity.id !== entry.entity.id));
         return hit ? [{ entityId: entity.id, alias: hit.alias }] : [];
       });
-      const accepted = operator === "any" ? matches.length > 0 : matches.length === selected.length;
-      return { accepted, reason: accepted ? "title_entity_match" : "title_entity_mismatch", matches };
+      const requiredMatches = matches.filter((match) => requiredIds.has(match.entityId));
+      const accepted = operator === "any" ? requiredMatches.length > 0 : requiredMatches.length === required.length;
+      return { accepted, reason: accepted ? "title_entity_match" : "title_entity_mismatch", matches,
+        ...(balanced ? { preferredMatchCount: matches.length - requiredMatches.length,
+          allEntitiesMatched: matches.length === selected.length } : {}) };
     }
   };
 }

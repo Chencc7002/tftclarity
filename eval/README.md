@@ -18,3 +18,5 @@ npm run eval:agent
 数据集覆盖装备与阵容主查询、英雄/装备/羁绊详情、多轮继承和改口、澄清、低样本与空结果、stale、Embedding/LLM 失败、工具注册安全、Runtime 超时/取消/预算/迟到结果、赛季隔离和 LLM 事实越权。契约场景只断言结构化字段，不比较整段自然语言。
 
 报告中的延迟为注入时钟下的确定性离线值，不代表生产网络延迟。真实请求延迟继续由现有 smoke 和运行观测衡量。
+
+Jev 独立意图维度的三方开发对照使用 `jev-dimensions-cases.json` 和 `node scripts/eval-jev-dimensions.mjs`（默认零网络；`--live` 显式开启付费调用）。这是合成开发集的意图组件评估，不能替代 Agent 回归或真实端到端准确率。边界、调用上限、HTTP 451 阻碍与结果见 [实现记录](../docs/jev-intent-dimensions-20261012.md)。

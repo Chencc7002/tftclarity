@@ -312,16 +312,18 @@ export class FallbackSemanticRetriever extends SemanticRetriever {
   }
 
   async search(query, options = {}) {
+    let fallbackReason = "no_vector_candidates";
     try {
       const hits = await this.primary?.search?.(query, options);
       if (array(hits).length) return hits;
     } catch (error) {
+      fallbackReason = "embedding_error";
       (options.onFallback ?? this.onFallback)?.(error);
     }
     const hits = await this.fallback.search(query, options);
     return hits.map((hit) => ({
       ...hit,
-      metadata: { ...hit.metadata, fallback: true }
+      metadata: { ...hit.metadata, fallback: true, fallbackReason }
     }));
   }
 }
@@ -377,9 +379,19 @@ export function createFallbackSemanticRetriever(primary, fallback) {
 export function createPersistentSemanticRetriever({ store, provider, onFallback = null } = {}) {
   if (!store?.list) throw new TypeError("createPersistentSemanticRetriever requires a SemanticDocumentStore");
   const fallback = new TfidfSemanticRetriever({ store });
+  const counters = { searches: 0, vectorCandidateSearches: 0, noVectorCandidates: 0, embeddingErrors: 0,
+    vectorResultSearches: 0, lexicalOnlySearches: 0, emptySearches: 0 };
+  const vectorRetriever = provider ? new EmbeddingSemanticRetriever({ provider, store }) : null;
+  const primary = { search: async (query, options) => {
+    try {
+      const hits = await vectorRetriever.search(query, options);
+      counters[hits.length ? "vectorCandidateSearches" : "noVectorCandidates"] += 1;
+      return hits;
+    } catch (error) { counters.embeddingErrors += 1; throw error; }
+  } };
   const retriever = provider
     ? new FallbackSemanticRetriever(
-        new EmbeddingSemanticRetriever({ provider, store }),
+        primary,
         fallback,
         { onFallback }
       )
@@ -387,6 +399,16 @@ export function createPersistentSemanticRetriever({ store, provider, onFallback 
   const hybrid = new HybridSemanticRetriever(retriever, {
     lexicalRetriever: provider ? fallback : null
   });
+  const search = hybrid.search.bind(hybrid);
+  hybrid.search = async (query, options = {}) => {
+    const hits = await search(query, options);
+    counters.searches += 1;
+    if (!hits.length) counters.emptySearches += 1;
+    else if (hits.some((hit) => hit.metadata?.retrievalMode === "embedding")) counters.vectorResultSearches += 1;
+    else counters.lexicalOnlySearches += 1;
+    return hits;
+  };
+  hybrid.getRetrievalStatus = () => ({ ...counters });
   hybrid.listCurrentStatsScopes = (options = {}) => listCurrentStatsScopesFromStore(store, options);
   return hybrid;
 }

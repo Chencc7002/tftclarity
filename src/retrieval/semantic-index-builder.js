@@ -7,8 +7,10 @@ function chunks(values, size) {
 }
 
 function scopeKey(document) {
-  return JSON.stringify([document.patch ?? null, document.locale ?? null]);
+  return JSON.stringify([document.seasonContextId, document.patch ?? null, document.locale ?? null]);
 }
+
+const documentKey = (document) => `${document.seasonContextId}\u0000${document.id}`;
 
 export async function buildSemanticIndex({
   store,
@@ -22,16 +24,16 @@ export async function buildSemanticIndex({
   if (!store?.upsert || !store?.list) throw new TypeError("buildSemanticIndex requires a SemanticDocumentStore");
   const normalized = [...new Map((documents ?? []).map((value) => {
     const document = normalizeSemanticDocument(value);
-    return [document.id, document];
+    return [documentKey(document), document];
   })).values()];
   if (!normalized.length) throw new RangeError("buildSemanticIndex requires at least one semantic document");
   if (requireEmbeddings && !provider?.isAvailable?.()) {
     throw new Error("A configured EmbeddingProvider is required to build the vector index");
   }
-  const existing = new Map((await store.list()).map((document) => [document.id, document]));
+  const existing = new Map((await store.list({ allSeasons: true })).map((document) => [documentKey(document), document]));
   const model = provider?.model ?? null;
   const changed = normalized.filter((document) => {
-    const current = existing.get(document.id);
+    const current = existing.get(documentKey(document));
     if (!current || current.contentHash !== document.contentHash) return true;
     if (!requireEmbeddings) return false;
     return !Array.isArray(current.embedding) || current.embeddingModel !== model;
@@ -40,14 +42,14 @@ export async function buildSemanticIndex({
   if (changed.length && provider?.isAvailable?.()) {
     for (const batch of chunks(changed, Math.max(1, Number(batchSize) || 64))) {
       const vectors = await provider.embed(batch.map((document) => document.content), { purpose: "semantic_index_build" });
-      batch.forEach((document, index) => embedded.set(document.id, vectors[index]));
+      batch.forEach((document, index) => embedded.set(documentKey(document), vectors[index]));
       onProgress?.({ phase: "embedding", completed: embedded.size, total: changed.length });
     }
   }
   const candidates = normalized.map((document) => {
-    const vector = embedded.get(document.id);
+    const vector = embedded.get(documentKey(document));
     if (vector) return { ...document, embedding: vector, embeddingModel: model };
-    const current = existing.get(document.id);
+    const current = existing.get(documentKey(document));
     if (current?.contentHash === document.contentHash && Array.isArray(current.embedding)) {
       return { ...document, embedding: current.embedding, embeddingModel: current.embeddingModel };
     }
@@ -59,12 +61,11 @@ export async function buildSemanticIndex({
   const upserted = await store.upsert(candidates);
   let removed = 0;
   if (prune) {
-    const retained = new Set(normalized.map((document) => document.id));
+    const retained = new Set(normalized.map(documentKey));
     const scopes = new Set(normalized.map(scopeKey));
-    const staleIds = [...existing.values()]
-      .filter((document) => scopes.has(scopeKey(document)) && !retained.has(document.id))
-      .map((document) => document.id);
-    removed = await store.remove(staleIds);
+    const stale = [...existing.values()]
+      .filter((document) => scopes.has(scopeKey(document)) && !retained.has(documentKey(document)));
+    for (const document of stale) removed += await store.remove([document.id], { seasonContextId: document.seasonContextId });
   }
   store.setMeta?.("embeddingModel", model ?? "none");
   store.setMeta?.("lastBuildAt", new Date().toISOString());
@@ -87,7 +88,7 @@ export async function buildSemanticIndex({
 
 export async function auditSemanticIndex(store, options = {}) {
   if (!store?.list) throw new TypeError("auditSemanticIndex requires a SemanticDocumentStore");
-  const documents = await store.list();
+  const documents = await store.list({ allSeasons: true });
   const issues = [];
   const expectedModel = options.embeddingModel ?? null;
   const dimensionsByModel = new Map();
@@ -114,7 +115,7 @@ export async function auditSemanticIndex(store, options = {}) {
     } else if (!knownDimensions) {
       dimensionsByModel.set(document.embeddingModel, document.embedding.length);
     }
-    const key = JSON.stringify([document.documentType, document.patch, document.locale, document.contentHash]);
+    const key = JSON.stringify([document.seasonContextId, document.documentType, document.patch, document.locale, document.contentHash]);
     const previous = contentScopes.get(key);
     if (previous && previous !== document.id) {
       issues.push({ code: "duplicate_content", documentId: document.id, duplicateOf: previous });

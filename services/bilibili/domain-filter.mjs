@@ -24,6 +24,10 @@ const WEAK_POSITIVE = Object.freeze([
 const STRATEGY_EVIDENCE = /攻略|教学|阵容|羁绊|运营|过渡|站位|装备|出装|主c|副c|强化|海克斯|上人口|升人口|搜牌|d牌/iu;
 const NEGATIVE_GAMEPLAY = /召唤师峡谷|对线教学|连招教学|技能连招|打野路线|打野教学|adc教学|中单教学|上单教学|辅助教学|补刀教学|符文天赋|英雄联盟手游|lol手游|峡谷手游/iu;
 const NEGATIVE_CONTENT = /赛事集锦|比赛集锦|高光集锦|操作集锦|精彩集锦|五杀集锦|精彩操作合集/iu;
+const COSMETIC_CONTENT = /皮肤|原画|载入界面|加载界面|臻彩|炫彩|特效展示|特效预览|\bskin\b|\bsplash\s+art\b|\bchroma\b/iu;
+// A cosmetic tutorial is not a tactics tutorial. Generic tags such as 攻略
+// cannot rescue a showcase, but a title about actual composition play can.
+const TACTICAL_TITLE = /阵容|羁绊|运营|站位|出装|主c|副c|上分|吃鸡|搜牌|重抽|赌狗|\bcomp\b|\bbuild\b|\breroll\b/iu;
 const EXPLICIT_NON_STRATEGY = /电影|电视剧|动漫|番剧|音乐|歌曲|舞蹈|美食|旅游|足球|篮球|编程|代码|宠物|猫咪|猫猫|狗狗|汽车|数码评测|召唤师峡谷|峡谷|英雄联盟手游|lol手游/iu;
 const EXPLICIT_VIDEO_REQUEST = /视频|bilibili|哔哩哔哩|b站|搜索|帮我找|给我找/iu;
 const BOTH_INTENT = /两边|两个.{0,4}都|分别|云顶.{0,8}金铲铲|金铲铲.{0,8}云顶/iu;
@@ -119,7 +123,7 @@ export function gateStrategyVideoRequest(query) {
   };
 }
 
-export function classifyStrategyVideoDomain(video, query, requestedEcosystem = "tft_pc") {
+export function classifyStrategyVideoDomain(video, query, requestedEcosystem = "tft_pc", options = {}) {
   const title = String(video.title ?? "");
   const description = String(video.description ?? "");
   const tags = Array.isArray(video.tags) ? video.tags.join(" ") : String(video.tags ?? "");
@@ -144,6 +148,10 @@ export function classifyStrategyVideoDomain(video, query, requestedEcosystem = "
     resultEcosystem
   };
 
+  if (options.cosmeticFilter && COSMETIC_CONTENT.test(`${title} ${tags}`) && !TACTICAL_TITLE.test(title)) {
+    return { ...base, domainStatus: "rejected", reason: "cosmetic_showcase" };
+  }
+
   if (NEGATIVE_CONTENT.test(text) && !hasStrategyEvidence) {
     return { ...base, domainStatus: "rejected", reason: "non_strategy_content" };
   }
@@ -165,11 +173,11 @@ export function classifyStrategyVideoDomain(video, query, requestedEcosystem = "
   return { ...base, domainStatus: "rejected", reason: "insufficient_ecosystem_evidence" };
 }
 
-export function filterStrategyVideoDomain(videos, query, requestedEcosystem = "tft_pc") {
+export function filterStrategyVideoDomain(videos, query, requestedEcosystem = "tft_pc", options = {}) {
   const accepted = [];
   const rejected = [];
   for (const video of videos) {
-    const domainEvidence = classifyStrategyVideoDomain(video, query, requestedEcosystem);
+    const domainEvidence = classifyStrategyVideoDomain(video, query, requestedEcosystem, options);
     const value = {
       ...video,
       ecosystem: domainEvidence.resultEcosystem,

@@ -55,6 +55,7 @@ test("default chat handler returns generated candidates and ReAct blocks a guess
   assert.equal(payload.status, "clarification_required", JSON.stringify(payload));
   assert.match(payload.question, /卡尔马.*卡尔玛/u);
   assert.deepEqual(payload.missingFields, ["unit"]);
+  assert.equal(payload.clarificationContext.candidates[0].iconUrl, null);
   assert.equal(payload.evidence.length, 1);
   assert.equal(payload.evidence[0].toolName, "entity_catalog_query");
   assert.equal(runtime.entityNameResolutionTelemetry.snapshot().withCandidates, 1);
@@ -188,4 +189,17 @@ for (const withBridge of [true, false]) test(`second candidate selection recheck
   assert.equal(catalogEvidence.value.resolution.requests[0].status, "resolved");
   assert.equal(selected.payload.evidence.filter(entry => entry.toolName === "unit_details").length, 1);
   assert.equal(runtime.entitySlangTelemetry.snapshot().calls, 1);
+});
+
+
+test("confirmation response decorates real unit IDs with existing asset URLs", async () => {
+  const catalog = structuredClone(fixture.catalog);
+  catalog.units = catalog.units.map(unit => unit.apiName === "Test_Karma" ? { ...unit, apiName: "TFT17_Karma" } : unit);
+  const runtime = runtimeFor({ catalog: createCatalog(catalog), entityNameResolutionMode: "suggest",
+    reactDecisionProvider: async () => catalogAction("卡尔马") });
+  const { payload } = await handleReactChatRequest({ ...request, conversationId: "icon-confirmation" }, runtime);
+  assert.equal(payload.status, "clarification_required");
+  const candidate = payload.clarificationContext.candidates[0];
+  assert.equal(candidate.apiName, "TFT17_Karma");
+  assert.equal(candidate.iconUrl, "https://cdn.metatft.com/file/metatft/champions/tft17_karma.png");
 });

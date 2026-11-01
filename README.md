@@ -4,6 +4,8 @@
 
 [在线体验](https://tftclarity.cn/) · [功能总览](#功能总览) · [典型使用方式](#典型使用方式) · [快速开始](#快速开始) · [架构与可信度](#架构与可信度) · [V2 部署指南](docs/deploy-v2.md) · [发布就绪状态](docs/r1-release-readiness.md)
 
+开发与版本整合以 `main` 为基线；生产镜像另按部署记录识别。参见[主分支整合与发布约定](docs/main-production-consolidation-20261101.md)。
+
 ![tftclarity 产品首页](docs/images/tftclarity-overview.png)
 
 tftclarity 是面向《云顶之弈》的对话式智能助手。它支持“霞有羊刀后两件怎么补”“当前有哪些阵容正在上升”这类自然语言问题转换为受控的结构化查询，也保留了快捷功能入口来提升运行的速度，结合 MetaTFT 统计、版本快照、近期对局、攻略知识和可选的 AI 解读，返回结论、样本规模、风险提示与证据来源。

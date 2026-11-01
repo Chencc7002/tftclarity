@@ -1,6 +1,7 @@
 import { AppShell, TitleBar } from "./app-shell.js";
 import { mountEmblemRankings } from "./emblem-rankings.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
+import { composeQuotedInput, createSelectionQuote } from "./selection-quote.js";
 import { CompRankingResult, ItemRankingResult, RecommendationResult, ResultPane } from "./result-pane.js";
 import { collectCompositionResultGroups } from "./composition-result-groups.js";
 import { hasBoundTacticalEvidence } from "./composition-card-details.js";
@@ -44,6 +45,7 @@ const state = {
   rankFilter: [],
   lastInput: "",
   lastDisplayInput: "",
+  lastQuotedReplies: [],
   lastQuickTask: null,
   lastSupplementalText: "",
   lastResult: null,
@@ -163,6 +165,10 @@ let activeQuickTask = null;
 
 const conversationPane = new ConversationPane(resultEl);
 const composer = new Composer({ form, input: queryInput });
+const selectionQuote = createSelectionQuote({
+  root: resultEl, form, input: queryInput, t,
+  onAdded: () => closeQuickTaskForm()
+});
 const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
 const wallpaperController = new WallpaperController({
   shell: shellEl,
@@ -177,6 +183,7 @@ const titleBar = new TitleBar({
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
+    selectionQuote.refreshLocale();
     applySeasonTheme(state.seasonContext, { refreshWallpaper: false });
     wallpaperController.refreshLocale();
     rerenderLocalizedState();
@@ -289,6 +296,7 @@ function captureCompNavigationSnapshot(compName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuotedReplies: state.lastQuotedReplies,
     lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
@@ -311,6 +319,7 @@ function captureEntityCatalogNavigationSnapshot(catalogName) {
     data: state.lastResult,
     lastInput: state.lastInput,
     lastDisplayInput: state.lastDisplayInput,
+    lastQuotedReplies: state.lastQuotedReplies,
     lastQuickTask: state.lastQuickTask,
     lastResultId: state.lastResultId,
     lastSuggestions: state.lastSuggestions,
@@ -330,6 +339,7 @@ function restorePreviousCatalogResult() {
   state.resultNavigation.pop();
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuotedReplies = snapshot.lastQuotedReplies ?? [];
   state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
@@ -355,6 +365,7 @@ function restorePreviousCompResult() {
 
   state.lastInput = snapshot.lastInput;
   state.lastDisplayInput = snapshot.lastDisplayInput;
+  state.lastQuotedReplies = snapshot.lastQuotedReplies ?? [];
   state.lastQuickTask = snapshot.lastQuickTask ?? null;
   state.lastResult = snapshot.data;
   state.lastResultId = snapshot.lastResultId;
@@ -1912,7 +1923,7 @@ function renderEntityCandidates(candidates = [], responseId = "") {
   if (!candidates.length) return "";
   if (candidates.every(candidate => candidate.confirmation === true)) {
     return `<div class="suggestions entity-confirmation-choices">${candidates.map((candidate, index) =>
-      `<button type="button" data-candidate-action="confirm" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(candidateLabel(candidate))}</button>`
+      `<button type="button" data-candidate-action="confirm" data-candidate-index="${index}" data-response-id="${escapeHtml(responseId)}">${candidate.iconUrl ? assetThumb(candidate.iconUrl, candidateLabel(candidate), "entity-confirmation-icon", candidate.fallbackIconUrl) : ""}<span>${escapeHtml(candidateLabel(candidate))}</span></button>`
     ).join("")}</div>`;
   }
   return `
@@ -2680,7 +2691,7 @@ function patchHistoryHtml(patch) {
                   <span><b>${t("patchNotesRevision")}</b><code>${escapeHtml(revision.id)}</code></span>
                   <span><b>${t("patchNotesParent")}</b><code>${escapeHtml(revision.parentId ?? t("patchNotesRoot"))}</code></span>
                 </div>
-                <details${isLatest ? " open" : ""}>
+                ${changeCount ? `<details${isLatest ? " open" : ""}>
                   <summary>${t("patchNotesShowChanges", { count: changeCount })}</summary>
                   <div class="patch-history-groups">
                     ${(revision.groups ?? []).map((group) => `
@@ -2705,7 +2716,7 @@ function patchHistoryHtml(patch) {
                       </section>
                     `).join("")}
                   </div>
-                </details>
+                </details>` : ""}
                 <footer><span>${escapeHtml(revision.sourceName)}</span><a href="${escapeHtml(revision.sourceUrl)}" target="_blank" rel="noopener noreferrer">${t("patchNotesOfficialLink")} <span aria-hidden="true">↗</span></a></footer>
               </div>
             </article>
@@ -3109,7 +3120,8 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
     ? `<div class="answer-follow-up"><span>${escapeHtml(data.agentSuggestedActions.prompt ?? "")}</span>${renderAgentSuggestedActions(data.agentSuggestedActions.actions, responseId)}</div>`
     : "";
   if (compactVideoSummary) {
-    return `${understanding}<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div>${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+    const videoConclusion = reactModelConclusionHtml(data, compactVideoSummary, responseId);
+    return `${understanding}${videoConclusion || `<div class="answer-summary">${escapeHtml(compactVideoSummary)}</div>`}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   }
   if (data?.clarification?.needsClarification) {
     return `${understanding}<div class="answer-summary">${escapeHtml(data.clarification.question)}</div>${renderEntityCandidates(data.clarification.entityCandidates ?? [], responseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], responseId)}`;
@@ -3123,10 +3135,24 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
         ? t("currentCompRanking")
         : t("noResult"));
   const modelConclusion = reactModelConclusionHtml(data, summary, responseId);
+  const resultPreview = chatBuildPreview(data, responseId)
+    || `${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
   if (modelConclusion) {
-    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+    return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${resultPreview}${followUpGuidance}`;
   }
-  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${chatCoreItemsHtml(data)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${data?.query?.constraints ? conditionChips(data) : ""}${followUpGuidance}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${resultPreview}${followUpGuidance}`;
+}
+
+function chatBuildPreview(data, responseId) {
+  if (!EQUIPMENT_CORE_RESULT_TYPES.has(data?.type) || !data.cards?.length) return "";
+  const card = data.cards[0];
+  const unit = localizedName(data.unit, data.query?.unitName ?? data.query?.unit ?? "");
+  return `<section class="chat-build-preview">
+    <header>${assetThumb(data.unit?.iconUrl ?? data.query?.unitIconUrl, unit, "equipment-unit-icon")}<strong>${escapeHtml(unit)}</strong><span>${escapeHtml(data.query?.starLevel?.length ? t("starLevel", { value: data.query.starLevel.join("/") }) : "")}</span>${card.lowSample ? `<span class="risk">${t("lowSample")}</span>` : ""}</header>
+    <div class="items">${card.items.map(itemPill).join("")}</div>
+    <div class="chat-build-metrics"><span>${t("top4")}<b>${formatNumber(card.stats.top4)}%</b></span><span>${t("avg")}<b>${formatNumber(card.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</b></span><span>${t("samples")}<b>${formatNumber(card.stats.games)}</b></span></div>
+    <footer><span>${escapeHtml(data.query?.days ? t("daysRecent", { value: data.query.days }) : "")}</span><button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} ↗</button></footer>
+  </section>`;
 }
 
 function stopAssistantCoreStream(record) {
@@ -3172,6 +3198,7 @@ function recordAssistantResponse(data) {
     data,
     input: state.lastInput,
     displayInput: state.lastDisplayInput,
+    quotedReplies: [...(state.lastQuotedReplies ?? [])],
     quickTask: state.lastQuickTask,
     conversationId: state.conversationId,
     seasonContextId: state.seasonContextId,
@@ -3191,6 +3218,7 @@ function activateResponseResult(record) {
   state.currentConclusionController = null;
   state.lastInput = record.input ?? state.lastInput;
   state.lastDisplayInput = record.displayInput ?? record.input ?? state.lastDisplayInput;
+  state.lastQuotedReplies = record.quotedReplies ?? [];
   state.lastQuickTask = record.quickTask ?? null;
   state.lastResult = record.data;
   state.lastResultId = record.data.queryId ?? null;
@@ -3257,7 +3285,7 @@ function renderItemRankings(data) {
       ? `同条件装备排行榜（前 ${rankingCards.length} / 共 ${allRankings.length}）`
       : `同条件装备 Top ${rankingCards.length}`;
     setResponseHtml(`
-      ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", performance.conclusion ?? data.answer?.summary ?? data.text, "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
+      ${resultHeader("\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1", structuredQueryScope(data), "\u88c5\u5907\u8868\u73b0\u9a8c\u8bc1")}
       ${target ? `<section class="item-ranking-list"><h2>\u6307\u5b9a\u88c5\u5907</h2><article class="item-ranking-card best"><div class="item-ranking-head">${assetThumb(target.iconUrl, localizedName(target), "tiny-item-icon")}<strong>${escapeHtml(localizedName(target))}</strong><span>${performance.rank ? `#${performance.rank}` : t("lowSample")}</span></div><div class="stats">${metric(t("top4"), `${formatNumber(target.stats.top4)}%`)}${metric(t("win"), `${formatNumber(target.stats.win)}%`)}${metric(t("avg"), formatNumber(target.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(target.stats.games))}</div></article></section>` : ""}
       ${itemRankingModeControl(data)}
       <section class="item-ranking-list"><h2>${escapeHtml(rankingTitle)}</h2>${rankingCards.map((item, index) => `<article class="item-ranking-card"><div class="item-ranking-head">${assetThumb(item.iconUrl, localizedName(item), "tiny-item-icon")}<strong>${index + 1}. ${escapeHtml(localizedName(item))}</strong></div><div class="stats">${metric(t("top4"), `${formatNumber(item.stats.top4)}%`)}${metric(t("win"), `${formatNumber(item.stats.win)}%`)}${metric(t("avg"), formatNumber(item.stats.avg, { minimumFractionDigits: 2, maximumFractionDigits: 2 }))}${metric(t("samples"), formatNumber(item.stats.games))}</div></article>`).join("")}</section>
@@ -3274,7 +3302,7 @@ function renderItemRankings(data) {
     state.itemRankingCategoryBeforeMixed = data.query.itemCategories[0];
   }
   setResponseHtml(`
-    ${resultHeader(t("itemRanking"), data.answer?.summary ?? data.text, t("itemRanking"))}
+    ${resultHeader(t("itemRanking"), structuredQueryScope(data), t("itemRanking"))}
     ${itemRankingModeControl(data)}
     <div class="item-ranking-list">
       ${rankings.slice(0, itemRankingDisplayLimit(data)).map((item, index) => `
@@ -3340,7 +3368,7 @@ function renderItemCarrierRankings(data) {
   </article>` : "";
   if (!carriers.length) {
     setResponseHtml(`
-      ${resultHeader(title, data.text ?? emptyText, t("noResult"))}
+      ${resultHeader(title, structuredQueryScope(data), t("noResult"))}
       ${detailHtml}
       <div class="empty-state"><div class="state-orbit" aria-hidden="true">✦</div><strong>${escapeHtml(data.text ?? emptyText)}</strong></div>
       ${conditionPanel(data)}${sourceAndRisk(data)}
@@ -3348,7 +3376,7 @@ function renderItemCarrierRankings(data) {
     return;
   }
   setResponseHtml(`
-    ${resultHeader(title, data.text, itemLabel)}
+    ${resultHeader(title, structuredQueryScope(data), itemLabel)}
     ${detailHtml}
     <div class="carrier-ranking-list">
       ${carriers.map((carrier, index) => `
@@ -3423,6 +3451,26 @@ function recommendationCard(data, card, index) {
   </article>`;
 }
 
+// Result cards own the statistics; the conversation owns the full model answer.
+// Build this overview only from structured query fields, never answer.summary.
+function structuredQueryScope(data) {
+  const query = data.query ?? {};
+  return [
+    query.patch && query.patch !== "current" ? t("conditionPatch", { value: query.patch }) : null,
+    query.starLevel?.length ? t("starLevel", { value: query.starLevel.join("/") }) : null,
+    query.days ? t("daysRecent", { value: query.days }) : null,
+    query.rankFilter?.length ? rankChip(query.rankFilter) : null
+  ].filter(Boolean).join(" · ");
+}
+
+function recommendationOverview(data) {
+  const query = data.query ?? {};
+  const unit = localizedName(data.unit, getLocale() === "en-US"
+    ? query.unit : query.unitName ?? query.unit);
+  const title = [unit, t("equipmentBuilds")].filter(Boolean).join(" · ");
+  return resultHeader(title, structuredQueryScope(data), t("equipmentBuilds"));
+}
+
 function renderRecommendationResult(data) {
   if (data.clarification?.needsClarification) {
     setResponseHtml(`${resultHeader(t("clarification"), data.clarification.question, t("clarification"))}<div class="clarification-state"><div class="state-orbit" aria-hidden="true">?</div><strong>${escapeHtml(data.clarification.question)}</strong>${renderEntityCandidates(data.clarification.entityCandidates ?? [], state.currentResponseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], state.currentResponseId)}</div>${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
@@ -3439,15 +3487,17 @@ function renderRecommendationResult(data) {
   }
   const locked = data.lockedItems?.length ? data.lockedItems.map((item) => localizedName(item)).join(" + ") : t("none");
   const coreSummary = data.coreItemSummary ?? data.answer?.coreConclusion;
-  const commonCore = coreSummary?.items?.length ? coreSummary.items.map((item) => localizedName(item)).join(" + ") : null;
+  const commonCore = coreSummary?.items?.length ? coreSummary.items.map(itemPill).join("") : null;
   const [best, ...alternatives] = data.cards;
-  setResponseHtml(`${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
-    <div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>
-    ${commonCore ? `<div class="core-line">${t("frequentCore")}：${escapeHtml(commonCore)}（${t("coreFrequencyRule", { count: coreSummary.recommendationCount, required: coreSummary.requiredAppearances })}）</div>` : ""}
+  const interpretation = generatedConclusionCard(data);
+  setResponseHtml(`<div class="equipment-results">${recommendationOverview(data)}
+    ${data.lockedItems?.length ? `<div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>` : ""}
+    ${commonCore ? `<details class="equipment-core"><summary><span>${t("frequentCore")}</span><span class="equipment-core-items">${commonCore}</span></summary><p>${t("coreFrequencyRule", { count: coreSummary.recommendationCount, required: coreSummary.requiredAppearances })}</p></details>` : ""}
     ${recommendationCard(data, best, 0)}
     ${alternatives.length ? `<details class="alternatives" ${window.innerWidth >= 520 ? "open" : ""}><summary>${t("alternatives")} · ${alternatives.length}</summary><div class="alternatives-grid">${alternatives.slice(0, 2).map((card, index) => recommendationCard(data, card, index + 1)).join("")}</div></details>` : ""}
-    ${generatedConclusionCard(data)}
-    ${conditionPanel(data)}${sourceAndRisk(data)}`);
+    ${interpretation ? `<details class="equipment-detail"><summary>${t("dataInterpretation")}</summary>${interpretation}</details>` : ""}
+    ${Object.keys(data.query?.constraints ?? {}).length ? `<details class="equipment-detail"><summary>${t("conditions")}</summary>${conditionPanel(data)}</details>` : ""}
+    ${sourceAndRisk(data)}</div>`);
 }
 
 function safeKnowledgeSourceUrl(value, timestampStart = null) {
@@ -3643,7 +3693,7 @@ function renderMechanismClassification(data) {
   const cacheLabel = data?.classificationMeta?.cache === "hit" ? t("mechanismCacheHit") : t("mechanismCacheScan");
   const rawModelOutput = data?.modelOutput ? JSON.stringify(data.modelOutput, null, 2) : "";
   setResponseHtml(`
-    ${resultHeader(t("mechanismTitle"), data?.answer?.summary ?? data?.text, "MECHANISM")}
+    ${resultHeader(t("mechanismTitle"), structuredQueryScope(data), "MECHANISM")}
     <section class="knowledge-evidence mechanism-classification-results">
       <header class="knowledge-evidence-head">
         <div><span>${escapeHtml(cacheLabel)}</span><h2>${escapeHtml(t("mechanismResultCount", { count: entries.length }))}</h2></div>
@@ -4070,7 +4120,7 @@ function renderSemanticNativeResult(data) {
     </article>`;
   }).join("");
   setResponseHtml(`
-    ${resultHeader(t("recommendation"), data.answer?.summary ?? data.text, t("recommendation"))}
+    ${resultHeader(t("recommendation"), structuredQueryScope(data), t("recommendation"))}
     ${cards ? `<section class="ranking-section">${cards}</section>` : `<div class="empty-state"><strong>${escapeHtml(data.text ?? t("noResult"))}</strong></div>`}
     ${data.query ? conditionPanel(data) : ""}
     ${data.source ? sourceAndRisk(data) : ""}
@@ -4596,6 +4646,13 @@ function appendUserMessage(input) {
   conversationPane.appendUser(escapeHtml(input), `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
 }
 
+function appendQuotedUserMessage(input, quotes) {
+  if (!quotes.length) return appendUserMessage(input);
+  const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
+  const html = quotes.map(text => `<blockquote class="message-quote" aria-label="${escapeHtml(t("quoteLabel"))}">${escapeHtml(text)}</blockquote>`).join("");
+  conversationPane.appendUser(`${html}${escapeHtml(input)}`, `<time>${escapeHtml(time)}</time><strong>${t("you")}</strong>`);
+}
+
 function appendAssistantMessage(progress = null) {
   const time = new Intl.DateTimeFormat(getLocale(), { hour: "2-digit", minute: "2-digit", hour12: false }).format(new Date());
   return conversationPane.appendAssistant(
@@ -4773,13 +4830,18 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
   if (code === "missing_required_evidence") {
     const hasVideoEvidence = Array.isArray(failure?.evidence)
       && failure.evidence.some((entry) => entry?.value?.type === "strategy_video_search_results");
+    const hasNativeEvidence = hasRenderableNativeEvidence(failure);
     return getLocale().startsWith("zh")
       ? hasVideoEvidence
         ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"
-        : "\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u6570\u636e\u7ed3\u679c\u3002"
+        : hasNativeEvidence
+          ? "\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u6570\u636e\u7ed3\u679c\u3002"
+          : "\u672c\u8f6e\u672a\u53d6\u5f97\u53ef\u7528\u4e8e\u56de\u7b54\u7684\u8bc1\u636e\uff0c\u8bf7\u91cd\u8bd5\u6216\u8bf4\u660e\u5e0c\u671b\u89e3\u91ca\u7684\u4e0a\u4e00\u6761\u7ed3\u679c\u3002"
       : hasVideoEvidence
         ? "Candidate sources were retrieved, but the generated summary did not pass evidence validation. The verifiable video results are shown below."
-        : "The generated summary did not pass evidence validation. The verifiable data results are shown below.";
+        : hasNativeEvidence
+          ? "The generated summary did not pass evidence validation. The verifiable data results are shown below."
+          : "No evidence usable for this answer was obtained. Please retry or identify the previous result you want explained.";
   }
   return rawMessage || fallback;
 }
@@ -5003,6 +5065,7 @@ function normalizeEndpointPayload(payload) {
     const context = payload.clarificationContext;
     clarification.entityCandidates = (context.candidates ?? []).filter(candidate => candidate?.apiName && candidate?.name)
       .map(candidate => ({ apiName: candidate.apiName, label: candidate.name,
+        iconUrl: candidate.iconUrl ?? null, fallbackIconUrl: candidate.fallbackIconUrl ?? null,
         queryText: context.inputName && context.originalInput?.includes(context.inputName)
           ? context.originalInput.replaceAll(context.inputName, candidate.name)
           : [candidate.name, context.originalInput].filter(Boolean).join("："),
@@ -5159,7 +5222,7 @@ function reactChatMessages() {
       ?? record.data?.text
       ?? record.data?.reactAnswer;
     return [
-      { role: "user", content: String(record.displayInput ?? record.input ?? "").slice(0, 8000) },
+      { role: "user", content: String((record.quotedReplies?.length ? record.input : record.displayInput ?? record.input) ?? "").slice(0, 8000) },
       { role: "assistant", content: String(assistant ?? "").slice(0, 8000) }
     ].filter((message) => message.content);
   }).slice(-20);
@@ -5200,9 +5263,18 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     setStatus(t("seasonPreviewQueryDisabled"), "stale");
     return;
   }
-  const input = reuseLastInput ? state.lastInput : queryInput.value.trim();
+  const draftInput = queryInput.value.trim();
+  const quotedReplies = reuseLastInput ? state.lastQuotedReplies : quickTask ? [] : normalizedRequestOptions.quotedReplies ?? [];
+  let input = reuseLastInput ? state.lastInput : draftInput;
   if (!input) {
     renderError("enterQuery", "enterQuery");
+    return;
+  }
+  try {
+    if (!reuseLastInput) input = composeQuotedInput(input, quotedReplies);
+  } catch (error) {
+    selectionQuote.reportError(error.message);
+    queryInput.focus();
     return;
   }
 
@@ -5212,16 +5284,19 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
   const requestId = ++state.requestSerial;
   state.progressIndex = 0;
   state.lastInput = input;
-  state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? input;
+  state.lastDisplayInput = reuseLastInput ? state.lastDisplayInput ?? input : displayInput ?? draftInput;
+  state.lastQuotedReplies = [...quotedReplies];
   state.lastQuickTask = reuseLastInput ? state.lastQuickTask : quickTask;
   state.lastSupplementalText = reuseLastInput ? state.lastSupplementalText : supplementalText;
-  appendUserMessage(state.lastDisplayInput);
+  appendQuotedUserMessage(state.lastDisplayInput, quotedReplies);
   const recommendationProgress = createRecommendationProgressState();
   activeRecommendationProgress = recommendationProgress;
   activeResponseEl = appendAssistantMessage(recommendationProgress);
   const assistantTarget = activeResponseEl;
   startRecommendationProgressClock(assistantTarget, recommendationProgress);
   if (!reuseLastInput) composer.clear();
+  if (!reuseLastInput && quotedReplies.length) selectionQuote.clear();
+  const quoteRevisionAfterSend = selectionQuote.revision;
   scrollConversation();
   setStatusKey(refresh ? "statusRefreshing" : "statusQuerying", "loading");
   const controller = new AbortController();
@@ -5345,6 +5420,10 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     );
   } catch (error) {
     if (requestId !== state.requestSerial) return;
+    if (!reuseLastInput && quotedReplies.length && !queryInput.value && selectionQuote.revision === quoteRevisionAfterSend) {
+      queryInput.value = draftInput;
+      selectionQuote.restore(quotedReplies);
+    }
     if (error.name === "AbortError") {
       renderStoppedResult();
       if (activeResponseEl) activeResponseEl.innerHTML = `<div>${t("stoppedBody")}</div>`;
@@ -5481,6 +5560,12 @@ rankControl.addEventListener("change", () => {
 
 form.addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (state.requestInFlight) return;
+  const quotedReplies = selectionQuote.getQuotes();
+  if (quotedReplies.length && !activeQuickTask) {
+    await requestRecommendation(false, null, { quotedReplies });
+    return;
+  }
   if (await submitQuickTaskForm()) return;
   if (!state.activeAnalysisContext && await routeNaturalLanguageQuickTask(queryInput.value)) return;
   requestRecommendation(false);
@@ -5560,6 +5645,7 @@ async function routeNaturalLanguageQuickTask(input) {
   appendUserMessage(text);
   state.lastInput = text;
   state.lastDisplayInput = text;
+  state.lastQuotedReplies = [];
   queryInput.value = "";
   await launchQuickTask(taskId);
   scrollConversation();
@@ -5896,6 +5982,8 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   state.conversationId = globalThis.crypto?.randomUUID?.() ?? `conversation-${Date.now()}`;
   state.lastInput = "";
   state.lastDisplayInput = "";
+  state.lastQuotedReplies = [];
+  selectionQuote.clear();
   state.lastQuickTask = null;
   state.lastResult = null;
   state.lastResultId = null;
@@ -5938,6 +6026,33 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
 clearButton.addEventListener("click", () => {
   void resetConversation();
 });
+
+const navigationToggle = document.querySelector("#navigation-toggle");
+function closeNavigation() {
+  shellEl.classList.remove("navigation-open");
+  navigationToggle.setAttribute("aria-expanded", String(!mobileLayoutQuery.matches && !shellEl.classList.contains("navigation-collapsed")));
+  document.querySelector(".navigation-backdrop").hidden = true;
+}
+navigationToggle.addEventListener("click", () => {
+  if (!mobileLayoutQuery.matches) {
+    const collapsed = shellEl.classList.toggle("navigation-collapsed");
+    navigationToggle.setAttribute("aria-expanded", String(!collapsed));
+    return;
+  }
+  const open = shellEl.classList.toggle("navigation-open");
+  navigationToggle.setAttribute("aria-expanded", String(open));
+  document.querySelector(".navigation-backdrop").hidden = !open;
+});
+mobileLayoutQuery.addEventListener?.("change", closeNavigation);
+document.querySelector("[data-nav-close]").addEventListener("click", closeNavigation);
+document.querySelector("#app-navigation").addEventListener("click", event => {
+  if (!event.target.closest("button")) return;
+  closeNavigation();
+  if (event.target.closest("[data-nav-new]")) { void resetConversation(); queryInput.focus(); }
+  if (event.target.closest("[data-nav-patch]")) { renderPatchNote(); openMobileResult(); }
+  if (event.target.closest("[data-nav-settings]")) document.querySelector("#settings-button").click();
+});
+document.addEventListener("keydown", event => { if (event.key === "Escape") closeNavigation(); });
 
 seasonContextSelect.addEventListener("change", () => {
   const requested = state.seasonContexts.find((context) => context.id === seasonContextSelect.value);

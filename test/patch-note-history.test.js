@@ -58,27 +58,27 @@ test("announcement renderer exposes trace anchors and buff/nerf visuals", () => 
   assert.match(styles, /\.patch-history-groups li:target/u);
 });
 
-test("18.2 is reachable from the active season and matches the mini program", () => {
+test("18.5 is reachable from the active season and matches the mini program", () => {
   const season = createSeasonContextService().listPublic().find((record) => record.id === "set18-live");
   const patch = getPatchNote(season.theme.patchNoteVersion, "zh-CN");
   const mini = createRequire(import.meta.url)("../miniprogram/data/patch-notes.js");
-  assert.equal(patch.version, "18.2");
+  assert.equal(patch.version, "18.5");
   assert.deepEqual(patch, getCurrentPatchNote());
-  assert.equal(patch.publishedAt, "2026-09-09T18:00:00.000Z");
-  assert.equal(patch.updatedAt, "2026-09-14");
-  assert.match(season.notices[0], /18\.2 版本已上线/u);
-  assert.match(season.theme.subtitle["en-US"], /18\.2/u);
+  assert.equal(patch.publishedAt, "2026-10-20T18:00:00.000Z");
+  assert.equal(patch.updatedAt, "2026-10-27");
+  assert.match(season.notices[0], /18\.5 版本/u);
+  assert.match(season.theme.subtitle["en-US"], /18\.5/u);
   const changes = patch.history.flatMap((revision) => revision.groups.flatMap((group) => group.changes));
-  assert.equal(changes.length, 171);
+  assert.equal(changes.length, 84);
   assert.equal(new Set(changes.map((change) => change.id)).size, changes.length);
-  assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.2-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
+  assert.deepEqual(mini.history.filter((revision) => revision.id.startsWith("18.5-")).flatMap((revision) => revision.changes).map(({ id, direction, before, after, label }) => ({ id, direction, before, after, body: label })), changes.map(({ id, direction, before, after, body }) => ({ id, direction, before, after, body })));
   assert.equal(mini.sourceUrl, patch.sourceUrl);
   const en = getCurrentPatchNote("en-US");
   assert.deepEqual(en.history.flatMap((r) => r.groups.flatMap((g) => g.changes)).map(({ body, ...change }) => change), changes.map(({ body, ...change }) => change));
 });
 
 test("18.2 distinguishes mixed tuning and excludes tooltip-only buffs", () => {
-  const changes = getCurrentPatchNote().history.flatMap((r) => r.groups.flatMap((g) => g.changes));
+  const changes = getPatchNote("18.2").history.flatMap((r) => r.groups.flatMap((g) => g.changes));
   const find = (id) => changes.find((change) => change.id === `18.2-release-2026-09-09-${id}`);
   assert.equal(find("xp-8").after, "56");
   assert.equal(find("ahri-damage").direction, "buff");

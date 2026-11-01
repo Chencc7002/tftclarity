@@ -1453,7 +1453,7 @@ test("unnamed single-item data request binds the ordinary item ranking instead o
 });
 
 test("equipment category vocabulary separates exclusive, additive and negated scopes", () => {
-  for (const input of ["不含特殊装备", "不要特殊装备", "排除所有特殊装备", "修改为只包含普通装备", "without special items"]) {
+  for (const input of ["不含特殊装备", "不要特殊装备", "排除所有特殊装备", "修改为只包含普通装备", "只查常规出装", "without special items"]) {
     assert.deepEqual(requestedEquipmentCategoryScope(input), {
       itemPolicy: "ordinary_only", itemCategories: ["ordinary_completed"]
     }, input);
@@ -3593,4 +3593,44 @@ test("brief potential-and-popularity trend answer finishes without repair or man
   assert.equal(provider.requests.length, 2);
   assert.ok(!events.some(event => event.type === "decision_rejected"));
   assert.ok(events.some(event => event.type === "answer_coverage_observed" && event.data.factualValidationPassed));
+});
+
+test("equipment requests preserve separate build and category calls across a correction", async () => {
+  const unit = "Test_Unit";
+  const ordinary = { unit, itemPolicy: "ordinary_only", itemCategories: [], days: 3, starLevel: [3] };
+  const artifact = { ...ordinary, itemPolicy: "include_artifact", itemCategories: ["artifact"] };
+  for (const [input, queries] of [
+    ["帮我搜一下剑圣的常规出装和好用的神器", [artifact, ordinary]],
+    ["你只查了神器，没有查常规出装", [ordinary]],
+    ["常规出装也补上，光明装备已经查过了", [ordinary]]
+  ]) {
+    const observed = [];
+    const { result } = await runCase({ input,
+      messages: [{ role: "user", content: "帮我搜一下剑圣的常规出装和好用的神器" }],
+      provider: queueProvider([
+        call("entity_catalog_query"), ...queries.map(query => call("unit_builds", query)),
+        finish("已取得请求的装备统计。", queries.map((_, index) => `ev-${index + 2}`))
+      ]),
+      definitions: [definition("entity_catalog_query"), definition("unit_builds", { inputSchema: {
+        type: "object", additionalProperties: false, required: ["unit"], properties: {
+          unit: { type: "string" }, itemPolicy: { type: "string" },
+          itemCategories: { type: "array", items: { type: "string" } },
+          days: { type: "integer" }, starLevel: { type: "array", items: { type: "integer" } }
+        }
+      } })],
+      handlers: {
+        entity_catalog_query: async () => evidence([{ apiName: unit }], {
+          entityType: "unit", resolution: { requests: [{ status: "resolved", candidates: [{ apiName: unit }] }] }
+        }),
+        unit_builds: async query => {
+          observed.push(query);
+          return evidence([{ items: ["a", "b", "c"] }], { query,
+            type: query.itemCategories.length ? "unit_item_rankings" : "unit_build_rankings" });
+        }
+      }
+    });
+    assert.deepEqual(observed, queries, input);
+    assert.equal(result.status, "completed", input);
+    assert.equal(result.safetyMetrics.duplicateCallsBlocked, 0, input);
+  }
 });

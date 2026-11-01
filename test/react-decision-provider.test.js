@@ -3,6 +3,41 @@ import { createHash } from "node:crypto";
 import test from "node:test";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
+test("Jev control intent is a bounded prompt hint and cannot change the tool catalog", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    let body;
+    const toolCatalog = [{ name: "strategy_video_search", inputSchema: { type: "object" } }];
+    const intentAdvisory = { schemaVersion: "jev-intent-control.v1", action: "find_video", domain: "tft",
+      context: "self_contained", confidence: { action: 0.9, domain: 0.95, context: 0.92 },
+      domainResolution: "jev_direct", authority: "intent_hint_only" };
+    const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+      fetchImpl: async (_url, init) => {
+        body = JSON.parse(init.body);
+        return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+          schemaVersion: "react-action.v1", type: "finish", answer: "ok", evidenceIds: [], reasonCode: "direct_answer", narrative: null
+        }) } }] }) };
+      } });
+    await provider({ state: { question: "找一个云顶教学视频", intentAdvisory }, toolCatalog });
+    const guidance = body.messages.find(message => message.content.startsWith("jev-intent-control.v1"));
+    assert.match(guidance?.content ?? "", /cannot add or select a tool/u);
+    assert.match(guidance.content, /toolCatalog/u);
+    if (messageLayout === "append_only") {
+      const context = body.messages.map(message => {
+        try { return JSON.parse(message.content); } catch { return null; }
+      }).find(value => value?.schemaVersion === "react-run-context.v1");
+      assert.deepEqual(context.intentAdvisory, intentAdvisory);
+      const stable = body.messages.map(message => {
+        try { return JSON.parse(message.content); } catch { return null; }
+      }).find(value => value?.schemaVersion === "react-stable-context.v1");
+      assert.deepEqual(stable.toolCatalog, toolCatalog);
+    } else {
+      const context = JSON.parse(body.messages.find(message => message.role === "user").content);
+      assert.deepEqual(context.state.intentAdvisory, intentAdvisory);
+      assert.deepEqual(context.toolCatalog, toolCatalog);
+    }
+  }
+});
+
 test("item query guidance separates artifacts from emblems and treats history as a bounded excerpt", async () => {
   for (const messageLayout of ["append_only", "legacy_full_state"]) {
     let body;
@@ -772,6 +807,28 @@ test("current trend evidence adds request-first guidance in both layouts without
         assert.match(guidance.content, /Answer the user's requested points first/);
         assert.match(guidance.content, /declining compositions are optional context/);
       }
+    }
+  }
+});
+
+test("multiple equipment categories do not impose one scope on every tool call", async () => {
+  for (const messageLayout of ["append_only", "legacy_full_state"]) {
+    for (const question of ["帮我搜一下剑圣的常规出装和好用的神器", "你只查了神器，没有查常规出装"]) {
+      let body;
+      const provider = createReactDecisionProvider({ endpoint: "https://example.test", model: "test", messageLayout,
+        fetchImpl: async (_url, init) => {
+          body = JSON.parse(init.body);
+          return { ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify({
+            schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
+            arguments: { unit: "Test_Unit", itemPolicy: "ordinary_only", itemCategories: [] },
+            purposeCode: "retrieve_current_statistics"
+          }) } }] }) };
+        } });
+      await provider({ state: { question }, toolCatalog: [{ name: "unit_builds" }] });
+      const guidance = body.messages.find(message => message.content.startsWith("equipment-category-guidance.v1"));
+      assert.ok(guidance);
+      assert.doesNotMatch(guidance.content, /with this current-turn scope/);
+      assert.match(guidance.content, /separate unit_builds calls/);
     }
   }
 });

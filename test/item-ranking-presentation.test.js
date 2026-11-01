@@ -14,6 +14,7 @@ test("item performance summary does not hide the full ranking payload", () => {
   const context = vm.createContext({
     setResponseHtml: (value) => { rendered = value; },
     resultHeader: () => "",
+    structuredQueryScope: () => "",
     assetThumb: () => "",
     localizedName: (item) => item?.name ?? item?.apiName ?? "",
     escapeHtml: String,

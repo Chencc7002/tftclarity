@@ -1,7 +1,9 @@
 const STATISTICAL_SIGNAL = /(?:平均名次|均名|前四率|登顶率|胜率|选择率|出场率|样本|场次|排名变化|top\s*4|win\s*rate|pick\s*rate|sample|games?|\d+(?:\.\d+)?\s*%)/iu;
 const INSUFFICIENT_SIGNAL = /(?:数据不足|证据不足|没有可验证|无可验证|工具不可用|查询失败|结果为空|没有结果|无法可靠判断|暂时无法判断|当前样本门槛下没有|insufficient|unavailable|failed|no reliable|no verifiable)/iu;
-const CURRENT_RANKING_SIGNAL = /(?:当前|现在|目前|最近|这版本|胜率|前四率|登顶率|平均名次|选择率|出场率|样本数|排名|最优|最好|最高|current|latest|best|highest|win\s*rate|top\s*4)/iu;
-const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*(?:奥恩)?神器|(?:含|包含|包括|加入|带上|算上|纳入|主流|推荐|首选|最强|适合).{0,8}(?:奥恩)?神器|(?:奥恩)?神器.{0,8}(?:排行|排名|推荐|首选|主流|[：:]))/u;
+const CURRENT_RANKING_SIGNAL = /(?:当前(?!目标|敌人|棋子|单位|生命|血量|法力|护盾|层数|状态)|现在|目前|最近|这版本|胜率|前四率|登顶率|平均名次|选择率|出场率|样本数|排名|最优|最好|最高|current|latest|best|highest|win\s*rate|top\s*4)/iu;
+// A parenthetical item category, e.g. “电刃（神器）：法强”, is not a ranking header.
+// Explicit ranking/recommendation words still require Artifact-scoped statistics.
+const ARTIFACT_RANKING_CLAIM = /(?:(?:排行榜|排名|数据|单装备).{0,16}(?:含|包含|包括|加入|带上|算上|纳入)?\s*(?:奥恩)?神器|(?:含|包含|包括|加入|带上|算上|纳入|主流|推荐|首选|最强|适合).{0,8}(?:奥恩)?神器|(?:奥恩)?神器.{0,8}(?:排行|排名|推荐|首选|主流)|(?:奥恩)?神器[^。；\n（）()]{0,8}[：:])/u;
 
 import { hasTacticalPositionProse, scopedTacticalPositionErrors } from "./tactical-position-grounding.js";
 import { officialItemEvidenceFailure, officialItemBatchEvidenceFailure } from "../agent/official-item-evidence.js";
@@ -12,6 +14,57 @@ function numericTokens(text) {
 
 function evidenceText(entries) {
   return entries.map((entry) => JSON.stringify(entry.value)).join("\n");
+}
+
+const NUMERIC_SERIES = /[+-]?\d+(?:\.\d+)?(?:\s*\/\s*[+-]?\d+(?:\.\d+)?){1,}/gu;
+
+function numericSeriesKey(value) {
+  return [...String(value ?? "").matchAll(/[+-]?\d+(?:\.\d+)?/gu)]
+    .map((match) => match[0])
+    .join("/");
+}
+
+function isCalendarDateSeries(key) {
+  const parts = key.split("/").map(Number);
+  if (parts.length !== 3 || parts.some((part) => !Number.isInteger(part))) return false;
+  const [first, second, third] = parts;
+  return (first >= 1900 && first <= 2100 && second >= 1 && second <= 12 && third >= 1 && third <= 31)
+    || (third >= 1900 && third <= 2100 && first >= 1 && first <= 31 && second >= 1 && second <= 12);
+}
+
+function patchNumericSeriesGroundingErrors(answer, entries) {
+  const patchChanges = entries
+    .filter((entry) => entry?.toolName === "patch_facts")
+    .flatMap((entry) => entry.value?.revisions ?? [])
+    .flatMap((revision) => revision?.changes ?? []);
+  if (!patchChanges.length) return [];
+
+  const changeSeries = patchChanges.map((change) => ({
+    before: [...String(change?.before ?? "").matchAll(NUMERIC_SERIES)].map((match) => numericSeriesKey(match[0])),
+    after: [...String(change?.after ?? "").matchAll(NUMERIC_SERIES)].map((match) => numericSeriesKey(match[0]))
+  }));
+  const supported = new Set(changeSeries.flatMap((change) => [...change.before, ...change.after]));
+  const supportedPairs = new Set(changeSeries.flatMap((change) => (
+    change.before.flatMap((before) => change.after.map((after) => `${before}->${after}`))
+  )));
+  const claims = [...String(answer ?? "").matchAll(NUMERIC_SERIES)]
+    .map((match) => ({ raw: match[0].replace(/\s+/gu, ""), key: numericSeriesKey(match[0]) }))
+    .filter((claim) => claim.key && !isCalendarDateSeries(claim.key));
+  const errors = claims
+    .filter((claim) => !supported.has(claim.key))
+    .map((claim) => `patch answer numeric series is not present as one before/after value: ${claim.raw}`);
+  const seriesPair = new RegExp(
+    `(${NUMERIC_SERIES.source})\\s*[%秒sg]*\\s*(?:→|->|⇒)\\s*(${NUMERIC_SERIES.source})`,
+    "gui"
+  );
+  for (const match of String(answer ?? "").matchAll(seriesPair)) {
+    const before = numericSeriesKey(match[1]);
+    const after = numericSeriesKey(match[2]);
+    if (!supportedPairs.has(`${before}->${after}`)) {
+      errors.push(`patch answer numeric series pair is not present in one change: ${before} -> ${after}`);
+    }
+  }
+  return [...new Set(errors)];
 }
 
 function artifactScopeGroundingErrors(answer, entries) {
@@ -501,6 +554,7 @@ function answerLanguageErrors(answer, input, responseLocale = null) {
 export function validateFinishAction(action, ledger, options = {}) {
   const errors = [];
   const coverageWarnings = [];
+  const groundingWarnings = [];
   const ids = [...new Set(action.evidenceIds ?? [])];
   const entries = ledger.resolve(ids);
   const currentLedgerEntries = typeof ledger.snapshot === "function"
@@ -576,6 +630,12 @@ export function validateFinishAction(action, ledger, options = {}) {
     if (contradictsCompositionBreakpointEvidence(action.answer, entries)) {
       errors.push("answer contradicts deterministic composition breakpoint changes");
     }
+    const patchSeriesErrors = patchNumericSeriesGroundingErrors(action.answer, entries);
+    if (options.patchNumericSeriesGroundingMode === "enforce") {
+      errors.push(...patchSeriesErrors);
+    } else if (options.patchNumericSeriesGroundingMode === "observe") {
+      groundingWarnings.push(...patchSeriesErrors);
+    }
     errors.push(...artifactScopeGroundingErrors(action.answer, entries));
     const contentionEntries = activeUnitBuildEntries(entries).filter((entry) => (
       entry.value?.itemContentionPlan?.status === "available"
@@ -636,6 +696,7 @@ export function validateFinishAction(action, ledger, options = {}) {
     valid: errors.length === 0,
     errors,
     coverageWarnings,
+    groundingWarnings,
     evidence: entries
   };
 }

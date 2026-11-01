@@ -56,6 +56,8 @@ export function resolveBilibiliMcpConfig(options = {}, env = process.env) {
     minCurrentResults: integer(options.minCurrentResults ?? env.BILIBILI_MIN_CURRENT_RESULTS, 3, 1, 10),
     entityMatchMode: ["off", "shadow", "enforce"].includes(options.entityMatchMode ?? env.BILIBILI_ENTITY_MATCH_MODE)
       ? options.entityMatchMode ?? env.BILIBILI_ENTITY_MATCH_MODE : "shadow",
+    entityRecallMode: ["off", "shadow", "enforce"].includes(options.entityRecallMode ?? env.BILIBILI_ENTITY_RECALL_MODE)
+      ? options.entityRecallMode ?? env.BILIBILI_ENTITY_RECALL_MODE : "shadow",
     tftPatchWindows,
     patchWindows: tftPatchWindows,
     goldenSpatulaPatchWindows: normalizePatchWindows(
@@ -139,7 +141,7 @@ function mergeDetail(candidate, detail) {
 }
 
 function publicVideo(video, evidence) {
-  const { raw, ...value } = video;
+  const { raw, recalledQuery, recalledPage, ...value } = video;
   return {
     ...value,
     evidence: {
@@ -204,38 +206,59 @@ export class BilibiliStrategyVideoService {
     this.patchWindowProvider = options.patchWindowProvider ?? null;
   }
 
-  async searchGroup(plan, input, context, userQuery, retrievedAt, ecosystemSource, entityMatcher) {
+  async searchGroup(plan, input, context, userQuery, retrievedAt, ecosystemSource, entityMatcher, recallBudget, state) {
+    state ??= { candidates: new Map(), details: new Map(), failures: new Map(), attempts: [], warnings: [] };
+    context.signal?.throwIfAborted?.();
     let onlinePatchContext = null;
     let patchDiscoveryWarning = null;
-    if (this.patchWindowProvider) {
+    if (this.patchWindowProvider && !state.patch) {
       try {
         onlinePatchContext = await this.patchWindowProvider.resolve(plan.ecosystem);
       } catch {
         patchDiscoveryWarning = `patch_discovery_unavailable:${plan.ecosystem}`;
       }
     }
-    const patch = patchWindowContext(this.config, {
+    const patch = state.patch ?? patchWindowContext(this.config, {
       ...context,
       onlinePatchContexts: {
         ...(context.onlinePatchContexts ?? {}),
         ...(onlinePatchContext ? { [plan.ecosystem]: onlinePatchContext } : {})
       }
     }, plan.ecosystem);
+    state.patch = patch;
+    const request = state.nextRequest ?? { query: plan.effectiveQuery, page: input.page ?? 1 };
     let search;
     try {
+      const searchContext = state.nextRequest ? { ...context, signal: AbortSignal.any([
+        ...(context.signal ? [context.signal] : []),
+        AbortSignal.timeout(Math.max(1, recallBudget.deadline - Date.now()))
+      ]) } : context;
       search = await this.adapter.searchVideos({
-        query: plan.effectiveQuery,
-        page: input.page ?? 1,
-        limit: Math.min(Number(input.limit ?? this.config.recallLimit), this.config.recallLimit)
-      }, context);
+        ...request,
+        limit: recallBudget?.enabled ? this.config.recallLimit
+          : Math.min(Number(input.limit ?? this.config.recallLimit), this.config.recallLimit)
+      }, searchContext);
+      context.signal?.throwIfAborted?.();
+      state.searchTool ??= search.toolName;
+      state.attempts.push({ ...request, status: "ok", count: search.videos.length });
     } catch (error) {
-      return emptyGroup(plan, patch, error, retrievedAt);
+      context.signal?.throwIfAborted?.();
+      if (!state.attempts.length) return emptyGroup(plan, patch, error, retrievedAt);
+      state.attempts.push({ ...request, status: "unavailable", count: 0 });
+      state.warnings.push("video_entity_supplement_unavailable");
+      search = { videos: [], warnings: [], toolName: state.searchTool };
     }
 
-    const normalized = search.videos
+    for (const video of search.videos) {
+      if (video.videoId && video.url && video.title && !state.candidates.has(video.videoId)) {
+        state.candidates.set(video.videoId, { ...video, recalledQuery: request.query, recalledPage: request.page });
+      }
+    }
+    const normalized = (recallBudget?.enabled ? [...state.candidates.values()] : search.videos)
       .filter((video) => video.videoId && video.url && video.title)
       .map((video) => ({ ...video, detailStatus: "unavailable" }));
-    const domainFiltered = filterStrategyVideoDomain(normalized, userQuery, plan.ecosystem);
+    const domainFiltered = filterStrategyVideoDomain(normalized, userQuery, plan.ecosystem,
+      { cosmeticFilter: Boolean(recallBudget?.enabled) });
     const entityMode = this.config.entityMatchMode ?? "shadow";
     const titleMatches = new Map();
     const matchesEntity = (video) => {
@@ -243,29 +266,40 @@ export class BilibiliStrategyVideoService {
         ?? { accepted: true, reason: "off", matches: [] });
       return titleMatches.get(video.title);
     };
+    const prioritize = (videos) => {
+      const sorted = sortRankedVideos(videos);
+      const patchOrder = { current: 0, previous: 1, unknown: 2, older: 3 };
+      return recallBudget?.enabled ? sorted.sort((a, b) => (
+        (patchOrder[a.patchTimeStatus] ?? 2) - (patchOrder[b.patchTimeStatus] ?? 2)
+        || (matchesEntity(b).preferredMatchCount ?? 0) - (matchesEntity(a).preferredMatchCount ?? 0)
+      )) : sorted;
+    };
     const observed = domainFiltered.accepted.map((video) => ({ video, match: matchesEntity(video) }));
     const candidates = domainFiltered.accepted
       .map((video) => ({ ...video, ...patchFields(video, patch) }))
       .filter((video) => entityMode === "enforce" && entityMatcher?.scope.status !== "unscoped"
         ? matchesEntity(video).accepted : relevanceScore(video, userQuery) >= 0.08);
-    const preliminary = sortRankedVideos(attachRankingSignals(candidates, { query: userQuery, now: this.now() }));
+    const preliminary = prioritize(attachRankingSignals(candidates, { query: userQuery, now: this.now() }));
     const detailCandidates = preliminary
-      .filter((video) => video.videoId)
-      .slice(0, Math.min(this.config.detailLimit, preliminary.length));
-    const detailRequested = new Set(detailCandidates.map((video) => video.videoId));
-    const detailById = new Map();
-    const detailFailureById = new Map();
-    const warnings = [...(search.warnings ?? []), ...(patchDiscoveryWarning ? [patchDiscoveryWarning] : [])];
+      .filter((video) => video.videoId && !state.details.has(video.videoId) && !state.failures.has(video.videoId))
+      .slice(0, Math.max(0, this.config.detailLimit - state.details.size - state.failures.size));
+    const detailById = state.details;
+    const detailFailureById = state.failures;
+    const warnings = state.warnings;
+    warnings.push(...(search.warnings ?? []), ...(patchDiscoveryWarning ? [patchDiscoveryWarning] : []));
     await Promise.all(detailCandidates.map(async (candidate) => {
       try {
         const result = await this.adapter.getVideoDetail({ videoId: candidate.videoId }, context);
         detailById.set(candidate.videoId, result.video);
         warnings.push(...(result.warnings ?? []));
       } catch (error) {
+        context.signal?.throwIfAborted?.();
         detailFailureById.set(candidate.videoId, String(error?.code ?? "bilibili_mcp_tool_error"));
         warnings.push(`detail_unavailable:${candidate.videoId}`);
       }
     }));
+    context.signal?.throwIfAborted?.();
+    const detailRequested = new Set([...detailById.keys(), ...detailFailureById.keys()]);
     const enriched = preliminary.map((candidate) => detailById.has(candidate.videoId)
       ? mergeDetail(candidate, detailById.get(candidate.videoId))
       : detailFailureById.has(candidate.videoId)
@@ -273,9 +307,12 @@ export class BilibiliStrategyVideoService {
         : candidate);
     // Details can replace the title. Recheck it before selection and every
     // patch/ecosystem fallback; popularity and freshness cannot bypass scope.
-    const finalCandidates = entityMode === "enforce"
+    const titleCandidates = entityMode === "enforce"
       ? enriched.filter((video) => matchesEntity(video).accepted) : enriched;
-    const reranked = sortRankedVideos(attachRankingSignals(finalCandidates.map((video) => ({
+    const detailDomain = recallBudget?.enabled
+      ? filterStrategyVideoDomain(titleCandidates, userQuery, plan.ecosystem, { cosmeticFilter: true }) : null;
+    const finalCandidates = detailDomain?.accepted ?? titleCandidates;
+    const reranked = prioritize(attachRankingSignals(finalCandidates.map((video) => ({
       ...video,
       ...patchFields(video, patch)
     })), { query: userQuery, now: this.now() }));
@@ -313,16 +350,42 @@ export class BilibiliStrategyVideoService {
       patch
     };
     const videos = selected.videos.map((video) => {
-      const result = publicVideo(video, evidence);
+      const result = publicVideo(video, { ...evidence, searchQuery: video.recalledQuery ?? evidence.searchQuery });
+      if (recallBudget?.enabled) result.evidence.searchPage = video.recalledPage;
       if (entityMode === "enforce") result.evidence.titleEntityMatch = matchesEntity(video);
       return result;
     });
+    // At most two additional searches across all ecosystem groups. Reuse
+    // observations/details; never expand the detail cap or bypass the title gate.
+    if (recallBudget?.enabled && recallBudget.remaining > 0 && videos.length < resultLimit
+        && entityMatcher?.scope.status === "resolved"
+        && (!recallBudget.deadline || Date.now() < recallBudget.deadline)
+        && state.attempts.at(-1).status === "ok") {
+      const anchor = plan.ecosystem === "golden_spatula" ? "金铲铲之战" : "云顶之弈";
+      const queries = [...new Set((entityMatcher.recallQueries ?? []).map((query) => `${query} ${anchor}`))];
+      const nextPage = { query: state.attempts.length > 1 ? request.query : queries[0] ?? plan.effectiveQuery,
+        page: state.attempts.length > 1 ? request.page + 1 : (input.page ?? 1) + 1 };
+      const choices = state.attempts.length > 1 ? [nextPage]
+        : [...queries.map((query) => ({ query, page: 1 })), nextPage];
+      const next = choices.find((choice) => !state.attempts.some((attempt) => attempt.query === choice.query && attempt.page === choice.page));
+      if (next) {
+        context.signal?.throwIfAborted?.();
+        recallBudget.remaining -= 1;
+        recallBudget.deadline ??= Date.now() + 4000;
+        state.nextRequest = next;
+        return this.searchGroup(plan, input, context, userQuery, retrievedAt, ecosystemSource, entityMatcher, recallBudget, state);
+      }
+    }
     if (entityMode === "enforce" && entityMatcher) {
       if (["ambiguous", "catalog_unavailable"].includes(entityMatcher.scope.status)) {
         warnings.push(`video_entity_scope_${entityMatcher.scope.status}`);
       } else if (entityMatcher.scope.status === "resolved" && !videos.length) {
         warnings.push("no_title_entity_match");
       }
+    }
+    if (recallBudget?.enabled && entityMatcher?.scope.preferredEntityIds?.length
+        && videos.some((video) => !video.evidence.titleEntityMatch.allEntitiesMatched)) {
+      warnings.push("video_entity_secondary_terms_unconfirmed");
     }
     return {
       ecosystem: plan.ecosystem,
@@ -349,12 +412,25 @@ export class BilibiliStrategyVideoService {
       ...(entityMatcher ? { entityFilter: {
         mode: entityMode,
         ...entityMatcher.scope,
+        ...(recallBudget?.mode !== "off" && entityMatcher.balancedShadow ? { balancedShadow: {
+          ...entityMatcher.balancedShadow.scope,
+          accepted: filterStrategyVideoDomain(normalized, userQuery, plan.ecosystem, { cosmeticFilter: true }).accepted
+            .filter((video) => entityMatcher.balancedShadow.matchTitle(video.title).accepted).length
+        } } : {}),
+        ...(recallBudget?.enabled ? { recallAttempts: state.attempts,
+          additionalSearches: state.attempts.length - 1,
+          recallStoppedReason: videos.length >= resultLimit ? "enough_results"
+            : state.attempts.at(-1).status !== "ok" ? "upstream_unavailable"
+              : recallBudget.deadline && Date.now() >= recallBudget.deadline ? "time_budget"
+                : entityMatcher.scope.status !== "resolved" ? "unresolved_scope" : "call_budget"
+        } : {}),
         accepted: observed.filter(({ match }) => match.accepted).length,
         rejected: observed.filter(({ match }) => !match.accepted).length,
         rejections: observed.filter(({ match }) => !match.accepted)
           .map(({ video, match }) => ({ videoId: video.videoId, reason: match.reason })),
         returnedOutsideScope: videos.filter((video) => !matchesEntity(video).accepted).map((video) => video.videoId),
-        detailTitleRejected: enriched.length - finalCandidates.length
+        detailTitleRejected: enriched.length - titleCandidates.length,
+        ...(recallBudget?.enabled ? { detailDomainRejected: detailDomain.rejected.length } : {})
       } } : {}),
       fallbackUsed: selected.fallbackUsed,
       fallbackType: selected.fallbackType,
@@ -381,6 +457,12 @@ export class BilibiliStrategyVideoService {
           ? await context.loadVideoEntityResources({ mode: this.config.entityMatchMode ?? "shadow" }) : context;
         context.signal?.throwIfAborted?.();
         entityMatcher = createVideoEntityScope(query, resources ?? {});
+        const recallMode = this.config.entityRecallMode ?? "shadow";
+        if (recallMode !== "off") {
+          const balancedMatcher = createVideoEntityScope(query, resources ?? {}, { policy: "balanced" });
+          if (recallMode === "enforce" && this.config.entityMatchMode === "enforce") entityMatcher = balancedMatcher;
+          else entityMatcher.balancedShadow = balancedMatcher;
+        }
       } catch {
         context.signal?.throwIfAborted?.();
         entityMatcher = createVideoEntityScope(query, {});
@@ -423,8 +505,10 @@ export class BilibiliStrategyVideoService {
       };
     }
 
+    const recallBudget = { mode: this.config.entityRecallMode ?? "shadow",
+      enabled: this.config.entityRecallMode === "enforce" && this.config.entityMatchMode === "enforce", remaining: 2 };
     const groups = await Promise.all(requestGate.searchPlans.map((plan) => (
-      this.searchGroup(plan, input, context, query, retrievedAt, requestGate.ecosystemSource, entityMatcher)
+      this.searchGroup(plan, input, context, query, retrievedAt, requestGate.ecosystemSource, entityMatcher, recallBudget)
     )));
     if (requestGate.requestedEcosystem === "both") {
       const nativeGroups = groups.map((group) => ({

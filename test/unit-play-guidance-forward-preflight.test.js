@@ -59,9 +59,10 @@ test("forward plan deterministically interleaves 90 pairs and 180 Agent runs", (
   assert.ok(first.pairs.some((pair) => pair.order.join("") === "BA"));
 });
 
-test("v2 zero-call preflight passes hashes, receipts, routing, projection and seam gates", async () => {
+test("v2 zero-call preflight blocks the frozen experiment after production prompt drift", async () => {
   const result = await resultPromise;
-  assert.equal(result.status, "passed", JSON.stringify(result.gates));
+  assert.equal(result.status, "failed", JSON.stringify(result.gates));
+  assert.equal(result.gates.defaultMessagesHash, false);
   assert.equal(result.plan.actualProviderModelCalls, 0);
   assert.equal(result.routing.positiveSelected, 30);
   assert.equal(result.routing.negativeFalseTakeover, 0);
@@ -70,7 +71,7 @@ test("v2 zero-call preflight passes hashes, receipts, routing, projection and se
   assert.equal(result.seam.onlyGuidanceDiffers, true);
   assert.equal(result.projection.originalUnchanged, true);
   assert.equal(result.projection.deterministic, true);
-  assert.ok(Object.values(result.gates).every(Boolean));
+  assert.deepEqual(Object.entries(result.gates).filter(([, passed]) => !passed).map(([name]) => name), ["defaultMessagesHash"]);
 });
 
 test("tampered item order fails closed and a call-authorizing mode is rejected", async () => {

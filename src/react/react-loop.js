@@ -4,7 +4,7 @@ import { validateToolInput } from "../agent/tools/contracts.js";
 import { parseCompTrendDirection } from "../core/comp-trend-intent.js";
 import { itemDetailsBatchMatchesPlan } from "../domain/tft/differentiating-item-selector.js";
 import { isItemCarrierRequest } from "../domain/tft/intent-patterns.js";
-import { itemPolicyForCategories, requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
+import { hasMultipleEquipmentCategoryMentions, itemPolicyForCategories, requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import { validateReactAction } from "./react-action.js";
 import { DuplicateCallGuard } from "./duplicate-call-guard.js";
 import { EvidenceLedger } from "./evidence-ledger.js";
@@ -13,6 +13,7 @@ import { ReactWorkingState } from "./working-state.js";
 import { currentDeadlineEvidence } from "./deadline-evidence.js";
 import { buildPartialEvidenceAnswer, partialEvidenceSummary } from "./partial-evidence-answer.js";
 import { selectedEntityConfirmation } from "./entity-confirmation.js";
+import { buildPatchSummaryAnswer } from "./patch-summary-answer.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
 
@@ -45,6 +46,19 @@ function canPublishSummaryWithValidationWarnings(request, action, validation, le
   if (entries.length !== action.evidenceIds.length || entries.length === 0) return false;
   return validation.errors.length > 0
     && validation.errors.every((error) => SOFT_SUMMARY_VALIDATION_ERROR.test(String(error)));
+}
+
+function isSessionCarryoverTemporalValidation(action, validation, ledger) {
+  if (action?.reasonCode !== "sufficient_evidence" || !action.evidenceIds?.length) return false;
+  if (!validation?.errors?.length || !validation.errors.every((error) => (
+    String(error) === "historical quick-tool evidence cannot support a current statistical or best-ranking claim"
+  ))) return false;
+  const entries = ledger.resolve(action.evidenceIds);
+  return entries.length === action.evidenceIds.length
+    && entries.every((entry) => (
+      entry.temporalStatus === "historical"
+      && entry.metadata?.sessionCarryover === true
+    ));
 }
 
 function currentTurnUserText(request = {}) {
@@ -185,6 +199,14 @@ function applyRequestBoundEquipmentScope(action, request = {}) {
   if (action?.type !== "call_tool" || action.tool !== "unit_builds") return action;
   const userText = equipmentScopeUserText(request);
   const categoryScope = requestedEquipmentCategoryScope(userText);
+  // Multiple categories can describe separate requests or a correction of prior output.
+  // Preserve a coherent call within that scope instead of merging every call into it.
+  const callCategories = Array.isArray(action.arguments?.itemCategories) && action.arguments.itemCategories.length
+    ? action.arguments.itemCategories : ["ordinary_completed"];
+  if (categoryScope?.itemCategories.length > 1
+    && hasMultipleEquipmentCategoryMentions(userText)
+    && callCategories.every(category => categoryScope.itemCategories.includes(category))
+    && action.arguments?.itemPolicy === itemPolicyForCategories(callCategories)) return action;
   const singleItemRankingSignal = /(?:单(?:件)?装备(?:数据|排行|排名|榜)|装备(?:单件)?(?:排行|排名|榜))/u;
   const requestsSingleItemRanking = singleItemRankingSignal.test(userText);
   if (!categoryScope && !requestsSingleItemRanking) return action;
@@ -1871,6 +1893,7 @@ export class ReactLoop {
           compositionCardsOwnPositioning: context.compositionCardsOwnPositioning,
           trendCoverageMode: context.trendCoverageMode,
           officialItemEvidenceV1: context.officialItemEvidenceV1,
+          patchNumericSeriesGroundingMode: context.patchNumericSeriesGroundingMode,
           unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
           currentTurnInput: request.input ?? request.question,
           responseLocale: state.locale,
@@ -1878,6 +1901,13 @@ export class ReactLoop {
         if (finishValidation.coverageWarnings.length) {
           emit("answer_coverage_observed", { scope: "available_trend_sections",
             coverageWarnings: finishValidation.coverageWarnings, factualValidationPassed: finishValidation.valid });
+        }
+        if (finishValidation.groundingWarnings.length) {
+          emit("answer_grounding_observed", {
+            scope: "patch_numeric_series",
+            warnings: finishValidation.groundingWarnings,
+            enforced: false
+          });
         }
         if (context.compositionCardScope) {
           const legacyValidation = validateFinishAction(action, ledger);
@@ -1920,6 +1950,40 @@ export class ReactLoop {
               status: "completed_with_warning",
               answer,
               answerOrigin: "system_language_fallback"
+            });
+          }
+          const patchSummaryFallback = buildPatchSummaryAnswer({
+            request,
+            action,
+            validation: finishValidation,
+            ledger,
+            locale: state.locale
+          });
+          if (patchSummaryFallback) {
+            const warnings = finishValidation.errors.map(String);
+            state.warn("patch_summary_validation_fallback");
+            emit("answer", {
+              answer: patchSummaryFallback.answer,
+              evidenceIds: patchSummaryFallback.evidenceIds,
+              reasonCode: "sufficient_evidence",
+              narrativeAccepted: false,
+              systemFallback: true,
+              validationWarnings: warnings
+            });
+            return terminate("finish_validation_fallback", {
+              status: "completed_with_warning",
+              answer: patchSummaryFallback.answer,
+              evidenceIds: patchSummaryFallback.evidenceIds,
+              narrativeWarnings: warnings,
+              groundingAudit: {
+                schemaVersion: "grounding-audit.v1",
+                mode: "deterministic_patch_summary_fallback",
+                narrativeAccepted: false,
+                qualitativeOutputPreserved: true,
+                violationCount: warnings.length,
+                violations: warnings
+              },
+              answerOrigin: "system_patch_summary_fallback"
             });
           }
           if (canPublishSummaryWithValidationWarnings(request, action, finishValidation, ledger)) {
@@ -1990,6 +2054,20 @@ export class ReactLoop {
             });
           }
           if (action.reasonCode === "sufficient_evidence") {
+            if (isSessionCarryoverTemporalValidation(action, finishValidation, ledger)) {
+              sufficientFinishRepairCount += 1;
+              state.recordObservation({
+                type: "decision_rejected",
+                actionType: "finish",
+                reasonCode: action.reasonCode,
+                errors: finishValidation.errors,
+                repairInstruction: "本轮只能通俗解释上一条结果。保留相同 Evidence 引用与已支持事实，但删除‘当前、现在、目前、最近、最新、这版本、排名、最好、最高’等实时或排名表述；不要把历史快照说成当前证据。技能中的‘当前目标’请改写为‘正在攻击的目标’。"
+              }, { progress: false });
+              if (sufficientFinishRepairCount === 1 && state.decisions.length < budget.maxDecisions) {
+                state.warn("session_evidence_temporal_repair_requested");
+                continue;
+              }
+            }
             const fallback = buildCompositionTrendFallback(ledger)
               ?? buildCompositionReplacementFallback(ledger)
               ?? buildConstrainedBatchEvidenceFallback(ledger)
