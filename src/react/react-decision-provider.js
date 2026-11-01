@@ -1,4 +1,5 @@
 import { selectedEntityConfirmation } from "./entity-confirmation.js";
+import { companionPrompt } from '../conversation/companion-personas.js';
 import { validateReactAction } from "./react-action.js";
 import { hasMultipleEquipmentCategoryMentions, requestedEquipmentCategoryScope } from "../domain/tft/equipment-category-scope.js";
 import {
@@ -527,6 +528,8 @@ export function createReactDecisionProvider(options = {}) {
           : reactDecisionMessages(request, repairNote, options.cacheNamespace, guidanceRenderer,
             tacticalPresentationScope, guidanceOverride, decisionPromptVersion);
         const messages = applyUnitPlayCandidateDecisionProfile(rawMessages, candidateProfile);
+        const voice = companionPrompt(context.companionPersona);
+        if (voice) messages.splice(1, 0, { role: 'system', content: voice });
         const response = await fetchImpl(options.endpoint, {
           method: "POST",
           headers: {

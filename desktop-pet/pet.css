@@ -1,0 +1,32 @@
+:root { font: 12px/1.4 "Microsoft YaHei UI", "Segoe UI", sans-serif; color: #f4f4ff; color-scheme: dark; }
+* { box-sizing: border-box; }
+html, body { margin: 0; width: 100%; height: 100%; background: transparent; overflow: hidden; user-select: none; }
+main { width: 100%; height: 100%; display: flex; align-items: center; flex-direction: column; padding-top: 10px; }
+button { font: inherit; color: inherit; border: 0; cursor: pointer; }
+.bubble { height: 64px; flex-shrink: 0; line-height: 16px; text-align: left; display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow-wrap: anywhere; max-width: 298px; border: 1px solid #e9dcff45; background: #232338ed; border-radius: 18px; padding: 7px 13px; overflow: hidden; white-space: normal; text-overflow: ellipsis; box-shadow: 0 3px 12px #0002; }
+#pet { width: 192px; height: 208px; touch-action: none; cursor: grab; }
+.bubble { display: flex; align-items: center; }
+.bubble { margin-bottom: -24px; position: relative; z-index: 1; }
+#bubble-text { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: 3; overflow: hidden; max-height: 48px; }
+#pet.dragging { cursor: grabbing; }
+.capsule { display: flex; align-items: center; gap: 4px; height: 44px; flex-shrink: 0; padding: 4px 8px; border-radius: 24px; background: #fff; border: 1px solid #1616160a; box-shadow: 0 3px 12px #00000012; }
+.capsule button { display: grid; place-items: center; width: 36px; height: 34px; padding: 7px; border-radius: 18px; color: #333; background: transparent; }
+.capsule button:hover { background: #f1f1f1; }
+.capsule button:active { background: #e6e6e6; }
+.capsule svg { width: 21px; height: 21px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+#menu circle { fill: currentColor; stroke: none; }
+.divider { width: 1px; height: 22px; background: #eeeeee; }
+button:focus-visible { outline: 2px solid #dfc8ff; outline-offset: 2px; }
+
+.bubble.expired { visibility: hidden; pointer-events: none; }
+.capsule { visibility: hidden; pointer-events: none; }
+body.controls-visible .capsule { visibility: visible; pointer-events: auto; }
+[hidden] { display: none !important; }
+.composer { display: flex; align-items: center; width: 298px; height: 44px; flex-shrink: 0; gap: 5px; padding: 5px 6px; border-radius: 24px; background: #fff; box-shadow: 0 3px 12px #00000012; color-scheme: light; }
+.composer input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #292929; font: 13px/1.4 "Microsoft YaHei UI", "Segoe UI", sans-serif; }
+.composer input::placeholder { color: #a5a5a5; }
+.composer button { display: grid; place-items: center; width: 32px; height: 32px; flex-shrink: 0; border-radius: 50%; font: 23px/1 "Segoe UI", sans-serif; background: #f2f2f2; color: #555; padding: 0; }
+.composer #send { background: #d9e8ff; color: #fff; }
+.composer #send:not(:disabled) { background: #81adf4; }
+.composer #send:not(:disabled):hover { background: #6599ed; }
+.composer #send:disabled { cursor: default; }

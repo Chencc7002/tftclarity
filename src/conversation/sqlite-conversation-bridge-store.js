@@ -10,6 +10,10 @@ import {
 
 export const SQLITE_CONVERSATION_BRIDGE_SCHEMA = `
 PRAGMA foreign_keys = ON;
+CREATE TABLE IF NOT EXISTS conversation_companion_bindings (
+ scope_key TEXT NOT NULL, conversation_id TEXT NOT NULL, persona_id TEXT NOT NULL,
+ persona_version INTEGER NOT NULL, PRIMARY KEY(scope_key, conversation_id)
+);
 CREATE TABLE IF NOT EXISTS quick_tool_bridge_states (
   scope_key TEXT NOT NULL,
   conversation_id TEXT NOT NULL,
@@ -164,6 +168,16 @@ export class SQLiteConversationBridgeStore {
     this.failpoint = options.failpoint ?? null;
     this.database.exec(SQLITE_CONVERSATION_BRIDGE_SCHEMA);
     this._migrateSchema();
+  }
+
+  bindCompanion({ scopeKey, conversationId, persona }) {
+    const id = persona?.id ?? '';
+    const version = persona?.version ?? 0;
+    this.database.prepare('INSERT OR IGNORE INTO conversation_companion_bindings VALUES (?, ?, ?, ?)')
+      .run(scopeKey, conversationId, id, version);
+    const row = this.database.prepare('SELECT persona_id, persona_version FROM conversation_companion_bindings WHERE scope_key = ? AND conversation_id = ?').get(scopeKey, conversationId);
+    if (row.persona_id !== id || row.persona_version !== version) throw bridgeError('companion_binding_conflict', '此会话的角色已经确定，请开启新对话切换角色。', 409);
+    return { personaId: id || null, version };
   }
 
   _migrateSchema() {

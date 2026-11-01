@@ -1,3 +1,4 @@
+import { companionMode, resolveCompanion } from '../conversation/companion-personas.js';
 import { createServer } from "node:http";
 import { createJevIntentObserver } from "../understanding/jev-intent-observer.js";
 import { queryEmblemRankings, queryEmblemCarriers, emblemExecutionPlan, scopedEmblemQuery } from "../core/emblem-rankings.js";
@@ -1147,6 +1148,7 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       retrieval: runtime.semanticRetriever?.getRetrievalStatus?.() ?? null },
     routing: {
       reactChatMode: runtime.reactChatMode ?? "off",
+      companionPersonaMode: companionMode(runtime.companionPersonaMode),
       reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
       reactTaskFrameControlV1: runtime.reactTaskFrameControlV1 === true,
       reactTaskFrameShadowV1: runtime.reactTaskFrameShadowV1 === true,
@@ -3429,6 +3431,7 @@ export function createSmallWindowRuntime(options = {}) {
     semanticRetriever: options.semanticRetriever ?? null,
     semanticDocumentStore: options.semanticDocumentStore ?? null,
     semanticConfig: options.semanticConfig ?? { enabled: false, provider: "off" },
+    companionPersonaMode: companionMode(options.companionPersonaMode),
     conversationBridgeStore: options.conversationBridgeStore ?? null,
     conversationBridgeMode: String(options.conversationBridgeMode ?? "off").toLowerCase(),
     reactChatMode: String(options.reactChatMode ?? "off").toLowerCase(),
@@ -4404,6 +4407,7 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ...mechanismClassificationRuntime,
     ...semanticRuntime,
     conversationBridgeMode,
+    companionPersonaMode: companionMode(options.companionPersonaMode ?? env.TFT_AGENT_COMPANION_PERSONA_MODE),
     conversationBridgeStore,
     reactChatMode,
     acceptanceMode,
@@ -7884,6 +7888,22 @@ export function createAgentSkillControlLogObserver(write = console.info) {
 
 export async function handleReactChatRequest(body, runtime, context = {}) {
   const normalizedRequest = normalizeReactChatRequest(body);
+  const voiceMode = companionMode(runtime.companionPersonaMode);
+  let companionPersona = null, companionReceipt = null;
+  try {
+    const selected = resolveCompanion(body.companion);
+    if (selected && voiceMode === 'off') return { statusCode: 503, payload: { ok: false, code: 'companion_unavailable', error: '桌宠角色对话暂未启用，请稍后重试。' } };
+    if (voiceMode === 'on') {
+      if (!runtime.conversationBridgeStore?.bindCompanion) {
+        if (selected) throw Object.assign(new Error('桌宠会话存储暂不可用。'), { statusCode: 503, code: 'companion_store_unavailable' });
+      } else {
+        if (selected && (!body.conversationId || normalizedRequest.conversationId === 'default')) throw Object.assign(new Error('桌宠需要独立会话。'), { statusCode: 400, code: 'companion_conversation_required' });
+        await runtime.conversationBridgeStore.bindCompanion({ scopeKey: String(context.visitor?.scope ?? 'local'), conversationId: normalizedRequest.conversationId, persona: selected });
+      }
+      companionPersona = selected;
+    }
+    if (selected) companionReceipt = { mode: voiceMode, personaId: selected.id, version: selected.version, promptVersion: 'companion-voice.v1' };
+  } catch (error) { return { statusCode: error.statusCode ?? 500, payload: { ok: false, code: error.code ?? 'companion_binding_failed', error: error.message } }; }
   const ambiguousReference = ambiguousUnitPlayClarification(normalizedRequest, runtime);
   const playGuidance = broadUnitPlayGuidance(normalizedRequest, runtime);
   const getTaskFrameParse = createReactTaskFrameParse(normalizedRequest, runtime);
@@ -8128,7 +8148,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }, decisionContext), runtime.reactDecisionProvider)
     : runtime.reactDecisionProvider;
   const decisionProvider = quotaWrappedCallable(
-    candidateDecisionProvider,
+    (decision, providerContext) => candidateDecisionProvider(decision, { ...providerContext, companionPersona }),
     context.accessService,
     context.visitor,
     reserveLlmUseForRequest
@@ -8293,6 +8313,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     );
     const payload = {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
+      ...(companionReceipt ? { companion: companionReceipt } : {}),
       type: "react_chat_result",
       ...result,
       ...(result.clarificationContext?.type === "entity_candidate" ? {
