@@ -1,0 +1,18 @@
+# Opt-in publication gate. Use with the root compose.yaml from the repository root.
+services:
+  knowledge-release:
+    build: .
+    restart: "no"
+    env_file: [.env.production]
+    environment:
+      TFT_AGENT_SEMANTIC_INDEX_PATH: /app/.cache/semantic-index.sqlite
+    command: ["node", "scripts/publish-static-knowledge.mjs", "--season=${TFT_STATIC_RELEASE_SEASON:?Set the audited release season}", "--mode=publish", "--model=bge-m3", "--dimensions=1024"]
+    volumes: [tft_semantic:/app/.cache]
+    networks: [backend]
+    depends_on:
+      embedding-model: { condition: service_completed_successfully }
+  app:
+    environment:
+      TFT_AGENT_STATIC_KNOWLEDGE_MODE: published
+    depends_on:
+      knowledge-release: { condition: service_completed_successfully }

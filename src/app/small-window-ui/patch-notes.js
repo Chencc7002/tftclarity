@@ -1,8 +1,68 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.2";
+export const CURRENT_PATCH_VERSION = "18.5";
 
 const PATCH_NOTES = {
+  "18.5": {
+    version: "18.5",
+    publishedAt: "2026-10-20T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "18.5 更新与热补丁",
+        summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。最新调整削弱卡兹克、绯红印记树怪的法强型穿甲，以及正义之手的全能吸血；10 月 27 日章节目前仅见于英文官方公告。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
+        highlights: []
+      },
+      "en-US": {
+        title: "Patch 18.5 and mid-patch updates",
+        summary: "Verified through October 29, 2026: 71 release records, seven October 22 B-patch records, and six October 27 records, 84 numeric records total. The latest update nerfs Kha'Zix, Brambleback's AP-scaled Armor Ignore, and Hand of Justice Omnivamp.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-5/",
+        highlights: []
+      }
+    }
+  },
+  "18.4": {
+    version: "18.4",
+    publishedAt: "2026-10-06T18:00:00.000Z",
+    locales: {
+      "zh-CN": {
+        title: "18.4 更新与 B 补丁",
+        summary: "已核实至 2026 年 10 月 8 日：首发 91 项、10 月 7 日 B 补丁 28 项，共 119 项数值记录。钢铁之心和三个竞技场暂时禁用；B 补丁先推送 PC，移动端随后跟进。重复公布的数值按最终落点读取，不应叠加计算。",
+        sourceName: "Riot Games 官方更新公告",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-4/",
+        highlights: []
+      },
+      "en-US": {
+        title: "Patch 18.4 and B-patch",
+        summary: "Verified through October 8, 2026: 91 release records and 28 October 7 B-patch records, 119 numeric records total. Heart of Steel and three Arenas are temporarily disabled. The B-patch rolls out on PC first with mobile to follow. Repeated values are final endpoints and must not be compounded.",
+        sourceName: "Official Riot Games patch notes",
+        sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-4/",
+        highlights: []
+      }
+    }
+  },
+  "18.3": {
+  "version": "18.3",
+  "publishedAt": "2026-09-22T18:00:00.000Z",
+  "locales": {
+    "zh-CN": {
+      "title": "18.3 更新与热补丁",
+      "summary": "已核实至 2026 年 10 月 4 日：保留首发 74 项，追加 9 月 24 日 B 补丁 13 项数值记录及四个强化符文临时禁用；9 月 28 日大型变形术灵火临时禁用。共 87 项数值记录，恢复的旧调整不应叠加计算。18.4 尚未发布。",
+      "sourceName": "Riot Games 官方更新公告",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+      "highlights": []
+    },
+    "en-US": {
+      "title": "Patch 18.3 updates and hotfixes",
+      "summary": "Verified through October 4, 2026: 74 release changes, 13 September 24 B-patch numeric records, four Augment disables, and the September 28 Major Polymorph disable. 87 numeric records in total; restored changes must not be applied twice. Patch 18.4 is not yet released.",
+      "sourceName": "Official Riot Games patch notes",
+      "sourceUrl": "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+      "highlights": []
+    }
+  }
+},
   "18.2": {
     "version": "18.2",
     "publishedAt": "2026-09-09T18:00:00.000Z",

@@ -1,0 +1,16 @@
+services:
+  app:
+    image: tftclarity-app:static-knowledge-20261031
+    environment:
+      TFT_AGENT_STATIC_KNOWLEDGE_MODE: published
+    depends_on:
+      knowledge-release: { condition: service_completed_successfully }
+  knowledge-release:
+    image: tftclarity-app:static-knowledge-20261031
+    restart: "no"
+    env_file: [.env.production]
+    environment:
+      TFT_AGENT_SEMANTIC_INDEX_PATH: /app/.cache/semantic-index.sqlite
+    command: ["node", "scripts/publish-static-knowledge.mjs", "--season=set18-live", "--mode=publish", "--model=bge-m3", "--dimensions=1024"]
+    volumes: [tft_semantic:/app/.cache]
+    networks: [backend]

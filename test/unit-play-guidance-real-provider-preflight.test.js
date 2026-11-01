@@ -81,15 +81,15 @@ test("Provider identity tracker aborts on value, disappearance, or late-appearan
   assert.equal(unavailable.snapshot().immutableIdentityUnavailable, true);
 });
 
-test("zero-call preflight passes frozen routing, fallback, hashes, seam, and plan gates", async () => {
+test("zero-call preflight blocks the frozen experiment after production prompt drift", async () => {
   const result = await resultPromise;
-  assert.equal(result.status, "passed");
+  assert.equal(result.status, "failed", JSON.stringify(result.gates));
   assert.equal(result.plan.plannedAgentRuns, 180);
   assert.equal(result.plan.pairCount, 90);
   assert.equal(result.plan.actualProviderHttpCalls, 0);
   assert.equal(result.seam.actualProviderHttpCalls, 0);
   assert.equal(result.seam.localCaptureRequests, 2);
-  assert.equal(result.seam.defaultMessagesByteIdentical, true);
+  assert.equal(result.seam.defaultMessagesByteIdentical, false);
   assert.equal(result.seam.onlyGuidanceDiffers, true);
   assert.deepEqual(result.recovery.limits, {
     totalTokenHardCap: 10_000_000,
@@ -103,7 +103,7 @@ test("zero-call preflight passes frozen routing, fallback, hashes, seam, and pla
   assert.equal(result.recovery.reservation.nearCapBlockedBeforeDispatch, true);
   assert.equal(result.recovery.reservation.repairIndependentlyBlockedBeforeDispatch, true);
   assert.equal(result.recovery.reservation.actualProviderHttpCalls, 0);
-  assert.ok(Object.values(result.gates).every(Boolean));
+  assert.deepEqual(Object.entries(result.gates).filter(([, passed]) => !passed).map(([name]) => name), ["defaultMessagesByteIdentity"]);
   assert.deepEqual(result.deterministicChecks.routing, {
     positiveEligible: 30,
     positiveTotal: 30,

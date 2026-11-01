@@ -1,5 +1,5 @@
 // Category vocabulary, not entity resolution: hero/item identities still come from tools.
-const CATEGORY_MENTIONS = /特殊(?:装备)?|\bspecial(?:\s+items?)?\b|神器|\bartifacts?\b|光明(?:装备)?|\bradiant(?:\s+items?)?\b|普通(?:装备)?/giu;
+const CATEGORY_MENTIONS = /特殊(?:装备)?|\bspecial(?:\s+items?)?\b|神器|\bartifacts?\b|光明(?:装备)?|\bradiant(?:\s+items?)?\b|(?:普通|常规)(?:装备)?/giu;
 const NEGATED_PREFIX = /(?:不要|不看|不查|不含|不包括|不包含|排除|去掉|不需要|不是|而非|别查|非|without|exclude)\s*(?:任何|所有|全部)?\s*(?:奥恩)?\s*$/iu;
 const ADDITIVE_PREFIX = /(?:加入|加上|包含|包括|带上|算上|纳入|include|add)\s*(?:奥恩)?\s*$/iu;
 const EXCLUSIVE_SCOPE = /(?:只|仅)(?:看|查|查询|要|用|包括|包含)?\s*(?:(?:奥恩)?神器|光明|artifacts?|radiant)|(?:only|just)\s+(?:artifacts?|radiant)/iu;
@@ -23,6 +23,12 @@ export function requestedEquipmentPolicyScope(input) {
   return undefined;
 }
 
+export function hasMultipleEquipmentCategoryMentions(input) {
+  return new Set([...String(input ?? "").matchAll(CATEGORY_MENTIONS)].map(match => (
+    requestedEquipmentCategoryScope(match[0]).itemCategories.join(",")
+  ))).size > 1;
+}
+
 export function requestedEquipmentCategoryScope(input) {
   const text = String(input ?? "");
   const categories = [];
@@ -43,7 +49,7 @@ export function requestedEquipmentCategoryScope(input) {
       continue;
     }
     const category = /光明|radiant/iu.test(match[0]) ? "radiant"
-      : /普通/u.test(match[0]) ? "ordinary_completed" : "artifact";
+      : /普通|常规/u.test(match[0]) ? "ordinary_completed" : "artifact";
     if (category === "ordinary_completed" && EXCLUSIVE_ORDINARY_PREFIX.test(prefix)) {
       categories.splice(0, categories.length);
       additive = false;

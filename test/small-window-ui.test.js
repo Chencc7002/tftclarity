@@ -250,9 +250,9 @@ test("welcome recommendations and searchable tool library reuse deterministic qu
   assert.match(appJs, /startNewTask: true/);
   assert.match(appJs, /state\.lastDisplayInput/);
   assert.match(appJs, /renderPatchNote/);
-  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "18\.2"/);
-  assert.match(patchNotes, /2026-09-09T18:00:00\.000Z/);
-  assert.match(patchNotes, /teamfight-tactics-patch-18-2/);
+  assert.match(patchNotes, /CURRENT_PATCH_VERSION = "18\.5"/);
+  assert.match(patchNotes, /2026-10-20T18:00:00\.000Z/);
+  assert.match(patchNotes, /teamfight-tactics-patch-18-5/);
   assert.match(patchNotes, /teamfighttactics\.leagueoflegends\.com/);
   assert.match(styles, /\.patch-note-grid/);
   assert.match(styles, /\.patch-note-source/);
@@ -1225,7 +1225,9 @@ test("all existing real interactions and endpoints remain wired", () => {
 
 test("request lifecycle isolates refreshes, retries, clears, and stale abort completions", () => {
   assert.match(appJs, /const reuseLastInput = refresh \|\| normalizedRequestOptions\.reuseLastInput === true/);
-  assert.match(appJs, /const input = reuseLastInput \? state\.lastInput : queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /const draftInput = queryInput\.value\.trim\(\)/);
+  assert.match(appJs, /let input = reuseLastInput \? state\.lastInput : draftInput/);
+  assert.match(appJs, /if \(!reuseLastInput\) input = composeQuotedInput\(input, quotedReplies\)/);
   assert.match(appJs, /if \(!reuseLastInput\) composer\.clear\(\)/);
   assert.match(appJs, /requestRecommendation\(false, null, \{ reuseLastInput: true \}\)/);
   assert.match(appJs, /const requestId = \+\+state\.requestSerial/);

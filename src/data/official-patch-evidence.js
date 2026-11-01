@@ -1,8 +1,80 @@
 import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 
+import { PATCH_18_3_REVISIONS } from "../app/small-window-ui/patch-18-3.js";
+import { PATCH_18_4_REVISIONS } from "../app/small-window-ui/patch-18-4.js";
+import { PATCH_18_5_REVISIONS } from "../app/small-window-ui/patch-18-5.js";
+
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.5": Object.freeze({
+    version: "18.5",
+    title: "云顶之弈 18.5 版本更新公告",
+    summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。10 月 27 日章节目前仅见于英文官方公告。强化符文出现倾向、灵火筛选、状态变化和错误修复均保留在各修订摘要中。 " + PATCH_18_5_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    updatedAt: "2026-10-27",
+    publishedAt: "2026-10-20T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
+    changes: Object.freeze(PATCH_18_5_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl,
+      direction: change.direction,
+      entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames],
+      stat: change.stat,
+      before: change.before,
+      after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    })))))
+  }),
+  "18.4": Object.freeze({
+    version: "18.4",
+    title: "云顶之弈 18.4 版本更新公告",
+    summary: "已核实至 2026 年 10 月 8 日：首发 91 项、10 月 7 日 B 补丁 28 项，共 119 项数值记录。钢铁之心和三个竞技场暂时禁用；B 补丁先推送 PC，移动端随后跟进。重复公布的数值按最终落点读取，不应叠加计算。 " + PATCH_18_4_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    updatedAt: "2026-10-07",
+    publishedAt: "2026-10-06T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-4/",
+    changes: Object.freeze(PATCH_18_4_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl,
+      direction: change.direction,
+      entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames],
+      stat: change.stat,
+      before: change.before,
+      after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    })))))
+  }),
+  "18.3": Object.freeze({
+    version: "18.3",
+    title: "云顶之弈 18.3 版本更新公告",
+    summary: "已核实至 2026 年 10 月 4 日：保留首发 74 项，追加 9 月 24 日 B 补丁 13 项数值记录及四个强化符文临时禁用；9 月 28 日大型变形术灵火临时禁用。共 87 项数值记录，恢复的旧调整不应叠加计算。18.4 尚未发布。 9 月 24 日追加 13 项数值记录：削弱黑荆棘法系献祭与卡兹克，并恢复 18.3 意外回退的 10 项 18.2 B 调整。绯红印记树怪（Brambleback）施法略微加快，未公布具体数值。临时禁用 Challenger’s Grace、Dark Ritual、Infinity Protection、Nesting Dolls 四个强化符文。官方同时确认 18.3 已主动回退 18.2 的目标选择改动。日期采用英文公告章节日期。 9 月 28 日：大型变形术灵火（Major Polymorph，官方说明段落称 Greater Polymorph）因漏洞可过早稳定获得二星五费弈子，已临时禁用。官方计划在 18.4 修复，截止 10 月 4 日未见恢复公告；计划不代表已经恢复。本次没有公布前后数值，故仅记录状态，不计入数值变更。日期采用英文公告章节日期。",
+    updatedAt: "2026-09-28",
+    publishedAt: "2026-09-22T18:00:00.000Z",
+    sourceName: "Riot Games 官方更新公告",
+    sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-3/",
+    // Use the same reviewed numeric records as patch_facts and the announcement UI.
+    changes: Object.freeze(PATCH_18_3_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`,
+      revisionId: revision.id,
+      publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl ?? "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-3/",
+      direction: change.direction,
+      entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames],
+      stat: change.stat,
+      before: change.before,
+      after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    })))))
+  }),
+
   "18.2": Object.freeze({
     version: "18.2",
     title: "云顶之弈 18.2 版本更新公告",

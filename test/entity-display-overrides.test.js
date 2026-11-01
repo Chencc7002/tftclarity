@@ -32,11 +32,13 @@ test("S18 live display overrides remove internal form and unique-trait tokens", 
     apiName: "DA_18_Elise",
     zhName: "伊莉丝",
     enName: "Elise",
-    aliases: ["伊莉丝", "Elise"],
+    aliases: ["伊莉丝", "Elise", "蜘蛛", "蜘蛛女皇"],
     source: "metatft_live_2026_08_27_bilingual"
   });
   assert.equal(unitDisplayOverrideByApiName.get("DA_Nidalee18_AP").enName, "Nidalee");
   assert.equal(unitDisplayOverrideByApiName.get("DA_18_GnarSmall").enName, "Gnar");
+  assert.equal(unitDisplayOverrideByApiName.get("DA_Brambleback18").cost, 4);
+  assert.equal(unitDisplayOverrideByApiName.get("DA_18_Maokai").cost, 5);
   assert.equal(traitDisplayOverrideByApiName.get("DA_18_LuxUniqueTrait").enName, "Avatar");
   assert.equal(traitDisplayOverrideByApiName.get("DA_FloraFatalis18").enName, "Flora Fatalis");
   assert.equal(traitDisplayOverrideByApiName.get("DA_18_Sprykin").zhName, "约德尔人");
@@ -85,6 +87,32 @@ test("Aphelios spelling alias resolves through generated and cached catalogs wit
     assert.equal(result.results[0].apiName, "DA_18_Aphelios");
     assert.equal(result.results[0].name, "厄斐琉斯");
   }
+});
+
+test("Brambleback's zh-TW patch name stays distinct from the Maokai nickname", () => {
+  const units = buildUnitCatalogFromExplorerRows({ data: [
+    { units_unique: "DA_Brambleback18-1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] },
+    { units_unique: "DA_18_Maokai-1", placement_count: [1, 1, 1, 1, 1, 1, 1, 1] }
+  ] }, { includeSeeds: false });
+  const result = queryEntityCatalog({
+    catalog: { units, items: [], traits: [] },
+    input: { entityType: "unit", filters: { names: ["树精长老", "大树"] } }
+  });
+
+  assert.equal(result.resolution.mode, "exact_alias");
+  assert.deepEqual(result.resolution.requests.map((request) => ({
+    inputName: request.inputName,
+    status: request.status,
+    apiName: request.candidates[0]?.apiName
+  })), [
+    { inputName: "树精长老", status: "resolved", apiName: "DA_Brambleback18" },
+    { inputName: "大树", status: "resolved", apiName: "DA_18_Maokai" }
+  ]);
+  assert.deepEqual(result.results.map((unit) => ({ apiName: unit.apiName, name: unit.name })), [
+    { apiName: "DA_Brambleback18", name: "绯红印记树怪" },
+    { apiName: "DA_18_Maokai", name: "茂凯" }
+  ]);
+  assert.deepEqual(result.results.map((unit) => unit.cost), [4, 5]);
 });
 
 test("Aphelios nicknames remain fuzzy confirmations with one stable canonical candidate", () => {

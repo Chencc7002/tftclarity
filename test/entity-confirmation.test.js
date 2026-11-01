@@ -54,6 +54,7 @@ function uiHarness() {
     }
   });
   for (const [start, end] of [
+    ["function assetThumb(", "function handleAssetError("],
     ["function entityTypeLabel(", "function summaryLines("],
     ["function normalizeReactCompositionRankings(", "function reactChatMessages("],
     ["function isCurrentEntityConfirmation(", "async function requestRecommendation("],
@@ -73,7 +74,7 @@ function uiHarness() {
 test("candidate names render as escaped buttons and one click submits without a composer action", async () => {
   const h = uiHarness();
   const html = h.context.renderEntityCandidates(h.data.clarification.entityCandidates, h.record.id);
-  assert.match(html, /data-candidate-action="confirm"[^>]*>卡尔玛<\/button>/u);
+  assert.match(html, /data-candidate-action="confirm"[^>]*>\s*<span>卡尔玛<\/span><\/button>/u);
   assert.doesNotMatch(html, /candidate-action="save"|0%|Second/u);
   const escaped = h.context.renderEntityCandidates([{ confirmation: true, label: '<img src="bad">' }], '"bad');
   assert.ok(!escaped.includes("<img"));
@@ -104,6 +105,22 @@ test("coach-style clarification in the result panel keeps clickable candidate na
   const app = readFileSync(new URL("../src/app/small-window-ui/app.js", import.meta.url), "utf8");
   vm.runInContext(app.slice(app.indexOf("function renderCoachAnswerResult("), app.indexOf("function renderSystemInteractionResult(")), h.context);
   h.context.renderCoachAnswerResult(h.data);
-  assert.match(html, /data-candidate-action="confirm"[^>]*data-response-id="response-1"[^>]*>卡尔玛<\/button>/u);
-  assert.match(html, />娜美<\/button>/u);
+  assert.match(html, /data-candidate-action="confirm"[^>]*data-response-id="response-1"[^>]*>\s*<span>卡尔玛<\/span><\/button>/u);
+  assert.match(html, /><span>娜美<\/span><\/button>/u);
+});
+
+
+test("confirmation normalization preserves icons and buttons keep their candidate identity", () => {
+  const h = uiHarness();
+  const data = h.context.normalizeEndpointPayload({ type: "react_chat_result", status: "clarification_required", question: "确认英雄", evidence: [],
+    clarificationContext: { type: "entity_candidate", entityType: "unit", candidates: [
+      { apiName: "TFT18_Khazix", name: "卡兹克", iconUrl: "https://cdn.metatft.com/file/metatft/champions/tft18_khazix.png", fallbackIconUrl: "https://example.com/fallback.png" }
+    ] } });
+  const candidate = data.clarification.entityCandidates[0];
+  const html = h.context.renderEntityCandidates([candidate], "response-icons");
+  assert.match(html, /<img src="https:\/\/cdn.metatft.com/u);
+  assert.match(html, /data-fallback-src="https:\/\/example.com\/fallback.png"/u);
+  assert.match(html, /data-candidate-index="0"/u);
+  assert.match(html, /卡兹克/u);
+  assert.doesNotMatch(h.context.renderEntityCandidates([{ confirmation: true, label: "未知装备" }]), /<img/u);
 });

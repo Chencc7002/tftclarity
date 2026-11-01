@@ -1,4 +1,5 @@
 import { createServer } from "node:http";
+import { createJevIntentObserver } from "../understanding/jev-intent-observer.js";
 import { queryEmblemRankings, queryEmblemCarriers, emblemExecutionPlan, scopedEmblemQuery } from "../core/emblem-rankings.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -7,7 +8,13 @@ import { fileURLToPath } from "node:url";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
 import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
-import { loadFollowUpHistory, singleEquipmentResultSubject, unitResultCoverage } from "./unit-follow-up.js";
+import {
+  attachSessionEvidenceSnapshotHashes,
+  loadFollowUpHistory,
+  loadSessionEvidenceCarryover,
+  singleEquipmentResultSubject,
+  unitResultCoverage
+} from "./unit-follow-up.js";
 import { currentDeadlineEvidence } from "../react/deadline-evidence.js";
 import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
@@ -961,7 +968,10 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
     throw new Error("Embedding mode is enabled but endpoint, model or API key is missing");
   }
   const store = options.semanticDocumentStore ?? await SQLiteSemanticDocumentStore.open({ filePath: config.indexPath });
-  if (typeof store.upsert === "function") {
+  const staticMode = String(options.staticKnowledgeMode ?? env.TFT_AGENT_STATIC_KNOWLEDGE_MODE ?? "legacy");
+  if (!["legacy", "shadow", "published"].includes(staticMode)) throw new Error("Invalid static knowledge mode");
+  config.staticKnowledgeMode = staticMode;
+  if (typeof store.upsert === "function" && staticMode !== "published") {
     await store.upsert(buildOfficialPatchSemanticDocuments({
       seasonContextId: options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
       locale: config.locale
@@ -980,6 +990,16 @@ async function createSmallWindowSemanticRuntime(options = {}, env = process.env)
         fetchImpl: options.embeddingFetch
       })
     : null;
+  if (staticMode !== "legacy") {
+    const { inspectStaticKnowledge } = await import("../knowledge/static-knowledge-release.js");
+    const seasonContextId = options.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID;
+    config.staticKnowledgeHealth = await inspectStaticKnowledge(store, {
+      seasonContextId, locale: config.locale, model: config.model,
+      dimensions: config.dimensions ?? (config.model === "bge-m3" ? 1024 : null),
+      documents: [...buildOfficialPatchSemanticDocuments({ seasonContextId, locale: config.locale }),
+        ...buildUserStrategySemanticDocuments({ seasonContextId, locale: config.locale })]
+    });
+  }
   return {
     semanticRetriever: createPersistentSemanticRetriever({ store, provider }),
     semanticDocumentStore: store,
@@ -1061,7 +1081,9 @@ function summarizeSemanticConfig(config = {}, store = null) {
     model: config.model ? String(config.model) : null,
     indexConfigured: Boolean(config.indexPath),
     endpointConfigured: Boolean(config.endpoint),
-    apiKeyConfigured: Boolean(config.apiKey)
+    apiKeyConfigured: Boolean(config.apiKey),
+    staticKnowledgeMode: config.staticKnowledgeMode ?? "legacy",
+    staticKnowledgeHealth: config.staticKnowledgeHealth ?? null
   };
 }
 
@@ -1088,6 +1110,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       detectedAt: runtime.cacheStore.loadDiagnostic.detectedAt
     };
   }
+
+  const jevSnapshot = runtime.jevIntentObserver?.snapshot?.() ?? null;
 
   return {
     processRole: runtime.processRole ?? "all",
@@ -1119,7 +1143,8 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       runtime.mechanismClassificationConfig ?? {},
       runtime.mechanismClassificationCache
     ),
-    semanticIndex: summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
+    semanticIndex: { ...summarizeSemanticConfig(runtime.semanticConfig ?? {}, runtime.semanticDocumentStore),
+      retrieval: runtime.semanticRetriever?.getRetrievalStatus?.() ?? null },
     routing: {
       reactChatMode: runtime.reactChatMode ?? "off",
       reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
@@ -1137,7 +1162,24 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       entitySlangProviderAvailable: typeof runtime.entitySlangProvider === "function",
       entitySlangMetrics: runtime.entitySlangTelemetry?.snapshot() ?? null,
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
-      conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore)
+      conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore),
+      patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode ?? "off",
+      jevIntent: jevSnapshot ? {
+        mode: jevSnapshot.mode,
+        attempted: jevSnapshot.attempted,
+        maxRequests: jevSnapshot.maxRequests,
+        sampleRate: jevSnapshot.sampleRate,
+        controlMinConfidence: jevSnapshot.controlMinConfidence,
+        controlApplied: jevSnapshot.controlApplied,
+        controlFallbacks: jevSnapshot.controlFallbacks,
+        counts: jevSnapshot.counts,
+        domainComparisons: jevSnapshot.domainComparisons,
+        outcomes: jevSnapshot.outcomes
+      } : null,
+      jevIntentDimensions: runtime.jevIntentDimensionsObserver ? (() => {
+        const { last, ...metrics } = runtime.jevIntentDimensionsObserver.snapshot();
+        return metrics;
+      })() : null
     },
     acceptanceProvenance: {
       decisionProviderMode: runtime.reactDecisionProvider?.providerKind === "react_decision_llm"
@@ -3145,6 +3187,15 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 
 export function createSmallWindowRuntime(options = {}) {
   const runtimeEnv = options.env ?? process.env;
+  const patchNumericSeriesGroundingMode = ["off", "observe", "enforce"].includes(String(
+    options.patchNumericSeriesGroundingMode
+      ?? runtimeEnv.TFT_AGENT_PATCH_NUMERIC_SERIES_GROUNDING_MODE
+      ?? "enforce"
+  ).trim().toLowerCase())
+    ? String(options.patchNumericSeriesGroundingMode
+      ?? runtimeEnv.TFT_AGENT_PATCH_NUMERIC_SERIES_GROUNDING_MODE
+      ?? "enforce").trim().toLowerCase()
+    : "enforce";
   const reactTaskFrameShadowV1 = ["1", "true", "on", "enabled"].includes(String(
     options.reactTaskFrameShadowV1
       ?? runtimeEnv.TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1
@@ -3396,6 +3447,26 @@ export function createSmallWindowRuntime(options = {}) {
     toolExecutor,
     executionPlanExecutor,
     reactDecisionProvider: options.reactDecisionProvider ?? null,
+    jevIntentObserver: createJevIntentObserver({
+      env: runtimeEnv,
+      mode: options.jevIntentMode ?? runtimeEnv.TFT_AGENT_JEV_INTENT_MODE ?? "off",
+      fetchImpl: options.jevIntentFetch,
+      onObservation: options.onJevIntentObservation
+        ?? (event => console.info(event.mode === "control" ? "[jev-intent-control]" : "[jev-intent-shadow]", JSON.stringify(event))),
+      onOutcome: options.onJevIntentOutcome
+        ?? (event => console.info("[jev-intent-outcome]", JSON.stringify(event)))
+    }),
+    jevIntentDimensionsObserver: createJevIntentObserver({
+      env: runtimeEnv, policy: "dimensions",
+      mode: options.jevIntentDimensionsMode ?? runtimeEnv.TFT_AGENT_JEV_INTENT_DIMENSIONS_MODE ?? "off",
+      maxRequests: Number(runtimeEnv.TFT_AGENT_JEV_INTENT_DIMENSIONS_MAX_REQUESTS ?? 25),
+      sampleRate: Number(runtimeEnv.TFT_AGENT_JEV_INTENT_DIMENSIONS_SAMPLE_RATE ?? 0.05),
+      fetchImpl: options.jevIntentDimensionsFetch ?? options.jevIntentFetch,
+      onObservation: options.onJevIntentDimensionsObservation
+        ?? (event => console.info("[jev-intent-dimensions]", JSON.stringify(event))),
+      onOutcome: options.onJevIntentDimensionsOutcome
+        ?? (event => console.info("[jev-intent-dimensions-outcome]", JSON.stringify(event)))
+    }),
     reactCreateId: options.reactCreateId ?? null,
     reactNow: options.reactNow ?? null,
     reactTaskFrameShadowV1,
@@ -3427,6 +3498,7 @@ export function createSmallWindowRuntime(options = {}) {
     reactCompositionCardScope: options.reactCompositionCardScope === true,
     reactCompositionCardsOwnPositioning: options.reactCompositionCardsOwnPositioning === true,
     reactOfficialItemEvidenceV1: options.reactOfficialItemEvidenceV1 === true,
+    patchNumericSeriesGroundingMode,
     reactUnitPlayFixedCardCompletionAffordance: options.reactUnitPlayFixedCardCompletionAffordance === true,
     reactUnitPlayFixedCardCount: Number.isInteger(options.reactUnitPlayFixedCardCount)
       && options.reactUnitPlayFixedCardCount > 0 ? options.reactUnitPlayFixedCardCount : 2,
@@ -5094,6 +5166,7 @@ async function persistQueryResponse(payload, runtime, details = {}) {
       model: responseSnapshot.answer.generatedConclusion.model ?? null
     };
   }
+  attachSessionEvidenceSnapshotHashes(responseSnapshot);
   payload.queryId = queryId;
   await runtime.cacheStore?.addQueryEvent?.({
     queryId,
@@ -7856,6 +7929,23 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       }
     };
   }
+  let jevIntentAdvisory = null;
+  let jevIntentObservation = null;
+  let jevDimensionObservationPromise = null;
+  const dimensionObserver = runtime.jevIntentDimensionsObserver;
+  const dimensionControl = dimensionObserver?.mode === "control";
+  if (!dimensionControl && runtime.jevIntentObserver?.mode === "control") {
+    try {
+      const observation = await runtime.jevIntentObserver.observe(normalizedRequest, { signal: context.signal });
+      jevIntentObservation = observation;
+      jevIntentAdvisory = observation.control?.advisory ?? null;
+    } catch {
+      // Any control-classifier failure falls back to the unchanged ReAct path.
+    }
+  } else if (!dimensionControl) {
+    // Optional bounded shadow observation. It never changes the request or critical path.
+    void runtime.jevIntentObserver?.observe(normalizedRequest, { signal: context.signal });
+  }
   let candidateTaskFrame = null;
   if (runtime.agentSkillsUnitPlayControlOperational && runtime.candidateSkillRegistry) {
     try {
@@ -7876,10 +7966,11 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       });
     }
   }
-  const requestFor = (advisory) => advisory
-    ? { ...normalizedRequest, semanticAdvisory: advisory }
-    : playGuidance
-      ? {
+  const requestFor = (advisory) => {
+    const requestValue = advisory
+      ? { ...normalizedRequest, semanticAdvisory: advisory }
+      : playGuidance
+        ? {
         ...normalizedRequest,
         input: playGuidance.initialQuery,
         messages: [
@@ -7889,8 +7980,12 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
             content: `当前首答范围仅为“${playGuidance.initialQuery}”。本轮只完成当前版本的出装数据查询，工具范围限制为 entity_catalog_query、unit_builds 和必要的 item_details_batch。`
           }
         ]
-      }
-      : normalizedRequest;
+        }
+        : normalizedRequest;
+    return jevIntentAdvisory
+      ? { ...requestValue, intentAdvisory: jevIntentAdvisory }
+      : requestValue;
+  };
   const injectedHandlers = runtime.reactToolHandlers ?? {};
   const createHandlerBundle = async (requestValue) => typeof runtime.createReactToolHandlers === "function"
     ? runtime.createReactToolHandlers({ request: requestValue, runtime, context })
@@ -7937,7 +8032,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }
   }
   const controlledUnitPlay = Boolean(semanticAdvisory);
-  const request = requestFor(semanticAdvisory);
+  let request = requestFor(semanticAdvisory);
   const bridgeScopeKey = String(context.visitor?.scope ?? "local");
   let bridgeContext = null;
   let loadedBridgeState = null;
@@ -7976,7 +8071,48 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       };
     }
   }
+  try {
+    const carriedEvidence = await loadSessionEvidenceCarryover(
+      normalizedRequest,
+      runtime,
+      bridgeScopeKey,
+      { now: runtime.reactNow ? runtime.reactNow() : Date.now() }
+    );
+    if (carriedEvidence.length) {
+      bridgeContext ??= {
+        relation: "continue",
+        view: null,
+        promotedEvidence: [],
+        estimatedTokens: 0
+      };
+      bridgeContext.promotedEvidence = [
+        ...(bridgeContext.promotedEvidence ?? []),
+        ...carriedEvidence
+      ];
+    }
+  } catch {
+    // Session carryover is an optimization. Any cache/read/validation failure
+    // leaves the normal current-turn tool path unchanged.
+  }
   bridgeContext = attachTrustedAnalysisContext(bridgeContext, context.trustedAnalysisContext);
+  if (dimensionObserver && dimensionObserver.mode !== "off") {
+    try {
+      const season = runtime.seasonContextService.resolveForQuery(normalizedRequest.seasonContextId);
+      const { catalog } = immediateReactEntityCatalog(runtime, entityCatalogPreferences(runtime, season));
+      // Reuse the same scoped Bridge load as ReAct; never accept a body-supplied summary.
+      const pending = dimensionObserver.observe(normalizedRequest, {
+        signal: context.signal, serverContext: { bridgeContext, catalog }
+      });
+      if (dimensionControl) {
+        jevIntentObservation = await pending;
+        jevIntentAdvisory = jevIntentObservation.control?.advisory ?? null;
+        if (jevIntentAdvisory) request = { ...request, intentAdvisory: jevIntentAdvisory };
+      } else {
+        // Separate bounded shadow request; no candidate data enters the live decision input.
+        jevDimensionObservationPromise = pending.catch(() => null);
+      }
+    } catch { /* New policy failure falls back to the existing LLM without a retry. */ }
+  }
   if (!handlerBundle) handlerBundle = await createHandlerBundle(request);
   const reserveLlmUseForRequest = createTransportRetryQuotaReservation({
     body,
@@ -8048,6 +8184,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     compositionCardScope: candidateControl ? true : runtime.reactCompositionCardScope === true,
     compositionCardsOwnPositioning: candidateControl ? true : runtime.reactCompositionCardsOwnPositioning === true,
     officialItemEvidenceV1: candidateControl ? true : runtime.reactOfficialItemEvidenceV1 === true,
+    patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode,
     unitPlayFixedCardCompletionAffordance: candidateControl
       ? true : runtime.reactUnitPlayFixedCardCompletionAffordance === true,
     unitPlayFixedCardCount: candidateControl ? 2 : runtime.reactUnitPlayFixedCardCount,
@@ -8056,6 +8193,27 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     ...(runtime.reactCreateId ? { createId: runtime.reactCreateId } : {}),
     ...(runtime.reactNow ? { now: runtime.reactNow } : {})
   });
+  const jevDecisionTrace = [];
+  const onReactEvent = event => {
+    if (event?.type === "decision" && jevDecisionTrace.length < 24) {
+      jevDecisionTrace.push({
+        type: event.data?.type ?? null,
+        tool: event.data?.tool ?? null,
+        purposeCode: event.data?.purposeCode ?? null
+      });
+    }
+    context.onProgress?.(event);
+  };
+  const recordJevOutcome = result => {
+    try {
+      (dimensionControl ? dimensionObserver : runtime.jevIntentObserver)?.recordOutcome?.(jevIntentObservation, result, jevDecisionTrace);
+      if (jevDimensionObservationPromise) {
+        void jevDimensionObservationPromise.then(observation => dimensionObserver.recordOutcome(observation, result, jevDecisionTrace)).catch(() => {});
+      }
+    } catch {
+      // Outcome telemetry cannot change the user's result.
+    }
+  };
   try {
     const startedAt = Date.now();
     const result = hydrateReactResultKnowledgeSignals(await agent.chat({
@@ -8064,7 +8222,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       principalId: context.visitor?.scope ?? "anonymous"
     }, {
       signal: context.signal,
-      onEvent: context.onProgress,
+      onEvent: jevIntentObservation || jevDimensionObservationPromise ? onReactEvent : context.onProgress,
       budget: runtime.reactChatBudget,
       groundingMode: runtime.reactGroundingMode
     }));
@@ -8137,6 +8295,17 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       ok: ["completed", "completed_with_warning", "clarification_required"].includes(result.status),
       type: "react_chat_result",
       ...result,
+      ...(result.clarificationContext?.type === "entity_candidate" ? {
+        clarificationContext: {
+          ...result.clarificationContext,
+          candidates: (result.clarificationContext.candidates ?? []).map(candidate => {
+            const resolve = { unit: ASSET_RESOLVER.resolveUnit, item: ASSET_RESOLVER.resolveItem,
+              trait: ASSET_RESOLVER.resolveTrait }[result.clarificationContext.entityType];
+            const asset = resolve?.(candidate.apiName);
+            return { ...candidate, iconUrl: asset?.iconUrl ?? null, fallbackIconUrl: asset?.fallbackIconUrl ?? null };
+          })
+        }
+      } : {}),
       ...(contextualGuidance ? { agentSuggestedActions: contextualGuidance } : {}),
       ...(bridgeContext ? {
         conversationBridge: {
@@ -8161,6 +8330,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       });
     }
     observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, payload);
+    recordJevOutcome(result);
     if (candidateControl) {
       emitAgentSkillControl(runtime, {
         schemaVersion: "agent-skill-control.v1",
@@ -8184,6 +8354,10 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
   } catch (error) {
     const access = await publicAccessStatus();
     observeAgentSkillOutcome(runtime, selectedSkillShadow, normalizedRequest, null);
+    recordJevOutcome({
+      status: "failed",
+      terminationReason: String(error?.code ?? "react_chat_failed")
+    });
     if (candidateControl) {
       emitAgentSkillControl(runtime, {
         schemaVersion: "agent-skill-control.v1",

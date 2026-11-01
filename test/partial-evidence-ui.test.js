@@ -45,3 +45,8 @@ test("the actual ReAct card formats dense post-confirmation equipment answers", 
     assert.doesNotMatch(html, /assistant-rich-text__summary|<header>/u);
   }
 });
+
+test("missing-evidence copy does not claim that nonexistent data is displayed", () => {
+  assert.match(app, /No evidence usable for this answer was obtained/u);
+  assert.match(app, /hasNativeEvidence\s*=\s*hasRenderableNativeEvidence\(failure\)/u);
+});
