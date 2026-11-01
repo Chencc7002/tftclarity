@@ -1,0 +1,15 @@
+node_modules/
+portable-data/
+dist/
+test-output/
+assets/prestige-gwen/model.glb
+
+# Third-party character assets remain local; source-only public repository.
+*.glb
+*.gltf
+*.fbx
+*.blend
+*.bin
+*.webp
+assets/ouo-neko/
+assets/whale-refined/
