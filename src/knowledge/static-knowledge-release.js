@@ -28,7 +28,7 @@ export async function inspectStaticKnowledge(store, { seasonContextId, locale = 
 // Prepare and audit without touching the active DB. Only the final, short SQLite
 // transaction publishes content and vectors together. Other ingestion owners are untouched.
 export async function publishStaticKnowledge({ store, provider, documents, seasonContextId,
-  locale = "zh-CN", dimensions = 1024, batchSize = 4, shadow = false, onProgress = null }) {
+  locale = "zh-CN", dimensions = 1024, batchSize = 4, shadow = false, onProgress = null, vectorCache = [] }) {
   if (!store.database?.exec) throw new TypeError("Static publication requires a SQLite store");
   if (!seasonContextId || !Number.isInteger(dimensions) || dimensions < 1) throw new Error("Explicit season and dimensions are required");
   const desired = documents.map(normalizeSemanticDocument);
@@ -37,9 +37,19 @@ export async function publishStaticKnowledge({ store, provider, documents, seaso
   }
   const readOwned = async () => (await store.list({ seasonContextId, locale, includeGlobalLocale: false })).filter(owned);
   const before = await readOwned();
+  const desiredById = new Map(desired.map((d) => [identity(d), d]));
+  const cached = vectorCache.map(normalizeSemanticDocument).filter((d) => {
+    const expected = desiredById.get(identity(d));
+    return expected && d.contentHash === expected.contentHash && d.content === expected.content
+      && d.embeddingModel === provider?.model && d.embedding?.length === dimensions
+      && d.embedding.every(Number.isFinite) && d.embedding.some((v) => v !== 0);
+  });
   const candidate = new MemorySemanticDocumentStore(before.map((d) => d.embedding?.length === dimensions
     && d.embedding.every(Number.isFinite) && d.embedding.some((v) => v !== 0)
     ? d : { ...d, embedding: null, embeddingModel: null }));
+  // A locally prepared candidate is only a vector cache; source text/metadata
+  // still comes from the current release bundle and is audited again below.
+  await candidate.upsert(cached);
   const build = await buildSemanticIndex({ store: candidate, provider, documents: desired,
     batchSize, prune: false, requireEmbeddings: true, onProgress });
   const ids = new Set(desired.map(identity));
@@ -54,7 +64,7 @@ export async function publishStaticKnowledge({ store, provider, documents, seaso
   if (!audit.healthy) throw Object.assign(new Error("Static knowledge candidate failed audit; active index unchanged"), { audit });
   const removedIds = before.filter((d) => !ids.has(identity(d))).map((d) => d.id);
   const report = { schemaVersion: "static_knowledge_release.v1", seasonContextId, locale,
-    shadow, published: false, build, audit, removed: removedIds.length };
+    shadow, published: false, cachedVectorsReused: cached.length, build, audit, removed: removedIds.length };
   if (shadow) return report;
   store.database.exec("BEGIN IMMEDIATE");
   try {

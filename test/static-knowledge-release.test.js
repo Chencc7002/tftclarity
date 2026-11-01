@@ -77,6 +77,22 @@ test("publication rolls back partial SQL writes and rejects concurrent source ch
   assert.equal((await store.list(scope))[0].content, "concurrent");
 });
 
+test("candidate vectors are reused only for identical source text, scope, model and dimensions", async (t) => {
+  const store = database(t);
+  let calls = 0;
+  const p = provider((texts) => { calls += texts.length; return texts.map(() => [1, 0]); });
+  const documents = [doc("a", "new"), doc("b", "changed")];
+  const vectorCache = [doc("a", "new", { embedding: [1, 0], embeddingModel: p.model }),
+    doc("b", "old", { embedding: [0, 1], embeddingModel: p.model }),
+    doc("foreign", "new", { seasonContextId: "set17-live", embedding: [1, 0], embeddingModel: p.model })];
+  const result = await publishStaticKnowledge({ store, provider: p, documents, vectorCache, ...scope });
+  assert.equal(result.cachedVectorsReused, 1);
+  assert.equal(result.build.embedded, 1);
+  assert.equal(calls, 1);
+  assert.equal((await store.list(scope)).length, 2);
+  assert.equal((await store.list({ seasonContextId: "set17-live" })).length, 0);
+});
+
 test("generic incremental builder distinguishes same IDs across seasons and scopes pruning", async () => {
   const store = new MemorySemanticDocumentStore([doc("a"), doc("stale"),
     doc("a", "S17", { seasonContextId: "set17-live" })]);

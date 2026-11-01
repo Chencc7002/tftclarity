@@ -1,0 +1,10 @@
+FROM tftclarity-app:pre-static-knowledge-20261031
+USER root
+COPY src/app/small-window-server.js /app/src/app/small-window-server.js
+COPY src/retrieval/semantic-document-store.js /app/src/retrieval/semantic-document-store.js
+COPY src/retrieval/semantic-index-builder.js /app/src/retrieval/semantic-index-builder.js
+COPY src/retrieval/semantic-retriever.js /app/src/retrieval/semantic-retriever.js
+COPY src/knowledge/static-knowledge-release.js /app/src/knowledge/static-knowledge-release.js
+COPY scripts/publish-static-knowledge.mjs scripts/smoke-static-knowledge.mjs /app/scripts/
+COPY test/static-knowledge-release.test.js /app/test/static-knowledge-release.test.js
+USER node

@@ -9,7 +9,7 @@ import { publishStaticKnowledge, inspectStaticKnowledge } from "../src/knowledge
 loadLocalEnvironment();
 const args = {};
 for (const arg of process.argv.slice(2)) {
-  const match = arg.match(/^--(season|locale|db|model|dimensions|batch-size|timeout-ms|mode)=(.+)$/);
+  const match = arg.match(/^--(season|locale|db|vector-cache-db|model|dimensions|batch-size|timeout-ms|mode)=(.+)$/);
   if (!match || Object.hasOwn(args, match[1])) throw new Error(`Invalid/duplicate argument: ${arg}`);
   args[match[1]] = match[2];
 }
@@ -35,7 +35,14 @@ try {
   } else {
     if (!config.configured) throw new Error("A configured embedding provider is required");
     const provider = createEmbeddingProviderFromConfig({ ...config, batchSize, timeoutMs });
+    let vectorCache = [];
+    if (args["vector-cache-db"]) {
+      const cachedStore = await SQLiteSemanticDocumentStore.open({ filePath: resolve(args["vector-cache-db"]) });
+      try { vectorCache = await cachedStore.list({ seasonContextId: args.season, locale }); }
+      finally { cachedStore.close(); }
+    }
     const report = await publishStaticKnowledge({ store, provider, documents, ...scope, dimensions, batchSize,
+      vectorCache,
       shadow: args.mode === "shadow", onProgress: (event) => {
         if (event.phase === "embedding") process.stderr.write(`${JSON.stringify(event)}\n`);
       } });
