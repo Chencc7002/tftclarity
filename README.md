@@ -1,27 +1,31 @@
 # tftclarity
 
-> 简化云顶数据网站的检索学习成本，检索步骤，数据解读门槛和信息密度，尝试使用AI打造一个云铲垂直智能助手。
+> 用自然语言查装备、看阵容、读版本变化；结论带着数据与来源。
 
-[在线体验](https://tftclarity.cn/) · [功能总览](#功能总览) · [典型使用方式](#典型使用方式) · [快速开始](#快速开始) · [架构与可信度](#架构与可信度) · [V2 部署指南](docs/deploy-v2.md) · [发布就绪状态](docs/r1-release-readiness.md)
+[在线体验](https://tftclarity.cn/) · [功能总览](#功能总览) · [典型使用方式](#典型使用方式) · [桌宠实验](#windows-桌宠实验) · [快速开始](#快速开始) · [架构与可信度](#架构与可信度) · [V2 部署指南](docs/deploy-v2.md) · [发布就绪状态](docs/r1-release-readiness.md)
 
 开发与版本整合以 `main` 为基线；生产镜像另按部署记录识别。参见[主分支整合与发布约定](docs/main-production-consolidation-20261101.md)。
 
-[桌宠实验源码](desktop-pet/README.md) 已纳入主分支，独立运行、默认关闭人格接入，不随网站发布；仓库不包含角色模型或安装包。
+| 使用入口 | 当前状态 |
+| --- | --- |
+| [Web 在线体验](https://tftclarity.cn/) | 已上线，浏览器直接使用 |
+| [Windows 小窗口](docs/small-window-launcher.md) | 本地启动网站的小窗口 |
+| [Windows 桌宠](desktop-pet/README.md) | 实验源码已纳入 `main`，未发布安装包，角色人格默认关闭 |
 
-![tftclarity 产品首页](docs/images/tftclarity-overview.png)
+![tftclarity 产品首页](docs/images/tftclarity-overview-20261101.png)
 
-tftclarity 是面向《云顶之弈》的对话式智能助手。它支持“霞有羊刀后两件怎么补”“当前有哪些阵容正在上升”这类自然语言问题转换为受控的结构化查询，也保留了快捷功能入口来提升运行的速度，结合 MetaTFT 统计、版本快照、近期对局、攻略知识和可选的 AI 解读，返回结论、样本规模、风险提示与证据来源。
+tftclarity 是面向《云顶之弈》的对话式智能助手。它支持“剑圣有羊刀后两件怎么补”“当前有哪些阵容正在上升”这类自然语言问题转换为受控的结构化查询，也保留了快捷功能入口来提升运行的速度，结合 MetaTFT 统计、版本快照、近期对局、攻略知识和可选的 AI 解读，返回结论、样本规模、风险提示与证据来源。
 
 项目可以作为浏览器 Web 应用、本地 Windows 小窗口或公开服务运行。V2 Public Beta 已部署至 [tftclarity.cn](https://tftclarity.cn/)，当前版本将确定性统计、ReAct Agent、多轮上下文、PBE/NA 玩家数据、攻略知识和证据约束解读整合在同一个界面中。
 
 ## 为什么使用 tftclarity？
 
-- **快速得到结论**：不必在完整榜单中反复筛选，降低了完整榜单的信息密度，系统直接组织首选方案、备选方案、关键指标和下一步建议。
+- **更快读懂结果**：把首选、备选、关键指标和数据限制放在一起，减少来回翻榜单。
 - **中文俗称与连续追问**：可以直接说“羊刀、无尽、巨杀、石像鬼”，后续追问会继承英雄、阵容和筛选条件。
 - **查询、复盘和教学一体化**：能查看近期终局棋盘、高手样本和B站视频攻略知识。
 - **结论可追溯**：同时展示样本、版本、数据来源和风险边界；数据不足时不会强行给出确定结论。
 
-Public Beta 当前承诺已落地的查询、近期对局、Pool 和证据链能力；G4-B 装备分配优先级不在本次 Beta 承诺范围，后续仍需基于可验证的反事实证据推进。
+线上功能以现有查询、近期对局、Pool 和证据解读为主。桌宠处于本地试用阶段，实时游戏画面识别尚未接入。
 
 ## 功能总览
 
@@ -29,7 +33,7 @@ Public Beta 当前承诺已落地的查询、近期对局、Pool 和证据链能
 | --- | --- |
 | 对话式查询 | 中文自然语言、常见俗称、连续追问、条件继承与修改、无法唯一识别时的候选确认 |
 | 装备分析 | 英雄三件套、已有装备补全、单装备定阵、多装备对比、核心装备与竞争关系 |
-| 阵容决策 | 阵容排行与趋势、指定英雄、加人/下人/换人的确定性羁绊重算、可展开阵容卡片一图流 |
+| 阵容分析 | 阵容排行与趋势、指定英雄、加人/下人/换人的确定性羁绊重算、可展开阵容卡片一图流 |
 | 资料百科 | 当前赛季英雄、装备、羁绊详情，中英文名称、常见俗称和版本公告 |
 | 对局与复盘 | PBE/NA Riot ID、近期对局、终局棋盘、装备与羁绊、单局详情和 AI 复盘 |
 | 玩家 Pool | 最多 2 组、每组 1–15 人、添加/移出/重命名、分享码一键复制、独立管理 |
@@ -37,6 +41,8 @@ Public Beta 当前承诺已落地的查询、近期对局、Pool 和证据链能
 | Pool 对比 | 两组 Pool 的总体指标、阵容偏好差异、效果矩阵和逐阵容可展开对比 |
 | 攻略知识 | YouTube 字幕知识、Bilibili 攻略搜索、版本窗排序和来源披露 |
 | Agent 执行 | ReAct 多工具组合、真实流式事件时间线、证据账本、失败原因和诚实降级 |
+| 选段引用 | 选中 AI 回复，把片段加入下一条提问的上下文 |
+| 桌宠实验 | 透明置顶、角色拖动、就地输入、回复气泡、查询旁白、摸头喂食；独立本地运行 |
 
 ## 典型使用方式
 
@@ -45,7 +51,7 @@ Public Beta 当前承诺已落地的查询、近期对局、Pool 和证据链能
 不需要记住完整官方名称或 API 字段，可以直接输入：
 
 ```text
-霞已经有羊刀，剩下两件怎么补？
+剑圣已经有羊刀，剩下两件怎么补？
 
 查询这个阵容里三星贾克斯的出装，样本至少 500。
 
@@ -56,11 +62,13 @@ Public Beta 当前承诺已落地的查询、近期对局、Pool 和证据链能
 
 系统会提取英雄、星级、阵容、装备、段位、时间窗口、样本门槛和排序目标。快捷任务走确定性低延迟路径；普通聊天可以由 ReAct Agent 连续调用多个只读工具，并把真实执行事件流式显示在界面中。
 
-### 装备与阵容决策
+### 装备与阵容分析
 
 结果区不会只复述原始榜单，而是把首选、备选、关键指标、样本覆盖和风险提示放在同一条证据链里。阵容查询会返回可展开的阵容卡片；加人、下人或换人后的羁绊人数与档位由代码重新计算，AI 只解释已计算出的变化。
 
-![快速得到装备结论：首选、备选、指标与数据解读](docs/images/tftclarity-quick-answer.png)
+![实际装备查询：结论、锁定装备和结果卡片](docs/images/tftclarity-query-20261101.png)
+
+首页与上图查询结果截取于 2026-11-01；数值是当时查询结果，仅用于展示界面。后续 Pool 图片为功能示例。
 
 ### 高手趋势与教学复盘
 
@@ -122,6 +130,29 @@ Pool 名称只用于展示，不决定服务器、赛季或统计口径。环境
 
 系统会先检查赛季、Patch 和样本覆盖。口径兼容且样本达到门槛时标记为 `FULL`；否则只并列展示观测事实，不生成“哪组更强”的结论。
 
+## Windows 桌宠实验
+
+桌宠把聊天入口放在桌面上，适合一边游戏、一边查资料的场景。当前版本在本机试用，源码位于 [desktop-pet/](desktop-pet/README.md)，不随网站部署启动。
+
+<table>
+  <tr>
+    <td align="center"><img src="docs/images/desktop-pet-compact-20261101.png" width="300" alt="桌宠实际界面：透明角色和简洁的白色胶囊"><br>轻量入口：悬停显示，离开后收起</td>
+    <td align="center"><img src="docs/images/desktop-pet-input-20261101.png" width="300" alt="桌宠实际输入条：直接输入消息并发送"><br>就地输入：不用先打开完整聊天窗口</td>
+  </tr>
+</table>
+
+- **就地聊天**：点击输入图标展开输入条，Enter 发送；回复显示在头顶气泡，点击可查看完整聊天。
+- **少遮挡**：底部操作条自动隐藏；气泡按字数显示 4～15 秒后收起，查询进行时保留进度。
+- **角色互动**：单击摸头、按住拖动；右键菜单中喂食、查看亲密度或切换安静模式。
+- **跟随移动**：完整聊天窗口跟着角色移动，手动调整的窗口尺寸会保留。
+- **角色配置**：模型动作、旁白与后端人格分开管理，后续可扩展其他角色。人格只影响表达，沿用现有工具、上下文和证据规则。
+
+上图是本地原型的实际界面，输入条展示的是未发送的示例草稿，不代表安装包已公开提供。角色素材属于各自权利人；截图展示不构成模型授权，仓库不包含格温模型、其他角色图片或个人会话缓存。运行需自行准备有权使用的素材，详见[素材与许可说明](desktop-pet/THIRD_PARTY_NOTICES.md)。
+
+**适用范围**：Windows 本地原型，窗口化/无边框游戏需实际测试。独占全屏兼容性未确认；国服已收到“桌宠可见但不能点击”的反馈，尚未完成国服兼容修复。当前不提供游戏画面识别、语音对话或自动游戏操作。
+
+开发和本地试用入口见[桌宠说明](desktop-pet/README.md)，人格接入及默认关闭策略见[架构说明](docs/desktop-companion-persona-architecture.md)。
+
 ## 数据口径与可信度
 
 tftclarity 的核心原则是“统计由代码计算，模型只在证据范围内解释”。
@@ -163,12 +194,14 @@ EvidenceBundle → 证据约束解读 → Web UI
 - 诚实降级：样本不足、来源失败或模型输出不合格时，返回可验证的确定性结果并说明边界。
 - 赛季隔离：会话、缓存、目录、Pool 统计和查询均携带赛季上下文。
 
+范围说明：G4-B 装备分配优先级不在本次 Beta 承诺范围；当前的终局数据解读不等于完整对局时间线复盘。
+
 ## 快速开始
 
 ### 环境要求
 
 - Windows、macOS 或 Linux
-- Node.js 20+；推荐 Node.js 24
+- 推荐 Node.js 24（与当前测试和生产 Docker 镜像一致）；最低 Node.js 20
 - Node.js 20–21 使用 SQLite 时需要成功安装可选依赖 `better-sqlite3`
 
 ### 本地启动
@@ -176,7 +209,7 @@ EvidenceBundle → 证据约束解读 → Web UI
 ```powershell
 git clone https://github.com/Chencc7002/tftclarity.git
 cd tftclarity
-npm install
+npm ci
 npm start
 ```
 
@@ -186,7 +219,7 @@ npm start
 Invoke-RestMethod http://127.0.0.1:17317/api/health
 ```
 
-Windows 桌面小窗口：
+Windows 网站小窗口（与独立桌宠不同）：
 
 ```powershell
 npm run window
@@ -212,6 +245,7 @@ Copy-Item .env.example .env
 
 | 配置 | 作用 |
 | --- | --- |
+| `TFT_AGENT_COMPANION_PERSONA_MODE` | 桌宠人格：`off / shadow / on`，默认 `off`；需显式启用和会话存储 |
 | `TFT_AGENT_REACT_CHAT_MODE` | 开启普通聊天的 ReAct Agent 路径 |
 | `TFT_AGENT_REACT_TASK_FRAME_CONTROL_V1` | 让宽泛英雄玩法问题使用受控 TaskFrame 语义建议 |
 | `TFT_AGENT_REACT_TASK_FRAME_SHADOW_V1` | 记录 TaskFrame 影子解析观测，不改变最终回答 |
@@ -235,7 +269,8 @@ Copy-Item .env.example .env
 | --- | --- |
 | `npm start` | 启动本地 Web 服务 |
 | `npm run window` | 启动 Windows 桌面小窗口 |
-| `npm test` | 运行 Node 自动化测试 |
+| `npm run test:ci:main` | 运行标准主测试通道 |
+| `npm run test:ci:integration` | 运行标准集成测试通道 |
 | `npm run smoke:small-window` | 验证本地 API 主流程 |
 | `npm run smoke:visual` | 运行多断点视觉冒烟测试 |
 | `npm run smoke:metatft` | 验证 MetaTFT 数据链路 |
@@ -277,7 +312,8 @@ curl -fsS https://your-domain.example/api/ready
 ## 测试与质量门槛
 
 ```powershell
-npm test
+npm run test:ci:main
+npm run test:ci:integration
 npm run smoke:small-window
 npm run smoke:comps
 npm run eval:agent
@@ -287,6 +323,8 @@ npm run eval:agent
 
 ## 进一步阅读
 
+- [桌宠源码、运行方式与交互](desktop-pet/README.md)
+- [桌宠人格架构与会话隔离](docs/desktop-companion-persona-architecture.md)
 - [玩家 Pool 产品与统计口径](docs/player-pools.md)
 - [MetaTFT Player Match MCP](docs/metatft-player-match-mcp.md)
 - [R1 独立 ReAct 与 Conversation Bridge](docs/react-chat-r1-architecture.md)
