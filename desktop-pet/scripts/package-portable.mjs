@@ -16,7 +16,7 @@ if (!existsSync(join(runtime, 'electron.exe'))) throw new Error('Run node node_m
 mkdirSync(out, { recursive: true }); cpSync(runtime, out, { recursive: true });
 renameSync(join(out, 'electron.exe'), join(out, 'TFTClarityPet.exe'));
 const app = join(out, 'resources/app'); mkdirSync(app, { recursive: true });
-for (const file of ['package.json', 'main.cjs', 'window-policy.cjs', 'pet-preload.cjs', 'chat-preload.cjs', 'pet.html', 'pet.css', 'pet.mjs', 'model-renderer.mjs', 'narration.mjs', 'bubble-lifetime.mjs', 'pets.json', 'THIRD_PARTY_NOTICES.md', 'vendor']) cpSync(join(root, file), join(app, file), { recursive: true });
+for (const file of ['package.json', 'main.cjs', 'window-policy.cjs', 'windows-voice.cjs', 'pet-preload.cjs', 'chat-preload.cjs', 'pet.html', 'pet.css', 'pet.mjs', 'model-renderer.mjs', 'narration.mjs', 'bubble-lifetime.mjs', 'pets.json', 'THIRD_PARTY_NOTICES.md', 'vendor']) cpSync(join(root, file), join(app, file), { recursive: true });
 mkdirSync(join(app, 'assets'), { recursive: true });
 copyFileSync(join(root, 'assets/tray.png'), join(app, 'assets/tray.png'));
 if (existsSync(join(root, 'assets/tray.ico'))) copyFileSync(join(root, 'assets/tray.ico'), join(app, 'assets/tray.ico'));
