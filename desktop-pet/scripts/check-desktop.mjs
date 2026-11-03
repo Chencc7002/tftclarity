@@ -65,6 +65,39 @@ try {
     await pet.mouse.move(1, 1); await new Promise(r => setTimeout(r, 100)); assert.equal(await app.evaluate(() => global.__petTest.clickThrough), true);
     await revealControls(); await pet.locator('#chat').hover(); await new Promise(r => setTimeout(r, 100)); assert.equal(await app.evaluate(() => global.__petTest.clickThrough), false);
   });
+  await check('voice entry preserves draft across system-panel blur and handles launch failure', async () => {
+    await app.evaluate(() => {
+      global.__voiceCalls = [];
+      global.__petTest.windowsVoice.launchWindowsVoice = async handle => { global.__voiceCalls.push(String(handle)); return { ok: true }; };
+    });
+    await revealControls(); await pet.locator('#chat').click();
+    await pet.locator('#message-input').fill('已有草稿：');
+    await pet.locator('#message-input').press('Escape');
+    await revealControls(); await pet.locator('#voice').click();
+    await pet.waitForFunction(() => document.getElementById('bubble').textContent.includes('Windows 语音面板'));
+    assert.equal(await pet.locator('#message-input').inputValue(), '已有草稿：');
+    assert.equal(await pet.locator('#message-input').evaluate(el => el === document.activeElement), true);
+    assert.equal(await app.evaluate(() => global.__voiceCalls.length), 1);
+    await app.evaluate(() => global.__petTest.pet.webContents.send('pet:composer-blur'));
+    assert.equal(await pet.locator('#composer').isVisible(), true);
+    await pet.keyboard.insertText('语音转写');
+    assert.equal(await pet.locator('#message-input').inputValue(), '已有草稿：语音转写');
+    assert.equal(await app.evaluate(() => Boolean(global.__petTest.chat)), false);
+    await pet.locator('#message-input').press('Escape');
+    assert.equal(await app.evaluate(() => global.__petTest.pet.isFocusable()), false);
+    await revealControls(); await pet.locator('#chat').click();
+    await pet.locator('#composer-voice').click();
+    assert.equal(await pet.locator('#message-input').inputValue(), '已有草稿：语音转写');
+    await app.evaluate(() => {
+      global.__petTest.windowsVoice.launchWindowsVoice = async () => ({ ok: false, error: '未能打开语音输入，请按 Win+H。' });
+    });
+    await pet.waitForFunction(() => !document.getElementById('composer-voice').disabled);
+    await pet.locator('#composer-voice').click();
+    await pet.waitForFunction(() => document.getElementById('bubble').textContent.includes('未能打开'));
+    assert.equal(await pet.locator('#message-input').inputValue(), '已有草稿：语音转写');
+    await pet.locator('#message-input').fill('');
+    await pet.locator('#message-input').press('Escape');
+  });
   await pet.screenshot({ path: resolve(output, 'pet.png'), omitBackground: true });
   const nextWindow = app.waitForEvent('window');
   await revealControls(); await pet.locator('#chat').click();

@@ -14,6 +14,8 @@ const composer = document.getElementById('composer');
 const input = document.getElementById('message-input');
 const sendButton = document.getElementById('send');
 let controlsUntil = Date.now() + 2500, sending = false;
+let voiceLaunching = false, voiceSession = false;
+const voiceButton = document.getElementById('composer-voice');
 const pets = await (await fetch('./pets.json')).json();
 let spec, atlas, size, loadedPet = '', loadSerial = 0;
 let modelRenderer = null, modelActions = {}, lastModelFrame = 0;
@@ -146,12 +148,28 @@ function openComposer() {
 }
 function closeComposer() {
   if (sending || composer.hidden) return;
+  voiceSession = false;
   composer.hidden = true; capsule.hidden = false; controlsUntil = 0;
   api.action('compose-blur'); sendHit(false);
 }
 document.getElementById('chat').onclick = openComposer;
 api.onCompose(openComposer);
-api.onComposerBlur(closeComposer);
+api.onComposerBlur(() => { if (!voiceLaunching && !voiceSession) closeComposer(); });
+
+async function startVoiceInput() {
+  if (sending || voiceLaunching) return;
+  openComposer();
+  voiceLaunching = true; voiceSession = true; voiceButton.disabled = true;
+  let result;
+  try { result = await api.startVoiceInput(); }
+  catch { result = { ok: false, error: '语音输入暂时无法打开，请在输入框中按 Win+H。' }; }
+  voiceLaunching = false; voiceButton.disabled = false;
+  if (!result?.ok) voiceSession = false;
+  interactionText = result?.ok ? '请在 Windows 语音面板中说话，确认文字后再发送。' : result?.error || '无法打开语音输入，请在输入框中按 Win+H。';
+  interactionSerial++; reactionUntil = Date.now() + readingDuration(interactionText);
+}
+document.getElementById('voice').onclick = startVoiceInput;
+voiceButton.onclick = startVoiceInput;
 document.getElementById('close-composer').onclick = closeComposer;
 input.addEventListener('input', () => { sendButton.disabled = sending || !input.value.trim(); });
 input.addEventListener('keydown', event => {
@@ -162,10 +180,12 @@ composer.addEventListener('submit', async event => {
   event.preventDefault();
   if (sending || !input.value.trim()) return;
   sending = true; sendButton.disabled = true;
+  voiceButton.disabled = true; voiceSession = false;
   const text = input.value;
   let result;
   try { result = await api.sendMessage(text); } catch { result = { ok: false, error: '暂时没有发出，请稍后重试。' }; }
   sending = false;
+  voiceButton.disabled = false;
   if (result?.ok) { input.value = ''; closeComposer(); }
   else { interactionText = result?.error || '暂时没有发出，请稍后重试。'; interactionSerial++; reactionUntil = Date.now() + readingDuration(interactionText); }
   sendButton.disabled = !input.value.trim();

@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const { pathToFileURL } = require('node:url');
 const { allowedSite, clampBounds, publicLink } = require('./window-policy.cjs');
+const windowsVoice = require('./windows-voice.cjs');
 const pets = require('./pets.json');
 const testMode = process.argv.includes('--pet-test');
 const site = allowedSite(process.env.TFT_PET_SITE);
@@ -14,6 +15,18 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
   let pet, chat, tray, affinityModule;
   let chatSize = { width: 420, height: 600 };
   let pendingSend = false;
+  let pendingVoice = false;
+  async function startVoiceInput() {
+    if (pendingVoice || pendingSend || !pet.isVisible() || !pet.isFocused()) return { ok: false, error: '请点回桌宠输入框后重试。' };
+    pendingVoice = true;
+    try {
+      const editing = await pet.webContents.executeJavaScript(`document.activeElement?.id === 'message-input' && !document.getElementById('composer').hidden`);
+      if (!editing || !pet.isFocused()) return { ok: false, error: '请先点进桌宠输入框。' };
+      const handle = pet.getNativeWindowHandle();
+      return await windowsVoice.launchWindowsVoice(handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE()));
+    } catch { return { ok: false, error: '语音输入暂时无法打开，请在输入框中按 Win+H。' }; }
+    finally { pendingVoice = false; }
+  }
   let quitting = false, dragging = null, dragTimer, clickThrough = true, quiet = false;
   let answerPreview = '';
   let narrationKey = 'idle';
@@ -169,6 +182,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
       s.on('will-download', event => event.preventDefault());
     }
     ipcMain.handle('pet:send-message', (event, text) => petSender(event) ? sendMessage(text) : { ok: false });
+    ipcMain.handle('pet:voice-input', event => petSender(event) ? startVoiceInput() : { ok: false });
     pet.on('blur', () => pet.webContents.send('pet:composer-blur'));
     ipcMain.handle('pet:snapshot', event => petSender(event) ? snapshot() : null);
     ipcMain.handle('pet:interact', (event, kind) => petSender(event) ? interactPet(kind) : null);
@@ -214,7 +228,7 @@ if (!app.requestSingleInstanceLock()) { app.quit(); } else {
     }
     publish();
     // Test-only observability, never exposed to either renderer or a network port.
-    if (testMode) global.__petTest = { showChat, toggleChat, selectPet, menuTemplate, get pet() { return pet; }, get chat() { return chat; }, snapshot, get clickThrough() { return clickThrough; }, dataDir };
+    if (testMode) global.__petTest = { showChat, toggleChat, selectPet, menuTemplate, windowsVoice, get pet() { return pet; }, get chat() { return chat; }, snapshot, get clickThrough() { return clickThrough; }, dataDir };
   }).catch(error => { dialog.showErrorBox('桌宠启动失败', error.message); app.quit(); });
   app.on('second-instance', () => { if (pet) { pet.showInactive(); showChat(); } });
   app.on('before-quit', () => { quitting = true; clearInterval(dragTimer); persist(); globalShortcut.unregisterAll(); });

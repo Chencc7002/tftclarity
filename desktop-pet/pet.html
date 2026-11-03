@@ -15,6 +15,10 @@
         <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M13 5H6a3 3 0 0 0-3 3v10a3 3 0 0 0 3 3h10a3 3 0 0 0 3-3v-7"/><path d="m10 14 1-4L19 2a2.1 2.1 0 0 1 3 3l-8 8-4 1Z"/></svg>
       </button>
       <span class="divider" aria-hidden="true"></span>
+      <button id="voice" title="语音输入 · Windows 听写" aria-label="语音输入">
+        <svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg>
+      </button>
+      <span class="divider" aria-hidden="true"></span>
       <button id="menu" title="更多操作 · 也可右键格温" aria-label="更多操作">
         <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>
       </button>
@@ -22,6 +26,7 @@
     <form id="composer" class="composer hit" hidden autocomplete="off">
       <button type="button" id="close-composer" title="收起输入框 · Esc" aria-label="收起输入框">×</button>
       <input id="message-input" aria-label="发给格温的消息" placeholder="和格温聊聊…" maxlength="8000">
+      <button type="button" id="composer-voice" title="语音输入 · Windows 听写" aria-label="语音输入"><svg viewBox="0 0 24 24" aria-hidden="true"><rect x="9" y="2" width="6" height="12" rx="3"/><path d="M5 10v2a7 7 0 0 0 14 0v-2M12 19v3M8 22h8"/></svg></button>
       <button type="submit" id="send" aria-label="发送消息" title="发送 · Enter" disabled>↑</button>
     </form>
   </main>

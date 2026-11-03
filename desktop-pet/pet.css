@@ -30,3 +30,7 @@ body.controls-visible .capsule { visibility: visible; pointer-events: auto; }
 .composer #send:not(:disabled) { background: #81adf4; }
 .composer #send:not(:disabled):hover { background: #6599ed; }
 .composer #send:disabled { cursor: default; }
+.composer #composer-voice { background: transparent; }
+.composer #composer-voice:hover { background: #f1f1f1; }
+.composer #composer-voice svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.composer #composer-voice:disabled { opacity: .5; cursor: wait; }
