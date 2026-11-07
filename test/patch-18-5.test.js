@@ -6,7 +6,7 @@ import {
   PATCH_18_5_OCTOBER_27_HOTFIX,
   PATCH_18_5_REVISION
 } from "../src/app/small-window-ui/patch-18-5.js";
-import { getCurrentPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
+import { getPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
 import { unitDisplayOverrideByApiName } from "../src/data/entity-display-overrides.js";
 import { associateOfficialPatchChanges } from "../src/data/official-patch-evidence.js";
 import { getOfficialPatchFacts } from "../src/data/official-patch-facts.js";
@@ -17,8 +17,8 @@ import { createSmallWindowRuntime, handleReactChatRequest } from "../src/app/sma
 const flatten = (revision) => revision.groups.flatMap((group) => group.changes);
 
 test("18.5 appends release and both mid-patch revisions while retaining prior history", () => {
-  const current = getCurrentPatchNote();
-  const timeline = getPatchNoteTimeline();
+  const current = getPatchNote("18.5");
+  const timeline = getPatchNoteTimeline("18.5");
   assert.equal(current.version, "18.5");
   assert.equal(current.publishedAt, "2026-10-20T18:00:00.000Z");
   assert.equal(current.updatedAt, "2026-10-27");

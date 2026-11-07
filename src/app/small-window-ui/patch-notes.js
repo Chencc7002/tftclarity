@@ -1,15 +1,35 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.5";
+export const CURRENT_PATCH_VERSION = "18.6";
 
 const PATCH_NOTES = {
+  "18.6": {
+    version: "18.6",
+    publishedAt: "2026-11-04T11:45:27.000Z",
+    locales: {
+      "zh-CN": {
+        title: "18.6 国服更新公告",
+        summary: "截至 2026 年 11 月 7 日，收录国服 11 月 5 日版本的 21 项数值调整。增强墨菲特、奈德丽、暗影狼等弈子，削弱九永恒之森与巨化术。约德尔人和朋友远程加成被国服明确标记为暂未生效，仅在修订摘要说明。11 月 6 日/10 日客户端修复为分批发布，未增加战斗数值记录。",
+        sourceName: "腾讯《英雄联盟》国服官方公告",
+        sourceUrl: "https://lol.qq.com/gicp/news/662/37101298.html",
+        highlights: []
+      },
+      "en-US": {
+        title: "Patch 18.6 (China release)",
+        summary: "21 numeric adjustments for the November 5 China release, verified through November 7. Buffs to Malphite, Nidalee and Murkwolf; nerfs to Elderwood (9) and Embiggen. China marks ranged Sprykin BFF bonuses as not yet effective; details remain in the revision summary. November 6/10 client fixes roll out in stages without additional combat balance records.",
+        sourceName: "Official Tencent China patch notes",
+        sourceUrl: "https://lol.qq.com/gicp/news/662/37101298.html",
+        highlights: []
+      }
+    }
+  },
   "18.5": {
     version: "18.5",
     publishedAt: "2026-10-20T18:00:00.000Z",
     locales: {
       "zh-CN": {
         title: "18.5 更新与热补丁",
-        summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。最新调整削弱卡兹克、绯红印记树怪的法强型穿甲，以及正义之手的全能吸血；10 月 27 日章节目前仅见于英文官方公告。",
+        summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。最新调整削弱卡兹克、绯红印记树怪的法强型穿甲，以及正义之手的全能吸血；国服 10 月 29 日公告确认了相同调整，不重复计入。",
         sourceName: "Riot Games 官方更新公告",
         sourceUrl: "https://teamfighttactics.leagueoflegends.com/zh-tw/news/game-updates/teamfight-tactics-patch-18-5/",
         highlights: []

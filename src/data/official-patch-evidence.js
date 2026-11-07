@@ -3,14 +3,30 @@ import { PATCH_18_2_REVISIONS } from "../app/small-window-ui/patch-18-2.js";
 import { PATCH_18_3_REVISIONS } from "../app/small-window-ui/patch-18-3.js";
 import { PATCH_18_4_REVISIONS } from "../app/small-window-ui/patch-18-4.js";
 import { PATCH_18_5_REVISIONS } from "../app/small-window-ui/patch-18-5.js";
+import { PATCH_18_6_REVISIONS } from "../app/small-window-ui/patch-18-6.js";
 
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.6": Object.freeze({
+    version: "18.6",
+    title: "云顶之弈 18.6 国服版本更新公告",
+    summary: PATCH_18_6_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    updatedAt: "2026-11-05",
+    publishedAt: "2026-11-04T11:45:27.000Z",
+    sourceName: "腾讯《英雄联盟》国服官方公告",
+    sourceUrl: "https://lol.qq.com/gicp/news/662/37101298.html",
+    changes: Object.freeze(PATCH_18_6_REVISIONS.flatMap((revision) => revision.groups.flatMap((group) => group.changes.map((change) => ({
+      id: `${revision.id}-${change.id}`, revisionId: revision.id, publishedAt: revision.publishedAt,
+      sourceUrl: revision.sourceUrl, direction: change.direction, entityType: change.entityType,
+      entityApiNames: [...change.entityApiNames], stat: change.stat, before: change.before, after: change.after,
+      summary: `${change.text["zh-CN"]}：${change.before} → ${change.after}。`
+    }))))),
+  }),
   "18.5": Object.freeze({
     version: "18.5",
     title: "云顶之弈 18.5 版本更新公告",
-    summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。10 月 27 日章节目前仅见于英文官方公告。强化符文出现倾向、灵火筛选、状态变化和错误修复均保留在各修订摘要中。 " + PATCH_18_5_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
+    summary: "已核实至 2026 年 10 月 29 日：首发 71 项、10 月 22 日 B 补丁 7 项、10 月 27 日热补丁 6 项，共 84 项数值记录。国服 10 月 29 日公告确认了相同调整，不重复计入。强化符文出现倾向、灵火筛选、状态变化和错误修复均保留在各修订摘要中。 " + PATCH_18_5_REVISIONS.map((revision) => revision.summary["zh-CN"]).join(" "),
     updatedAt: "2026-10-27",
     publishedAt: "2026-10-20T18:00:00.000Z",
     sourceName: "Riot Games 官方更新公告",

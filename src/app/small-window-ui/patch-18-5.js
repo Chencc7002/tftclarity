@@ -115,11 +115,11 @@ const october22Groups = Object.freeze([
     c("brambleback-heal", "nerf", "5%", "4%", "绯红印记树怪（Brambleback）· 命中治疗", "Brambleback · Healing on-hit", "unit", ["DA_Brambleback18"], "alpha_mark_heal")
   ]),
   g("灵火", "Wisps", [
-    c("die-roll-upgrade-cost", "buff", "3g", "2g", "掷骰（Die Roll）· 升级价格", "Die Roll · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("die-roll-upgrade-cost", "buff", "3g", "2g", "掷骰子（Die Roll）· 升级价格", "Die Roll · Upgrade cost", "wisp", [], "upgrade_cost"),
     c("downpour-upgrade-cost", "buff", "3g", "2g", "倾盆大雨（Downpour）· 升级价格", "Downpour · Upgrade cost", "wisp", [], "upgrade_cost"),
-    c("heros-entrance-upgrade-cost", "buff", "4g", "2g", "英灵之门（Hero's Entrance）· 升级价格", "Hero's Entrance · Upgrade cost", "wisp", [], "upgrade_cost"),
-    c("hireling-base-cost", "nerf", "2g", "5g", "佣兵（Hireling）· 基础价格", "Hireling · Base cost", "wisp", [], "base_cost"),
-    c("knick-knack-bag-upgrade-cost", "buff", "2g", "1g", "小玩意包（Knick-Knack Bag）· 升级价格", "Knick-Knack Bag · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("heros-entrance-upgrade-cost", "buff", "4g", "2g", "英雄登场（Hero's Entrance）· 升级价格", "Hero's Entrance · Upgrade cost", "wisp", [], "upgrade_cost"),
+    c("hireling-base-cost", "nerf", "2g", "5g", "雇佣兵（Hireling）· 基础价格", "Hireling · Base cost", "wisp", [], "base_cost"),
+    c("knick-knack-bag-upgrade-cost", "buff", "2g", "1g", "小饰品包（Knick-Knack Bag）· 升级价格", "Knick-Knack Bag · Upgrade cost", "wisp", [], "upgrade_cost"),
     c("moonlight-ritual-base-cost", "nerf", "2g", "3g", "月光仪式（Moonlight Ritual）· 基础价格", "Moonlight Ritual · Base cost", "wisp", [], "base_cost")
   ])
 ]);
@@ -158,7 +158,7 @@ export const PATCH_18_5_OCTOBER_27_HOTFIX = Object.freeze({
   kind: "hotfix",
   title: t("18.5 10 月 27 日热补丁", "18.5 October 27 mid-patch update"),
   summary: t(
-    "10 月 27 日热补丁追加 6 项数值记录：削弱卡兹克的基础与孤立伤害；绯红印记树怪的无视护甲从偏重法强系数改为更高基础值；正义之手及其光明版本降低全能吸血。该章节截至 10 月 29 日仅见于 Riot 英文官方公告。",
+    "10 月 27 日英文官方公告追加 6 项数值记录：削弱卡兹克的基础与孤立伤害；绯红印记树怪的无视护甲从偏重法强系数改为更高基础值；正义之手及其光明版本降低全能吸血。腾讯国服 10 月 29 日热更公告确认同一批调整和此前六项自然仙灵费用调整，按同一组最终落点读取，不再重复追加或叠加。",
     "The October 27 update adds six numeric records: Kha'Zix loses base and isolated damage, Brambleback shifts Armor Ignore from AP scaling into a higher base value, and Hand of Justice plus its Radiant version lose Omnivamp. As of October 29, this section appears only in Riot's English article."
   ),
   sourceUrl: "https://teamfighttactics.leagueoflegends.com/en-us/news/game-updates/teamfight-tactics-patch-18-5/",

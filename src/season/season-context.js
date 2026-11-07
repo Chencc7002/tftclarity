@@ -31,8 +31,8 @@ const CONTEXTS = [
     theme: {
       documentTitle: "TFTClarity｜云顶数据智答",
       subtitle: {
-        "zh-CN": "S18 魔法森林 · 18.5",
-        "en-US": "Set 18 Enchanted Wilds · 18.5"
+        "zh-CN": "S18 魔法森林 · 18.6",
+        "en-US": "Set 18 Enchanted Wilds · 18.6"
       },
       colors: {
         primary: "#356b43",
@@ -48,14 +48,14 @@ const CONTEXTS = [
         speed: 0.62,
         tones: ["214,239,160", "121,221,197", "239,211,116"]
       },
-      patchNoteVersion: "18.5",
+      patchNoteVersion: "18.6",
       quickQuestions: {
         "zh-CN": ["当前有什么稳定阵容？", "当前版本阵容趋势", "阿狸最好的三件装备是什么"],
         "en-US": ["What comps are stable right now?", "Show current comp trends", "What are Ahri's best three items?"]
       },
       riskNotice: null
     },
-    notices: ["S18“魔法森林”18.5 版本已上线，更新公告已同步；截至 10 月 22 日官方尚未发布 18.5 B 补丁，本站 S17 数据查询暂时停用。"]
+    notices: ["S18“魔法森林”18.6 国服更新公告已同步，历史公告保留；约德尔人和朋友远程加成暂未生效，详见公告。本站 S17 数据查询暂时停用。"]
   },
   {
     id: LEGACY_SEASON_CONTEXT_ID,
