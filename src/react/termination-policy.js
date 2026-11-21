@@ -32,7 +32,21 @@ function isCalendarDateSeries(key) {
     || (third >= 1900 && third <= 2100 && first >= 1 && first <= 31 && second >= 1 && second <= 12);
 }
 
-function patchNumericSeriesGroundingErrors(answer, entries) {
+function patchNumericSeriesGroundingErrors(answer, entries, options = {}) {
+  let claimsText = String(answer ?? "");
+  if (options.patchSummaryRecoveryMode === "enforce") {
+    // URL path segments are source identifiers, not combat stat arrays.
+    claimsText = claimsText.replace(/https?:\/\/[^\s<>"'()（）\[\]。；，]+/gu, "");
+    for (const entry of entries) {
+      if (entry?.toolName !== "patch_facts" || entry.temporalStatus === "historical"
+        || entry.value?.schemaVersion !== "official-patch-facts.v1" || entry.value?.status !== "found") continue;
+      for (const revision of entry.value.revisions ?? []) {
+        // A complete, unchanged source paragraph retains its pending/effective qualifiers.
+        const summary = String(revision.summary ?? "").trim();
+        if (summary) claimsText = claimsText.replaceAll(summary, "");
+      }
+    }
+  }
   const patchChanges = entries
     .filter((entry) => entry?.toolName === "patch_facts")
     .flatMap((entry) => entry.value?.revisions ?? [])
@@ -47,7 +61,7 @@ function patchNumericSeriesGroundingErrors(answer, entries) {
   const supportedPairs = new Set(changeSeries.flatMap((change) => (
     change.before.flatMap((before) => change.after.map((after) => `${before}->${after}`))
   )));
-  const claims = [...String(answer ?? "").matchAll(NUMERIC_SERIES)]
+  const claims = [...claimsText.matchAll(NUMERIC_SERIES)]
     .map((match) => ({ raw: match[0].replace(/\s+/gu, ""), key: numericSeriesKey(match[0]) }))
     .filter((claim) => claim.key && !isCalendarDateSeries(claim.key));
   const errors = claims
@@ -57,7 +71,7 @@ function patchNumericSeriesGroundingErrors(answer, entries) {
     `(${NUMERIC_SERIES.source})\\s*[%秒sg]*\\s*(?:→|->|⇒)\\s*(${NUMERIC_SERIES.source})`,
     "gui"
   );
-  for (const match of String(answer ?? "").matchAll(seriesPair)) {
+  for (const match of claimsText.matchAll(seriesPair)) {
     const before = numericSeriesKey(match[1]);
     const after = numericSeriesKey(match[2]);
     if (!supportedPairs.has(`${before}->${after}`)) {
@@ -630,7 +644,7 @@ export function validateFinishAction(action, ledger, options = {}) {
     if (contradictsCompositionBreakpointEvidence(action.answer, entries)) {
       errors.push("answer contradicts deterministic composition breakpoint changes");
     }
-    const patchSeriesErrors = patchNumericSeriesGroundingErrors(action.answer, entries);
+    const patchSeriesErrors = patchNumericSeriesGroundingErrors(action.answer, entries, options);
     if (options.patchNumericSeriesGroundingMode === "enforce") {
       errors.push(...patchSeriesErrors);
     } else if (options.patchNumericSeriesGroundingMode === "observe") {

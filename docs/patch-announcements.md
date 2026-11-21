@@ -38,6 +38,14 @@
 
 ## 数据与发布
 
+公告摘要的数值或引用校验失败时，`TFT_AGENT_PATCH_SUMMARY_RECOVERY_MODE` 控制恢复路径。
+默认 `shadow` 只观测，`enforce` 用本轮已验证的官方公告证据构建摘要，`off` 保留原路径。
+候选摘要再次通过结束与数值序列校验；显式版本必须全部有对应证据，历史 Evidence、
+未找到的公告和具体战斗数值问题不进入该恢复路径。恢复不增加工具调用或网络权限。
+开启恢复时，链接路径不作为战斗数值数组；完整照录的官方摘要按原段落核验，保留其中的
+待生效限定。脱离摘要的数值数组及前后配对仍须对应同一条已收录调整。
+自由聊天失败结果也写入查询事件，保留 runId、输入、工具观察和回答校验错误。
+
 `src/app/small-window-ui/patch-18-*.js` 保存来源明确的双语数值修订。
 `patch-history.js` 构建修订链，`patch-notes.js` 提供公告与默认版本；
 `src/data/official-patch-evidence.js` 和 `official-patch-facts.js` 向注册工具提供官方证据。

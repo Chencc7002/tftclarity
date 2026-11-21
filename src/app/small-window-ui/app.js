@@ -2980,7 +2980,8 @@ function systemInteractionAnswerHtml(data) {
 }
 
 function reactModelConclusionHtml(data, summary, responseId = "") {
-  const original = typeof data?.modelConclusion?.answer === "string"
+  const original = data?.answerOrigin !== "system_patch_summary_fallback"
+    && typeof data?.modelConclusion?.answer === "string"
     ? conclusionDisplayText(data.modelConclusion.answer).trim() : "";
   const answer = original || (typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "");
   if (!answer) return "";
@@ -4831,6 +4832,15 @@ function recommendationFailureMessage(failure, fallback = t("queryFailed")) {
     const hasVideoEvidence = Array.isArray(failure?.evidence)
       && failure.evidence.some((entry) => entry?.value?.type === "strategy_video_search_results");
     const hasNativeEvidence = hasRenderableNativeEvidence(failure);
+    const hasRejectedEvidence = failure?.modelConclusion?.status === "rejected"
+      && Array.isArray(failure?.evidence)
+      && failure.evidence.some((entry) => entry?.temporalStatus !== "historical"
+        && (entry?.toolName !== "patch_facts" || entry?.value?.status === "found"));
+    if (hasRejectedEvidence && !hasVideoEvidence && !hasNativeEvidence) {
+      return getLocale().startsWith("zh")
+        ? "已取得来源资料，但自动回答未通过核验。请重试，或打开官方原文查看。"
+        : "Source material was retrieved, but the generated answer did not pass validation. Please retry or open the official source.";
+    }
     return getLocale().startsWith("zh")
       ? hasVideoEvidence
         ? "\u5df2\u68c0\u7d22\u5230\u5019\u9009\u6765\u6e90\uff0c\u4f46\u81ea\u52a8\u603b\u7ed3\u672a\u901a\u8fc7\u8bc1\u636e\u6821\u9a8c\uff1b\u4ee5\u4e0b\u76f4\u63a5\u5c55\u793a\u53ef\u6838\u9a8c\u7684\u89c6\u9891\u7ed3\u679c\u3002"

@@ -1164,6 +1164,7 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       conversationBridgeMode: runtime.conversationBridgeMode ?? "off",
       conversationBridgeEnabled: Boolean(runtime.conversationBridgeStore),
       patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode ?? "off",
+      patchSummaryRecoveryMode: runtime.patchSummaryRecoveryMode ?? "shadow",
       jevIntent: jevSnapshot ? {
         mode: jevSnapshot.mode,
         attempted: jevSnapshot.attempted,
@@ -3187,6 +3188,9 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 
 export function createSmallWindowRuntime(options = {}) {
   const runtimeEnv = options.env ?? process.env;
+  const patchRecoveryMode = options.patchSummaryRecoveryMode ?? runtimeEnv.TFT_AGENT_PATCH_SUMMARY_RECOVERY_MODE;
+  const patchSummaryRecoveryMode = ["off", "shadow", "enforce"].includes(patchRecoveryMode)
+    ? patchRecoveryMode : "shadow";
   const patchNumericSeriesGroundingMode = ["off", "observe", "enforce"].includes(String(
     options.patchNumericSeriesGroundingMode
       ?? runtimeEnv.TFT_AGENT_PATCH_NUMERIC_SERIES_GROUNDING_MODE
@@ -3499,6 +3503,7 @@ export function createSmallWindowRuntime(options = {}) {
     reactCompositionCardsOwnPositioning: options.reactCompositionCardsOwnPositioning === true,
     reactOfficialItemEvidenceV1: options.reactOfficialItemEvidenceV1 === true,
     patchNumericSeriesGroundingMode,
+    patchSummaryRecoveryMode,
     reactUnitPlayFixedCardCompletionAffordance: options.reactUnitPlayFixedCardCompletionAffordance === true,
     reactUnitPlayFixedCardCount: Number.isInteger(options.reactUnitPlayFixedCardCount)
       && options.reactUnitPlayFixedCardCount > 0 ? options.reactUnitPlayFixedCardCount : 2,
@@ -8185,6 +8190,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     compositionCardsOwnPositioning: candidateControl ? true : runtime.reactCompositionCardsOwnPositioning === true,
     officialItemEvidenceV1: candidateControl ? true : runtime.reactOfficialItemEvidenceV1 === true,
     patchNumericSeriesGroundingMode: runtime.patchNumericSeriesGroundingMode,
+    patchSummaryRecoveryMode: runtime.patchSummaryRecoveryMode,
     unitPlayFixedCardCompletionAffordance: candidateControl
       ? true : runtime.reactUnitPlayFixedCardCompletionAffordance === true,
     unitPlayFixedCardCount: candidateControl ? 2 : runtime.reactUnitPlayFixedCardCount,
@@ -8319,7 +8325,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       unavailableTools: handlerBundle.unavailableTools ?? [],
       ...(access ? { access } : {})
     };
-    if (payload.answer && payload.status !== "clarification_required") {
+    if (payload.status !== "clarification_required" && (payload.answer || payload.status === "failed")) {
       await persistQueryResponse(payload, runtime, {
         scope: context.visitor?.scope ?? "local",
         runId: result?.run?.runId ?? null,

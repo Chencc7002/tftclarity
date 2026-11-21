@@ -13,7 +13,7 @@ import { ReactWorkingState } from "./working-state.js";
 import { currentDeadlineEvidence } from "./deadline-evidence.js";
 import { buildPartialEvidenceAnswer, partialEvidenceSummary } from "./partial-evidence-answer.js";
 import { selectedEntityConfirmation } from "./entity-confirmation.js";
-import { buildPatchSummaryAnswer } from "./patch-summary-answer.js";
+import { buildPatchAnnouncementRecovery, buildPatchSummaryAnswer } from "./patch-summary-answer.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
 
@@ -1886,6 +1886,7 @@ export class ReactLoop {
           trendCoverageMode: context.trendCoverageMode,
           officialItemEvidenceV1: context.officialItemEvidenceV1,
           patchNumericSeriesGroundingMode: context.patchNumericSeriesGroundingMode,
+          patchSummaryRecoveryMode: context.patchSummaryRecoveryMode,
           unitPlayInputLanguageGuard: context.unitPlayInputLanguageGuard,
           currentTurnInput: request.input ?? request.question,
           responseLocale: state.locale,
@@ -1944,7 +1945,29 @@ export class ReactLoop {
               answerOrigin: "system_language_fallback"
             });
           }
-          const patchSummaryFallback = buildPatchSummaryAnswer({
+          const patchRecoveryMode = context.patchSummaryRecoveryMode ?? "shadow";
+          const patchRecovery = patchRecoveryMode === "off" ? null : buildPatchAnnouncementRecovery({
+            request, action, validation: finishValidation, ledger, locale: state.locale
+          });
+          const patchRecoveryValidation = patchRecovery ? validateFinishAction({
+            ...action, ...patchRecovery, reasonCode: "sufficient_evidence"
+          }, ledger, {
+            patchNumericSeriesGroundingMode: "enforce",
+            patchSummaryRecoveryMode: "enforce",
+            currentTurnInput: request.input ?? request.question,
+            responseLocale: state.locale,
+            now: this.now(), seasonContextId: state.seasonContextId
+          }) : null;
+          if (patchRecovery) emit("patch_summary_recovery_observed", {
+            mode: patchRecoveryMode,
+            eligible: patchRecoveryValidation.valid,
+            applied: patchRecoveryMode === "enforce" && patchRecoveryValidation.valid,
+            evidenceIds: patchRecovery.evidenceIds,
+            originalErrors: finishValidation.errors,
+            candidateErrors: patchRecoveryValidation.errors
+          });
+          const patchSummaryFallback = (patchRecoveryMode === "enforce" && patchRecoveryValidation?.valid
+            ? patchRecovery : null) ?? buildPatchSummaryAnswer({
             request,
             action,
             validation: finishValidation,

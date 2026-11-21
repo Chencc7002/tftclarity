@@ -1,5 +1,31 @@
 const PATCH_SUMMARY_REQUEST = /(?:总结|简述|概括|摘要|归纳|梳理|(?:版本|补丁).{0,8}(?:更新|改动)|summari[sz]e|summary|recap|patch\s*notes?)/iu;
 const RECOVERABLE_PATCH_SUMMARY_ERROR = /(?:answer statistic is not present in cited evidence|patch answer numeric series(?: pair)? is not present)/iu;
+const ANNOUNCEMENT_REQUEST = /(?:公告|patch\s*notes?|版本.{0,8}(?:更新|改动)|补丁.{0,8}(?:更新|改动))/iu;
+const ANNOUNCEMENT_DETAIL_REQUEST = /(?:伤害|治疗|护甲|魔抗|技能|出装|阵容|胜率|强度|damage|healing|armor|build|win\s*rate)/iu;
+const REPLACEABLE_FINISH_ERROR = /^(?:answer statistic is not present in cited evidence:|patch answer numeric series(?: pair)? is not present|finish references unknown evidenceIds$|sufficient_evidence requires evidenceIds$)/iu;
+
+export function buildPatchAnnouncementRecovery({ request, action, validation, ledger, locale } = {}) {
+  const input = requestText(request);
+  if (action?.reasonCode !== "sufficient_evidence"
+    || !ANNOUNCEMENT_REQUEST.test(input)
+    || ANNOUNCEMENT_DETAIL_REQUEST.test(input)
+    || !validation?.errors?.length
+    || !validation.errors.every((error) => REPLACEABLE_FINISH_ERROR.test(String(error)))) return null;
+  const requested = requestedPatchOrder(request);
+  const entries = (ledger?.snapshot?.().entries ?? []).filter((entry) => (
+    entry.temporalStatus !== "historical"
+    && entry.toolName === "patch_facts"
+    && entry.value?.schemaVersion === "official-patch-facts.v1"
+    && entry.value?.status === "found"
+    && entry.value?.source?.sourceUrl
+    && (!requested.length || requested.includes(entry.value.patch))
+  ));
+  const patches = new Set(entries.map((entry) => entry.value.patch));
+  if (!entries.length || (requested.length
+    ? requested.some((patch) => !patches.has(patch))
+    : patches.size !== 1)) return null;
+  return renderPatchSummary(entries, request, locale);
+}
 
 function requestText(request = {}) {
   const current = [request.input, request.question]
@@ -144,7 +170,10 @@ export function buildPatchSummaryAnswer({ request, action, validation, ledger, l
     && candidate?.value?.status === "found"
   ));
   if (!entries.length) return null;
+  return renderPatchSummary(entries, request, locale);
+}
 
+function renderPatchSummary(entries, request, locale) {
   const uniqueEntries = entries.filter((entry, index) => (
     entries.findIndex((candidate) => candidate.value?.patch === entry.value?.patch) === index
   ));

@@ -21,6 +21,8 @@ export class ChatAgent {
     this.compositionCardScope = options.compositionCardScope === true;
     this.compositionCardsOwnPositioning = options.compositionCardsOwnPositioning === true;
     this.officialItemEvidenceV1 = options.officialItemEvidenceV1 === true;
+    this.patchSummaryRecoveryMode = ["off", "shadow", "enforce"].includes(options.patchSummaryRecoveryMode)
+      ? options.patchSummaryRecoveryMode : "shadow";
     this.patchNumericSeriesGroundingMode = ["off", "observe", "enforce"].includes(
       String(options.patchNumericSeriesGroundingMode ?? "off").toLowerCase()
     ) ? String(options.patchNumericSeriesGroundingMode ?? "off").toLowerCase() : "off";
@@ -70,6 +72,7 @@ export class ChatAgent {
         compositionCardsOwnPositioning: this.compositionCardsOwnPositioning,
         officialItemEvidenceV1: this.officialItemEvidenceV1,
         patchNumericSeriesGroundingMode: this.patchNumericSeriesGroundingMode,
+        patchSummaryRecoveryMode: this.patchSummaryRecoveryMode,
         unitPlayFixedCardCompletionAffordance: this.unitPlayFixedCardCompletionAffordance,
         unitPlayFixedCardCount: this.unitPlayFixedCardCount,
         unitPlayInputLanguageGuard: this.unitPlayInputLanguageGuard,
