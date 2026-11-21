@@ -4,10 +4,22 @@ import { PATCH_18_3_REVISIONS } from "../app/small-window-ui/patch-18-3.js";
 import { PATCH_18_4_REVISIONS } from "../app/small-window-ui/patch-18-4.js";
 import { PATCH_18_5_REVISIONS } from "../app/small-window-ui/patch-18-5.js";
 import { PATCH_18_6_REVISIONS } from "../app/small-window-ui/patch-18-6.js";
+import { PATCH_18_7_REVISIONS } from "../app/small-window-ui/patch-18-7.js";
 
 export const OFFICIAL_PATCH_EVIDENCE_VERSION = "riot-patch-evidence.v1";
 
 const PATCHES = Object.freeze({
+  "18.7": Object.freeze({
+    version: "18.7", title: "云顶之弈 18.7 国服版本更新公告",
+    summary: PATCH_18_7_REVISIONS.map((r) => r.summary["zh-CN"]).join(" "),
+    publishedAt: "2026-11-18T10:50:40.000Z", updatedAt: "2026-11-19",
+    sourceName: "腾讯《英雄联盟》国服官方公告", sourceUrl: "https://lol.qq.com/gicp/news/662/37102796.html",
+    changes: Object.freeze(PATCH_18_7_REVISIONS.flatMap((r) => r.groups.flatMap((g) => g.changes.map((c) => ({
+      id: `${r.id}-${c.id}`, revisionId: r.id, publishedAt: r.publishedAt, sourceUrl: r.sourceUrl,
+      direction: c.direction, entityType: c.entityType, entityApiNames: [...c.entityApiNames], stat: c.stat,
+      before: c.before, after: c.after, summary: `${c.text["zh-CN"]}：${c.before} → ${c.after}。`
+    })))))
+  }),
   "18.6": Object.freeze({
     version: "18.6",
     title: "云顶之弈 18.6 国服版本更新公告",

@@ -1,8 +1,15 @@
 import { buildPatchHistory } from "./patch-history.js";
 
-export const CURRENT_PATCH_VERSION = "18.6";
+export const CURRENT_PATCH_VERSION = "18.7";
 
 const PATCH_NOTES = {
+  "18.7": {
+    version: "18.7", publishedAt: "2026-11-18T10:50:40.000Z",
+    locales: {
+      "zh-CN": { title: "18.7 国服更新公告", summary: "国服 11 月 19 日版本共 38 项数值调整：加强多名低费弈子、卡兹克和厄斐琉斯，调整高层级羁绊及强化符文。凯南新增约德尔人和朋友，艾翁新增永恒之森，远古石甲虫新增召唤师。原文重复地狱火数值只计一次；腐蚀已生效但描述文本有误，Esc 取消武器库选择暂未生效。", sourceName: "腾讯《英雄联盟》国服官方公告", sourceUrl: "https://lol.qq.com/gicp/news/662/37102796.html", highlights: [] },
+      "en-US": { title: "Patch 18.7 (China release)", summary: "38 numeric adjustments for China's November 19 release, plus new traits for Kennen, Ivern and Krug. Repeated Inferno values are counted once. Corrosion is effective with a tooltip bug; Escape cancelling unconfirmed armory choices is not yet effective in China.", sourceName: "Official Tencent China patch notes", sourceUrl: "https://lol.qq.com/gicp/news/662/37102796.html", highlights: [] }
+    }
+  },
   "18.6": {
     version: "18.6",
     publishedAt: "2026-11-04T11:45:27.000Z",

@@ -34,9 +34,9 @@ test('every displayed current patch is registered with identical official numeri
   assert.equal(facts.status,'found');
   const expected=page.history.flatMap(r=>r.groups.flatMap(g=>g.changes));
   assert.deepEqual(facts.revisions.flatMap(r=>r.changes).map(({id,label,direction,before,after,entityApiNames})=>({id,body:label,direction,before,after,entityApiNames})),expected.map(({id,body,direction,before,after,entityApiNames})=>({id,body,direction,before,after,entityApiNames})));
-  assert.equal(facts.summary.changeCount,21);
-  assert.equal(facts.publishedAt,'2026-11-04T11:45:27.000Z');
-  assert.equal(facts.source.sourceUrl,'https://lol.qq.com/gicp/news/662/37101298.html');
+  assert.equal(facts.summary.changeCount,38);
+  assert.equal(facts.publishedAt,'2026-11-18T10:50:40.000Z');
+  assert.equal(facts.source.sourceUrl,'https://lol.qq.com/gicp/news/662/37102796.html');
   assert.ok(facts.revisions[0].changes.filter(c=>['unit','trait','item'].includes(c.entityType)).every(c=>c.entityApiNames.length));
  }
  const changes=associateOfficialPatchChanges({units:[{apiName:'DA_18_Ahri'}]},'18.2');

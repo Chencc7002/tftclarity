@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getCurrentPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
+import { getPatchNote, getPatchNoteTimeline } from "../src/app/small-window-ui/patch-notes.js";
 import { getOfficialPatchFacts } from "../src/data/official-patch-facts.js";
 import { buildOfficialPatchSemanticDocuments } from "../src/knowledge/official-patch-knowledge.js";
 
 test("18.6 appends a China-sourced release without removing historical revisions", () => {
-  const patch = getCurrentPatchNote();
-  const timeline = getPatchNoteTimeline();
+  const patch = getPatchNote("18.6");
+  const timeline = getPatchNoteTimeline("18.6");
   const old = getPatchNoteTimeline("18.5");
   assert.equal(patch.version, "18.6");
   assert.equal(timeline.history.length, old.history.length + 1);

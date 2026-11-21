@@ -73,11 +73,14 @@ test("mini program patch notes use the numeric-only traceable chain", () => {
   const patch = require("../miniprogram/data/patch-notes.js");
   const { buildResultView } = require("../miniprogram/utils/result-view.js");
   const view = buildResultView({ type: "patch_notes", ...patch });
-  assert.equal(patch.version, "18.6");
-  assert.equal(patch.updatedAt, "2026-11-05");
-  assert.equal(patch.history.length, 12);
+  assert.equal(patch.version, "18.7");
+  assert.equal(patch.updatedAt, "2026-11-19");
+  assert.equal(patch.history.length, 13);
   assert.equal(patch.history.every((revision, index) => index === 0 || revision.parentId === patch.history[index - 1].id), true);
   assert.equal(patch.history[0].changes.length, 15);
+  assert.equal(view.cards[0].id, "18.7-release-2026-11-19");
+  assert.match(view.cards[0].subtitle, /18\.6-release-2026-11-05/u);
+  view.cards.shift();
   assert.equal(view.cards[0].id, "18.6-release-2026-11-05");
   assert.match(view.cards[0].subtitle, /18\.5-hotfix-2026-10-27/u);
   view.cards.shift();
