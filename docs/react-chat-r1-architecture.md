@@ -13,6 +13,14 @@ The ReAct endpoint has no fallback to `recommendForInput`, `TakeoverController`,
 `RetrievalPlan`, or `ExecutionPlanExecutor`. It reuses `AgentRuntime`,
 `ToolRegistry`, `ToolExecutor`, and the shared single-tool evidence validator.
 
+## 会话数值追问
+
+对上一轮指定装备表现数值的简短评价（例如“3.91其实很差了吧”），服务端核对同一会话、访客和赛季的上一条查询记录。数值须同时出现在已展示的回答和已引用、通过完整性校验的目标装备统计中，等值小数按同一数值匹配。单独改星级时可沿用经本赛季目录确认的英雄和目标装备，由工具查询新星级的数据。
+
+继续问“为什么说羊刀偏弱”时可引用同一目标装备的原始证据。若上一条是对统计的解读，服务端通过引用记录回到原始查询，再检查归属和完整性。对比数据完整时，ReAct 直接用同一分类、同一指标的装备行生成回答并校验引用。单英雄装备排名之后追问核心出装时，已确认的英雄须仍在本赛季目录内，完整出装由本轮工具查询。
+
+`TFT_AGENT_SESSION_METRIC_REVIEW_MODE` 默认 `shadow`，仅在匹配时记录 `sessionMetricReview`。`enforce` 启用装备追问复用，`off` 关闭。
+
 ## Action protocol
 
 The model can emit one `react-action.v1` action per decision:

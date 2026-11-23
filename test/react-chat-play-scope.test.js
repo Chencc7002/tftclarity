@@ -11,6 +11,7 @@ import { MemoryCacheStore } from "../src/index.js";
 import {
   attachSessionEvidenceSnapshotHashes,
   isSessionEvidenceExplanationFollowUp,
+  loadEquipmentQueryContinuation,
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
   singleEquipmentResultSubject,
@@ -279,6 +280,64 @@ test("session evidence carryover rejects current-data requests, uncited evidence
   assert.deepEqual(await loadSessionEvidenceCarryover(request, { cacheStore }, "other", { now }), []);
   assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, historyQueryIds: ["uncited"] }, { cacheStore }, "owner", { now }), []);
   assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, historyQueryIds: ["expired"] }, { cacheStore }, "owner", { now }), []);
+});
+
+test("a judgement on the previously displayed equipment metric can finish with zero tool calls", async () => {
+  const cacheStore = new MemoryCacheStore();
+  const scope = "metric-owner", conversationId = "metric-chat", seasonContextId = "set19-pbe";
+  const input = "3.91其实很差了吧";
+  const value = { type: "unit_item_rankings", query: { intent: "unit_item_rankings", unit: "DA_Zeri19", unitName: "泽丽", performanceItem: "rageblade", itemPolicy: "ordinary_only" },
+    itemRankings: [{ apiName: "rageblade", name: "羊刀", stats: { avg: 3.91, top4: 59.7 } },
+      { apiName: "infinity", name: "无尽", stats: { avg: 3.58 } }] };
+  const answer = "羊刀均名3.91，前四59.70%，无尽3.58。";
+  const entry = { evidenceId: "builds", toolCallId: "query", toolName: "unit_builds",
+    type: value.type, source: "metatft", value, fingerprint: createHash("sha256").update(JSON.stringify(value)).digest("hex") };
+  cacheStore.addQueryEvent({ queryId: "zeri", input: "泽丽的羊刀是差的吗", visitorScope: scope, conversationId,
+    seasonContextId, response: attachSessionEvidenceSnapshotHashes({ status: "completed", answer, evidenceIds: ["builds"], evidence: [entry] }) });
+  const request = { input, historyQueryIds: ["zeri"], conversationId, seasonContextId };
+  for (const mode of ["off", "shadow", "enforce"]) {
+    const runtime = createSmallWindowRuntime({ cacheStore, sessionMetricReviewMode: mode,
+      reactDecisionProvider: async ({ state }) => {
+        if (mode !== "enforce") {
+          assert.equal(state.evidence.length, 0);
+          return { schemaVersion: "react-action.v1", type: "ask_user", question: "你指的是哪个结果？",
+            missingFields: ["unit"], reasonCode: "ambiguous_entity" };
+        }
+        const [snapshot] = state.evidence;
+        assert.equal(snapshot.metadata.quotedMetric, "3.91");
+        assert.equal(snapshot.temporalStatus, "historical");
+        return { schemaVersion: "react-action.v1", type: "finish", answer: "在刚才那组数据里，羊刀3.91，比无尽3.58靠后。",
+          evidenceIds: [snapshot.evidenceId], reasonCode: "sufficient_evidence" };
+      }
+    });
+    const { payload } = await handleReactChatRequest(request, runtime, { visitor: { scope } });
+    assert.deepEqual(payload.sessionMetricReview, mode === "off" ? undefined : { mode, matched: true });
+    if (mode !== "enforce") continue;
+    assert.equal(payload.status, "completed", JSON.stringify(payload));
+    assert.equal(payload.answerOrigin, "system_session_equipment_review");
+    assert.match(payload.answer, /羊刀为3\.91，无尽为3\.58/u);
+    assert.equal(payload.safetyMetrics.actualToolCalls, 0);
+    const rationale = await loadSessionEvidenceCarryover({ ...request, input: "为什么说羊刀偏弱？", historyQueryIds: [payload.queryId] }, runtime, scope);
+    assert.equal(rationale.length, 1);
+    assert.equal(rationale[0].metadata.originQueryId, "zeri");
+    assert.equal(rationale[0].metadata.equipmentAssessment, true);
+    const rounded = await loadSessionEvidenceCarryover({ ...request, input: "59.7%很低吗" }, runtime, scope);
+    assert.equal(rounded[0].metadata.reviewField, "top4");
+    const stars = await loadEquipmentQueryContinuation({ ...request, input: "那换成三星呢？", historyQueryIds: [payload.queryId] }, runtime, scope);
+    assert.equal(stars.apiName, "DA_Zeri19");
+    assert.deepEqual(stars.filters.starLevel, [3]);
+    assert.equal(stars.filters.performanceItem, "rageblade");
+    const core = await loadEquipmentQueryContinuation({ ...request, input: "那有什么核心装备呢" }, runtime, scope);
+    assert.equal(core.filters.itemCount, 3);
+    assert.equal(core.filters.performanceItem, undefined);
+    assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, input: "为什么说青龙刀偏弱？" }, runtime, scope), []);
+    for (const question of ["3.91其实很差了吧，换三星呢", "查最新的3.91", "3.92其实很差了吧", "3.58其实很差了吧", "前四率3.91%很差吧"]) {
+      assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, input: question }, runtime, scope), []);
+    }
+    assert.deepEqual(await loadSessionEvidenceCarryover({ ...request, historyQueryIds: ["zeri", "missing"] }, runtime, scope), []);
+    assert.deepEqual(await loadSessionEvidenceCarryover(request, runtime, "another-owner"), []);
+    assert.deepEqual(await loadSessionEvidenceCarryover(request, runtime, scope, { refresh: true }), []);
+  }
 });
 
 test("successful equipment evidence suppresses duplicate items even for a how-to-equip query", async () => {

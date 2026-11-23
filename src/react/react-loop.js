@@ -61,6 +61,30 @@ function isSessionCarryoverTemporalValidation(action, validation, ledger) {
     ));
 }
 
+function equipmentReviewFinish(ledger, request) {
+  if (String(request.locale ?? "").startsWith("en")) return null;
+  const entries = ledger.snapshot().entries.filter(entry => entry.temporalStatus === "historical"
+    && entry.toolName === "unit_builds" && entry.metadata?.sessionCarryover && entry.metadata.reviewField);
+  if (entries.length !== 1) return null;
+  const [entry] = entries;
+  const field = entry.metadata.reviewField;
+  const label = { avg: "均名", top4: "进前四的比例", win: "拿第一的比例" }[field];
+  if (!label) return null;
+  const rows = entry.value.itemRankings;
+  const target = rows.find(row => row.apiName === entry.value.query.performanceItem);
+  if (!target?.name || !Number.isFinite(target.stats?.[field])) return null;
+  const peers = rows.filter(row => row.apiName !== target.apiName && row.name && row.category === target.category
+    && Number.isFinite(row.stats?.[field])).slice(0, 2);
+  if (!peers.length) return null;
+  const metricText = row => row.name + "为" + row.stats[field] + (field === "avg" ? "" : "%");
+  const worse = peers.filter(row => field === "avg" ? target.stats.avg > row.stats.avg : target.stats[field] < row.stats[field]);
+  const verdict = worse.length === peers.length ? "在这组对比里偏弱"
+    : worse.length ? "在这几件装备中表现居中" : "在这组对比里没有落后";
+  const unit = entry.value.unit?.name ?? entry.value.query.unitName;
+  const answer = `按刚才${unit ? unit + "的" : "的"}出装数据看，${target.name}${verdict}。${label}${field === "avg" ? "越低越好" : "越高越好"}，${[target, ...peers].map(metricText).join("，")}。`;
+  return { schemaVersion: "react-action.v1", type: "finish", answer, evidenceIds: [entry.evidenceId], reasonCode: "sufficient_evidence" };
+}
+
 function currentTurnUserText(request = {}) {
   return [request.input, request.question]
     .map((value) => String(value ?? "").trim())
@@ -686,7 +710,8 @@ function validateUnitBuildsAction(action, ledger, request = {}) {
     && request.semanticAdvisory?.action === "recommend"
     ? String(request.semanticAdvisory?.subject?.resolvedId ?? "")
     : "";
-  if (!resolvedCatalogEntity(entries, "unit", unitApiName) && controlledUnitPlayId !== unitApiName) {
+  const continuation = request.bridgeContext?.view?.equipmentQueryContinuation;
+  if (!resolvedCatalogEntity(entries, "unit", unitApiName) && controlledUnitPlayId !== unitApiName && continuation?.apiName !== unitApiName) {
     errors.push("unit_builds unit requires prior exact unit entity_catalog_query resolution");
   }
   for (const apiName of itemApiNames) {
@@ -1682,9 +1707,15 @@ export class ReactLoop {
     while (state.decisions.length < budget.maxDecisions) {
       context.run?.assertActive?.();
       state.recordRuntimeState();
+      const reviewFinish = state.decisions.length === 0 ? equipmentReviewFinish(ledger, request) : null;
+      const continuation = state.decisions.length === 0 && this.availableToolNames.has("unit_builds")
+        ? request.bridgeContext?.view?.equipmentQueryContinuation : null;
+      const continuationAction = continuation ? { schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
+        arguments: { unit: continuation.apiName, ...continuation.filters },
+        purposeCode: "retrieve_current_statistics" } : null;
       let provided;
       try {
-        provided = await this.decisionProvider({
+        provided = reviewFinish ?? continuationAction ?? await this.decisionProvider({
           schemaVersion: "react-decision-request.v1",
           state: state.snapshot(ledger),
           toolCatalog: catalog
@@ -2170,6 +2201,7 @@ export class ReactLoop {
           narrativeAccepted: narrativeValidation.valid,
           systemFallback: Boolean(rejectedNarrativeFallback)
         });
+        if (reviewFinish && !rejectedNarrativeFallback) modelConclusion = null;
         return terminate(
           action.reasonCode === "insufficient_evidence" ? "insufficient_evidence" : "completed",
           {
@@ -2181,7 +2213,7 @@ export class ReactLoop {
             groundingAudit,
             answerOrigin: rejectedNarrativeFallback
               ? "system_evidence_fallback"
-              : "model"
+              : reviewFinish ? "system_session_equipment_review" : "model"
           }
         );
       }

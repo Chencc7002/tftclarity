@@ -10,6 +10,7 @@ import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
 import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
 import {
   attachSessionEvidenceSnapshotHashes,
+  loadEquipmentQueryContinuation,
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
   singleEquipmentResultSubject,
@@ -3188,6 +3189,7 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 
 export function createSmallWindowRuntime(options = {}) {
   const runtimeEnv = options.env ?? process.env;
+  const metricReviewMode = options.sessionMetricReviewMode ?? runtimeEnv.TFT_AGENT_SESSION_METRIC_REVIEW_MODE;
   const patchRecoveryMode = options.patchSummaryRecoveryMode ?? runtimeEnv.TFT_AGENT_PATCH_SUMMARY_RECOVERY_MODE;
   const patchSummaryRecoveryMode = ["off", "shadow", "enforce"].includes(patchRecoveryMode)
     ? patchRecoveryMode : "shadow";
@@ -3504,6 +3506,7 @@ export function createSmallWindowRuntime(options = {}) {
     reactOfficialItemEvidenceV1: options.reactOfficialItemEvidenceV1 === true,
     patchNumericSeriesGroundingMode,
     patchSummaryRecoveryMode,
+    sessionMetricReviewMode: ["off", "enforce"].includes(metricReviewMode) ? metricReviewMode : "shadow",
     reactUnitPlayFixedCardCompletionAffordance: options.reactUnitPlayFixedCardCompletionAffordance === true,
     reactUnitPlayFixedCardCount: Number.isInteger(options.reactUnitPlayFixedCardCount)
       && options.reactUnitPlayFixedCardCount > 0 ? options.reactUnitPlayFixedCardCount : 2,
@@ -8089,13 +8092,18 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       };
     }
   }
+  let metricReviewObservation = null;
   try {
-    const carriedEvidence = await loadSessionEvidenceCarryover(
+    let carriedEvidence = await loadSessionEvidenceCarryover(
       normalizedRequest,
       runtime,
       bridgeScopeKey,
-      { now: runtime.reactNow ? runtime.reactNow() : Date.now() }
+      { now: runtime.reactNow ? runtime.reactNow() : Date.now(), refresh: body.refresh === true }
     );
+    if (carriedEvidence.some(entry => entry.metadata.quotedMetric || entry.metadata.equipmentAssessment)) {
+      metricReviewObservation = { mode: runtime.sessionMetricReviewMode, matched: true };
+      if (runtime.sessionMetricReviewMode !== "enforce") carriedEvidence = [];
+    }
     if (carriedEvidence.length) {
       bridgeContext ??= {
         relation: "continue",
@@ -8107,6 +8115,22 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         ...(bridgeContext.promotedEvidence ?? []),
         ...carriedEvidence
       ];
+    }
+    if (!body.refresh && !bridgeContext?.requiredClarification && !bridgeContext?.view?.pendingClarification) {
+      const subject = await loadEquipmentQueryContinuation(normalizedRequest, runtime, bridgeScopeKey, runtime.reactNow?.());
+      if (subject) {
+        const season = runtime.seasonContextService.resolveForQuery(normalizedRequest.seasonContextId);
+        const { catalog } = immediateReactEntityCatalog(runtime, entityCatalogPreferences(runtime, season));
+        const current = catalog?.unitByApiName?.get(subject.apiName);
+        const item = subject.filters.performanceItem && catalog?.itemByApiName?.get(subject.filters.performanceItem);
+        if (current && current.current !== false && (!subject.filters.performanceItem || (item && item.current !== false))) {
+          metricReviewObservation = { mode: runtime.sessionMetricReviewMode, matched: true, kind: subject.kind };
+          if (runtime.sessionMetricReviewMode === "enforce") {
+            bridgeContext ??= { relation: "continue", promotedEvidence: [], estimatedTokens: 0 };
+            bridgeContext.view = { ...(bridgeContext.view ?? {}), equipmentQueryContinuation: subject };
+          }
+        }
+      }
     }
   } catch {
     // Session carryover is an optimization. Any cache/read/validation failure
@@ -8326,6 +8350,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         }
       } : {}),
       ...(contextualGuidance ? { agentSuggestedActions: contextualGuidance } : {}),
+      ...(metricReviewObservation ? { sessionMetricReview: metricReviewObservation } : {}),
       ...(bridgeContext ? {
         conversationBridge: {
           relation: bridgeContext.relation,

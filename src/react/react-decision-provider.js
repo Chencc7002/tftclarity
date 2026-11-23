@@ -151,6 +151,13 @@ function historicalEvidence(entries = []) {
   return entries.filter((entry) => entry?.temporalStatus === "historical");
 }
 
+function quotedMetricGuidance(entries = [], bridgeContext) {
+  if (bridgeContext?.equipmentQueryContinuation) return [{ role: "system", content: "The server matched this equipment follow-up to the current season catalog. Answer from this turn's unit_builds result for the changed query. If it contains few samples, qualify the result." }];
+  return entries.some(entry => entry.temporalStatus === "historical" && entry.metadata?.sessionCarryover && (entry.metadata.quotedMetric || entry.metadata.equipmentAssessment))
+    ? [{ role: "system", content: "The user is evaluating the preceding equipment result. Explain relative performance from that snapshot and its same-filter comparisons. Finish directly with that historical evidence ID. Attribute numbers to the earlier result, distinguish association from causation and avoid current-data claims." }]
+    : [];
+}
+
 function semanticGuidance(advisory) {
   if (advisory?.goal !== "recommend_unit_play") return null;
   const name = String(advisory.subject?.canonicalName ?? advisory.subject?.resolvedId ?? "the named unit");
@@ -346,6 +353,7 @@ function reactDecisionMessages(
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     ...trendSummaryGuidance(state.evidence),
+    ...quotedMetricGuidance(state.evidence, state.bridgeContext),
     ...videoSummaryGuidance(state.evidence),
     ...intentAdvisoryGuidance(state.intentAdvisory),
     {
@@ -420,6 +428,7 @@ function legacyReactDecisionMessages(
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     ...trendSummaryGuidance(legacyState.evidence),
+    ...quotedMetricGuidance(legacyState.evidence, legacyState.bridgeContext),
     ...videoSummaryGuidance(legacyState.evidence),
     ...intentAdvisoryGuidance(legacyState.intentAdvisory),
     {
