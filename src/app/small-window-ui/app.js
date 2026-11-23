@@ -2728,7 +2728,7 @@ function patchHistoryHtml(patch) {
 }
 
 function renderPatchNote(track = true) {
-  const version = state.seasonContext?.theme?.patchNoteVersion ?? CURRENT_PATCH_VERSION;
+  const version = state.seasonContext ? state.seasonContext.theme?.patchNoteVersion ?? null : CURRENT_PATCH_VERSION;
   const patch = getPatchNoteTimeline(version, getLocale());
   if (track) state.resultView = { type: "patch-note" };
   if (!patch) {

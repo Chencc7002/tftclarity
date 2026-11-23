@@ -370,7 +370,7 @@ async function renderTrends(refreshResult = null) {
         <span>${esc(label)}</span><strong>${esc(value)}</strong><small>${esc(analysisCompSummary(result, comp, metric))}</small>
       </div>`).join("")}</div>` : "";
     const pool = result.pool ?? pools.find((entry) => entry.id === state.pool) ?? {};
-    const environmentLabel = pool.environment === "pbe" ? "S18 PBE" : "NA 正式服";
+    const environmentLabel = pool.environment === "pbe" ? (pool.season || "PBE") : "NA 正式服";
     setResult(
       `${pool.name ?? "玩家 Pool"} · 阵容趋势`,
       `
@@ -810,7 +810,7 @@ async function renderPlayerPools(refreshResult = null) {
     }
     host.innerHTML = `
       ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-import"><div class="opgg-card-body"><div class="opgg-section-title">用 Pool 码一键导入</div><div class="opgg-pool-import-row"><input id="opgg-pool-share-code" maxlength="8" autocomplete="off" placeholder="输入 8 位 Pool 码" aria-label="Pool 码"><button type="button" class="opgg-primary-button" data-opgg-action="pool-import-code">导入为我的 Pool</button></div><p class="opgg-form-hint">会复制当下的成员名单；导入后可以独立增删，不影响原 Pool。</p></div></div>` : ""}
-      ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-create"><div class="opgg-card-body"><div class="opgg-section-title">创建 Pool（需同时添加首个角色）</div><div class="opgg-pool-create-row"><input id="opgg-pool-name" placeholder="自定义 Pool 名称"><select id="opgg-pool-environment"><option value="pbe">S18 PBE</option><option value="live">NA 正式服</option></select><input id="opgg-pool-initial-name" placeholder="首个角色游戏名"><input id="opgg-pool-initial-tag" placeholder="首个角色 Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-create">验证并创建</button></div></div></div>` : ""}
+      ${pools.length < data.maxPools ? `<div class="opgg-card opgg-pool-create"><div class="opgg-card-body"><div class="opgg-section-title">创建 Pool（需同时添加首个角色）</div><div class="opgg-pool-create-row"><input id="opgg-pool-name" placeholder="自定义 Pool 名称"><select id="opgg-pool-environment"><option value="pbe">PBE</option><option value="live">NA 正式服</option></select><input id="opgg-pool-initial-name" placeholder="首个角色游戏名"><input id="opgg-pool-initial-tag" placeholder="首个角色 Tag"><button type="button" class="opgg-primary-button" data-opgg-action="pool-create">验证并创建</button></div></div></div>` : ""}
       <section class="opgg-pool-compare-entry ${pools.length === 2 ? "ready" : "waiting"}">
         <span class="opgg-pool-compare-icon" aria-hidden="true">⇄</span>
         <div><strong>Pool 对比分析</strong><p>${pools.length === 2 ? `已选择 ${esc(pools[0].name)} 与 ${esc(pools[1].name)}，对比阵容偏好、平均名次、前四率和登顶率。` : pools.length === 1 ? `当前已有 ${esc(pools[0].name)}；再创建或用 Pool 码导入 1 个 Pool，即可在这里对比。` : "先创建或导入两个 Pool，即可比较两组玩家的阵容偏好与表现。"}</p></div>
@@ -1203,7 +1203,7 @@ function directUnitBoardHtml(units) {
 async function renderDirectPlayer() {
   state.view = "direct-player";
   state.playerId = directPlayerKey();
-  setResult("S18 PBE 战绩", loadingHtml("正在从 MetaTFT MCP 获取最近 10–20 场…"));
+  setResult("PBE 战绩", loadingHtml("正在从 MetaTFT MCP 获取最近 10–20 场…"));
   try {
     const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}?${directPlayerQuery({ limit: "20" })}`);
     const cards = (data.matches ?? []).map((match) => `
@@ -1222,23 +1222,23 @@ async function renderDirectPlayer() {
         </div>
       </details>`).join("");
     setResult(
-      `${directPlayerKey()} · S18 PBE 战绩`,
+      `${directPlayerKey()} · PBE 战绩`,
       `${backLink("返回个人复盘", "personal")}
-       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(directPlayerKey())}</h3><p class="opgg-page-sub">S18 PBE · MetaTFT · 返回 ${data.returnedCount}/${data.availableCount} 场</p></div><span class="opgg-badge opgg-badge-warn">测试服数据</span></div>
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(directPlayerKey())}</h3><p class="opgg-page-sub">PBE · MetaTFT · 返回 ${data.returnedCount}/${data.availableCount} 场</p></div><span class="opgg-badge opgg-badge-warn">测试服数据</span></div>
        <div class="opgg-notice">数据来源 MetaTFT public profile；数据时间 ${fmtDate(data.provenance?.sourceFetchedAt)}，${data.provenance?.cacheStatus === "hit" ? "当前为 2 分钟内缓存" : "本次已向上游刷新"}。仅展示终局状态，不含逐回合经济、搜牌和站位。${esc((data.warnings ?? []).join("；"))}</div>
        <div class="opgg-toolbar" style="margin-top:10px"><button type="button" class="opgg-ai-button" data-opgg-action="direct-teaching"><span class="opgg-ai-icon">✦</span><span><strong>AI 智能复盘</strong><small>基于最近 20 场终局证据</small></span></button></div>
        <div class="opgg-section-title">最近对局 <small>点击卡片可展开摘要，再按需读取单局详情</small></div>
-       <div class="opgg-player-match-list">${cards || '<div class="opgg-empty">该玩家当前没有可用的 S18 PBE 对局</div>'}</div>`,
+       <div class="opgg-player-match-list">${cards || '<div class="opgg-empty">该玩家当前没有可用的 PBE 对局</div>'}</div>`,
       data
     );
   } catch (error) {
-    setResult("S18 PBE 战绩", `${backLink("返回个人复盘", "personal")}${errorHtml(error)}`);
+    setResult("PBE 战绩", `${backLink("返回个人复盘", "personal")}${errorHtml(error)}`);
   }
 }
 
 async function renderDirectMatch() {
   state.view = "direct-match";
-  setResult("S18 PBE 单局详情", loadingHtml("正在读取该局完整终局状态…"));
+  setResult("PBE 单局详情", loadingHtml("正在读取该局完整终局状态…"));
   try {
     const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}/matches/${encodeURIComponent(state.matchId)}?${directPlayerQuery()}`);
     const match = data.match;
@@ -1258,9 +1258,9 @@ async function renderDirectMatch() {
       </div>`;
     }).join("");
     setResult(
-      "S18 PBE 单局详情",
+      "PBE 单局详情",
       `${backLink("返回对局列表", "direct-player")}
-       <div class="opgg-page-head"><div><h3 class="opgg-page-title">第 ${match.placement ?? "?"} 名 · Lv${match.level ?? "-"}</h3><p class="opgg-page-sub">${esc(match.matchId)} · S18 PBE · MetaTFT</p></div><span class="opgg-badge opgg-badge-warn">终局数据</span></div>
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">第 ${match.placement ?? "?"} 名 · Lv${match.level ?? "-"}</h3><p class="opgg-page-sub">${esc(match.matchId)} · PBE · MetaTFT</p></div><span class="opgg-badge opgg-badge-warn">终局数据</span></div>
        <div class="opgg-chips"><div class="opgg-chip"><b>淘汰回合</b><span>${match.lastRound ?? "-"}</span></div><div class="opgg-chip"><b>淘汰玩家</b><span>${match.playersEliminated ?? "-"}</span></div><div class="opgg-chip"><b>对玩家伤害</b><span>${match.totalDamageToPlayers ?? "-"}</span></div><div class="opgg-chip"><b>参与者</b><span>${match.participantCount ?? "-"}</span></div></div>
        <div class="opgg-section-title">终局棋子与装备</div><div class="opgg-units-grid">${units || '<div class="opgg-empty">无棋子数据</div>'}</div>
        <div class="opgg-section-title">羁绊</div><div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.id ?? "未知羁绊")}</span>`).join("")}</div>
@@ -1268,7 +1268,7 @@ async function renderDirectMatch() {
       data
     );
   } catch (error) {
-    setResult("S18 PBE 单局详情", `${backLink("返回对局列表", "direct-player")}${errorHtml(error)}`);
+    setResult("PBE 单局详情", `${backLink("返回对局列表", "direct-player")}${errorHtml(error)}`);
   }
 }
 
@@ -1338,21 +1338,21 @@ function directReviewDashboardHtml(dashboard) {
 
 async function renderDirectTeaching(matchId = null) {
   state.view = "direct-teaching";
-  setResult("S18 PBE AI 复盘", loadingHtml("AI 正在读取 MetaTFT 终局证据并校验结论…"));
+  setResult("PBE AI 复盘", loadingHtml("AI 正在读取 MetaTFT 终局证据并校验结论…"));
   try {
     const query = `?${directPlayerQuery(matchId ? { match: matchId } : {})}`;
     const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}/teaching${query}`);
     setResult(
-      "S18 PBE AI 复盘",
+      "PBE AI 复盘",
       `${backLink(matchId ? "返回单局详情" : "返回对局列表", matchId ? "direct-match" : "direct-player")}
-       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(data.headline ?? "AI 智能复盘")}</h3><p class="opgg-page-sub">MetaTFT · S18 PBE · ${data.validated ? "证据校验通过" : "已降级"}</p></div></div>
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(data.headline ?? "AI 智能复盘")}</h3><p class="opgg-page-sub">MetaTFT · PBE · ${data.validated ? "证据校验通过" : "已降级"}</p></div></div>
        ${directReviewDashboardHtml(data.dashboard)}
        <details class="opgg-card opgg-review-narrative"><summary>查看 AI 完整文字解读</summary><div class="opgg-card-body">${esc(data.text ?? "")}</div></details>
        <div class="opgg-notice">缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}。复盘不得推断逐回合经济、搜牌、过渡或站位。</div>`,
       data
     );
   } catch (error) {
-    setResult("S18 PBE AI 复盘", `${backLink("返回对局列表", "direct-player")}${errorHtml(error)}`);
+    setResult("PBE AI 复盘", `${backLink("返回对局列表", "direct-player")}${errorHtml(error)}`);
   }
 }
 

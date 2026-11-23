@@ -1,10 +1,10 @@
-import { DEFAULT_SEASON_CONTEXT_ID } from "../../src/season/season-context.js";
+import { CURRENT_PBE_SEASON_CONTEXT_ID, DEFAULT_SEASON_CONTEXT_ID } from "../../src/season/season-context.js";
 
 // Pool scope is server-owned. Preserve explicitly pinned historical/PBE pools.
 export function poolSeason(pool = {}, player = {}) {
   if (pool.season) return pool.season;
   return (player.region ?? pool.region) === "pbe" || pool.environment === "pbe"
-    ? "set18-pbe"
+    ? CURRENT_PBE_SEASON_CONTEXT_ID
     : DEFAULT_SEASON_CONTEXT_ID;
 }
 

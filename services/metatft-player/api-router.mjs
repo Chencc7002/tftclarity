@@ -1,3 +1,4 @@
+import { CURRENT_PBE_SEASON_CONTEXT_ID } from "../../src/season/season-context.js";
 import { createPlayerMatchMcpClient } from "./mcp-client.mjs";
 import { buildMatchReview, buildPlayerReview } from "../opgg/review.mjs";
 import { localizeMatch } from "../opgg/localization.mjs";
@@ -50,7 +51,7 @@ function playerInput(player, query, scope) {
 }
 
 function seasonFor(environment, query) {
-  if (environment === "pbe") return "set18-pbe";
+  if (environment === "pbe") return CURRENT_PBE_SEASON_CONTEXT_ID;
   return query.get("season") ?? process.env.METATFT_NA_DEFAULT_SEASON ?? "set17-live";
 }
 
@@ -247,7 +248,7 @@ function createPlayerMatchApiRouter(options = {}) {
         const result = await generateTeaching({
           evidence,
           provider,
-          question: "请基于 MetaTFT 的 S18 PBE 终局证据复盘，不得补写缺失字段或逐回合过程。",
+          question: "请基于 MetaTFT 的当前赛季 终局证据复盘，不得补写缺失字段或逐回合过程。",
           strict: true,
           maxRetries: 0
         });

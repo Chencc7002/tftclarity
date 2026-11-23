@@ -224,7 +224,7 @@ test("refresh follows the active live season and preserves pinned historical/PBE
   const db = await setup();
   try {
     assert.equal(poolSeason(), DEFAULT_SEASON_CONTEXT_ID);
-    assert.equal(poolSeason({}, { region: "pbe" }), "set18-pbe");
+    assert.equal(poolSeason({}, { region: "pbe" }), "set19-pbe");
     createPool(db, { id: "historical", name: "S17", region: "na", season: "set17-live", ownerType: "user", ownerId: "owner" });
     registerPlayer(db, player, "historical");
     const observed = [];

@@ -14,6 +14,7 @@ import {
 } from "../src/index.js";
 import {
   createSmallWindowRuntime,
+  handleEntityCatalogRequest,
   handleRecommendRequest,
   loadRuntimeCatalog
 } from "../src/app/small-window-server.js";
@@ -48,6 +49,59 @@ test("SeasonContext registry exposes only safe public records", () => {
   assert.equal("source" in set18, false);
   assert.equal("catalogNamespace" in set18, false);
   assert.doesNotMatch(JSON.stringify(records), /api-hc\.metatft\.com|pbe-comps/);
+});
+
+test("Set 19 PBE binds queries to the test realm and excludes old Explorer rows", async () => {
+  const service = createSeasonContextService();
+  const context = service.resolveForQuery("set19-pbe");
+  assert.equal(service.resolveForSelection(context.id).selectable, true);
+  assert.equal(context.source.lookupChannel, "pbe");
+  assert.equal(context.source.tftSet, "TFTSet19");
+  assert.equal(context.source.queue, "PBE");
+  assert.equal(context.isDefault, false);
+  const lookup = {
+    _metadata: { set: "TFTSet19", patch: "pbe" },
+    units: [
+      { apiName: "DA_Annie19", name: "安妮", shopUnit: true, cost: 2 },
+      { apiName: "DA_AkaliKDA19", name: "阿卡丽", shopUnit: true, cost: 5 },
+      { apiName: "DA_Akali_TrueDamage19", name: "阿卡丽", shopUnit: true, cost: 5 }
+    ],
+    traits: [{ apiName: "DA_Arcanist19", name: "法师", effects: [{ minUnits: 2 }] }],
+    items: [{ apiName: "DA_InfinityEdge", name: "无尽之刃" }]
+  };
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(), fetchItems: true,
+    catalogMetaTFTClient: {
+      async getItems() { return { data: [{ items: "DA_Obsolete18" }] }; },
+      async getUnitsUnique(params) {
+        assert.equal(params.queue, "PBE");
+        return { data: [{ units_unique: "DA_18_Ahri-1" }, { units_unique: "DA_Annie19-1" }] };
+      },
+      async getTraits() { return { data: [{ traits: "DA_Riftbeast18_3" }, { traits: "DA_Arcanist19_1" }] }; }
+    },
+    compsClient: {
+      async getLatestClusterInfo() { return {}; },
+      async getSetLookup(set, { channel }) {
+        assert.equal(set, "TFTSet19");
+        assert.equal(channel, "pbe");
+        return lookup;
+      }
+    }
+  });
+  const preferences = { ...context.source, seasonContextId: context.id };
+  const { catalog, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
+  assert.equal(catalog.unitByApiName.has("DA_18_Ahri"), false);
+  const variants = await handleEntityCatalogRequest(runtime, {
+    seasonContextId: context.id, entityType: "unit", query: "阿卡丽"
+  });
+  assert.equal(variants.pagination.total, 2);
+  assert.equal(entityDetails.units.get("DA_Annie19").name, "安妮");
+  assert.equal(entityDetails.meta.season, "TFTSet19");
+  assert.equal(catalog.traits.some(trait => trait.apiName === "DA_Riftbeast18"), false);
+  assert.equal(catalog.itemByApiName.has("DA_Obsolete18"), false);
+  lookup._metadata.set = "TFTSet18";
+  runtime.catalogCache.clear();
+  await assert.rejects(loadRuntimeCatalog(runtime, preferences), { code: "pbe_catalog_unavailable" });
 });
 
 test("Set 18 live can be selected and queried through its isolated provider context", () => {

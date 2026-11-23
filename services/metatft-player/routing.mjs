@@ -1,3 +1,4 @@
+import { CURRENT_PBE_SEASON_CONTEXT_ID } from "../../src/season/season-context.js";
 import { PlayerMatchError } from "./errors.mjs";
 
 const DEFAULT_PBE_TAG_PATTERN = "^PBE[0-9]+$";
@@ -102,7 +103,7 @@ function resolveRoutingContext(input, options = {}) {
 
   const defaultSeason =
     environment === "pbe"
-      ? options.pbeDefaultSeason ?? env.METATFT_PBE_DEFAULT_SEASON ?? "set18-pbe"
+      ? options.pbeDefaultSeason ?? env.METATFT_PBE_DEFAULT_SEASON ?? CURRENT_PBE_SEASON_CONTEXT_ID
       : options.naDefaultSeason ?? env.METATFT_NA_DEFAULT_SEASON ?? "set17-live";
   const season = String(input?.season ?? defaultSeason).trim().toLowerCase();
   const expectedSet = setIdForSeason(season, environment);

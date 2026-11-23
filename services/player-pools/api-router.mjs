@@ -267,7 +267,7 @@ function createPlayerPoolApiRouter(options = {}) {
       limit: 20,
       callerKey: ownerId
     });
-    if (!history.returnedCount) throw new Error(pool.environment === "pbe" ? "NO_S18_PBE_MATCH_EVIDENCE" : "NO_CURRENT_SEASON_MATCH_EVIDENCE");
+    if (!history.returnedCount) throw new Error(pool.environment === "pbe" ? "NO_PBE_MATCH_EVIDENCE" : "NO_CURRENT_SEASON_MATCH_EVIDENCE");
     const entry = {
       id: slugify(player.gameName, player.tagLine, pool.region),
       displayName: `${player.gameName}#${player.tagLine}`,

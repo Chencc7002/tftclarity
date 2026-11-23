@@ -26,7 +26,7 @@ try {
       gameName: "Flancy",
       tagLine: "PBE2",
       environment: "pbe",
-      season: "set18-pbe",
+      season: "set19-pbe",
       limit: 10
     }
   });
@@ -40,7 +40,7 @@ try {
       gameName: "Flancy",
       tagLine: "PBE2",
       environment: "pbe",
-      season: "set18-pbe",
+      season: "set19-pbe",
       matchId: pbe.matches[0].matchId
     }
   });

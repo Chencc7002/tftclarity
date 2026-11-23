@@ -263,8 +263,8 @@ test("refresh updates personal accounts and every owned Pool member without cros
   assert.equal(playerMatchCalls, 3);
   assert.deepEqual(observedRoutes.toSorted((a, b) => a.gameName.localeCompare(b.gameName)), [
     { gameName: "NaUser", environment: "live", season: "set18-live" },
-    { gameName: "PbeUser", environment: "pbe", season: "set18-pbe" },
-    { gameName: "PoolUser", environment: "pbe", season: "set18-pbe" }
+    { gameName: "PbeUser", environment: "pbe", season: "set19-pbe" },
+    { gameName: "PoolUser", environment: "pbe", season: "set19-pbe" }
   ]);
   assert.equal(database.prepare("SELECT COUNT(*) AS n FROM player_match_fact").get().n, 3);
   const repeated = responseCapture();

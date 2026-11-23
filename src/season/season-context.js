@@ -1,6 +1,8 @@
 export const DEFAULT_SEASON_CONTEXT_ID = "set18-live";
 export const LEGACY_SEASON_CONTEXT_ID = "set17-live";
 
+export const CURRENT_PBE_SEASON_CONTEXT_ID = "set19-pbe";
+
 const CONTEXTS = [
   {
     id: DEFAULT_SEASON_CONTEXT_ID,
@@ -56,6 +58,49 @@ const CONTEXTS = [
       riskNotice: null
     },
     notices: ["S18“魔法森林”18.7 国服更新公告已同步，历史公告保留；腐蚀描述文本和 Esc 武器库操作状态详见公告。本站 S17 数据查询暂时停用。"]
+  },
+  {
+    id: CURRENT_PBE_SEASON_CONTEXT_ID,
+    label: "Set 19 · PBE 测试服",
+    season: 19,
+    environment: "pbe",
+    mode: "standard",
+    status: "pbe",
+    visible: true,
+    selectable: true,
+    isDefault: false,
+    catalogNamespace: CURRENT_PBE_SEASON_CONTEXT_ID,
+    source: {
+      provider: "metatft-pbe",
+      providerVersion: "metatft-pbe.v1",
+      queue: "PBE",
+      patchPolicy: "latest",
+      currentPatch: "current",
+      explorerPatch: "current",
+      unitBuildPatch: "current",
+      compsPatch: "current",
+      tftSet: "TFTSet19",
+      lookupChannel: "pbe",
+      lookupLocale: "zh_cn",
+      requestDeadlineMs: 20000
+    },
+    themeId: "set19",
+    theme: {
+      documentTitle: "TFTClarity｜云顶数据智答",
+      subtitle: { "zh-CN": "S19 测试服", "en-US": "Prismatic Tour" },
+      colors: { primary: "#7650ae", secondary: "#d477c5" },
+      wallpaper: { seasonId: "set-19-pbe" },
+      patchNoteVersion: null,
+      quickQuestions: {
+        "zh-CN": ["当前热门阵容", "安妮的技能是什么？"],
+        "en-US": ["Show popular comps", "What does Annie's ability do?"]
+      },
+      riskNotice: {
+        "zh-CN": "当前使用 S19 PBE 数据，棋子、羁绊和统计会随测试服更新。",
+        "en-US": "Set 19 PBE units, traits and statistics can change during testing."
+      }
+    },
+    notices: ["当前使用 S19 PBE 测试服数据。"]
   },
   {
     id: LEGACY_SEASON_CONTEXT_ID,
@@ -139,17 +184,19 @@ export class SeasonContextService {
   constructor(options = {}) {
     const contexts = options.contexts ?? SEASON_CONTEXTS;
     this.contexts = new Map(contexts.map((context) => [context.id, deepFreeze(clone(context))]));
+    const metaTftAvailability = {
+      available: true,
+      status: "available",
+      health: {
+        status: "ready",
+        lastCheckedAt: null,
+        lastSuccessfulSyncAt: null,
+        catalogStatus: "runtime_managed"
+      }
+    };
     this.providerAvailability = new Map(Object.entries({
-      "metatft-live": {
-        available: true,
-        status: "available",
-        health: {
-          status: "ready",
-          lastCheckedAt: null,
-          lastSuccessfulSyncAt: null,
-          catalogStatus: "runtime_managed"
-        }
-      },
+      "metatft-live": metaTftAvailability,
+      "metatft-pbe": metaTftAvailability,
       ...(options.providerAvailability ?? {})
     }));
     const defaults = [...this.contexts.values()].filter((context) => context.isDefault);

@@ -25,6 +25,7 @@ function sourceUrls(options = {}) {
 }
 
 function finite(value) {
+  if (value === null || value === undefined || value === "") return null;
   const number = Number(value);
   return Number.isFinite(number) ? number : null;
 }
@@ -133,6 +134,69 @@ function sourceRecord(options = {}) {
   };
 }
 
+function lookupUnitDetail(apiName, lookup, source, row = null, channel = null) {
+  const description = renderLookupText(lookup?.ability?.desc, lookup);
+  const stats = lookup?.stats ?? {};
+  return {
+    apiName,
+    ...(!row && lookup?.shopUnit === true ? { shopUnit: true } : {}),
+    name: row?.display_name ?? lookup?.name ?? apiName,
+    cost: finite(row?.tier ?? lookup?.cost),
+    role: Array.isArray(lookup?.roleTags) ? lookup.roleTags.map((tag) => String(tag).replace(/^Role\./, "")).join(" · ") : null,
+    traitNames: row ? compact((row.traits ?? []).map((trait) => trait?.name)) : lookup.traits ?? [],
+    stats: {
+      health: finite(stats.hp),
+      mana: finite(stats.mana),
+      startingMana: finite(stats.initialMana),
+      attackDamage: finite(stats.damage),
+      attackDamageByStar: Array.isArray(stats.damageByStar) ? stats.damageByStar.map(finite) : null,
+      armor: finite(stats.armor),
+      magicResist: finite(stats.magicResist),
+      attackSpeed: finite(stats.attackSpeed),
+      attackRange: finite(stats.range),
+      critChance: finite(stats.critChance) === null ? null : finite(stats.critChance) * 100
+    },
+    ability: {
+      name: lookup?.ability?.name ?? null,
+      type: null,
+      description,
+      iconUrl: null,
+      sourceTokens: [],
+      unresolvedTokens: [],
+      scalingReferences: [],
+      numericFormulaComplete: !description.includes("?")
+    },
+    iconUrl: row ? communityDragonAssetUrl(row.squareIconPath ?? row.squareSplashIconPath, channel) : null,
+    source
+  };
+}
+
+export function buildPbeLookupDetails(lookup, { tftSet, locale }) {
+  const metadata = lookup?._metadata;
+  if (metadata?.set !== tftSet || metadata?.patch !== "pbe"
+      || !lookup.units?.some(unit => unit.shopUnit) || !lookup.traits?.length || !lookup.items?.length) {
+    throw Object.assign(new Error("当前测试服赛季目录暂不可用"), { statusCode: 503, code: "pbe_catalog_unavailable" });
+  }
+  const url = `https://data.metatft.com/lookups/${tftSet}_pbe_${locale}.json`;
+  const source = { season: tftSet, version: metadata.release, updatedAt: metadata.generated, url, sources: [url] };
+  const units = new Map(lookup.units.filter(unit => unit.shopUnit && unit.apiName)
+    .map(unit => [unit.apiName, lookupUnitDetail(unit.apiName, unit, source)]));
+  const traits = new Map(lookup.traits.filter(trait => trait.apiName).map(trait => [trait.apiName, {
+    apiName: trait.apiName,
+    name: trait.name,
+    type: trait.type,
+    description: renderLookupText(trait.desc, trait),
+    levels: (trait.effects ?? []).map(tier => ({
+      units: tier.minUnits,
+      effect: renderLookupText(tier.desc, trait),
+      style: normalizeTraitStyle(tier.style),
+      styleIndex: tier.style
+    })),
+    source
+  }]));
+  return { units, traits, meta: source };
+}
+
 export function buildCommunityDragonEntityDetails(payloads = {}, options = {}) {
   const tftSet = options.tftSet ?? "TFTSet18";
   const plannerRows = Array.isArray(payloads?.teamplanner?.[tftSet])
@@ -148,38 +212,7 @@ export function buildCommunityDragonEntityDetails(payloads = {}, options = {}) {
     const apiName = String(row?.character_id ?? "").trim();
     if (!apiName) continue;
     const lookup = lookupUnit(apiName, lookupPayload.units);
-    const stats = lookup?.stats ?? {};
-    units.set(apiName, {
-      apiName,
-      name: row.display_name ?? lookup?.name ?? apiName,
-      cost: finite(row.tier ?? lookup?.cost),
-      role: Array.isArray(lookup?.roleTags) ? lookup.roleTags.map((tag) => String(tag).replace(/^Role\./, "")).join(" · ") : null,
-      traitNames: compact((row.traits ?? []).map((trait) => trait?.name)),
-      stats: {
-        health: finite(stats.hp),
-        mana: finite(stats.mana),
-        startingMana: finite(stats.initialMana),
-        attackDamage: finite(stats.damage),
-        attackDamageByStar: Array.isArray(stats.damageByStar) ? stats.damageByStar.map(finite) : null,
-        armor: finite(stats.armor),
-        magicResist: finite(stats.magicResist),
-        attackSpeed: finite(stats.attackSpeed),
-        attackRange: finite(stats.range),
-        critChance: finite(stats.critChance) === null ? null : finite(stats.critChance) * 100
-      },
-      ability: {
-        name: lookup?.ability?.name ?? null,
-        type: null,
-        description: renderLookupText(lookup?.ability?.desc, lookup),
-        iconUrl: null,
-        sourceTokens: [],
-        unresolvedTokens: [],
-        scalingReferences: [],
-        numericFormulaComplete: true
-      },
-      iconUrl: communityDragonAssetUrl(row.squareIconPath ?? row.squareSplashIconPath, sourceUrls(options).channel),
-      source
-    });
+    units.set(apiName, lookupUnitDetail(apiName, lookup, source, row, sourceUrls(options).channel));
   }
 
   for (const row of traitRows) {

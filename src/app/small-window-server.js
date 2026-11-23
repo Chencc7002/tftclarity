@@ -19,7 +19,7 @@ import { currentDeadlineEvidence } from "../react/deadline-evidence.js";
 import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
 import { augmentAliasOverrideByApiName } from "../data/augment-alias-overrides.js";
-import { fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
+import { buildPbeLookupDetails, fetchCommunityDragonEntityDetails } from "../data/communitydragon-entity-details.js";
 import { resolveTraitStyle } from "../data/trait-style.js";
 import { createOpggApiRouter } from "../../services/opgg/api-router.mjs";
 import { createPlayerMatchApiRouter } from "../../services/metatft-player/api-router.mjs";
@@ -4562,14 +4562,16 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
   });
 
   const key = runtimeCatalogKey(preferences);
-  if (runtime.catalogCache.has(key)) return runtime.catalogCache.get(key);
+  const cached = runtime.catalogCache.get(key);
+  if (cached && (!cached.expiresAt || cached.expiresAt > Date.now())) return cached;
+  if (cached) invalidateRuntimeCatalog(runtime, key);
   runtime.catalogLoadPromises ??= new Map();
   if (runtime.catalogLoadPromises.has(key)) return runtime.catalogLoadPromises.get(key);
   const generation = runtimeCatalogGeneration(runtime, key);
 
   const loadPromise = (async () => {
     const entry = {
-      catalog: createCatalog(),
+      catalog: preferences.lookupChannel === "pbe" ? createCatalog({ units: [], traits: [], items: [] }) : createCatalog(),
       warning: null,
       compsData: null,
       entityDetails: null,
@@ -4629,19 +4631,14 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const setLookupRequest = isPbeCatalog
         ? setLookupRemoteRequest.catch(async () => JSON.parse(await readFile(localLookupPath, "utf8")))
         : setLookupRemoteRequest;
-      const communityDragonDetailsRequest = preferences.tftSet
+      const communityDragonDetailsRequest = preferences.tftSet && !isPbeCatalog
         && runtime.communityDragonEntityDetailsEnabled
         ? runtime.fetchCommunityDragonEntityDetails({
             fetchImpl: runtime.officialEntityDetailsFetch,
             tftSet: preferences.tftSet,
             version: preferences.currentPatch ?? "current",
-            channel: isPbeCatalog ? "pbe" : "latest",
+            channel: "latest",
             lookupPromise: setLookupRequest,
-            localCachePaths: isPbeCatalog ? {
-              teamplanner: ".cache/communitydragon-pbe-tftchampions-teamplanner.json",
-              traits: ".cache/communitydragon-pbe-tfttraits.json",
-              lookup: localLookupPath
-            } : null,
             timeoutMs: catalogRequestTimeoutMs
           })
         : Promise.resolve(null);
@@ -4659,7 +4656,12 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       ];
       const [items, unitsUnique, traits, latestClusterInfo, compOptions, compBuilds, setLookup, communityDragonDetails] = await Promise.allSettled(requests);
       const setLookupPayload = setLookup.status === "fulfilled" ? setLookup.value : null;
-      if (communityDragonDetails.status === "fulfilled") {
+      if (isPbeCatalog) {
+        entry.entityDetails = buildPbeLookupDetails(setLookupPayload, {
+          tftSet: preferences.tftSet, locale: preferences.lookupLocale ?? "zh_cn"
+        });
+        entry.expiresAt = Date.now() + 15 * 60 * 1000;
+      } else if (communityDragonDetails.status === "fulfilled") {
         entry.entityDetails = communityDragonDetails.value;
       } else if (preferences.tftSet) {
         warnings.push(`CommunityDragon 当前赛季棋子/羁绊详情刷新失败：${communityDragonDetails.reason.message}`);
@@ -4694,7 +4696,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
           includeSeeds: includeSeedCatalog
         });
         if (generatedItems.length > 0) {
-          const resolvedItems = mergeCatalogItems(generatedItems, setLookupItems, { patch });
+          const resolvedItems = isPbeCatalog ? setLookupItems : mergeCatalogItems(generatedItems, setLookupItems, { patch });
           catalogOverrides.items = resolvedItems;
           entry.itemCatalogMemory = {
             source: setLookupItems.length > 0 ? "remote+set_lookup" : "remote",
@@ -4716,7 +4718,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
 
       if (!catalogOverrides.items) {
         const cachedItems = persistedItemCatalog?.value?.items;
-        if (Array.isArray(cachedItems) && cachedItems.length > 0) {
+        if (!isPbeCatalog && Array.isArray(cachedItems) && cachedItems.length > 0) {
           catalogOverrides.items = mergeCatalogItems(cachedItems, setLookupItems, { patch });
           entry.itemCatalogMemory = {
             source: setLookupItems.length > 0 ? "persistent+set_lookup" : "persistent",
@@ -4859,6 +4861,14 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
         }
       }
 
+      if (isPbeCatalog) {
+        const units = buildUnitCatalogFromExplorerRows({
+          data: [...entry.entityDetails.units.keys()].map(units_unique => ({ units_unique }))
+        }, { patch, unitLookupByApiName, includeSeeds: false });
+        catalogOverrides.units = mergeCatalogUnits(units, (catalogOverrides.units ?? [])
+          .filter(unit => entry.entityDetails.units.has(unit.apiName)));
+        catalogOverrides.traits = (catalogOverrides.traits ?? []).filter(trait => traitLookupByApiName.has(trait.apiName));
+      }
       const finalUnits = catalogOverrides.units ?? (includeSeedCatalog ? createCatalog().units : []);
       const finalTraits = catalogOverrides.traits ?? (includeSeedCatalog ? createCatalog().traits : []);
       catalogOverrides.units = finalUnits;
@@ -7421,6 +7431,9 @@ function immediateReactEntityCatalog(runtime, preferences = {}) {
   const key = runtimeCatalogKey(preferences);
   const cached = runtime.catalogCache?.get?.(key);
   if (cached?.catalog) return cached;
+  if (preferences.lookupChannel === "pbe") {
+    return { catalog: createCatalog({ units: [], traits: [], items: [] }), entityDetails: null };
+  }
   const base = createCatalog({ patch: preferences.patch ?? "current" });
   const isSet18 = preferences.tftSet === "TFTSet18";
   return {
@@ -8602,11 +8615,11 @@ function augmentLookupCacheKey(tftSet, locale) {
   return `${String(tftSet ?? "").trim()}|${String(locale ?? "").trim().toLowerCase()}`;
 }
 
-async function loadCachedAugmentLookup(runtime, tftSet, locale = "zh_cn") {
+async function loadCachedAugmentLookup(runtime, tftSet, locale = "zh_cn", channel = "latest") {
   if (!tftSet || typeof runtime.compsClient?.getAugmentLookup !== "function") return null;
   runtime.augmentLookupCache ??= new Map();
   runtime.augmentLookupLoadPromises ??= new Map();
-  const key = augmentLookupCacheKey(tftSet, locale);
+  const key = `${channel}|${augmentLookupCacheKey(tftSet, locale)}`;
   const now = Date.now();
   const cached = runtime.augmentLookupCache.get(key);
   if (cached && cached.expiresAt > now) return cached.response;
@@ -8615,7 +8628,9 @@ async function loadCachedAugmentLookup(runtime, tftSet, locale = "zh_cn") {
   const existing = runtime.augmentLookupLoadPromises.get(key);
   if (existing) return existing;
 
-  const load = Promise.resolve().then(() => runtime.compsClient.getAugmentLookup(tftSet, locale));
+  const load = Promise.resolve().then(() => channel === "pbe"
+    ? runtime.compsClient.getSetLookup(tftSet, { channel, locale })
+    : runtime.compsClient.getAugmentLookup(tftSet, locale));
   runtime.augmentLookupLoadPromises.set(key, load);
   try {
     const response = await load;
@@ -8743,7 +8758,7 @@ async function createCompDetailPayload(input, runtime, seasonContext) {
   let lookupWarning = null;
   if (normalizedAugments.status === "available" && tftSet) {
     try {
-      lookupResponse = await loadCachedAugmentLookup(runtime, tftSet, "zh_cn");
+      lookupResponse = await loadCachedAugmentLookup(runtime, tftSet, "zh_cn", seasonContext.source.lookupChannel);
     } catch {
       lookupWarning = "MetaTFT augment lookup is temporarily unavailable; gold and prismatic recommendations are hidden because rarity cannot be verified.";
     }

@@ -19,7 +19,7 @@ test("player API parses encoded Riot IDs", () => {
   assert.equal(parsePlayerId("Flancy"), null);
 });
 
-test("PBE player route requests 10-20 MCP summaries with explicit set18-pbe", async () => {
+test("PBE player route requests 10-20 MCP summaries with explicit set19-pbe", async () => {
   const calls = [];
   const router = createPlayerMatchApiRouter({
     client: { async callTool(name, input) { calls.push({ name, input }); return { returnedCount: input.limit, matches: [] }; } }
@@ -38,7 +38,7 @@ test("PBE player route requests 10-20 MCP summaries with explicit set18-pbe", as
       gameName: "Flancy",
       tagLine: "PBE2",
       environment: "pbe",
-      season: "set18-pbe",
+      season: "set19-pbe",
       callerKey: "visitor-a",
       limit: 15
     }
@@ -64,7 +64,7 @@ test("explicit PBE selection accepts arbitrary Riot tags without prefix routing"
       gameName: "chencc",
       tagLine: "aug",
       environment: "pbe",
-      season: "set18-pbe",
+      season: "set19-pbe",
       callerKey: "visitor-a",
       verificationMode: "provider",
       limit: 20
@@ -145,7 +145,7 @@ test("PBE teaching keeps MetaTFT provenance and missing-field evidence", async (
             missingFields: ["augments"]
           }],
           warnings: [],
-          provenance: { provider: "metatft", environment: "pbe", season: "set18-pbe" }
+          provenance: { provider: "metatft", environment: "pbe", season: "set19-pbe" }
         };
       }
     }

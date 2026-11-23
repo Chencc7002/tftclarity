@@ -70,7 +70,7 @@ function unitEntryScore(record) {
 function collapseUnitRecords(records) {
   const grouped = new Map();
   for (const record of records) {
-    const key = normalizedText(record?.entry?.name) || normalizedText(record?.entry?.apiName);
+    const key = record.shopUnitId ?? (normalizedText(record.entry.name) || normalizedText(record.entry.apiName));
     const existing = grouped.get(key);
     if (!existing) {
       grouped.set(key, {
@@ -151,7 +151,7 @@ function unitEntries(catalog, details, options = {}) {
         hasDetails: Boolean(official),
         source: publicSource(official?.source)
       };
-      return { entry, aliases: [...new Set([...(aliases ?? []), ...(unit.aliases ?? [])])] };
+      return { entry, shopUnitId: official?.shopUnit ? official.apiName : null, aliases: [...new Set([...(aliases ?? []), ...(unit.aliases ?? [])])] };
     }))
     .filter(({ entry, aliases }) => {
       const entryCost = Number(entry.cost);
