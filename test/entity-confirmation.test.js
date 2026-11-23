@@ -2,10 +2,22 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import vm from "node:vm";
-import { selectedEntityConfirmation } from "../src/react/entity-confirmation.js";
+import { akaliSelection, selectedEntityConfirmation } from "../src/react/entity-confirmation.js";
 import { createReactDecisionProvider } from "../src/react/react-decision-provider.js";
 
 const candidates = [{ apiName: "First", name: "娜美" }, { apiName: "Second", name: "卡尔玛" }];
+test("Akali qualifiers, scoped choices and quoted replies retain distinct variant identities", () => {
+  const trueDamage = "DA_Akali_TrueDamage19", kda = "DA_AkaliKDA19";
+  const pending = { type: "entity_candidate", entityType: "unit", candidates: [trueDamage,kda].map(apiName => ({ apiName, name: "阿卡丽" })) };
+  assert.equal(akaliSelection("真实伤害的阿卡丽怎么出装", null).apiName, trueDamage);
+  assert.equal(akaliSelection("K/DA 阿卡丽怎么出装", null).apiName, kda);
+  assert.equal(akaliSelection("我指的是真伤那个", pending).apiName, trueDamage);
+  assert.equal(akaliSelection("第二个", pending).apiName, kda);
+  assert.equal(akaliSelection("阿卡丽", pending).origin, "ambiguous");
+  assert.equal(akaliSelection("是的", pending).apiName, undefined);
+  assert.equal(akaliSelection("执行\n\n引用的历史回复 / Quoted previous replies：\n> KDA阿卡丽", null), null);
+  assert.equal(akaliSelection("真实伤害的阿卡丽和 KDA 阿卡丽有什么区别", null), null);
+});
 const bridge = { pendingClarification: { confirmationContext: { type: "entity_candidate", entityType: "unit",
   inputName: "扇子姐姐", originalInput: "扇子姐姐已有羊刀，剩下两件只要普通装备", candidates } } };
 

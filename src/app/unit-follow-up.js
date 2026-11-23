@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { akaliForm, akaliSelection, currentSelectionText } from "../react/entity-confirmation.js";
 
 const EQUIPMENT_TYPES = new Set(["unit_builds", "unit_builds_batch", "unit_builds_batch_results", "unit_best_3_items", "unit_build_rankings", "unit_item_rankings", "unit_emblem_rankings", "unit_build_completion", "unit_item_comparison"]);
 const COMPOSITION_TYPES = new Set(["comps_rankings", "comps_analysis", "comp_rankings", "comp_analysis", "composition_rankings"]);
@@ -177,6 +178,29 @@ export async function loadEquipmentQueryContinuation(request, runtime, scope, no
   const level = Number(star[1]) || "一二三".indexOf(star[1]) + 1;
   return { ...subject, kind: "equipment_star_change", filters: { ...filters, performanceItem: query.performanceItem,
     itemPolicy: query.itemPolicy, itemCategories: query.itemCategories ?? [], starLevel: [level] } };
+}
+
+export async function loadAkaliVariant(request, runtime, scope, pending, now) {
+  if (request.seasonContextId !== "set19-pbe" || runtime.akaliVariantMode === "off") return null;
+  const selection = akaliSelection(request.input, pending);
+  if (selection?.apiName || (selection && pending)) return selection;
+  const text = currentSelectionText(request.input);
+  if (/(?:另一个|另一|另外|换个英雄|换英雄|哪(?:一个|个|种)(?:形态|阿卡[丽莉])|不是这个|不要这个|切换|分别|对比|比较|真伤|真实伤害|k\s*\/?\s*da|true\s*damage)/iu.test(text)) return selection;
+  if (!selection && !/^(?:(?:执行|继续(?:查询)?|确认|可以|好(?:的)?|是的|对|yes|ok)[吧啊。！？!?\s]*$|那?(?:她|这个英雄)|(?:那|如果)?(?:锁定|带上|给她))/iu.test(text)) return null;
+  const [last] = await loadFollowUpRecords({ ...request, historyQueryIds: (request.historyQueryIds ?? []).slice(-1) }, runtime, scope, now);
+  if (!usable(last?.response)) return selection;
+  const origin = await originalCitations(last, request, runtime, scope, now);
+  if (!origin) return selection;
+  const evidence = list(origin.record.response.evidence).filter(entry => origin.citedIds.has(entry.evidenceId)
+    && entry.temporalStatus !== "historical" && entry.metadata?.temporalStatus !== "historical" && hasValidStoredEvidenceSnapshot(entry));
+  const form = akaliForm(singleEquipmentResultSubject({ evidence })?.apiName);
+  if (form) return { ...form, origin: "last_equipment_result" };
+  const lastForm = akaliForm(origin.record.response.akaliVariantSelection?.apiName);
+  if (lastForm && evidence.some(entry => entry.toolName === "unit_details"
+    && [entry.value?.apiName, ...list(entry.value?.results).map(unitId)].includes(lastForm.apiName))) {
+    return { ...lastForm, origin: "last_unit_details" };
+  }
+  return selection;
 }
 
 // A query event is a server-owned, scoped receipt. For an explanation-only

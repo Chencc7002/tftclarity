@@ -23,6 +23,8 @@ The ReAct endpoint has no fallback to `recommendForInput`, `TakeoverController`,
 
 ## Action protocol
 
+S19 PBE 的阿卡丽有真实伤害与 K/DA 两个独立英雄 ID。自由聊天优先使用用户本轮指定的形态。用户继续上一轮出装操作时，可以从同访客、会话、赛季且通过完整性校验的单英雄结果取得形态，并由本轮目录工具核实。候选选择按 ID 绑定，引用文本仅提供语境。未指明形态时显示两个不同的选项。`TFT_AGENT_AKALI_VARIANT_MODE` 支持 `off`、`shadow`（默认）和 `enforce`。
+
 The model can emit one `react-action.v1` action per decision:
 
 - `call_tool`

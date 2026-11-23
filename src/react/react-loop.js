@@ -12,7 +12,7 @@ import { validateFinishAction, validateGroundedBuildNarrative } from "./terminat
 import { ReactWorkingState } from "./working-state.js";
 import { currentDeadlineEvidence } from "./deadline-evidence.js";
 import { buildPartialEvidenceAnswer, partialEvidenceSummary } from "./partial-evidence-answer.js";
-import { selectedEntityConfirmation } from "./entity-confirmation.js";
+import { akaliForm, selectedEntityConfirmation } from "./entity-confirmation.js";
 import { buildPatchAnnouncementRecovery, buildPatchSummaryAnswer } from "./patch-summary-answer.js";
 
 export const REACT_STREAM_EVENT_SCHEMA_VERSION = "react-stream-event.v1";
@@ -138,7 +138,8 @@ function confirmedEntityCatalogAction(request, availableToolNames, ledger) {
     tool: "entity_catalog_query",
     arguments: {
       entityType: confirmation.entityType,
-      filters: { names: [confirmation.candidates[0].name] }
+      filters: { names: [request.bridgeContext?.view?.akaliVariant?.apiName === confirmation.candidates[0].apiName
+        ? confirmation.candidates[0].apiName : confirmation.candidates[0].name] }
     },
     purposeCode: "retrieve_entity_details"
   };
@@ -155,7 +156,9 @@ function pendingEntityConfirmation(ledger, request = {}) {
     const candidates = [...new Map(pending.candidates.map((candidate) => [
       candidate.apiName, candidate
     ])).values()];
-    const names = [...new Set(candidates.map((candidate) => candidate.name ?? candidate.apiName).filter(Boolean))];
+    const label = candidate => (request.bridgeContext?.view?.akaliVariant && akaliForm(candidate.apiName)?.name)
+      || candidate.name || candidate.apiName;
+    const names = [...new Set(candidates.map(label).filter(Boolean))];
     const entityType = String(entry.value?.entityType ?? "");
     const entityLabel = entityType === "unit" ? "英雄" : entityType === "item" ? "装备" : "羁绊";
     const missingField = entityType === "unit" ? "unit" : entityType === "item" ? "item" : "trait";
@@ -175,7 +178,7 @@ function pendingEntityConfirmation(ledger, request = {}) {
         equipmentCategoryScope: requestedEquipmentCategoryScope(currentTurnUserText(request)),
         candidates: candidates.slice(0, 5).map((candidate) => ({
           apiName: String(candidate.apiName),
-          name: String(candidate.name ?? candidate.apiName)
+          name: String(label(candidate))
         }))
       }
     };
@@ -1713,9 +1716,13 @@ export class ReactLoop {
       const continuationAction = continuation ? { schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
         arguments: { unit: continuation.apiName, ...continuation.filters },
         purposeCode: "retrieve_current_statistics" } : null;
+      const variant = request.bridgeContext?.view?.akaliVariant;
+      const variantLookup = variant && state.decisions.length === 0 && this.availableToolNames.has("entity_catalog_query")
+        ? { schemaVersion: "react-action.v1", type: "call_tool", tool: "entity_catalog_query",
+          arguments: { entityType: "unit", filters: { names: [variant.apiName ?? "阿卡丽"] } }, purposeCode: "retrieve_entity_details" } : null;
       let provided;
       try {
-        provided = reviewFinish ?? continuationAction ?? await this.decisionProvider({
+        provided = reviewFinish ?? continuationAction ?? variantLookup ?? await this.decisionProvider({
           schemaVersion: "react-decision-request.v1",
           state: state.snapshot(ledger),
           toolCatalog: catalog
@@ -1762,9 +1769,15 @@ export class ReactLoop {
         }
       }
 
-      const candidate = confirmedEntityCatalogAction(request, this.availableToolNames, ledger)
+      let candidate = confirmedEntityCatalogAction(request, this.availableToolNames, ledger)
         ?? provided?.action
         ?? provided;
+      if (variant?.apiName && candidate?.tool === "entity_catalog_query" && candidate.arguments?.entityType === "unit"
+        && Array.isArray(candidate.arguments.filters?.names)) {
+        const filters = candidate.arguments.filters;
+        candidate = { ...candidate, arguments: { ...candidate.arguments, filters: { ...filters,
+          names: filters.names.map(name => /^(?:阿卡[丽莉]|akali)$/iu.test(name) ? variant.apiName : name) } } };
+      }
       const validation = validateReactAction(candidate, {
         registry: this.registry,
         availableToolNames: this.availableToolNames

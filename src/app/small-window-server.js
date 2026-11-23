@@ -10,6 +10,7 @@ import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
 import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
 import {
   attachSessionEvidenceSnapshotHashes,
+  loadAkaliVariant,
   loadEquipmentQueryContinuation,
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
@@ -3190,6 +3191,7 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
 export function createSmallWindowRuntime(options = {}) {
   const runtimeEnv = options.env ?? process.env;
   const metricReviewMode = options.sessionMetricReviewMode ?? runtimeEnv.TFT_AGENT_SESSION_METRIC_REVIEW_MODE;
+  const akaliMode = options.akaliVariantMode ?? runtimeEnv.TFT_AGENT_AKALI_VARIANT_MODE;
   const patchRecoveryMode = options.patchSummaryRecoveryMode ?? runtimeEnv.TFT_AGENT_PATCH_SUMMARY_RECOVERY_MODE;
   const patchSummaryRecoveryMode = ["off", "shadow", "enforce"].includes(patchRecoveryMode)
     ? patchRecoveryMode : "shadow";
@@ -3507,6 +3509,7 @@ export function createSmallWindowRuntime(options = {}) {
     patchNumericSeriesGroundingMode,
     patchSummaryRecoveryMode,
     sessionMetricReviewMode: ["off", "enforce"].includes(metricReviewMode) ? metricReviewMode : "shadow",
+    akaliVariantMode: ["off", "enforce"].includes(akaliMode) ? akaliMode : "shadow",
     reactUnitPlayFixedCardCompletionAffordance: options.reactUnitPlayFixedCardCompletionAffordance === true,
     reactUnitPlayFixedCardCount: Number.isInteger(options.reactUnitPlayFixedCardCount)
       && options.reactUnitPlayFixedCardCount > 0 ? options.reactUnitPlayFixedCardCount : 2,
@@ -8093,7 +8096,17 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }
   }
   let metricReviewObservation = null;
+  let akaliVariantObservation = null;
   try {
+    const variant = await loadAkaliVariant(normalizedRequest, runtime, bridgeScopeKey,
+      bridgeContext?.view?.pendingClarification?.confirmationContext, runtime.reactNow?.());
+    if (variant) {
+      akaliVariantObservation = { mode: runtime.akaliVariantMode, ...variant };
+      if (runtime.akaliVariantMode === "enforce") {
+        bridgeContext ??= { relation: "continue", promotedEvidence: [], estimatedTokens: 0 };
+        bridgeContext.view = { ...(bridgeContext.view ?? {}), akaliVariant: variant };
+      }
+    }
     let carriedEvidence = await loadSessionEvidenceCarryover(
       normalizedRequest,
       runtime,
@@ -8351,6 +8364,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       } : {}),
       ...(contextualGuidance ? { agentSuggestedActions: contextualGuidance } : {}),
       ...(metricReviewObservation ? { sessionMetricReview: metricReviewObservation } : {}),
+      ...(akaliVariantObservation ? { akaliVariantSelection: akaliVariantObservation } : {}),
       ...(bridgeContext ? {
         conversationBridge: {
           relation: bridgeContext.relation,

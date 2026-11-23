@@ -10,6 +10,7 @@ import {
 import { MemoryCacheStore } from "../src/index.js";
 import {
   attachSessionEvidenceSnapshotHashes,
+  loadAkaliVariant,
   isSessionEvidenceExplanationFollowUp,
   loadEquipmentQueryContinuation,
   loadFollowUpHistory,
@@ -22,6 +23,23 @@ const buildEvidenceValue = (unit = "DA_Cinderling18") => ({
   type: "unit_build_rankings", unit: { apiName: unit, name: "绯红树怪" },
   cards: [{ title: "样本出装", items: [{ apiName: "TFT_Item_InfinityEdge", name: "无尽之刃" }], stats: { games: 100 } }],
   source: { provider: "metatft", updatedAt: new Date().toISOString() }, updatedAt: new Date().toISOString()
+});
+
+test("an underspecified Akali follow-up uses only the last scoped, cited equipment result", async () => {
+  const cacheStore = new MemoryCacheStore(), seasonContextId = "set19-pbe", conversationId = "variants";
+  const apiName = "DA_Akali_TrueDamage19", value = buildEvidenceValue(apiName);
+  value.unit.name = "阿卡丽";
+  const evidence = { evidenceId: "build", toolCallId: "call", toolName: "unit_builds", type: value.type, value,
+    fingerprint: createHash("sha256").update(JSON.stringify(value)).digest("hex") };
+  cacheStore.addQueryEvent({ queryId: "akali", input: "真实伤害阿卡丽怎么出装", visitorScope: "owner", conversationId, seasonContextId,
+    response: attachSessionEvidenceSnapshotHashes({ status: "completed", evidenceIds: ["build"], evidence: [evidence] }) });
+  const runtime = { cacheStore, akaliVariantMode: "enforce" };
+  const req = { conversationId, seasonContextId, historyQueryIds: ["akali"], input: "那阿卡丽要不要带夜刃" };
+  assert.equal((await loadAkaliVariant(req, runtime, "owner")).apiName, apiName);
+  assert.equal((await loadAkaliVariant(req, runtime, "other")).origin, "ambiguous");
+  assert.equal((await loadAkaliVariant({ ...req, startNewTask: true }, runtime, "owner")).origin, "ambiguous");
+  assert.equal((await loadAkaliVariant({ ...req, input: "换另一个阿卡丽" }, runtime, "owner")).origin, "ambiguous");
+  assert.equal((await loadAkaliVariant({ ...req, input: "K/DA阿卡丽怎么出装" }, runtime, "owner")).apiName, "DA_AkaliKDA19");
 });
 
 test("deadline partial payload keeps its warning and never claims follow-up coverage is complete", { timeout: 5000 }, async t => {

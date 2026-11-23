@@ -244,6 +244,10 @@ function repairInstruction(locale, legacy = false) {
 
 function confirmedEntityGuidance(question, bridgeContext) {
   const context = selectedEntityConfirmation(question, bridgeContext);
+  if (!context && bridgeContext?.akaliVariant?.apiName) {
+    const form = bridgeContext.akaliVariant;
+    return [{ role: "system", content: `The active user-selected champion is ${form.name} (${form.apiName}). Current entity_catalog_query evidence verifies that choice. Continue the user's current task with that exact form, including when the user accepts the prior proposal. Ask only about information still missing.` }];
+  }
   if (!context) return [];
   const candidate = context.candidates[0];
   return [{ role: "system", content: [
