@@ -1,8 +1,8 @@
-.selection-quote-toolbar { position:fixed; z-index:100; display:flex; padding:4px; border:1px solid #e3eae5; border-radius:11px; background:#fff; box-shadow:0 3px 14px #233d3020; max-width:calc(100vw - 16px); }
+.selection-quote-toolbar { position:fixed; z-index:100; display:flex; padding:4px; border:1px solid var(--chat-line,#e3eae5); border-radius:11px; background:#fff; box-shadow:0 3px 14px var(--chat-shadow,#233d3020); max-width:calc(100vw - 16px); }
 .selection-quote-toolbar[hidden], .composer-quotes[hidden], .composer-quote-status[hidden], .quote-popover[hidden], .quote-chip[hidden], .quote-content blockquote[hidden] { display:none; }
-.selection-quote-toolbar button { border:0; border-radius:7px; background:transparent; color:#263d32; padding:7px 12px; font:inherit; font-size:13px; cursor:pointer; }
-.selection-quote-toolbar button:hover { background:#f1f5f2; }
-.selection-quote-toolbar button:focus-visible, .quote-popover button:focus-visible, #app-shell .quote-chip button:focus-visible { outline:2px solid #28734f; outline-offset:2px; }
+.selection-quote-toolbar button { border:0; border-radius:7px; background:transparent; color:var(--chat-ink,#263d32); padding:7px 12px; font:inherit; font-size:13px; cursor:pointer; }
+.selection-quote-toolbar button:hover { background:var(--chat-bubble,#f1f5f2); }
+.selection-quote-toolbar button:focus-visible, .quote-popover button:focus-visible, #app-shell .quote-chip button:focus-visible { outline:2px solid var(--chat-action,#28734f); outline-offset:2px; }
 #app-shell .composer-quotes { min-width:0; margin:0 0 5px; grid-column:1/-1; }
 #app-shell .quote-chip { display:inline-flex; align-items:center; gap:4px; padding:4px 5px 4px 9px; border:1px solid #e8e8e8; border-radius:14px; background:#fff; color:#6f7375; }
 #app-shell .quote-chip[hidden] { display:none; }
@@ -23,15 +23,15 @@
 .quote-popover button { display:inline-flex; align-items:center; justify-content:center; border:0; border-radius:5px; background:transparent; color:#8f9395; padding:3px; font:inherit; cursor:pointer; box-shadow:none; }
 .quote-popover button:hover { color:#303638; background:#f5f5f5; }
 .quote-card-actions svg { display:block; width:19px; height:19px; }
-.quote-content textarea { display:block; box-sizing:border-box; width:100%; min-height:90px; max-height:220px; resize:vertical; padding:8px; border:1px solid #d9dfdc; border-radius:8px; color:#24282b; background:#fff; font:inherit; font-size:14px; line-height:1.6; }
-.quote-content textarea:focus { outline:2px solid #9ab7a6; outline-offset:1px; }
+.quote-content textarea { display:block; box-sizing:border-box; width:100%; min-height:90px; max-height:220px; resize:vertical; padding:8px; border:1px solid var(--chat-line-strong,#d9dfdc); border-radius:8px; color:#24282b; background:#fff; font:inherit; font-size:14px; line-height:1.6; }
+.quote-content textarea:focus { outline:2px solid var(--chat-action,#9ab7a6); outline-offset:1px; }
 .quote-edit-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:8px; }
 .quote-edit-actions button { padding:5px 10px; font-size:12px; }
-.quote-edit-actions button:last-child { background:#eef3ef; color:#28734f; }
+.quote-edit-actions button:last-child { background:var(--chat-bubble,#eef3ef); color:var(--chat-action,#28734f); }
 @media (max-width:480px) {
   .quote-popover .composer-quote { padding:14px; grid-template-columns:18px minmax(0,1fr) auto; gap:8px; }
   .quote-card-actions { gap:3px; }
   .quote-content textarea { font-size:16px; }
 }
 .composer-quote-status { margin:6px 0 0; font-size:12px; color:#795526; }
-#app-shell .message-quote { margin:0 0 10px; padding:6px 10px; border-left:3px solid #a0b8aa; color:#64766b; font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; }
+#app-shell .message-quote { margin:0 0 10px; padding:6px 10px; border-left:3px solid var(--chat-line-strong,#a0b8aa); color:var(--chat-muted,#64766b); font-size:12px; white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; }

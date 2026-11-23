@@ -1010,7 +1010,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .mobile-preference-button { width: 100%; min-height: 42px; margin-top: 9px; padding: 7px 10px; display: flex; align-items: center; justify-content: space-between; gap: 10px; border: 1px solid var(--line); border-radius: 9px; color: var(--ink); background: #fff; text-align: left; }
 .mobile-preference-button span:first-child { min-width: 0; display: grid; gap: 2px; }
 .mobile-preference-button strong { font-size: 11px; }.mobile-preference-button small { color: var(--muted); font-size: 9px; }
-.advanced-query-settings, .settings-section, .details { margin: 0 0 11px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: #fbfcfe; }
+.advanced-query-settings, .settings-section, .details { margin: 0 0 11px; padding: 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--chat-surface-subtle, #fbfcfe); }
 .advanced-query-settings > summary, .alias-review > summary, .details > summary { cursor: pointer; color: var(--ink); font-size: 12px; font-weight: 800; }
 .controls { margin-top: 12px; display: grid; gap: 11px; }
 .control-label, .field-stack { display: grid; gap: 6px; color: var(--muted); font-size: 10px; }
@@ -1018,7 +1018,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .segmented { min-width: 0; display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; overflow: hidden; border: 1px solid var(--line-strong); border-radius: 8px; background: #fff; }
 .segmented button { min-width: 0; min-height: 32px; padding: 0 4px; border: 0; border-right: 1px solid var(--line); color: var(--muted); background: transparent; font-size: 10px; }
 .segmented button:last-child { border-right: 0; }
-.segmented button.active { color: #355ad0; background: var(--star-indigo-soft); font-weight: 800; }
+.segmented button.active { color: var(--chat-action, #355ad0); background: var(--star-indigo-soft); font-weight: 800; }
 .settings-section h2 { margin: 0 0 9px; font-size: 12px; }
 .rank-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px; }
 .rank-grid label { min-width: 0; min-height: 31px; padding: 5px 6px; display: flex; align-items: center; gap: 4px; border: 1px solid var(--line); border-radius: 7px; color: var(--muted); background: #fff; font-size: 10px; }

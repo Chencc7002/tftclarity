@@ -497,8 +497,8 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   shellEl.dataset.seasonEnvironment = context.environment;
   shellEl.dataset.seasonTheme = context.themeId ?? "";
   shellEl.dataset.seasonPreview = String(previewOnly);
-  shellEl.style.setProperty("--season-primary", colors.primary ?? "#6b63df");
-  shellEl.style.setProperty("--season-secondary", colors.secondary ?? "#34b9d6");
+  document.documentElement.style.setProperty("--season-primary", colors.primary ?? "#6b63df");
+  document.documentElement.style.setProperty("--season-secondary", colors.secondary ?? "#34b9d6");
   if (seasonPreviewBanner) seasonPreviewBanner.hidden = !previewOnly;
   queryInput.disabled = previewOnly;
   sendButton.disabled = previewOnly;
