@@ -15,7 +15,7 @@ body { background:#fff; }
   color: var(--ink, #263d32);
   font-variant-numeric: tabular-nums;
 }
-.answer-comparison__heading, .answer-comparison__toolbar, .answer-comparison__views, .answer-comparison__toolbar label {
+.answer-comparison__heading, .answer-comparison__toolbar, .answer-comparison__toolbar label {
   display: flex;
   align-items: center;
 }
@@ -23,13 +23,10 @@ body { background:#fff; }
 .answer-comparison__heading > strong { font-size: 16px; font-weight: 650; }
 .answer-comparison__toolbar { flex-wrap: wrap; gap: 6px; }
 .answer-comparison__toolbar label { gap: 5px; color: var(--muted); font-size: 12px; }
-.answer-comparison__views { padding: 3px; margin-inline-end: 7px; border-radius: 8px; background: var(--comparison-soft); border: 1px solid var(--comparison-line); }
 .answer-comparison__toolbar button, .answer-comparison__toolbar select {
   min-height: 30px; margin: 0; border: 1px solid var(--comparison-line); border-radius: 6px;
   background: white; color: inherit; padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer;
 }
-.answer-comparison__views button { min-height: 25px; border: 0; background: transparent; color: var(--muted); }
-.answer-comparison__views button[aria-pressed="true"] { background: white; color: var(--comparison-accent); box-shadow: 0 1px 4px #1c163222; font-weight: 650; }
 .answer-comparison__toolbar .answer-comparison__direction { min-width: 32px; font-size: 15px; }
 .answer-comparison__direction:disabled { opacity: .5; cursor: default; }
 .answer-comparison :focus-visible { outline: 2px solid var(--comparison-accent); outline-offset: -2px; }
@@ -39,6 +36,14 @@ body { background:#fff; }
 .answer-comparison thead th { background: var(--comparison-soft); color: var(--muted); font-size: 12px; font-weight: 550; }
 .answer-comparison th[scope="row"] { white-space: normal; text-align: start; font-weight: 550; }
 .answer-comparison [data-label] { text-align: start; }
+.answer-comparison__name { display: flex; align-items: center; gap: 9px; }
+.answer-comparison__portrait {
+  flex: 0 0 32px; width: 32px; height: 32px; overflow: hidden;
+  display: grid; place-items: center; border-radius: 7px; background: var(--comparison-soft);
+  box-shadow: inset 0 0 0 1px var(--comparison-line); color: var(--comparison-accent);
+}
+.answer-comparison__portrait:empty::after { content: "♟"; }
+.answer-comparison__portrait img { width: 100%; height: 100%; object-fit: cover; }
 .answer-comparison tbody tr:hover { background: var(--comparison-soft); }
 .answer-comparison__cell { display: inline-flex; align-items: center; }
 .answer-comparison meter { appearance: none; display: none; width: 100%; height: 8px; overflow: hidden; border: 0; border-radius: 20px; background: var(--comparison-line); }
@@ -48,14 +53,16 @@ body { background:#fff; }
 .answer-comparison[data-view="chart"] [data-column]:not([data-label]):not([data-plotted]) { display: none; }
 .answer-comparison[data-view="chart"] tr { display: grid; grid-template-columns: minmax(110px, 36%) 1fr; }
 .answer-comparison[data-view="chart"] [data-label] { order: -1; }
+.answer-comparison[data-view="chart"] td[data-plotted] { display: grid; align-items: center; }
 .answer-comparison[data-view="chart"] .answer-comparison__cell { display: grid; grid-template-columns: minmax(20px, 1fr) minmax(48px, max-content); gap: 8px; }
 .answer-comparison[data-view="chart"] meter { display: block; }
 .answer-comparison[data-view="chart"] .answer-comparison__cell > span:only-child { grid-column: 2; }
 .answer-comparison[data-view="chart"] thead, .answer-comparison[data-view="chart"] tbody { display: block; }
 @container (max-width: 460px) {
   .answer-comparison__heading { padding: 10px; }
-  .answer-comparison__toolbar { width: 100%; }
-  .answer-comparison__views { margin-inline-end: auto; }
+  .answer-comparison__name { gap: 6px; }
+  .answer-comparison__portrait { width: 27px; height: 27px; flex-basis: 27px; }
+  .answer-comparison[data-view="chart"] tr { grid-template-columns: minmax(138px, 47%) 1fr; }
   .answer-comparison th, .answer-comparison td { padding: 7px 9px; }
   .answer-comparison[data-view="table"] table { min-width: max-content; }
   .answer-comparison[data-view="table"] [data-label] { position: sticky; left: 0; background: white; }

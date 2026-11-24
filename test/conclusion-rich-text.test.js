@@ -162,3 +162,18 @@ test("text tables, unsafe cells, escaped pipes, fenced examples and adjacent tab
   assert.doesNotMatch(conclusionRichTextHtml("~~~\n" + text + "\n~~~"), /<table>/u);
   assert.doesNotMatch(conclusionRichTextHtml("A | B\njust text"), /<table>/u);
 });
+import { namedChartUnit } from "../src/app/small-window-ui/answer-comparison.js";
+
+test("composition charts bind the named carry, including season-specific forms", () => {
+  const ez = { name: "伊泽瑞尔", enName: "Ezreal19" };
+  const kda = { name: "阿卡丽", traitNames: ["K/DA"] }, td = { name: "阿卡丽", traitNames: ["真实伤害"] };
+  const roster = [ez, kda, td];
+  assert.equal(namedChartUnit("心之钢 · 伊泽瑞尔", roster), ez);
+  assert.equal(namedChartUnit("Heartsteel · EZ", roster), ez);
+  assert.equal(namedChartUnit("真伤 · 阿卡丽", roster), td);
+  assert.equal(namedChartUnit("K/DA · 阿卡丽", roster), kda);
+  assert.equal(namedChartUnit("阿卡丽", roster), null);
+  const html = conclusionRichTextHtml("| 阵容 | 前四率 |\n|---|---|\n| 心之钢 · 伊泽瑞尔 | 68.0% |\n| 真伤 · 阿卡丽 | 54% |");
+  assert.match(html, /data-comp-portrait="心之钢 · 伊泽瑞尔"/u);
+  assert.doesNotMatch(html, /data-view-button/u);
+});

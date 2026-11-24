@@ -1,3 +1,4 @@
+import { hydrateComparisonPortraits } from "./answer-comparison.js";
 import { AppShell, TitleBar } from "./app-shell.js";
 import { mountEmblemRankings } from "./emblem-rankings.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
@@ -3188,6 +3189,7 @@ function rerenderAssistantRecord(record) {
   if (!record?.target?.isConnected) return;
   stopAssistantCoreStream(record);
   record.target.innerHTML = assistantResponseHtml(record.data, record.id);
+  void hydrateComparisonPortraits(record);
 }
 
 function recordAssistantResponse(data) {
@@ -3207,6 +3209,7 @@ function recordAssistantResponse(data) {
   };
   const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
+  void hydrateComparisonPortraits(record);
   state.responseRecords.push(record);
   state.responsesById.set(id, record);
   if (fixedCoreText) streamAssistantCoreConclusion(record);

@@ -62,11 +62,15 @@ export function renderAnswerTable({ headers, rows }, inlineHtml) {
   const initial = metrics.find(m => measures[m.index].placement)?.index ?? metrics[0]?.index;
   const zh = headers.some(h => /\p{Script=Han}/u.test(h));
   const title = chart ? (zh ? plain(headers[label]) + "对比" : plain(headers[label]) + " comparison") : (zh ? "数据表" : "Data table");
-  const toolbar = chart ? `<div class="answer-comparison__toolbar"><div class="answer-comparison__views" role="group" aria-label="${zh ? "显示方式" : "View"}"><button type="button" data-view-button="chart" aria-pressed="true">${zh ? "图表" : "Chart"}</button><button type="button" data-view-button="table" aria-pressed="false">${zh ? "表格" : "Table"}</button></div><label>${zh ? "排序" : "Sort"} <select data-sort-field><option value="">${zh ? "原始顺序" : "Original order"}</option>${metrics.map(m => `<option value="${m.index}" data-direction="${measures[m.index].ascending ? "asc" : "desc"}">${escape(m.name)}</option>`).join("")}</select></label><button class="answer-comparison__direction" type="button" data-sort-direction disabled aria-label="${zh ? "切换排序方向" : "Reverse order"}">↕</button></div>` : "";
+  const toolbar = chart ? `<div class="answer-comparison__toolbar"><label>${zh ? "排序" : "Sort"} <select data-sort-field><option value="">${zh ? "原始顺序" : "Original order"}</option>${metrics.map(m => `<option value="${m.index}" data-direction="${measures[m.index].ascending ? "asc" : "desc"}">${escape(m.name)}</option>`).join("")}</select></label><button class="answer-comparison__direction" type="button" data-sort-direction disabled aria-label="${zh ? "切换排序方向" : "Reverse order"}">↕</button></div>` : "";
+  const showPortrait = chart && /阵容|comp(?:osition)?\b|lineup|team/iu.test(headers[label]);
   const column = index => `data-column="${index}"${index === label ? " data-label" : ""}${index === initial ? " data-plotted" : ""}`;
   const head = headers.map((h,i) => `<th scope="col" ${column(i)}>${inlineHtml(h)}</th>`).join("");
   const body = rows.map((row, r) => `<tr data-original="${r}">${row.map((value, i) => {
-    if (i === label) return `<th scope="row" ${column(i)}>${inlineHtml(value)}</th>`;
+    if (i === label) {
+      const portrait = showPortrait ? `<span class="answer-comparison__portrait" data-comp-portrait="${escape(plain(value))}" aria-hidden="true"></span>` : "";
+      return `<th scope="row" ${column(i)}><span class="answer-comparison__name">${portrait}<span>${inlineHtml(value)}</span></span></th>`;
+    }
     const number = measures[i] && values[i][r];
     const bar = chart && number ? `<meter aria-hidden="true" min="0" max="${measures[i].max}" value="${number.value}"></meter>` : "";
     return `<td ${column(i)}${number ? ` data-number="${number.value}"` : ""}><span class="answer-comparison__cell">${bar}<span>${inlineHtml(value)}</span></span></td>`;
@@ -103,6 +107,80 @@ function sortComparison(card, reverse) {
   body.append(...rows);
 }
 
+const portraitCatalogs = new Map();
+const normalizeName = name => String(name ?? "").normalize("NFKC").toLowerCase().replace(/[\s·•/（）()_-]/gu, "");
+function catalogEntries(season, type) {
+  const key = season + ":" + type;
+  if (!portraitCatalogs.has(key)) {
+    const params = new URLSearchParams({ type, seasonContextId: season, limit: "200" });
+    portraitCatalogs.set(key, fetch("/api/entity-catalog?" + params).then(async response => {
+      if (!response.ok) throw Error("catalog unavailable");
+      const payload = await response.json();
+      if (payload.seasonContext?.id !== season || !Array.isArray(payload.items)) throw Error("catalog scope mismatch");
+      return payload.items;
+    }).catch(() => { portraitCatalogs.delete(key); return []; }));
+  }
+  return portraitCatalogs.get(key);
+}
+
+export function namedChartUnit(compName, units) {
+  const pieces = compName.split(/[·•｜|：:＋+]/u).map(normalizeName).filter(Boolean);
+  // Composition names commonly end in the carry. Resolve exact names before
+  // suffixes so a shorter alias cannot displace a fully named champion.
+  for (const piece of pieces.reverse()) {
+    const names = unit => {
+      const en = unit.enName?.replace(/\d+$/u, "");
+      return [unit.name, unit.zhName, en, normalizeName(en) === "ezreal" ? "EZ" : "", ...(unit.aliases ?? [])].filter(Boolean).map(normalizeName);
+    };
+    let candidates = units.filter(unit => names(unit).includes(piece));
+    if (!candidates.length) candidates = units.filter(unit => names(unit).some(name => name.length >= 2 && piece.endsWith(name)));
+    if (candidates.length > 1) {
+      const comp = normalizeName(compName).replace("真伤", "真实伤害");
+      candidates = candidates.filter(unit => [...(unit.traitNames ?? []), ...(unit.traitNamesEn ?? [])]
+        .some(trait => comp.includes(normalizeName(trait).replace(/\d+$/u, ""))));
+    }
+    if (candidates.length === 1) return candidates[0];
+  }
+  return null;
+}
+
+function showPortrait(slot, entry) {
+  if (!entry?.iconUrl) return false;
+  const img = new Image();
+  img.alt = "";
+  img.decoding = "async";
+  img.title = entry.name ?? entry.zhName ?? "";
+  let fallback = entry.fallbackIconUrl;
+  img.addEventListener("error", () => {
+    if (fallback && img.src !== fallback) { img.src = fallback; fallback = null; }
+    else img.remove();
+  });
+  slot.replaceChildren(img);
+  img.src = entry.iconUrl;
+  return true;
+}
+
+export async function hydrateComparisonPortraits(record) {
+  const slots = [...record.target.querySelectorAll("[data-comp-portrait]")];
+  if (!slots.length || !record.seasonContextId) return;
+  const groups = [record.data, ...(record.data.compositionResultGroups ?? []).map(group => group.result)];
+  const comps = groups.flatMap(group => Object.values(group?.rankings ?? {}).flat());
+  const remaining = slots.filter(slot => {
+    const name = slot.dataset.compPortrait;
+    const comp = comps.find(entry => normalizeName(entry.name) === normalizeName(name));
+    const units = comp?.units ?? [];
+    return !showPortrait(slot, namedChartUnit(name, units) ?? units.find(unit => unit.core && unit.iconUrl));
+  });
+  if (!remaining.length) return;
+  const units = await catalogEntries(record.seasonContextId, "unit");
+  const unresolved = remaining.filter(slot => slot.isConnected && !showPortrait(slot, namedChartUnit(slot.dataset.compPortrait, units)));
+  if (!unresolved.length) return;
+  const traits = await catalogEntries(record.seasonContextId, "trait");
+  for (const slot of unresolved) {
+    if (slot.isConnected) showPortrait(slot, namedChartUnit(slot.dataset.compPortrait, traits));
+  }
+}
+
 if (typeof document !== "undefined") {
   document.addEventListener("change", event => {
     if (event.target.matches(".answer-comparison [data-sort-field]")) sortComparison(event.target.closest(".answer-comparison"), false);
@@ -112,9 +190,5 @@ if (typeof document !== "undefined") {
     if (!button) return;
     const card = button.closest(".answer-comparison");
     if (button.hasAttribute("data-sort-direction")) sortComparison(card, true);
-    if (button.dataset.viewButton) {
-      card.dataset.view = button.dataset.viewButton;
-      for (const view of card.querySelectorAll("[data-view-button]")) view.setAttribute("aria-pressed", String(view === button));
-    }
   });
 }
