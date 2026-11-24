@@ -44,12 +44,20 @@ export function equipmentSampleReference(result, question, itemName, explicitFlo
   return rows.length ? { originalMinimum: floor, referenceMinimum: rows.at(-1).games, qualifiedCount: qualified, requestedCount: needed, rows } : null;
 }
 
-export function sampleReferenceText(ref, unit, locale) {
+export function sampleReferenceText(ref, unit, locale, answer = "") {
   const en = String(locale).startsWith("en");
   const note = en
     ? `For ${unit}, the sample minimum for supplementary results was lowered from ${ref.originalMinimum} to ${ref.referenceMinimum} games. These small samples are descriptive only.`
-    : `${unit}的补充结果已将样本门槛从 ${ref.originalMinimum} 场降至 ${ref.referenceMinimum} 场。以下仅作低样本参考。`;
+    : `${unit}的补充结果已将样本门槛从 ${ref.originalMinimum} 场降至 ${ref.referenceMinimum} 场。低于原门槛的数据仅供参考。`;
+  const segments = answer.replaceAll(",", "").split(/[；;。\n]/u);
+  const missing = ref.rows.filter(row => !segments.some(segment => {
+    const at = segment.indexOf(row.name);
+    if (at < 0) return false;
+    const samples = new RegExp(`(?:^|[^\\d.])${row.games}\\s*(?:场|局|games?\\b|samples?\\b|\\|\\s*$)|(?:样本(?:数|量)?|场次|games|samples)\\s*[:：]?\\s*${row.games}(?![\\d.])`, "iu");
+    return samples.test(segment.slice(at + row.name.length));
+  }));
+  if (!missing.length) return note;
   const header = en ? "| Equipment | Avg placement | Top 4 | Win rate | Games |" : "| 装备 | 平均名次 | 前四率 | 吃鸡率 | 场次 |";
-  return [note, "", header, "|---|---|---|---|---|", ...ref.rows.map(x =>
+  return [note, "", header, "|---|---|---|---|---|", ...missing.map(x =>
     `| ${x.name.replaceAll("|", "\\|")} | ${x.avg.toFixed(2)} | ${x.top4}% | ${x.win}% | ${x.games} |`)].join("\n");
 }

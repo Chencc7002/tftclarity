@@ -19,6 +19,8 @@ test("supplement fills the shortfall from the highest observed samples with the 
   assert.equal(ref.referenceMinimum, 91);
   assert.equal(query(fixture, "取前五件").referenceMinimum, 27);
   assert.match(sampleReferenceText(ref, "泽丽", "zh-CN"), /100 场降至 91 场/u);
+  assert.doesNotMatch(sampleReferenceText(ref, "泽丽", "zh-CN", "D：4.31/48.4%/13.2%/91场。"), /\|/u);
+  assert.match(sampleReferenceText(ref, "泽丽", "zh-CN", "D：样本191场。"), /\| D \|/u);
   assert.equal(query(fixture, "前两件"), null);
   assert.equal(fixture.itemRankings.length, 2);
 });

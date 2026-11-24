@@ -8340,7 +8340,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         && entry.temporalStatus !== "historical" && entry.value?.scope?.seasonContextId === request.seasonContextId
         && !entry.value?.cache?.query?.stale && result.evidenceIds?.includes(entry.evidenceId) && entry.value?.sampleReference);
       if (refs.length) {
-        const notes = refs.map(entry => sampleReferenceText(entry.value.sampleReference, entry.value.unit?.name ?? entry.value.query.unitName, request.locale));
+        const notes = refs.map(entry => sampleReferenceText(entry.value.sampleReference, entry.value.unit?.name ?? entry.value.query.unitName, request.locale, result.answer));
         result.answer = [result.answer, ...new Set(notes)].filter(Boolean).join("\n\n");
         result.includesSampleReference = true;
       }
