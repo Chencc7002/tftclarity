@@ -2981,7 +2981,7 @@ function systemInteractionAnswerHtml(data) {
 }
 
 function reactModelConclusionHtml(data, summary, responseId = "") {
-  const original = data?.answerOrigin !== "system_patch_summary_fallback"
+  const original = !data?.includesSampleReference && data?.answerOrigin !== "system_patch_summary_fallback"
     && typeof data?.modelConclusion?.answer === "string"
     ? conclusionDisplayText(data.modelConclusion.answer).trim() : "";
   const answer = original || (typeof data?.reactAnswer === "string" ? conclusionDisplayText(data.reactAnswer).trim() : "");

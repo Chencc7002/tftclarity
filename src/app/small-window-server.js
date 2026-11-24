@@ -5,6 +5,7 @@ import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
 import { fileURLToPath } from "node:url";
+import { equipmentSampleReference, sampleReferenceText } from "./equipment-sample-reference.js";
 import { loadLocalEnvironment } from "../config/load-env.js";
 import { parseCompAnalysisRequest } from "../core/comp-analysis.js";
 import { itemPolicyForCategories, requestedEquipmentPolicyScope } from "../domain/tft/equipment-category-scope.js";
@@ -3454,6 +3455,7 @@ export function createSmallWindowRuntime(options = {}) {
     conversationBridgeStore: options.conversationBridgeStore ?? null,
     conversationBridgeMode: String(options.conversationBridgeMode ?? "off").toLowerCase(),
     reactChatMode: String(options.reactChatMode ?? "off").toLowerCase(),
+    equipmentSampleMode: options.equipmentSampleMode ?? process.env.TFT_AGENT_EQUIPMENT_SAMPLE_MODE ?? "off",
     reactEmblemRankings: options.reactEmblemRankings ?? !["0", "false", "off", "disabled"].includes(String(runtimeEnv.TFT_AGENT_REACT_EMBLEM_RANKINGS ?? "on").toLowerCase()),
     acceptanceMode: Boolean(options.acceptanceMode),
     quickTaskSupplementalClassifier: options.quickTaskSupplementalClassifier ?? null,
@@ -7210,6 +7212,14 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         entityDetails: loaded.entityDetails,
         itemDetails
       });
+      if (["shadow", "on"].includes(runtime.equipmentSampleMode)) {
+        const ref = equipmentSampleReference(result, request.input, id => itemName(id, loaded.catalog), input.minSamples != null);
+        if (ref) {
+          console.info(JSON.stringify({ event: "equipment_sample_reference", mode: runtime.equipmentSampleMode,
+            intent, originalMinimum: ref.originalMinimum, referenceMinimum: ref.referenceMinimum, added: ref.rows.length }));
+          if (runtime.equipmentSampleMode === "on") serialized.sampleReference = ref;
+        }
+      }
       const mechanismApiNames = runtime.reactUnitPlayItemMechanismBatch === true
         && request.semanticAdvisory?.goal === "recommend_unit_play"
         && request.semanticAdvisory?.subject?.resolvedId === unitApiName
@@ -8323,6 +8333,16 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
         result.answerOrigin = "system_equipment_summary";
         result.evidenceIds = [unitBuildEvidence.evidenceId];
         if (result.modelConclusion) result.modelConclusion.status = "superseded_by_scoped_summary";
+      }
+    }
+    if (runtime.equipmentSampleMode === "on" && ["completed", "completed_with_warning"].includes(result.status)) {
+      const refs = (result.evidence ?? []).filter(entry => entry.toolName === "unit_builds"
+        && entry.temporalStatus !== "historical" && entry.value?.scope?.seasonContextId === request.seasonContextId
+        && !entry.value?.cache?.query?.stale && result.evidenceIds?.includes(entry.evidenceId) && entry.value?.sampleReference);
+      if (refs.length) {
+        const notes = refs.map(entry => sampleReferenceText(entry.value.sampleReference, entry.value.unit?.name ?? entry.value.query.unitName, request.locale));
+        result.answer = [result.answer, ...new Set(notes)].filter(Boolean).join("\n\n");
+        result.includesSampleReference = true;
       }
     }
     if (runtime.conversationBridgeStore) {

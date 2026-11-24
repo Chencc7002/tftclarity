@@ -303,6 +303,11 @@ function videoSummaryGuidance(evidence = []) {
   ].join("\n") }];
 }
 
+function sampleReferenceGuidance(evidence = []) {
+  if (!evidence.some(entry => entry.toolName === "unit_builds" && entry.temporalStatus !== "historical" && entry.value?.sampleReference?.rows?.length)) return [];
+  return [{ role: "system", content: "The equipment tool has already evaluated a lower sample minimum on the same observations. Cite this equipment evidence and answer using the original qualified results. The server displays the supplemental low-sample metrics and thresholds alongside your answer. Do not duplicate that table, ask permission to relax the threshold, retry the same search, or use the small samples to establish a winner." }];
+}
+
 function trendSummaryGuidance(evidence = []) {
   if (!evidence.some((entry) => entry?.toolName === "comps_trends" && entry?.temporalStatus !== "historical")) return [];
   return [{ role: "system", content: [
@@ -357,6 +362,7 @@ function reactDecisionMessages(
     ...confirmedEntityGuidance(state.question, state.bridgeContext),
     ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
     ...trendSummaryGuidance(state.evidence),
+    ...sampleReferenceGuidance(state.evidence),
     ...quotedMetricGuidance(state.evidence, state.bridgeContext),
     ...videoSummaryGuidance(state.evidence),
     ...intentAdvisoryGuidance(state.intentAdvisory),
@@ -432,6 +438,7 @@ function legacyReactDecisionMessages(
     ...confirmedEntityGuidance(legacyState.question, legacyState.bridgeContext),
     ...equipmentCategoryGuidance(legacyState.question, legacyState.bridgeContext, legacyState.messages),
     ...trendSummaryGuidance(legacyState.evidence),
+    ...sampleReferenceGuidance(legacyState.evidence),
     ...quotedMetricGuidance(legacyState.evidence, legacyState.bridgeContext),
     ...videoSummaryGuidance(legacyState.evidence),
     ...intentAdvisoryGuidance(legacyState.intentAdvisory),

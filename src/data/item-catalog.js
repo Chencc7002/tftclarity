@@ -429,7 +429,7 @@ export function classifyItemApiName(apiName, options = {}) {
   if (CONSUMABLE_ITEM_PATTERNS.some((pattern) => pattern.test(itemName))) return "consumable";
   if (/^DA_(?:Blast|Health|Mana)Potion18/i.test(itemName)) return "consumable";
   if (/_?Radiant$/i.test(itemName) || /^TFT5_Item_/.test(itemName)) return "radiant";
-  if (itemName.includes("EmblemItem") || /^DA_18_Emblem/i.test(itemName)) return "emblem";
+  if (itemName.includes("EmblemItem") || /^DA_18_Emblem/i.test(itemName) || /^DA_.+19_Emblem$/i.test(itemName)) return "emblem";
   if (ARTIFACT_PATTERNS.some((pattern) => pattern.test(itemName)) || /^DA_(?:Artifact_|Item_Artifact_)/i.test(itemName)) return "artifact";
   if (SUPPORT_OR_TACTICIAN_PATTERNS.some((pattern) => pattern.test(itemName)) || /^DA_Tacticians/i.test(itemName)) return "support";
   if (SET_SPECIAL_PATTERNS.some((pattern) => pattern.test(itemName))) return "set_special";
