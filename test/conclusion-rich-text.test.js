@@ -162,7 +162,23 @@ test("text tables, unsafe cells, escaped pipes, fenced examples and adjacent tab
   assert.doesNotMatch(conclusionRichTextHtml("~~~\n" + text + "\n~~~"), /<table>/u);
   assert.doesNotMatch(conclusionRichTextHtml("A | B\njust text"), /<table>/u);
 });
-import { namedChartUnit } from "../src/app/small-window-ui/answer-comparison.js";
+import { namedChartItem, namedChartUnit } from "../src/app/small-window-ui/answer-comparison.js";
+
+test("item tables identify gear by header, render single rows and keep icons in build order", () => {
+  const table = ["｜档位｜装备组合｜前四率｜场次｜", "｜-｜-｜-｜-｜", "｜A｜羊刀 + 无尽｜59.7%｜14,919｜"].join("\n\n");
+  for (const answer of [table, "```markdown\n" + table + "\n```"]) {
+    const html = conclusionRichTextHtml(answer, { bodyOnly: true });
+    assert.match(html, /data-view="chart"/u);
+    assert.match(html, /data-item-portrait="羊刀".*data-item-portrait="无尽"/u);
+    assert.match(html, /data-number="14919"/u);
+    assert.doesNotMatch(html, /[｜`]/u);
+  }
+  const ordinary = { apiName: "rageblade", name: "鬼索的狂暴之刃", aliases: ["羊刀"] };
+  const radiant = { apiName: "radiant", name: "光明羊刀", aliases: ["光明鬼索"] };
+  assert.equal(namedChartItem("羊刀", [ordinary, radiant]), ordinary);
+  assert.equal(namedChartItem("光明鬼索", [ordinary, radiant]), radiant);
+  assert.equal(namedChartItem("羊刀", [ordinary, { ...radiant, aliases: ["羊刀"] }]), null);
+});
 
 test("composition charts bind the named carry, including season-specific forms", () => {
   const ez = { name: "伊泽瑞尔", enName: "Ezreal19" };

@@ -1,9 +1,11 @@
-const divider = /^:?-{2,}:?$/u;
+const divider = /^:?-+:?$/u;
+const compHeader = /阵容|\b(?:comp(?:osition)?s?|lineups?|teams?)\b/iu;
+const itemHeader = /装备|出装|神器|纹章|三件套|单件|\b(?:items?|equipment|builds?|artifacts?|emblems?)\b/iu;
 const escape = value => String(value).replace(/[&<>"']/gu, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const plain = value => value.replaceAll("**", "").trim();
 
 function cells(line = "") {
-  const text = line.trim();
+  const text = line.trim().replaceAll("｜", "|");
   if (!text.includes("|")) return [];
   return text.replace(/^\|/u, "").replace(/(?<!\\)\|$/u, "").split(/(?<!\\)\|/u).map(cell => cell.replaceAll("\\|", "|").trim());
 }
@@ -56,19 +58,21 @@ function measure(header, values) {
 export function renderAnswerTable({ headers, rows }, inlineHtml) {
   const values = headers.map((_, i) => rows.map(row => metricValue(row[i])));
   const measures = headers.map((h, i) => measure(h, values[i]));
-  const label = headers.findIndex((_, i) => !measures[i]);
+  let label = headers.findIndex((h, i) => !measures[i] && (compHeader.test(h) || itemHeader.test(h)));
+  if (label < 0) label = headers.findIndex((_, i) => !measures[i]);
   const metrics = headers.map((name, index) => ({ name: plain(name), index })).filter(({ index }) => measures[index]);
-  const chart = rows.length >= 2 && label >= 0 && metrics.length > 0;
+  const chart = rows.length > 0 && label >= 0 && metrics.length > 0;
   const initial = metrics.find(m => measures[m.index].placement)?.index ?? metrics[0]?.index;
   const zh = headers.some(h => /\p{Script=Han}/u.test(h));
   const title = chart ? (zh ? plain(headers[label]) + "对比" : plain(headers[label]) + " comparison") : (zh ? "数据表" : "Data table");
   const toolbar = chart ? `<div class="answer-comparison__toolbar"><label>${zh ? "排序" : "Sort"} <select data-sort-field><option value="">${zh ? "原始顺序" : "Original order"}</option>${metrics.map(m => `<option value="${m.index}" data-direction="${measures[m.index].ascending ? "asc" : "desc"}">${escape(m.name)}</option>`).join("")}</select></label><button class="answer-comparison__direction" type="button" data-sort-direction disabled aria-label="${zh ? "切换排序方向" : "Reverse order"}">↕</button></div>` : "";
-  const showPortrait = chart && /阵容|comp(?:osition)?\b|lineup|team/iu.test(headers[label]);
+  const portraitType = compHeader.test(headers[label]) ? "comp" : itemHeader.test(headers[label]) ? "item" : "";
   const column = index => `data-column="${index}"${index === label ? " data-label" : ""}${index === initial ? " data-plotted" : ""}`;
   const head = headers.map((h,i) => `<th scope="col" ${column(i)}>${inlineHtml(h)}</th>`).join("");
   const body = rows.map((row, r) => `<tr data-original="${r}">${row.map((value, i) => {
     if (i === label) {
-      const portrait = showPortrait ? `<span class="answer-comparison__portrait" data-comp-portrait="${escape(plain(value))}" aria-hidden="true"></span>` : "";
+      const names = portraitType === "item" ? plain(value).split(/\s*[+＋、]\s*/u).filter(Boolean) : [plain(value)];
+      const portrait = chart && portraitType ? names.map(name => `<span class="answer-comparison__portrait" data-${portraitType}-portrait="${escape(name)}" aria-hidden="true"></span>`).join("") : "";
       return `<th scope="row" ${column(i)}><span class="answer-comparison__name">${portrait}<span>${inlineHtml(value)}</span></span></th>`;
     }
     const number = measures[i] && values[i][r];
@@ -113,7 +117,8 @@ function catalogEntries(season, type) {
   const key = season + ":" + type;
   if (!portraitCatalogs.has(key)) {
     const params = new URLSearchParams({ type, seasonContextId: season, limit: "200" });
-    portraitCatalogs.set(key, fetch("/api/entity-catalog?" + params).then(async response => {
+    const url = type === "item" ? "/api/item-icons?" + new URLSearchParams({ seasonContextId: season }) : "/api/entity-catalog?" + params;
+    portraitCatalogs.set(key, fetch(url).then(async response => {
       if (!response.ok) throw Error("catalog unavailable");
       const payload = await response.json();
       if (payload.seasonContext?.id !== season || !Array.isArray(payload.items)) throw Error("catalog scope mismatch");
@@ -160,9 +165,32 @@ function showPortrait(slot, entry) {
   return true;
 }
 
+export function namedChartItem(name, items) {
+  const key = normalizeName(name);
+  if (!key) return null;
+  const exact = items.filter(item => [item.name, item.apiName, item.zhName, item.enName].some(value => normalizeName(value) === key));
+  const matches = exact.length ? exact : items.filter(item => item.aliases?.some(alias => normalizeName(alias) === key));
+  return matches.length && matches.every(item => item.apiName === matches[0].apiName) ? matches[0] : null;
+}
+
+async function hydrateItemPortraits(record, slots) {
+  const data = record.data;
+  const items = [...(data.itemRankings ?? []), ...(data.itemPerformance?.topRankings ?? []), data.itemPerformance?.item,
+    data.item, ...(data.coreItemSummary?.items ?? []), ...(data.cards ?? []).flatMap(card => card.items ?? [])].filter(item => item?.iconUrl && item.apiName);
+  const remaining = slots.filter(slot => !showPortrait(slot, namedChartItem(slot.dataset.itemPortrait, items)));
+  if (!remaining.length) return;
+  const catalog = await catalogEntries(record.seasonContextId, "item");
+  for (const slot of remaining) {
+    if (slot.isConnected) showPortrait(slot, namedChartItem(slot.dataset.itemPortrait, catalog));
+  }
+}
+
 export async function hydrateComparisonPortraits(record) {
+  if (!record.seasonContextId) return;
+  const itemSlots = [...record.target.querySelectorAll("[data-item-portrait]")];
+  if (itemSlots.length) await hydrateItemPortraits(record, itemSlots);
   const slots = [...record.target.querySelectorAll("[data-comp-portrait]")];
-  if (!slots.length || !record.seasonContextId) return;
+  if (!slots.length) return;
   const groups = [record.data, ...(record.data.compositionResultGroups ?? []).map(group => group.result)];
   const comps = groups.flatMap(group => Object.values(group?.rankings ?? {}).flat());
   const remaining = slots.filter(slot => {

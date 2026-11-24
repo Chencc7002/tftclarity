@@ -244,7 +244,7 @@ function tacticalConclusionText(value) {
 export function conclusionDisplayText(value) {
   const cleaned = cleanInternalPositionIds(value);
   // Rewriting a positioning paragraph can otherwise consume adjacent table rows.
-  if (/^\s*\|?\s*:?-{2,}:?\s*\|/mu.test(cleaned)) return cleaned.trim();
+  if (/^\s*[|｜]?\s*:?-+:?\s*[|｜]/mu.test(cleaned)) return cleaned.trim();
   return tacticalConclusionText(cleaned);
 }
 
@@ -266,9 +266,27 @@ export function conclusionRichTextHtml(value, options = {}) {
   for (let index = 0; index < lines.length; index++) {
     let line = lines[index].trim();
     const marker = line.match(/^(`{3,}|~{3,})/u)?.[1];
+    if (marker && !fence && /^(?:`{3,}|~{3,})(?:markdown|md)?$/iu.test(line)) {
+      let start = index + 1;
+      while (start < lines.length && !lines[start].trim()) start++;
+      const wrapped = start < lines.length && readAnswerTable(lines, start);
+      if (wrapped) {
+        let close = wrapped.end;
+        while (close < lines.length && !lines[close].trim()) close++;
+        if (lines[close]?.trim() === marker) {
+          const html = renderAnswerTable(wrapped, inlineConclusionHtml);
+          if (html.includes('data-view="chart"')) {
+            flushList();
+            blocks.push(html);
+            index = close;
+            continue;
+          }
+        }
+      }
+    }
     if (marker && !fence) fence = marker;
     else if (marker?.startsWith(fence) && fence) fence = "";
-    const table = !fence && line.includes("|") && readAnswerTable(lines, index);
+    const table = !fence && /[|｜]/u.test(line) && readAnswerTable(lines, index);
     if (table) {
       flushList();
       blocks.push(renderAnswerTable(table, inlineConclusionHtml));

@@ -18,6 +18,7 @@ import {
   handleCacheClearRequest,
   handleCompDetailRequest,
   handleEntityCatalogRequest,
+  handleItemIconsRequest,
   handleEntityDetailRequest,
   handleEntityAliasBatchReviewRequest,
   handleEntityAliasExportRequest,
@@ -256,6 +257,15 @@ test("resolves the outer Agent run deadline from options and environment", () =>
     deadlineMs: 45000,
     maxSteps: 20
   });
+});
+
+test("item chart icons expose season, canonical identities and catalog aliases", async () => {
+  const runtime = createSmallWindowRuntime({ cacheStore: new MemoryCacheStore(), catalog: createCatalog(), fetchItems: false });
+  const result = await handleItemIconsRequest(runtime, "set19-pbe");
+  assert.equal(result.seasonContext.id, "set19-pbe");
+  const item = result.items.find(entry => entry.apiName === "TFT_Item_GuinsoosRageblade");
+  assert.ok(item.aliases.includes("羊刀"));
+  assert.ok(item.iconUrl);
 });
 
 test("query snapshots default to 30 days and honor an explicit override", async () => {

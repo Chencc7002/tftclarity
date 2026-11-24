@@ -43,6 +43,8 @@ body { background:#fff; }
   box-shadow: inset 0 0 0 1px var(--comparison-line); color: var(--comparison-accent);
 }
 .answer-comparison__portrait:empty::after { content: "♟"; }
+.answer-comparison__portrait[data-item-portrait]:empty::after { content: "◇"; }
+.answer-comparison__name:has([data-item-portrait]) { flex-wrap: wrap; gap: 4px; }
 .answer-comparison__portrait img { width: 100%; height: 100%; object-fit: cover; }
 .answer-comparison tbody tr:hover { background: var(--comparison-soft); }
 .answer-comparison__cell { display: inline-flex; align-items: center; }

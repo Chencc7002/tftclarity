@@ -2430,6 +2430,20 @@ function entityCatalogPreferences(runtime, seasonContext) {
   };
 }
 
+export async function handleItemIconsRequest(runtime, seasonContextId) {
+  const season = runtime.seasonContextService.resolveForQuery(seasonContextId);
+  const { catalog } = await loadRuntimeCatalog(runtime, entityCatalogPreferences(runtime, season));
+  const items = catalog.items.filter(item => item.apiName && item.current !== false).map(item => {
+    const fallbackIconUrl = ASSET_RESOLVER.resolveItem(item.apiName).iconUrl;
+    return {
+      apiName: item.apiName, name: item.zhName ?? item.shortName ?? item.apiName,
+      aliases: [...new Set([item.shortName, item.enName, item.preferredDisplayName, ...(item.aliases ?? [])].filter(Boolean))],
+      iconUrl: item.iconUrl || fallbackIconUrl, fallbackIconUrl
+    };
+  });
+  return { seasonContext: runtime.seasonContextService.publicRecord(season), items };
+}
+
 export async function handleEntityCatalogRequest(runtime, options = {}) {
   const seasonContext = runtime.seasonContextService.resolveForQuery(options.seasonContextId);
   const locale = normalizeDisplayLocale(options.locale);
@@ -10111,6 +10125,10 @@ export function createSmallWindowHandler(options = {}) {
           format: url.searchParams.get("format") ?? undefined,
           refresh: url.searchParams.get("refresh") === "1"
         }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/item-icons") {
+        return sendJson(res, 200, await handleItemIconsRequest(runtime, url.searchParams.get("seasonContextId")));
       }
 
       if (req.method === "GET" && url.pathname === "/api/entity-catalog") {

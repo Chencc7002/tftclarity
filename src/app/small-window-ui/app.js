@@ -2959,7 +2959,7 @@ function chatCoreConclusionHtml(data, responseId, options = {}) {
   return `<section class="chat-core-conclusion" data-chat-core-conclusion="${escapeHtml(responseId)}">
     <header><strong>${t("chatCoreTitle")}</strong><small>${chatCoreScopeText(data)}</small></header>
     <p class="chat-core-fixed${options.streamingFixed ? " is-streaming" : ""}" data-chat-core-fixed>${escapeHtml(fixedText)}</p>
-    ${interpretation ? `<div class="chat-core-interpretation${conclusion?.status === "pending" ? " pending" : ""}"><span>${t("chatFurtherInterpretation")}</span><p data-chat-conclusion-stream>${escapeHtml(interpretation)}</p></div>` : ""}
+    ${interpretation ? `<div class="chat-core-interpretation${conclusion?.status === "pending" ? " pending" : ""}"><span>${t("chatFurtherInterpretation")}</span><div data-chat-conclusion-stream>${conclusion?.status === "pending" ? escapeHtml(interpretation) : conclusionRichTextHtml(interpretation, { bodyOnly: true })}</div></div>` : ""}
   </section>`;
 }
 
@@ -5414,6 +5414,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
         activeResponseEl.innerHTML = answer
           ? `${chatCoreItemsHtml(data)}<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
           : `<div>${t("queryFailed")}</div>`;
+        if (answer) void hydrateComparisonPortraits({ target: activeResponseEl, data, seasonContextId: state.seasonContextId });
       }
     } else {
       renderResult(data);
