@@ -137,3 +137,28 @@ test("explicit Markdown, short answers and quoted labels keep their existing str
   const nested = conclusionRichTextHtml("说明（主流出装：甲；核心装备：乙）。", { bodyOnly: true });
   assert.doesNotMatch(nested, /<h3 /u);
 });
+test("rankings render a chart and sortable table from the same values, including spaced Markdown rows", () => {
+  const input = ["比赛结果", "| 阵容 | 平均名次 | 前四率 | 场次 |", "| :--- | ---: | ---: | ---: |",
+    "| **心之钢** | 3.55 | 68.0% | 6,536 |", "| 天才 | 3.73 | — | 1,343 |", "下一段说明。"].join("\n\n");
+  const html = conclusionRichTextHtml(input, { bodyOnly: true });
+  assert.match(html, /class="answer-comparison" data-view="chart"/u);
+  assert.match(html, /value="1" data-direction="asc">平均名次/u);
+  assert.match(html, /value="2" data-direction="desc">前四率/u);
+  assert.match(html, /data-number="6536"/u);
+  assert.match(html, /max="8" value="3.55"/u);
+  assert.match(html, /max="100" value="68"/u);
+  assert.match(html, />6,536</u);
+  assert.match(html, /下一段说明/u);
+  assert.doesNotMatch(html, /:---/u);
+});
+
+test("text tables, unsafe cells, escaped pipes, fenced examples and adjacent tables preserve content", () => {
+  const text = "Name | Detail\n---|---\nA\\|B | <img onerror=x>\n\nName | Note\n---|---\nX | Y";
+  const html = conclusionRichTextHtml(text);
+  assert.equal((html.match(/<table>/gu) ?? []).length, 2);
+  assert.doesNotMatch(html, /<img|data-sort-field/u);
+  assert.match(html, /A\|B/u);
+  assert.match(html, /&lt;img onerror=x&gt;/u);
+  assert.doesNotMatch(conclusionRichTextHtml("~~~\n" + text + "\n~~~"), /<table>/u);
+  assert.doesNotMatch(conclusionRichTextHtml("A | B\njust text"), /<table>/u);
+});

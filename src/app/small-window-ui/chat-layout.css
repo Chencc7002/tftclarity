@@ -1,6 +1,66 @@
 /* Chat-first layout. Existing result views and tool dialogs keep their behavior. */
 body { background:#fff; }
 
+.answer-comparison {
+  --comparison-accent: var(--chat-action, #287a53);
+  --comparison-line: var(--chat-line, #dce7df);
+  --comparison-soft: var(--chat-surface-subtle, #f7faf8);
+  container-type: inline-size;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  background: white;
+  border: 1px solid var(--comparison-line);
+  border-radius: 14px;
+  color: var(--ink, #263d32);
+  font-variant-numeric: tabular-nums;
+}
+.answer-comparison__heading, .answer-comparison__toolbar, .answer-comparison__views, .answer-comparison__toolbar label {
+  display: flex;
+  align-items: center;
+}
+.answer-comparison__heading { justify-content: space-between; flex-wrap: wrap; gap: 10px; padding: 14px 16px; }
+.answer-comparison__heading > strong { font-size: 16px; font-weight: 650; }
+.answer-comparison__toolbar { flex-wrap: wrap; gap: 6px; }
+.answer-comparison__toolbar label { gap: 5px; color: var(--muted); font-size: 12px; }
+.answer-comparison__views { padding: 3px; margin-inline-end: 7px; border-radius: 8px; background: var(--comparison-soft); border: 1px solid var(--comparison-line); }
+.answer-comparison__toolbar button, .answer-comparison__toolbar select {
+  min-height: 30px; margin: 0; border: 1px solid var(--comparison-line); border-radius: 6px;
+  background: white; color: inherit; padding: 3px 8px; font: inherit; font-size: 12px; cursor: pointer;
+}
+.answer-comparison__views button { min-height: 25px; border: 0; background: transparent; color: var(--muted); }
+.answer-comparison__views button[aria-pressed="true"] { background: white; color: var(--comparison-accent); box-shadow: 0 1px 4px #1c163222; font-weight: 650; }
+.answer-comparison__toolbar .answer-comparison__direction { min-width: 32px; font-size: 15px; }
+.answer-comparison__direction:disabled { opacity: .5; cursor: default; }
+.answer-comparison :focus-visible { outline: 2px solid var(--comparison-accent); outline-offset: -2px; }
+.answer-comparison__scroll { overflow-x: auto; }
+.answer-comparison table { width: 100%; border-collapse: collapse; margin: 0; line-height: 1.45; font-size: 13px; }
+.answer-comparison th, .answer-comparison td { padding: 8px 14px; border: 0; border-top: 1px solid var(--comparison-line); background: transparent; text-align: end; white-space: nowrap; }
+.answer-comparison thead th { background: var(--comparison-soft); color: var(--muted); font-size: 12px; font-weight: 550; }
+.answer-comparison th[scope="row"] { white-space: normal; text-align: start; font-weight: 550; }
+.answer-comparison [data-label] { text-align: start; }
+.answer-comparison tbody tr:hover { background: var(--comparison-soft); }
+.answer-comparison__cell { display: inline-flex; align-items: center; }
+.answer-comparison meter { appearance: none; display: none; width: 100%; height: 8px; overflow: hidden; border: 0; border-radius: 20px; background: var(--comparison-line); }
+.answer-comparison meter::-webkit-meter-bar { height: 8px; border: 0; border-radius: 20px; background: var(--comparison-line); }
+.answer-comparison meter::-webkit-meter-optimum-value { border-radius: 20px; background: var(--comparison-accent); }
+.answer-comparison meter::-moz-meter-bar { border-radius: 20px; background: var(--comparison-accent); }
+.answer-comparison[data-view="chart"] [data-column]:not([data-label]):not([data-plotted]) { display: none; }
+.answer-comparison[data-view="chart"] tr { display: grid; grid-template-columns: minmax(110px, 36%) 1fr; }
+.answer-comparison[data-view="chart"] [data-label] { order: -1; }
+.answer-comparison[data-view="chart"] .answer-comparison__cell { display: grid; grid-template-columns: minmax(20px, 1fr) minmax(48px, max-content); gap: 8px; }
+.answer-comparison[data-view="chart"] meter { display: block; }
+.answer-comparison[data-view="chart"] .answer-comparison__cell > span:only-child { grid-column: 2; }
+.answer-comparison[data-view="chart"] thead, .answer-comparison[data-view="chart"] tbody { display: block; }
+@container (max-width: 460px) {
+  .answer-comparison__heading { padding: 10px; }
+  .answer-comparison__toolbar { width: 100%; }
+  .answer-comparison__views { margin-inline-end: auto; }
+  .answer-comparison th, .answer-comparison td { padding: 7px 9px; }
+  .answer-comparison[data-view="table"] table { min-width: max-content; }
+  .answer-comparison[data-view="table"] [data-label] { position: sticky; left: 0; background: white; }
+}
+
 /* Quote popovers are mounted on body and share the active chat palette. */
 :root:has(#app-shell[data-season-theme="set19"]) {
   --chat-action: var(--season-primary);

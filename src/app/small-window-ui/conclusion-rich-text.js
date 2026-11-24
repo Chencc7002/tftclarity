@@ -1,3 +1,5 @@
+import { readAnswerTable, renderAnswerTable } from "./answer-comparison.js";
+
 export const ASSISTANT_OUTPUT_SCHEMA_VERSION = "assistant-output.v1";
 
 const SUMMARY_LABEL_PATTERN = /^(变化汇总|关键变化|核心结论|最终结论|结论|总结|建议|summary|conclusion|recommendation|key points?|key changes?)\s*[：:]?\s*(.*)$/iu;
@@ -240,7 +242,10 @@ function tacticalConclusionText(value) {
 }
 
 export function conclusionDisplayText(value) {
-  return tacticalConclusionText(cleanInternalPositionIds(value));
+  const cleaned = cleanInternalPositionIds(value);
+  // Rewriting a positioning paragraph can otherwise consume adjacent table rows.
+  if (/^\s*\|?\s*:?-{2,}:?\s*\|/mu.test(cleaned)) return cleaned.trim();
+  return tacticalConclusionText(cleaned);
 }
 
 export function conclusionRichTextHtml(value, options = {}) {
@@ -257,8 +262,19 @@ export function conclusionRichTextHtml(value, options = {}) {
     listItems = [];
   };
 
-  for (const rawLine of lines) {
-    let line = rawLine.trim();
+  let fence = "";
+  for (let index = 0; index < lines.length; index++) {
+    let line = lines[index].trim();
+    const marker = line.match(/^(`{3,}|~{3,})/u)?.[1];
+    if (marker && !fence) fence = marker;
+    else if (marker?.startsWith(fence) && fence) fence = "";
+    const table = !fence && line.includes("|") && readAnswerTable(lines, index);
+    if (table) {
+      flushList();
+      blocks.push(renderAnswerTable(table, inlineConclusionHtml));
+      index = table.end - 1;
+      continue;
+    }
     if (options.bodyOnly) {
       const body = line.replace(/^#{1,3}\s+/u, "").replace(/^\*\*(.*?)\*\*/u, "$1")
         .match(/^(?:系统证据结论|模型原始结论(?:[（(][^）)]*[）)])?|模型最终结论|核心结论|最终结论|结论|summary|conclusion)\s*(?:[：:]\s*(.*)|$)/iu);
