@@ -15,11 +15,32 @@ function harness() {
     renderCompFormation: (_comp, formation, placed) => `formation:${formation?.status ?? "unavailable"}:${placed.size}`
   });
   vm.runInContext(app.slice(app.indexOf("function normalizeReactCompositionRankings("), app.indexOf("function reactChatMessages(")), context);
+  vm.runInContext(app.slice(app.indexOf("function compositionCoreRoles("), app.indexOf("function chatBuildPreview(")), context);
   vm.runInContext(app.slice(app.indexOf("function compDetailDescriptor("), app.indexOf("function normalizedCompDetailStatus(")), context);
   vm.runInContext(app.slice(app.indexOf("function renderCompDetailContent("), app.indexOf("function renderCompCard(")), context);
   return context;
 }
 const cards = (value) => Object.values(value.rankings).flat();
+
+test("direct composition evidence resolves all three media types and keeps items on the matching role", () => {
+  const context = harness();
+  const member = (name, id, role, games) => ({ apiName: id, name, officialProfile: { role }, itemizationEvidence: { games,
+    displayItems: [{ apiName: "DA_InfinityEdge", name: "无尽", iconUrl: null }] } });
+  const value = { results: [{ compositionRef: { name: "舞者 · 佛耶戈" }, members: [
+    member("阿木木","DA_Amumu19","Magic · Tank",100), member("贝蕾亚","DA_Briar19","Attack · Assassin",900),
+    member("佛耶戈","DA_Viego19","Attack · Fighter",500)
+  ], traits: [{ filterId: "DA_Mosher19_3" }] }] };
+  const [comp] = cards(context.normalizeReactCompositionRankings(value));
+  assert.match(comp.units[0].iconUrl, /champions\/da_amumu19\.png$/u);
+  assert.match(comp.units[0].items[0].iconUrl, /items\/da_infinityedge\.png$/u);
+  assert.match(comp.traits[0].iconUrl, /traits\/da_mosher19\.png$/u);
+  assert.deepEqual(Array.from(context.compositionCoreRoles(comp), x => [x.unit.name,x.role,x.inferred]), [["佛耶戈","carry",true],["阿木木","tank",true]]);
+  comp.units[1].roleEvidence = { primaryCarry: "supported" };
+  assert.equal(context.compositionCoreRoles(comp)[0].unit.name,"贝蕾亚");
+  assert.equal(context.compositionCoreRoles({ units: [{ name:"甲", items:[{}] }] })[0].role,"core");
+  assert.equal(context.compositionIconUrl("items", { apiName: "../oops" }), null);
+  assert.equal(context.compositionIconUrl("items", { iconUrl: "existing" }), "existing");
+});
 
 async function scopedPayload() {
   const payload = await compositionCardPayload({ includeEquipment: true });

@@ -3137,12 +3137,61 @@ function assistantResponseHtml(data, responseId = "", options = {}) {
         ? t("currentCompRanking")
         : t("noResult"));
   const modelConclusion = reactModelConclusionHtml(data, summary, responseId);
-  const resultPreview = chatBuildPreview(data, responseId)
-    || `${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`;
+  const corePreview = chatCompositionCores(data, data.reactAnswer || summary);
+  const resultPreview = corePreview + (chatBuildPreview(data, responseId)
+    || `${data?.query?.constraints ? conditionChips(data) : ""}<button type="button" class="view-result" data-view-result data-response-id="${escapeHtml(responseId)}">${t("resultDetails")} →</button>`);
   if (modelConclusion) {
     return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}${modelConclusion}${resultPreview}${followUpGuidance}`;
   }
   return `${understanding}${chatCoreConclusionHtml(data, responseId, options)}<div class="answer-summary">${conclusionRichTextHtml(summary)}</div>${resultPreview}${followUpGuidance}`;
+}
+
+function chatCompositionCores(data, answer) {
+  const groups = data.compositionResultGroups?.length ? data.compositionResultGroups.map(group => group.result) : [data];
+  const zh = getLocale().startsWith("zh");
+  const text = String(answer ?? "").replaceAll("**", "");
+  return groups.map(group => {
+    if (!["comp_rankings", "comp_trends", "comp_analysis"].includes(group.type)) return "";
+    const seen = new Set();
+    const comps = [...Object.values(group.rankings ?? {}).flat(), ...(group.rising ?? []), ...(group.falling ?? [])]
+      .filter(comp => {
+        const key = comp.compId || comp.name;
+        if (!key || seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    const mentioned = comps.filter(comp => (comp.compId && text.includes(comp.compId)) || (comp.name && text.includes(comp.name)));
+    const cards = (mentioned.length ? mentioned : comps.slice(0, 5)).map(comp => {
+      const leads = compositionCoreRoles(comp);
+      if (!leads.length) return "";
+      const labels = zh ? { carry: "主 C", tank: "主坦", core: "携装核心" } : { carry: "Carry", tank: "Tank", core: "Item holder" };
+      return `<div class="chat-comp-cores__comp"><strong>${escapeHtml(localizedName(comp))}</strong><div class="chat-comp-cores__units">${leads.map(({ unit, role, inferred }) => {
+        const label = labels[role] + (inferred ? (zh ? (role === "carry" ? " 参考" : "参考") : " candidate") : "");
+        const items = unit.items ?? [];
+        return `<div class="chat-comp-cores__unit">${assetThumb(unit.iconUrl, localizedName(unit), "core-portrait", unit.fallbackIconUrl)}
+          <span class="chat-comp-cores__identity"><small>${escapeHtml(label)}</small><b>${escapeHtml(localizedName(unit))}</b></span>
+          <span class="chat-comp-cores__gear">${items.map(item => assetThumb(item.iconUrl, localizedName(item), "core-gear", item.fallbackIconUrl)).join("")}</span></div>`;
+      }).join("")}</div></div>`;
+    }).join("");
+    return cards ? `<section class="chat-comp-cores" aria-label="${zh ? "阵容核心与装备" : "Composition carries, tanks and items"}">${cards}</section>` : "";
+  }).join("");
+}
+
+function compositionCoreRoles(comp) {
+  const units = comp.units ?? [];
+  const itemized = units.filter(unit => unit.items?.length).sort((a,b) => (b.itemizationGames ?? 0) - (a.itemizationGames ?? 0));
+  const named = comp.name?.split(/\s+[·•]\s+/u).at(-1);
+  const tank = /tank|坦克|坦位/i;
+  const damage = /fighter|assassin|marksman|caster|specialist|carry|战士|射手|法师|术士|刺客|输出/i;
+  const selected = [];
+  for (const role of ["carry", "tank"]) {
+    const explicit = units.find(unit => unit.roleEvidence?.[role === "carry" ? "primaryCarry" : "primaryTank"] === "supported");
+    const pool = itemized.filter(unit => role === "tank" ? tank.test(unit.role) : !tank.test(unit.role) && damage.test(unit.role));
+    const unit = explicit ?? pool.find(candidate => candidate.name === named) ?? pool[0];
+    if (unit && !selected.some(entry => entry.unit === unit)) selected.push({ unit, role, inferred: !explicit });
+  }
+  if (!selected.length) return itemized.slice(0, 2).map(unit => ({ unit, role: "core", inferred: false }));
+  return selected;
 }
 
 function chatBuildPreview(data, responseId) {
@@ -4981,15 +5030,19 @@ function normalizeReactCompositionRankings(value) {
     units: (result.members ?? []).map((member) => ({
       apiName: member.apiName,
       name: member.name ?? member.apiName,
-      iconUrl: member.iconUrl ?? null,
+      iconUrl: compositionIconUrl("champions", member),
       fallbackIconUrl: member.fallbackIconUrl ?? null,
       targetStarLevel: member.targetStarLevel ?? null,
       avgStarLevel: member.avgStarLevel ?? null,
       core: Boolean(member.core || member.relations?.includes?.("itemized_core_candidate")),
-      items: member.itemizationEvidence?.displayItems
-        ?? (member.itemizationEvidence?.items ?? []).map((apiName) => ({ apiName, name: apiName }))
+      role: member.officialProfile?.role ?? null,
+      roleEvidence: member.roleEvidence,
+      itemizationGames: member.itemizationEvidence?.games ?? null,
+      items: (member.itemizationEvidence?.displayItems?.length ? member.itemizationEvidence.displayItems
+        : (member.itemizationEvidence?.items ?? []).map(apiName => ({ apiName, name: apiName })))
+        .map(item => ({ ...item, iconUrl: compositionIconUrl("items", item) }))
     })),
-    traits: result.traits ?? [],
+    traits: (result.traits ?? []).map(trait => ({ ...trait, iconUrl: compositionIconUrl("traits", trait) })),
     stats: result.stats ?? {},
     tacticalDetailQueryPlan: result.tacticalDetailQueryPlan ?? null,
     source: result.source ?? value.source ?? null
@@ -5003,6 +5056,13 @@ function normalizeReactCompositionRankings(value) {
     query: value.query ?? {},
     source: value.source ?? comps[0]?.source ?? null
   };
+}
+
+function compositionIconUrl(directory, entity) {
+  if (entity.iconUrl) return entity.iconUrl;
+  const id = entity.apiName || (directory === "traits" ? entity.filterId?.replace(/_\d+(?:plus|minus)?$/iu, "") : "");
+  if (!/^(?:DA_|TFT\d*_)[\w]+$/iu.test(id ?? "")) return null;
+  return `https://cdn.metatft.com/file/metatft/${directory}/${id.toLowerCase()}.png`;
 }
 
 function normalizeReactOfficialDetail(value) {
@@ -5412,7 +5472,7 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
           ?? ""
         ).trim();
         activeResponseEl.innerHTML = answer
-          ? `${chatCoreItemsHtml(data)}<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>`
+          ? `${chatCoreItemsHtml(data)}<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>${chatCompositionCores(data, answer)}`
           : `<div>${t("queryFailed")}</div>`;
         if (answer) void hydrateComparisonPortraits({ target: activeResponseEl, data, seasonContextId: state.seasonContextId });
       }

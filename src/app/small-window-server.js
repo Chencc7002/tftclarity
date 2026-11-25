@@ -3105,6 +3105,8 @@ function serializeCompRankings(result, meta = {}, catalog = null, entityDetails 
         iconUrl: unit.iconUrl ?? resolvedUnitIconUrl(unit.apiName, catalog, entityDetails),
         fallbackIconUrl: unit.fallbackIconUrl ?? null,
         assetFallback: Boolean(unit.assetFallback),
+        role: entityDetails?.units?.get?.(unit.apiName)?.role ?? null,
+        itemizationGames: comp.coreBuilds?.find(build => build.unitApiName === unit.apiName)?.games ?? null,
         targetStarLevel: Number.isInteger(unit.targetStarLevel) ? unit.targetStarLevel : null,
         starLevel: Number.isFinite(unit.starLevel) ? unit.starLevel : null,
         avgStarLevel: Number.isFinite(unit.avgStarLevel) ? unit.avgStarLevel : null,
