@@ -170,7 +170,12 @@ export class WallpaperController {
       this.setMobileMenuOpen(false);
     });
     document.addEventListener("click", (event) => {
-      if (!this.mobileMenu.hidden && !this.mobileMenu.contains(event.target) && event.target !== this.mobileButton) this.setMobileMenuOpen(false);
+      if (
+        !this.mobileMenu.hidden
+        && !this.mobileMenu.contains(event.target)
+        && event.target !== this.mobileButton
+        && !event.target.closest?.("[data-open-wallpaper]")
+      ) this.setMobileMenuOpen(false);
     });
     this.handleActivity = () => this.registerActivity();
     document.addEventListener("keydown", (event) => {
@@ -298,6 +303,12 @@ export class WallpaperController {
     this.control.classList.toggle("wallpaper-unavailable", !available);
     this.toggle.disabled = !available;
     this.mobileButton.disabled = !available;
+    const openWallpaperButton = document.querySelector("[data-open-wallpaper]");
+    if (openWallpaperButton) {
+      openWallpaperButton.disabled = !available;
+      openWallpaperButton.hidden = !available;
+    }
+    if (!available) this.setMobileMenuOpen(false);
     this.select.disabled = !available || !this.enabled;
     this.shell.classList.toggle("wallpaper-enabled", available && this.enabled);
     if (!available) this.particles.setActive(false);

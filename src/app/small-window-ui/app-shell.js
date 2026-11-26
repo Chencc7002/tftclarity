@@ -35,7 +35,10 @@ export class AppShell {
     this.titleBar = titleBar;
     settingsButton.addEventListener("click", () => this.settings.toggle());
     document.addEventListener("click", (event) => {
-      if (event.target.closest("[data-open-wallpaper]")) document.getElementById("wallpaper-mobile-button")?.click();
+      if (event.target.closest("[data-open-wallpaper]")) {
+        event.stopPropagation();
+        document.getElementById("wallpaper-mobile-button")?.click();
+      }
     });
     settingsClose.addEventListener("click", () => this.settings.setOpen(false));
     settingsDone.addEventListener("click", () => this.settings.setOpen(false));

@@ -227,6 +227,9 @@ function setMobileView(view, { pushHistory = false, replaceHistory = false } = {
   if (!mobileLayoutQuery.matches) return;
   const historyState = { ...(history.state ?? {}), tftclarityMobileView: nextView };
   if (pushHistory && history.state?.tftclarityMobileView !== nextView) {
+    if (nextView === "result" && history.state?.tftclarityMobileView !== "chat") {
+      history.replaceState({ ...(history.state ?? {}), tftclarityMobileView: "chat" }, "");
+    }
     history.pushState(historyState, "");
   } else if (replaceHistory) {
     history.replaceState(historyState, "");
@@ -247,7 +250,7 @@ function openMobileResult() {
 }
 
 function returnToMobileChat() {
-  if (mobileLayoutQuery.matches && history.state?.tftclarityMobileView === "result") {
+  if (mobileLayoutQuery.matches && history.state?.tftclarityMobileView === "result" && history.length !== 1) {
     history.back();
     return;
   }
@@ -595,28 +598,28 @@ const QUICK_TASK_CATEGORIES = [
     titleKey: "quickCategoryEquipmentTitle",
     bodyKey: "quickCategoryEquipmentBody",
     countKey: "quickCategoryEquipmentCount",
-    icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
+    icon: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/>'
   },
   {
     id: "comps",
     titleKey: "quickCategoryCompsTitle",
     bodyKey: "quickCategoryCompsBody",
     countKey: "quickCategoryCompsCount",
-    icon: '<path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/>'
+    icon: '<path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5a1.5 1.5 0 0 0 0 3H7M17 6h2.5a1.5 1.5 0 0 1 0 3H17M12 14v4M8.5 20h7"/>'
   },
   {
     id: "library",
     titleKey: "quickCategoryLibraryTitle",
     bodyKey: "quickCategoryLibraryBody",
     countKey: "quickCategoryLibraryCount",
-    icon: '<path d="M5 4h10a3 3 0 0 1 3 3v13H8a3 3 0 0 1-3-3z"/><path d="M8 16h10M9 8h5M9 11h6"/>'
+    icon: '<path d="M5 4.5h11a2.5 2.5 0 0 1 2.5 2.5v12.5H7.5A2.5 2.5 0 0 1 5 17z"/><path d="M7.5 16h11M9 8.5h5.5M9 11.5h6.5"/>'
   },
   {
     id: "news",
     titleKey: "quickCategoryNewsTitle",
     bodyKey: "quickCategoryNewsBody",
     countKey: "quickCategoryNewsCount",
-    icon: '<path d="M6 4h12v16H6z"/><path d="M9 8h6M9 12h6M9 16h4"/>'
+    icon: '<path d="M14.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h5M9 12.5h6M9 16h4"/>'
   }
 ];
 
@@ -625,7 +628,7 @@ const QUICK_TASKS = [
     category: "equipment", id: "emblem-rankings", operation: "emblem_rankings",
     query: "查询可合成转职强度排行", promptKey: "quickTaskEmblemsPrompt",
     titleKey: "quickTaskEmblemsTitle", bodyKey: "quickTaskEmblemsBody", exampleKey: "quickTaskEmblemsExample",
-    icon: '<path d="m12 3 7 4v5c0 4-7 9-7 9s-7-5-7-9V7z"/><path d="m8 13 3-3 2 2 3-5"/>'
+    icon: '<path d="M12 3 19.5 7.3v9.4L12 21 4.5 16.7V7.3z"/><path d="m12 8 3 4-3 4-3-4z"/>'
   },
   {
     category: "equipment",
@@ -636,7 +639,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskBuildTitle",
     bodyKey: "quickTaskBuildBody",
     exampleKey: "quickTaskBuildExample",
-    icon: '<path d="m6 18 8-8"/><path d="m12 6 6-2-2 6-8 8-4 2 2-4z"/>'
+    icon: '<path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/>'
   },
   {
     category: "equipment",
@@ -648,7 +651,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskCompletionTitle",
     bodyKey: "quickTaskCompletionBody",
     exampleKey: "quickTaskCompletionExample",
-    icon: '<path d="M5 12h14M12 5v14"/><circle cx="12" cy="12" r="9"/>'
+    icon: '<rect x="3.5" y="13" width="7" height="7" rx="1.6"/><rect x="13.5" y="13" width="7" height="7" rx="1.6"/><rect x="3.5" y="3.5" width="7" height="7" rx="1.6"/><path d="M17 4.5v5M14.5 7h5"/>'
   },
   {
     category: "equipment",
@@ -659,7 +662,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskPerformanceTitle",
     bodyKey: "quickTaskPerformanceBody",
     exampleKey: "quickTaskPerformanceExample",
-    icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
+    icon: '<path d="M4 19.5h16"/><rect x="5.5" y="11" width="3" height="8.5" rx="1"/><rect x="10.5" y="6" width="3" height="13.5" rx="1"/><rect x="15.5" y="9" width="3" height="10.5" rx="1"/>'
   },
   {
     category: "equipment",
@@ -670,7 +673,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskComparisonTitle",
     bodyKey: "quickTaskComparisonBody",
     exampleKey: "quickTaskComparisonExample",
-    icon: '<path d="M7 7h12l-3-3M17 17H5l3 3"/>'
+    icon: '<path d="M7 8h13m0 0-3.5-3.5M20 8l-3.5 3.5M17 16H4m0 0 3.5-3.5M4 16l3.5 3.5"/>'
   },
   {
     category: "equipment",
@@ -681,7 +684,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskCarriersTitle",
     bodyKey: "quickTaskCarriersBody",
     exampleKey: "quickTaskCarriersExample",
-    icon: '<circle cx="12" cy="8" r="3"/><path d="M5.5 19c.8-3.4 3-5 6.5-5s5.7 1.6 6.5 5"/>'
+    icon: '<circle cx="9.5" cy="7.5" r="3.5"/><path d="M3.5 19.5c.6-3.2 2.9-5 6-5s5.4 1.8 6 5"/><path d="m16 11.5 2 2 4-4"/>'
   },
   {
     category: "equipment",
@@ -692,7 +695,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskSpecialTitle",
     bodyKey: "quickTaskSpecialBody",
     exampleKey: "quickTaskSpecialExample",
-    icon: '<path d="m12 3 1.5 5.5L19 10l-5.5 1.5L12 17l-1.5-5.5L5 10l5.5-1.5z"/>'
+    icon: '<path d="m11 3.5 1.7 5.3L18 10.5l-5.3 1.7L11 17.5l-1.7-5.3L4 10.5l5.3-1.7z"/><path d="M18.5 15.5v4M16.5 17.5h4"/>'
   },
   {
     category: "comps",
@@ -703,7 +706,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskCompsTitle",
     bodyKey: "quickTaskCompsBody",
     exampleKey: "quickTaskCompsExample",
-    icon: '<path d="M4 5h7v6H4zM13 5h7v6h-7zM4 13h7v6H4zM13 13h7v6h-7z"/>'
+    icon: '<path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5a1.5 1.5 0 0 0 0 3H7M17 6h2.5a1.5 1.5 0 0 1 0 3H17M12 14v4M8.5 20h7"/>'
   },
   {
     category: "comps",
@@ -714,7 +717,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskTrendsTitle",
     bodyKey: "quickTaskTrendsBody",
     exampleKey: "quickTaskTrendsExample",
-    icon: '<path d="m4 17 5-5 4 3 7-8"/><path d="M15 7h5v5"/>'
+    icon: '<path d="m3.5 16.5 6-6 4 4 7-7"/><path d="M15.5 7.5h5v5"/>'
   },
   {
     category: "comps",
@@ -725,7 +728,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskHeroCompsTitle",
     bodyKey: "quickTaskHeroCompsBody",
     exampleKey: "quickTaskHeroCompsExample",
-    icon: '<circle cx="9" cy="9" r="4"/><path d="m12 12 7 7M15 15l2-2"/>'
+    icon: '<circle cx="10.5" cy="10.5" r="6"/><path d="m20 20-4.8-4.8"/><circle cx="10.5" cy="10.5" r="2"/>'
   },
   {
     category: "library",
@@ -736,7 +739,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskUnitDetailsTitle",
     bodyKey: "quickTaskUnitDetailsBody",
     exampleKey: "quickTaskUnitDetailsExample",
-    icon: '<circle cx="12" cy="8" r="3"/><path d="M6 19c.7-3.4 2.7-5 6-5s5.3 1.6 6 5"/>'
+    icon: '<rect x="4" y="4" width="16" height="16" rx="3"/><circle cx="12" cy="10" r="2.7"/><path d="M7.5 18c.8-2.3 2.5-3.5 4.5-3.5s3.7 1.2 4.5 3.5"/>'
   },
   {
     category: "library",
@@ -747,7 +750,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskUnitCatalogTitle",
     bodyKey: "quickTaskUnitCatalogBody",
     exampleKey: "quickTaskUnitCatalogExample",
-    icon: '<circle cx="8" cy="8" r="3"/><circle cx="16" cy="8" r="3"/><path d="M3 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5M11 19c.5-3.2 2.2-5 5-5s4.5 1.8 5 5"/>'
+    icon: '<circle cx="9" cy="8" r="3"/><path d="M3.5 19c.6-3 2.5-4.5 5.5-4.5s4.9 1.5 5.5 4.5"/><circle cx="16.5" cy="9" r="2.5"/><path d="M16.5 14.5c2 0 3.5 1.2 4 3.5"/>'
   },
   {
     category: "library",
@@ -758,7 +761,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskItemDetailsTitle",
     bodyKey: "quickTaskItemDetailsBody",
     exampleKey: "quickTaskItemDetailsExample",
-    icon: '<path d="m8 16 8-8M7 5l12 12M5 7l2-2M17 19l2-2"/>'
+    icon: '<path d="M6.5 4.5h11L21 9.5l-9 10-9-10z"/><path d="M3 9.5h18M12 4.5v15"/>'
   },
   {
     category: "library",
@@ -769,7 +772,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskTraitDetailsTitle",
     bodyKey: "quickTaskTraitDetailsBody",
     exampleKey: "quickTaskTraitDetailsExample",
-    icon: '<path d="M12 3 5 7v5c0 4.3 2.8 7.4 7 9 4.2-1.6 7-4.7 7-9V7z"/><path d="m9 12 2 2 4-5"/>'
+    icon: '<path d="M12 3 5 6.2v5.3c0 4.5 3 8 7 9.5 4-1.5 7-5 7-9.5V6.2z"/><path d="m9.5 12 2.5 2.5 3.5-4"/>'
   },
   {
     category: "library",
@@ -780,7 +783,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskTraitCatalogTitle",
     bodyKey: "quickTaskTraitCatalogBody",
     exampleKey: "quickTaskTraitCatalogExample",
-    icon: '<path d="M4 6h6v5H4zM14 6h6v5h-6zM9 15h6v5H9z"/><path d="M7 11v2h5M17 11v2h-5v2"/>'
+    icon: '<circle cx="12" cy="5.5" r="2.5"/><circle cx="6" cy="17.5" r="2.5"/><circle cx="18" cy="17.5" r="2.5"/><path d="M10.7 7.8 7.3 15.2M13.3 7.8l3.4 7.4M8.5 17.5h7"/>'
   },
   {
     category: "news",
@@ -789,7 +792,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskUpdatesTitle",
     bodyKey: "quickTaskUpdatesBody",
     exampleKey: "quickTaskUpdatesExample",
-    icon: '<path d="M6 5h12v14H6z"/><path d="M9 9h6M9 12h6M9 15h4"/>'
+    icon: '<path d="M14.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h5M9 12.5h6M9 16h4"/>'
   },
   {
     category: "news",
@@ -798,7 +801,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskOpggTrendsTitle",
     bodyKey: "quickTaskOpggTrendsBody",
     exampleKey: "quickTaskOpggTrendsExample",
-    icon: '<path d="M3 17l5-5 4 3 6-7 3 3"/><path d="M3 21h18"/>'
+    icon: '<path d="M3 12h4l2.5-6.5 4 13L16 12h5"/>'
   },
   {
     category: "news",
@@ -807,7 +810,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskOpggPersonalTitle",
     bodyKey: "quickTaskOpggPersonalBody",
     exampleKey: "quickTaskOpggPersonalExample",
-    icon: '<path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8z"/><path d="M4 20c.8-3.5 3.6-5.5 8-5.5s7.2 2 8 5.5"/>'
+    icon: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/><path d="M3.5 4v4.5H8"/><path d="M12 7.5V12l3 2"/>'
   },
   {
     category: "news",
@@ -816,7 +819,7 @@ const QUICK_TASKS = [
     titleKey: "quickTaskOpggTeachingTitle",
     bodyKey: "quickTaskOpggTeachingBody",
     exampleKey: "quickTaskOpggTeachingExample",
-    icon: '<path d="M8 4h8v16H8z"/><path d="M5 8h3M16 8h3M11 12h2M11 15h2"/>'
+    icon: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="m10 9.2 5.2 2.8L10 14.8z"/>'
   }
 ];
 
@@ -1085,15 +1088,20 @@ function renderRuntimeStatus(runtime = {}) {
 function renderAccessStatus(access = {}) {
   state.access = access;
   const quota = access.quota ?? {};
+  const quotaTargets = [aiQuotaEl, document.querySelector("#nav-ai-quota")].filter(Boolean);
   if (!quota.enabled) {
-    aiQuotaEl.classList.add("hidden");
+    for (const el of quotaTargets) el.classList.add("hidden");
     return;
   }
-  aiQuotaEl.classList.remove("hidden");
-  aiQuotaEl.dataset.empty = quota.remaining === 0 ? "true" : "false";
-  aiQuotaEl.textContent = quota.remaining === 0
+  const isEmpty = quota.remaining === 0;
+  const label = isEmpty
     ? t("aiQuotaEmpty")
     : t("aiQuotaRemaining", { remaining: quota.remaining, limit: quota.limit });
+  for (const el of quotaTargets) {
+    el.classList.remove("hidden");
+    el.dataset.empty = isEmpty ? "true" : "false";
+    el.textContent = label;
+  }
 }
 
 async function loadAccessStatus() {
@@ -6023,6 +6031,10 @@ window.addEventListener("popstate", (event) => {
   setMobileView(event.state?.tftclarityMobileView === "result" ? "result" : "chat");
 });
 mobileLayoutQuery.addEventListener?.("change", () => {
+  if (mobileLayoutQuery.matches && state.mobileView === "result" && history.state?.tftclarityMobileView !== "result") {
+    setMobileView("result", { pushHistory: true });
+    return;
+  }
   setMobileView(state.mobileView, { replaceHistory: mobileLayoutQuery.matches });
 });
 for (const container of [resultEl, resultContentEl]) {
@@ -6125,6 +6137,17 @@ document.querySelector("#app-navigation").addEventListener("click", event => {
   if (event.target.closest("[data-nav-new]")) { void resetConversation(); queryInput.focus(); }
   if (event.target.closest("[data-nav-patch]")) { renderPatchNote(); openMobileResult(); }
   if (event.target.closest("[data-nav-settings]")) document.querySelector("#settings-button").click();
+});
+document.querySelector("#landing-shortcuts")?.addEventListener("click", async (event) => {
+  const quickTaskButton = event.target.closest("button[data-quick-task]");
+  if (quickTaskButton && !state.requestInFlight) {
+    await launchQuickTask(quickTaskButton);
+    return;
+  }
+  if (event.target.closest("[data-nav-patch]")) {
+    renderPatchNote();
+    openMobileResult();
+  }
 });
 document.addEventListener("keydown", event => { if (event.key === "Escape") closeNavigation(); });
 

@@ -485,6 +485,12 @@ export function formatDate(value) {
 
 export function localizedName(entity, fallback = "") {
   if (!entity || typeof entity !== "object") return String(fallback || "");
-  if (locale === "en-US") return entity.enName ?? entity.nameEn ?? entity.displayNameEn ?? entity.apiName ?? entity.canonicalName ?? entity.compId ?? entity.name ?? fallback;
+  if (locale === "en-US") {
+    const preferred = entity.enName ?? entity.nameEn ?? entity.displayNameEn;
+    if (preferred) return preferred;
+    const isOpaqueKey = (value) => /^(?:cluster:|TFT\d+_|DA_|Item_|Trait_)/i.test(String(value ?? "").trim());
+    const readable = [entity.apiName, entity.canonicalName, entity.displayName, entity.name, entity.compId].find((value) => value && !isOpaqueKey(value));
+    return readable ?? entity.displayName ?? entity.name ?? entity.apiName ?? entity.canonicalName ?? entity.compId ?? fallback;
+  }
   return entity.zhName ?? entity.nameZh ?? entity.displayName ?? entity.name ?? entity.apiName ?? entity.canonicalName ?? fallback;
 }

@@ -92,11 +92,11 @@
         <aside id="app-navigation" class="app-navigation" aria-label="导航">
           <div class="navigation-brand"><img src="/favicon.png?v=20260727" alt="">tftclarity</div>
           <nav>
-            <button type="button" data-nav-new><span aria-hidden="true">＋</span><span data-i18n="newChat">新对话</span></button>
-            <button type="button" data-open-tools="all"><span aria-hidden="true">▦</span><span data-i18n="quickTaskFormEyebrow">快捷查询</span></button>
-            <button type="button" data-nav-patch><span aria-hidden="true">▤</span><span data-i18n="versionUpdates">版本更新</span></button>
+            <button type="button" data-nav-new><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="4" y="4" width="16" height="16" rx="4"/><path d="M12 8.5v7M8.5 12h7"/></svg></span><span data-i18n="newChat">新对话</span></button>
+            <button type="button" data-open-tools="all"><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg></span><span data-i18n="quickTaskFormEyebrow">快捷查询</span></button>
+            <button type="button" data-nav-patch><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h5M9 12.5h6M9 16h4"/></svg></span><span data-i18n="versionUpdates">版本更新</span></button>
           </nav>
-          <div class="navigation-bottom"><button type="button" data-nav-settings><span aria-hidden="true">⚙</span><span data-i18n="settings">设置</span></button><small data-i18n="navigationTagline">云顶数据与战术助手</small></div>
+          <div class="navigation-bottom"><div class="nav-ai-quota hidden" id="nav-ai-quota" aria-live="polite"></div><button type="button" data-nav-settings><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09a1.65 1.65 0 0 0-1-1.51 1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09a1.65 1.65 0 0 0 1.51-1 1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg></span><span data-i18n="settings">设置</span></button><small data-i18n="navigationTagline">云顶数据与战术助手</small></div>
         </aside>
         <button type="button" class="navigation-backdrop" data-nav-close aria-label="关闭导航" hidden></button>
         <section class="conversation-pane" id="conversation-pane" aria-labelledby="conversation-title">
@@ -126,8 +126,8 @@
               <div class="composer-tool-anchor" id="composer-tool-anchor">
                 <button type="button" id="tool-menu-toggle" class="tool-menu-toggle" aria-haspopup="menu" aria-expanded="false" aria-controls="tool-menu" data-i18n-aria="toolMenu" data-i18n-title="toolMenu" aria-label="工具与收藏" title="工具与收藏"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg></button>
                 <div id="tool-menu" class="tool-menu" role="menu" data-i18n-aria="toolMenu" aria-label="工具与收藏" hidden>
-                  <button type="button" role="menuitem" data-open-tools="all" aria-haspopup="dialog"><span aria-hidden="true">▦</span><span data-i18n="toolAll">全部工具</span></button>
-                  <button type="button" role="menuitem" data-open-tools="favorites" aria-haspopup="dialog"><span aria-hidden="true">☆</span><span data-i18n="toolFavorites">我的收藏</span><span data-favorites-count>0</span></button>
+                  <button type="button" role="menuitem" data-open-tools="all" aria-haspopup="dialog"><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg></span><span data-i18n="toolAll">全部工具</span></button>
+                  <button type="button" role="menuitem" data-open-tools="favorites" aria-haspopup="dialog"><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m12 3.5 2.6 5.3 5.9.85-4.25 4.15 1 5.85L12 16.9l-5.25 2.75 1-5.85L3.5 9.65l5.9-.85z"/></svg></span><span data-i18n="toolFavorites">我的收藏</span><span data-favorites-count>0</span></button>
                 </div>
               </div>
               <div class="composer-entry-body">
@@ -158,9 +158,16 @@
               <button type="button" id="stop-button" class="compact-action hidden" data-i18n-title="stopTitle" title="停止查询"><span aria-hidden="true">■</span><span data-i18n="stop">停止</span></button>
               <button type="button" id="refresh-button" class="compact-action" data-i18n-title="refreshTitle" data-i18n-aria="refreshTitle" title="刷新数据" aria-label="刷新数据" disabled><svg class="compact-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M20 11a8 8 0 1 0-2.34 5.66"/><path d="M20 4v7h-7"/></svg><span data-i18n="refresh">刷新</span></button>
               <button type="button" id="clear-button" class="compact-action" data-i18n-title="clearTitle" data-i18n-aria="clearTitle" title="清空会话" aria-label="清空会话"><svg class="compact-action-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M7 7l1 13h8l1-13M10 11v5M14 11v5"/></svg><span data-i18n="clear">清空</span></button>
-              <button class="primary send-button" type="submit" data-i18n-title="sendTitle" title="发送"><span data-i18n="send">发送</span><span aria-hidden="true">➜</span></button>
+              <button class="primary send-button" type="submit" data-i18n-title="sendTitle" title="发送"><span data-i18n="send">发送</span><span class="ui-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></span></button>
             </div>
           </form>
+          <div class="landing-shortcuts" id="landing-shortcuts" role="navigation" data-i18n-aria="quickTasksLabel" aria-label="功能分类与快捷查询">
+            <button type="button" class="landing-shortcut" data-quick-task="comp-rankings"><span class="landing-shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M7 4h10v5a5 5 0 0 1-10 0V4Z"/><path d="M7 6H4.5a1.5 1.5 0 0 0 0 3H7M17 6h2.5a1.5 1.5 0 0 1 0 3H17M12 14v4M8.5 20h7"/></svg></span><span data-i18n="quickTaskCompsTitle">热门阵容排行</span></button>
+            <button type="button" class="landing-shortcut" data-quick-task="comp-trends"><span class="landing-shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="m3.5 16.5 6-6 4 4 7-7"/><path d="M15.5 7.5h5v5"/></svg></span><span data-i18n="quickTaskTrendsTitle">阵容趋势</span></button>
+            <button type="button" class="landing-shortcut" data-quick-task="unit-build"><span class="landing-shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 17.5 3 6V3h3l11.5 11.5"/><path d="m13 19 6-6"/><path d="m16 16 4 4"/><path d="m19 21 2-2"/></svg></span><span data-i18n="quickTaskBuildTitle">英雄出装</span></button>
+            <button type="button" class="landing-shortcut" data-nav-patch><span class="landing-shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M14.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h5M9 12.5h6M9 16h4"/></svg></span><span data-i18n="versionUpdates">版本更新</span></button>
+            <button type="button" class="landing-shortcut landing-shortcut-more" data-open-tools="all"><span class="landing-shortcut-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><rect x="3.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="3.5" width="7" height="7" rx="1.8"/><rect x="3.5" y="13.5" width="7" height="7" rx="1.8"/><rect x="13.5" y="13.5" width="7" height="7" rx="1.8"/></svg></span><span data-i18n="toolAll">全部工具</span></button>
+          </div>
         </section>
 
         <section class="result-pane" id="result-pane" aria-labelledby="result-title">
@@ -266,12 +273,14 @@
               </div>
             </section>
 
-            <section class="settings-section runtime-status" data-i18n-aria="runtimeStatus" aria-label="运行状态">
-              <h2 data-i18n="runtimeStatus">数据与运行状态</h2>
-              <div class="runtime-row"><span data-i18n="cache">缓存</span><strong id="cache-status">-</strong></div>
-              <div class="runtime-row"><span>LLM</span><strong id="llm-status">-</strong></div>
-              <small id="runtime-detail">-</small>
-            </section>
+            <details class="settings-section runtime-status-details">
+              <summary data-i18n="runtimeStatus">数据与运行状态</summary>
+              <div class="runtime-status" data-i18n-aria="runtimeStatus" aria-label="运行状态">
+                <div class="runtime-row"><span data-i18n="cache">缓存</span><strong id="cache-status">-</strong></div>
+                <div class="runtime-row"><span>LLM</span><strong id="llm-status">-</strong></div>
+                <small id="runtime-detail">-</small>
+              </div>
+            </details>
 
             <section class="settings-section maintenance-entry admin-only" aria-label="维护">
               <div>
