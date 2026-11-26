@@ -1,3 +1,4 @@
+import { pinyin } from "pinyin-pro";
 import {
   deriveEnglishEntityName,
   localizedEntityName,
@@ -137,6 +138,7 @@ function unitEntries(catalog, details, options = {}) {
       const entry = {
         entityType: "unit",
         apiName,
+        queryApiName: unit.apiName,
         name: locale === "en-US" ? enName : zhName,
         zhName,
         enName,
@@ -167,7 +169,10 @@ function unitEntries(catalog, details, options = {}) {
         ...aliases
       ], query);
     })
-    .map(({ entry }) => entry)
+    .map(({ entry, aliases }) => {
+      const syllables = pinyin(entry.zhName, { toneType: "none", type: "array" });
+      return { ...entry, searchAliases: [...new Set([...aliases, syllables.join(""), syllables.map(part => part[0]).join("")])] };
+    })
     .sort((left, right) => {
       const costDifference = Number(left.cost ?? 99) - Number(right.cost ?? 99);
       return costDifference || compareNames(left.name, right.name) || compareNames(left.apiName, right.apiName);

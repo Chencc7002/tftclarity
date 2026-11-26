@@ -113,7 +113,7 @@ function sortComparison(card, reverse) {
 
 const portraitCatalogs = new Map();
 const normalizeName = name => String(name ?? "").normalize("NFKC").toLowerCase().replace(/[\s·•/（）()_-]/gu, "");
-function catalogEntries(season, type) {
+export function catalogEntries(season, type) {
   const key = season + ":" + type;
   if (!portraitCatalogs.has(key)) {
     const params = new URLSearchParams({ type, seasonContextId: season, limit: "200" });

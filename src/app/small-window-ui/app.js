@@ -1,4 +1,5 @@
-import { hydrateComparisonPortraits } from "./answer-comparison.js";
+import { catalogEntries, hydrateComparisonPortraits } from "./answer-comparison.js";
+import { attachChampionPicker } from "./champion-picker.js";
 import { AppShell, TitleBar } from "./app-shell.js";
 import { mountEmblemRankings } from "./emblem-rankings.js";
 import { Composer, ConversationPane } from "./conversation-pane.js";
@@ -497,6 +498,7 @@ function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
   const colors = theme.colors ?? {};
   const wallpaper = theme.wallpaper ?? {};
   const previewOnly = Boolean(context.themePreview && !context.selectable);
+  if (activeQuickTask && shellEl.dataset.seasonContextId && shellEl.dataset.seasonContextId !== context.id) closeQuickTaskForm();
   shellEl.dataset.seasonContextId = context.id;
   shellEl.dataset.seasonEnvironment = context.environment;
   shellEl.dataset.seasonTheme = context.themeId ?? "";
@@ -882,7 +884,10 @@ const QUICK_TASK_FIELD_DEFINITIONS = {
   specialCategory: { labelKey: "quickFieldSpecialCategory", placeholderKey: "quickFieldSpecialCategoryPlaceholder", required: true }
 };
 
+let disposeChampionPicker;
 function closeQuickTaskForm({ focus = false } = {}) {
+  disposeChampionPicker?.();
+  disposeChampionPicker = null;
   voiceInput.cancel({ silent: true });
   activeQuickTask = null;
   quickTaskForm.hidden = true;
@@ -893,6 +898,8 @@ function closeQuickTaskForm({ focus = false } = {}) {
 }
 
 function openQuickTaskForm(task) {
+  disposeChampionPicker?.();
+  disposeChampionPicker = null;
   activeQuickTask = task;
   queryInput.value = "";
   queryInput.setCustomValidity("");
@@ -912,6 +919,14 @@ function openQuickTaskForm(task) {
   }).join("");
   quickTaskForm.hidden = false;
   form.classList.add("quick-task-form-active");
+  const champion = quickTaskFields.querySelector('[data-quick-field="champion"]');
+  if (champion) {
+    disposeChampionPicker = attachChampionPicker(champion, {
+      season: () => shellEl.dataset.seasonContextId,
+      load: season => catalogEntries(season, "unit"),
+      name: localizedName, locale: getLocale, t
+    });
+  }
   quickTaskFields.querySelector("input")?.focus();
 }
 
@@ -924,9 +939,10 @@ function quickTaskQuery(task) {
   const templateKey = task.optionalQueryTemplateKey && values.item2
     ? task.optionalQueryTemplateKey
     : task.queryTemplateKey;
+  const championId = quickTaskFields.querySelector("[data-champion-id]")?.dataset.championId;
   return {
     query: t(templateKey, values),
-    values
+    values: championId ? { ...values, champion: championId } : values
   };
 }
 

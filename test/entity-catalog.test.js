@@ -110,6 +110,8 @@ test("unit catalog keeps current-season units and supports deterministic filters
   assert.equal(result.items[0].apiName, "TFT17_Xayah");
   assert.equal(result.items[0].role, "物理输出");
   assert.deepEqual(result.items[0].traitNames, ["观星者", "神射手"]);
+  assert.equal(result.items[0].queryApiName, "TFT17_Xayah");
+  assert.ok(result.items[0].searchAliases.includes("xia"));
   assert.equal(result.items.some((entry) => entry.apiName === "TFT16_OldUnit"), false);
 });
 
