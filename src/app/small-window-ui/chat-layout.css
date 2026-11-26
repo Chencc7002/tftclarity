@@ -347,6 +347,7 @@ body.onboarding-active #app-shell .season-context-notice,
   box-shadow:0 1px 4px var(--chat-shadow,rgba(31,51,42,.10));
 }
 #app-shell .mobile-preference-button:hover { border-color:var(--line-strong); background:var(--chat-surface-subtle,#f5faf7); }
+#app-shell .mobile-preference-button[hidden] { display:none; }
 #app-shell #sample-control { display:flex; grid-auto-flow:initial; }
 #app-shell #sample-control button { flex:1 0 auto; padding:0 6px; white-space:nowrap; }
 #app-shell .rank-grid label,
