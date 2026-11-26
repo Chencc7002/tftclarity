@@ -8,7 +8,7 @@ function searchTerms(unit) {
   ].filter(Boolean).map(key);
 }
 
-export function attachChampionPicker(input, { season, load, name, locale, t }) {
+export function attachChampionPicker(input, { season, load, name, t }) {
   const listeners = new AbortController();
   const listen = (el, event, fn, options = {}) => el.addEventListener(event, fn, { ...options, signal: listeners.signal });
   const label = input.closest("label");
@@ -83,19 +83,16 @@ export function attachChampionPicker(input, { season, load, name, locale, t }) {
       row.setAttribute("aria-selected", "false");
       const portrait = document.createElement("span");
       portrait.className = "quick-champion-portrait";
-      portrait.textContent = name(unit).slice(0, 1);
+      portrait.setAttribute("aria-hidden", "true");
       if (unit.iconUrl) {
         const img = document.createElement("img");
         img.loading = "lazy"; img.alt = ""; img.src = unit.iconUrl;
         img.onerror = () => img.remove();
         portrait.append(img);
       }
-      const title = document.createElement("strong"), meta = document.createElement("small");
+      const title = document.createElement("strong");
       title.textContent = name(unit);
-      const en = locale() === "en-US";
-      const traits = (en ? unit.traitNamesEn : unit.traitNamesZh) ?? unit.traitNames ?? [];
-      meta.textContent = [unit.cost && unit.cost + (en ? " cost" : "费"), ...traits].filter(Boolean).join(" · ");
-      row.append(portrait,title,meta);
+      row.append(portrait,title);
       fragment.append(row);
     });
     list.append(fragment);

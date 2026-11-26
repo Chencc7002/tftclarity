@@ -110,8 +110,7 @@
 .quick-champion-list[hidden] { display:none; }
 .quick-champion-list [role="option"] { display:grid; grid-template-columns:30px minmax(0,1fr); column-gap:8px; align-items:center; min-height:40px; padding:4px 6px; border-radius:6px; cursor:pointer; }
 .quick-champion-list [role="option"]:hover,.quick-champion-list [aria-selected="true"] { background:var(--chat-surface-subtle,#eef4f1); }
-.quick-champion-portrait { position:relative; grid-row:span 2; display:grid; place-items:center; width:30px; height:30px; border-radius:5px; overflow:hidden; background:var(--chat-surface-subtle,#eef4f1); }
+.quick-champion-portrait { position:relative; display:grid; place-items:center; width:30px; height:30px; border-radius:5px; overflow:hidden; background:var(--chat-surface-subtle,#eef4f1); }
 .quick-champion-portrait img { position:absolute; inset:0; width:100%; height:100%; object-fit:cover; }
 .quick-champion-list strong { font-size:13px; }
-.quick-champion-list small,.quick-champion-message { color:var(--muted); font-size:11px; }
-.quick-champion-message { padding:10px; }
+.quick-champion-message { padding:10px; color:var(--muted); font-size:11px; }

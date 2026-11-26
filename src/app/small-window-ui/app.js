@@ -924,7 +924,7 @@ function openQuickTaskForm(task) {
     disposeChampionPicker = attachChampionPicker(champion, {
       season: () => shellEl.dataset.seasonContextId,
       load: season => catalogEntries(season, "unit"),
-      name: localizedName, locale: getLocale, t
+      name: localizedName, t
     });
   }
   quickTaskFields.querySelector("input")?.focus();
