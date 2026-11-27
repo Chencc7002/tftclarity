@@ -246,7 +246,8 @@ test("empty MetaTFT QueryResult remains authoritative instead of falling through
     knowledgeEvidence: []
   });
   assert.equal(result.content.status, "insufficient_evidence");
-  assert.match(result.text, /MetaTFT 结构化 QueryResult/);
+  assert.match(result.text, /当前统计查询已完成/);
+  assert.doesNotMatch(result.text, /MetaTFT/i);
   assert.match(result.text, /没有满足样本门槛和筛选条件的候选/);
   assert.ok(result.warnings.includes("structured_query_no_eligible_candidates"));
 });

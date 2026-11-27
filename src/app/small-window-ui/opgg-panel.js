@@ -659,7 +659,7 @@ async function renderPersonal(refreshResult = null) {
       const refreshBadge = accountRefreshBadge(player, refreshResult);
       const accountData = `data-player="${esc(player.id)}" data-environment="${isPbe ? "pbe" : "live"}" data-game-name="${esc(player.gameName)}" data-tag-line="${esc(player.tagLine)}"`;
       const reviewButton = isPbe
-        ? `<button type="button" class="opgg-ai-button" data-opgg-action="personal-direct-teaching" ${accountData}><span class="opgg-ai-icon" aria-hidden="true">✦</span><span><strong>AI 智能复盘</strong><small>读取 MetaTFT 最近 20 场</small></span></button>`
+        ? `<button type="button" class="opgg-ai-button" data-opgg-action="personal-direct-teaching" ${accountData}><span class="opgg-ai-icon" aria-hidden="true">✦</span><span><strong>AI 智能复盘</strong><small>读取最近 20 场对局</small></span></button>`
         : aiReviewButton(player.id);
       return `
       <div class="opgg-card opgg-personal-card">
@@ -670,7 +670,7 @@ async function renderPersonal(refreshResult = null) {
             <span class="opgg-badge opgg-badge-muted">${isPbe ? "PBE" : "NA"}</span>${refreshBadge}
           </div>
           <div class="opgg-match-sub">${esc(player.gameName)}#${esc(player.tagLine)}</div>
-          ${isPbe ? '<div class="opgg-notice opgg-personal-live-note">对局与统计将在打开时从 MetaTFT 近实时读取</div>' : `<div class="opgg-metrics" style="margin-top:9px">
+          ${isPbe ? '<div class="opgg-notice opgg-personal-live-note">对局与统计将在打开时近实时读取</div>' : `<div class="opgg-metrics" style="margin-top:9px">
             <div class="opgg-metric"><b>已采集</b><span>${player.summary?.matchCount ?? 0} 场</span></div>
             <div class="opgg-metric"><b>均名次</b><span>${player.summary?.avgPlacement ?? "-"}</span></div>
             <div class="opgg-metric"><b>前四率</b><span>${player.summary?.top4Rate != null ? Math.round(player.summary.top4Rate * 100) + "%" : "-"}</span></div>
@@ -700,7 +700,7 @@ async function renderPersonal(refreshResult = null) {
             <label><span>地区</span><select id="opgg-personal-environment" aria-label="选择账号地区"><option value="pbe">PBE</option><option value="live">NA</option></select></label>
             <button type="button" class="opgg-primary-button" data-opgg-action="personal-add">添加并复盘</button>
           </div>
-          <p class="opgg-form-hint">地区由你明确选择，Tag 保留 Riot ID 原值，不再用 PBE/NA 前缀猜测服务器。账号更新使用 MetaTFT，对局按所选地区和赛季隔离。</p>
+          <p class="opgg-form-hint">地区由你明确选择，Tag 保留 Riot ID 原值，不再用 PBE/NA 前缀猜测服务器。对局按所选地区和赛季隔离。</p>
         </div></div>
         <div class="opgg-section-title">我的账号 <small>点击账号看详情，点击 AI 智能复盘直接生成分析</small></div>
         <div class="opgg-grid">${cards || '<div class="opgg-empty">还没有添加账号</div>'}</div>
@@ -1195,7 +1195,7 @@ function directUnitBoardHtml(units) {
 async function renderDirectPlayer() {
   state.view = "direct-player";
   state.playerId = directPlayerKey();
-  setResult("PBE 战绩", loadingHtml("正在从 MetaTFT MCP 获取最近 10–20 场…"));
+  setResult("PBE 战绩", loadingHtml("正在获取最近 10–20 场对局…"));
   try {
     const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}?${directPlayerQuery({ limit: "20" })}`);
     const cards = (data.matches ?? []).map((match) => `
@@ -1216,8 +1216,8 @@ async function renderDirectPlayer() {
     setResult(
       `${directPlayerKey()} · PBE 战绩`,
       `${backLink("返回个人复盘", "personal")}
-       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(directPlayerKey())}</h3><p class="opgg-page-sub">PBE · MetaTFT · 返回 ${data.returnedCount}/${data.availableCount} 场</p></div><span class="opgg-badge opgg-badge-warn">测试服数据</span></div>
-       <div class="opgg-notice">数据来源 MetaTFT public profile；数据时间 ${fmtDate(data.provenance?.sourceFetchedAt)}，${data.provenance?.cacheStatus === "hit" ? "当前为 2 分钟内缓存" : "本次已向上游刷新"}。仅展示终局状态，不含逐回合经济、搜牌和站位。${esc((data.warnings ?? []).join("；"))}</div>
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(directPlayerKey())}</h3><p class="opgg-page-sub">PBE · 返回 ${data.returnedCount}/${data.availableCount} 场</p></div><span class="opgg-badge opgg-badge-warn">测试服数据</span></div>
+       <div class="opgg-notice">数据时间 ${fmtDate(data.provenance?.sourceFetchedAt)}，${data.provenance?.cacheStatus === "hit" ? "当前为 2 分钟内缓存" : "本次已实时刷新"}。仅展示终局状态，不含逐回合经济、搜牌和站位。${esc((data.warnings ?? []).join("；"))}</div>
        <div class="opgg-toolbar" style="margin-top:10px"><button type="button" class="opgg-ai-button" data-opgg-action="direct-teaching"><span class="opgg-ai-icon">✦</span><span><strong>AI 智能复盘</strong><small>基于最近 20 场终局证据</small></span></button></div>
        <div class="opgg-section-title">最近对局 <small>点击卡片可展开摘要，再按需读取单局详情</small></div>
        <div class="opgg-player-match-list">${cards || '<div class="opgg-empty">该玩家当前没有可用的 PBE 对局</div>'}</div>`,
@@ -1252,11 +1252,11 @@ async function renderDirectMatch() {
     setResult(
       "PBE 单局详情",
       `${backLink("返回对局列表", "direct-player")}
-       <div class="opgg-page-head"><div><h3 class="opgg-page-title">第 ${match.placement ?? "?"} 名 · Lv${match.level ?? "-"}</h3><p class="opgg-page-sub">${esc(match.matchId)} · PBE · MetaTFT</p></div><span class="opgg-badge opgg-badge-warn">终局数据</span></div>
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">第 ${match.placement ?? "?"} 名 · Lv${match.level ?? "-"}</h3><p class="opgg-page-sub">${esc(match.matchId)} · PBE</p></div><span class="opgg-badge opgg-badge-warn">终局数据</span></div>
        <div class="opgg-chips"><div class="opgg-chip"><b>淘汰回合</b><span>${match.lastRound ?? "-"}</span></div><div class="opgg-chip"><b>淘汰玩家</b><span>${match.playersEliminated ?? "-"}</span></div><div class="opgg-chip"><b>对玩家伤害</b><span>${match.totalDamageToPlayers ?? "-"}</span></div><div class="opgg-chip"><b>参与者</b><span>${match.participantCount ?? "-"}</span></div></div>
        <div class="opgg-section-title">终局棋子与装备</div><div class="opgg-units-grid">${units || '<div class="opgg-empty">无棋子数据</div>'}</div>
        <div class="opgg-section-title">羁绊</div><div class="opgg-traits">${(match.traits ?? []).map((trait) => `<span class="opgg-trait-chip">${esc(trait.displayName ?? trait.id ?? "未知羁绊")}</span>`).join("")}</div>
-       <div class="opgg-notice">来源：${esc(data.provenance?.provider)} / ${esc(data.provenance?.environment)} / ${esc(data.provenance?.season)}。数据时间：${fmtDate(data.provenance?.sourceFetchedAt)}（${data.provenance?.cacheStatus === "hit" ? "10 分钟内详情缓存" : "本次实时读取"}）。缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}</div>`,
+       <div class="opgg-notice">${esc(data.provenance?.environment)} / ${esc(data.provenance?.season)}。数据时间：${fmtDate(data.provenance?.sourceFetchedAt)}（${data.provenance?.cacheStatus === "hit" ? "10 分钟内详情缓存" : "本次实时读取"}）。缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}</div>`,
       data
     );
   } catch (error) {
@@ -1330,14 +1330,14 @@ function directReviewDashboardHtml(dashboard) {
 
 async function renderDirectTeaching(matchId = null) {
   state.view = "direct-teaching";
-  setResult("PBE AI 复盘", loadingHtml("AI 正在读取 MetaTFT 终局证据并校验结论…"));
+  setResult("PBE AI 复盘", loadingHtml("AI 正在读取终局证据并校验结论…"));
   try {
     const query = `?${directPlayerQuery(matchId ? { match: matchId } : {})}`;
     const data = await api(`/api/player-matches/players/${encodeURIComponent(directPlayerKey())}/teaching${query}`);
     setResult(
       "PBE AI 复盘",
       `${backLink(matchId ? "返回单局详情" : "返回对局列表", matchId ? "direct-match" : "direct-player")}
-       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(data.headline ?? "AI 智能复盘")}</h3><p class="opgg-page-sub">MetaTFT · PBE · ${data.validated ? "证据校验通过" : "已降级"}</p></div></div>
+       <div class="opgg-page-head"><div><h3 class="opgg-page-title">${esc(data.headline ?? "AI 智能复盘")}</h3><p class="opgg-page-sub">PBE · ${data.validated ? "证据校验通过" : "已降级"}</p></div></div>
        ${directReviewDashboardHtml(data.dashboard)}
        <details class="opgg-card opgg-review-narrative"><summary>查看 AI 完整文字解读</summary><div class="opgg-card-body">${esc(data.text ?? "")}</div></details>
        <div class="opgg-notice">缺失字段：${esc((data.missingFields ?? []).join("、") || "无")}。复盘不得推断逐回合经济、搜牌、过渡或站位。</div>`,

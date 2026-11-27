@@ -300,7 +300,7 @@ export function buildCompRankings(response = {}, options = {}) {
       sampleSize: pageStats.totalGames,
       clusterId: pageStats.clusterId || pageData.clusterId || null,
       minPlayrate,
-      risk: "MetaTFT 为第三方数据源；榜单按其 /comps 页面当前 cluster、筛选和排序规则转换，仅供决策参考。"
+      risk: "榜单按当前版本统计口径筛选和排序，仅供决策参考。"
     },
     warnings: options.warnings ?? [],
     diagnostics: {

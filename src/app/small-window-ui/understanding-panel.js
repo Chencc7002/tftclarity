@@ -171,12 +171,12 @@ const VALUE_LABELS = Object.freeze({
 
 const TOOLS = Object.freeze({
   entity_catalog_query: ["按当前赛季实体目录筛选棋子", "Filter champions in the current-season entity catalog"],
-  unit_builds_batch: ["批量查询候选棋子的 MetaTFT 出装数据", "Batch-query MetaTFT builds for candidate champions"],
-  unit_builds: ["查询 MetaTFT 英雄出装数据", "Query MetaTFT champion build data"],
+  unit_builds_batch: ["批量查询候选棋子的出装数据", "Batch-query builds for candidate champions"],
+  unit_builds: ["查询英雄出装数据", "Query champion build data"],
   unit_comp_candidates: ["查询包含指定英雄的阵容", "Query compositions containing the champion"],
-  item_carrier_rankings: ["查询 MetaTFT 装备携带者数据", "Query MetaTFT item-carrier data"],
-  comps_rankings: ["查询 MetaTFT 当前阵容排名与稳定性", "Query current MetaTFT composition rankings and stability"],
-  comps_trends: ["查询 MetaTFT 阵容趋势", "Query MetaTFT composition trends"],
+  item_carrier_rankings: ["查询装备携带者数据", "Query item-carrier data"],
+  comps_rankings: ["查询当前阵容排名与稳定性", "Query current composition rankings and stability"],
+  comps_trends: ["查询阵容趋势", "Query composition trends"],
   comps_analysis: ["查询阵容分析证据", "Query composition analysis evidence"],
   unit_details: ["查询英雄资料", "Query champion details"],
   item_details: ["查询装备资料", "Query item details"],
@@ -444,7 +444,7 @@ function authorityLabels(data, locale) {
   const authority = data?.answerModeRoute?.authority ?? {};
   const labels = [];
   if (authority.currentStatistics === "metatft") {
-    labels.push(localeIndex(locale) === 0 ? "阵容排名和实时数据：MetaTFT" : "Rankings and current statistics: MetaTFT");
+    labels.push(localeIndex(locale) === 0 ? "阵容排名和实时数据：实时对局统计" : "Rankings and current statistics: live match stats");
   }
   if (authority.creatorAdvice === "youtube") {
     labels.push(localeIndex(locale) === 0 ? "运营解释：视频攻略与机制知识" : "Operational guidance: video guides and mechanic knowledge");

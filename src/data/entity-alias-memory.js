@@ -19,6 +19,9 @@ function normalizeEntityType(value) {
 }
 
 export function applyEntityAliasesToCatalog(catalog = createCatalog(), aliases = []) {
+  if (!Array.isArray(aliases) || aliases.length === 0) {
+    return { catalog, applied: [], ignored: [] };
+  }
   const overrideAliases = new Set((aliases ?? [])
     .filter((alias) => alias?.enabled && alias?.alias)
     .map((alias) => normalizeAlias(alias.alias))
@@ -83,6 +86,14 @@ export function applyEntityAliasesToCatalog(catalog = createCatalog(), aliases =
     }
 
     ignored.push({ ...alias, reason: "unknown_entity_type" });
+  }
+
+  if (applied.length === 0) {
+    return {
+      catalog,
+      applied,
+      ignored
+    };
   }
 
   return {

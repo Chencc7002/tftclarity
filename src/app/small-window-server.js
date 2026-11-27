@@ -1,4 +1,6 @@
 import { createServer } from "node:http";
+import { monitorEventLoopDelay } from "node:perf_hooks";
+import { BoundedSemaphore, SingleflightCache } from "../core/concurrency.js";
 import { buildUnderstandingSummary } from "./small-window-ui/understanding-panel.js";
 import { createJevIntentObserver } from "../understanding/jev-intent-observer.js";
 import {
@@ -770,6 +772,34 @@ export function resolveSmallWindowAgentRunBudget(options = {}, env = process.env
   };
 }
 
+function normalizeChatCompletionsEndpoint(rawEndpoint) {
+  const value = String(rawEndpoint ?? "").trim();
+  if (!value) return null;
+  if (/\/chat\/completions\/?$/iu.test(value)) return value.replace(/\/+$/u, "");
+  return `${value.replace(/\/+$/u, "")}/chat/completions`;
+}
+
+export function resolveTieredLlmConfig(baseConfig = {}, overrides = {}, env = process.env, envPrefix = "") {
+  const endpointRaw = overrides.endpoint ?? (envPrefix ? env[`${envPrefix}_ENDPOINT`] : null) ?? baseConfig.endpoint ?? null;
+  const endpoint = normalizeChatCompletionsEndpoint(endpointRaw);
+  const model = String(overrides.model ?? (envPrefix ? env[`${envPrefix}_MODEL`] : null) ?? baseConfig.model ?? "").trim() || null;
+  const apiKey = overrides.apiKey ?? (envPrefix ? env[`${envPrefix}_API_KEY`] : null) ?? baseConfig.apiKey ?? null;
+  const thinkingMode = String(
+    overrides.thinkingMode
+      ?? (envPrefix ? env[`${envPrefix}_THINKING_MODE`] : null)
+      ?? "disabled"
+  ).trim().toLowerCase() || "disabled";
+  const enabled = Boolean((baseConfig.enabled || (endpoint && model)) && endpoint && model);
+  return {
+    ...baseConfig,
+    enabled,
+    endpoint,
+    model,
+    apiKey,
+    thinkingMode
+  };
+}
+
 export function resolveSmallWindowStructuredParserConfig(options = {}, env = process.env) {
   return resolveStructuredParserConfig({
     ...(options.structuredParserConfig ?? {}),
@@ -1235,6 +1265,22 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       reactSafety: runtime.reactChatBudget ?? null,
       groundingMode: runtime.reactGroundingMode ?? "strict",
       registeredTools: runtime.toolRegistry?.list?.().map((tool) => tool.name) ?? []
+    },
+    concurrency: {
+      sse: runtime.sseBulkhead ? { ...runtime.sseBulkhead } : null,
+      llm: runtime.llmBulkhead?.stats?.() ?? null,
+      metatft: runtime.metaTFTClient?.getConcurrencyStats?.() ?? null,
+      hotQueryCache: runtime.hotQueryCache?.stats?.() ?? null,
+      eventLoopLagP99Ms: runtime.eventLoopMonitor
+        ? Number((runtime.eventLoopMonitor.percentile(99) / 1e6).toFixed(2))
+        : null
+    },
+    modelTiering: {
+      structuredParser: runtime.structuredParserConfig?.model ?? null,
+      reactDecision: runtime.reactDecisionProvider?.model ?? null,
+      lightweight: runtime.entitySlangProvider?.model ?? runtime.turnDeltaProvider?.model ?? null,
+      conclusion: runtime.conclusionGeneratorConfig?.model ?? null,
+      coach: runtime.coachConfig?.model ?? null
     }
   };
 }
@@ -3366,23 +3412,72 @@ export function createSmallWindowRuntime(options = {}) {
     requestTimeouts.explorerTimeoutMs * 2 + 2_000,
     requestTimeouts.compRankingsTimeoutMs
   );
+  const positiveInt = (value, fallback) => {
+    const parsed = Number(value);
+    return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback;
+  };
+  const sharedMetaTftSemaphore = options.metaTftSemaphore ?? new BoundedSemaphore({
+    maxConcurrent: positiveInt(options.metaTftMaxConcurrent ?? runtimeEnv.TFT_AGENT_METATFT_MAX_CONCURRENT, 16),
+    maxQueue: positiveInt(options.metaTftMaxQueue ?? runtimeEnv.TFT_AGENT_METATFT_MAX_QUEUE, 256),
+    queueTimeoutMs: positiveTimeout(options.metaTftQueueTimeoutMs ?? runtimeEnv.TFT_AGENT_METATFT_QUEUE_TIMEOUT_MS, 5000),
+    errorCode: "metatft_busy",
+    errorStatusCode: 503,
+    errorMessage: "统计服务并发繁忙，请稍后重试"
+  });
+  const sharedMetaTftMetrics = options.metaTftConcurrencyMetrics ?? {
+    requestsTotal: 0,
+    singleflightCoalesced: 0,
+    upstream429Count: 0
+  };
   const metaTFTOptions = options.metaTFTOptions ?? {};
   const compsOptions = options.compsOptions ?? {};
   const metaTFTClient = options.metaTFTClient ?? new MetaTFTClient({
     ...metaTFTOptions,
+    semaphore: metaTFTOptions.semaphore ?? sharedMetaTftSemaphore,
+    concurrencyMetrics: metaTFTOptions.concurrencyMetrics ?? sharedMetaTftMetrics,
     timeoutMs: metaTFTOptions.timeoutMs ?? requestTimeouts.explorerTimeoutMs
   });
   const catalogMetaTFTClient = options.catalogMetaTFTClient
     ?? options.metaTFTClient
     ?? new MetaTFTClient({
       ...metaTFTOptions,
+      semaphore: metaTFTOptions.semaphore ?? sharedMetaTftSemaphore,
+      concurrencyMetrics: metaTFTOptions.concurrencyMetrics ?? sharedMetaTftMetrics,
       timeoutMs: metaTFTOptions.timeoutMs ?? requestTimeouts.catalogTimeoutMs
     });
   const compsClient = options.compsClient ?? new CompsContextClient({
     ...compsOptions,
+    semaphore: compsOptions.semaphore ?? sharedMetaTftSemaphore,
+    concurrencyMetrics: compsOptions.concurrencyMetrics ?? sharedMetaTftMetrics,
     timeoutMs: compsOptions.timeoutMs ?? requestTimeouts.compsTimeoutMs,
     rankingsTimeoutMs: compsOptions.rankingsTimeoutMs ?? requestTimeouts.compRankingsTimeoutMs
   });
+  const hotQueryCache = options.hotQueryCache ?? new SingleflightCache({
+    maxEntries: positiveInt(options.hotQueryCacheMaxEntries ?? runtimeEnv.TFT_AGENT_HOT_CACHE_MAX_ENTRIES, 256),
+    softTtlMs: positiveTimeout(options.hotQueryCacheSoftTtlMs ?? runtimeEnv.TFT_AGENT_HOT_CACHE_SOFT_TTL_MS, 120_000),
+    hardTtlMs: positiveTimeout(options.hotQueryCacheHardTtlMs ?? runtimeEnv.TFT_AGENT_HOT_CACHE_HARD_TTL_MS, 600_000)
+  });
+  const llmBulkhead = options.llmBulkhead ?? new BoundedSemaphore({
+    maxConcurrent: positiveInt(options.llmMaxConcurrent ?? runtimeEnv.TFT_AGENT_LLM_MAX_CONCURRENT, 20),
+    maxQueue: positiveInt(options.llmMaxQueue ?? runtimeEnv.TFT_AGENT_LLM_MAX_QUEUE, 100),
+    queueTimeoutMs: positiveTimeout(options.llmQueueTimeoutMs ?? runtimeEnv.TFT_AGENT_LLM_QUEUE_TIMEOUT_MS, 8000),
+    errorCode: "llm_busy",
+    errorStatusCode: 503,
+    errorMessage: "AI 推理并发繁忙，请稍后重试"
+  });
+  const sseBulkhead = {
+    active: 0,
+    peak: 0,
+    rejected: 0,
+    maxActive: positiveInt(options.sseMaxActive ?? runtimeEnv.TFT_AGENT_SSE_MAX_ACTIVE, 80)
+  };
+  let eventLoopMonitor = null;
+  try {
+    eventLoopMonitor = monitorEventLoopDelay({ resolution: 20 });
+    eventLoopMonitor.enable();
+  } catch {
+    eventLoopMonitor = null;
+  }
   const cacheStore = options.cacheStore ?? createSmallWindowCacheStore(options);
   const statsProvider = options.statsProvider ?? new MetaTftLiveProvider({
     explorerClient: metaTFTClient,
@@ -3493,6 +3588,10 @@ export function createSmallWindowRuntime(options = {}) {
     strategyVideoSearchService,
     cacheStore,
     cacheStoreInfo,
+    hotQueryCache,
+    llmBulkhead,
+    sseBulkhead,
+    eventLoopMonitor,
     compDetailCache: options.compDetailCache ?? new Map(),
     compDetailLoadPromises: options.compDetailLoadPromises ?? new Map(),
     compDetailCacheTtlMs: Math.max(
@@ -3664,6 +3763,45 @@ export function createSmallWindowRuntime(options = {}) {
   };
 }
 
+function emblemHotCacheKey(tool, query, seasonContext) {
+  return `emblem:${tool}:${JSON.stringify([
+    seasonContext?.id ?? DEFAULT_SEASON_CONTEXT_ID,
+    query.queue ?? null,
+    query.patch ?? "current",
+    Number(query.days ?? 3),
+    [...(query.rank ?? [])].sort(),
+    Number(query.minSamples ?? 100),
+    [...(query.excludeUnits ?? [])].sort(),
+    query.item ?? null,
+    query.recipeBase ?? null,
+    query.primaryMetric ?? null,
+    [...(query.apiNames ?? [])].sort()
+  ])}`;
+}
+
+async function cachedEmblemQuery(runtime, tool, query, seasonContext, loader, options = {}) {
+  if (!runtime.hotQueryCache) {
+    return loader();
+  }
+  const cacheKey = emblemHotCacheKey(tool, query, seasonContext);
+  const storeOptions = {
+    seasonContextId: seasonContext?.id ?? DEFAULT_SEASON_CONTEXT_ID,
+    patch: query.patch ?? "current",
+    clone: false
+  };
+  const { value } = await runtime.hotQueryCache.getOrLoad(cacheKey, loader, {
+    signal: options.signal ?? null,
+    forceRefresh: Boolean(options.refresh),
+    l2Get: runtime.cacheStore?.getQuery
+      ? () => runtime.cacheStore.getQuery(cacheKey, storeOptions)
+      : null,
+    l2Set: runtime.cacheStore?.setQuery
+      ? (loaded) => runtime.cacheStore.setQuery(cacheKey, loaded, { ...storeOptions, ttlMs: 300_000 })
+      : null
+  });
+  return value;
+}
+
 export async function queryCompositionRankings(toolInput, catalog, runtime, options = {}) {
   const seasonContext = options.seasonContext
     ?? runtime.seasonContextService.resolveForQuery(options.seasonContextId);
@@ -3678,39 +3816,102 @@ export async function queryCompositionRankings(toolInput, catalog, runtime, opti
   const limit = Number.isFinite(requestedLimit)
     ? Math.max(1, Math.min(100, Math.floor(requestedLimit)))
     : 20;
-  // Optional request-local raw snapshot reuse. Each registered call still
-  // resolves/filters/ranks independently and passes the normal Evidence gates.
-  const snapshotKey = JSON.stringify([seasonContext.id, queue ?? null, patch, days]);
+  // Shared L1 SWR + Singleflight + L2 cacheStore snapshot reuse, avoiding redundant
+  // upstream fan-out and full-payload deep clones under concurrent requests.
+  const snapshotKey = `comps_snapshot:${JSON.stringify([seasonContext.id, queue ?? null, patch, days])}`;
   const snapshotCache = options.compsData ? null : options.snapshotCache;
-  const cached = snapshotCache?.get(snapshotKey);
-  const reuse = cached && Date.now() >= cached.fetchedAt && Date.now() - cached.fetchedAt < 30_000;
-  options.signal?.throwIfAborted?.();
-  const compsData = reuse ? structuredClone(cached.compsData)
-    : options.compsData ?? await runtime.compsClient.getCompsData({ queue });
-  options.signal?.throwIfAborted?.();
-  const dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
-  const compsStats = reuse ? structuredClone(cached.compsStats) : await runtime.compsClient.getCompsStats({
-    queue,
-    patch,
-    days,
-    permit_filter_adjustment: "true",
-    ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
-  });
-  options.signal?.throwIfAborted?.();
-  const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
-  if (
-    dataClusterId !== undefined
-    && statsClusterId !== undefined
-    && String(dataClusterId) !== String(statsClusterId)
-  ) {
-    throw Object.assign(new Error("MetaTFT composition definition and statistics clusters do not match"), {
-      code: "comp_cluster_mismatch",
-      recoverable: true
+  let compsData;
+  let compsStats;
+  if (snapshotCache) {
+    const cached = snapshotCache.get(snapshotKey);
+    const reuse = cached && Date.now() >= cached.fetchedAt && Date.now() - cached.fetchedAt < 30_000;
+    options.signal?.throwIfAborted?.();
+    compsData = reuse ? cached.compsData : await runtime.compsClient.getCompsData({ queue }, { signal: options.signal });
+    options.signal?.throwIfAborted?.();
+    const dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+    compsStats = reuse ? cached.compsStats : await runtime.compsClient.getCompsStats({
+      queue,
+      patch,
+      days,
+      permit_filter_adjustment: "true",
+      ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+    }, { signal: options.signal });
+    options.signal?.throwIfAborted?.();
+    const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+    if (
+      dataClusterId !== undefined
+      && statsClusterId !== undefined
+      && String(dataClusterId) !== String(statsClusterId)
+    ) {
+      throw Object.assign(new Error("MetaTFT composition definition and statistics clusters do not match"), {
+        code: "comp_cluster_mismatch",
+        recoverable: true
+      });
+    }
+    if (!reuse) {
+      if (snapshotCache.size >= 16) snapshotCache.delete(snapshotCache.keys().next().value);
+      snapshotCache.set(snapshotKey, { fetchedAt: Date.now(), compsData, compsStats });
+    }
+  } else if (!options.compsData && runtime.hotQueryCache) {
+    const storeOptions = { seasonContextId: seasonContext.id, patch, clone: false };
+    const { value } = await runtime.hotQueryCache.getOrLoad(snapshotKey, async () => {
+      const fetchedData = await runtime.compsClient.getCompsData({ queue });
+      const dataClusterId = fetchedData?.results?.data?.cluster_id ?? fetchedData?.cluster_id;
+      const fetchedStats = await runtime.compsClient.getCompsStats({
+        queue,
+        patch,
+        days,
+        permit_filter_adjustment: "true",
+        ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+      });
+      const statsClusterId = fetchedStats?.cluster_id ?? fetchedStats?.data?.cluster_id;
+      if (
+        dataClusterId !== undefined
+        && statsClusterId !== undefined
+        && String(dataClusterId) !== String(statsClusterId)
+      ) {
+        throw Object.assign(new Error("MetaTFT composition definition and statistics clusters do not match"), {
+          code: "comp_cluster_mismatch",
+          recoverable: true
+        });
+      }
+      return { compsData: fetchedData, compsStats: fetchedStats };
+    }, {
+      signal: options.signal ?? null,
+      forceRefresh: Boolean(options.refresh),
+      l2Get: runtime.cacheStore?.getQuery
+        ? () => runtime.cacheStore.getQuery(snapshotKey, storeOptions)
+        : null,
+      l2Set: runtime.cacheStore?.setQuery
+        ? (loaded) => runtime.cacheStore.setQuery(snapshotKey, loaded, { ...storeOptions, ttlMs: 300_000 })
+        : null
     });
-  }
-  if (snapshotCache && !reuse) {
-    if (snapshotCache.size >= 16) snapshotCache.delete(snapshotCache.keys().next().value);
-    snapshotCache.set(snapshotKey, { fetchedAt: Date.now(), compsData: structuredClone(compsData), compsStats: structuredClone(compsStats) });
+    compsData = value.compsData;
+    compsStats = value.compsStats;
+  } else {
+    options.signal?.throwIfAborted?.();
+    compsData = options.compsData ?? await runtime.compsClient.getCompsData({ queue }, { signal: options.signal });
+    options.signal?.throwIfAborted?.();
+    const dataClusterId = compsData?.results?.data?.cluster_id ?? compsData?.cluster_id;
+    compsStats = await runtime.compsClient.getCompsStats({
+      queue,
+      patch,
+      days,
+      permit_filter_adjustment: "true",
+      ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+    }, { signal: options.signal });
+    options.signal?.throwIfAborted?.();
+    const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
+    if (
+      dataClusterId !== undefined
+      && statsClusterId !== undefined
+      && String(dataClusterId) !== String(statsClusterId)
+    ) {
+      throw Object.assign(new Error("MetaTFT composition definition and statistics clusters do not match"), {
+        code: "comp_cluster_mismatch",
+        recoverable: true
+      });
+    }
   }
   const intent = options.intent === "comp_trends" ? "comp_trends" : "comp_rankings";
   const rankings = buildCompRankings(createCompsPageSnapshot(compsData, compsStats), {
@@ -4407,12 +4608,34 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
     ?? env.TFT_AGENT_CONVERSATION_STATE_V2_MODE
     ?? "off"
   ).trim().toLowerCase();
+  const lightweightLlmConfig = resolveTieredLlmConfig(
+    structuredParserRuntime.structuredParserConfig ?? {},
+    {
+      model: options.lightweightModel,
+      endpoint: options.lightweightEndpoint,
+      apiKey: options.lightweightApiKey,
+      thinkingMode: options.lightweightThinkingMode
+    },
+    env,
+    "TFT_AGENT_LIGHTWEIGHT"
+  );
+  const reactDecisionLlmConfig = resolveTieredLlmConfig(
+    structuredParserRuntime.structuredParserConfig ?? {},
+    {
+      model: options.reactDecisionModel,
+      endpoint: options.reactDecisionEndpoint,
+      apiKey: options.reactDecisionApiKey,
+      thinkingMode: options.reactDecisionThinkingMode
+    },
+    env,
+    "TFT_AGENT_REACT_DECISION"
+  );
   const turnDeltaProvider = options.turnDeltaProvider
     ?? options.semanticTaskProvider
-    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+    ?? (lightweightLlmConfig.enabled
       ? createChatSemanticTaskProvider({
-        ...structuredParserRuntime.structuredParserConfig,
-        thinkingMode: options.turnDeltaThinkingMode ?? "disabled",
+        ...lightweightLlmConfig,
+        thinkingMode: options.turnDeltaThinkingMode ?? lightweightLlmConfig.thinkingMode ?? "disabled",
         fetchImpl: options.structuredParserFetch ?? options.llmFetch,
         onRequestLog: options.turnDeltaRequestLog
           ?? options.semanticTaskRequestLog
@@ -4439,13 +4662,13 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
   const controlledPlannerFallback = options.controlledPlannerFallback
     ?? (controlledPlanner?.plannerKind === "llm" ? deterministicControlledPlanner : null);
   const reactDecisionProvider = options.reactDecisionProvider
-    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+    ?? (reactDecisionLlmConfig.enabled
       ? createReactDecisionProvider({
-        ...structuredParserRuntime.structuredParserConfig,
+        ...reactDecisionLlmConfig,
         timeoutMs: options.reactDecisionTimeoutMs
           ?? env.TFT_AGENT_REACT_DECISION_TIMEOUT_MS
           ?? 25_000,
-        thinkingMode: options.reactDecisionThinkingMode ?? "disabled",
+        thinkingMode: options.reactDecisionThinkingMode ?? reactDecisionLlmConfig.thinkingMode ?? "disabled",
         maxTokens: options.reactDecisionMaxTokens ?? 1800,
         fetchImpl: options.reactDecisionFetch ?? options.structuredParserFetch ?? options.llmFetch,
         onRequestLog: options.reactDecisionRequestLog
@@ -4454,10 +4677,10 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       })
       : null);
   const quickTaskSupplementalClassifier = options.quickTaskSupplementalClassifier
-    ?? (structuredParserRuntime.structuredParserConfig?.enabled
+    ?? (lightweightLlmConfig.enabled
       ? createQuickTaskSupplementalClassifierProvider({
-        ...structuredParserRuntime.structuredParserConfig,
-        thinkingMode: options.quickTaskSupplementalThinkingMode ?? "disabled",
+        ...lightweightLlmConfig,
+        thinkingMode: options.quickTaskSupplementalThinkingMode ?? lightweightLlmConfig.thinkingMode ?? "disabled",
         maxTokens: options.quickTaskSupplementalMaxTokens ?? 180,
         fetchImpl: options.quickTaskSupplementalFetch
           ?? options.structuredParserFetch
@@ -4465,9 +4688,12 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       })
       : null);
   const entitySlangProvider = options.entitySlangProvider ?? (
-    structuredParserRuntime.structuredParserConfig?.enabled
-      ? createEntitySlangProvider({ ...structuredParserRuntime.structuredParserConfig,
-        thinkingMode: "disabled", fetchImpl: options.entitySlangFetch ?? options.structuredParserFetch ?? options.llmFetch })
+    lightweightLlmConfig.enabled
+      ? createEntitySlangProvider({
+        ...lightweightLlmConfig,
+        thinkingMode: lightweightLlmConfig.thinkingMode ?? "disabled",
+        fetchImpl: options.entitySlangFetch ?? options.structuredParserFetch ?? options.llmFetch
+      })
       : null
   );
   const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
@@ -4871,7 +5097,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
             items: setLookupItems.length,
             updatedAt: new Date().toISOString()
           };
-          warnings.push("MetaTFT /items 未返回当前赛季数据，已使用对应 set lookup 装备目录");
+          warnings.push("实时装备统计暂未返回当前赛季数据，已使用当前赛季装备目录");
         } else if (includeSeedCatalog) {
           const snapshotItems = buildItemCatalogFromItemsResponse({
             data: (CURRENT_ITEM_LOCALIZATION.items ?? []).map((item) => ({ items: item.apiName }))
@@ -5310,13 +5536,16 @@ async function persistQueryResponse(payload, runtime, details = {}) {
   const visitorScope = String(details.scope ?? "local");
   const conclusion = payload.answer?.generatedConclusion ?? null;
   const llmActivity = llmActivityForPayload(payload, runtime);
-  const responseSnapshot = structuredClone(payload);
+  const responseSnapshot = { ...payload };
   delete responseSnapshot.access;
   if (responseSnapshot.answer?.generatedConclusion?.status === "pending") {
-    responseSnapshot.answer.generatedConclusion = {
-      status: "pending",
-      content: null,
-      model: responseSnapshot.answer.generatedConclusion.model ?? null
+    responseSnapshot.answer = {
+      ...responseSnapshot.answer,
+      generatedConclusion: {
+        status: "pending",
+        content: null,
+        model: responseSnapshot.answer.generatedConclusion.model ?? null
+      }
     };
   }
   attachSessionEvidenceSnapshotHashes(responseSnapshot);
@@ -5830,12 +6059,26 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     const execution = await requestRuntime.executionPlanExecutor.execute(plan, {
       run: context.agentRun, signal: context.signal, intent: tool,
       handlers: { [tool]: async (args, toolContext) => {
+        const scoped = scopedEmblemQuery(args, preferences);
         if (tool === "emblem_rankings") {
           const itemDetails = await emblemItemDetails(requestRuntime, seasonContext, entityDetails);
-          return queryEmblemRankings({ client: requestRuntime.metaTFTClient, catalog, itemDetails, query: scopedEmblemQuery(args, preferences), signal: toolContext.signal });
+          return cachedEmblemQuery(
+            requestRuntime,
+            tool,
+            scoped,
+            seasonContext,
+            () => queryEmblemRankings({ client: requestRuntime.metaTFTClient, catalog, itemDetails, query: scoped }),
+            { signal: toolContext.signal, refresh: body.refresh }
+          );
         }
-        return queryEmblemCarriers({ client: requestRuntime.metaTFTClient, compsClient: requestRuntime.compsClient,
-          catalog, query: scopedEmblemQuery(args, preferences), signal: toolContext.signal });
+        return cachedEmblemQuery(
+          requestRuntime,
+          tool,
+          scoped,
+          seasonContext,
+          () => queryEmblemCarriers({ client: requestRuntime.metaTFTClient, compsClient: requestRuntime.compsClient, catalog, query: scoped }),
+          { signal: toolContext.signal, refresh: body.refresh }
+        );
       } }
     });
     if (execution.status !== "completed") {
@@ -6462,7 +6705,29 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     agentRun: context.agentRun,
     abortSignal: context.signal
   };
-  const result = await requestRuntime.recommendForInputImpl(input, recommendationOptions);
+  const canUseHotQuickCompCache = Boolean(
+    requestRuntime.hotQueryCache
+    && ["comp-rankings", "comp-trends"].includes(quickTask?.id)
+    && Object.keys(quickTask?.arguments ?? {}).length === 0
+    && !supplementalText
+    && !body.refresh
+  );
+  const result = canUseHotQuickCompCache
+    ? (await requestRuntime.hotQueryCache.getOrLoad(
+      `quick_comp:${JSON.stringify([
+        quickTask.id,
+        seasonContext.id,
+        preferences.queue ?? null,
+        preferences.patch ?? "current",
+        Number(preferences.days ?? 3),
+        [...(preferences.rankFilter ?? [])].sort(),
+        Number(preferences.minSamples ?? 100),
+        displayLocale
+      ])}`,
+      () => requestRuntime.recommendForInputImpl(input, recommendationOptions),
+      { signal: context.signal }
+    )).value
+    : await requestRuntime.recommendForInputImpl(input, recommendationOptions);
   if (quickTask && result.cache?.query) {
     result.cache.query.policy = {
       refreshAfterMs: quickCachePolicy.refreshAfterMs,
@@ -7135,10 +7400,27 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
       const loaded = await resources();
       const query = scopedEmblemQuery(carriers ? input : { ...input, recipeBase: input.recipeBase ?? "all" }, preferences);
       const result = carriers
-        ? await queryEmblemCarriers({ client: runtime.metaTFTClient, compsClient: runtime.compsClient,
-          catalog: loaded.catalog, query, signal: toolContext.signal })
-        : await queryEmblemRankings({ client: runtime.metaTFTClient, catalog: loaded.catalog,
-          itemDetails: await emblemItemDetails(runtime, seasonContext, loaded.entityDetails), query, signal: toolContext.signal });
+        ? await cachedEmblemQuery(
+          runtime,
+          "emblem_carriers",
+          query,
+          seasonContext,
+          () => queryEmblemCarriers({ client: runtime.metaTFTClient, compsClient: runtime.compsClient, catalog: loaded.catalog, query }),
+          { signal: toolContext.signal }
+        )
+        : await cachedEmblemQuery(
+          runtime,
+          "emblem_rankings",
+          query,
+          seasonContext,
+          async () => queryEmblemRankings({
+            client: runtime.metaTFTClient,
+            catalog: loaded.catalog,
+            itemDetails: await emblemItemDetails(runtime, seasonContext, loaded.entityDetails),
+            query
+          }),
+          { signal: toolContext.signal }
+        );
       for (const carrier of result.carriers ?? []) {
         carrier.unit.iconUrl = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName).iconUrl;
       }
@@ -8392,12 +8674,21 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
       candidateDecisionProfile: candidateControl.decisionProfile
     }, decisionContext), runtime.reactDecisionProvider)
     : runtime.reactDecisionProvider;
-  const decisionProvider = quotaWrappedCallable(
+  const quotaDecisionProvider = quotaWrappedCallable(
     candidateDecisionProvider,
     context.accessService,
     context.visitor,
     reserveLlmUseForRequest
   );
+  const decisionProvider = runtime.llmBulkhead
+    ? Object.assign(
+      async (decisionRequest, decisionContext) => runtime.llmBulkhead.run(
+        () => quotaDecisionProvider(decisionRequest, decisionContext),
+        decisionContext?.signal ?? context.signal ?? null
+      ),
+      quotaDecisionProvider
+    )
+    : quotaDecisionProvider;
   const publicAccessStatus = async () => {
     if (!context.accessService || !context.visitor) return null;
     try {
@@ -8717,6 +9008,7 @@ export async function handleCacheClearRequest(runtime) {
   const catalogCache = invalidateRuntimeCatalog(runtime);
   const compDetailCache = runtime.compDetailCache?.size ?? 0;
   const augmentLookupCache = runtime.augmentLookupCache?.size ?? 0;
+  const hotQueryCache = runtime.hotQueryCache?.clear?.() ?? 0;
   runtime.compDetailCache?.clear?.();
   runtime.compDetailLoadPromises?.clear?.();
   runtime.augmentLookupCache?.clear?.();
@@ -8730,7 +9022,8 @@ export async function handleCacheClearRequest(runtime) {
       sessionState: storeCleared.sessionState ?? 0,
       catalogCache,
       compDetailCache,
-      augmentLookupCache
+      augmentLookupCache,
+      hotQueryCache
     }
   };
 }
@@ -9043,7 +9336,7 @@ async function createCompDetailPayload(input, runtime, seasonContext) {
       detailsEndpoint: formation.source.endpoint,
       augmentEndpoint: augmentRecommendations.source.endpoint,
       updatedAt,
-      risk: "MetaTFT is an unofficial third-party data source. Positioning and augment compatibility are refreshed on demand and may change."
+      risk: "Positioning and augment compatibility are refreshed on demand from match statistics and may change."
     },
     warnings
   };
@@ -9937,7 +10230,7 @@ async function loadAdminCurrentComps(runtime, seasonContext, options = {}) {
   const statsClusterId = compsStats?.cluster_id ?? compsStats?.data?.cluster_id;
   if (dataClusterId !== undefined && statsClusterId !== undefined && String(dataClusterId) !== String(statsClusterId)) {
     compsData = await runtime.compsClient.getCompsData({ queue });
-    throw Object.assign(new Error("MetaTFT 阵容定义和统计 cluster 不一致，请稍后重试"), {
+    throw Object.assign(new Error("阵容定义和统计数据暂未同步，请稍后重试"), {
       statusCode: 503,
       code: "comp_cluster_mismatch"
     });
@@ -10389,37 +10682,62 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, statusCode, payload);
       }
 
+      const runWithSseBulkhead = async (fn) => {
+        const bulkhead = runtime.sseBulkhead;
+        if (bulkhead && bulkhead.active >= bulkhead.maxActive) {
+          bulkhead.rejected += 1;
+          return sendJson(res, 503, {
+            ok: false,
+            code: "server_busy",
+            error: "当前并发请求较多，请稍后重试"
+          });
+        }
+        if (bulkhead) {
+          bulkhead.active += 1;
+          if (bulkhead.active > bulkhead.peak) bulkhead.peak = bulkhead.active;
+        }
+        try {
+          return await fn();
+        } finally {
+          if (bulkhead) bulkhead.active = Math.max(0, bulkhead.active - 1);
+        }
+      };
+
       if (req.method === "POST" && url.pathname === "/api/recommend/stream") {
-        const body = await readJsonRequest(req);
-        const controller = new AbortController();
-        const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
-        req.once("aborted", abortRequest);
-        res.once("close", () => {
-          if (!res.writableEnded) abortRequest();
-        });
-        return streamRecommendResponse(req, res, body, runtime, {
-          visitor,
-          accessService,
-          signal: controller.signal
+        return runWithSseBulkhead(async () => {
+          const body = await readJsonRequest(req);
+          const controller = new AbortController();
+          const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
+          req.once("aborted", abortRequest);
+          res.once("close", () => {
+            if (!res.writableEnded) abortRequest();
+          });
+          return streamRecommendResponse(req, res, body, runtime, {
+            visitor,
+            accessService,
+            signal: controller.signal
+          });
         });
       }
 
       if (req.method === "POST" && url.pathname === "/api/react-chat/stream") {
-        const body = await readJsonRequest(req);
-        const trustedAnalysisContext = body?.analysisContext
-          ? await playerPoolRouter.resolveAnalysisContext(body.analysisContext, { scope: visitor.scope })
-          : null;
-        const controller = new AbortController();
-        const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
-        req.once("aborted", abortRequest);
-        res.once("close", () => {
-          if (!res.writableEnded) abortRequest();
-        });
-        return streamReactChatResponse(req, res, body, runtime, {
-          visitor,
-          accessService,
-          trustedAnalysisContext,
-          signal: controller.signal
+        return runWithSseBulkhead(async () => {
+          const body = await readJsonRequest(req);
+          const trustedAnalysisContext = body?.analysisContext
+            ? await playerPoolRouter.resolveAnalysisContext(body.analysisContext, { scope: visitor.scope })
+            : null;
+          const controller = new AbortController();
+          const abortRequest = () => controller.abort(new Error("HTTP client disconnected"));
+          req.once("aborted", abortRequest);
+          res.once("close", () => {
+            if (!res.writableEnded) abortRequest();
+          });
+          return streamReactChatResponse(req, res, body, runtime, {
+            visitor,
+            accessService,
+            trustedAnalysisContext,
+            signal: controller.signal
+          });
         });
       }
 
@@ -10460,14 +10778,14 @@ export function createSmallWindowHandler(options = {}) {
       }
 
       if (req.method === "GET" && url.pathname === "/api/conclusion/stream") {
-        return streamConclusionResponse(
+        return runWithSseBulkhead(() => streamConclusionResponse(
           req,
           res,
           runtime,
           url.searchParams.get("jobId"),
           visitor.scope,
           url.searchParams.get("token")
-        );
+        ));
       }
 
       if (req.method === "GET" && url.pathname === "/api/preferences") {
@@ -10638,11 +10956,13 @@ export function createSmallWindowHandler(options = {}) {
         const seasonContext = resolveAdminSeasonContext(runtime, body?.seasonContextId);
         const cleared = await runtime.cacheStore?.clearQueryHistory?.({ seasonContextId: seasonContext.id }) ?? {};
         const catalogCache = invalidateRuntimeCatalog(runtime);
+        const hotQueryCache = runtime.hotQueryCache?.clear?.() ?? 0;
         await recordAdminAudit(runtime, seasonContext.id, "clear", "cache", null, null, {
           ...cleared,
-          catalogCache
+          catalogCache,
+          hotQueryCache
         });
-        return sendJson(res, 200, { ok: true, cleared: { ...cleared, catalogCache } });
+        return sendJson(res, 200, { ok: true, cleared: { ...cleared, catalogCache, hotQueryCache } });
       }
 
       if (req.method === "GET" && url.pathname === "/api/admin/item-catalog-audit") {
@@ -10756,7 +11076,10 @@ export function createSmallWindowHandler(options = {}) {
 }
 
 export function createSmallWindowServer(options = {}) {
-  return createServer(createSmallWindowHandler(options));
+  const server = createServer(createSmallWindowHandler(options));
+  server.keepAliveTimeout = Math.max(5_000, Number(options.keepAliveTimeoutMs ?? 65_000));
+  server.headersTimeout = Math.max(server.keepAliveTimeout + 1_000, Number(options.headersTimeoutMs ?? 66_000));
+  return server;
 }
 
 function parseCliOptions(args) {

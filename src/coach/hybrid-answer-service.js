@@ -303,7 +303,7 @@ function renderStructuredEmpty({ bundle, options }) {
     schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
     status: "insufficient_evidence",
     headline: "当前结构化统计无合格候选",
-    text: "本轮 MetaTFT 结构化 QueryResult 已返回，但当前查询范围内没有满足样本门槛和筛选条件的候选。不会用 current_stats 摘要或视频观点替代这一结果。",
+    text: "当前统计查询已完成，但当前查询范围内没有满足样本门槛和筛选条件的候选，不会用历史摘要或视频观点替代这一结果。",
     currentRecommendation: null,
     reasons: [],
     alternatives: [],

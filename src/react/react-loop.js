@@ -1290,7 +1290,7 @@ export function buildCompositionTrendFallback(ledger) {
   }
   return {
     answer: enrichMetricLeaderInterpretations(
-      `MetaTFT 今日趋势中，${sections.join("；")}。各榜单按当前返回结果独立展示。`
+      `今日阵容趋势中，${sections.join("；")}。各榜单按当前返回结果独立展示。`
     ),
     evidenceIds: [entry.evidenceId]
   };

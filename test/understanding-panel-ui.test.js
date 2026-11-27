@@ -126,9 +126,9 @@ test("result audit stays structured while chat uses a lightweight prose trace", 
   assert.match(chatHtml, /我理解到/);
   assert.match(chatHtml, /我识别到的条件是/);
   assert.doesNotMatch(chatHtml, /我准备查询什么|哪些地方存在不确定性|understanding-body/);
-  assert.doesNotMatch(chatHtml, /查询 MetaTFT 当前阵容排名与稳定性/);
+  assert.doesNotMatch(chatHtml, /查询当前阵容排名与稳定性/);
   assert.match(progressiveHtml, /接下来我会/);
-  assert.match(progressiveHtml, /查询 MetaTFT 当前阵容排名与稳定性/);
+  assert.match(progressiveHtml, /查询当前阵容排名与稳定性/);
   assert.doesNotMatch(html, /must never be exposed|providerRawResponse|完整 Prompt|思维链/);
   assert.doesNotMatch(chatHtml, /must never be exposed|providerRawResponse|完整 Prompt|思维链/);
 });

@@ -16,8 +16,8 @@ function asArray(value) {
 }
 
 function cloneValue(value) {
-  if (value === undefined) return undefined;
-  return JSON.parse(JSON.stringify(value));
+  if (value === undefined || value === null || typeof value !== "object") return value;
+  return structuredClone(value);
 }
 
 function sortStrings(values) {
@@ -49,9 +49,9 @@ function isExpired(entry, nowMs) {
   return Boolean(entry?.expiresAt) && Date.parse(entry.expiresAt) <= nowMs;
 }
 
-function entryValue(entry, nowMs) {
+function entryValue(entry, nowMs, { clone = true } = {}) {
   return {
-    value: cloneValue(entry.value),
+    value: clone ? cloneValue(entry.value) : entry.value,
     updatedAt: entry.updatedAt,
     expiresAt: entry.expiresAt,
     expired: isExpired(entry, nowMs)
@@ -210,6 +210,7 @@ export class MemoryCacheStore {
     this.compTrendHistories = new Map();
     this.entityAliases = [];
     this.queryEvents = new Map();
+    this.maxQueryEvents = positiveInteger(options.maxQueryEvents, 500);
     this.feedbackEvents = [];
     this.adminAuditEvents = [];
     this.compProfiles = new Map();
@@ -224,7 +225,7 @@ export class MemoryCacheStore {
 
     const nowMs = this.now();
     if (isExpired(entry, nowMs) && !options.allowExpired) return null;
-    return entryValue(entry, nowMs);
+    return entryValue(entry, nowMs, { clone: options.clone !== false });
   }
 
   _set(map, key, value, ttlMs) {
@@ -235,7 +236,7 @@ export class MemoryCacheStore {
       expiresAt: expiresAt(nowMs, ttlMs)
     };
     map.set(key, entry);
-    return entryValue(entry, nowMs);
+    return entryValue(entry, nowMs, { clone: false });
   }
 
   getQuery(key, options = {}) {
@@ -480,8 +481,8 @@ export class MemoryCacheStore {
       conversationId: record.conversationId ?? record.conversation_id ?? null,
       input,
       resultType: record.resultType ?? record.result_type ?? null,
-      query: cloneValue(record.query ?? null),
-      response: cloneValue(record.response ?? null),
+      query: record.query && typeof record.query === "object" ? { ...record.query } : (record.query ?? null),
+      response: record.response && typeof record.response === "object" ? { ...record.response } : (record.response ?? null),
       patch: record.patch ?? null,
       cacheHit: Boolean(record.cacheHit ?? record.cache_hit),
       cacheStale: Boolean(record.cacheStale ?? record.cache_stale),
@@ -493,7 +494,10 @@ export class MemoryCacheStore {
       createdAt: record.createdAt ?? record.created_at ?? new Date(this.now()).toISOString()
     };
     this.queryEvents.set(queryId, entry);
-    return cloneValue(entry);
+    while (this.queryEvents.size > this.maxQueryEvents) {
+      this.queryEvents.delete(this.queryEvents.keys().next().value);
+    }
+    return { ...entry };
   }
 
   getQueryEvent(queryId) {

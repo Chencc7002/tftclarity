@@ -355,17 +355,11 @@ function reactDecisionMessages(
   promptVersion = REACT_DECISION_PROMPT_VERSION
 ) {
   const state = request.state ?? {};
+  // Keep static prefix (decision contract, toolCatalog, and static tool guidance)
+  // ahead of per-turn and post-evidence guidance so cross-turn and intra-loop
+  // Prefix KV Cache stays valid across ReAct steps.
   const messages = [
     { role: "system", content: decisionContract(cacheNamespace, tacticalPresentationScope, promptVersion) },
-    ...emblemRankingGuidance(request.toolCatalog),
-    ...itemQueryGuidance(request.toolCatalog, state.bridgeContext),
-    ...confirmedEntityGuidance(state.question, state.bridgeContext),
-    ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
-    ...trendSummaryGuidance(state.evidence),
-    ...sampleReferenceGuidance(state.evidence),
-    ...quotedMetricGuidance(state.evidence, state.bridgeContext),
-    ...videoSummaryGuidance(state.evidence),
-    ...intentAdvisoryGuidance(state.intentAdvisory),
     {
       role: "system",
       content: stableJson({
@@ -375,6 +369,12 @@ function reactDecisionMessages(
         toolCatalog: request.toolCatalog ?? []
       })
     },
+    ...emblemRankingGuidance(request.toolCatalog),
+    ...itemQueryGuidance(request.toolCatalog, state.bridgeContext),
+    ...confirmedEntityGuidance(state.question, state.bridgeContext),
+    ...equipmentCategoryGuidance(state.question, state.bridgeContext, state.messages),
+    ...quotedMetricGuidance(state.evidence, state.bridgeContext),
+    ...intentAdvisoryGuidance(state.intentAdvisory),
     {
       role: "user",
       content: stableJson({
@@ -407,6 +407,12 @@ function reactDecisionMessages(
       })
     });
   }
+
+  messages.push(
+    ...trendSummaryGuidance(state.evidence),
+    ...sampleReferenceGuidance(state.evidence),
+    ...videoSummaryGuidance(state.evidence)
+  );
 
   if (repairNote) {
     messages.push({

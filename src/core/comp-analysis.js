@@ -249,7 +249,7 @@ export function analyzeCompRankingResult(result, request = {}) {
   if (resolution.status !== "resolved") {
     const conclusion = resolution.status === "ambiguous"
       ? "命中了多个阵容，请补充核心英雄或主要羁绊。"
-      : "没有在当前 MetaTFT 可见阵容中找到目标，请补充阵容名称、核心英雄或主要羁绊。";
+      : "没有在当前可见阵容中找到目标，请补充阵容名称、核心英雄或主要羁绊。";
     return {
       ...result,
       type: "comp_analysis",

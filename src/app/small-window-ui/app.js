@@ -1495,8 +1495,7 @@ function renderCompDetailContent(descriptor) {
   if (!placedUnits.size && !augmentEntries.length) {
     return `<div class="comp-detail-state" data-status="unavailable">${escapeHtml(t("compDetailUnavailable"))}</div>`;
   }
-  const sourceLabel = compDetailSourceLabel(detail.source);
-  return `${renderCompFormation(descriptor.comp, detail.formation, placedUnits)}${renderCompAugments(augmentEntries)}${sourceLabel ? `<small class="comp-detail-source">${escapeHtml(t("sourceLabel"))}：${escapeHtml(sourceLabel)}</small>` : ""}`;
+  return `${renderCompFormation(descriptor.comp, detail.formation, placedUnits)}${renderCompAugments(augmentEntries)}`;
 }
 
 function renderCompDetailPanel(descriptor) {
@@ -1631,7 +1630,6 @@ function renderCompCard(comp, metricKey, initiallyOpen = false) {
         ${renderCompDetailPanel(detailDescriptor)}
         <div class="full-unit-grid">${(comp.units ?? []).map((unit) => renderCompUnit(unit, comp, true)).join("")}</div>
         <div class="full-trait-row">${(comp.traits ?? []).map((trait) => `<span>${traitThumb(trait)}<small>${escapeHtml(compTraitLabel(trait))}</small></span>`).join("")}</div>
-        <div class="comp-source">${t("sourceLabel")}：MetaTFT /comps_stats${comp.source?.clusterId ? ` / cluster ${escapeHtml(comp.source.clusterId)}` : ""} / ${escapeHtml(compUpdatedLabel(comp.source?.updatedAt))}</div>
       </div>
     </details>`;
 }
@@ -1747,7 +1745,7 @@ function compRankingsHtml(data, { initiallyOpen = true, grouped = false } = {}) 
       ${renderCompPreferenceSummary(data)}
       ${(data.warnings ?? []).map((warning) => `<div class="comp-warning">${escapeHtml(warning)}</div>`).join("")}
       ${renderCompTrendNotice(data, [])}
-      <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`;
+      <div class="comp-footnote">${escapeHtml(data.source?.risk && !/metatft/iu.test(data.source.risk) ? data.source.risk : t("externalRisk"))}</div>${sourceAndRisk(data)}`;
   }
   let firstCompCard = initiallyOpen;
   const renderCompCards = (comps, metricKey) => (comps ?? []).map((comp) => {
@@ -1770,7 +1768,7 @@ function compRankingsHtml(data, { initiallyOpen = true, grouped = false } = {}) 
     ${isTrendView && popularity.length ? `<section class="ranking-section popularity-section"><h2>${t("selectionRateTop")}</h2>${renderCompCards(popularity, "popularity")}</section>` : ""}
     ${sections.map(([key, comps]) => `<section class="ranking-section"><h2>${escapeHtml(compMetricLabel(key))}</h2>${renderCompCards(comps, key)}</section>`).join("")}
     ${references.length ? `<section class="ranking-section low-sample-section"><h2>${t("lowSampleSection")}</h2>${renderCompCards(references, "popularity")}</section>` : ""}
-    <div class="comp-footnote">${escapeHtml(data.source?.risk ?? t("externalRisk"))}</div>${sourceAndRisk(data)}`;
+    <div class="comp-footnote">${escapeHtml(data.source?.risk && !/metatft/iu.test(data.source.risk) ? data.source.risk : t("externalRisk"))}</div>${sourceAndRisk(data)}`;
 }
 
 function feedbackActions(cardIndex) {
@@ -2470,12 +2468,10 @@ function sourceCacheLabel(value, fallbackCache) {
 
 function sourceAndRisk(data) {
   const source = data.source ?? {};
-  const updated = formatCacheUpdatedAt(source.updatedAt) ?? t("updateUnavailable");
   const risks = [...new Set([...(source.risks ?? []), ...(data.answer?.warnings ?? [])])];
+  if (!risks.length) return "";
   return `
-    <section class="source-risk"><h3>${t("source")}</h3><div class="source-line">${escapeHtml(source.provider ?? "MetaTFT")} · ${escapeHtml(source.endpoint ?? t("unknownEndpoint"))} · ${escapeHtml(updated)} · ${escapeHtml(sourceCacheLabel(source.cache, data.cache?.query))}</div>
-    ${source.compCandidates ? `<div class="source-line">${t("compCandidates")}：${escapeHtml(source.compCandidates.endpoint ?? t("unknownEndpoint"))} · ${escapeHtml(sourceCacheLabel(source.compCandidates.cache))}${source.compCandidates.stale ? ` · ${t("staleCache")}` : ""}</div>` : ""}
-    ${risks.length ? `<div class="risk-line"><strong>${t("risk")}</strong> · ${risks.map(escapeHtml).join("；")}</div>` : ""}</section>
+    <section class="source-risk"><div class="risk-line"><strong>${t("risk")}</strong> · ${risks.map(escapeHtml).join("；")}</div></section>
   `;
 }
 
@@ -3973,7 +3969,6 @@ function renderSemanticNativeResult(data) {
       <section class="comp-tactical-detail react-comp-tactical-detail" data-status="${placedUnits.size || augmentEntries.length ? "available" : "unavailable"}">
         ${renderCompFormation(comp, data.formation, placedUnits)}
         ${renderCompAugments(augmentEntries)}
-        ${sourceLabel ? `<small class="comp-detail-source">${escapeHtml(t("sourceLabel"))}：${escapeHtml(sourceLabel)}</small>` : ""}
       </section>
       ${(data.warnings ?? []).length ? `<div class="risk-line">${(data.warnings ?? []).map(escapeHtml).join("<br>")}</div>` : ""}
     `);

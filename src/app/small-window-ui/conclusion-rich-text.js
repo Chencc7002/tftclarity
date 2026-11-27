@@ -223,7 +223,7 @@ function tacticalConclusionText(value) {
   const augments = text.match(/(?:推荐)?(?:强化符文|海克斯)(?:（([^）]*)）|\(([^)]*)\))?\s*[：:]\s*([\s\S]*)$/u);
   const source = String(position[1] ?? position[2] ?? "")
     .replace(/^来自\s*/u, "")
-    .replace(/MetaTFT\s*当前/u, "MetaTFT 当前")
+    .replace(/MetaTFT\s*/giu, "")
     .trim();
   const positions = sectionItems(position[3], /[，；]\s*/u).map(emphasizedPositionItem);
   const augmentItems = augments

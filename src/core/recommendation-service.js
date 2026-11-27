@@ -2218,7 +2218,7 @@ async function recommendItemCarriersForInput(
         updatedAt: stale.updatedAt,
         expiresAt: stale.expiresAt
       };
-      warnings.push(`MetaTFT 请求失败，已使用 ${stale.updatedAt} 的过期装备携带者缓存`);
+      warnings.push(`实时统计请求失败，已使用 ${stale.updatedAt} 的过期装备携带者缓存`);
     }
   }
 
@@ -2919,7 +2919,7 @@ export async function recommendForInput(input, options = {}) {
     const warnings = [];
 
     if (response === undefined && !options.bypassQueryCache) {
-      const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options));
+      const cached = await getStoreEntry(cacheStore, "getQuery", queryCacheKey, storeOptionsFor(options, { clone: false }));
       if (cached?.value?.response !== undefined) {
         response = cached.value.response;
         queryCache = cachedQueryState(queryCacheKey, cached, options);
@@ -3053,7 +3053,7 @@ export async function recommendForInput(input, options = {}) {
           updatedAt: stale.updatedAt,
           expiresAt: stale.expiresAt
         };
-        warnings.push(`MetaTFT 请求失败，已使用 ${stale.updatedAt} 的过期阵容榜缓存`);
+        warnings.push(`实时统计请求失败，已使用 ${stale.updatedAt} 的过期阵容榜缓存`);
       }
     }
 
@@ -3512,7 +3512,7 @@ export async function recommendForInput(input, options = {}) {
         updatedAt: stale.updatedAt,
         expiresAt: stale.expiresAt
       };
-      additionalWarnings.push(`MetaTFT 请求失败，已使用 ${stale.updatedAt} 的缓存结果`);
+      additionalWarnings.push(`实时统计请求失败，已使用 ${stale.updatedAt} 的缓存结果`);
     }
   }
 

@@ -23,7 +23,7 @@ test("tactical conclusions hide provider cell ids and become readable sections",
   const html = conclusionRichTextHtml(source);
 
   assert.doesNotMatch(text, /cell_/iu);
-  assert.match(text, /^\*\*阵容站位（MetaTFT 当前数据）\*\*/u);
+  assert.match(text, /^\*\*阵容站位（当前数据）\*\*/u);
   assert.match(text, /- \*\*千珏\*\*放角落/u);
   assert.match(text, /\*\*推荐强化符文（S级，金色）\*\*/u);
   assert.match(text, /- \*\*秘传奥义\*\*（3-2\/4-2）/u);

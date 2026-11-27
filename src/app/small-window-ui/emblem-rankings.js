@@ -59,8 +59,6 @@ export function mountEmblemRankings({
   }
   function render() {
     const rows = filteredEmblems(data.rows ?? [], base, sort);
-    const sourceUrl = data.source?.url
-      || `https://www.metatft.com/explorer?tab=items&emblem_count=1-any${data.query?.queue === "PBE" ? "&queue=PBE" : ""}`;
     root.innerHTML = `<section class="emblem-results">
       <div class="emblem-intro"><span class="emblem-eyebrow">${escape(t("emblemEyebrow"))}</span><h2>${escape(t("quickTaskEmblemsTitle"))}</h2><p>${escape(t("emblemIntro"))}</p></div>
       <div class="emblem-filters" role="group" aria-label="${escape(t("emblemRecipeFilter"))}">${["craftable", "spatula", "pan", "all"].map(value => `<button type="button" data-emblem-base="${value}" aria-pressed="${value === base}">${escape(t(`emblemBase_${value}`))}</button>`).join("")}</div>
@@ -73,7 +71,7 @@ export function mountEmblemRankings({
         <div class="stats">${metric(t("avg"), row.stats.avgPlacement.toFixed(2))}${metric(t("top4"), percent(row.stats.top4Rate))}${metric(t("win"), percent(row.stats.winRate))}${metric(t("samples"), number(row.stats.games))}</div>
         <details data-emblem-carriers="${escape(row.item.apiName)}"><summary>${escape(t("emblemCommonCarriers"))}<span>${escape(t("emblemByGames"))}</span></summary><div data-emblem-carrier-content>${cached.has(row.item.apiName) ? carrierHtml(cached.get(row.item.apiName)) : escape(t("emblemLoading"))}</div></details>
       </article>`).join("") : `<div class="empty-state"><strong>${escape(t("emblemEmpty"))}</strong><p>${escape(t("emblemEmptyHint"))}</p></div>`}
-      <footer class="emblem-source"><a href="${escape(sourceUrl)}" target="_blank" rel="noopener noreferrer">MetaTFT ↗</a><span>${data.query?.queue === "PBE" ? "PBE · " : ""}${escape(data.query?.patch ?? "")} · ${escape(t("emblemDays", { days: data.query?.days ?? 3 }))}</span><time datetime="${escape(data.updatedAt ?? "")}">${escape(new Date(data.updatedAt).toLocaleString())}</time></footer>
+      <footer class="emblem-source"><span>${data.query?.queue === "PBE" ? "PBE · " : ""}${escape(data.query?.patch ?? "")} · ${escape(t("emblemDays", { days: data.query?.days ?? 3 }))}</span><time datetime="${escape(data.updatedAt ?? "")}">${escape(new Date(data.updatedAt).toLocaleString())}</time></footer>
     </section>`;
     root.querySelectorAll("[data-emblem-base]").forEach(button => button.addEventListener("click", () => {
       base = button.dataset.emblemBase; render(); root.querySelector(`[data-emblem-base="${base}"]`)?.focus();

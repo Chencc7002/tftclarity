@@ -135,7 +135,7 @@ export function buildCompRankings(parsed, options = {}) {
     ? Object.entries(query.constraintSources).filter(([, source]) => source === "conversation").map(([key]) => key)
     : [];
   const warnings = [
-    "MetaTFT /comps 当前不支持按段位或天数筛选；这些条件会保留在会话中，但本榜单仍使用 /comps 的当前版本口径。"
+    "当前阵容榜暂不支持按段位或天数筛选；这些条件会保留在会话中，本榜单仍使用当前版本统计口径。"
   ];
   if (query.sort === "win_first" && !rankedComps.some((comp) => comp.winRate != null)) {
     warnings.push("当前 /comps 响应未提供吃鸡率，无法按吃鸡率排序；结果仅按样本量稳定展示，不作吃鸡优先结论。");

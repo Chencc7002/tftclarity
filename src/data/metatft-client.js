@@ -1,4 +1,5 @@
 import { buildUrl } from "../core/query-planner.js";
+import { BoundedSemaphore, raceWithAbort } from "../core/concurrency.js";
 import { get as httpsGet } from "node:https";
 
 function createRequestError(message, details = {}) {
@@ -151,6 +152,9 @@ async function fetchJsonWithRetry(fetchImpl, url, options) {
       return await fetchJsonWithTimeout(fetchImpl, url, options.timeoutMs);
     } catch (error) {
       const retryable = error?.retryable ?? true;
+      if (Number(error?.status) === 429) {
+        options.onStatus429?.();
+      }
       if (!retryable || attempt >= maxRetries) {
         const finalError = error instanceof Error
           ? error
@@ -185,29 +189,96 @@ function requestOptions(client) {
   };
 }
 
+function initClientConcurrency(client, options = {}) {
+  const envMaxConcurrent = Number(process.env.TFT_AGENT_METATFT_MAX_CONCURRENT ?? 16);
+  const envQueueTimeoutMs = Number(process.env.TFT_AGENT_METATFT_QUEUE_TIMEOUT_MS ?? 5000);
+  client.enableSingleflight = options.enableSingleflight !== false;
+  client.inFlight = options.inFlight ?? new Map();
+  client.semaphore = options.semaphore ?? new BoundedSemaphore({
+    maxConcurrent: options.maxConcurrent ?? (Number.isInteger(envMaxConcurrent) && envMaxConcurrent > 0 ? envMaxConcurrent : 16),
+    maxQueue: options.maxQueue ?? 256,
+    queueTimeoutMs: options.queueTimeoutMs ?? (Number.isFinite(envQueueTimeoutMs) && envQueueTimeoutMs > 0 ? envQueueTimeoutMs : 5000),
+    errorCode: "metatft_busy",
+    errorStatusCode: 503,
+    errorMessage: "统计服务并发繁忙，请稍后重试"
+  });
+  client.concurrencyMetrics = options.concurrencyMetrics ?? {
+    requestsTotal: 0,
+    singleflightCoalesced: 0,
+    upstream429Count: 0
+  };
+}
+
+function fetchUrlWithConcurrency(client, url, options = {}) {
+  const key = String(url);
+  const signal = options.signal ?? null;
+  if (signal?.aborted) {
+    return raceWithAbort(Promise.resolve(), signal);
+  }
+  client.concurrencyMetrics.requestsTotal += 1;
+
+  if (client.enableSingleflight && client.inFlight.has(key)) {
+    client.concurrencyMetrics.singleflightCoalesced += 1;
+    return raceWithAbort(client.inFlight.get(key), signal);
+  }
+
+  // Shared upstream request runs without binding to the first caller's AbortSignal
+  // so one client disconnect cannot cancel other coalesced callers.
+  const shared = client.semaphore.run(
+    () => fetchJsonWithRetry(client.fetchImpl, url, {
+      ...requestOptions(client),
+      timeoutMs: options.timeoutMs ?? client.timeoutMs,
+      onStatus429: () => {
+        client.concurrencyMetrics.upstream429Count += 1;
+      }
+    }),
+    null
+  ).finally(() => {
+    if (client.inFlight.get(key) === shared) {
+      client.inFlight.delete(key);
+    }
+  });
+
+  if (client.enableSingleflight) {
+    client.inFlight.set(key, shared);
+  }
+  return raceWithAbort(shared, signal);
+}
+
 export class MetaTFTClient {
   constructor(options = {}) {
     this.baseUrl = options.baseUrl ?? "https://api-hc.metatft.com";
     this.fetchImpl = options.fetchImpl ?? globalThis.fetch;
     this.timeoutMs = options.timeoutMs ?? 8000;
     assignRetryOptions(this, options);
+    initClientConcurrency(this, options);
+  }
+
+  getConcurrencyStats() {
+    return {
+      ...this.semaphore.stats(),
+      inFlightUrls: this.inFlight.size,
+      requestsTotal: this.concurrencyMetrics.requestsTotal,
+      singleflightCoalesced: this.concurrencyMetrics.singleflightCoalesced,
+      upstream429Count: this.concurrencyMetrics.upstream429Count
+    };
   }
 
   async getUnitBuilds(plan, options = {}) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = buildUrl(this.baseUrl, plan);
-    return fetchJsonWithRetry(this.fetchImpl, url, {
-      ...requestOptions(this),
-      timeoutMs: options.timeoutMs ?? this.timeoutMs
+    return fetchUrlWithConcurrency(this, url, {
+      timeoutMs: options.timeoutMs ?? this.timeoutMs,
+      signal: options.signal
     });
   }
 
   async getCompCandidates(plan, options = {}) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = buildUrl(this.baseUrl, plan);
-    return fetchJsonWithRetry(this.fetchImpl, url, {
-      ...requestOptions(this),
-      timeoutMs: options.timeoutMs ?? this.timeoutMs
+    return fetchUrlWithConcurrency(this, url, {
+      timeoutMs: options.timeoutMs ?? this.timeoutMs,
+      signal: options.signal
     });
   }
 
@@ -216,26 +287,26 @@ export class MetaTFTClient {
   }
 
   async getItems(params = {}, options = {}) {
-    return this.#get("/tft-explorer-api/items", params, options.timeoutMs);
+    return this.#get("/tft-explorer-api/items", params, options.timeoutMs, options.signal);
   }
 
-  async getTotal(params = {}) {
-    return this.#get("/tft-explorer-api/total", params);
+  async getTotal(params = {}, options = {}) {
+    return this.#get("/tft-explorer-api/total", params, options.timeoutMs, options.signal);
   }
 
   async getUnitsUnique(params = {}, options = {}) {
-    return this.#get("/tft-explorer-api/units_unique", params, options.timeoutMs);
+    return this.#get("/tft-explorer-api/units_unique", params, options.timeoutMs, options.signal);
   }
 
   async getTraits(params = {}, options = {}) {
-    return this.#get("/tft-explorer-api/traits", params, options.timeoutMs);
+    return this.#get("/tft-explorer-api/traits", params, options.timeoutMs, options.signal);
   }
 
-  async getExactUnitsTraits2(params = {}) {
-    return this.#get("/tft-explorer-api/exact_units_traits2", params);
+  async getExactUnitsTraits2(params = {}, options = {}) {
+    return this.#get("/tft-explorer-api/exact_units_traits2", params, options.timeoutMs, options.signal);
   }
 
-  async #get(path, params, timeoutMs = this.timeoutMs) {
+  async #get(path, params, timeoutMs = this.timeoutMs, signal = null) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = new URL(path, this.baseUrl);
     for (const [key, value] of Object.entries(params)) {
@@ -245,10 +316,7 @@ export class MetaTFTClient {
         url.searchParams.set(key, String(value));
       }
     }
-    return fetchJsonWithRetry(this.fetchImpl, url, {
-      ...requestOptions(this),
-      timeoutMs
-    });
+    return fetchUrlWithConcurrency(this, url, { timeoutMs, signal });
   }
 }
 
@@ -259,26 +327,37 @@ export class CompsContextClient {
     this.timeoutMs = options.timeoutMs ?? 2200;
     this.rankingsTimeoutMs = options.rankingsTimeoutMs ?? 8000;
     assignRetryOptions(this, options);
+    initClientConcurrency(this, options);
+  }
+
+  getConcurrencyStats() {
+    return {
+      ...this.semaphore.stats(),
+      inFlightUrls: this.inFlight.size,
+      requestsTotal: this.concurrencyMetrics.requestsTotal,
+      singleflightCoalesced: this.concurrencyMetrics.singleflightCoalesced,
+      upstream429Count: this.concurrencyMetrics.upstream429Count
+    };
   }
 
   async getLatestClusterInfo(params = {}, options = {}) {
-    return this.#get("/tft-comps-api/latest_cluster_info", params, options.timeoutMs);
+    return this.#get("/tft-comps-api/latest_cluster_info", params, options.timeoutMs, options.signal);
   }
 
-  async getCompOptions(params = {}) {
-    return this.#get("/tft-comps-api/comp_options", params);
+  async getCompOptions(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/comp_options", params, options.timeoutMs, options.signal);
   }
 
-  async getCompBuilds(params = {}) {
-    return this.#get("/tft-comps-api/comp_builds", params);
+  async getCompBuilds(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/comp_builds", params, options.timeoutMs, options.signal);
   }
 
-  async getCompDetails(params = {}) {
-    return this.#get("/tft-comps-api/comp_details", params, this.rankingsTimeoutMs);
+  async getCompDetails(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/comp_details", params, this.rankingsTimeoutMs, options.signal);
   }
 
-  async getCompAugmentTiers(params = {}) {
-    return this.#get("/tft-comps-api/comp_augment_tiers", params, this.rankingsTimeoutMs);
+  async getCompAugmentTiers(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/comp_augment_tiers", params, this.rankingsTimeoutMs, options.signal);
   }
 
   async getAugmentLookup(tftSet, locale = "zh_cn") {
@@ -292,10 +371,7 @@ export class CompsContextClient {
       throw new TypeError("MetaTFT augment lookup requires a valid locale");
     }
     const url = new URL(`/lookups/${encodeURIComponent(setName)}_latest_${encodeURIComponent(language)}.json`, "https://data.metatft.com");
-    return fetchJsonWithRetry(this.fetchImpl, url, {
-      ...requestOptions(this),
-      timeoutMs: this.rankingsTimeoutMs
-    });
+    return fetchUrlWithConcurrency(this, url, { timeoutMs: this.rankingsTimeoutMs });
   }
 
   async getSetLookup(tftSet, options = {}) {
@@ -314,33 +390,30 @@ export class CompsContextClient {
     }
     const fileName = `${setName}_${channel}_${locale}.json`;
     const url = new URL(`/lookups/${encodeURIComponent(fileName)}`, "https://data.metatft.com");
-    return fetchJsonWithRetry(this.fetchImpl, url, {
-      ...requestOptions(this),
-      timeoutMs: options.timeoutMs ?? this.rankingsTimeoutMs
+    return fetchUrlWithConcurrency(this, url, {
+      timeoutMs: options.timeoutMs ?? this.rankingsTimeoutMs,
+      signal: options.signal
     });
   }
 
-  async getCompsData(params = {}) {
-    return this.#get("/tft-comps-api/comps_data", params, this.rankingsTimeoutMs);
+  async getCompsData(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/comps_data", params, this.rankingsTimeoutMs, options.signal);
   }
 
-  async getCompsStats(params = {}) {
-    return this.#get("/tft-comps-api/comps_stats", params, this.rankingsTimeoutMs);
+  async getCompsStats(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/comps_stats", params, this.rankingsTimeoutMs, options.signal);
   }
 
-  async getUnitItemsProcessed(params = {}) {
-    return this.#get("/tft-comps-api/unit_items_processed", params, this.rankingsTimeoutMs);
+  async getUnitItemsProcessed(params = {}, options = {}) {
+    return this.#get("/tft-comps-api/unit_items_processed", params, this.rankingsTimeoutMs, options.signal);
   }
 
-  async #get(path, params, timeoutMs = this.timeoutMs) {
+  async #get(path, params, timeoutMs = this.timeoutMs, signal = null) {
     if (!this.fetchImpl) throw new Error("fetch is not available in this runtime");
     const url = new URL(path, this.baseUrl);
     for (const [key, value] of Object.entries(params)) {
       if (value !== undefined && value !== null) url.searchParams.set(key, String(value));
     }
-    return fetchJsonWithRetry(this.fetchImpl, url, {
-      ...requestOptions(this),
-      timeoutMs
-    });
+    return fetchUrlWithConcurrency(this, url, { timeoutMs, signal });
   }
 }
