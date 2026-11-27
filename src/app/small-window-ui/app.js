@@ -767,33 +767,6 @@ const QUICK_TASKS = [
     bodyKey: "quickTaskUpdatesBody",
     exampleKey: "quickTaskUpdatesExample",
     icon: '<path d="M14.5 3.5H7a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3.5V8h5M9 12.5h6M9 16h4"/>'
-  },
-  {
-    category: "news",
-    id: "opgg-pro-trends",
-    view: "opgg-pro-trends",
-    titleKey: "quickTaskOpggTrendsTitle",
-    bodyKey: "quickTaskOpggTrendsBody",
-    exampleKey: "quickTaskOpggTrendsExample",
-    icon: '<path d="M3 12h4l2.5-6.5 4 13L16 12h5"/>'
-  },
-  {
-    category: "news",
-    id: "opgg-personal-review",
-    view: "opgg-personal-review",
-    titleKey: "quickTaskOpggPersonalTitle",
-    bodyKey: "quickTaskOpggPersonalBody",
-    exampleKey: "quickTaskOpggPersonalExample",
-    icon: '<path d="M3.5 12a8.5 8.5 0 1 0 2.5-6L3.5 8.5"/><path d="M3.5 4v4.5H8"/><path d="M12 7.5V12l3 2"/>'
-  },
-  {
-    category: "news",
-    id: "opgg-pro-teaching",
-    view: "opgg-pro-teaching",
-    titleKey: "quickTaskOpggTeachingTitle",
-    bodyKey: "quickTaskOpggTeachingBody",
-    exampleKey: "quickTaskOpggTeachingExample",
-    icon: '<rect x="3.5" y="4.5" width="17" height="15" rx="3"/><path d="m10 9.2 5.2 2.8L10 14.8z"/>'
   }
 ];
 
@@ -5686,32 +5659,10 @@ quickTaskFormClose.addEventListener("click", () => closeQuickTaskForm({ focus: t
 
 const NATURAL_LANGUAGE_QUICK_TASK_RULES = [
   {
-    id: "opgg-pro-teaching",
-    patterns: [
-      /\u804c\u4e1a\u9009\u624b.*(?:\u6559\u5b66|\u590d\u76d8|\u6253\u6cd5|\u600e\u4e48\u73a9)|(?:\u5b66\u4e60|\u770b\u770b|\u67e5\u770b).*\u804c\u4e1a\u9009\u624b|\u9ad8\u624b(?:\u6559\u5b66|\u590d\u76d8|\u6253\u6cd5)/iu,
-      /pro\s*(?:player\s*)?(?:teaching|coaching|review)/iu
-    ]
-  },
-  {
-    id: "opgg-pro-trends",
-    patterns: [
-      /\u804c\u4e1a\u9635\u5bb9\u8d8b\u52bf|\u804c\u4e1a\u8d8b\u52bf|(?:\u804c\u4e1a|\u9009\u624b|\u804c\u4e1a\u6c60).*(?:\u9635\u5bb9|\u4e0a\u5206).*(?:\u8d8b\u52bf|\u7edf\u8ba1|\u6570\u636e)/iu,
-      /pro\s*(?:comp|composition)\s*trends?/iu
-    ]
-  },
-  {
     id: "patch-notes",
     patterns: [
       /\u66f4\u65b0\u516c\u544a|\u7248\u672c\u516c\u544a|\u8865\u4e01\u516c\u544a|(?:\u66f4\u65b0|\u7248\u672c|\u8865\u4e01).*(?:\u5185\u5bb9|\u8bf4\u660e|\u6539\u52a8|\u516c\u544a)/iu,
       /patch\s*notes?|release\s*notes?|what(?:'s| is)?\s*new/iu
-    ]
-  },
-  {
-    id: "opgg-personal-review",
-    patterns: [
-      /(?:\u5bf9\u5c40|\u6218\u5c40|\u6bd4\u8d5b).*(?:\u53ef\u89c6\u5316|\u68cb\u76d8|\u8be6\u60c5)|(?:\u53ef\u89c6\u5316|\u68cb\u76d8).*(?:\u5bf9\u5c40|\u6218\u5c40|\u6bd4\u8d5b)/iu,
-      /(?:\u6211\u8981|\u6211\u60f3|\u5e2e\u6211|\u7ed9\u6211|\u8bf7|\u8fdb\u5165|\u6253\u5f00|\u67e5\u770b|\u5f00\u59cb|\u505a\u4e2a|\u505a\u4e00\u6b21)?(?:\u4e2a\u4eba|\u6211\u7684)?(?:\u6218\u7ee9|\u6218\u5c40|\u5bf9\u5c40|\u6e38\u620f)?\u590d\u76d8|\u590d\u76d8(?:\u4e00\u4e0b|\u6211\u7684\u6218\u7ee9|\u6211\u7684\u5bf9\u5c40)?/iu,
-      /review\s*my\s*(?:matches|games)|match\s*review/iu
     ]
   }
 ];

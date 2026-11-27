@@ -13,8 +13,14 @@ const SKIP_ANCESTOR_SELECTOR = [
   "button", "a", ".asset-thumb", ".item", ".entity-inline", ".answer-comparison__name",
   ".chat-core-item", ".chat-comp-cores", ".chat-build-preview header", ".comp-unit",
   ".emblem-card-head", ".emblem-recipe", ".emblem-carrier", ".card-title-group",
-  ".entity-confirmation-choices", ".emblem-unit-filter-icon"
+  ".entity-confirmation-choices", ".emblem-unit-filter-icon",
+  ".comparison-name", ".item-ranking-head", ".carrier-ranking-head",
+  ".entity-detail-head", ".stable-item-head", ".full-trait-row",
+  ".condition-chip", ".result-header-card"
 ].join(",");
+const ICON_BEARING_HEADER_SELECTOR = ".card-head, header";
+const PROSE_DEDUP_CONTAINER_SELECTOR = ".generated-conclusion, .conclusion-card, .chat-model-conclusion, .comparison-summary, .summary";
+const BUILD_COMBO_SEPARATOR = /^\s*[+/＋]\s*$/u;
 
 function escapeRegex(value) {
   return String(value ?? "").replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
@@ -159,14 +165,31 @@ function createInlineEntitySpan(matchedText, entry, doc) {
   return span;
 }
 
+function hasExistingNonInlineImage(container) {
+  if (!container || typeof container.querySelector !== "function") return false;
+  return Boolean(container.querySelector("img:not(.entity-inline__icon)"));
+}
+
 function shouldSkipTextNode(textNode) {
   const parent = textNode?.parentElement;
   if (!parent) return true;
   if (!textNode.nodeValue || textNode.nodeValue.trim().length < 2) return true;
-  if (typeof parent.closest === "function" && parent.closest(SKIP_ANCESTOR_SELECTOR)) {
-    return true;
+  if (typeof parent.closest === "function") {
+    if (parent.closest(SKIP_ANCESTOR_SELECTOR)) return true;
+    const header = parent.closest(ICON_BEARING_HEADER_SELECTOR);
+    if (header && hasExistingNonInlineImage(header)) return true;
   }
   return false;
+}
+
+function isPartOfBuildCombo(text, start, end) {
+  const before = text.slice(Math.max(0, start - 3), start);
+  const after = text.slice(end, Math.min(text.length, end + 3));
+  return /[+/＋]\s*$/u.test(before) || /^\s*[+/＋]/u.test(after) || BUILD_COMBO_SEPARATOR.test(before);
+}
+
+function entityIdentityKey(entry) {
+  return `${entry.entityType ?? "entity"}:${entry.apiName ?? entry.name ?? ""}`;
 }
 
 export function decorateInlineEntityIcons(root, matcher) {
@@ -181,9 +204,27 @@ export function decorateInlineEntityIcons(root, matcher) {
     node = walker.nextNode();
   }
 
+  // Deduplicate repeated entity icons within prose containers (such as conclusion cards
+  // and narrative paragraphs) while keeping every item icon inside `+`-joined build combos.
+  const seenByContainer = new WeakMap();
+  const seenSetFor = (container) => {
+    let set = seenByContainer.get(container);
+    if (!set) {
+      set = new Set();
+      seenByContainer.set(container, set);
+    }
+    return set;
+  };
+
   let decoratedCount = 0;
   for (const textNode of textNodes) {
     const text = textNode.nodeValue;
+    const parent = textNode.parentElement;
+    const dedupContainer = typeof parent?.closest === "function"
+      ? (parent.closest(PROSE_DEDUP_CONTAINER_SELECTOR) ?? parent.closest("p, li"))
+      : null;
+    const seenInContainer = dedupContainer ? seenSetFor(dedupContainer) : null;
+
     matcher.pattern.lastIndex = 0;
     const fragment = doc.createDocumentFragment();
     let cursor = 0;
@@ -199,6 +240,10 @@ export function decorateInlineEntityIcons(root, matcher) {
       }
       const entry = matcher.lookup.get(matched.toLowerCase());
       if (!entry?.iconUrl) continue;
+      const key = entityIdentityKey(entry);
+      const inCombo = isPartOfBuildCombo(text, start, end);
+      if (seenInContainer && !inCombo && seenInContainer.has(key)) continue;
+      seenInContainer?.add(key);
       if (start > cursor) fragment.append(doc.createTextNode(text.slice(cursor, start)));
       fragment.append(createInlineEntitySpan(matched, entry, doc));
       cursor = end;

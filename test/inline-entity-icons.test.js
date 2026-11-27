@@ -207,6 +207,36 @@ test("inline entity icons skip code, buttons, links, and existing item pills", (
   );
 });
 
+test("inline entity icons skip icon-bearing comparison headers and deduplicate repeated prose mentions", () => {
+  const matcher = buildInlineEntityMatcher(SAMPLE_CATALOG);
+  const { root } = createFakeDom((doc, FakeElement) => {
+    const comparisonName = new FakeElement("div", "comparison-name");
+    const existingImg = new FakeElement("img");
+    const titleWrap = new FakeElement("div");
+    const title = new FakeElement("div", "card-title");
+    title.append(doc.createTextNode("狂徒"));
+    titleWrap.append(title);
+    comparisonName.append(existingImg, titleWrap);
+
+    const conclusion = new FakeElement("section", "generated-conclusion");
+    const h3 = new FakeElement("h3");
+    h3.append(doc.createTextNode("蒙多医生使用狂徒时高于石像鬼，狂徒胜出。"));
+    const p2 = new FakeElement("p");
+    p2.append(doc.createTextNode("狂徒与石像鬼样本均稳定，优先给蒙多医生配狂徒或振奋盔甲。"));
+    conclusion.append(h3, p2);
+
+    return [comparisonName, conclusion];
+  });
+
+  const count = decorateInlineEntityIcons(root, matcher);
+  // 4 distinct entities in conclusion-card (蒙多医生, 狂徒, 石像鬼, 振奋盔甲); comparison-name skipped.
+  assert.equal(count, 4);
+  assert.deepEqual(
+    root.querySelectorAll("entity-inline").map((el) => el.textContent),
+    ["蒙多医生", "狂徒", "石像鬼", "振奋盔甲"]
+  );
+});
+
 test("handleItemIconsRequest derives short radiant aliases from the base item in the same season", async () => {
   const catalog = createCatalog({
     units: [],

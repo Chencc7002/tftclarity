@@ -233,10 +233,11 @@ test("welcome recommendations and searchable tool library reuse deterministic qu
   assert.match(appJs, /function naturalLanguageQuickTaskId\(input\)/);
   assert.match(appJs, /async function routeNaturalLanguageQuickTask\(input\)/);
   assert.match(appJs, /routeNaturalLanguageQuickTask\(queryInput\.value\)/);
-  assert.match(appJs, /id: "opgg-personal-review"[\s\S]*\\u6211\\u8981/);
-  assert.match(appJs, /id: "opgg-pro-trends"[\s\S]*\\u804c\\u4e1a\\u9635\\u5bb9\\u8d8b\\u52bf/);
-  assert.match(appJs, /id: "opgg-pro-teaching"[\s\S]*\\u804c\\u4e1a\\u9009\\u624b/);
+  assert.doesNotMatch(appJs, /id: "opgg-personal-review"/);
+  assert.doesNotMatch(appJs, /id: "opgg-pro-trends"/);
+  assert.doesNotMatch(appJs, /id: "opgg-pro-teaching"/);
   assert.match(appJs, /id: "patch-notes"[\s\S]*\\u66f4\\u65b0\\u516c\\u544a/);
+  assert.match(i18n, /quickCategoryNewsTitle: "版本更新"/);
   assert.match(appJs, /async function launchQuickTask\(quickTaskTarget\)/);
   assert.match(appJs, /QUICK_TASKS\.find/);
   assert.match(appJs, /queryInput\.value = quickTask\.query/);

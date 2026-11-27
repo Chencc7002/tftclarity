@@ -1438,7 +1438,7 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .comparison-grid-ranked { grid-template-columns: 1fr; }
 .comparison-card { min-width: 0; margin-bottom: 0; }
 .comparison-name { min-width: 0; display: flex; align-items: center; gap: 8px; }
-.comparison-name img { width: 34px; height: 34px; flex: 0 0 34px; object-fit: cover; border-radius: 8px; }
+.comparison-name > img { width: 34px; height: 34px; flex: 0 0 34px; object-fit: cover; border-radius: 8px; }
 .comparison-primary { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: baseline; gap: 3px 8px; }
 .comparison-primary strong { color: var(--ink); font-size: 22px; }
 .comparison-primary span { grid-column: 1 / -1; }
