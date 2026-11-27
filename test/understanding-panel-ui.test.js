@@ -331,7 +331,7 @@ test("UI renders the audit panel before the chat answer and keeps the result pan
   assert.match(app, /const understanding = renderUnderstandingPanel\(data, \{[\s\S]*?surface: "chat"[\s\S]*?\}\)/);
   assert.match(app, /return `\$\{understanding\}\$\{chatCoreConclusionHtml/);
   assert.doesNotMatch(app, /insertAdjacentHTML\("(?:afterbegin|afterend)", understandingHtml\)/);
-  assert.match(app, /formatDecisionAuditPayload\(data\)/);
+  assert.doesNotMatch(app, /formatDecisionAuditPayload\(data\)/);
   assert.match(app, /const endpoint = state\.lastQuickTask \|\| !reactChatEnabled[\s\S]*?"\/api\/recommend\/stream"[\s\S]*?"\/api\/react-chat\/stream"/);
   assert.match(app, /fetch\(endpoint/);
   assert.match(app, /readRecommendationStream\(/);

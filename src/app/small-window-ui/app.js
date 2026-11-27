@@ -22,10 +22,8 @@ import {
 } from "./opgg-panel.js";
 import {
   formatProcessingDuration,
-  formatDecisionAuditPayload,
   renderUnderstandingPanel
 } from "./understanding-panel.js";
-import { WallpaperController } from "./wallpaper-controller.js";
 import { conclusionDisplayText, conclusionRichTextHtml } from "./conclusion-rich-text.js";
 import {
   STREAM_TRANSPORT_MAX_RETRIES,
@@ -133,16 +131,11 @@ const seasonContextNoticeClose = document.querySelector("#season-context-notice-
 const seasonPreviewBanner = document.querySelector("#season-preview-banner");
 const sendButton = form.querySelector(".send-button");
 const aiQuotaEl = document.querySelector("#ai-quota");
-const rawOutputEl = document.querySelector("#raw-output");
-const detailsEl = document.querySelector("#details");
 const sortSelect = document.querySelector("#sort-select");
 const daysSelect = document.querySelector("#days-select");
 const structuredParserModeSelect = document.querySelector("#structured-parser-mode-select");
 const conclusionModeSelect = document.querySelector("#conclusion-mode-select");
 const rankControl = document.querySelector("#rank-control");
-const cacheStatusEl = document.querySelector("#cache-status");
-const llmStatusEl = document.querySelector("#llm-status");
-const runtimeDetailEl = document.querySelector("#runtime-detail");
 const openItemAuditButton = document.querySelector("#open-item-audit-button");
 const itemAuditPanel = document.querySelector("#item-audit-panel");
 const itemAuditClose = document.querySelector("#item-audit-close");
@@ -172,13 +165,6 @@ const selectionQuote = createSelectionQuote({
   onAdded: () => closeQuickTaskForm()
 });
 const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
-const wallpaperController = new WallpaperController({
-  shell: shellEl,
-  canvas: document.querySelector("#particle-layer"),
-  control: document.querySelector("#wallpaper-control"),
-  toggle: document.querySelector("#wallpaper-toggle"),
-  select: document.querySelector("#wallpaper-select")
-});
 const titleBar = new TitleBar({
   root: document.querySelector("#title-bar"),
   localeRoot: shellEl,
@@ -186,8 +172,7 @@ const titleBar = new TitleBar({
   onLocaleChange: (locale) => {
     setLocale(locale);
     selectionQuote.refreshLocale();
-    applySeasonTheme(state.seasonContext, { refreshWallpaper: false });
-    wallpaperController.refreshLocale();
+    applySeasonTheme(state.seasonContext);
     rerenderLocalizedState();
   }
 });
@@ -207,16 +192,10 @@ const appShell = new AppShell({
 
 // Named modules are intentionally referenced here: AppShell/TitleBar own window layout,
 // ConversationPane/Composer own chat entry, and ResultPane dispatches the three result templates.
-void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, composer, wallpaperController];
+void [RecommendationResult, ItemRankingResult, CompRankingResult, appShell, composer];
 
 function setResponseHtml(html) {
   resultPane.setHtml(`${renderResultNavigation()}${html}`);
-}
-
-function setDeveloperOutput(data) {
-  rawOutputEl.textContent = formatDecisionAuditPayload(data)
-    ?? data?.text
-    ?? JSON.stringify(data, null, 2);
 }
 
 const mobileLayoutQuery = window.matchMedia("(max-width: 759px)");
@@ -310,7 +289,6 @@ function captureCompNavigationSnapshot(compName) {
     compRankingMetric: state.compRankingMetric,
     feedbackByCard: { ...state.feedbackByCard },
     explanationFeedback: state.explanationFeedback,
-    rawOutput: rawOutputEl.textContent,
     openCompKeys,
     scrollTop: resultContentEl.scrollTop
   };
@@ -332,7 +310,6 @@ function captureEntityCatalogNavigationSnapshot(catalogName) {
     currentResponseId: state.currentResponseId,
     feedbackByCard: { ...state.feedbackByCard },
     explanationFeedback: state.explanationFeedback,
-    rawOutput: rawOutputEl.textContent,
     scrollTop: resultContentEl.scrollTop
   };
 }
@@ -354,7 +331,6 @@ function restorePreviousCatalogResult() {
   state.feedbackByCard = { ...snapshot.feedbackByCard };
   state.explanationFeedback = snapshot.explanationFeedback;
   state.resultView = { type: "result", data: snapshot.data };
-  rawOutputEl.textContent = snapshot.rawOutput;
   resultTitleEl.textContent = t("resultTitle");
   renderCurrentResult(snapshot.data);
   resultContentEl.scrollTop = snapshot.scrollTop;
@@ -381,7 +357,6 @@ function restorePreviousCompResult() {
   state.feedbackByCard = { ...snapshot.feedbackByCard };
   state.explanationFeedback = snapshot.explanationFeedback;
   state.resultView = { type: "result", data: snapshot.data };
-  rawOutputEl.textContent = snapshot.rawOutput;
   resultTitleEl.textContent = t("resultTitle");
   renderCurrentResult(snapshot.data);
 
@@ -492,32 +467,28 @@ function dismissSeasonNotice(seasonContextId = state.seasonContextId) {
   if (seasonContextNotice) seasonContextNotice.hidden = true;
 }
 
-function applySeasonTheme(context, { refreshWallpaper = true } = {}) {
+function applySeasonTheme(context) {
   if (!context) return;
   const theme = context.theme ?? {};
   const colors = theme.colors ?? {};
-  const wallpaper = theme.wallpaper ?? {};
   const previewOnly = Boolean(context.themePreview && !context.selectable);
+  const primary = colors.primary ?? "#28734f";
+  const secondary = colors.secondary ?? "#48b8c7";
   if (activeQuickTask && shellEl.dataset.seasonContextId && shellEl.dataset.seasonContextId !== context.id) closeQuickTaskForm();
   shellEl.dataset.seasonContextId = context.id;
   shellEl.dataset.seasonEnvironment = context.environment;
   shellEl.dataset.seasonTheme = context.themeId ?? "";
   shellEl.dataset.seasonPreview = String(previewOnly);
-  document.documentElement.style.setProperty("--season-primary", colors.primary ?? "#6b63df");
-  document.documentElement.style.setProperty("--season-secondary", colors.secondary ?? "#34b9d6");
+  document.documentElement.style.setProperty("--season-primary", primary);
+  document.documentElement.style.setProperty("--season-secondary", secondary);
+  shellEl.style.setProperty("--wallpaper-accent", primary);
+  shellEl.style.setProperty("--wallpaper-accent-secondary", secondary);
   if (seasonPreviewBanner) seasonPreviewBanner.hidden = !previewOnly;
   queryInput.disabled = previewOnly;
   sendButton.disabled = previewOnly;
   voiceInput.setEnabled(!previewOnly);
   if (previewOnly) queryInput.setAttribute("aria-describedby", "season-preview-banner");
   else queryInput.removeAttribute("aria-describedby");
-  if (refreshWallpaper) {
-    wallpaperController.setSeason(wallpaper.seasonId, wallpaper.defaultId, {
-      primary: colors.primary,
-      secondary: colors.secondary,
-      particles: theme.particles
-    });
-  }
   const label = seasonContextSummary?.querySelector("[data-season-label]");
   const subtitle = seasonContextSummary?.querySelector("[data-season-subtitle]");
   const subtitleSeparator = seasonContextSummary?.querySelector("[data-season-subtitle-separator]");
@@ -1064,38 +1035,8 @@ async function loadPreferences() {
   }
 }
 
-function cacheStatusLabel(type) {
-  return {
-    json: t("cacheJson"),
-    sqlite: t("cacheSqlite"),
-    memory: t("cacheMemory")
-  }[type] ?? String(type ?? "-");
-}
-
 function renderRuntimeStatus(runtime = {}) {
   state.runtimeStatus = runtime;
-  const cache = runtime.cache ?? {};
-  const parser = runtime.structuredParser ?? {};
-  const conclusion = runtime.conclusionGenerator ?? {};
-  const requests = runtime.requests ?? {};
-  cacheStatusEl.textContent = cacheStatusLabel(cache.type);
-  llmStatusEl.textContent = conclusion.enabled
-    ? `${t("dataInterpretation")} / ${conclusion.model ?? conclusion.provider ?? "LLM"}`
-    : parser.enabled
-      ? `${parser.provider ?? "LLM"} / ${parser.mode ?? "auto"}`
-      : t("disabled");
-
-  const detail = [];
-  if (cache.persistent) detail.push(cache.pathConfigured ? t("persistence") : t("persistenceUnset"));
-  if (parser.enabled && parser.model) detail.push(parser.model);
-  if (conclusion.enabled && conclusion.timeoutMs) detail.push(`${t("dataInterpretation")} ${conclusion.timeoutMs}ms`);
-  const explorerTimeoutMs = Number(requests.explorerTimeoutMs);
-  if (requests.explorerTimeoutMs != null && Number.isFinite(explorerTimeoutMs) && explorerTimeoutMs > 0) {
-    detail.push(t("timeout", { seconds: explorerTimeoutMs / 1000 }));
-  }
-  if (parser.enabled && parser.timeoutMs) detail.push(`${parser.timeoutMs}ms`);
-  if (parser.enabled && parser.apiKeyConfigured) detail.push(t("keyConfigured"));
-  runtimeDetailEl.textContent = detail.join(" / ") || t("rulesFirst");
   for (const element of document.querySelectorAll(".admin-only")) {
     element.classList.toggle("hidden", Boolean(runtime.publicMode));
   }
@@ -1137,9 +1078,7 @@ async function loadRuntimeStatus() {
     if (!response.ok || !data.ok) throw new Error(data.error ?? "runtime status unavailable");
     renderRuntimeStatus(data.runtime);
   } catch {
-    cacheStatusEl.textContent = "-";
-    llmStatusEl.textContent = "-";
-    runtimeDetailEl.textContent = t("statusUnavailable");
+    renderRuntimeStatus({ publicMode: true });
   }
 }
 
@@ -2759,17 +2698,11 @@ function renderPatchNote(track = true) {
   if (!patch) {
     resultTitleEl.textContent = t("patchNotesUnavailable");
     resultRefreshButton.disabled = true;
-    rawOutputEl.textContent = JSON.stringify({
-      seasonContextId: state.seasonContextId,
-      patchNoteVersion: version ?? null,
-      status: "unavailable"
-    }, null, 2);
     setResponseHtml(`<section class="result-state result-empty" data-state="empty"><div class="state-orbit" aria-hidden="true">!</div><strong>${escapeHtml(t("patchNotesUnavailable"))}</strong></section>`);
     return;
   }
   resultTitleEl.textContent = t("patchNotesTitle", { version: patch.version });
   resultRefreshButton.disabled = true;
-  rawOutputEl.textContent = JSON.stringify(patch, null, 2);
   const latestRevision = patch.history?.at(-1);
   setResponseHtml(`
     <article class="patch-note-hero">
@@ -3307,7 +3240,6 @@ function activateResponseResult(record) {
   state.explanationFeedback = null;
   state.conclusionStreamText = "";
   state.resultView = { type: "result", data: record.data };
-  setDeveloperOutput(record.data);
   resultTitleEl.textContent = t("resultTitle");
   renderCurrentResult(record.data);
   refreshButton.disabled = state.requestInFlight || !state.lastInput;
@@ -4245,7 +4177,6 @@ function renderResult(data) {
   state.feedbackByCard = {};
   state.explanationFeedback = null;
   state.conclusionStreamText = "";
-  setDeveloperOutput(data);
   state.lastSuggestions = data.clarification?.suggestions ?? [];
   state.lastEntityCandidates = data.clarification?.entityCandidates ?? [];
   state.currentResponseId = recordAssistantResponse(data);
@@ -4277,7 +4208,6 @@ function applyConclusionEvent(data, event) {
     resultContentEl.scrollTop = scrollTop;
     const record = state.responsesById.get(state.currentResponseId);
     if (record?.data === data) rerenderAssistantRecord(record);
-    setDeveloperOutput(data);
     return true;
   }
   return event.type === "start";
@@ -4371,7 +4301,6 @@ function renderError(message, messageKey = null) {
   state.lastResultId = null;
   const resolvedMessageKey = messageKey ?? requestErrorMessageKey(message);
   const displayMessage = resolvedMessageKey ? t(resolvedMessageKey) : message;
-  rawOutputEl.textContent = displayMessage;
   renderErrorResult(message, true, resolvedMessageKey);
   if (activeResponseEl) activeResponseEl.innerHTML = `<div class="chat-request-error"><strong>${escapeHtml(displayMessage)}</strong><span>${escapeHtml(t("networkRetryHint"))}</span></div>`;
 }
@@ -4621,16 +4550,16 @@ async function fetchAliasDraft() {
 
 async function exportAliasDraft() {
   const draft = await fetchAliasDraft();
-  rawOutputEl.textContent = draft?.text ?? JSON.stringify(draft, null, 2);
-  detailsEl.open = true;
+  const text = draft?.text ?? JSON.stringify(draft, null, 2);
+  if (navigator.clipboard?.writeText) {
+    await navigator.clipboard.writeText(text).catch(() => {});
+  }
   setStatusKey("exported");
 }
 
 async function downloadAliasDraft() {
   const draft = await fetchAliasDraft();
   const text = draft?.text ?? JSON.stringify(draft, null, 2);
-  rawOutputEl.textContent = text;
-  detailsEl.open = true;
 
   const blob = new Blob([text], {
     type: "text/javascript;charset=utf-8"
@@ -5486,7 +5415,6 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
     if (!reuseLastInput && quickTask && !data.clarification?.needsClarification) quickToolLibrary.recordUse(quickTask.id);
     completeRecommendationProgress(recommendationProgress, data);
     if (preserveResultPane) {
-      setDeveloperOutput(data);
       if (activeResponseEl) {
         const answer = String(
           data.reactAnswer
@@ -5598,7 +5526,6 @@ async function requestEntityDetail(target) {
     state.lastResult = data;
     state.lastResultId = null;
     state.resultView = { type: "result", data };
-    setDeveloperOutput(data);
     resultTitleEl.textContent = t("resultTitle");
     renderCurrentResult(data);
     detailLoaded = true;
@@ -6099,7 +6026,6 @@ async function resetConversation({ previousSeasonContextId = state.seasonContext
   clearCompDetailState();
   state.feedbackByCard = {};
   state.explanationFeedback = null;
-  rawOutputEl.textContent = "";
   closeQuickTaskForm();
   composer.clear();
   quickToolLibrary.reset();
@@ -6340,7 +6266,6 @@ clearCacheButton.addEventListener("click", async () => {
     const data = await response.json();
     if (!response.ok || !data.ok) throw new Error(data.error ?? t("clearFailed"));
     clearCompDetailState();
-    rawOutputEl.textContent = "";
     renderEmptyResult();
     setStatusKey("clearHistory");
   } catch (error) {
@@ -6366,7 +6291,6 @@ resetPreferencesButton.addEventListener("click", async () => {
 resultEl.innerHTML = welcomeConversationHtml("welcome");
 setMobileView("chat", { replaceHistory: true });
 setLocale(getLocale());
-wallpaperController.refreshLocale();
 setRequestRunning(false);
 void loadSeasonContexts();
 loadPreferences();

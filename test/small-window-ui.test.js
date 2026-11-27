@@ -166,7 +166,7 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.match(appJs, /seasonContextId: previousSeasonContextId/);
   assert.doesNotMatch(appJs, /document\.title\s*=/);
   assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
-  assert.match(appJs, /wallpaperController\.setSeason/);
+  assert.match(appJs, /shellEl\.style\.setProperty\("--wallpaper-accent"/);
   assert.match(appJs, /shellEl\.dataset\.seasonTheme = context\.themeId/);
   assert.match(appJs, /context\.selectable \|\| context\.themePreview/);
   assert.match(appJs, /!requested\?\.selectable && !requested\?\.themePreview/);
@@ -1133,16 +1133,16 @@ test("mechanism cards expand to source text and disclose unresolved model omissi
   assert.match(styles, /\.mechanism-incomplete-warning/u);
 });
 
-test("season wallpapers are catalogued, switchable, glass-backed, and idle-aware", () => {
-  assert.match(indexHtml, /id="wallpaper-toggle"/);
-  assert.match(indexHtml, /role="switch"/);
-  assert.match(indexHtml, /id="wallpaper-select"/);
-  assert.match(indexHtml, /id="wallpaper-mobile-button"/);
-  assert.match(indexHtml, /id="wallpaper-mobile-menu"/);
-  assert.match(indexHtml, /id="wallpaper-mobile-options"/);
-  assert.match(indexHtml, /id="particle-layer"/);
+test("wallpaper UI is detached from the active frontend while season theme tokens remain intact", () => {
+  assert.doesNotMatch(indexHtml, /id="wallpaper-toggle"/);
+  assert.doesNotMatch(indexHtml, /id="wallpaper-select"/);
+  assert.doesNotMatch(indexHtml, /id="wallpaper-mobile-button"/);
+  assert.doesNotMatch(indexHtml, /id="wallpaper-mobile-menu"/);
+  assert.doesNotMatch(indexHtml, /id="wallpaper-mobile-options"/);
+  assert.doesNotMatch(indexHtml, /id="particle-layer"/);
+  assert.doesNotMatch(indexHtml, /data-open-wallpaper/);
+  assert.doesNotMatch(appJs, /WallpaperController/);
   assert.match(indexHtml, /id="topbar-starfield"/);
-  assert.match(appJs, /WallpaperController/);
   assert.match(wallpaperCatalog, /"set-17"/);
   assert.match(wallpaperCatalog, /cosmic-court\.jpg/);
   assert.match(wallpaperCatalog, /stargazer-convergence\.[a-f0-9]{12}\.webp/);
@@ -1385,16 +1385,18 @@ test("comp unit drill-down preserves and restores the previous comp result", () 
   assert.match(i18n, /statusReturnedToComp:/);
 });
 
-test("settings retain preferences, runtime details, alias review, export, clear, and reset controls", () => {
+test("settings retain preferences, alias review, export, clear, and reset controls without exposing internal runtime or raw JSON", () => {
   for (const id of [
     "sample-control", "policy-control", "sort-select", "days-select",
-    "structured-parser-mode-select", "rank-control", "cache-status", "llm-status", "runtime-detail",
+    "structured-parser-mode-select", "rank-control",
     "alias-list", "export-aliases-button", "download-aliases-button", "reload-aliases-button",
     "clear-entity-memory-button", "alias-state-filter", "alias-type-filter", "alias-query-filter",
     "alias-select-all", "enable-selected-aliases-button", "disable-selected-aliases-button",
     "alias-prev-button", "alias-next-button", "clear-cache-button", "reset-preferences-button"
   ]) assert.match(indexHtml, new RegExp(`id="${id}"`));
   assert.doesNotMatch(indexHtml, /context-strategy-select/);
+  assert.doesNotMatch(indexHtml, /id="(?:cache-status|llm-status|runtime-detail|details|raw-output)"/);
+  assert.doesNotMatch(appJs, /rawOutputEl|cacheStatusEl|llmStatusEl|runtimeDetailEl/);
   assert.match(indexHtml, /data-value="0" data-i18n="noThreshold"/);
   assert.match(appJs, /structuredParserMode: state\.structuredParserMode/);
   assert.match(appJs, /rankFilter: state\.rankFilter/);

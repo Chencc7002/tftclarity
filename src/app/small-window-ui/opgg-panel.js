@@ -280,20 +280,12 @@ async function api(path, options) {
   return data;
 }
 
-function setResult(title, html, raw) {
+function setResult(title, html) {
   const titleEl = el("result-title");
   const resultEl = el("result-content");
   const refreshButton = el("result-refresh-button");
-  const rawOutputEl = el("raw-output");
   if (titleEl) titleEl.textContent = title;
   if (refreshButton) resetShellRefresh();
-  if (rawOutputEl) {
-    rawOutputEl.textContent = JSON.stringify(
-      raw ?? { view: state.view, pool: state.pool },
-      null,
-      2
-    );
-  }
   if (resultEl) resultEl.innerHTML = html;
 }
 
