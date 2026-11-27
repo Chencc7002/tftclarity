@@ -447,6 +447,11 @@ const PARAMETER_SCHEMAS = Object.freeze({
     enum: ["top4Rate", "winRate", "avgPlacement", "games"]
   },
   recipeBase: { type: "string", enum: ["craftable", "spatula", "pan", "all"] },
+  excludeUnits: {
+    type: "array",
+    maxItems: 3,
+    items: { type: "string", minLength: 1, maxLength: 120 }
+  },
   constraints: {
     type: "object",
     additionalProperties: false,

@@ -1,6 +1,14 @@
 import { createServer } from "node:http";
+import { buildUnderstandingSummary } from "./small-window-ui/understanding-panel.js";
 import { createJevIntentObserver } from "../understanding/jev-intent-observer.js";
-import { queryEmblemRankings, queryEmblemCarriers, emblemExecutionPlan, scopedEmblemQuery } from "../core/emblem-rankings.js";
+import {
+  SET19_EMBLEM_EXCLUDE_UNIT,
+  emblemExecutionPlan,
+  normalizeExcludeUnits,
+  queryEmblemCarriers,
+  queryEmblemRankings,
+  scopedEmblemQuery
+} from "../core/emblem-rankings.js";
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { extname, resolve, sep } from "node:path";
@@ -220,8 +228,8 @@ export const REACT_UNIT_BUILD_CACHE_TTL_MS = 30 * 60 * 1000;
 export const REACT_UNIT_BUILD_STALE_RETENTION_MS = 24 * 60 * 60 * 1000;
 const QUICK_TASK_SCHEMA_VERSION = "quick-task.v1";
 const QUICK_TASK_DEFINITIONS = new Map([
-  ["emblem-rankings", { operation: "emblem_rankings", intent: "emblem_rankings", required: [] }],
-  ["emblem-carriers", { operation: "emblem_carriers", intent: "emblem_carriers", required: ["item"] }],
+  ["emblem-rankings", { operation: "emblem_rankings", intent: "emblem_rankings", required: [], optional: ["excludeUnits"] }],
+  ["emblem-carriers", { operation: "emblem_carriers", intent: "emblem_carriers", required: ["item"], optional: ["excludeUnits"] }],
   ["unit-build", { operation: "unit_build_rankings", intent: "unit_build_rankings", required: ["champion"] }],
   ["unit-build-completion", { operation: "unit_build_completion", intent: "unit_build_completion", required: ["champion", "item1"], optional: ["item2"] }],
   ["item-performance", { operation: "unit_item_rankings", intent: "unit_item_rankings", required: ["champion", "itemCategory"] }],
@@ -297,6 +305,21 @@ function normalizeQuickTask(value) {
   const args = {};
   for (const [key, raw] of Object.entries(rawArguments)) {
     if (!allowed.has(key)) throw invalidQuickTask(`quickTask argument is not supported: ${key}`);
+    if (key === "excludeUnits") {
+      if (!Array.isArray(raw)) throw invalidQuickTask("quickTask argument excludeUnits must be an array");
+      if (raw.length > 3) throw invalidQuickTask("quickTask argument excludeUnits supports at most 3 units");
+      const units = [];
+      for (const entry of raw) {
+        if (typeof entry !== "string") throw invalidQuickTask("quickTask argument excludeUnits items must be strings");
+        const normalized = entry.normalize("NFKC").trim();
+        if (!normalized || normalized.length > 120) {
+          throw invalidQuickTask("quickTask argument excludeUnits item is invalid");
+        }
+        if (!units.includes(normalized)) units.push(normalized);
+      }
+      if (units.length) args[key] = units;
+      continue;
+    }
     const normalized = String(raw ?? "").normalize("NFKC").trim();
     if (normalized.length > 80) throw invalidQuickTask(`quickTask argument is too long: ${key}`);
     if (normalized) args[key] = normalized;
@@ -1090,6 +1113,10 @@ function summarizeSemanticConfig(config = {}, store = null) {
   };
 }
 
+function isReactChatEnabled(runtime) {
+  return ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off"));
+}
+
 export function getSmallWindowRuntimeStatus(runtime = {}) {
   const cacheStoreInfo = runtime.cacheStoreInfo ?? summarizeCacheStore({}, runtime.cacheStore);
   const cachePath = cacheStoreInfo.cachePath ?? cacheStoreInfo.path ?? null;
@@ -1150,7 +1177,7 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
       retrieval: runtime.semanticRetriever?.getRetrievalStatus?.() ?? null },
     routing: {
       reactChatMode: runtime.reactChatMode ?? "off",
-      reactChatEnabled: ["1", "true", "on", "enabled"].includes(String(runtime.reactChatMode ?? "off")),
+      reactChatEnabled: isReactChatEnabled(runtime),
       reactTaskFrameControlV1: runtime.reactTaskFrameControlV1 === true,
       reactTaskFrameShadowV1: runtime.reactTaskFrameShadowV1 === true,
       agentSkillsShadowV1: runtime.agentSkillsShadowV1 === true,
@@ -1212,8 +1239,35 @@ export function getSmallWindowRuntimeStatus(runtime = {}) {
   };
 }
 
+// Diagnostics stay available to server observers and authenticated operators.
+const publicQueryResponses = new WeakSet();
+const internalQueryFields = new Set([
+  "agent", "taskFrame", "resolvedTaskFrame", "explicitTaskFrame", "turnDelta",
+  "executionPlan", "executionTrace", "answerModeRoute", "providerFallback", "capabilityMatch",
+  "conversationBridge", "sessionMetricReview", "akaliVariantSelection", "safetyMetrics",
+  "observations", "groundingAudit", "shadowComparison", "unavailableTools", "diagnostics",
+  "modelCalls", "run", "usage"
+]);
+
+function publicQueryField(key, value) {
+  if (internalQueryFields.has(key)) return undefined;
+  if (key === "conversation" && value && !Array.isArray(value)) {
+    return { stateVersion: value.stateVersion };
+  }
+  return value;
+}
+
+function userQueryResult(payload) {
+  const summary = buildUnderstandingSummary(payload, { locale: payload.locale });
+  const resultMode = payload.resultMode ?? payload.executionPlan?.resultPolicy?.payload?.mode;
+  return { ...payload, ...(resultMode ? { resultMode } : {}),
+    ...(summary ? { understandingSummary: { ...summary, llmCalls: [] } } : {}) };
+}
+
 function sendJson(res, statusCode, payload) {
-  const body = JSON.stringify(payload);
+  const body = publicQueryResponses.has(res)
+    ? JSON.stringify(userQueryResult(payload), publicQueryField)
+    : JSON.stringify(payload);
   res.writeHead(statusCode, {
     "content-type": "application/json; charset=utf-8",
     "content-length": Buffer.byteLength(body)
@@ -1232,6 +1286,17 @@ function beginNdjson(res, statusCode = 200) {
 
 function writeNdjson(res, payload) {
   if (res.destroyed || res.writableEnded) return false;
+  if (publicQueryResponses.has(res)) {
+    if (payload.type === "diagnostic") return true;
+    if (payload.type === "complete") payload = { ...payload, payload: userQueryResult(payload.payload) };
+    if (payload.event) {
+      const { phase, type, sequence, data = {} } = payload.event;
+      const fields = ["type", "tool", "iteration", "stage", "source", "resultType", "evidenceCount", "terminationReason", "code"];
+      const progress = Object.fromEntries(fields.filter(key => ["string", "number"].includes(typeof data[key])).map(key => [key, data[key]]));
+      payload = { type: payload.type, event: { phase, type, sequence, data: progress } };
+    }
+    return res.write(`${JSON.stringify(payload, publicQueryField)}\n`);
+  }
   return res.write(`${JSON.stringify(payload)}\n`);
 }
 
@@ -2435,14 +2500,59 @@ function entityCatalogPreferences(runtime, seasonContext) {
   };
 }
 
+function itemAssetStem(apiName) {
+  return String(apiName ?? "")
+    .replace(/^TFT\d*_Item_/iu, "")
+    .replace(/^DA_/iu, "")
+    .replace(/_?Radiant$/iu, "")
+    .replace(/[^a-z0-9]/giu, "")
+    .toLowerCase();
+}
+
+function deriveRadiantShortAliases(item, baseByStem) {
+  const isRadiant = item.category === "radiant" || /Radiant$/iu.test(String(item.apiName ?? ""));
+  if (!isRadiant) return [];
+  const derived = new Set();
+  const addRadiantVariants = (label) => {
+    const clean = String(label ?? "").trim();
+    if (!clean || !/[\p{Script=Han}]/u.test(clean) || /^(?:光明|光|棱彩)/u.test(clean)) return;
+    if (clean.length >= 2) {
+      derived.add(`光明${clean}`);
+      derived.add(`光${clean}`);
+    }
+    const stripped = clean.replace(/(?:石板甲|盔甲|铠甲|战甲|护甲)$/u, "");
+    if (stripped.length >= 2 && stripped !== clean) {
+      derived.add(`光明${stripped}`);
+      derived.add(`光${stripped}`);
+    }
+  };
+  const ownName = String(item.zhName ?? item.preferredDisplayName ?? "").replace(/^(?:光明版|棱彩版|光明|棱彩)/u, "").trim();
+  if (ownName) addRadiantVariants(ownName);
+  const base = baseByStem.get(itemAssetStem(item.apiName));
+  if (base) {
+    for (const label of [base.zhName, base.shortName, base.preferredDisplayName, ...(base.aliases ?? [])]) {
+      addRadiantVariants(label);
+    }
+  }
+  return [...derived];
+}
+
 export async function handleItemIconsRequest(runtime, seasonContextId) {
   const season = runtime.seasonContextService.resolveForQuery(seasonContextId);
   const { catalog } = await loadRuntimeCatalog(runtime, entityCatalogPreferences(runtime, season));
-  const items = catalog.items.filter(item => item.apiName && item.current !== false).map(item => {
+  const currentItems = catalog.items.filter(item => item.apiName && item.current !== false);
+  const baseByStem = new Map();
+  for (const item of currentItems) {
+    if (item.category === "radiant" || /Radiant$/iu.test(String(item.apiName ?? ""))) continue;
+    const stem = itemAssetStem(item.apiName);
+    if (stem && !baseByStem.has(stem)) baseByStem.set(stem, item);
+  }
+  const items = currentItems.map(item => {
     const fallbackIconUrl = ASSET_RESOLVER.resolveItem(item.apiName).iconUrl;
+    const radiantAliases = deriveRadiantShortAliases(item, baseByStem);
     return {
       apiName: item.apiName, name: item.zhName ?? item.shortName ?? item.apiName,
-      aliases: [...new Set([item.shortName, item.enName, item.preferredDisplayName, ...(item.aliases ?? [])].filter(Boolean))],
+      aliases: [...new Set([item.shortName, item.enName, item.preferredDisplayName, ...(item.aliases ?? []), ...radiantAliases].filter(Boolean))],
       iconUrl: item.iconUrl || fallbackIconUrl, fallbackIconUrl
     };
   });
@@ -5696,7 +5806,18 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
   if (["emblem-rankings", "emblem-carriers"].includes(quickTask?.id)) {
     const tool = quickTask.operation;
-    const query = { days: Number(preferences.days ?? 3), rank: [...(preferences.rankFilter ?? [])], minSamples: Number(preferences.minSamples ?? 100) };
+    let excludeUnits = [];
+    try {
+      excludeUnits = normalizeExcludeUnits(quickTask.arguments.excludeUnits, catalog);
+    } catch {
+      return { statusCode: 400, payload: { ok: false, error: "排除单位不在当前赛季棋子目录中", code: "invalid_exclude_unit" } };
+    }
+    const query = {
+      days: Number(preferences.days ?? 3),
+      rank: [...(preferences.rankFilter ?? [])],
+      minSamples: Number(preferences.minSamples ?? 100),
+      excludeUnits
+    };
     if (tool === "emblem_carriers") {
       const input = quickTask.arguments.item;
       query.item = catalog.itemByApiName.has(input) ? input : resolveQuickTaskEntity(quickTask, "item", "item", catalog);
@@ -5721,11 +5842,58 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       return { statusCode: 502, payload: { ok: false, error: "转职数据查询失败，请重试", code: "emblem_query_failed" } };
     }
     const payload = execution.result;
-    const craftableCount = (payload.rows ?? []).filter(row => row.recipeBase).length;
-    payload.text = tool === "emblem_rankings"
-      ? displayLocale === "en-US" ? `Found ${craftableCount} craftable emblems. Compare rankings and common carriers in the results panel.`
-        : `已找到 ${craftableCount} 个可合成转职，可在结果区按金铲铲或金锅锅筛选，展开查看常见携带英雄。`
-      : displayLocale === "en-US" ? `Found ${payload.carriers?.length ?? 0} common carriers.` : `已找到 ${payload.carriers?.length ?? 0} 个常见携带英雄。`;
+    const emblemUnitFilter = Number(seasonContext?.season) === 19
+      ? (() => {
+        const unit = catalog.unitByApiName.get(SET19_EMBLEM_EXCLUDE_UNIT);
+        const asset = ASSET_RESOLVER.resolveUnit(SET19_EMBLEM_EXCLUDE_UNIT);
+        return {
+          apiName: SET19_EMBLEM_EXCLUDE_UNIT,
+          name: unit?.zhName ?? "史密奇",
+          enName: unit?.enName ? String(unit.enName).replace(/19$/u, "") : "Smeech",
+          iconUrl: asset.iconUrl,
+          fallbackIconUrl: asset.fallbackIconUrl ?? null
+        };
+      })()
+      : null;
+    if (tool === "emblem_rankings") payload.emblemUnitFilter = emblemUnitFilter;
+    const excludedUnitNames = (payload.query?.excludeUnits ?? []).map((apiName) => {
+      const unit = catalog.unitByApiName.get(apiName);
+      if (displayLocale === "en-US") return String(unit?.enName ?? apiName).replace(/19$/u, "");
+      return unit?.zhName ?? apiName;
+    });
+    const craftableRows = (payload.rows ?? []).filter(row => row.recipeBase);
+    const summaryPool = craftableRows.length ? craftableRows : (payload.rows ?? []);
+    const qualifiedPool = summaryPool.filter((row) => !row.lowSample);
+    const topEmblems = (qualifiedPool.length ? qualifiedPool : summaryPool).slice(0, 3);
+    if (tool === "emblem_rankings") {
+      if (topEmblems.length) {
+        const scopeNote = excludedUnitNames.length
+          ? (displayLocale === "en-US" ? ` (excluding ${excludedUnitNames.join(", ")})` : `（已排除${excludedUnitNames.join("、")}）`)
+          : "";
+        const heading = displayLocale === "en-US"
+          ? `${craftableRows.length ? "Top craftable emblems" : "Top emblems"}${scopeNote}:`
+          : `当前${craftableRows.length ? "可合成" : ""}转职前列${scopeNote}：`;
+        const lines = topEmblems.map((row) => {
+          const name = displayLocale === "en-US" ? (row.item.enName ?? row.item.name) : row.item.name;
+          const avg = Number(row.stats.avgPlacement).toFixed(2);
+          const top4 = (Number(row.stats.top4Rate) * 100).toFixed(1);
+          const win = (Number(row.stats.winRate) * 100).toFixed(1);
+          const games = Number(row.stats.games).toLocaleString(displayLocale);
+          return displayLocale === "en-US"
+            ? `- ${name}: avg ${avg}, Top 4 ${top4}%, Win ${win}% (${games} games)`
+            : `- ${name}：平均名次 ${avg}，前四率 ${top4}%，登顶率 ${win}%（${games} 场）`;
+        });
+        payload.text = [heading, ...lines].join("\n");
+      } else {
+        payload.text = displayLocale === "en-US"
+          ? "No craftable emblems matched the current filters."
+          : "当前筛选条件下暂无满足门槛的可合成转职数据。";
+      }
+    } else {
+      payload.text = displayLocale === "en-US"
+        ? `Found ${payload.carriers?.length ?? 0} common carriers.`
+        : `已找到 ${payload.carriers?.length ?? 0} 个常见携带英雄。`;
+    }
     payload.answer = { summary: payload.text };
     const carrierItemDetails = payload.carriers?.length ? await emblemItemDetails(requestRuntime, seasonContext, entityDetails) : null;
     for (const carrier of payload.carriers ?? []) {
@@ -6980,7 +7148,21 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
           { entityDetails: loaded.entityDetails, itemDetails: await emblemItemDetails(runtime, seasonContext, loaded.entityDetails) }),
           updatedAt: result.updatedAt }
         : result;
-      return { ...publicResult, scope: { seasonContextId: seasonContext.id, patch: query.patch, queue: query.queue },
+      const emblemUnitFilter = !carriers && Number(seasonContext?.season) === 19
+        ? (() => {
+          const unit = loaded.catalog.unitByApiName.get(SET19_EMBLEM_EXCLUDE_UNIT);
+          const asset = ASSET_RESOLVER.resolveUnit(SET19_EMBLEM_EXCLUDE_UNIT);
+          return {
+            apiName: SET19_EMBLEM_EXCLUDE_UNIT,
+            name: unit?.zhName ?? "史密奇",
+            enName: unit?.enName ? String(unit.enName).replace(/19$/u, "") : "Smeech",
+            iconUrl: asset.iconUrl,
+            fallbackIconUrl: asset.fallbackIconUrl ?? null
+          };
+        })()
+        : null;
+      return { ...publicResult, ...(!carriers ? { emblemUnitFilter } : {}),
+        scope: { seasonContextId: seasonContext.id, patch: query.patch, queue: query.queue },
         seasonContext: runtime.seasonContextService.publicRecord(seasonContext), locale: request.locale };
     };
     if (typeof runtime.metaTFTClient?.getItems === "function") {
@@ -10055,6 +10237,10 @@ export function createSmallWindowHandler(options = {}) {
   return async function smallWindowHandler(req, res) {
     const url = new URL(req.url, `http://${req.headers.host ?? "localhost"}`);
     applySecurityHeaders(res);
+    const publicVisitor = accessService.config.enabled && !hasValidAdminToken(req, runtime);
+    if (publicVisitor && req.method === "POST" && ["/api/recommend", "/api/recommend/stream", "/api/react-chat/stream"].includes(url.pathname)) {
+      publicQueryResponses.add(res);
+    }
 
     try {
       if (req.method === "GET" && url.pathname === "/api/health") {
@@ -10068,13 +10254,14 @@ export function createSmallWindowHandler(options = {}) {
           const storage = runtime.storageRuntime
             ? await runtime.storageRuntime.store.healthCheck()
             : { ok: true, mode: "legacy" };
-          return sendJson(res, storage.ok ? 200 : 503, { ok: Boolean(storage.ok), storage });
+          return sendJson(res, storage.ok ? 200 : 503, { ok: Boolean(storage.ok), ...(!publicVisitor && { storage }) });
         } catch (error) {
-          return sendJson(res, 503, { ok: false, error: "storage_not_ready", detail: error.message });
+          return sendJson(res, 503, { ok: false, error: "storage_not_ready", ...(!publicVisitor && { detail: error.message }) });
         }
       }
 
       if (req.method === "GET" && url.pathname === "/api/dependencies") {
+        if (publicVisitor) return sendJson(res, 404, { ok: false, error: "Not found" });
         return sendJson(res, 200, {
           ok: true,
           providers: {
@@ -10130,6 +10317,11 @@ export function createSmallWindowHandler(options = {}) {
       }
 
       if (req.method === "GET" && url.pathname === "/api/runtime") {
+        res.setHeader("cache-control", "private, no-store");
+        if (publicVisitor) return sendJson(res, 200, {
+          ok: true, runtime: { publicMode: true, routing: { reactChatEnabled: isReactChatEnabled(runtime) } },
+          access: await accessService.publicStatus(visitor)
+        });
         const payload = await handleRuntimeStatusRequest(runtime);
         payload.runtime.publicMode = accessService.config.enabled;
         payload.access = await accessService.publicStatus(visitor);

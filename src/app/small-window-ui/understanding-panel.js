@@ -819,7 +819,7 @@ function renderChatUnderstandingTrace(data, summary, options, copy, locale) {
 export function renderUnderstandingPanel(data, options = {}) {
   const locale = options.locale ?? "zh-CN";
   const copy = copyFor(locale);
-  const summary = buildUnderstandingSummary(data, { locale });
+  const summary = data?.understandingSummary ?? buildUnderstandingSummary(data, { locale });
   if (options.surface === "chat") {
     return renderChatUnderstandingTrace(data, summary, options, copy, locale);
   }

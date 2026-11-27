@@ -110,6 +110,23 @@ test("public HTTP mode keeps two browser visitors isolated", async () => {
     const firstAccess = await fetch(`${started.url}api/access`);
     const firstCookie = cookieHeader(firstAccess.headers.get("set-cookie"));
     assert.equal((await firstAccess.json()).access.quota.remaining, 10);
+    const read = async (route, headers = {}) => (await fetch(started.url + route, { headers })).json();
+    const publicStatus = await read("api/runtime");
+    assert.deepEqual(publicStatus.runtime, { publicMode: true, routing: { reactChatEnabled: false } });
+    assert.ok((await read("api/runtime", { authorization: "Bearer test-admin-token" })).runtime.cache);
+    assert.deepEqual(await read("api/ready"), { ok: true });
+    assert.equal((await fetch(started.url + "api/dependencies")).status, 404);
+    for (const path of ["api/recommend", "api/recommend/stream"]) {
+      const response = await fetch(started.url + path, {
+        method: "POST", headers: { cookie: firstCookie, "content-type": "application/json" },
+        body: JSON.stringify({ input: "你好", locale: "zh-CN" })
+      });
+      assert.equal(response.status, 200);
+      const body = await response.text();
+      assert.doesNotMatch(body, /"(?:executionPlan|taskFrame|answerModeRoute|executionTrace|providerFallback|bridgeMode)"\s*:/);
+      const lines = body.trim().split("\n").map(line => JSON.parse(line));
+      assert.equal((lines.at(-1).payload ?? lines.at(-1)).ok, true);
+    }
 
     const saved = await fetch(`${started.url}api/preferences`, {
       method: "POST",

@@ -52,11 +52,11 @@ function statisticalNumbersInText(value) {
   const matches = [];
   for (const pattern of [
     /(-?\d+(?:\.\d+)?)\s*%/g,
-    /(?:平均名次|前四率|胜率|登顶率|样本(?:数)?|场次|games?|samples?|top\s*4|win\s*rate|avg(?:erage)?\s*place(?:ment)?)\D{0,8}(-?\d+(?:\.\d+)?)/gi,
-    /(-?\d+(?:\.\d+)?)\s*(?:场|局|个样本|games?|samples?)/gi
+    /(?:平均名次|前四率|胜率|登顶率|样本(?:数)?|场次|games?|samples?|top\s*4|win\s*rate|avg(?:erage)?\s*place(?:ment)?)\D{0,8}(-?\d{1,3}(?:,\d{3})+|-?\d+(?:\.\d+)?)/gi,
+    /(-?\d{1,3}(?:,\d{3})+|-?\d+(?:\.\d+)?)\s*(?:场|局|个样本|games?|samples?)/gi
   ]) {
     for (const match of text.matchAll(pattern)) {
-      const number = Number(match[1]);
+      const number = Number(String(match[1]).replaceAll(",", ""));
       if (Number.isFinite(number)) matches.push(number);
     }
   }
@@ -119,68 +119,183 @@ export function validateCoachAnswer(value, bundle) {
   return { valid: errors.length === 0, errors, value: errors.length ? null : value };
 }
 
+function hasMetric(value) {
+  return (typeof value === "number" || (typeof value === "string" && value.trim() !== "")) && Number.isFinite(Number(value));
+}
+
+function formatCandidateMetrics(candidate) {
+  const s = candidate?.stats ?? {};
+  const parts = [];
+  if (hasMetric(s.avgPlacement)) parts.push(`平均名次 ${Number(s.avgPlacement).toFixed(2)}`);
+  if (hasMetric(s.top4Rate)) parts.push(`前四率 ${(Number(s.top4Rate) * 100).toFixed(1)}%`);
+  if (hasMetric(s.winRate)) parts.push(`登顶率 ${(Number(s.winRate) * 100).toFixed(1)}%`);
+  if (hasMetric(s.games)) parts.push(`样本 ${Number(s.games)}`);
+  const lowSample = array(candidate?.riskFlags).includes("low_sample");
+  const summary = parts.join("，");
+  if (!summary) return lowSample ? "低样本参考" : "";
+  return lowSample ? `${summary}（低样本参考）` : summary;
+}
+
+function formatCandidateBullet(candidate, prefix = "") {
+  const label = candidateLabel(candidate);
+  const metrics = formatCandidateMetrics(candidate);
+  return `- ${prefix}${label}${metrics ? `：${metrics}` : ""}`;
+}
+
+function formatVideoLine(video) {
+  if (!video) return null;
+  const videoClaim = String(video.claim ?? "").trim();
+  if (!videoClaim) return null;
+  const conditionSeparator = /[。！？.!?]$/.test(videoClaim) ? "" : "。";
+  const conditions = array(video.conditions).length
+    ? `${conditionSeparator}适用条件：${video.conditions.join("、")}`
+    : "";
+  return `- 攻略补充（${video.author ?? "创作者"}）：${videoClaim}${conditions}`;
+}
+
 function renderCompTrends({ bundle, candidates, options }) {
   const first = candidates[0];
   const trendCandidates = candidates.slice(0, 5);
-    const trendLabels = trendCandidates.map((candidate) => {
-      const change = Number(candidate.stats?.avgPlacementChange);
-      return Number.isFinite(change)
-        ? `${candidateLabel(candidate)}（平均名次变化 ${change.toFixed(2)}）`
-        : candidateLabel(candidate);
-    });
-    const citations = trendCandidates.map((candidate) => String(candidate.evidenceId));
-    return {
-      schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
-      status: "ok",
-      headline: "MetaTFT 近期上升阵容",
-      text: `根据本轮 MetaTFT 结构化趋势结果，近期上升阵容依次为：${trendLabels.join("；")}。趋势排序以本轮结构化 QueryResult 为准。`,
-      currentRecommendation: {
-        evidenceId: String(first.evidenceId),
-        label: candidateLabel(first)
-      },
-      reasons: [{
-        evidenceIds: citations,
-        text: "上升名单和顺序来自本轮 MetaTFT 结构化趋势结果。"
-      }],
-      alternatives: [],
-      citations,
-      warnings: deterministicWarnings(bundle, options)
-    };
+  const trendLines = trendCandidates.map((candidate) => {
+    const change = Number(candidate.stats?.avgPlacementChange);
+    const metrics = formatCandidateMetrics(candidate);
+    const changePart = hasMetric(candidate.stats?.avgPlacementChange)
+      ? `平均名次变化 ${change > 0 ? `+${change.toFixed(2)}` : change.toFixed(2)}`
+      : "";
+    const detail = [changePart, metrics].filter(Boolean).join("，");
+    return `- ${candidateLabel(candidate)}${detail ? `：${detail}` : ""}`;
+  });
+  const citations = trendCandidates.map((candidate) => String(candidate.evidenceId));
+  return {
+    schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
+    status: "ok",
+    headline: "近期上升阵容前列",
+    text: ["近期上升明显的阵容：", ...trendLines].join("\n"),
+    currentRecommendation: {
+      evidenceId: String(first.evidenceId),
+      label: candidateLabel(first)
+    },
+    reasons: [{
+      evidenceIds: citations,
+      text: "按本轮统计的近期平均名次变化排序。"
+    }],
+    alternatives: [],
+    citations,
+    warnings: deterministicWarnings(bundle, options)
+  };
+}
+
+function renderCompRankings({ bundle, candidates, knowledge, options }) {
+  const first = candidates[0];
+  const recommendation = candidateLabel(first);
+  const top = candidates.slice(0, 3);
+  const video = knowledge.find((record) => record.sourceType === "youtube");
+  const videoLine = formatVideoLine(video);
+  const lines = [
+    "当前热门阵容前列：",
+    ...top.map((candidate) => formatCandidateBullet(candidate)),
+    ...(videoLine ? [videoLine] : [])
+  ];
+  const citations = [
+    ...top.map((candidate) => String(candidate.evidenceId)),
+    ...(video ? [String(video.evidenceId)] : [])
+  ];
+  return {
+    schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
+    status: "ok",
+    headline: `当前热门阵容首选：${recommendation}`,
+    text: lines.join("\n"),
+    currentRecommendation: {
+      evidenceId: String(first.evidenceId),
+      label: recommendation
+    },
+    reasons: [{
+      evidenceIds: top.map((candidate) => String(candidate.evidenceId)),
+      text: "按本轮实时统计的平均名次、前四率与样本量排序。"
+    }],
+    alternatives: video ? [{
+      evidenceIds: [String(video.evidenceId)],
+      text: `${video.author ?? "创作者"}的攻略仅作为条件性建议，不覆盖当前统计排序。`,
+      conditions: array(video.conditions)
+    }] : [],
+    citations,
+    warnings: deterministicWarnings(bundle, options)
+  };
+}
+
+function renderItemCarriers({ bundle, candidates, knowledge, options }) {
+  const first = candidates[0];
+  const recommendation = candidateLabel(first);
+  const top = candidates.slice(0, 3);
+  const video = knowledge.find((record) => record.sourceType === "youtube");
+  const videoLine = formatVideoLine(video);
+  const lines = [
+    "适配携带英雄前列：",
+    ...top.map((candidate) => formatCandidateBullet(candidate)),
+    ...(videoLine ? [videoLine] : [])
+  ];
+  return {
+    schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
+    status: "ok",
+    headline: `首选携带英雄：${recommendation}`,
+    text: lines.join("\n"),
+    currentRecommendation: {
+      evidenceId: String(first.evidenceId),
+      label: recommendation
+    },
+    reasons: [{
+      evidenceIds: top.map((candidate) => String(candidate.evidenceId)),
+      text: "按本轮携带样本与平均名次表现排序。"
+    }],
+    alternatives: video ? [{
+      evidenceIds: [String(video.evidenceId)],
+      text: `${video.author ?? "创作者"}的攻略仅作为条件性建议。`,
+      conditions: array(video.conditions)
+    }] : [],
+    citations: [
+      ...top.map((candidate) => String(candidate.evidenceId)),
+      ...(video ? [String(video.evidenceId)] : [])
+    ],
+    warnings: deterministicWarnings(bundle, options)
+  };
 }
 
 function renderStructuredRecommendation({ bundle, candidates, knowledge, options }) {
   const first = candidates[0];
   const recommendation = candidateLabel(first);
+  const top = candidates.slice(0, 3);
   const video = knowledge.find((record) => record.sourceType === "youtube");
-    const videoClaim = String(video?.claim ?? "").trim();
-    const conditionSeparator = /[。！？.!?]$/.test(videoClaim) ? "" : "。";
-    const explanation = video
-      ? `检索到 ${video.author ?? "该作者"} 的视频观点：${videoClaim}${array(video.conditions).length ? `${conditionSeparator}适用条件：${video.conditions.join("、")}` : ""}`
-      : "当前没有检索到足够相关的视频攻略，以下结论主要基于当前统计；机制解释需要更多知识证据。";
-    return {
-      schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
-      status: "ok",
-      headline: `当前统计首选：${recommendation}`,
-      text: `当前推荐以 MetaTFT 结构化结果的第一名“${recommendation}”为准。${explanation}`,
-      currentRecommendation: {
-        evidenceId: String(first.evidenceId),
-        label: recommendation
-      },
-      reasons: [{
-        evidenceIds: [String(first.evidenceId)],
-        text: "当前最好与排序由右侧 MetaTFT 统计候选决定。"
-      }],
-      alternatives: video ? [{
-        evidenceIds: [String(video.evidenceId)],
-        text: `${video.author ?? "该作者"}的攻略仅作为条件性建议，不覆盖当前统计首选。`,
-        conditions: array(video.conditions)
-      }] : [],
-      citations: [
-        String(first.evidenceId),
-        ...(video ? [String(video.evidenceId)] : [])
-      ],
-      warnings: deterministicWarnings(bundle, options)
-    };
+  const videoLine = formatVideoLine(video);
+  const firstMetrics = formatCandidateMetrics(first);
+  const lines = [
+    `当前首选：${recommendation}${firstMetrics ? `（${firstMetrics}）` : ""}`,
+    ...top.slice(1).map((candidate) => formatCandidateBullet(candidate, "备选：")),
+    ...(videoLine ? [videoLine] : [])
+  ];
+  return {
+    schemaVersion: COACH_ANSWER_SCHEMA_VERSION,
+    status: "ok",
+    headline: `当前统计首选：${recommendation}`,
+    text: lines.join("\n"),
+    currentRecommendation: {
+      evidenceId: String(first.evidenceId),
+      label: recommendation
+    },
+    reasons: [{
+      evidenceIds: top.map((candidate) => String(candidate.evidenceId)),
+      text: "主结论与备选排序来自本轮统计表现。"
+    }],
+    alternatives: video ? [{
+      evidenceIds: [String(video.evidenceId)],
+      text: `${video.author ?? "创作者"}的攻略仅作为条件性建议，不覆盖当前统计首选。`,
+      conditions: array(video.conditions)
+    }] : [],
+    citations: [
+      ...top.map((candidate) => String(candidate.evidenceId)),
+      ...(video ? [String(video.evidenceId)] : [])
+    ],
+    warnings: deterministicWarnings(bundle, options)
+  };
 }
 
 function renderStructuredEmpty({ bundle, options }) {
@@ -241,9 +356,9 @@ export const DETERMINISTIC_ANSWER_RENDERERS = Object.freeze({
   unit_item_comparison: renderStructuredRecommendation,
   unit_item_availability: renderStructuredRecommendation,
   unit_emblem_rankings: renderStructuredRecommendation,
-  item_carrier_rankings: renderStructuredRecommendation,
-  comp_rankings: renderStructuredRecommendation,
-  comp_analysis: renderStructuredRecommendation,
+  item_carrier_rankings: renderItemCarriers,
+  comp_rankings: renderCompRankings,
+  comp_analysis: renderCompRankings,
   structured_default: renderStructuredRecommendation,
   structured_empty: renderStructuredEmpty,
   knowledge_default: renderKnowledge,

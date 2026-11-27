@@ -50,8 +50,38 @@ test("Hybrid answer falls back without losing structured statistics", async () =
   });
   assert.equal(result.status, "fallback");
   assert.equal(result.content.currentRecommendation.evidenceId, "stats:build:1");
-  assert.match(result.text, /MetaTFT/);
+  assert.match(result.text, /羊刀 \+ 无尽 \+ 轻语/);
+  assert.match(result.text, /4\.02/);
+  assert.match(result.text, /56\.3%/);
+  assert.equal(validateCoachAnswer(result.content, result.evidenceBundle).valid, true);
   assert.equal(result.evidenceBundle.queryResult.candidates.length, 1);
+});
+
+test("Hybrid comp_rankings deterministic conclusion presents Top 3 metrics without robotic video-missing disclaimers", async () => {
+  const service = new HybridAnswerService();
+  const result = await service.answer({
+    question: "推荐当前版本热门阵容",
+    mode: "hybrid",
+    query: { intent: "comp_rankings" },
+    structuredResult: {
+      type: "comp_rankings",
+      source: { provider: "MetaTFT", updatedAt: "2026-11-27T00:00:00Z" },
+      rankings: {
+        avg_placement: [
+          { name: "编舞师·阿狸", stats: { games: 4210, avgPlacement: 3.82, top4Rate: 0.614, winRate: 0.182 } },
+          { name: "电子舞曲·劫", stats: { games: 3100, avgPlacement: 3.95, top4Rate: 0.581, winRate: 0.15 } },
+          { name: "国风·凯尔", stats: { games: 2890, avgPlacement: 4.04, top4Rate: 0.562, winRate: 0.131 } }
+        ]
+      }
+    },
+    knowledgeEvidence: []
+  });
+  assert.equal(result.status, "fallback");
+  assert.equal(validateCoachAnswer(result.content, result.evidenceBundle).valid, true);
+  assert.match(result.text, /编舞师·阿狸.*3\.82.*61\.4%/);
+  assert.match(result.text, /电子舞曲·劫.*3\.95/);
+  assert.match(result.text, /国风·凯尔.*4\.04/);
+  assert.doesNotMatch(result.text, /结构化结果的第一名|没有检索到足够相关的视频攻略|机制解释需要更多知识证据|QueryResult/);
 });
 
 test("Hybrid validator rejects a video recommendation overriding MetaTFT first place", () => {

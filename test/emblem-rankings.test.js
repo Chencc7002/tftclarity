@@ -131,3 +131,93 @@ test("carrier shortcut decorates existing emblem builds without changing their e
   assert.ok(build.displayItems.every(item => item.iconUrl?.startsWith("https://")));
   assert.equal(build.stats.games, 240);
 });
+
+test("S19 emblem rankings expose Smeech exclusion option, pass MetaTFT exclusion filter, and validate excluded units", async () => {
+  const SMEECH = "DA_Smeech19";
+  const s19Catalog = createCatalog({
+    units: [
+      { apiName: UNIT, zhName: "阿狸", aliases: ["阿狸"], current: true },
+      { apiName: SMEECH, zhName: "史密奇", enName: "Smeech19", aliases: ["史密奇", "Smeech"], current: true }
+    ],
+    items: [
+      { apiName: A, zhName: "斗士纹章", aliases: ["斗士纹章"], category: "emblem", current: true, obtainable: true },
+      { apiName: B, zhName: "花仙子纹章", aliases: ["花仙子纹章"], category: "emblem", current: true, obtainable: true },
+      { apiName: C, zhName: "魔女纹章", aliases: ["魔女纹章"], category: "emblem", current: true, obtainable: true }
+    ]
+  });
+  let receivedItemParams = null;
+  let receivedCarrierPlan = null;
+  const runtime = createSmallWindowRuntime({
+    catalog: s19Catalog,
+    cacheStore: new MemoryCacheStore(),
+    fetchItems: false,
+    officialItemDetails: details,
+    fetchOfficialItemDetails: async () => details,
+    metaTFTClient: {
+      getItems: async (params) => { receivedItemParams = params; return response; },
+      getItemCarrierBuilds: async (plan) => {
+        receivedCarrierPlan = plan;
+        return { data: [{ unit_builds: `${UNIT}&${A}`, placement_count: [30, 30, 30, 30, 20, 20, 20, 20] }] };
+      }
+    },
+    compsClient: { getUnitItemsProcessed: async () => ({ units: { [UNIT]: { avg: 4.3 } } }) }
+  });
+
+  // Default S19 query includes Smeech (excludeUnits: []) and exposes emblemUnitFilter
+  const defaultRes = await handleRecommendRequest({
+    input: "查询可合成转职强度排行",
+    seasonContextId: "set19-pbe",
+    preferences: { conclusionMode: "off" },
+    quickTask: { schemaVersion: "quick-task.v1", requestId: "s19-default", id: "emblem-rankings", operation: "emblem_rankings", arguments: {} }
+  }, runtime);
+  assert.equal(defaultRes.statusCode, 200);
+  assert.deepEqual(defaultRes.payload.query.excludeUnits, []);
+  assert.equal(defaultRes.payload.emblemUnitFilter?.apiName, SMEECH);
+  assert.equal(defaultRes.payload.emblemUnitFilter?.name, "史密奇");
+  assert.equal(receivedItemParams["sf[0][and][0][unit_unique]"], undefined);
+  assert.match(defaultRes.payload.text, /斗士纹章/);
+
+  // Excluding Smeech injects sf[0][and][0][unit_unique]=!DA_Smeech19-1 and updates URL/summary
+  const excludedRes = await handleRecommendRequest({
+    input: "查询可合成转职强度排行",
+    seasonContextId: "set19-pbe",
+    preferences: { conclusionMode: "off" },
+    quickTask: { schemaVersion: "quick-task.v1", requestId: "s19-excl", id: "emblem-rankings", operation: "emblem_rankings", arguments: { excludeUnits: [SMEECH] } }
+  }, runtime);
+  assert.equal(excludedRes.statusCode, 200);
+  assert.deepEqual(excludedRes.payload.query.excludeUnits, [SMEECH]);
+  assert.equal(receivedItemParams["sf[0][and][0][unit_unique]"], `!${SMEECH}-1`);
+  assert.match(excludedRes.payload.source.url, /unit_unique=%21DA_Smeech19-1/);
+  assert.match(excludedRes.payload.text, /已排除史密奇/);
+
+  // Carrier lookup on PBE with excludeUnits routes to unit_builds with the same exclusion filter
+  const carrierRes = await handleRecommendRequest({
+    input: "常见携带英雄",
+    seasonContextId: "set19-pbe",
+    preferences: { conclusionMode: "off" },
+    quickTask: { schemaVersion: "quick-task.v1", requestId: "s19-carriers-excl", id: "emblem-carriers", operation: "emblem_carriers", arguments: { item: A, excludeUnits: [SMEECH] } }
+  }, runtime);
+  assert.equal(carrierRes.statusCode, 200);
+  assert.equal(receivedCarrierPlan.endpoint, "unit_builds");
+  assert.equal(receivedCarrierPlan.params["sf[0][and][0][unit_unique]"], `!${SMEECH}-1`);
+
+  // Invalid excluded unit is rejected before retrieval
+  const invalidRes = await handleRecommendRequest({
+    input: "查询可合成转职强度排行",
+    seasonContextId: "set19-pbe",
+    preferences: { conclusionMode: "off" },
+    quickTask: { schemaVersion: "quick-task.v1", requestId: "s19-invalid-excl", id: "emblem-rankings", operation: "emblem_rankings", arguments: { excludeUnits: ["UNKNOWN_UNIT"] } }
+  }, runtime);
+  assert.equal(invalidRes.statusCode, 400);
+  assert.equal(invalidRes.payload.code, "invalid_exclude_unit");
+
+  // Non-S19 seasons do not expose the Smeech emblemUnitFilter
+  const s18Res = await handleRecommendRequest({
+    input: "查询可合成转职强度排行",
+    seasonContextId: "set18-live",
+    preferences: { conclusionMode: "off" },
+    quickTask: { schemaVersion: "quick-task.v1", requestId: "s18-default", id: "emblem-rankings", operation: "emblem_rankings", arguments: {} }
+  }, runtime);
+  assert.equal(s18Res.statusCode, 200);
+  assert.equal(s18Res.payload.emblemUnitFilter, null);
+});

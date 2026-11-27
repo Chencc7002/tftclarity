@@ -210,6 +210,7 @@ function traitEntries(catalog, details, options = {}) {
         ...catalogTrait,
         aliases: [...new Set([...(catalogTrait.aliases ?? []), ...grouped.aliases])]
       }, apiName);
+      const resolvedTraitAsset = options.assetResolver?.resolveTrait?.(apiName) ?? null;
       const entry = {
         entityType: "trait",
         apiName,
@@ -219,7 +220,8 @@ function traitEntries(catalog, details, options = {}) {
         traitType: official?.type ?? null,
         tierCounts: [...new Set((official?.levels ?? []).map((level) => Number(level.units)).filter(Number.isFinite))]
           .sort((left, right) => left - right),
-        iconUrl: official?.iconUrl ?? null,
+        iconUrl: official?.iconUrl ?? resolvedTraitAsset?.iconUrl ?? null,
+        aliases: [...new Set([zhName, enName, ...grouped.aliases].filter(Boolean))],
         hasDetails: Boolean(official),
         source: publicSource(official?.source)
       };

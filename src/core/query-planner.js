@@ -74,7 +74,11 @@ export function planMetaTFTCompCandidates(query) {
 export function planMetaTFTItemCarrierBuilds(query) {
   const item = String(query.item ?? "").trim();
   if (!item) throw new TypeError("planMetaTFTItemCarrierBuilds requires item");
-  if (String(query.queue ?? DEFAULT_QUERY_OPTIONS.queue).toUpperCase() === "PBE") {
+  const excludeUnits = Array.isArray(query.excludeUnits)
+    ? [...new Set(query.excludeUnits.map((value) => String(value ?? "").trim()).filter(Boolean))].sort()
+    : [];
+  const queue = String(query.queue ?? DEFAULT_QUERY_OPTIONS.queue);
+  if (queue.toUpperCase() === "PBE" && !excludeUnits.length) {
     const [patch, buildPatch = ""] = String(query.patch ?? DEFAULT_QUERY_OPTIONS.patch).split("_", 2);
     return {
       endpoint: "item_detail",
@@ -90,20 +94,25 @@ export function planMetaTFTItemCarrierBuilds(query) {
       }
     };
   }
+  const params = {
+    formatnoarray: "true",
+    compact: "true",
+    queue,
+    patch: query.patch ?? DEFAULT_QUERY_OPTIONS.patch,
+    days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
+    rank: queue.toUpperCase() === "PBE" ? "" : (query.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter).join(","),
+    permit_filter_adjustment: excludeUnits.length ? "false" : "true",
+    item_unique: `${item}-1`,
+    ...Object.fromEntries(excludeUnits.map((apiName, index) => [
+      `sf[0][and][${index}][unit_unique]`,
+      `!${apiName}-1`
+    ]))
+  };
   return {
     endpoint: "unit_builds",
     method: "GET",
     path: "/tft-explorer-api/unit_builds",
-    params: {
-      formatnoarray: "true",
-      compact: "true",
-      queue: query.queue ?? DEFAULT_QUERY_OPTIONS.queue,
-      patch: query.patch ?? DEFAULT_QUERY_OPTIONS.patch,
-      days: String(query.days ?? DEFAULT_QUERY_OPTIONS.days),
-      rank: (query.rankFilter ?? DEFAULT_QUERY_OPTIONS.rankFilter).join(","),
-      permit_filter_adjustment: "true",
-      item_unique: `${item}-1`
-    }
+    params
   };
 }
 

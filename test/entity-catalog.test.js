@@ -212,3 +212,24 @@ test("unit catalog collapses duplicate runtime ids onto the official detail-back
   assert.equal(legacyAlias.pagination.total, 1);
   assert.equal(legacyAlias.items[0].apiName, "DA_18_Diana");
 });
+
+test("trait catalog falls back to assetResolver icons and exposes aliases", () => {
+  const catalog = {
+    units: [],
+    traits: [
+      { apiName: "DA_EDM19", zhName: "电子舞曲", enName: "EDM19", current: true, aliases: ["电子舞曲", "EDM"] }
+    ]
+  };
+  const details = { units: new Map(), traits: new Map() };
+  const result = buildEntityCatalog(catalog, details, {
+    entityType: "trait",
+    assetResolver: {
+      resolveTrait: (apiName) => ({ iconUrl: `https://cdn.metatft.com/file/metatft/traits/${apiName.toLowerCase()}.png` })
+    }
+  });
+
+  assert.equal(result.items.length, 1);
+  assert.equal(result.items[0].iconUrl, "https://cdn.metatft.com/file/metatft/traits/da_edm19.png");
+  assert.ok(result.items[0].aliases.includes("电子舞曲"));
+  assert.ok(result.items[0].aliases.includes("EDM"));
+});

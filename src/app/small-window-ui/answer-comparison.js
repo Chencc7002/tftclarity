@@ -1,5 +1,7 @@
 const divider = /^:?-+:?$/u;
 const compHeader = /阵容|\b(?:comp(?:osition)?s?|lineups?|teams?)\b/iu;
+const unitHeader = /英雄|棋子|携带者|弈子|\b(?:units?|champions?|heroes?|carriers?)\b/iu;
+const traitHeader = /羁绊|\b(?:traits?|synerg(?:y|ies))\b/iu;
 const itemHeader = /装备|出装|神器|纹章|三件套|单件|\b(?:items?|equipment|builds?|artifacts?|emblems?)\b/iu;
 const escape = value => String(value).replace(/[&<>"']/gu, ch => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[ch]);
 const plain = value => value.replaceAll("**", "").trim();
@@ -58,7 +60,7 @@ function measure(header, values) {
 export function renderAnswerTable({ headers, rows }, inlineHtml) {
   const values = headers.map((_, i) => rows.map(row => metricValue(row[i])));
   const measures = headers.map((h, i) => measure(h, values[i]));
-  let label = headers.findIndex((h, i) => !measures[i] && (compHeader.test(h) || itemHeader.test(h)));
+  let label = headers.findIndex((h, i) => !measures[i] && (compHeader.test(h) || itemHeader.test(h) || unitHeader.test(h) || traitHeader.test(h)));
   if (label < 0) label = headers.findIndex((_, i) => !measures[i]);
   const metrics = headers.map((name, index) => ({ name: plain(name), index })).filter(({ index }) => measures[index]);
   const chart = rows.length > 0 && label >= 0 && metrics.length > 0;
@@ -66,7 +68,15 @@ export function renderAnswerTable({ headers, rows }, inlineHtml) {
   const zh = headers.some(h => /\p{Script=Han}/u.test(h));
   const title = chart ? (zh ? plain(headers[label]) + "对比" : plain(headers[label]) + " comparison") : (zh ? "数据表" : "Data table");
   const toolbar = chart ? `<div class="answer-comparison__toolbar"><label>${zh ? "排序" : "Sort"} <select data-sort-field><option value="">${zh ? "原始顺序" : "Original order"}</option>${metrics.map(m => `<option value="${m.index}" data-direction="${measures[m.index].ascending ? "asc" : "desc"}">${escape(m.name)}</option>`).join("")}</select></label><button class="answer-comparison__direction" type="button" data-sort-direction disabled aria-label="${zh ? "切换排序方向" : "Reverse order"}">↕</button></div>` : "";
-  const portraitType = compHeader.test(headers[label]) ? "comp" : itemHeader.test(headers[label]) ? "item" : "";
+  const portraitType = compHeader.test(headers[label])
+    ? "comp"
+    : itemHeader.test(headers[label])
+      ? "item"
+      : unitHeader.test(headers[label])
+        ? "unit"
+        : traitHeader.test(headers[label])
+          ? "trait"
+          : "";
   const column = index => `data-column="${index}"${index === label ? " data-label" : ""}${index === initial ? " data-plotted" : ""}`;
   const head = headers.map((h,i) => `<th scope="col" ${column(i)}>${inlineHtml(h)}</th>`).join("");
   const body = rows.map((row, r) => `<tr data-original="${r}">${row.map((value, i) => {
@@ -189,6 +199,20 @@ export async function hydrateComparisonPortraits(record) {
   if (!record.seasonContextId) return;
   const itemSlots = [...record.target.querySelectorAll("[data-item-portrait]")];
   if (itemSlots.length) await hydrateItemPortraits(record, itemSlots);
+  const unitSlots = [...record.target.querySelectorAll("[data-unit-portrait]")];
+  if (unitSlots.length) {
+    const units = await catalogEntries(record.seasonContextId, "unit");
+    for (const slot of unitSlots) {
+      if (slot.isConnected) showPortrait(slot, namedChartUnit(slot.dataset.unitPortrait, units));
+    }
+  }
+  const traitSlots = [...record.target.querySelectorAll("[data-trait-portrait]")];
+  if (traitSlots.length) {
+    const traits = await catalogEntries(record.seasonContextId, "trait");
+    for (const slot of traitSlots) {
+      if (slot.isConnected) showPortrait(slot, namedChartItem(slot.dataset.traitPortrait, traits));
+    }
+  }
   const slots = [...record.target.querySelectorAll("[data-comp-portrait]")];
   if (!slots.length) return;
   const groups = [record.data, ...(record.data.compositionResultGroups ?? []).map(group => group.result)];

@@ -1,4 +1,5 @@
 import { catalogEntries, hydrateComparisonPortraits } from "./answer-comparison.js";
+import { hydrateInlineEntityIcons } from "./inline-entity-icons.js";
 import { attachChampionPicker } from "./champion-picker.js";
 import { AppShell, TitleBar } from "./app-shell.js";
 import { mountEmblemRankings } from "./emblem-rankings.js";
@@ -185,7 +186,7 @@ const appShell = new AppShell({
   settingsDone,
   onSettingsOpen: async () => {
     await loadRuntimeStatus();
-    if (!state.runtimeStatus?.publicMode) await loadAliases();
+    if (state.runtimeStatus?.publicMode === false) await loadAliases();
   },
   titleBar
 });
@@ -928,8 +929,13 @@ function structuredQuickTask(task, values = {}) {
     locale: getLocale(),
     arguments: Object.fromEntries(
       Object.entries(values)
-        .map(([key, value]) => [key, String(value ?? "").trim()])
-        .filter(([, value]) => value)
+        .map(([key, value]) => [
+          key,
+          Array.isArray(value)
+            ? value.map((entry) => String(entry ?? "").trim()).filter(Boolean)
+            : String(value ?? "").trim()
+        ])
+        .filter(([, value]) => (Array.isArray(value) ? value.length > 0 : Boolean(value)))
     )
   };
 }
@@ -2716,6 +2722,7 @@ function renderPatchNote(track = true) {
     </article>
     ${patchHistoryHtml(patch)}
   `);
+  void hydrateInlineEntityIcons({ target: resultContentEl, seasonContextId: state.seasonContextId });
 }
 
 function renderErrorResult(message, track = true, messageKey = null) {
@@ -3187,6 +3194,7 @@ function streamAssistantCoreConclusion(record) {
     if (index >= characters.length) {
       target.classList.remove("is-streaming");
       stopAssistantCoreStream(record);
+      void hydrateInlineEntityIcons({ target, data: record.data, seasonContextId: record.seasonContextId });
     }
   }, 16);
 }
@@ -3196,6 +3204,7 @@ function rerenderAssistantRecord(record) {
   stopAssistantCoreStream(record);
   record.target.innerHTML = assistantResponseHtml(record.data, record.id);
   void hydrateComparisonPortraits(record);
+  void hydrateInlineEntityIcons(record);
 }
 
 function recordAssistantResponse(data) {
@@ -3216,6 +3225,7 @@ function recordAssistantResponse(data) {
   const fixedCoreText = chatCoreConclusionText(data);
   activeResponseEl.innerHTML = assistantResponseHtml(data, id, fixedCoreText ? { fixedCoreText: "", streamingFixed: true } : {});
   void hydrateComparisonPortraits(record);
+  void hydrateInlineEntityIcons(record);
   state.responseRecords.push(record);
   state.responsesById.set(id, record);
   if (fixedCoreText) streamAssistantCoreConclusion(record);
@@ -3276,7 +3286,7 @@ function rerenderLocalizedState() {
   else if (state.resultView.type === "patch-note") renderPatchNote(false);
   else renderEmptyResult(false);
   if (state.aliases) renderAliases(state.aliases);
-  renderRuntimeStatus(state.runtimeStatus ?? {});
+  renderRuntimeStatus(state.runtimeStatus ?? { publicMode: true });
   const statusKey = state.statusKey;
   const statusParams = state.statusParams;
   if (statusKey) setStatusKey(statusKey, state.statusState ?? "ready", statusParams ?? {});
@@ -3341,17 +3351,56 @@ function renderItemRankings(data) {
   `);
 }
 
-function renderEmblemRankings(data) {
+function renderEmblemRankings(data, viewOptions = {}) {
   setResponseHtml('<div data-emblem-root></div>');
-  mountEmblemRankings({ root: resultContentEl.querySelector("[data-emblem-root]"), data,
+  const root = resultContentEl.querySelector("[data-emblem-root]");
+  const responseId = state.currentResponseId;
+  mountEmblemRankings({ root, data,
     t, escapeHtml, itemPill, assetThumb, localizedName,
+    initialBase: viewOptions.base ?? null,
+    initialSort: viewOptions.sort ?? null,
+    onToggleExcludeUnit: async (excludeUnits, currentView = {}) => {
+      const response = await fetch("/api/recommend", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          input: t("quickTaskEmblemsPrompt"),
+          locale: data.locale ?? getLocale(),
+          seasonContextId: data.seasonContext?.id ?? state.seasonContextId,
+          conversationId: state.conversationId,
+          startNewTask: true,
+          preferences: { days: data.query?.days ?? state.days, rankFilter: data.query?.rank ?? state.rankFilter, minSamples: data.query?.minSamples ?? state.minSamples },
+          quickTask: structuredQuickTask(
+            { id: "emblem-rankings", operation: "emblem_rankings" },
+            excludeUnits.length ? { excludeUnits } : {}
+          )
+        })
+      });
+      const next = await response.json();
+      if (!root.isConnected || responseId !== state.currentResponseId) return;
+      if (!response.ok || !next.ok || next.type !== "emblem_rankings") {
+        throw new Error(next.error ?? "emblem_rankings_failed");
+      }
+      state.lastResult = next;
+      state.resultView = { type: "result", data: next };
+      const record = state.responsesById.get(state.currentResponseId);
+      if (record) {
+        record.data = next;
+        rerenderAssistantRecord(record);
+      }
+      renderEmblemRankings(next, currentView);
+    },
     loadCarriers: async item => {
+      const excludeUnits = data.query?.excludeUnits ?? [];
       const response = await fetch("/api/recommend", { method: "POST", headers: { "content-type": "application/json" },
         body: JSON.stringify({ input: t("emblemCommonCarriers"), locale: data.locale,
           seasonContextId: data.seasonContext?.id ?? state.seasonContextId,
           conversationId: `emblem-detail-${crypto.randomUUID()}`, startNewTask: true,
           preferences: { days: data.query.days, rankFilter: data.query.rank, minSamples: data.query.minSamples },
-          quickTask: structuredQuickTask({ id: "emblem-carriers", operation: "emblem_carriers" }, { item }) }) });
+          quickTask: structuredQuickTask(
+            { id: "emblem-carriers", operation: "emblem_carriers" },
+            excludeUnits.length ? { item, excludeUnits } : { item }
+          ) }) });
       const value = await response.json();
       if (!response.ok || !value.ok || value.type !== "emblem_carriers") throw new Error(value.error ?? "emblem_carriers_failed");
       return value;
@@ -4164,6 +4213,11 @@ function renderCurrentResult(data) {
   if (currentStatsScopeHtml) resultContentEl.insertAdjacentHTML("beforeend", currentStatsScopeHtml);
   const knowledgeHtml = renderKnowledgeEvidence(data);
   if (knowledgeHtml) resultContentEl.insertAdjacentHTML("beforeend", knowledgeHtml);
+  void hydrateInlineEntityIcons({
+    target: resultContentEl,
+    data,
+    seasonContextId: data?.seasonContext?.id ?? state.seasonContextId
+  });
 }
 
 function renderResult(data) {
@@ -4552,15 +4606,23 @@ async function exportAliasDraft() {
   const draft = await fetchAliasDraft();
   const text = draft?.text ?? JSON.stringify(draft, null, 2);
   if (navigator.clipboard?.writeText) {
-    await navigator.clipboard.writeText(text).catch(() => {});
+    try {
+      await navigator.clipboard.writeText(text);
+      setStatusKey("exported");
+      return;
+    } catch {
+      // Browsers can deny clipboard access even after a user gesture.
+    }
   }
-  setStatusKey("exported");
+  saveAliasDraft(text);
 }
 
 async function downloadAliasDraft() {
   const draft = await fetchAliasDraft();
-  const text = draft?.text ?? JSON.stringify(draft, null, 2);
+  saveAliasDraft(draft?.text ?? JSON.stringify(draft, null, 2));
+}
 
+function saveAliasDraft(text) {
   const blob = new Blob([text], {
     type: "text/javascript;charset=utf-8"
   });
@@ -5426,7 +5488,11 @@ async function requestRecommendation(refresh = false, displayInput = null, reque
         activeResponseEl.innerHTML = answer
           ? `${chatCoreItemsHtml(data)}<div class="chat-conclusion">${conclusionRichTextHtml(answer)}</div>${chatCompositionCores(data, answer)}`
           : `<div>${t("queryFailed")}</div>`;
-        if (answer) void hydrateComparisonPortraits({ target: activeResponseEl, data, seasonContextId: state.seasonContextId });
+        if (answer) {
+          const targetRecord = { target: activeResponseEl, data, seasonContextId: state.seasonContextId };
+          void hydrateComparisonPortraits(targetRecord);
+          void hydrateInlineEntityIcons(targetRecord);
+        }
       }
     } else {
       renderResult(data);

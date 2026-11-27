@@ -7,9 +7,22 @@ export function filteredEmblems(rows, base, sort = "avg") {
       || b.stats.games - a.stats.games || a.item.apiName.localeCompare(b.item.apiName));
 }
 
-export function mountEmblemRankings({ root, data, t, escapeHtml: escape, itemPill, assetThumb, localizedName, loadCarriers }) {
-  let base = data.query?.recipeBase ?? (data.query?.apiNames?.length ? "all" : "craftable");
-  let sort = { avgPlacement: "avg", top4Rate: "top4", winRate: "win", games: "games" }[data.query?.primaryMetric] ?? "avg";
+export function mountEmblemRankings({
+  root,
+  data,
+  t,
+  escapeHtml: escape,
+  itemPill,
+  assetThumb,
+  localizedName,
+  loadCarriers,
+  onToggleExcludeUnit,
+  initialBase = null,
+  initialSort = null
+}) {
+  let base = initialBase ?? data.query?.recipeBase ?? (data.query?.apiNames?.length ? "all" : "craftable");
+  let sort = initialSort ?? { avgPlacement: "avg", top4Rate: "top4", winRate: "win", games: "games" }[data.query?.primaryMetric] ?? "avg";
+  let togglePending = false;
   const cached = new Map();
   const pending = new Map();
   const percent = value => `${(value * 100).toFixed(1)}%`;
@@ -28,11 +41,30 @@ export function mountEmblemRankings({ root, data, t, escapeHtml: escape, itemPil
       <div class="emblem-carrier-info"><strong>${escape(localizedName(carrier.unit, carrier.unitApiName))}</strong><small>${escape(t("samples"))} ${number(carrier.stats.games)} · ${escape(t("avg"))} ${carrier.stats.avgPlacement.toFixed(2)}</small>${buildsHtml(carrier, value.item)}</div>
     </div>`).join("") : `<p class="detail-muted">${escape(t("emblemNoCarriers"))}</p>`;
   }
+  function unitFilterHtml() {
+    const filter = data.emblemUnitFilter;
+    if (!filter?.apiName) return "";
+    const excluded = (data.query?.excludeUnits ?? []).includes(filter.apiName);
+    const unitLabel = localizedName(filter, filter.name ?? filter.apiName);
+    const buttonText = togglePending
+      ? t("emblemExcludeLoading")
+      : t(excluded ? "emblemExcludingUnit" : "emblemExcludeUnit", { name: unitLabel });
+    return `<div class="emblem-unit-filter${excluded ? " is-active" : ""}" data-emblem-unit-filter="${escape(filter.apiName)}">
+      <div class="emblem-unit-filter-copy">
+        ${assetThumb(filter.iconUrl, unitLabel, "emblem-unit-filter-icon", filter.fallbackIconUrl)}
+        <p>${escape(t("emblemSmeechNotice"))}</p>
+      </div>
+      <button type="button" class="emblem-unit-filter-toggle" data-emblem-exclude-unit="${escape(filter.apiName)}" aria-pressed="${excluded ? "true" : "false"}"${togglePending ? " disabled" : ""}>${escape(buttonText)}</button>
+    </div>`;
+  }
   function render() {
     const rows = filteredEmblems(data.rows ?? [], base, sort);
+    const sourceUrl = data.source?.url
+      || `https://www.metatft.com/explorer?tab=items&emblem_count=1-any${data.query?.queue === "PBE" ? "&queue=PBE" : ""}`;
     root.innerHTML = `<section class="emblem-results">
       <div class="emblem-intro"><span class="emblem-eyebrow">${escape(t("emblemEyebrow"))}</span><h2>${escape(t("quickTaskEmblemsTitle"))}</h2><p>${escape(t("emblemIntro"))}</p></div>
       <div class="emblem-filters" role="group" aria-label="${escape(t("emblemRecipeFilter"))}">${["craftable", "spatula", "pan", "all"].map(value => `<button type="button" data-emblem-base="${value}" aria-pressed="${value === base}">${escape(t(`emblemBase_${value}`))}</button>`).join("")}</div>
+      ${unitFilterHtml()}
       <div class="emblem-toolbar"><span>${escape(t("emblemCount", { count: rows.length }))}</span><label>${escape(t("emblemSort"))} <select data-emblem-sort>${["avg", "top4", "win", "games"].map(value => `<option value="${value}"${value === sort ? " selected" : ""}>${escape(t(`emblemSort_${value}`))}</option>`).join("")}</select></label></div>
       <p class="emblem-note">${escape(t("emblemScope"))}</p>
       ${rows.length ? rows.map((row, index) => `<article class="emblem-card${index === 0 && !row.lowSample ? " is-leading" : ""}">
@@ -41,13 +73,29 @@ export function mountEmblemRankings({ root, data, t, escapeHtml: escape, itemPil
         <div class="stats">${metric(t("avg"), row.stats.avgPlacement.toFixed(2))}${metric(t("top4"), percent(row.stats.top4Rate))}${metric(t("win"), percent(row.stats.winRate))}${metric(t("samples"), number(row.stats.games))}</div>
         <details data-emblem-carriers="${escape(row.item.apiName)}"><summary>${escape(t("emblemCommonCarriers"))}<span>${escape(t("emblemByGames"))}</span></summary><div data-emblem-carrier-content>${cached.has(row.item.apiName) ? carrierHtml(cached.get(row.item.apiName)) : escape(t("emblemLoading"))}</div></details>
       </article>`).join("") : `<div class="empty-state"><strong>${escape(t("emblemEmpty"))}</strong><p>${escape(t("emblemEmptyHint"))}</p></div>`}
-      <footer class="emblem-source"><a href="https://www.metatft.com/explorer?tab=items&amp;emblem_count=1-any${data.query?.queue === "PBE" ? "&amp;queue=PBE" : ""}" target="_blank" rel="noopener noreferrer">MetaTFT ↗</a><span>${data.query?.queue === "PBE" ? "PBE · " : ""}${escape(data.query?.patch ?? "")} · ${escape(t("emblemDays", { days: data.query?.days ?? 3 }))}</span><time datetime="${escape(data.updatedAt ?? "")}">${escape(new Date(data.updatedAt).toLocaleString())}</time></footer>
+      <footer class="emblem-source"><a href="${escape(sourceUrl)}" target="_blank" rel="noopener noreferrer">MetaTFT ↗</a><span>${data.query?.queue === "PBE" ? "PBE · " : ""}${escape(data.query?.patch ?? "")} · ${escape(t("emblemDays", { days: data.query?.days ?? 3 }))}</span><time datetime="${escape(data.updatedAt ?? "")}">${escape(new Date(data.updatedAt).toLocaleString())}</time></footer>
     </section>`;
     root.querySelectorAll("[data-emblem-base]").forEach(button => button.addEventListener("click", () => {
       base = button.dataset.emblemBase; render(); root.querySelector(`[data-emblem-base="${base}"]`)?.focus();
     }));
     root.querySelector("[data-emblem-sort]").addEventListener("change", event => {
       sort = event.target.value; render(); root.querySelector("[data-emblem-sort]")?.focus();
+    });
+    const excludeButton = root.querySelector("[data-emblem-exclude-unit]");
+    excludeButton?.addEventListener("click", async () => {
+      if (togglePending || typeof onToggleExcludeUnit !== "function") return;
+      const unitApiName = excludeButton.dataset.emblemExcludeUnit;
+      const current = new Set(data.query?.excludeUnits ?? []);
+      if (current.has(unitApiName)) current.delete(unitApiName);
+      else current.add(unitApiName);
+      togglePending = true;
+      render();
+      try {
+        await onToggleExcludeUnit([...current], { base, sort });
+      } catch {
+        togglePending = false;
+        render();
+      }
     });
     root.querySelectorAll("[data-emblem-carriers]").forEach(details => details.addEventListener("toggle", async () => {
       if (!details.open) return;

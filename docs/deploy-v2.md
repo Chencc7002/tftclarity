@@ -168,13 +168,13 @@ Final Release Image Gate 至少检查：
 ```powershell
 docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/health').then(async r=>{console.log(r.status,await r.text());if(!r.ok)process.exit(1)})"
 docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/ready').then(async r=>{console.log(r.status,await r.text());if(!r.ok)process.exit(1)})"
-docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/runtime').then(async r=>{console.log(r.status,await r.text());if(!r.ok)process.exit(1)})"
+docker compose exec -T app node -e "fetch('http://127.0.0.1:17317/api/runtime',{headers:{authorization:'Bearer '+process.env.TFT_AGENT_ADMIN_TOKEN}}).then(async r=>{console.log(r.status,await r.text());if(!r.ok)process.exit(1)})"
 docker compose run --rm migrate npm run db:status
 docker compose exec -T app node scripts/check-jev-readiness.mjs
 ```
 
 随后从公网入口检查 `https://<production-domain>/api/health`、`/api/ready` 和浏览器矩阵。
-`/api/runtime` 必须显示 real model、预期模型、`fixture=false`、ReAct on、Bridge on，且
+公开模式下，匿名 `/api/runtime` 仅返回界面所需的路由开关、公开模式和访客额度。携带管理员凭据的诊断请求必须显示 real model、预期模型、`fixture=false`、ReAct on、Bridge on，且
 storage 为 PostgreSQL + Redis。还要确认 HTTPS 证书、安全响应头、真实客户端 IP 限流、
 匿名额度、AI 声明、中英文 UI、MCP 正常/停机降级和恢复。
 
