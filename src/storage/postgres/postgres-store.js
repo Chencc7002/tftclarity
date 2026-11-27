@@ -199,6 +199,91 @@ export class PostgresStore {
       [queryId,JSON.stringify(conclusion??null),conclusion?.status==="generated",conclusion?.model??null]); return queryRow(rows[0]);
   }
   async pruneQueryEventsBefore(createdBefore) { return (await this.pool.query("DELETE FROM query_events WHERE created_at<$1",[createdBefore])).rowCount; }
+  async listQueryEventSummaries(options = {}) {
+    const values = [];
+    const clauses = [];
+    if (options.since) { values.push(String(options.since)); clauses.push(`created_at >= $${values.length}`); }
+    if (options.seasonContextId && options.seasonContextId !== "all") { values.push(season(options)); clauses.push(`season_context_id = $${values.length}`); }
+    values.push(limit(options.limit, 20000));
+    const { rows } = await this.pool.query(
+      `SELECT query_id, season_context_id, visitor_scope, conversation_id, left(input, 120) AS input, result_type, cache_hit, cache_stale, llm_used, llm_model, duration_ms, created_at
+       FROM query_events ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+       ORDER BY created_at DESC LIMIT $${values.length}`,
+      values
+    );
+    return rows.map((row) => ({
+      queryId: row.query_id,
+      seasonContextId: row.season_context_id,
+      visitorScope: row.visitor_scope,
+      conversationId: row.conversation_id,
+      input: row.input,
+      resultType: row.result_type,
+      cacheHit: Boolean(row.cache_hit),
+      cacheStale: Boolean(row.cache_stale),
+      llmUsed: Boolean(row.llm_used),
+      llmModel: row.llm_model,
+      durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
+      createdAt: iso(row.created_at)
+    }));
+  }
+  async addLlmUsageEvent(record = {}) {
+    try {
+      const { rows } = await this.pool.query(
+        `INSERT INTO llm_usage_events(event_id,season_context_id,stage,model,status,cached_input_tokens,uncached_input_tokens,output_tokens,attempts,duration_ms,estimated_cost_usd,created_at)
+         VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,COALESCE($12,now())) ON CONFLICT(event_id) DO NOTHING RETURNING *`,
+        [
+          String(record.eventId ?? randomUUID()),
+          season(record),
+          String(record.stage ?? "react_decision"),
+          String(record.model ?? "unknown"),
+          String(record.status ?? "ok"),
+          Math.max(0, Math.round(Number(record.cachedInputTokens ?? 0) || 0)),
+          Math.max(0, Math.round(Number(record.uncachedInputTokens ?? 0) || 0)),
+          Math.max(0, Math.round(Number(record.outputTokens ?? 0) || 0)),
+          Math.max(1, Math.round(Number(record.attempts ?? 1) || 1)),
+          Number.isFinite(Number(record.durationMs)) ? Math.round(Number(record.durationMs)) : null,
+          Number(record.estimatedCostUsd ?? 0) || 0,
+          record.createdAt ?? null
+        ]
+      );
+      return rows[0] ?? null;
+    } catch (error) {
+      if (error?.code === "42P01") return null;
+      throw error;
+    }
+  }
+  async listLlmUsageEvents(options = {}) {
+    try {
+      const values = [];
+      const clauses = [];
+      if (options.since) { values.push(String(options.since)); clauses.push(`created_at >= $${values.length}`); }
+      if (options.seasonContextId && options.seasonContextId !== "all") { values.push(season(options)); clauses.push(`season_context_id = $${values.length}`); }
+      values.push(limit(options.limit, 20000));
+      const { rows } = await this.pool.query(
+        `SELECT event_id, season_context_id, stage, model, status, cached_input_tokens, uncached_input_tokens, output_tokens, attempts, duration_ms, estimated_cost_usd, created_at
+         FROM llm_usage_events ${clauses.length ? `WHERE ${clauses.join(" AND ")}` : ""}
+         ORDER BY created_at DESC LIMIT $${values.length}`,
+        values
+      );
+      return rows.map((row) => ({
+        eventId: row.event_id,
+        seasonContextId: row.season_context_id,
+        stage: row.stage,
+        model: row.model,
+        status: row.status,
+        cachedInputTokens: Number(row.cached_input_tokens ?? 0),
+        uncachedInputTokens: Number(row.uncached_input_tokens ?? 0),
+        outputTokens: Number(row.output_tokens ?? 0),
+        attempts: Number(row.attempts ?? 1),
+        durationMs: row.duration_ms === null ? null : Number(row.duration_ms),
+        estimatedCostUsd: Number(row.estimated_cost_usd ?? 0),
+        createdAt: iso(row.created_at)
+      }));
+    } catch (error) {
+      if (error?.code === "42P01") return [];
+      throw error;
+    }
+  }
 
   async addFeedbackEvent(feedbackType,payload={},options={}) {
     const feedbackId=String(options.feedbackId??payload.feedbackId??"").trim(); if(!feedbackId)throw new Error("PostgreSQL feedback requires feedbackId");

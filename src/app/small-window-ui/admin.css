@@ -14,8 +14,10 @@ p { color: #9fb0be; }
 label { display: grid; gap: .35rem; color: #b9c7d1; font-size: .86rem; }
 input, select, textarea { min-width: 0; border: 1px solid #304454; border-radius: 8px; background: #0d1822; color: #f3f7fa; padding: .62rem .7rem; }
 main { width: min(1180px, calc(100% - 2rem)); margin: 1.4rem auto 4rem; }
-.tabs { display: flex; align-items: center; gap: .5rem; margin-bottom: 1rem; }
-.tabs a { color: #aebdc8; text-decoration: none; padding: .62rem .8rem; }
+.tabs { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem; margin-bottom: 1rem; }
+.tabs a { color: #aebdc8; text-decoration: none; padding: .62rem .8rem; border-radius: 9px; }
+.tabs a.tab-dashboard { background: rgba(26, 116, 110, .28); border: 1px solid #4fc9bf; color: #b9f6f0; font-weight: 600; }
+.tabs a.tab-dashboard:hover { background: rgba(26, 116, 110, .48); }
 .tabs .active { border-color: #5fd7cd; }
 .panel { margin-bottom: 1rem; padding: 1.2rem; border: 1px solid #263b4c; border-radius: 14px; background: rgba(14, 25, 35, .94); box-shadow: 0 16px 42px rgba(0, 0, 0, .24); }
 .panel-heading, .compact-panel { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }

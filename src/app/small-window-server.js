@@ -1,5 +1,9 @@
 import { createServer } from "node:http";
 import { monitorEventLoopDelay } from "node:perf_hooks";
+import {
+  aggregateAdminDashboardMetrics,
+  estimateLlmUsageCostUsd
+} from "../core/admin-dashboard-metrics.js";
 import { BoundedSemaphore, SingleflightCache } from "../core/concurrency.js";
 import { buildUnderstandingSummary } from "./small-window-ui/understanding-panel.js";
 import { createJevIntentObserver } from "../understanding/jev-intent-observer.js";
@@ -260,6 +264,8 @@ const PUBLIC_DIR = fileURLToPath(new URL("./small-window-ui/", import.meta.url))
 const STATIC_PAGE_ROUTES = new Map([
   ["/admin", "admin.html"],
   ["/admin/", "admin.html"],
+  ["/admin/dashboard", "admin-dashboard.html"],
+  ["/admin/dashboard/", "admin-dashboard.html"],
   ["/privacy", "privacy.html"],
   ["/privacy/", "privacy.html"],
   ["/terms", "terms.html"],
@@ -4601,8 +4607,75 @@ export function createSmallWindowCacheStore(options = {}) {
   });
 }
 
+function extractLlmUsageTokens(usage = {}) {
+  if (!usage || typeof usage !== "object") {
+    return { cachedInputTokens: 0, uncachedInputTokens: 0, outputTokens: 0 };
+  }
+  const toNonNeg = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) && num > 0 ? Math.round(num) : 0;
+  };
+  const explicitCached = usage.cachedInputTokens ?? usage.cached_input_tokens ?? usage.prompt_cache_hit_tokens ?? usage.prompt_tokens_details?.cached_tokens;
+  const explicitUncached = usage.uncachedInputTokens ?? usage.uncached_input_tokens ?? usage.prompt_cache_miss_tokens;
+  const totalPrompt = toNonNeg(usage.prompt_tokens ?? usage.input_tokens ?? usage.inputTokens);
+  const cachedInputTokens = toNonNeg(explicitCached);
+  const uncachedInputTokens = explicitUncached !== undefined && explicitUncached !== null
+    ? toNonNeg(explicitUncached)
+    : Math.max(0, totalPrompt - cachedInputTokens);
+  const outputTokens = toNonNeg(usage.outputTokens ?? usage.output_tokens ?? usage.completion_tokens);
+  return { cachedInputTokens, uncachedInputTokens, outputTokens };
+}
+
+function recordLlmUsageForRuntime(runtime, defaultStage, entry = {}) {
+  if (!runtime?.cacheStore?.addLlmUsageEvent || !entry || typeof entry !== "object") return;
+  const model = String(entry.model ?? "unknown").trim() || "unknown";
+  const stage = String(entry.stage ?? entry.requestKind ?? defaultStage ?? "unknown").trim() || "unknown";
+  const status = String(entry.status ?? (entry.error ? "error" : "ok")).trim() || "ok";
+  const tokens = extractLlmUsageTokens(entry.usage);
+  const totalTokens = tokens.cachedInputTokens + tokens.uncachedInputTokens + tokens.outputTokens;
+  const estimatedCostUsd = estimateLlmUsageCostUsd(model, tokens);
+  const durationMs = Number.isFinite(Number(entry.durationMs)) ? Math.round(Number(entry.durationMs)) : null;
+  const attempts = Number.isInteger(Number(entry.attempts)) && Number(entry.attempts) > 0 ? Number(entry.attempts) : 1;
+  const seasonContextId = entry.seasonContextId
+    ?? runtime.seasonContextService?.defaultContextId
+    ?? DEFAULT_SEASON_CONTEXT_ID;
+
+  try {
+    Promise.resolve(runtime.cacheStore.addLlmUsageEvent({
+      seasonContextId,
+      stage,
+      model,
+      status,
+      cachedInputTokens: tokens.cachedInputTokens,
+      uncachedInputTokens: tokens.uncachedInputTokens,
+      outputTokens: tokens.outputTokens,
+      totalTokens,
+      estimatedCostUsd,
+      durationMs,
+      attempts
+    })).catch(() => {});
+  } catch {
+    // Telemetry persistence is best-effort and must never fail user requests.
+  }
+}
+
 export async function createSmallWindowRuntimeAsync(options = {}, env = process.env) {
-  const structuredParserRuntime = createSmallWindowStructuredParser(options, env);
+  let boundRuntime = null;
+  const wrapLlmRequestLog = (defaultStage, upstream) => (entry) => {
+    try {
+      upstream?.(entry);
+    } catch {
+      // Upstream observer errors must not interrupt telemetry or execution.
+    }
+    recordLlmUsageForRuntime(boundRuntime, defaultStage, entry);
+  };
+  const structuredParserRuntime = createSmallWindowStructuredParser({
+    ...options,
+    structuredParserRequestLog: wrapLlmRequestLog(
+      "structured_parser",
+      options.structuredParserRequestLog ?? options.llmRequestLog
+    )
+  }, env);
   const conversationStateV2Mode = String(
     options.conversationStateV2Mode
     ?? env.TFT_AGENT_CONVERSATION_STATE_V2_MODE
@@ -4637,10 +4710,13 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
         ...lightweightLlmConfig,
         thinkingMode: options.turnDeltaThinkingMode ?? lightweightLlmConfig.thinkingMode ?? "disabled",
         fetchImpl: options.structuredParserFetch ?? options.llmFetch,
-        onRequestLog: options.turnDeltaRequestLog
-          ?? options.semanticTaskRequestLog
-          ?? options.structuredParserRequestLog
-          ?? options.llmRequestLog
+        onRequestLog: wrapLlmRequestLog(
+          "turn_delta",
+          options.turnDeltaRequestLog
+            ?? options.semanticTaskRequestLog
+            ?? options.structuredParserRequestLog
+            ?? options.llmRequestLog
+        )
       })
       : null);
   const deterministicControlledPlanner = options.controlledPlannerFallback
@@ -4651,9 +4727,12 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       thinkingMode: options.plannerThinkingMode ?? "disabled",
       maxTokens: options.plannerMaxTokens ?? 900,
       fetchImpl: options.structuredParserFetch ?? options.llmFetch,
-      onRequestLog: options.plannerRequestLog
-        ?? options.structuredParserRequestLog
-        ?? options.llmRequestLog
+      onRequestLog: wrapLlmRequestLog(
+        "planner",
+        options.plannerRequestLog
+          ?? options.structuredParserRequestLog
+          ?? options.llmRequestLog
+      )
     })
     : null;
   const controlledPlanner = options.controlledPlanner
@@ -4671,9 +4750,12 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
         thinkingMode: options.reactDecisionThinkingMode ?? reactDecisionLlmConfig.thinkingMode ?? "disabled",
         maxTokens: options.reactDecisionMaxTokens ?? 1800,
         fetchImpl: options.reactDecisionFetch ?? options.structuredParserFetch ?? options.llmFetch,
-        onRequestLog: options.reactDecisionRequestLog
-          ?? options.structuredParserRequestLog
-          ?? options.llmRequestLog
+        onRequestLog: wrapLlmRequestLog(
+          "react_decision",
+          options.reactDecisionRequestLog
+            ?? options.structuredParserRequestLog
+            ?? options.llmRequestLog
+        )
       })
       : null);
   const quickTaskSupplementalClassifier = options.quickTaskSupplementalClassifier
@@ -4696,7 +4778,10 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
       })
       : null
   );
-  const conclusionRuntime = createSmallWindowConclusionGenerator(options, env);
+  const conclusionRuntime = createSmallWindowConclusionGenerator({
+    ...options,
+    conclusionRequestLog: wrapLlmRequestLog("conclusion", options.conclusionRequestLog)
+  }, env);
   const coachRuntime = createSmallWindowCoachRuntime(options, env);
   const mechanismClassificationRuntime = createSmallWindowMechanismClassificationRuntime(options, env);
   const semanticRuntime = await createSmallWindowSemanticRuntime(options, env);
@@ -4800,6 +4885,8 @@ export async function createSmallWindowRuntimeAsync(options = {}, env = process.
   };
 
   const finalizeRuntime = (runtime) => {
+    boundRuntime = runtime;
+    runtime.recordLlmUsageEvent = (stage, entry) => recordLlmUsageForRuntime(runtime, stage, entry);
     runtime.accessService = options.accessService
       ?? createAnonymousAccessService(runtime, options.publicAccess ?? {}, env);
     runtime.conclusionWorker?.start?.();
@@ -5490,6 +5577,7 @@ function llmActivityForPayload(payload, runtime) {
   const conclusion = payload?.answer?.generatedConclusion ?? null;
   const assistant = payload?.assistantResponse ?? null;
   const stages = [];
+  if (payload?.type === "react_chat_result") stages.push("react_decision");
   if (interpretation?.attempted === true) stages.push("turn_interpreter");
   if (planner?.attempted === true && planner?.llm === true) stages.push("planner");
   if (conclusion?.status === "generated") stages.push("conclusion");
@@ -5519,7 +5607,8 @@ function llmActivityForPayload(payload, runtime) {
   ];
   return {
     used: stages.length > 0,
-    model: conclusion?.model
+    model: (payload?.type === "react_chat_result" ? runtime.reactDecisionProvider?.model : null)
+      ?? conclusion?.model
       ?? assistant?.model
       ?? planner?.model
       ?? runtime.structuredParserConfig?.model
@@ -10135,6 +10224,63 @@ export async function handleAdminAuditRequest(runtime, options = {}) {
   };
 }
 
+export async function handleAdminDashboardRequest(runtime, options = {}) {
+  const parsedDays = Number(options.days ?? 7);
+  const days = Number.isInteger(parsedDays) && parsedDays > 0 ? Math.min(90, parsedDays) : 7;
+  const rawSeason = String(options.seasonContextId ?? "all").trim();
+  const seasonContextId = rawSeason && rawSeason !== "all" ? rawSeason : "all";
+  const nowMs = Date.now();
+  const since = new Date(nowMs - days * 24 * 60 * 60 * 1000).toISOString();
+
+  const [queryEvents, llmEvents, feedbackEvents] = await Promise.all([
+    Promise.resolve(runtime.cacheStore?.listQueryEventSummaries?.({
+      since,
+      seasonContextId,
+      limit: 20000
+    }) ?? []),
+    Promise.resolve(runtime.cacheStore?.listLlmUsageEvents?.({
+      since,
+      seasonContextId,
+      limit: 20000
+    }) ?? []),
+    Promise.resolve(runtime.cacheStore?.listFeedbackEvents?.({
+      limit: 5000
+    }) ?? [])
+  ]);
+
+  const metrics = aggregateAdminDashboardMetrics({
+    queryEvents,
+    llmEvents,
+    feedbackEvents,
+    days,
+    seasonContextId,
+    nowMs
+  });
+  const status = getSmallWindowRuntimeStatus(runtime);
+  const accessConfig = runtime.accessService?.config ?? null;
+
+  return {
+    ok: true,
+    dashboard: {
+      ...metrics,
+      runtime: {
+        processRole: status.processRole,
+        storage: status.storage,
+        cache: status.cache,
+        seasonPatch: status.seasonPatch,
+        concurrency: status.concurrency,
+        modelTiering: status.modelTiering,
+        access: accessConfig ? {
+          enabled: Boolean(accessConfig.enabled),
+          globalDailyLimit: accessConfig.globalDailyLimit ?? null,
+          visitorDailyLimit: accessConfig.visitorDailyLimit ?? null
+        } : null
+      },
+      seasons: runtime.seasonContextService?.listPublic?.() ?? []
+    }
+  };
+}
+
 export function handleAdminSeasonContexts(runtime) {
   const seasonContexts = [...runtime.seasonContextService.contexts.values()].map((context) => {
     const resolved = runtime.seasonContextService.resolve(context.id, {
@@ -10499,6 +10645,15 @@ function isLegacyAdminWriteRoute(method, pathname) {
     ]).has(pathname);
 }
 
+function isAdminPageRoute(pathname) {
+  return pathname === "/admin"
+    || pathname === "/admin/"
+    || pathname === "/admin.html"
+    || pathname === "/admin/dashboard"
+    || pathname === "/admin/dashboard/"
+    || pathname === "/admin-dashboard.html";
+}
+
 function hasValidAdminToken(req, runtime) {
   const configured = String(runtime.adminToken ?? "");
   const authorization = String(req.headers.authorization ?? "");
@@ -10584,7 +10739,7 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, 404, { ok: false, error: "Not found" });
       }
 
-      if ((url.pathname === "/admin" || url.pathname === "/admin/") && !hasValidAdminToken(req, runtime)) {
+      if (isAdminPageRoute(url.pathname) && !hasValidAdminToken(req, runtime)) {
         res.setHeader("www-authenticate", 'Basic realm="TFTClarity Admin", charset="UTF-8"');
         return sendJson(res, 401, { ok: false, error: "Administrator authentication required" });
       }
@@ -10827,6 +10982,14 @@ export function createSmallWindowHandler(options = {}) {
         return sendJson(res, 200, await handleFeedbackRequest(body, runtime, {
           visitor,
           accessService
+        }));
+      }
+
+      if (req.method === "GET" && url.pathname === "/api/admin/dashboard") {
+        res.setHeader("cache-control", "private, no-store");
+        return sendJson(res, 200, await handleAdminDashboardRequest(runtime, {
+          days: url.searchParams.get("days") ?? undefined,
+          seasonContextId: url.searchParams.get("seasonContextId") ?? undefined
         }));
       }
 

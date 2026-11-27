@@ -1,0 +1,202 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>运营与 Token 看板 · TFTClarity 管理端</title>
+  <link rel="stylesheet" href="/admin-dashboard.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand-group">
+      <p class="eyebrow">TFTClarity · Admin Console</p>
+      <div class="title-row">
+        <h1>运营与 Token 看板</h1>
+        <span id="generated-at" class="meta-pill">加载中…</span>
+      </div>
+    </div>
+    <div class="toolbar">
+      <a class="nav-btn" href="/admin">返回内容管理</a>
+      <label class="inline-field">
+        <span>时间范围</span>
+        <select id="window-days">
+          <option value="1">近 24 小时</option>
+          <option value="7" selected>近 7 天</option>
+          <option value="14">近 14 天</option>
+          <option value="30">近 30 天</option>
+        </select>
+      </label>
+      <label class="inline-field">
+        <span>赛季空间</span>
+        <select id="season-filter">
+          <option value="all" selected>全部赛季</option>
+        </select>
+      </label>
+      <label class="toggle-field">
+        <input id="auto-refresh" type="checkbox">
+        <span>30s 自动刷新</span>
+      </label>
+      <button id="refresh-btn" class="primary" type="button">刷新</button>
+      <button id="export-json-btn" type="button">导出 JSON</button>
+    </div>
+  </header>
+
+  <main>
+    <div id="error-banner" class="error-banner" hidden></div>
+
+    <section class="kpi-grid" aria-label="核心指标">
+      <article class="kpi-card">
+        <div class="kpi-label">独立用户数（UV）</div>
+        <div id="kpi-uv" class="kpi-value">--</div>
+        <div id="kpi-uv-sub" class="kpi-sub">今日活跃 -- · 对话 --</div>
+      </article>
+      <article class="kpi-card">
+        <div class="kpi-label">总查询次数</div>
+        <div id="kpi-queries" class="kpi-value">--</div>
+        <div id="kpi-queries-sub" class="kpi-sub">今日 -- · 人均 -- 次</div>
+      </article>
+      <article class="kpi-card">
+        <div class="kpi-label">Token 总消耗</div>
+        <div id="kpi-tokens" class="kpi-value">--</div>
+        <div id="kpi-tokens-sub" class="kpi-sub">输入 -- · 输出 --</div>
+      </article>
+      <article class="kpi-card accent-cost">
+        <div class="kpi-label">估算总费用</div>
+        <div id="kpi-cost" class="kpi-value">--</div>
+        <div id="kpi-cost-sub" class="kpi-sub">今日 -- · 约 $--</div>
+      </article>
+      <article class="kpi-card accent-cache">
+        <div class="kpi-label">KV Cache 命中率</div>
+        <div id="kpi-kv-hit" class="kpi-value">--</div>
+        <div id="kpi-kv-hit-sub" class="kpi-sub">已节省约 --</div>
+      </article>
+      <article class="kpi-card">
+        <div class="kpi-label">响应性能与反馈</div>
+        <div id="kpi-perf" class="kpi-value">--</div>
+        <div id="kpi-perf-sub" class="kpi-sub">查询缓存 -- · 好评 -- / 差评 --</div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>每日趋势</h2>
+          <p id="chart-caption">按天聚合查询量、独立用户数与 Token 消耗趋势。</p>
+        </div>
+        <div class="chart-controls">
+          <div class="segmented" role="tablist" aria-label="趋势视图">
+            <button id="chart-mode-usage" class="seg-btn active" type="button" data-mode="usage">查询量 &amp; 独立用户</button>
+            <button id="chart-mode-tokens" class="seg-btn" type="button" data-mode="tokens">Token 消耗 &amp; 费用</button>
+          </div>
+        </div>
+      </div>
+      <div id="chart-legend" class="chart-legend"></div>
+      <div id="daily-chart-wrap" class="chart-wrap"></div>
+      <div id="chart-hover-detail" class="chart-hover-detail">将鼠标悬停在柱状图上可查看当日详细数据</div>
+    </section>
+
+    <section class="split-grid wide-left">
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <h2>模型 Token 与费用明细</h2>
+            <p>按调用模型汇总请求数、重试/错误、KV Cache 命中率及参考费用（DeepSeek Flash 离峰参考价，汇率 7.25）。</p>
+          </div>
+          <span id="llm-calls-badge" class="meta-pill">0 次调用</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>模型</th>
+                <th>调用</th>
+                <th>重试/错误</th>
+                <th>缓存命中率</th>
+                <th>命中 Tokens</th>
+                <th>未命中 Tokens</th>
+                <th>输出 Tokens</th>
+                <th>均耗时</th>
+                <th>估算费用</th>
+              </tr>
+            </thead>
+            <tbody id="model-rows"></tbody>
+          </table>
+        </div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <h2>调用阶段分布</h2>
+            <p>各 AI 推理环节的调用量与 Token 占比。</p>
+          </div>
+        </div>
+        <div id="stage-bars" class="bar-list"></div>
+      </article>
+    </section>
+
+    <section class="split-grid equal">
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <h2>功能使用分布</h2>
+            <p>按查询结果类型统计玩家最常使用的功能入口。</p>
+          </div>
+        </div>
+        <div id="feature-bars" class="bar-list"></div>
+      </article>
+
+      <article class="panel">
+        <div class="panel-heading">
+          <div>
+            <h2>赛季分布</h2>
+            <p>不同赛季空间的查询量与独立用户覆盖情况。</p>
+          </div>
+        </div>
+        <div id="season-bars" class="bar-list"></div>
+      </article>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>实时并发与运行健康</h2>
+          <p>当前进程内的并发舱壁、上游限流、L1 热缓存、Event Loop 延迟与分层模型配置。</p>
+        </div>
+        <span id="runtime-mode-badge" class="meta-pill">--</span>
+      </div>
+      <div id="health-grid" class="health-grid"></div>
+      <div id="tiering-strip" class="tiering-strip"></div>
+    </section>
+
+    <section class="panel">
+      <div class="panel-heading">
+        <div>
+          <h2>最近查询记录</h2>
+          <p>最近 15 条脱敏查询摘要（访客标识已单向哈希脱敏，不含原始 IP 或会话密钥）。</p>
+        </div>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>时间</th>
+              <th>赛季</th>
+              <th>访客</th>
+              <th>功能类型</th>
+              <th>输入摘要</th>
+              <th>模式</th>
+              <th>模型</th>
+              <th>耗时</th>
+            </tr>
+          </thead>
+          <tbody id="recent-query-rows"></tbody>
+        </table>
+      </div>
+    </section>
+  </main>
+
+  <div id="notice" role="status" aria-live="polite"></div>
+  <script type="module" src="/admin-dashboard.js"></script>
+</body>
+</html>

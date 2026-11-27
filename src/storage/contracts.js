@@ -3,7 +3,15 @@ export const PERSISTENT_REPOSITORY_METHODS = Object.freeze({
   catalog: ["getItemCatalog", "setItemCatalog", "clearItemCatalog", "getDomainCatalog", "setDomainCatalog", "clearDomainCatalog"],
   aliases: ["addEntityAlias", "getEntityAlias", "setEntityAliasEnabled", "updateEntityAlias", "deleteEntityAlias", "listEntityAliases", "findEntityAliases", "clearEntityAliases"],
   compProfiles: ["getCompProfile", "listCompProfiles", "upsertCompProfile", "deleteCompProfile", "listCompProfileBindings", "upsertCompProfileBinding", "deleteCompProfileBinding"],
-  events: ["addQueryEvent", "getQueryEvent", "updateQueryEventConclusion", "pruneQueryEventsBefore"],
+  events: [
+    "addQueryEvent",
+    "getQueryEvent",
+    "updateQueryEventConclusion",
+    "pruneQueryEventsBefore",
+    "listQueryEventSummaries",
+    "addLlmUsageEvent",
+    "listLlmUsageEvents"
+  ],
   feedback: ["addFeedbackEvent", "findFeedbackEventByFeedbackId", "listFeedbackEvents", "clearFeedbackEvents"],
   audit: ["addAdminAudit", "listAdminAudits"],
   stats: ["getCompTrendHistory", "setCompTrendHistory"]

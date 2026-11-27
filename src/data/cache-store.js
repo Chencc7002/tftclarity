@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname } from "node:path";
 import {
@@ -211,6 +212,8 @@ export class MemoryCacheStore {
     this.entityAliases = [];
     this.queryEvents = new Map();
     this.maxQueryEvents = positiveInteger(options.maxQueryEvents, 500);
+    this.llmUsageEvents = [];
+    this.maxLlmUsageEvents = positiveInteger(options.maxLlmUsageEvents, 2000);
     this.feedbackEvents = [];
     this.adminAuditEvents = [];
     this.compProfiles = new Map();
@@ -535,6 +538,88 @@ export class MemoryCacheStore {
     return count;
   }
 
+  listQueryEventSummaries(options = {}) {
+    const since = options.since ? String(options.since) : null;
+    const seasonFilter = options.seasonContextId && options.seasonContextId !== "all"
+      ? normalizeSeasonContextId(options.seasonContextId)
+      : null;
+    const maxRows = positiveInteger(options.limit, 10000);
+    return [...this.queryEvents.values()]
+      .filter((entry) => {
+        if (since && String(entry.createdAt ?? "") < since) return false;
+        if (seasonFilter && entry.seasonContextId !== seasonFilter) return false;
+        return true;
+      })
+      .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
+      .slice(0, maxRows)
+      .map((entry) => ({
+        queryId: entry.queryId,
+        runId: entry.runId ?? null,
+        seasonContextId: entry.seasonContextId,
+        visitorScope: entry.visitorScope,
+        conversationId: entry.conversationId ?? null,
+        input: String(entry.input ?? "").slice(0, 120),
+        resultType: entry.resultType ?? null,
+        patch: entry.patch ?? null,
+        cacheHit: Boolean(entry.cacheHit),
+        cacheStale: Boolean(entry.cacheStale),
+        llmUsed: Boolean(entry.llmUsed),
+        llmModel: entry.llmModel ?? null,
+        durationMs: entry.durationMs ?? null,
+        createdAt: entry.createdAt
+      }));
+  }
+
+  addLlmUsageEvent(record = {}) {
+    const cachedInputTokens = nonNegativeInteger(record.cachedInputTokens ?? record.cached_input_tokens, 0);
+    const uncachedInputTokens = nonNegativeInteger(record.uncachedInputTokens ?? record.uncached_input_tokens, 0);
+    const outputTokens = nonNegativeInteger(record.outputTokens ?? record.output_tokens, 0);
+    const entry = {
+      eventId: String(record.eventId ?? record.event_id ?? randomUUID()),
+      seasonContextId: normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id),
+      stage: String(record.stage ?? "unknown").trim() || "unknown",
+      model: String(record.model ?? "unknown").trim() || "unknown",
+      status: String(record.status ?? "ok").trim() || "ok",
+      cachedInputTokens,
+      uncachedInputTokens,
+      outputTokens,
+      totalTokens: nonNegativeInteger(
+        record.totalTokens ?? record.total_tokens,
+        cachedInputTokens + uncachedInputTokens + outputTokens
+      ),
+      estimatedCostUsd: Number.isFinite(Number(record.estimatedCostUsd ?? record.estimated_cost_usd))
+        ? Math.max(0, Number(record.estimatedCostUsd ?? record.estimated_cost_usd))
+        : 0,
+      durationMs: Number.isFinite(Number(record.durationMs ?? record.duration_ms))
+        ? Math.round(Number(record.durationMs ?? record.duration_ms))
+        : null,
+      attempts: positiveInteger(record.attempts, 1),
+      createdAt: record.createdAt ?? record.created_at ?? new Date(this.now()).toISOString()
+    };
+    this.llmUsageEvents.push(entry);
+    if (this.llmUsageEvents.length > this.maxLlmUsageEvents) {
+      this.llmUsageEvents.splice(0, this.llmUsageEvents.length - this.maxLlmUsageEvents);
+    }
+    return { ...entry };
+  }
+
+  listLlmUsageEvents(options = {}) {
+    const since = options.since ? String(options.since) : null;
+    const seasonFilter = options.seasonContextId && options.seasonContextId !== "all"
+      ? normalizeSeasonContextId(options.seasonContextId)
+      : null;
+    const maxRows = positiveInteger(options.limit, 10000);
+    return this.llmUsageEvents
+      .filter((entry) => {
+        if (since && String(entry.createdAt ?? "") < since) return false;
+        if (seasonFilter && entry.seasonContextId !== seasonFilter) return false;
+        return true;
+      })
+      .sort((a, b) => String(b.createdAt ?? "").localeCompare(String(a.createdAt ?? "")))
+      .slice(0, maxRows)
+      .map((entry) => ({ ...entry }));
+  }
+
   addFeedbackEvent(feedbackType, payload = {}, options = {}) {
     const type = String(feedbackType ?? "").trim();
     if (!type) throw new Error("addFeedbackEvent requires feedbackType");
@@ -798,6 +883,7 @@ export class MemoryCacheStore {
     this.compTrendHistories.clear();
     this.entityAliases = [];
     this.queryEvents.clear();
+    this.llmUsageEvents = [];
     this.feedbackEvents = [];
     this.adminAuditEvents = [];
     this.compProfiles.clear();
@@ -842,6 +928,10 @@ export class JsonFileCacheStore extends MemoryCacheStore {
         ...entry,
         seasonContextId: normalizeSeasonContextId(entry?.seasonContextId ?? entry?.season_context_id)
       }]));
+      this.llmUsageEvents = (Array.isArray(data.llmUsageEvents) ? data.llmUsageEvents : []).map((entry) => ({
+        ...entry,
+        seasonContextId: normalizeSeasonContextId(entry?.seasonContextId ?? entry?.season_context_id)
+      }));
       this.feedbackEvents = (Array.isArray(data.feedbackEvents) ? data.feedbackEvents : []).map((entry) => ({
         ...entry,
         seasonContextId: normalizeSeasonContextId(entry?.seasonContextId ?? entry?.season_context_id ?? entry?.payload?.seasonContextId)
@@ -888,6 +978,7 @@ export class JsonFileCacheStore extends MemoryCacheStore {
       compProfileBindings: serializeMap(this.compProfileBindings),
       entityAliases: this.entityAliases,
       queryEvents: serializeMap(this.queryEvents),
+      llmUsageEvents: this.llmUsageEvents,
       feedbackEvents: this.feedbackEvents,
       adminAuditEvents: this.adminAuditEvents,
       nextEntityAliasId: this.nextEntityAliasId,
@@ -1089,6 +1180,23 @@ export class JsonFileCacheStore extends MemoryCacheStore {
     const count = super.pruneQueryEventsBefore(createdBefore);
     if (count > 0) await this._persistQueued();
     return count;
+  }
+
+  async listQueryEventSummaries(options = {}) {
+    await this._ensureLoaded();
+    return super.listQueryEventSummaries(options);
+  }
+
+  async addLlmUsageEvent(record = {}) {
+    await this._ensureLoaded();
+    const entry = super.addLlmUsageEvent(record);
+    await this._persistQueued();
+    return entry;
+  }
+
+  async listLlmUsageEvents(options = {}) {
+    await this._ensureLoaded();
+    return super.listLlmUsageEvents(options);
   }
 
   async addFeedbackEvent(feedbackType, payload = {}, options = {}) {

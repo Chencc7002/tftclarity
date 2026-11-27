@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { mkdir } from "node:fs/promises";
 import { dirname } from "node:path";
 import { DEFAULT_CACHE_TTL_MS } from "./cache-store.js";
@@ -165,6 +166,28 @@ ON query_events(season_context_id, visitor_scope, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_query_events_created
 ON query_events(created_at);
+
+CREATE TABLE IF NOT EXISTS llm_usage_events (
+  event_id TEXT PRIMARY KEY,
+  season_context_id TEXT NOT NULL,
+  stage TEXT NOT NULL,
+  model TEXT NOT NULL,
+  status TEXT NOT NULL DEFAULT 'ok',
+  cached_input_tokens INTEGER NOT NULL DEFAULT 0,
+  uncached_input_tokens INTEGER NOT NULL DEFAULT 0,
+  output_tokens INTEGER NOT NULL DEFAULT 0,
+  total_tokens INTEGER NOT NULL DEFAULT 0,
+  estimated_cost_usd REAL NOT NULL DEFAULT 0,
+  duration_ms INTEGER,
+  attempts INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_events_created
+ON llm_usage_events(created_at);
+
+CREATE INDEX IF NOT EXISTS idx_llm_usage_events_model_created
+ON llm_usage_events(model, created_at);
 
 CREATE TABLE IF NOT EXISTS feedback_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -606,6 +629,43 @@ function rowToQueryEvent(row) {
     llmUsed: Boolean(row.llm_used),
     llmModel: row.llm_model ?? null,
     durationMs: Number.isFinite(row.duration_ms) ? row.duration_ms : null,
+    createdAt: row.created_at
+  };
+}
+
+function rowToQueryEventSummary(row) {
+  return {
+    queryId: row.query_id,
+    runId: row.run_id ?? null,
+    seasonContextId: normalizeSeasonContextId(row.season_context_id),
+    visitorScope: row.visitor_scope,
+    conversationId: row.conversation_id ?? null,
+    input: String(row.input ?? "").slice(0, 120),
+    resultType: row.result_type ?? null,
+    patch: row.patch ?? null,
+    cacheHit: Boolean(row.cache_hit),
+    cacheStale: Boolean(row.cache_stale),
+    llmUsed: Boolean(row.llm_used),
+    llmModel: row.llm_model ?? null,
+    durationMs: Number.isFinite(row.duration_ms) ? row.duration_ms : null,
+    createdAt: row.created_at
+  };
+}
+
+function rowToLlmUsageEvent(row) {
+  return {
+    eventId: row.event_id,
+    seasonContextId: normalizeSeasonContextId(row.season_context_id),
+    stage: row.stage,
+    model: row.model,
+    status: row.status,
+    cachedInputTokens: Number(row.cached_input_tokens ?? 0),
+    uncachedInputTokens: Number(row.uncached_input_tokens ?? 0),
+    outputTokens: Number(row.output_tokens ?? 0),
+    totalTokens: Number(row.total_tokens ?? 0),
+    estimatedCostUsd: Number(row.estimated_cost_usd ?? 0),
+    durationMs: Number.isFinite(row.duration_ms) ? row.duration_ms : null,
+    attempts: Number(row.attempts ?? 1),
     createdAt: row.created_at
   };
 }
@@ -1429,6 +1489,118 @@ export class SQLiteCacheStore {
     return Number(bindRun(this.database.prepare(
       "DELETE FROM query_events WHERE created_at < ?"
     ), [String(createdBefore ?? "")])?.changes ?? 0);
+  }
+
+  listQueryEventSummaries(options = {}) {
+    const clauses = [];
+    const params = [];
+    if (options.since) {
+      clauses.push("created_at >= ?");
+      params.push(String(options.since));
+    }
+    if (options.seasonContextId && options.seasonContextId !== "all") {
+      clauses.push("season_context_id = ?");
+      params.push(normalizeSeasonContextId(options.seasonContextId));
+    }
+    const maxRows = positiveInteger(options.limit, 10000);
+    const whereSql = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = bindAll(this.database.prepare(`
+      SELECT query_id, run_id, season_context_id, visitor_scope, conversation_id,
+             substr(input, 1, 120) AS input, result_type, patch,
+             cache_hit, cache_stale, llm_used, llm_model, duration_ms, created_at
+      FROM query_events
+      ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT ?
+    `), [...params, maxRows]);
+    return rows.map(rowToQueryEventSummary);
+  }
+
+  addLlmUsageEvent(record = {}) {
+    const eventId = String(record.eventId ?? record.event_id ?? randomUUID());
+    const seasonContextId = normalizeSeasonContextId(record.seasonContextId ?? record.season_context_id);
+    const stage = String(record.stage ?? "unknown").trim() || "unknown";
+    const model = String(record.model ?? "unknown").trim() || "unknown";
+    const status = String(record.status ?? "ok").trim() || "ok";
+    const cachedInputTokens = nonNegativeInteger(record.cachedInputTokens ?? record.cached_input_tokens, 0);
+    const uncachedInputTokens = nonNegativeInteger(record.uncachedInputTokens ?? record.uncached_input_tokens, 0);
+    const outputTokens = nonNegativeInteger(record.outputTokens ?? record.output_tokens, 0);
+    const totalTokens = nonNegativeInteger(
+      record.totalTokens ?? record.total_tokens,
+      cachedInputTokens + uncachedInputTokens + outputTokens
+    );
+    const estimatedCostUsd = Number.isFinite(Number(record.estimatedCostUsd ?? record.estimated_cost_usd))
+      ? Math.max(0, Number(record.estimatedCostUsd ?? record.estimated_cost_usd))
+      : 0;
+    const durationMs = Number.isFinite(Number(record.durationMs ?? record.duration_ms))
+      ? Math.round(Number(record.durationMs ?? record.duration_ms))
+      : null;
+    const attempts = positiveInteger(record.attempts, 1);
+    const createdAt = record.createdAt ?? record.created_at ?? new Date(this.now()).toISOString();
+
+    bindRun(this.database.prepare(`
+      INSERT INTO llm_usage_events (
+        event_id, season_context_id, stage, model, status,
+        cached_input_tokens, uncached_input_tokens, output_tokens, total_tokens,
+        estimated_cost_usd, duration_ms, attempts, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT(event_id) DO NOTHING
+    `), [
+      eventId,
+      seasonContextId,
+      stage,
+      model,
+      status,
+      cachedInputTokens,
+      uncachedInputTokens,
+      outputTokens,
+      totalTokens,
+      estimatedCostUsd,
+      durationMs,
+      attempts,
+      createdAt
+    ]);
+
+    return {
+      eventId,
+      seasonContextId,
+      stage,
+      model,
+      status,
+      cachedInputTokens,
+      uncachedInputTokens,
+      outputTokens,
+      totalTokens,
+      estimatedCostUsd,
+      durationMs,
+      attempts,
+      createdAt
+    };
+  }
+
+  listLlmUsageEvents(options = {}) {
+    const clauses = [];
+    const params = [];
+    if (options.since) {
+      clauses.push("created_at >= ?");
+      params.push(String(options.since));
+    }
+    if (options.seasonContextId && options.seasonContextId !== "all") {
+      clauses.push("season_context_id = ?");
+      params.push(normalizeSeasonContextId(options.seasonContextId));
+    }
+    const maxRows = positiveInteger(options.limit, 10000);
+    const whereSql = clauses.length ? `WHERE ${clauses.join(" AND ")}` : "";
+    const rows = bindAll(this.database.prepare(`
+      SELECT event_id, season_context_id, stage, model, status,
+             cached_input_tokens, uncached_input_tokens, output_tokens, total_tokens,
+             estimated_cost_usd, duration_ms, attempts, created_at
+      FROM llm_usage_events
+      ${whereSql}
+      ORDER BY created_at DESC
+      LIMIT ?
+    `), [...params, maxRows]);
+    return rows.map(rowToLlmUsageEvent);
   }
 
   addFeedbackEvent(feedbackType, payload = {}, options = {}) {
