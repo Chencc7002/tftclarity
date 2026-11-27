@@ -2231,7 +2231,8 @@ test("small-window cache clear removes query history without resetting preferenc
     sessionState: 1,
     catalogCache: 1,
     compDetailCache: 1,
-    augmentLookupCache: 1
+    augmentLookupCache: 1,
+    hotQueryCache: 0
   });
   assert.equal(cacheStore.getQuery("query:history"), null);
   assert.equal(cacheStore.getDefaultContext("default_context:history"), null);

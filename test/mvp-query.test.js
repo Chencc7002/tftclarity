@@ -2853,8 +2853,8 @@ test("recommendForInput surfaces the update time when it falls back to an expire
   assert.equal(second.cache.query.stale, true);
   assert.equal(second.cache.query.updatedAt, "2026-07-10T04:00:00.000Z");
   assert.equal(second.sourceUpdatedAt, "2026-07-10T04:00:00.000Z");
-  assert.match(second.query.warnings.join("；"), /MetaTFT 请求失败，已使用 2026-07-10T04:00:00.000Z 的缓存结果/);
-  assert.match(second.text, /MetaTFT 请求失败，已使用 2026-07-10T04:00:00.000Z 的缓存结果/);
+  assert.match(second.query.warnings.join("；"), /实时统计请求失败，已使用 2026-07-10T04:00:00.000Z 的缓存结果/);
+  assert.match(second.text, /实时统计请求失败，已使用 2026-07-10T04:00:00.000Z 的缓存结果/);
   assert.ok(second.rankedBuilds.length > 0);
 });
 

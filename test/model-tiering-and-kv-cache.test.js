@@ -115,6 +115,7 @@ test("resolveTieredLlmConfig supports independent ReAct and lightweight override
   assert.equal(tiered.model, "qwen-turbo-latest");
   assert.equal(tiered.endpoint, "https://dashscope.aliyuncs.com/compatible-mode/v1/chat/completions");
   assert.equal(tiered.apiKey, "lw-key");
+  assert.equal(resolveTieredLlmConfig(base, { endpoint: "https://other.test/v1" }, {}).apiKey, null);
 
   // Runtime wires distinct models into reactDecisionProvider vs entitySlangProvider/turnDeltaProvider
   const runtime = await createSmallWindowRuntimeAsync({

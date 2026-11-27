@@ -241,5 +241,6 @@ test("opt-in per-request snapshot reuse preserves source data while resolving ea
   const legacy = await newBundle();
   await legacy.handlers.comps_rankings({});
   await legacy.handlers.comps_rankings({ mention: first.compositionRef.compId });
-  assert.equal(dataCalls, 8, "default behavior remains unchanged");
+  assert.equal(dataCalls, 7, "both identities use the same source snapshot");
+  assert.equal(statsCalls, 7);
 });

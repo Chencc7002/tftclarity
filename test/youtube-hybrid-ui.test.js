@@ -35,7 +35,7 @@ test("result pane exposes query, statistics, and video evidence", () => {
   assert.match(styles, /\.knowledge-evidence/);
   assert.match(styles, /\.knowledge-card/);
   assert.match(i18n, /knowledgeAuthorityNote/);
-  assert.match(i18n, /MetaTFT structured statistics remain authoritative/);
+  assert.match(i18n, /Structured match statistics remain authoritative/);
   assert.match(i18n, /currentStatsSource/);
   assert.match(i18n, /AI 生成 · 未经人工复核/);
   assert.match(i18n, /AI-generated · Not human-reviewed/);

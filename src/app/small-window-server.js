@@ -786,10 +786,12 @@ function normalizeChatCompletionsEndpoint(rawEndpoint) {
 }
 
 export function resolveTieredLlmConfig(baseConfig = {}, overrides = {}, env = process.env, envPrefix = "") {
-  const endpointRaw = overrides.endpoint ?? (envPrefix ? env[`${envPrefix}_ENDPOINT`] : null) ?? baseConfig.endpoint ?? null;
-  const endpoint = normalizeChatCompletionsEndpoint(endpointRaw);
+  const tierEndpoint = overrides.endpoint ?? (envPrefix ? env[`${envPrefix}_ENDPOINT`] : null);
+  const endpoint = normalizeChatCompletionsEndpoint(tierEndpoint) ?? baseConfig.endpoint ?? null;
   const model = String(overrides.model ?? (envPrefix ? env[`${envPrefix}_MODEL`] : null) ?? baseConfig.model ?? "").trim() || null;
-  const apiKey = overrides.apiKey ?? (envPrefix ? env[`${envPrefix}_API_KEY`] : null) ?? baseConfig.apiKey ?? null;
+  const sameOrigin = endpoint === baseConfig.endpoint || (URL.canParse(endpoint) && URL.canParse(baseConfig.endpoint)
+    && new URL(endpoint).origin === new URL(baseConfig.endpoint).origin);
+  const apiKey = overrides.apiKey ?? (envPrefix ? env[`${envPrefix}_API_KEY`] : null) ?? (sameOrigin ? baseConfig.apiKey : null) ?? null;
   const thinkingMode = String(
     overrides.thinkingMode
       ?? (envPrefix ? env[`${envPrefix}_THINKING_MODE`] : null)
@@ -3781,6 +3783,7 @@ function emblemHotCacheKey(tool, query, seasonContext) {
     query.item ?? null,
     query.recipeBase ?? null,
     query.primaryMetric ?? null,
+    query.limit ?? null,
     [...(query.apiNames ?? [])].sort()
   ])}`;
 }
@@ -3805,7 +3808,7 @@ async function cachedEmblemQuery(runtime, tool, query, seasonContext, loader, op
       ? (loaded) => runtime.cacheStore.setQuery(cacheKey, loaded, { ...storeOptions, ttlMs: 300_000 })
       : null
   });
-  return value;
+  return structuredClone(value);
 }
 
 export async function queryCompositionRankings(toolInput, catalog, runtime, options = {}) {
@@ -6794,29 +6797,8 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
     agentRun: context.agentRun,
     abortSignal: context.signal
   };
-  const canUseHotQuickCompCache = Boolean(
-    requestRuntime.hotQueryCache
-    && ["comp-rankings", "comp-trends"].includes(quickTask?.id)
-    && Object.keys(quickTask?.arguments ?? {}).length === 0
-    && !supplementalText
-    && !body.refresh
-  );
-  const result = canUseHotQuickCompCache
-    ? (await requestRuntime.hotQueryCache.getOrLoad(
-      `quick_comp:${JSON.stringify([
-        quickTask.id,
-        seasonContext.id,
-        preferences.queue ?? null,
-        preferences.patch ?? "current",
-        Number(preferences.days ?? 3),
-        [...(preferences.rankFilter ?? [])].sort(),
-        Number(preferences.minSamples ?? 100),
-        displayLocale
-      ])}`,
-      () => requestRuntime.recommendForInputImpl(input, recommendationOptions),
-      { signal: context.signal }
-    )).value
-    : await requestRuntime.recommendForInputImpl(input, recommendationOptions);
+  // Each request persists its own conversation state. Upstream statistics can be shared.
+  const result = await requestRuntime.recommendForInputImpl(input, recommendationOptions);
   if (quickTask && result.cache?.query) {
     result.cache.query.policy = {
       refreshAfterMs: quickCachePolicy.refreshAfterMs,
