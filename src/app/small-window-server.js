@@ -1413,6 +1413,10 @@ async function loadOfficialItemDetails(runtime) {
   return runtime.officialItemDetailsPromise;
 }
 
+function emblemItemDetails(runtime, seasonContext, entityDetails) {
+  return seasonContext.environment === "pbe" ? entityDetails?.items : loadOfficialItemDetails(runtime);
+}
+
 async function serializeItemDetailsQuery(input, catalog, runtime, options = {}) {
   const parsed = parseQuery(input, { catalog });
   if (!isItemDetailsQuestion(input) || parsed.unit) return null;
@@ -4682,7 +4686,7 @@ export async function loadRuntimeCatalog(runtime, preferences = {}) {
       const setLookupPayload = setLookup.status === "fulfilled" ? setLookup.value : null;
       if (isPbeCatalog) {
         entry.entityDetails = buildPbeLookupDetails(setLookupPayload, {
-          tftSet: preferences.tftSet, locale: preferences.lookupLocale ?? "zh_cn"
+          tftSet: preferences.tftSet, locale: preferences.lookupLocale ?? "zh_cn", assetResolver: ASSET_RESOLVER
         });
         entry.expiresAt = Date.now() + 15 * 60 * 1000;
       } else if (communityDragonDetails.status === "fulfilled") {
@@ -5691,13 +5695,11 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
   }
   const { catalog, warning, compsData, aliasMemory, entityDetails } = await loadRuntimeCatalog(runtime, preferences);
   if (["emblem-rankings", "emblem-carriers"].includes(quickTask?.id)) {
-    if (seasonContext.environment === "pbe") {
-      return { statusCode: 400, payload: { ok: false, error: "转职强度查询暂仅支持正式服", code: "emblem_environment_unsupported" } };
-    }
     const tool = quickTask.operation;
     const query = { days: Number(preferences.days ?? 3), rank: [...(preferences.rankFilter ?? [])], minSamples: Number(preferences.minSamples ?? 100) };
     if (tool === "emblem_carriers") {
-      query.item = resolveQuickTaskEntity(quickTask, "item", "item", catalog);
+      const input = quickTask.arguments.item;
+      query.item = catalog.itemByApiName.has(input) ? input : resolveQuickTaskEntity(quickTask, "item", "item", catalog);
       const item = catalog.itemByApiName.get(query.item);
       if (!item || item.category !== "emblem" || item.current === false || item.obtainable === false) {
         return { statusCode: 400, payload: { ok: false, error: "未识别到当前赛季转职", code: "invalid_emblem" } };
@@ -5708,7 +5710,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       run: context.agentRun, signal: context.signal, intent: tool,
       handlers: { [tool]: async (args, toolContext) => {
         if (tool === "emblem_rankings") {
-          const itemDetails = await loadOfficialItemDetails(requestRuntime);
+          const itemDetails = await emblemItemDetails(requestRuntime, seasonContext, entityDetails);
           return queryEmblemRankings({ client: requestRuntime.metaTFTClient, catalog, itemDetails, query: scopedEmblemQuery(args, preferences), signal: toolContext.signal });
         }
         return queryEmblemCarriers({ client: requestRuntime.metaTFTClient, compsClient: requestRuntime.compsClient,
@@ -5725,7 +5727,7 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
         : `已找到 ${craftableCount} 个可合成转职，可在结果区按金铲铲或金锅锅筛选，展开查看常见携带英雄。`
       : displayLocale === "en-US" ? `Found ${payload.carriers?.length ?? 0} common carriers.` : `已找到 ${payload.carriers?.length ?? 0} 个常见携带英雄。`;
     payload.answer = { summary: payload.text };
-    const carrierItemDetails = payload.carriers?.length ? await loadOfficialItemDetails(requestRuntime) : null;
+    const carrierItemDetails = payload.carriers?.length ? await emblemItemDetails(requestRuntime, seasonContext, entityDetails) : null;
     for (const carrier of payload.carriers ?? []) {
       const unitAsset = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName);
       carrier.unit.iconUrl = unitAsset.iconUrl;
@@ -6959,7 +6961,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
   };
   const handlers = {};
 
-  if (runtime.reactEmblemRankings === true && seasonContext.environment !== "pbe") {
+  if (runtime.reactEmblemRankings === true) {
     const queryEmblems = async (input, toolContext, carriers) => {
       toolContext.signal?.throwIfAborted?.();
       const loaded = await resources();
@@ -6968,14 +6970,14 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
         ? await queryEmblemCarriers({ client: runtime.metaTFTClient, compsClient: runtime.compsClient,
           catalog: loaded.catalog, query, signal: toolContext.signal })
         : await queryEmblemRankings({ client: runtime.metaTFTClient, catalog: loaded.catalog,
-          itemDetails: await loadOfficialItemDetails(runtime), query, signal: toolContext.signal });
+          itemDetails: await emblemItemDetails(runtime, seasonContext, loaded.entityDetails), query, signal: toolContext.signal });
       for (const carrier of result.carriers ?? []) {
         carrier.unit.iconUrl = ASSET_RESOLVER.resolveUnit(carrier.unit.apiName).iconUrl;
       }
       const publicResult = carriers
         ? { ...serializeRecommendation({ ...result, type: "item_carrier_rankings",
           source: { ...result.source, updatedAt: result.updatedAt } }, loaded.catalog,
-          { entityDetails: loaded.entityDetails, itemDetails: await loadOfficialItemDetails(runtime) }),
+          { entityDetails: loaded.entityDetails, itemDetails: await emblemItemDetails(runtime, seasonContext, loaded.entityDetails) }),
           updatedAt: result.updatedAt }
         : result;
       return { ...publicResult, scope: { seasonContextId: seasonContext.id, patch: query.patch, queue: query.queue },
@@ -6985,7 +6987,7 @@ export async function createDefaultReactToolHandlerBundle({ request, runtime, co
       handlers.emblem_rankings = (input, context = {}) => queryEmblems(input, context, false);
     }
     if (typeof runtime.metaTFTClient?.getItemCarrierBuilds === "function"
-      && typeof runtime.compsClient?.getUnitItemsProcessed === "function") {
+      && (seasonContext.environment === "pbe" || typeof runtime.compsClient?.getUnitItemsProcessed === "function")) {
       handlers.emblem_carriers = (input, context = {}) => queryEmblems(input, context, true);
     }
   }

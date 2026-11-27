@@ -171,7 +171,7 @@ function lookupUnitDetail(apiName, lookup, source, row = null, channel = null) {
   };
 }
 
-export function buildPbeLookupDetails(lookup, { tftSet, locale }) {
+export function buildPbeLookupDetails(lookup, { tftSet, locale, assetResolver }) {
   const metadata = lookup?._metadata;
   if (metadata?.set !== tftSet || metadata?.patch !== "pbe"
       || !lookup.units?.some(unit => unit.shopUnit) || !lookup.traits?.length || !lookup.items?.length) {
@@ -194,7 +194,17 @@ export function buildPbeLookupDetails(lookup, { tftSet, locale }) {
     })),
     source
   }]));
-  return { units, traits, meta: source };
+  const itemRows = new Map(lookup.items.filter(row => row?.apiName).map(row => [row.apiName, row]));
+  const itemLabel = row => ({ apiName: row.apiName, name: row.name ?? row.apiName, enName: row.en_name,
+    iconUrl: assetResolver?.resolveItem(row.apiName).iconUrl ?? null });
+  const items = new Map();
+  for (const row of itemRows.values()) {
+    const ids = row.composition;
+    const known = Array.isArray(ids) && (ids.length === 0 || (ids.length === 2 && ids.every(id => itemRows.has(id))));
+    items.set(row.apiName, { ...itemLabel(row), recipeStatus: known ? "known" : "unknown",
+      recipe: known ? ids.map(id => itemLabel(itemRows.get(id))) : [] });
+  }
+  return { units, traits, items, meta: source };
 }
 
 export function buildCommunityDragonEntityDetails(payloads = {}, options = {}) {

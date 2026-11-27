@@ -11,7 +11,7 @@ export function scopedEmblemQuery(input = {}, preferences = {}) {
   return { ...input, queue: String(preferences.queue ?? "1100"),
     patch: String(preferences.unitBuildPatch ?? preferences.patch ?? "current"),
     days: input.days ?? preferences.days ?? 3,
-    rank: [...(input.rank ?? preferences.rankFilter ?? [])],
+    rank: preferences.queue === "PBE" ? [] : [...(input.rank ?? preferences.rankFilter ?? [])],
     minSamples: input.minSamples ?? preferences.minSamples ?? 100 };
 }
 
@@ -70,7 +70,7 @@ export function rankEmblems(response, { catalog, itemDetails, minSamples = 100 }
     rows.push({
       item: { apiName, name: item.preferredDisplayName ?? detail?.name ?? item.zhName ?? apiName,
         enName: item.enName, iconUrl: detail?.iconUrl ?? item.iconUrl ?? null },
-      recipe: detail?.recipe ?? [], recipeStatus: detail ? "known" : "unknown",
+      recipe: detail?.recipe ?? [], recipeStatus: detail?.recipeStatus ?? (detail ? "known" : "unknown"),
       recipeBase: emblemRecipeBase(detail?.recipe), placementCount: [...counts], stats,
       lowSample: stats.games < minSamples
     });
@@ -102,7 +102,7 @@ export async function queryEmblemRankings({ client, catalog, itemDetails, query,
     query: { ...query, emblemCount: "1-any" }, updatedAt: new Date().toISOString(),
     methodology: { sort: query.primaryMetric ?? "avgPlacement", lowSampleLast: true, carrierSort: "games_first" },
     source: { provider: "MetaTFT", endpoint: "tft-explorer-api/items", patch: query.patch,
-      url: "https://www.metatft.com/explorer?tab=items&emblem_count=1-any" }, warnings: [] };
+      url: "https://www.metatft.com/explorer?tab=items&emblem_count=1-any" + (query.queue === "PBE" ? "&queue=PBE" : "") }, warnings: [] };
 }
 
 // The same item-to-carrier aggregation as the existing item shortcut, without
@@ -115,18 +115,19 @@ export async function queryEmblemCarriers({ client, compsClient, catalog, query,
   const carrierQuery = { ...query, rankFilter: query.rank, minSamples: query.minSamples ?? 0, limit: 3,
     buildLimit: 1, positiveOnly: false, sort: "games_first" };
   signal?.throwIfAborted();
-  const [builds, baseline] = await Promise.all([
-    client.getItemCarrierBuilds(planMetaTFTItemCarrierBuilds(carrierQuery)),
+  const plan = planMetaTFTItemCarrierBuilds(carrierQuery);
+  const buildsRequest = client.getItemCarrierBuilds(plan);
+  const [builds, baseline] = await Promise.all([buildsRequest, plan.endpoint === "item_detail" ? buildsRequest :
     compsClient.getUnitItemsProcessed({ queue: query.queue, patch: query.patch,
-      days: query.days, rank: (query.rank ?? []).join(","), permit_filter_adjustment: "false" })
-  ]);
+      days: query.days, rank: (query.rank ?? []).join(","), permit_filter_adjustment: "false" })]);
   signal?.throwIfAborted();
   const result = aggregateItemCarrierRankings(builds, baseline, carrierQuery, { catalog });
   return { ok: true, type: "emblem_carriers", item: query.item, query: { ...query, positiveOnly: false, sort: "games_first" },
     carriers: result.carriers.map(carrier => ({ ...carrier,
       unit: { apiName: carrier.unitApiName, name: catalog.unitByApiName.get(carrier.unitApiName)?.zhName ?? carrier.unitApiName,
         enName: catalog.unitByApiName.get(carrier.unitApiName)?.enName } })),
-    updatedAt: new Date().toISOString(), source: { provider: "MetaTFT", endpoint: "tft-explorer-api/unit_builds + tft-comps-api/unit_items_processed" } };
+    updatedAt: new Date().toISOString(), source: { provider: "MetaTFT", endpoint: plan.endpoint === "item_detail"
+      ? "tft-stat-api/item_detail" : "tft-explorer-api/unit_builds + tft-comps-api/unit_items_processed" } };
 }
 
 export function emblemExecutionPlan(tool, args) {

@@ -6,6 +6,7 @@ import { createCatalog, MemoryCacheStore, buildOfficialTftItemDetailsCatalog } f
 import { createSmallWindowRuntime, createDefaultReactToolHandlerBundle, handleReactChatRequest, handleRecommendRequest } from "../src/app/small-window-server.js";
 import { queryEmblemRankings } from "../src/core/emblem-rankings.js";
 import { validateFinishAction } from "../src/react/termination-policy.js";
+import { buildPbeLookupDetails } from "../src/data/communitydragon-entity-details.js";
 
 const A = "DA_18_EmblemBrawler", B = "DA_18_EmblemFae", U = "DA_18_Ahri";
 const catalog = createCatalog({ units: [{ apiName: U, zhName: "阿狸", enName: "Ahri", aliases: ["阿狸"] }],
@@ -46,6 +47,36 @@ test("shadow equivalence: Quick Task and ReAct share ranking population and stat
   assert.equal(chat.query.queue, "1100");
   assert.equal(app.toolRegistry.get("emblem_rankings").inputSchema.additionalProperties, false);
   for (const key of ["patch", "queue", "seasonContextId", "url"]) assert.equal(app.toolRegistry.get("emblem_rankings").inputSchema.properties[key], undefined);
+});
+
+test("PBE quick and chat use the selected set's recipes and item_detail carrier baselines", async () => {
+  const item = "DA_Arcanist19_Emblem", unit = "DA_Annie19", pan = "DA_Component_FryingPan", rod = "DA_Component_Rod";
+  const counts = [10,20,30,40,40,30,20,10];
+  const pbeDetails = buildPbeLookupDetails({
+    _metadata: { set: "TFTSet19", patch: "pbe" }, units: [{apiName:unit, shopUnit:true}], traits:[{apiName:"DA_Arcanist19"}],
+    items: [{apiName:pan,name:"金锅锅"}, {apiName:rod,name:"大棒"}, {apiName:item,name:"法师纹章",composition:[pan,rod]}]
+  }, {tftSet:"TFTSet19",locale:"zh_cn"});
+  const app = runtime({catalog:createCatalog({units:[{apiName:unit,zhName:"安妮"}],
+    items:[{apiName:item,zhName:"法师纹章",current:true,category:"emblem",obtainable:true}]}),
+    officialEntityDetails:pbeDetails, compsClient:{}, metaTFTClient:{
+      getItems:async params => {
+        assert.equal(params.queue,"PBE"); assert.equal(params.rank,"");
+        return {data:[{items:item,placement_count:counts},{items:A,placement_count:counts}]};
+      },
+      getItemCarrierBuilds:async plan => {
+        assert.equal(plan.params.queue,"PBE"); assert.equal(plan.endpoint,"item_detail");
+        return {units:[{unit,places:counts}],units_overall:[{unit,places:counts}]};
+      }
+    }});
+  const seasonContextId="set19-pbe";
+  const quick=await handleRecommendRequest({input:"转职排行",seasonContextId,
+    quickTask:{schemaVersion:"quick-task.v1",id:"emblem-rankings",operation:"emblem_rankings",requestId:"pbe-rank",arguments:{}}},app);
+  assert.equal(quick.statusCode,200);
+  const {handlers}=await createDefaultReactToolHandlerBundle({runtime:app,request:{...request,seasonContextId}});
+  const chat=await handlers.emblem_rankings({recipeBase:"pan"});
+  assert.deepEqual(chat.rows,quick.payload.rows);
+  assert.deepEqual(chat.rows.map(r=>[r.item.apiName,r.recipeBase,r.recipe[1].name]),[[item,"pan","大棒"]]);
+  assert.equal((await handlers.emblem_carriers({item})).carriers[0].unit.apiName,unit);
 });
 
 test("ReAct receives filtered evidence, analyses it, and uses the existing carrier serializer", async () => {
