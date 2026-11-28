@@ -84,7 +84,8 @@ const state = {
   seasonContextId: "set18-live",
   seasonContexts: [],
   seasonContext: null,
-  activeAnalysisContext: null
+  activeAnalysisContext: null,
+  extraBuildsPanels: new Map()
 };
 
 const shellEl = document.querySelector("#app-shell");
@@ -3566,7 +3567,182 @@ function recommendationOverview(data) {
   return resultHeader(title, structuredQueryScope(data), t("equipmentBuilds"));
 }
 
+function extraBuildsFilterCandidates(builds = []) {
+  const counts = new Map();
+  for (const build of builds) {
+    const seen = new Set();
+    for (const item of build?.items ?? []) {
+      const apiName = String(item?.apiName ?? "");
+      if (!apiName || item?.locked || seen.has(apiName)) continue;
+      seen.add(apiName);
+      const current = counts.get(apiName) ?? {
+        apiName,
+        name: localizedName(item),
+        iconUrl: item.iconUrl ?? null,
+        count: 0
+      };
+      current.count += 1;
+      counts.set(apiName, current);
+    }
+  }
+  return [...counts.values()]
+    .sort((left, right) => right.count - left.count || left.name.localeCompare(right.name, getLocale()))
+    .slice(0, 8);
+}
+
+function sortAndFilterExtraBuilds(builds = [], { sort = "rank", selectedItems = new Set() } = {}) {
+  const selected = [...selectedItems];
+  const filtered = selected.length
+    ? builds.filter((build) => {
+      const apiNames = new Set((build?.items ?? []).map((item) => String(item?.apiName ?? "")));
+      return selected.every((apiName) => apiNames.has(apiName));
+    })
+    : [...builds];
+  return filtered.sort((left, right) => {
+    const ls = left?.stats ?? {};
+    const rs = right?.stats ?? {};
+    if (sort === "top4") {
+      return Number(rs.top4 ?? 0) - Number(ls.top4 ?? 0)
+        || Number(ls.avg ?? 9) - Number(rs.avg ?? 9)
+        || Number(rs.games ?? 0) - Number(ls.games ?? 0);
+    }
+    if (sort === "win") {
+      return Number(rs.win ?? 0) - Number(ls.win ?? 0)
+        || Number(rs.top4 ?? 0) - Number(ls.top4 ?? 0)
+        || Number(rs.games ?? 0) - Number(ls.games ?? 0);
+    }
+    if (sort === "avg") {
+      return Number(ls.avg ?? 9) - Number(rs.avg ?? 9)
+        || Number(rs.top4 ?? 0) - Number(ls.top4 ?? 0)
+        || Number(rs.games ?? 0) - Number(ls.games ?? 0);
+    }
+    if (sort === "games") {
+      return Number(rs.games ?? 0) - Number(ls.games ?? 0)
+        || Number(rs.top4 ?? 0) - Number(ls.top4 ?? 0);
+    }
+    return Number(left?.rank ?? 0) - Number(right?.rank ?? 0);
+  });
+}
+
+function renderExtraBuildsRows(panelState) {
+  const rows = sortAndFilterExtraBuilds(panelState.builds, panelState);
+  if (!rows.length) {
+    return `<div class="extra-builds-empty">${escapeHtml(t("moreBuildsEmptyFiltered"))}</div>`;
+  }
+  const sort = panelState.sort;
+  return `<div class="extra-builds-list" role="table" aria-label="${escapeHtml(t("moreBuildsTitle"))}">
+    <div class="extra-builds-head" role="row">
+      <span role="columnheader">#</span>
+      <span role="columnheader">${escapeHtml(t("equipmentBuilds"))}</span>
+      <span role="columnheader" class="${sort === "top4" ? "is-sorted" : ""}">${escapeHtml(t("top4Short"))}</span>
+      <span role="columnheader" class="${sort === "win" ? "is-sorted" : ""}">${escapeHtml(t("winShort"))}</span>
+      <span role="columnheader" class="${sort === "avg" ? "is-sorted" : ""}">${escapeHtml(t("avgShort"))}</span>
+      <span role="columnheader" class="${sort === "games" ? "is-sorted" : ""}">${escapeHtml(t("samples"))}</span>
+    </div>
+    ${rows.map((build) => {
+      const itemsHtml = (build.items ?? []).map((item) => {
+        const label = localizedName(item);
+        const matched = panelState.selectedItems.has(String(item.apiName ?? ""));
+        return `<span class="extra-build-item${item.locked ? " locked" : ""}${matched ? " is-matched" : ""}">${assetThumb(item.iconUrl, label, "tiny-item-icon")}<span>${escapeHtml(label)}</span></span>`;
+      }).join("");
+      const diffText = build.difference?.removed?.length
+        ? `${t("replace")} ${build.difference.removed.join(" + ")} → ${build.difference.added.join(" + ")}`
+        : "";
+      return `<div class="extra-build-row${build.lowSample ? " is-low-sample" : ""}" role="row" data-extra-build-rank="${escapeHtml(String(build.rank ?? ""))}">
+        <div class="extra-build-rank" role="cell">
+          <span>#${escapeHtml(String(build.rank ?? ""))}</span>
+          ${build.lowSample ? `<small class="extra-build-low-tag">${escapeHtml(t("lowSample"))}</small>` : ""}
+        </div>
+        <div class="extra-build-items-col" role="cell">
+          <div class="extra-build-items">${itemsHtml}</div>
+          ${diffText ? `<small class="extra-build-diff">${escapeHtml(diffText)}</small>` : ""}
+        </div>
+        <div class="extra-build-metric${sort === "top4" ? " is-sorted" : ""}" role="cell"><em>${escapeHtml(t("top4Short"))}</em><strong>${formatNumber(build.stats?.top4 ?? 0)}%</strong></div>
+        <div class="extra-build-metric${sort === "win" ? " is-sorted" : ""}" role="cell"><em>${escapeHtml(t("winShort"))}</em><strong>${formatNumber(build.stats?.win ?? 0)}%</strong></div>
+        <div class="extra-build-metric${sort === "avg" ? " is-sorted" : ""}" role="cell"><em>${escapeHtml(t("avgShort"))}</em><strong>${formatNumber(build.stats?.avg ?? 0, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</strong></div>
+        <div class="extra-build-metric${sort === "games" ? " is-sorted" : ""}" role="cell"><em>${escapeHtml(t("samples"))}</em><strong>${formatNumber(build.stats?.games ?? 0)}</strong></div>
+      </div>`;
+    }).join("")}
+  </div>`;
+}
+
+function renderExtraBuildsSection(extraBuilds, panelId = "rec-extra-builds") {
+  if (!Array.isArray(extraBuilds) || !extraBuilds.length) return "";
+  const panelState = {
+    builds: extraBuilds,
+    sort: "rank",
+    selectedItems: new Set()
+  };
+  state.extraBuildsPanels.set(panelId, panelState);
+  const candidates = extraBuildsFilterCandidates(extraBuilds);
+  const sortOptions = [
+    ["rank", t("moreBuildsSortRank")],
+    ["top4", t("top4Short")],
+    ["win", t("winShort")],
+    ["avg", t("avgShort")],
+    ["games", t("samples")]
+  ];
+  return `<details class="extra-builds-panel" data-extra-builds-panel="${escapeHtml(panelId)}">
+    <summary class="extra-builds-summary">
+      <span class="extra-builds-summary-main">
+        <strong>${escapeHtml(t("moreBuildsTitle"))}</strong>
+        <span class="extra-builds-count-pill">${escapeHtml(t("moreBuildsCount", { count: extraBuilds.length }))}</span>
+      </span>
+      <small class="extra-builds-hint">${escapeHtml(t("moreBuildsHint"))}</small>
+    </summary>
+    <div class="extra-builds-content">
+      <div class="extra-builds-toolbar">
+        <div class="extra-builds-sort-group" role="group" aria-label="${escapeHtml(t("moreBuildsSortLabel"))}">
+          <span class="extra-builds-tool-label">${escapeHtml(t("moreBuildsSortLabel"))}</span>
+          ${sortOptions.map(([key, label]) => `
+            <button type="button" class="extra-builds-sort-btn${key === "rank" ? " active" : ""}" data-extra-builds-sort="${escapeHtml(key)}" data-panel-id="${escapeHtml(panelId)}" aria-pressed="${key === "rank" ? "true" : "false"}">${escapeHtml(label)}</button>
+          `).join("")}
+        </div>
+        <span class="extra-builds-matched" data-extra-builds-matched>${escapeHtml(t("moreBuildsMatched", { matched: extraBuilds.length, total: extraBuilds.length }))}</span>
+      </div>
+      ${candidates.length ? `<div class="extra-builds-filter-row" role="group" aria-label="${escapeHtml(t("moreBuildsFilterLabel"))}">
+        <span class="extra-builds-tool-label">${escapeHtml(t("moreBuildsFilterLabel"))}</span>
+        ${candidates.map((item) => `
+          <button type="button" class="extra-builds-filter-chip" data-extra-builds-item="${escapeHtml(item.apiName)}" data-panel-id="${escapeHtml(panelId)}" aria-pressed="false">
+            ${assetThumb(item.iconUrl, item.name, "tiny-item-icon")}
+            <span>${escapeHtml(item.name)}</span>
+            <small>${escapeHtml(String(item.count))}</small>
+          </button>
+        `).join("")}
+        <button type="button" class="extra-builds-clear-btn" data-extra-builds-clear data-panel-id="${escapeHtml(panelId)}" hidden>${escapeHtml(t("moreBuildsFilterClear"))}</button>
+      </div>` : ""}
+      <div class="extra-builds-body" data-extra-builds-body>${renderExtraBuildsRows(panelState)}</div>
+    </div>
+  </details>`;
+}
+
+function updateExtraBuildsPanelDom(panelId) {
+  const panelState = state.extraBuildsPanels.get(panelId);
+  const root = resultContentEl.querySelector(`[data-extra-builds-panel="${CSS.escape(panelId)}"]`);
+  if (!panelState || !root) return;
+  root.querySelectorAll("button[data-extra-builds-sort]").forEach((btn) => {
+    const active = btn.dataset.extraBuildsSort === panelState.sort;
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  root.querySelectorAll("button[data-extra-builds-item]").forEach((btn) => {
+    const active = panelState.selectedItems.has(btn.dataset.extraBuildsItem);
+    btn.classList.toggle("active", active);
+    btn.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+  const clearBtn = root.querySelector("button[data-extra-builds-clear]");
+  if (clearBtn) clearBtn.hidden = panelState.selectedItems.size === 0;
+  const matched = sortAndFilterExtraBuilds(panelState.builds, panelState).length;
+  const matchedEl = root.querySelector("[data-extra-builds-matched]");
+  if (matchedEl) {
+    matchedEl.textContent = t("moreBuildsMatched", { matched, total: panelState.builds.length });
+  }
+  const bodyEl = root.querySelector("[data-extra-builds-body]");
+  if (bodyEl) bodyEl.innerHTML = renderExtraBuildsRows(panelState);
+}
+
 function renderRecommendationResult(data) {
+  state.extraBuildsPanels.clear();
   if (data.clarification?.needsClarification) {
     setResponseHtml(`${resultHeader(t("clarification"), data.clarification.question, t("clarification"))}<div class="clarification-state"><div class="state-orbit" aria-hidden="true">?</div><strong>${escapeHtml(data.clarification.question)}</strong>${renderEntityCandidates(data.clarification.entityCandidates ?? [], state.currentResponseId)}${renderSuggestionButtons(data.clarification.suggestions ?? [], state.currentResponseId)}</div>${data.query ? conditionPanel(data) : ""}${data.source ? sourceAndRisk(data) : ""}`);
     return;
@@ -3584,12 +3760,14 @@ function renderRecommendationResult(data) {
   const coreSummary = data.coreItemSummary ?? data.answer?.coreConclusion;
   const commonCore = coreSummary?.items?.length ? coreSummary.items.map(itemPill).join("") : null;
   const [best, ...alternatives] = data.cards;
+  const extraBuildsHtml = renderExtraBuildsSection(data.extraBuilds ?? [], "rec-extra-builds");
   const interpretation = generatedConclusionCard(data);
   setResponseHtml(`<div class="equipment-results">${recommendationOverview(data)}
     ${data.lockedItems?.length ? `<div class="locked-line">${t("carried")}：${escapeHtml(locked)}</div>` : ""}
     ${commonCore ? `<details class="equipment-core"><summary><span>${t("frequentCore")}</span><span class="equipment-core-items">${commonCore}</span></summary><p>${t("coreFrequencyRule", { count: coreSummary.recommendationCount, required: coreSummary.requiredAppearances })}</p></details>` : ""}
     ${recommendationCard(data, best, 0)}
     ${alternatives.length ? `<details class="alternatives" ${window.innerWidth >= 520 ? "open" : ""}><summary>${t("alternatives")} · ${alternatives.length}</summary><div class="alternatives-grid">${alternatives.slice(0, 2).map((card, index) => recommendationCard(data, card, index + 1)).join("")}</div></details>` : ""}
+    ${extraBuildsHtml}
     ${interpretation ? `<details class="equipment-detail"><summary>${t("dataInterpretation")}</summary>${interpretation}</details>` : ""}
     ${Object.keys(data.query?.constraints ?? {}).length ? `<details class="equipment-detail"><summary>${t("conditions")}</summary>${conditionPanel(data)}</details>` : ""}
     ${sourceAndRisk(data)}</div>`);
@@ -4022,6 +4200,7 @@ function renderSemanticNativeResult(data) {
   );
   const entries = data.results ?? [];
   if (isBatch && entries.some((entry) => Array.isArray(entry.buildOptions))) {
+    state.extraBuildsPanels.clear();
     const narrative = data.narrative?.schemaVersion === "grounded-build-narrative.v1"
       ? data.narrative
       : null;
@@ -4154,10 +4333,15 @@ function renderSemanticNativeResult(data) {
       const shortage = Number(entry.availableOptionCount ?? options.length) < Number(entry.requestedOptionCount ?? 3)
         ? `<div class="risk-line build-options-shortage">${escapeHtml(t("buildOptionsShortage", { value: entry.availableOptionCount ?? options.length }))}</div>`
         : "";
+      const extraBuildsHtml = renderExtraBuildsSection(
+        entry.extraBuilds ?? [],
+        `batch-extra-builds-${entry.apiName ?? unitName}`
+      );
       return `<section class="unit-build-options" data-unit-build-options="${escapeHtml(entry.apiName ?? "")}">
         ${coreItemsHtml}
         ${optionCards || `<div class="empty-state"><strong>${escapeHtml(entry.warning ?? data.text ?? t("noResult"))}</strong></div>`}
         ${shortage}
+        ${extraBuildsHtml}
       </section>`;
     }).join("");
     const narrativeWarnings = (data.narrativeWarnings ?? []).filter(Boolean).map(String);
@@ -6000,6 +6184,39 @@ async function handleResultClick(event) {
       }
       return;
     }
+  }
+
+  const extraSortButton = event.target.closest("button[data-extra-builds-sort]");
+  if (extraSortButton) {
+    const panelId = extraSortButton.dataset.panelId;
+    const panelState = state.extraBuildsPanels.get(panelId);
+    if (panelState) {
+      panelState.sort = extraSortButton.dataset.extraBuildsSort || "rank";
+      updateExtraBuildsPanelDom(panelId);
+    }
+    return;
+  }
+  const extraItemButton = event.target.closest("button[data-extra-builds-item]");
+  if (extraItemButton) {
+    const panelId = extraItemButton.dataset.panelId;
+    const apiName = extraItemButton.dataset.extraBuildsItem;
+    const panelState = state.extraBuildsPanels.get(panelId);
+    if (panelState && apiName) {
+      if (panelState.selectedItems.has(apiName)) panelState.selectedItems.delete(apiName);
+      else panelState.selectedItems.add(apiName);
+      updateExtraBuildsPanelDom(panelId);
+    }
+    return;
+  }
+  const extraClearButton = event.target.closest("button[data-extra-builds-clear]");
+  if (extraClearButton) {
+    const panelId = extraClearButton.dataset.panelId;
+    const panelState = state.extraBuildsPanels.get(panelId);
+    if (panelState) {
+      panelState.selectedItems.clear();
+      updateExtraBuildsPanelDom(panelId);
+    }
+    return;
   }
 
   const suggestionButton = event.target.closest("button[data-suggestion-index]");

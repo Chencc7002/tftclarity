@@ -7,7 +7,7 @@ import {
   createSmallWindowRuntime,
   handleReactChatRequest
 } from "../src/app/small-window-server.js";
-import { MemoryCacheStore } from "../src/index.js";
+import { createCatalog, MemoryCacheStore } from "../src/index.js";
 import {
   attachSessionEvidenceSnapshotHashes,
   loadAkaliVariant,
@@ -750,4 +750,147 @@ test("proactive guidance offers concrete comp detail pills plus artifact, emblem
     operation: "unit_build_rankings",
     arguments: { champion: "DA_18_Ornn" }
   });
+});
+
+test("unit build recommendation keeps core top-3 cards intact and exposes up to 17 extra high-sample builds without leaking them into LLM prompts", async () => {
+  const { handleRecommendRequest } = await import("../src/app/small-window-server.js");
+  const { createReactDecisionProvider } = await import("../src/react/react-decision-provider.js");
+  const catalog = createCatalog({
+    units: {
+      DA_18_TestCarry: { apiName: "DA_18_TestCarry", displayName: "绯红树怪", cost: 4 }
+    },
+    items: Object.fromEntries(
+      Array.from({ length: 24 }, (_, idx) => [
+        `TFT_Item_Test${idx + 1}`,
+        { apiName: `TFT_Item_Test${idx + 1}`, displayName: `测试装备${idx + 1}`, category: "ordinary_completed" }
+      ])
+    )
+  });
+  const rankedBuilds = Array.from({ length: 25 }, (_, idx) => ({
+    items: [
+      `TFT_Item_Test${(idx % 6) + 1}`,
+      `TFT_Item_Test${((idx + 1) % 10) + 7}`,
+      `TFT_Item_Test${((idx + 2) % 8) + 17}`
+    ],
+    stats: {
+      top4Rate: 0.65 - idx * 0.008,
+      winRate: 0.22 - idx * 0.004,
+      avgPlacement: 3.45 + idx * 0.04,
+      games: 3000 - idx * 80
+    },
+    ranking: {
+      method: "performance_role_v4",
+      score: 0.9 - idx * 0.015,
+      baseScore: 0.9 - idx * 0.015,
+      performanceScore: 0.9 - idx * 0.015,
+      coverageScore: 0.8,
+      priorSamples: 100,
+      generalRecommendation: idx === 0,
+      sampleLeadRatio: idx === 0 ? 1.5 : null,
+      applicabilityBasis: idx === 0 ? "sample_role_and_performance" : "performance_score",
+      recommendationRole: idx === 0 ? "mainstream" : idx === 1 ? "best_performance_alternative" : "alternative",
+      sampleTier: "high",
+      samplePercentile: 0.9 - idx * 0.02,
+      performanceTier: idx < 8 ? "high" : "medium",
+      insightCode: "mainstream_best"
+    }
+  }));
+
+  const runtime = createSmallWindowRuntime({
+    catalog,
+    recommendForInput: async () => ({
+      ok: true,
+      type: "unit_build_rankings",
+      text: "ok",
+      rankedBuilds,
+      filteredBuilds: rankedBuilds,
+      rows: rankedBuilds,
+      query: {
+        intent: "unit_build_rankings",
+        unit: "DA_18_TestCarry",
+        starLevel: [2],
+        itemCount: 3,
+        minSamples: 100,
+        days: 3,
+        patch: "current",
+        queue: "1100",
+        rankFilter: [],
+        sort: "robust_first"
+      },
+      source: { endpoint: "/tft-explorer-api/unit_builds/DA_18_TestCarry", updatedAt: "2026-11-28T00:00:00.000Z" }
+    })
+  });
+
+  const response = await handleRecommendRequest({
+    input: "绯红树怪出装",
+    seasonContextId: "set18-live",
+    locale: "zh-CN"
+  }, runtime);
+
+  assert.equal(response.status, 200);
+  assert.equal(response.payload.cards.length, 3);
+  assert.equal(response.payload.extraBuilds.length, 17);
+  assert.equal(response.payload.extraBuilds[0].rank, 4);
+  assert.equal(response.payload.extraBuilds[16].rank, 20);
+  assert.equal(response.payload.extraBuilds[0].items.length, 3);
+  assert.ok(response.payload.extraBuilds[0].difference, "extra builds include difference vs top-1 build");
+
+  // Confirm react-decision-provider strips UI-only extraBuilds before sending tool observations to the model.
+  let capturedBody = null;
+  const provider = createReactDecisionProvider({
+    apiKey: "test-key",
+    baseUrl: "https://example.invalid/v1",
+    model: "test-model",
+    fetchImpl: async (_url, init) => {
+      capturedBody = JSON.parse(init.body);
+      return {
+        ok: true,
+        status: 200,
+        async json() {
+          return {
+            choices: [{
+              message: {
+                content: JSON.stringify({
+                  schemaVersion: "react-action.v1",
+                  thought: "done",
+                  action: "finish",
+                  answer: "已完成推荐。",
+                  evidenceIds: ["ev-1"],
+                  missingEvidence: []
+                })
+              }
+            }]
+          };
+        }
+      };
+    }
+  });
+  await provider.decide({
+    toolCatalog: [],
+    state: {
+      question: "绯红树怪出装",
+      seasonContextId: "set18-live",
+      locale: "zh-CN",
+      messages: [],
+      evidence: [],
+      transcript: [{
+        type: "observation",
+        value: {
+          type: "tool_result",
+          evidence: {
+            evidenceId: "ev-1",
+            toolName: "unit_builds",
+            value: {
+              type: "unit_build_rankings",
+              cards: response.payload.cards,
+              extraBuilds: response.payload.extraBuilds
+            }
+          }
+        }
+      }]
+    }
+  });
+  const promptText = JSON.stringify(capturedBody?.messages ?? []);
+  assert.ok(promptText.includes("unit_build_rankings"));
+  assert.ok(!promptText.includes("extraBuilds"), "extraBuilds must be stripped from model prompt messages");
 });

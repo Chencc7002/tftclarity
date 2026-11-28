@@ -3137,6 +3137,35 @@ function serializeRecommendation(result, catalog, meta = {}) {
   cards.forEach((card, index) => {
     card.difference = index === 0 ? null : itemDifferences(referenceCard, card, catalog);
   });
+  const EXTRA_BUILD_RANKING_LIMIT = 17;
+  const extraBuilds = !isItemComparison
+    ? (result.rankedBuilds ?? []).slice(3, 3 + EXTRA_BUILD_RANKING_LIMIT).map((build, offset) => {
+      const lowSample = build.ranking?.method === PERFORMANCE_RANKING_METHOD
+        ? build.ranking.sampleTier === "low" || isLowSampleBuild(build, query)
+        : isLowSampleBuild(build, query);
+      const entry = {
+        rank: offset + 4,
+        items: (build.items ?? []).map((apiName) => ({
+          apiName,
+          name: itemName(apiName, catalog),
+          locked: lockedItemApiNames.includes(apiName),
+          iconUrl: ASSET_RESOLVER.resolveItem(apiName).iconUrl
+        })),
+        stats: {
+          top4: percent(build.stats.top4Rate),
+          win: percent(build.stats.winRate),
+          avg: Number(build.stats.avgPlacement.toFixed(2)),
+          games: build.stats.games
+        },
+        score: build.ranking?.method === PERFORMANCE_RANKING_METHOD
+          ? Number(((build.ranking.performanceScore ?? build.ranking.score ?? 0) * 100).toFixed(1))
+          : null,
+        lowSample
+      };
+      entry.difference = referenceCard ? itemDifferences(referenceCard, entry, catalog) : null;
+      return entry;
+    })
+    : [];
 
   const serializedComparison = comparison
     ? {
@@ -3191,6 +3220,7 @@ function serializeRecommendation(result, catalog, meta = {}) {
       iconUrl: resolvedUnitIconUrl(query.unit, catalog, entityDetails)
     } : null,
     cards,
+    extraBuilds,
     coreItemSummary,
     commonCore: coreItems,
     itemDifferentiation,
@@ -4280,14 +4310,21 @@ export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime
     const rawDistinctKeys = new Set(unthresholded.builds.map((build) => (
       [...(build.items ?? [])].map(String).sort().join("|")
     )));
+    const EXTRA_BUILD_RANKING_LIMIT = 17;
     const distinct = [];
+    const extraDistinct = [];
     const seenItemSets = new Set();
     for (const build of ranked) {
       const itemSetKey = [...(build.items ?? [])].map(String).sort().join("|");
       if (!itemSetKey || seenItemSets.has(itemSetKey)) continue;
       seenItemSets.add(itemSetKey);
-      distinct.push(build);
-      if (distinct.length >= optionsPerUnit) break;
+      if (distinct.length < optionsPerUnit) {
+        distinct.push(build);
+      } else if (extraDistinct.length < EXTRA_BUILD_RANKING_LIMIT) {
+        extraDistinct.push(build);
+      } else {
+        break;
+      }
     }
     const stableThreshold = stableSampleThreshold(query);
     const firstIsStable = distinct.length > 0 && !isLowSampleBuild(distinct[0], query);
@@ -4367,6 +4404,44 @@ export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime
           : "insufficient_distinct_builds";
     const mechanismQueryPlan = selectDifferentiatingItems(buildOptions, { limit: 4 });
     const best = distinct[0] ?? null;
+    const referenceForExtra = best
+      ? {
+        items: (best.items ?? []).map((itemApiName) => ({
+          apiName: itemApiName,
+          name: itemName(itemApiName, catalog)
+        })),
+        stats: {
+          top4: percent(best.stats?.top4Rate ?? 0),
+          games: Number(best.stats?.games ?? 0)
+        }
+      }
+      : null;
+    const extraBuilds = extraDistinct.map((build, offset) => {
+      const lowSample = build.ranking?.method === PERFORMANCE_RANKING_METHOD
+        ? build.ranking.sampleTier === "low" || isLowSampleBuild(build, query)
+        : isLowSampleBuild(build, query);
+      const entry = {
+        rank: optionsPerUnit + offset + 1,
+        items: (build.items ?? []).map((itemApiName) => ({
+          apiName: itemApiName,
+          name: itemName(itemApiName, catalog),
+          locked: lockedItemSet.has(String(itemApiName)),
+          iconUrl: ASSET_RESOLVER.resolveItem(itemApiName).iconUrl
+        })),
+        stats: {
+          top4: percent(build.stats?.top4Rate ?? 0),
+          win: percent(build.stats?.winRate ?? 0),
+          avg: Number((build.stats?.avgPlacement ?? 0).toFixed(2)),
+          games: Number(build.stats?.games ?? 0)
+        },
+        score: build.ranking?.method === PERFORMANCE_RANKING_METHOD
+          ? Number(((build.ranking.performanceScore ?? build.ranking.score ?? 0) * 100).toFixed(1))
+          : null,
+        lowSample
+      };
+      entry.difference = referenceForExtra ? itemDifferences(referenceForExtra, entry, catalog) : null;
+      return entry;
+    });
     const updatedAt = response?.provenance?.fetchedAt ?? new Date().toISOString();
     const constraintAudit = {
       schemaVersion: "unit-build-batch-constraint-audit.v1",
@@ -4394,6 +4469,7 @@ export async function queryUnitBuildsBatchStatistics(toolInput, catalog, runtime
         name,
         starLevel: [...query.starLevel],
         buildOptions,
+        extraBuilds,
         requestedOptionCount: optionsPerUnit,
         availableOptionCount: buildOptions.length,
         shortageReason,

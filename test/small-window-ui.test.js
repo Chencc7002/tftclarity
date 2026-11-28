@@ -1419,3 +1419,22 @@ test("observed quick-query conclusions remain visible with an evidence warning",
   assert.match(i18n, /observedConclusionNotice:/);
   assert.match(styles, /\.generated-conclusion\.observed/);
 });
+
+test("equipment results keep core top-3 cards primary and expose collapsible extra builds with sort and owned-item filters", () => {
+  assert.match(appJs, /extraBuildsPanels: new Map\(\)/);
+  assert.match(appJs, /function extraBuildsFilterCandidates\(/);
+  assert.match(appJs, /function sortAndFilterExtraBuilds\(/);
+  assert.match(appJs, /function renderExtraBuildsSection\(/);
+  assert.match(appJs, /function updateExtraBuildsPanelDom\(/);
+  assert.match(appJs, /data-extra-builds-sort/);
+  assert.match(appJs, /data-extra-builds-item/);
+  assert.match(appJs, /data-extra-builds-clear/);
+  assert.match(appJs, /renderExtraBuildsSection\(data\.extraBuilds \?\? \[\], "rec-extra-builds"\)/);
+  assert.match(appJs, /renderExtraBuildsSection\(\s*entry\.extraBuilds \?\? \[\]/);
+  assert.match(styles, /\.extra-builds-panel/);
+  assert.match(styles, /\.extra-builds-filter-chip\.active/);
+  assert.match(styles, /\.extra-build-item\.is-matched/);
+  assert.match(i18n, /moreBuildsTitle:/);
+  assert.match(i18n, /moreBuildsFilterLabel:/);
+  assert.match(i18n, /moreBuildsFilterClear:/);
+});

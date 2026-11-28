@@ -332,6 +332,25 @@ function intentAdvisoryGuidance(advisory) {
   ].join("\n") }];
 }
 
+function omitUiOnlyExtraBuilds(value) {
+  if (!value || typeof value !== "object") return value;
+  let changed = false;
+  const copy = { ...value };
+  if ("extraBuilds" in copy) {
+    delete copy.extraBuilds;
+    changed = true;
+  }
+  if (Array.isArray(copy.results) && copy.results.some((entry) => entry && typeof entry === "object" && "extraBuilds" in entry)) {
+    copy.results = copy.results.map((entry) => {
+      if (!entry || typeof entry !== "object" || !("extraBuilds" in entry)) return entry;
+      const { extraBuilds: _omit, ...rest } = entry;
+      return rest;
+    });
+    changed = true;
+  }
+  return changed ? copy : value;
+}
+
 function transcriptEventValue(event) {
   const value = event?.value ?? null;
   if (
@@ -340,6 +359,16 @@ function transcriptEventValue(event) {
     && value?.evidence
   ) {
     const { value: _duplicatedToolValue, ...compactValue } = value;
+    const evidenceValue = omitUiOnlyExtraBuilds(compactValue.evidence?.value);
+    if (evidenceValue !== compactValue.evidence?.value) {
+      return {
+        ...compactValue,
+        evidence: {
+          ...compactValue.evidence,
+          value: evidenceValue
+        }
+      };
+    }
     return compactValue;
   }
   return value;
