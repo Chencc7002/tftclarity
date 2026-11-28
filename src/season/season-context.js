@@ -31,7 +31,7 @@ const CONTEXTS = [
     },
     themeId: "set18",
     theme: {
-      documentTitle: "TFTClarity｜云顶数据智答",
+      documentTitle: "TFTClarity｜云顶之弈 AI数据检索",
       subtitle: {
         "zh-CN": "S18 魔法森林 · 18.7",
         "en-US": "Set 18 Enchanted Wilds · 18.7"
@@ -86,7 +86,7 @@ const CONTEXTS = [
     },
     themeId: "set19",
     theme: {
-      documentTitle: "TFTClarity｜云顶数据智答",
+      documentTitle: "TFTClarity｜云顶之弈 AI数据检索",
       subtitle: { "zh-CN": "S19 测试服", "en-US": "Prismatic Tour" },
       colors: { primary: "#7650ae", secondary: "#d477c5" },
       wallpaper: { seasonId: "set-19-pbe" },
@@ -123,7 +123,7 @@ const CONTEXTS = [
     },
     themeId: "set17",
     theme: {
-      documentTitle: "TFTClarity｜云顶数据智答",
+      documentTitle: "TFTClarity｜云顶之弈 AI数据检索",
       subtitle: {
         "zh-CN": "星神",
         "en-US": "Cosmic"

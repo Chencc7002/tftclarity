@@ -127,8 +127,8 @@ test("match review refresh includes Pool accounts and matrix points expose touch
 });
 
 test("desktop UI exposes the responsive AppShell structure", () => {
-  assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
-  assert.match(indexHtml, /<meta name="description" content="tftclarity 是面向云顶之弈的对话式数据助手/);
+  assert.match(indexHtml, /<title>TFTClarity｜云顶之弈 AI数据检索<\/title>/);
+  assert.match(indexHtml, /<meta name="description" content="TFTClarity 是面向云顶之弈的 AI 数据检索助手/);
   assert.match(indexHtml, /<link rel="icon" type="image\/png" href="\/favicon\.png\?v=20260727">/);
   assert.ok(statSync(new URL("../src/app/small-window-ui/favicon.png", import.meta.url)).size > 0);
   assert.doesNotMatch(indexHtml, />TFTAgent</);
@@ -165,7 +165,7 @@ test("season switching is server-validated, conversation-isolated, and theme-dri
   assert.match(appJs, /resetConversation\(\{ previousSeasonContextId/);
   assert.match(appJs, /seasonContextId: previousSeasonContextId/);
   assert.doesNotMatch(appJs, /document\.title\s*=/);
-  assert.match(indexHtml, /<title>TFTClarity｜云顶数据智答<\/title>/);
+  assert.match(indexHtml, /<title>TFTClarity｜云顶之弈 AI数据检索<\/title>/);
   assert.match(appJs, /shellEl\.style\.setProperty\("--wallpaper-accent"/);
   assert.match(appJs, /shellEl\.dataset\.seasonTheme = context\.themeId/);
   assert.match(appJs, /context\.selectable \|\| context\.themePreview/);
