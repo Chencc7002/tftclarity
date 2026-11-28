@@ -30,8 +30,10 @@ import {
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
   singleEquipmentResultSubject,
+  unitEquipmentFacetCoverage,
   unitResultCoverage
 } from "./unit-follow-up.js";
+import { decorateCompAssets } from "../data/asset-resolver.js";
 import { currentDeadlineEvidence } from "../react/deadline-evidence.js";
 import { currentOfficialItemRetrieval } from "../agent/official-item-evidence.js";
 import { createTransportRetryQuotaReservation } from "../access/transport-retry-quota.js";
@@ -3590,6 +3592,7 @@ export function createSmallWindowRuntime(options = {}) {
     metaTFTClient,
     catalogMetaTFTClient,
     compsClient,
+    hasCustomCompsClient: Boolean(options.compsClient),
     statsProvider,
     providerRouter,
     bilibiliConfig,
@@ -6094,6 +6097,34 @@ async function handleRecommendRequestInternal(body, runtime, context = {}) {
       if (llmActivity.planner) {
         payload.meta.planner = llmActivity.planner;
       }
+      if (!payload.agentSuggestedActions
+        && payload.ok !== false
+        && !payload.clarification?.needsClarification
+        && ["unit_build_rankings", "unit_item_rankings", "unit_emblem_rankings", "unit_build_completion", "unit_item_comparison"].includes(payload.type)
+        && (payload.unit?.apiName || payload.query?.unit)) {
+        try {
+          const syntheticResult = {
+            status: "completed",
+            evidence: [{ evidenceId: "quick-task-result", toolName: "unit_builds", value: payload }]
+          };
+          const quickGuidance = await contextualUnitGuidance(
+            {
+              input: displayInput,
+              locale: body?.locale ?? preferences?.displayLocale ?? "zh-CN",
+              seasonContextId: payload.seasonContext?.id ?? body?.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID
+            },
+            runtime,
+            null,
+            syntheticResult,
+            []
+          );
+          if (quickGuidance?.actions?.length) {
+            payload.agentSuggestedActions = quickGuidance;
+          }
+        } catch {
+          // Proactive guidance enrichment is best-effort and must not fail Quick Tasks.
+        }
+      }
       await persistQueryResponse(payload, runtime, {
         scope,
         conversationId,
@@ -8343,7 +8374,270 @@ function broadUnitPlayGuidance(request, runtime) {
   };
 }
 
-function contextualUnitGuidance(request, runtime, playGuidance = null, result = null, history = []) {
+function formatConcreteCompGuidanceMeta(comp, english = false) {
+  const parts = [];
+  if (Number.isFinite(comp?.stats?.top4Rate)) {
+    const pct = (comp.stats.top4Rate * 100).toFixed(1);
+    parts.push(english ? `Top4 ${pct}%` : `前四 ${pct}%`);
+  }
+  if (Number.isFinite(comp?.stats?.avgPlacement)) {
+    const avg = comp.stats.avgPlacement.toFixed(2);
+    parts.push(english ? `Avg ${avg}` : `均名 ${avg}`);
+  }
+  return parts.join(" · ");
+}
+
+const PARTNER_TANK_ROLE_PATTERN = /tank|坦克|坦位/iu;
+const PARTNER_DAMAGE_ROLE_PATTERN = /fighter|assassin|marksman|caster|specialist|carry|战士|射手|法师|术士|刺客|输出/iu;
+
+function classifyUnitRoleBucket(role) {
+  const value = String(role ?? "").trim();
+  if (!value) return "other";
+  if (PARTNER_TANK_ROLE_PATTERN.test(value)) return "tank";
+  if (PARTNER_DAMAGE_ROLE_PATTERN.test(value)) return "carry";
+  return "other";
+}
+
+function isReadableDisplayName(name) {
+  const value = String(name ?? "").trim();
+  return value.length > 0 && !/^(?:DA_|TFT\d*_)/u.test(value);
+}
+
+function extractRelatedUnitsFromComps(comps = [], targetApiName = "", { maxUnits = 3, perCompCap = 2 } = {}) {
+  if (!Array.isArray(comps) || !comps.length || !targetApiName) return [];
+  const consideredComps = comps.slice(0, 3);
+  const perCompLimit = consideredComps.length === 1 ? Math.min(maxUnits, 2) : Math.min(perCompCap, 2);
+  const perCompBuckets = [];
+
+  for (const comp of consideredComps) {
+    const units = Array.isArray(comp?.units) ? comp.units : Array.isArray(comp?.members) ? comp.members : [];
+    const targetUnit = units.find((u) => String(u?.apiName ?? u?.characterId ?? "") === targetApiName);
+    const targetBucket = classifyUnitRoleBucket(targetUnit?.role);
+    const compName = String(comp?.name ?? "").trim();
+    const candidates = [];
+
+    for (const unit of units) {
+      if (!unit || typeof unit !== "object") continue;
+      const apiName = String(unit.apiName ?? unit.characterId ?? "").trim();
+      if (!apiName || apiName === targetApiName) continue;
+      const name = String(unit.name ?? unit.zhName ?? unit.displayName ?? "").trim();
+      if (!isReadableDisplayName(name)) continue;
+      const isCore = Boolean(unit.core) || (Array.isArray(unit.items) && unit.items.length > 0);
+      const roleBucket = classifyUnitRoleBucket(unit.role);
+      const complementary = (targetBucket === "carry" && roleBucket === "tank")
+        || (targetBucket === "tank" && roleBucket === "carry");
+      const itemGames = Number.isFinite(Number(unit.itemizationGames)) ? Number(unit.itemizationGames) : 0;
+      candidates.push({
+        apiName,
+        name,
+        iconUrl: unit.iconUrl ?? ASSET_RESOLVER.resolveUnit(apiName)?.iconUrl ?? null,
+        fallbackIconUrl: unit.fallbackIconUrl ?? null,
+        isCore,
+        roleBucket,
+        complementary,
+        itemGames,
+        compId: comp.compId ?? comp.source?.clusterId ?? null,
+        compName
+      });
+    }
+
+    candidates.sort((a, b) => (
+      Number(b.isCore) - Number(a.isCore)
+      || Number(b.complementary) - Number(a.complementary)
+      || b.itemGames - a.itemGames
+      || a.apiName.localeCompare(b.apiName)
+    ));
+    if (candidates.length) perCompBuckets.push(candidates.slice(0, perCompLimit));
+  }
+
+  // Round-robin across concrete comps so each distinct comp contributes its own
+  // top complementary partner before taking a second partner from the first comp.
+  const selected = [];
+  const seen = new Set();
+  for (let rank = 0; rank < perCompLimit && selected.length < maxUnits; rank += 1) {
+    for (const bucket of perCompBuckets) {
+      const pick = bucket[rank];
+      if (!pick || seen.has(pick.apiName)) continue;
+      seen.add(pick.apiName);
+      selected.push(pick);
+      if (selected.length >= maxUnits) break;
+    }
+  }
+  return selected;
+}
+
+function extractConcreteCompsFromResult(result, apiName, maxComps = 2) {
+  const entries = Array.isArray(result?.evidence) ? result.evidence : [];
+  const seen = new Set();
+  const matched = [];
+  for (const entry of entries) {
+    const value = entry?.value;
+    if (!value || value.ok === false) continue;
+    const pool = [
+      ...(value.rankings?.top4Rate ?? []),
+      ...(value.rankings?.avgPlacement ?? []),
+      ...(value.rankings?.popularity ?? []),
+      ...(value.results ?? [])
+    ];
+    for (const comp of pool) {
+      if (!comp || !comp.name) continue;
+      const units = Array.isArray(comp.units) ? comp.units : Array.isArray(comp.members) ? comp.members : [];
+      if (!units.some((u) => (typeof u === "string" ? u : u?.apiName ?? u?.characterId) === apiName)) continue;
+      const key = String(comp.compId ?? comp.source?.clusterId ?? comp.name);
+      if (seen.has(key)) continue;
+      seen.add(key);
+      matched.push(comp);
+    }
+  }
+  return {
+    comps: matched.slice(0, maxComps),
+    totalMatched: matched.length,
+    relatedUnits: extractRelatedUnitsFromComps(matched, apiName, { maxUnits: 3 })
+  };
+}
+
+async function resolveUnitConcreteCompsForGuidance(runtime, request, entity, { maxComps = 2, timeoutMs = 5000 } = {}) {
+  if (!runtime || !entity?.apiName) return { comps: [], totalMatched: 0, relatedUnits: [] };
+  const seasonContext = runtime.seasonContextService?.resolve?.(request.seasonContextId, {
+    requireVisible: false,
+    requireSelectable: false,
+    requireAvailable: false
+  });
+  if (!seasonContext || seasonContext.availability?.available === false) {
+    return { comps: [], totalMatched: 0, relatedUnits: [] };
+  }
+  const queue = seasonContext.source?.queue;
+  const patch = seasonContext.currentPatch ?? seasonContext.effectivePatch ?? "current";
+  const days = 3;
+  const snapshotKey = `comps_snapshot:${JSON.stringify([seasonContext.id, queue ?? null, patch, days])}`;
+  const preferences = {
+    ...entityCatalogPreferences(runtime, seasonContext),
+    displayLocale: normalizeDisplayLocale(request.locale)
+  };
+  const findCachedCatalogEntry = () => {
+    if (!runtime.catalogCache) return null;
+    const exact = runtime.catalogCache.get?.(runtimeCatalogKey(preferences));
+    if (exact) return exact;
+    const prefix = `${seasonContext.id}:`;
+    for (const [key, entry] of runtime.catalogCache.entries?.() ?? []) {
+      if (String(key).startsWith(prefix) && entry?.catalog) return entry;
+    }
+    return null;
+  };
+  const cachedCatalogEntry = findCachedCatalogEntry();
+
+  // Avoid outbound network calls in unit tests using injected reactToolHandlers unless
+  // a custom compsClient was explicitly supplied or the snapshot is already cached.
+  const hasInjectedReactHandlers = Object.keys(runtime.reactToolHandlers ?? {}).length > 0;
+  const allowLiveFetch = Boolean(runtime.compsClient)
+    && (!hasInjectedReactHandlers || runtime.hasCustomCompsClient);
+
+  const isValidCompsPageSnapshot = (value) => Boolean(
+    value?.compsStats
+    && (value?.compsData?.results?.data?.cluster_details
+      || value?.compsData?.data?.cluster_details
+      || value?.compsData?.cluster_details)
+  );
+
+  const fetchFreshSnapshot = async () => {
+    const fetchedData = await runtime.compsClient.getCompsData({ queue });
+    const dataClusterId = fetchedData?.results?.data?.cluster_id ?? fetchedData?.cluster_id;
+    const fetchedStats = await runtime.compsClient.getCompsStats({
+      queue,
+      patch,
+      days,
+      permit_filter_adjustment: "true",
+      ...(dataClusterId !== undefined && dataClusterId !== null ? { cluster_id: dataClusterId } : {})
+    });
+    return { compsData: fetchedData, compsStats: fetchedStats };
+  };
+
+  const loadSnapshot = async () => {
+    if (runtime.hotQueryCache) {
+      const l1 = runtime.hotQueryCache.peek?.(snapshotKey);
+      if (isValidCompsPageSnapshot(l1?.value)) return l1.value;
+    }
+    if (runtime.cacheStore?.getQuery) {
+      const l2 = await runtime.cacheStore.getQuery(snapshotKey, {
+        seasonContextId: seasonContext.id,
+        patch,
+        clone: false
+      });
+      if (isValidCompsPageSnapshot(l2?.value)) return l2.value;
+    }
+    if (!allowLiveFetch) return null;
+    if (runtime.hotQueryCache) {
+      const storeOptions = { seasonContextId: seasonContext.id, patch, clone: false };
+      const { value } = await runtime.hotQueryCache.getOrLoad(snapshotKey, fetchFreshSnapshot, {
+        l2Get: runtime.cacheStore?.getQuery
+          ? async () => {
+            const entry = await runtime.cacheStore.getQuery(snapshotKey, storeOptions);
+            return isValidCompsPageSnapshot(entry?.value) ? entry : null;
+          }
+          : null,
+        l2Set: runtime.cacheStore?.setQuery
+          ? (loaded) => runtime.cacheStore.setQuery(snapshotKey, loaded, { ...storeOptions, ttlMs: 300_000 })
+          : null
+      });
+      return value;
+    }
+    return fetchFreshSnapshot();
+  };
+
+  let timer = null;
+  try {
+    const snapshot = await Promise.race([
+      loadSnapshot(),
+      new Promise((resolveTimeout) => {
+        timer = setTimeout(() => resolveTimeout(null), timeoutMs);
+        timer.unref?.();
+      })
+    ]);
+    if (!snapshot?.compsData || !snapshot?.compsStats) return { comps: [], totalMatched: 0, relatedUnits: [] };
+
+    const catalog = cachedCatalogEntry?.catalog ?? runtime.catalog ?? createCatalog();
+    const entityDetails = cachedCatalogEntry?.entityDetails ?? null;
+
+    const rankings = buildCompRankings(createCompsPageSnapshot(snapshot.compsData, snapshot.compsStats), {
+      catalog,
+      query: {
+        intent: "comp_rankings",
+        seasonContextId: seasonContext.id,
+        patch,
+        queue,
+        days,
+        unit: entity.apiName,
+        minSamples: 0,
+        metrics: ["top4_rate"],
+        limit: Math.max(6, maxComps + 2)
+      }
+    });
+    const decorated = decorateCompAssets(rankings, { resolver: ASSET_RESOLVER, catalog });
+    const serialized = serializeCompRankings(decorated, {}, catalog, entityDetails);
+    const primary = serialized.rankings?.top4Rate ?? [];
+    const fallbackRefs = serialized.references ?? [];
+    const combined = primary.length ? primary : fallbackRefs;
+    const seen = new Set();
+    const uniqueComps = [];
+    for (const comp of combined) {
+      const key = String(comp.compId ?? comp.source?.clusterId ?? comp.name);
+      if (!comp.name || seen.has(key)) continue;
+      seen.add(key);
+      uniqueComps.push(comp);
+    }
+    return {
+      comps: uniqueComps.slice(0, maxComps),
+      totalMatched: uniqueComps.length,
+      relatedUnits: extractRelatedUnitsFromComps(uniqueComps, entity.apiName, { maxUnits: 3 })
+    };
+  } catch {
+    return { comps: [], totalMatched: 0, relatedUnits: [] };
+  } finally {
+    if (timer) clearTimeout(timer);
+  }
+}
+
+async function contextualUnitGuidance(request, runtime, playGuidance = null, result = null, history = []) {
   if (!result || !["completed", "completed_with_warning"].includes(result.status)
     || result.terminationReason === "insufficient_evidence" || !result.evidence?.length) return null;
   const input = String(request.input ?? "").trim();
@@ -8366,30 +8660,133 @@ function contextualUnitGuidance(request, runtime, playGuidance = null, result = 
 
   const english = String(request.locale ?? "").toLowerCase().startsWith("en");
   const covered = unitResultCoverage(result, entity.apiName);
+  const facets = unitEquipmentFacetCoverage(result, entity.apiName);
   for (const previous of history) {
     const prior = unitResultCoverage(previous, entity.apiName);
     for (const facet of Object.keys(covered)) covered[facet] ||= prior[facet];
+    const priorFacets = unitEquipmentFacetCoverage(previous, entity.apiName);
+    for (const facet of Object.keys(facets)) facets[facet] ||= priorFacets[facet];
   }
+
+  let concreteComps = [];
+  let totalMatchedComps = 0;
+  let relatedUnits = [];
+  const fromResult = extractConcreteCompsFromResult(result, entity.apiName, 2);
+  if (fromResult.comps.length) {
+    concreteComps = fromResult.comps;
+    totalMatchedComps = fromResult.totalMatched;
+    relatedUnits = fromResult.relatedUnits ?? [];
+  } else {
+    const resolved = await resolveUnitConcreteCompsForGuidance(runtime, request, entity, { maxComps: 2 });
+    concreteComps = resolved.comps ?? [];
+    totalMatchedComps = resolved.totalMatched ?? 0;
+    relatedUnits = resolved.relatedUnits ?? [];
+  }
+
   const actions = [];
+  if (!covered.composition) {
+    for (const comp of concreteComps) {
+      actions.push({
+        id: `open_comp_detail:${comp.compId ?? comp.source?.clusterId ?? comp.name}`,
+        actionType: "comp_detail",
+        group: "comp",
+        label: comp.name,
+        meta: formatConcreteCompGuidanceMeta(comp, english),
+        query: english ? `Show details for ${comp.name}` : `查看${comp.name}阵容详情`,
+        comp,
+        seasonContextId: request.seasonContextId ?? DEFAULT_SEASON_CONTEXT_ID,
+        entity
+      });
+    }
+    if (!concreteComps.length || totalMatchedComps > concreteComps.length) {
+      actions.push({
+        id: "continue_with_compositions",
+        group: "comp_more",
+        label: concreteComps.length
+          ? (english ? `More ${entity.name} comps` : `更多${entity.name}阵容`)
+          : (english ? `${entity.name} compositions` : `${entity.name}阵容搭配`),
+        query: english ? `Compositions containing ${entity.name}` : `查询包含${entity.name}的阵容`,
+        quickTask: { id: "hero-comps", operation: "comp_rankings", arguments: { champion: entity.apiName } }
+      });
+    }
+  }
+
+  for (const partner of relatedUnits) {
+    const roleTag = partner.roleBucket === "tank"
+      ? (english ? "Tank" : "主坦")
+      : partner.roleBucket === "carry"
+        ? (english ? "Carry" : "主C")
+        : (partner.isCore ? (english ? "Core" : "核心") : "");
+    const compTag = isReadableDisplayName(partner.compName) ? partner.compName : "";
+    const meta = [roleTag, compTag].filter(Boolean).join(" · ");
+    actions.push({
+      id: `continue_with_partner_unit:${partner.apiName}`,
+      actionType: "partner_unit",
+      group: "partner",
+      label: english ? `${partner.name} items` : `${partner.name}出装`,
+      unitApiName: partner.apiName,
+      unitName: partner.name,
+      iconUrl: partner.iconUrl ?? null,
+      fallbackIconUrl: partner.fallbackIconUrl ?? null,
+      compId: partner.compId ?? null,
+      compName: compTag || null,
+      roleBucket: partner.roleBucket ?? "other",
+      meta,
+      query: english ? `${partner.name} recommended items` : `${partner.name}推荐出装`,
+      quickTask: { id: "unit-build", operation: "unit_build_rankings", arguments: { champion: partner.apiName } }
+    });
+  }
+
   if (!covered.equipment) {
     actions.push({
       id: "continue_with_equipment",
+      group: "equipment",
       label: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
       query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
       quickTask: { id: "unit-build", operation: "unit_build_rankings", arguments: { champion: entity.apiName } }
     });
-  }
-  if (!covered.composition) {
+  } else if (!facets.ordinary) {
     actions.push({
-      id: "continue_with_compositions",
-      label: english ? `${entity.name} compositions` : `${entity.name}阵容搭配`,
-      query: english ? `Compositions containing ${entity.name}` : `查询包含${entity.name}的阵容`,
-      quickTask: { id: "hero-comps", operation: "comp_rankings", arguments: { champion: entity.apiName } }
+      id: "continue_with_ordinary_equipment",
+      group: "equipment",
+      label: english ? `${entity.name} core build` : `${entity.name}常规出装`,
+      query: english ? `${entity.name} recommended items` : `${entity.name}推荐出装`,
+      quickTask: { id: "unit-build", operation: "unit_build_rankings", arguments: { champion: entity.apiName } }
     });
   }
+
+  if (!facets.artifact) {
+    actions.push({
+      id: "continue_with_artifacts",
+      group: "equipment",
+      label: english ? `${entity.name} Artifacts` : `${entity.name}神器推荐`,
+      query: english ? `Rank Artifact items for ${entity.name}` : `查询${entity.name}的神器排行`,
+      quickTask: { id: "special-items", operation: "unit_item_rankings", arguments: { champion: entity.apiName, specialCategory: "神器" } }
+    });
+  }
+  if (!facets.emblem) {
+    actions.push({
+      id: "continue_with_emblems",
+      group: "equipment",
+      label: english ? `${entity.name} Emblems` : `${entity.name}转职推荐`,
+      query: english ? `Rank Emblem items for ${entity.name}` : `查询${entity.name}的纹章单装备排行`,
+      quickTask: { id: "item-performance", operation: "unit_item_rankings", arguments: { champion: entity.apiName, itemCategory: "纹章" } }
+    });
+  }
+  if (!facets.radiant) {
+    actions.push({
+      id: "continue_with_radiant",
+      group: "equipment",
+      label: english ? `${entity.name} Radiant items` : `${entity.name}光明装推荐`,
+      query: english ? `Rank Radiant items for ${entity.name}` : `查询${entity.name}的光明装备排行`,
+      quickTask: { id: "special-items", operation: "unit_item_rankings", arguments: { champion: entity.apiName, specialCategory: "光明装备" } }
+    });
+  }
+
   if (!covered.video) {
     actions.push({
       id: "continue_with_video_guides",
+      group: "video",
       label: english ? `${entity.name} video guides` : `${entity.name}视频攻略`,
       query: english ? `${entity.name} video guides` : `${entity.name}视频攻略`
     });
@@ -8399,27 +8796,32 @@ function contextualUnitGuidance(request, runtime, playGuidance = null, result = 
   let prompt;
   if (covered.equipment && covered.composition && !covered.video) {
     prompt = english
-      ? `You have checked ${entity.name}'s items and compositions. Would you like a video guide next?`
-      : `已经看过${entity.name}的装备和阵容了，要不要继续查看视频攻略？`;
+      ? `You have checked ${entity.name}'s items and compositions. You can continue with artifacts, emblems, radiant items, or video guides.`
+      : `已经看过${entity.name}的装备和阵容，还可以补充神器、转职、光明装或视频攻略。`;
   } else if (covered.equipment && !covered.composition) {
-    prompt = english
-      ? `You have checked ${entity.name}'s items. You can continue with compositions or video guides.`
-      : `已经看过${entity.name}的出装，还可以继续查看阵容搭配或视频攻略。`;
+    prompt = concreteComps.length
+      ? (english
+        ? `You have checked ${entity.name}'s items. Click a comp below for full details, or explore artifacts, emblems, radiant items, and video guides.`
+        : `已经看过${entity.name}的出装，可以直接点击下方热门阵容查看详情，或补充神器、转职、光明装与视频攻略。`)
+      : (english
+        ? `You have checked ${entity.name}'s items. You can continue with compositions, artifacts, emblems, radiant items, or video guides.`
+        : `已经看过${entity.name}的出装，还可以继续查看阵容搭配、神器、转职、光明装或视频攻略。`);
   } else if (covered.composition && !covered.equipment) {
     prompt = english
-      ? `You have checked ${entity.name}'s compositions. You can continue with items or video guides.`
-      : `已经看过${entity.name}的阵容，还可以补充出装数据或视频攻略。`;
+      ? `You have checked ${entity.name}'s compositions. You can continue with standard builds, artifacts, emblems, radiant items, or video guides.`
+      : `已经看过${entity.name}的阵容，还可以补充常规出装、神器、转职、光明装或视频攻略。`;
   } else {
     prompt = english
       ? `You can continue exploring ${entity.name} based on this conversation.`
-      : `根据当前对话，还可以继续补充${entity.name}的相关信息。`;
+      : `根据当前对话，还可以继续查看${entity.name}的具体阵容、特殊装备推荐或视频攻略。`;
   }
   return {
     reason: "contextual_unit_information_gap",
     prompt,
-    actions: actions.slice(0, 2),
+    actions: actions.slice(0, 10),
     entity,
-    covered
+    covered,
+    facets
   };
 }
 
@@ -8922,7 +9324,7 @@ export async function handleReactChatRequest(body, runtime, context = {}) {
     }
     const access = await publicAccessStatus();
     const followUpHistory = await loadFollowUpHistory(normalizedRequest, runtime, bridgeScopeKey);
-    const contextualGuidance = result.terminationReason === "deadline_exceeded" ? null : contextualUnitGuidance(
+    const contextualGuidance = result.terminationReason === "deadline_exceeded" ? null : await contextualUnitGuidance(
       normalizedRequest,
       runtime,
       controlledUnitPlay ? null : playGuidance,

@@ -2155,15 +2155,83 @@ function comparisonReasonText(reason) {
   }[reason] ?? t("reasonInsufficientEvidence");
 }
 
+function openSuggestedCompDetail(action, responseId = "") {
+  if (!action?.comp) return;
+  const zh = getLocale().startsWith("zh");
+  const comp = action.comp;
+  const compTitle = localizedName(comp);
+  const entityName = action.entity?.name ?? "";
+  const entityApiName = action.entity?.apiName ?? "";
+  const backButton = responseId && state.responsesById.has(responseId)
+    ? `<button type="button" class="subtle-button" data-view-result data-response-id="${escapeHtml(responseId)}">← ${escapeHtml(zh ? "返回原查询" : "Back to result")}</button>`
+    : "";
+  const allCompsButton = entityApiName
+    ? `<button type="button" class="subtle-button" data-suggested-all-comps="${escapeHtml(entityApiName)}" data-suggested-entity-name="${escapeHtml(entityName || entityApiName)}">${escapeHtml(zh ? `查看全部含${entityName || entityApiName}的阵容` : `All comps with ${entityName || entityApiName}`)}</button>`
+    : "";
+  state.resultView = { type: "suggested_comp_detail", comp, action, responseId };
+  resultTitleEl.textContent = compTitle;
+  setResponseHtml(`
+    <div class="suggested-comp-spotlight">
+      <div class="suggested-comp-spotlight-head">
+        <div>
+          <span class="suggested-comp-eyebrow">${escapeHtml(zh ? "主动推荐 · 具体阵容详情" : "Recommended · Comp Details")}</span>
+          <strong>${escapeHtml(compTitle)}</strong>
+        </div>
+        <div class="suggested-comp-spotlight-actions">
+          ${backButton}
+          ${allCompsButton}
+        </div>
+      </div>
+      ${renderCompCard(comp, "top4Rate", true)}
+    </div>
+  `);
+  queueOpenCompDetailLoads();
+  shellEl.classList.add("has-result");
+  openMobileResult();
+}
+
 function renderAgentSuggestedActions(actions = [], responseId = "") {
   if (!actions.length) return "";
-  return `
-    <div class="agent-suggested-actions" data-guidance-response="${escapeHtml(responseId)}" aria-label="${escapeHtml(t("nextAction"))}">
-      ${actions.map((action, index) => `
-        <button type="button" data-agent-action-index="${index}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(action.label ?? action.query)}</button>
-      `).join("")}
-    </div>
-  `;
+  const zh = getLocale().startsWith("zh");
+  const indexed = actions.map((action, index) => ({ action, index }));
+  const compActions = indexed.filter(({ action }) => action?.actionType === "comp_detail" && action.comp);
+  const partnerActions = indexed.filter(({ action }) => action?.actionType === "partner_unit");
+  const otherActions = indexed.filter(({ action }) => (
+    !(action?.actionType === "comp_detail" && action.comp)
+    && action?.actionType !== "partner_unit"
+  ));
+  const compRow = compActions.length
+    ? `<div class="agent-suggested-comp-row" data-guidance-comps="${escapeHtml(responseId)}">
+        ${compActions.map(({ action, index }) => `
+          <button type="button" class="agent-action-comp" data-agent-action-index="${index}" data-agent-action-type="comp_detail" data-response-id="${escapeHtml(responseId)}">
+            <span class="agent-action-tag">${escapeHtml(zh ? "阵容详情" : "Comp")}</span>
+            <span class="agent-action-comp-name">${escapeHtml(action.label ?? action.query)}</span>
+            ${action.meta ? `<small class="agent-action-meta">${escapeHtml(action.meta)}</small>` : ""}
+            <span class="agent-action-arrow" aria-hidden="true">→</span>
+          </button>
+        `).join("")}
+      </div>`
+    : "";
+  const partnerRow = partnerActions.length
+    ? `<div class="agent-suggested-partner-row" data-guidance-partners="${escapeHtml(responseId)}">
+        <span class="agent-partner-label">${escapeHtml(zh ? "关联棋子" : "Related units")}</span>
+        ${partnerActions.map(({ action, index }) => `
+          <button type="button" class="agent-action-partner" data-agent-action-index="${index}" data-agent-action-type="partner_unit" data-response-id="${escapeHtml(responseId)}"${action.meta ? ` title="${escapeHtml(action.meta)}"` : ""}>
+            ${action.iconUrl ? `<img class="agent-action-unit-icon" src="${escapeHtml(action.iconUrl)}" alt="" loading="lazy">` : ""}
+            <span>${escapeHtml(action.label ?? action.query)}</span>
+            ${action.meta ? `<small class="agent-action-partner-meta">${escapeHtml(action.meta)}</small>` : ""}
+          </button>
+        `).join("")}
+      </div>`
+    : "";
+  const otherRow = otherActions.length
+    ? `<div class="agent-suggested-actions" data-guidance-response="${escapeHtml(responseId)}" aria-label="${escapeHtml(t("nextAction"))}">
+        ${otherActions.map(({ action, index }) => `
+          <button type="button" data-agent-action-index="${index}" data-agent-action-group="${escapeHtml(action.group ?? "")}" data-response-id="${escapeHtml(responseId)}">${escapeHtml(action.label ?? action.query)}</button>
+        `).join("")}
+      </div>`
+    : "";
+  return `${compRow}${partnerRow}${otherRow}`;
 }
 
 function comparisonItemDetail(entry) {
@@ -5943,18 +6011,41 @@ async function handleResultClick(event) {
     queryInput.focus();
     return;
   }
+  const suggestedAllCompsButton = event.target.closest("button[data-suggested-all-comps]");
+  if (suggestedAllCompsButton) {
+    if (state.requestInFlight) return;
+    const championApiName = suggestedAllCompsButton.dataset.suggestedAllComps;
+    const entityName = suggestedAllCompsButton.dataset.suggestedEntityName || championApiName;
+    if (!championApiName) return;
+    const zh = getLocale().startsWith("zh");
+    const label = zh ? `查询包含${entityName}的阵容` : `Compositions containing ${entityName}`;
+    queryInput.value = label;
+    const quickTask = structuredQuickTask(
+      { id: "hero-comps", operation: "comp_rankings" },
+      { champion: championApiName }
+    );
+    await requestRecommendation(false, label, { quickTask });
+    return;
+  }
   if (agentActionButton) {
-    const responseRecord = state.responsesById.get(agentActionButton.dataset.responseId);
+    const responseId = agentActionButton.dataset.responseId;
+    const responseRecord = state.responsesById.get(responseId);
     const actions = responseRecord?.data?.agentSuggestedActions?.actions ?? [];
     const action = actions[Number(agentActionButton.dataset.agentActionIndex)];
-    if (!action?.query) return;
+    if (!action) return;
+    if (action.actionType === "comp_detail" && action.comp) {
+      experienceGuidance.contextual("accepted", `${responseId}:${agentActionButton.dataset.agentActionIndex}`);
+      openSuggestedCompDetail(action, responseId);
+      return;
+    }
+    if (!action.query) return;
     if (state.requestInFlight) return;
-    experienceGuidance.contextual("accepted", `${agentActionButton.dataset.responseId}:${agentActionButton.dataset.agentActionIndex}`);
+    experienceGuidance.contextual("accepted", `${responseId}:${agentActionButton.dataset.agentActionIndex}`);
     queryInput.value = action.query;
     setMobileView("chat");
     queryInput.focus();
     const quickTask = action.quickTask ? structuredQuickTask(action.quickTask, action.quickTask.arguments) : null;
-    await requestRecommendation(false, action.label, quickTask ? { quickTask } : {});
+    await requestRecommendation(false, action.label, quickTask ? { quickTask, startNewTask: true } : {});
     return;
   }
   if (!suggestionButton) return;

@@ -986,9 +986,27 @@ button:focus-visible, select:focus-visible, input:focus-visible, textarea:focus-
 .entity-confirmation-choices .entity-confirmation-icon { width: 32px; height: 32px; flex: 0 0 32px; border-radius: 7px; }
 .suggestions button, .candidate-actions button { min-height: 32px; padding: 0 9px; border: 1px solid #b9dff0; border-radius: 8px; color: var(--star-cyan-dark); background: var(--star-cyan-soft); }
 .answer-follow-up { display: grid; gap: 8px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); color: var(--muted); font-size: 0.88rem; }
+.agent-suggested-comp-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.agent-action-comp { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 6px 11px; border: 1px solid color-mix(in srgb, var(--star-cyan, #3eaeeb) 48%, var(--line-strong)); border-radius: 10px; background: color-mix(in srgb, var(--star-cyan-soft, #eaf7fd) 78%, #ffffff); color: var(--ink); font: inherit; font-size: 0.85rem; cursor: pointer; text-align: left; transition: border-color .15s, background .15s, transform .12s; }
+.agent-action-comp:hover { border-color: var(--star-cyan-dark, #208bc7); background: var(--star-cyan-soft, #eaf7fd); transform: translateY(-1px); }
+.agent-action-tag { display: inline-flex; align-items: center; padding: 2px 6px; border-radius: 6px; background: var(--star-cyan-dark, #208bc7); color: #ffffff; font-size: 0.72rem; font-weight: 700; line-height: 1.2; }
+.agent-action-comp-name { font-weight: 700; color: var(--ink); }
+.agent-action-meta { color: var(--muted); font-size: 0.78rem; font-variant-numeric: tabular-nums; }
+.agent-action-arrow { color: var(--star-cyan-dark, #208bc7); font-weight: 700; margin-left: 2px; }
+.agent-suggested-partner-row { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; }
+.agent-partner-label { font-size: 0.78rem; color: var(--muted); font-weight: 600; margin-right: 2px; }
+.agent-action-partner { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 3px 10px 3px 5px; border: 1px solid color-mix(in srgb, var(--star-indigo, #5678e8) 38%, var(--line-strong)); border-radius: 999px; background: color-mix(in srgb, var(--star-indigo-soft, #eef1ff) 65%, #ffffff); color: var(--ink); font: inherit; font-size: 0.84rem; cursor: pointer; transition: border-color .15s, background .15s; }
+.agent-action-partner:hover { border-color: var(--star-indigo, #5678e8); background: var(--star-indigo-soft, #eef1ff); }
+.agent-action-unit-icon { width: 20px; height: 20px; border-radius: 50%; object-fit: cover; flex: 0 0 20px; border: 1px solid var(--line); }
+.agent-action-partner-meta { color: var(--muted); font-size: 0.74rem; max-width: 150px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .agent-suggested-actions { display: flex; flex-wrap: wrap; gap: 7px; }
-.agent-suggested-actions button { min-height: 32px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--forest); background: var(--surface-soft); font: inherit; cursor: pointer; }
-.agent-suggested-actions button:hover { border-color: var(--teal); color: var(--teal-strong); background: var(--teal-soft); }
+.agent-suggested-actions button { min-height: 32px; padding: 0 11px; border: 1px solid var(--line-strong); border-radius: 999px; color: var(--ink); background: var(--panel-soft, #f7f9fc); font: inherit; font-size: 0.84rem; cursor: pointer; transition: border-color .15s, color .15s, background .15s; }
+.agent-suggested-actions button:hover { border-color: var(--star-cyan, #3eaeeb); color: var(--star-cyan-dark, #208bc7); background: var(--star-cyan-soft, #eaf7fd); }
+.suggested-comp-spotlight { display: grid; gap: 10px; }
+.suggested-comp-spotlight-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 12px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--panel-soft, #f7f9fc); }
+.suggested-comp-eyebrow { display: block; color: var(--star-cyan-dark, #208bc7); font-size: 0.76rem; font-weight: 700; margin-bottom: 2px; }
+.suggested-comp-spotlight-head strong { font-size: 1rem; color: var(--ink); }
+.suggested-comp-spotlight-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 .entity-candidates { display: grid; gap: 8px; }
 .candidate-row { min-width: 0; padding: 10px; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 9px; border: 1px solid var(--line); border-radius: 10px; background: #fbfcfe; }
 .candidate-main { min-width: 0; display: grid; gap: 2px; }

@@ -545,7 +545,13 @@ test("react clarification and post-answer guidance stay visible and continue imm
   assert.match(appJs, /payload\.status === "clarification_required"/);
   assert.match(appJs, /data\?\.clarification\?\.needsClarification\) \{/);
   assert.match(appJs, /data\?\.agentSuggestedActions\?\.actions\?\.length/);
+  assert.match(appJs, /function openSuggestedCompDetail\(action, responseId = ""\)/);
+  assert.match(appJs, /data-agent-action-type="comp_detail"/);
+  assert.match(appJs, /data-agent-action-type="partner_unit"/);
+  assert.match(appJs, /data-suggested-all-comps=/);
   assert.match(appJs, /data-agent-action-index/);
+  assert.match(styles, /\.agent-action-comp/);
+  assert.match(styles, /\.agent-action-partner/);
   assert.match(styles, /\.agent-suggested-actions/);
   assert.match(appJs, /queryInput\.value = suggestion;[\s\S]*setMobileView\("chat"\);[\s\S]*await requestRecommendation\(false\);/);
 });

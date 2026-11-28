@@ -62,6 +62,52 @@ export function unitResultCoverage(result, apiName) {
   return covered;
 }
 
+// Tracks fine-grained equipment sub-facets (ordinary 3-item builds, artifacts,
+// emblems, radiant items) for contextual follow-up deduplication only.
+export function unitEquipmentFacetCoverage(result, apiName) {
+  const facets = { ordinary: false, artifact: false, radiant: false, emblem: false };
+  if (!usable(result)) return facets;
+  const entries = Array.isArray(result.evidence)
+    ? deliveredEntries(result)
+    : [{ toolName: result.type, value: result }];
+  for (const entry of entries) {
+    const value = entry.value;
+    if (!usable(value)) continue;
+    const type = entry.toolName ?? value.type;
+    if (!EQUIPMENT_TYPES.has(type)) continue;
+    const options = [value, ...list(value.results), ...list(value.units)];
+    for (const option of options) {
+      if (!usable(option) || ![unitId(option.unit), option.apiName, option.query?.unit].includes(apiName)) continue;
+      const hasRows = list(option.cards).length > 0
+        || list(option.builds).length > 0
+        || list(option.buildOptions).length > 0
+        || list(option.itemRankings).length > 0
+        || list(option.comparison?.entries).some((row) => Number(row.stats?.games ?? row.games) > 0);
+      if (!hasRows) continue;
+      const optionType = option.type ?? type;
+      const categories = new Set(list(option.query?.itemCategories).map((c) => String(c).toLowerCase()));
+      const policy = String(option.query?.itemPolicy ?? "").toLowerCase();
+      const hasArtifactRows = list(option.itemRankings).some((row) => String(row.category ?? "").toLowerCase() === "artifact");
+      const hasRadiantRows = list(option.itemRankings).some((row) => String(row.category ?? "").toLowerCase() === "radiant");
+      const hasEmblemRows = list(option.itemRankings).some((row) => String(row.category ?? "").toLowerCase() === "emblem");
+
+      const isArtifact = categories.has("artifact") || policy === "include_artifact" || (optionType === "unit_item_rankings" && hasArtifactRows && categories.size === 0);
+      const isRadiant = categories.has("radiant") || policy === "include_radiant" || (optionType === "unit_item_rankings" && hasRadiantRows && categories.size === 0);
+      const isEmblem = optionType === "unit_emblem_rankings" || categories.has("emblem") || policy === "include_emblem" || (optionType === "unit_item_rankings" && hasEmblemRows && categories.size === 0);
+
+      if (isArtifact) facets.artifact = true;
+      if (isRadiant) facets.radiant = true;
+      if (isEmblem) facets.emblem = true;
+      if (!isArtifact && !isRadiant && !isEmblem) {
+        facets.ordinary = true;
+      } else if (list(option.cards).length > 0 || list(option.builds).length > 0 || list(option.buildOptions).length > 0) {
+        if (policy === "ordinary_only" || !categories.size) facets.ordinary = true;
+      }
+    }
+  }
+  return facets;
+}
+
 export function singleEquipmentResultSubject(result) {
   if (!usable(result)) return null;
   const subjects = new Map();

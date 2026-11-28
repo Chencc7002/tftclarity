@@ -16,6 +16,7 @@ import {
   loadFollowUpHistory,
   loadSessionEvidenceCarryover,
   singleEquipmentResultSubject,
+  unitEquipmentFacetCoverage,
   unitResultCoverage
 } from "../src/app/unit-follow-up.js";
 
@@ -583,4 +584,170 @@ test("entity catalog also resolves common item aliases without remote startup wo
 
   assert.equal(result.resolution.requests[0].status, "resolved");
   assert.equal(result.results[0].apiName, "TFT_Item_GuinsoosRageblade");
+});
+
+test("proactive guidance offers concrete comp detail pills plus artifact, emblem, and radiant quick tasks", async () => {
+  const unit = "DA_Cinderling18";
+  const artifactCoverage = unitEquipmentFacetCoverage({
+    status: "completed",
+    evidence: [{
+      toolName: "unit_builds",
+      value: {
+        type: "unit_item_rankings",
+        unit: { apiName: unit, name: "绯红树怪" },
+        query: { unit, itemCategories: ["artifact"], itemPolicy: "include_artifact" },
+        itemRankings: [{ name: "金币收集者", category: "artifact", stats: { games: 120 } }]
+      }
+    }]
+  }, unit);
+  assert.deepEqual(artifactCoverage, { ordinary: false, artifact: true, radiant: false, emblem: false });
+
+  const mockCompsData = {
+    results: {
+      data: {
+        cluster_id: 991,
+        cluster_details: {
+          "101": {
+            cluster: "101",
+            units_string: `${unit}, DA_18_Ahri, DA_18_Ornn`,
+            traits_string: "TFT18_Mage_2",
+            name: [{ name: "DA_Cinderling18", type: "unit", score: 1 }],
+            builds: [
+              { unit, buildName: ["TFT_Item_InfinityEdge", "TFT_Item_GuinsoosRageblade", "TFT_Item_WarmogsArmor"], count: 800 },
+              { unit: "DA_18_Ahri", buildName: ["TFT_Item_JeweledGauntlet", "TFT_Item_SpearOfShojin", "TFT_Item_RabadonsDeathcap"], count: 750 },
+              { unit: "DA_18_Ornn", buildName: ["TFT_Item_WarmogsArmor", "TFT_Item_GargoyleStoneplate", "TFT_Item_Redemption"], count: 650 }
+            ],
+            centroid: [2]
+          },
+          "102": {
+            cluster: "102",
+            units_string: `${unit}, DA_18_Yunara, DA_18_Thresh`,
+            traits_string: "TFT18_Brawler_2",
+            name: [{ name: "DA_18_Yunara", type: "unit", score: 1 }],
+            builds: [
+              { unit, buildName: ["TFT_Item_GuinsoosRageblade", "TFT_Item_InfinityEdge", "TFT_Item_WarmogsArmor"], count: 600 },
+              { unit: "DA_18_Thresh", buildName: ["TFT_Item_WarmogsArmor", "TFT_Item_GargoyleStoneplate", "TFT_Item_Redemption"], count: 500 }
+            ],
+            centroid: [2]
+          },
+          "103": {
+            cluster: "103",
+            units_string: `${unit}, DA_18_Aphelios, DA_18_Ornn`,
+            traits_string: "TFT18_Brawler_2",
+            name: [{ name: "DA_18_Aphelios", type: "unit", score: 1 }],
+            builds: [{ unit, buildName: ["TFT_Item_WarmogsArmor", "TFT_Item_InfinityEdge", "TFT_Item_GuinsoosRageblade"], count: 400 }],
+            centroid: [2]
+          }
+        }
+      }
+    }
+  };
+  const mockCompsStats = {
+    cluster_id: 991,
+    results: [
+      { cluster: "101", places: [200, 220, 240, 260, 180, 160, 140, 100] },
+      { cluster: "102", places: [150, 170, 200, 220, 200, 180, 150, 130] },
+      { cluster: "103", places: [100, 120, 140, 160, 180, 200, 180, 160] }
+    ]
+  };
+
+  const { createCatalog } = await import("../src/index.js");
+  const mockCatalog = createCatalog({
+    units: [
+      { apiName: unit, zhName: "绯红树怪", displayName: "绯红树怪", cost: 4 },
+      { apiName: "DA_18_Ahri", zhName: "阿狸", displayName: "阿狸", cost: 4 },
+      { apiName: "DA_18_Ornn", zhName: "奥恩", displayName: "奥恩", cost: 4 },
+      { apiName: "DA_18_Yunara", zhName: "芸阿娜", displayName: "芸阿娜", cost: 4 },
+      { apiName: "DA_18_Thresh", zhName: "锤石", displayName: "锤石", cost: 4 },
+      { apiName: "DA_18_Aphelios", zhName: "厄斐琉斯", displayName: "厄斐琉斯", cost: 4 }
+    ],
+    items: [],
+    traits: []
+  });
+  const mockEntityDetails = {
+    units: new Map([
+      [unit, { role: "ADCarry" }],
+      ["DA_18_Ahri", { role: "MagicCarry" }],
+      ["DA_18_Ornn", { role: "APTank" }],
+      ["DA_18_Yunara", { role: "ADCarry" }],
+      ["DA_18_Thresh", { role: "APTank" }],
+      ["DA_18_Aphelios", { role: "ADCarry" }]
+    ])
+  };
+  const runtime = createSmallWindowRuntime({
+    cacheStore: new MemoryCacheStore(),
+    catalog: mockCatalog,
+    compsClient: {
+      async getCompsData() { return mockCompsData; },
+      async getCompsStats() { return mockCompsStats; }
+    },
+    reactToolHandlers: { unit_builds: async () => buildEvidenceValue(unit) },
+    reactDecisionProvider: async ({ state }) => state.evidence.length ? {
+      schemaVersion: "react-action.v1", type: "finish", answer: "绯红树怪推荐常规三件套。",
+      evidenceIds: [state.evidence[0].evidenceId], reasonCode: "sufficient_evidence"
+    } : {
+      schemaVersion: "react-action.v1", type: "call_tool", tool: "unit_builds",
+      arguments: { unit }, purposeCode: "retrieve_current_statistics"
+    }
+  });
+  runtime.catalogCache = new Map([
+    ["set18-live:metatft-live.v1:18.7:1100", { catalog: mockCatalog, entityDetails: mockEntityDetails }]
+  ]);
+  // Ensure catalogCache matches regardless of active default patch key.
+  runtime.catalogCache.get = () => ({ catalog: mockCatalog, entityDetails: mockEntityDetails });
+
+  const { payload } = await handleReactChatRequest({
+    input: "绯红树怪怎么带",
+    seasonContextId: "set18-live",
+    locale: "zh-CN"
+  }, runtime);
+
+  const actions = payload.agentSuggestedActions?.actions ?? [];
+  const compDetailActions = actions.filter((action) => action.actionType === "comp_detail");
+  assert.equal(compDetailActions.length, 2, JSON.stringify({ status: payload.status, reason: payload.terminationReason, error: payload.error, actions }));
+  assert.equal(compDetailActions[0].comp.source.clusterId, "101");
+  assert.equal(compDetailActions[0].comp.source.dataClusterId, "991");
+  assert.match(compDetailActions[0].meta, /前四.*均名/u);
+
+  const moreComps = actions.find((action) => action.id === "continue_with_compositions");
+  assert.ok(moreComps, "should offer more comps button when >2 comps match");
+  assert.match(moreComps.label, /更多.*阵容/u);
+
+  const artifact = actions.find((action) => action.id === "continue_with_artifacts");
+  assert.deepEqual(artifact?.quickTask, {
+    id: "special-items",
+    operation: "unit_item_rankings",
+    arguments: { champion: unit, specialCategory: "神器" }
+  });
+
+  const emblem = actions.find((action) => action.id === "continue_with_emblems");
+  assert.deepEqual(emblem?.quickTask, {
+    id: "item-performance",
+    operation: "unit_item_rankings",
+    arguments: { champion: unit, itemCategory: "纹章" }
+  });
+
+  const radiant = actions.find((action) => action.id === "continue_with_radiant");
+  assert.deepEqual(radiant?.quickTask, {
+    id: "special-items",
+    operation: "unit_item_rankings",
+    arguments: { champion: unit, specialCategory: "光明装备" }
+  });
+
+  assert.ok(actions.some((action) => action.id === "continue_with_video_guides"));
+  assert.ok(!actions.some((action) => action.id === "continue_with_equipment"));
+
+  const partnerActions = actions.filter((action) => action.actionType === "partner_unit");
+  assert.ok(partnerActions.length >= 2, JSON.stringify(actions));
+  assert.ok(partnerActions.every((action) => action.unitApiName !== unit), "must never recommend the queried unit itself");
+  // Carry queried -> Tank core partners from Comp 101 (奥恩) and Comp 102 (锤石) rank ahead of same-role carry 阿狸.
+  assert.equal(partnerActions[0].unitApiName, "DA_18_Ornn");
+  assert.equal(partnerActions[1].unitApiName, "DA_18_Thresh");
+  assert.match(partnerActions[0].meta, /主坦/u);
+  assert.match(partnerActions[1].meta, /主坦.*芸阿娜/u);
+  assert.deepEqual(partnerActions[0].quickTask, {
+    id: "unit-build",
+    operation: "unit_build_rankings",
+    arguments: { champion: "DA_18_Ornn" }
+  });
 });

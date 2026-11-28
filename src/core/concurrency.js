@@ -179,6 +179,13 @@ export class SingleflightCache {
     this.errors = 0;
   }
 
+  peek(key) {
+    const entry = this.entries.get(key);
+    if (!entry) return null;
+    if (this.now() >= entry.hardExpiresAt) return null;
+    return entry;
+  }
+
   #setL1(key, value, updatedAtMs = this.now()) {
     if (this.entries.has(key)) this.entries.delete(key);
     this.entries.set(key, {
