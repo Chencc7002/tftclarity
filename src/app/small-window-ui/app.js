@@ -3738,7 +3738,14 @@ function updateExtraBuildsPanelDom(panelId) {
     matchedEl.textContent = t("moreBuildsMatched", { matched, total: panelState.builds.length });
   }
   const bodyEl = root.querySelector("[data-extra-builds-body]");
-  if (bodyEl) bodyEl.innerHTML = renderExtraBuildsRows(panelState);
+  if (bodyEl) {
+    bodyEl.innerHTML = renderExtraBuildsRows(panelState);
+    void hydrateInlineEntityIcons({
+      target: bodyEl,
+      data: state.lastResult,
+      seasonContextId: state.seasonContextId
+    });
+  }
 }
 
 function renderRecommendationResult(data) {

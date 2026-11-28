@@ -207,6 +207,28 @@ test("inline entity icons skip code, buttons, links, and existing item pills", (
   );
 });
 
+test("inline entity icons skip extra-build-item pills while decorating plain diff text", () => {
+  const matcher = buildInlineEntityMatcher(SAMPLE_CATALOG);
+  const { root } = createFakeDom((doc, FakeElement) => {
+    const extraItem = new FakeElement("span", "extra-build-item");
+    const thumb = new FakeElement("span", "asset-thumb tiny-item-icon");
+    const label = new FakeElement("span");
+    label.append(doc.createTextNode("狂徒"));
+    extraItem.append(thumb, label);
+
+    const diff = new FakeElement("small", "extra-build-diff");
+    diff.append(doc.createTextNode("替换 冕卫 → 狂徒"));
+    return [extraItem, diff];
+  });
+
+  const count = decorateInlineEntityIcons(root, matcher);
+  assert.equal(count, 2);
+  assert.deepEqual(
+    root.querySelectorAll("entity-inline").map((el) => el.textContent),
+    ["冕卫", "狂徒"]
+  );
+});
+
 test("inline entity icons skip icon-bearing comparison headers and deduplicate repeated prose mentions", () => {
   const matcher = buildInlineEntityMatcher(SAMPLE_CATALOG);
   const { root } = createFakeDom((doc, FakeElement) => {

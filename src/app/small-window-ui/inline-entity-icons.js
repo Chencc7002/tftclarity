@@ -16,7 +16,7 @@ const SKIP_ANCESTOR_SELECTOR = [
   ".entity-confirmation-choices", ".emblem-unit-filter-icon",
   ".comparison-name", ".item-ranking-head", ".carrier-ranking-head",
   ".entity-detail-head", ".stable-item-head", ".full-trait-row",
-  ".condition-chip", ".result-header-card"
+  ".condition-chip", ".result-header-card", ".extra-build-item", ".extra-builds-filter-chip"
 ].join(",");
 const ICON_BEARING_HEADER_SELECTOR = ".card-head, header";
 const PROSE_DEDUP_CONTAINER_SELECTOR = ".generated-conclusion, .conclusion-card, .chat-model-conclusion, .comparison-summary, .summary";
@@ -78,6 +78,9 @@ function collectScopedEntries(data) {
   for (const item of data.coreItemSummary?.items ?? []) pushEntity(item, "item");
   for (const card of data.cards ?? []) {
     for (const item of card.items ?? []) pushEntity(item, "item");
+  }
+  for (const build of data.extraBuilds ?? []) {
+    for (const item of build.items ?? []) pushEntity(item, "item");
   }
   for (const row of data.rows ?? []) {
     pushEntity(row.item, "item");
