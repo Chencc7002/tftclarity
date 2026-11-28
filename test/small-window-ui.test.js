@@ -1438,3 +1438,21 @@ test("equipment results keep core top-3 cards primary and expose collapsible ext
   assert.match(i18n, /moreBuildsFilterLabel:/);
   assert.match(i18n, /moreBuildsFilterClear:/);
 });
+
+test("dark mode uses consolidated semantic tokens, anti-flash bootstrap, topbar toggle, and 3-way settings control", () => {
+  assert.match(indexHtml, /src="\/theme-init\.js"/);
+  assert.match(indexHtml, /id="theme-toggle"/);
+  assert.match(indexHtml, /data-theme-mode="light"/);
+  assert.match(indexHtml, /data-theme-mode="dark"/);
+  assert.match(indexHtml, /data-theme-mode="system"/);
+  assert.match(appJs, /THEME_STORAGE_KEY = "tft_agent_theme_mode_v1"/);
+  assert.match(appJs, /function resolveEffectiveTheme\(mode\)/);
+  assert.match(appJs, /function applyThemeMode\(mode/);
+  assert.match(styles, /html\[data-theme="dark"\]/);
+  assert.match(styles, /--panel-elevated:/);
+  assert.match(styles, /--hex-cell-bg:/);
+  assert.match(styles, /--warn-bg:/);
+  assert.match(i18n, /themeLabel:/);
+  assert.match(i18n, /themeToggleToDark:/);
+  assert.match(i18n, /themeToggleToLight:/);
+});

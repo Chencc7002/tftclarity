@@ -3,7 +3,8 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content">
-    <meta name="color-scheme" content="light">
+    <meta name="color-scheme" content="light dark">
+    <script src="/theme-init.js"></script>
     <title>TFTClarity｜云顶数据智答</title>
     <meta name="description" content="tftclarity 是面向云顶之弈的对话式数据助手：直接用自然语言询问阵容、英雄出装或单件装备表现，结合样本量、平均名次与近期趋势生成可解释结论，并提供可追溯的数据详情和版本公告。">
     <meta property="og:type" content="website">
@@ -70,6 +71,10 @@
             <button type="button" data-locale="zh-CN" class="active" aria-pressed="true">中文</button>
             <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
           </div>
+          <button type="button" id="theme-toggle" class="icon-button theme-toggle-button" title="切换到深色模式" aria-label="切换到深色模式" aria-pressed="false">
+            <svg class="theme-icon theme-icon-moon" viewBox="0 0 24 24" aria-hidden="true"><path d="M21 12.8A8.5 8.5 0 1 1 11.2 3a6.8 6.8 0 0 0 9.8 9.8Z"/></svg>
+            <svg class="theme-icon theme-icon-sun" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="4"/><path d="M12 2.5v2.2M12 19.3v2.2M4.9 4.9l1.6 1.6M17.5 17.5l1.6 1.6M2.5 12h2.2M19.3 12h2.2M4.9 19.1l1.6-1.6M17.5 6.5l1.6-1.6"/></svg>
+          </button>
           <button type="button" id="settings-button" class="icon-button" data-i18n-title="settings" data-i18n-aria="settings" title="设置" aria-label="设置" aria-expanded="false">
             <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 8.95 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.58 15 1.7 1.7 0 0 0 3 14H3v-4h.08A1.7 1.7 0 0 0 4.6 8.95a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.58 1.7 1.7 0 0 0 10 3h4v.08a1.7 1.7 0 0 0 1.03 1.52 1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.4 9c.13.38.5.95 1.52 1H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
           </button>
@@ -197,6 +202,14 @@
                 <div class="language-toggle segmented" role="group" data-i18n-aria="languageLabel" aria-label="语言">
                   <button type="button" data-locale="zh-CN" class="active" aria-pressed="true">中文</button>
                   <button type="button" data-locale="en-US" aria-pressed="false">EN</button>
+                </div>
+              </div>
+              <div class="mobile-preference-row">
+                <span data-i18n="themeLabel">主题外观</span>
+                <div class="theme-toggle-segmented segmented" role="group" data-i18n-aria="themeLabel" aria-label="主题外观">
+                  <button type="button" data-theme-mode="light" class="active" aria-pressed="true" data-i18n="themeLight">浅色</button>
+                  <button type="button" data-theme-mode="dark" aria-pressed="false" data-i18n="themeDark">深色</button>
+                  <button type="button" data-theme-mode="system" aria-pressed="false" data-i18n="themeSystem">跟随系统</button>
                 </div>
               </div>
             </section>

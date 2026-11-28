@@ -31,7 +31,7 @@
   padding: 0 13px;
   border: 1px solid var(--brand-primary, #356b43);
   border-radius: 9px;
-  background: #fff;
+  background: var(--panel, #fff);
   color: var(--brand-primary-hover, var(--brand-primary, #356b43));
   font: inherit;
   font-size: 12px;
@@ -59,14 +59,14 @@
 .emblem-card-head { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; }
 .emblem-rank { font-size: 20px; font-weight: 650; color: var(--brand-primary, #789c70); font-variant-numeric: tabular-nums; }
 .emblem-recipe { display: flex; gap: 5px; align-items: center; flex-wrap: wrap; margin: 12px 0; font-size: 12px; }
-.emblem-low-sample { margin-left: auto; font-size: 10px; background: #fbf0d5; color: #775923; padding: 4px 7px; border-radius: 4px; }
+.emblem-low-sample { margin-left: auto; font-size: 10px; background: var(--warn-bg, #fbf0d5); color: var(--warn-ink, #775923); padding: 4px 7px; border-radius: 4px; }
 .emblem-card .stats { margin-bottom: 14px; }
-.emblem-card details { border-top: 1px solid var(--border, #e8ebe4); }
+.emblem-card details { border-top: 1px solid var(--line, var(--border, #e8ebe4)); }
 .emblem-card summary { padding: 12px 0; cursor: pointer; font-size: 12px; font-weight: 600; }
-.emblem-card summary span { font-size: 10px; font-weight: 400; color: var(--text-muted, #73776f); margin-left: 10px; }
+.emblem-card summary span { font-size: 10px; font-weight: 400; color: var(--muted, var(--text-muted, #73776f)); margin-left: 10px; }
 [data-emblem-carrier-content] { padding: 2px 0 14px; font-size: 12px; }
 .emblem-carrier { display: flex; align-items: flex-start; gap: 10px; padding: 12px 0; }
-.emblem-carrier + .emblem-carrier { border-top: 1px solid var(--border, #e8ebe4); }
+.emblem-carrier + .emblem-carrier { border-top: 1px solid var(--line, var(--border, #e8ebe4)); }
 .emblem-carrier-info { flex: 1; min-width: 0; }
 .emblem-carrier-builds { margin-top: 10px; }
 .emblem-build-label { font-size: 10px; color: var(--text-muted, #73776f); }

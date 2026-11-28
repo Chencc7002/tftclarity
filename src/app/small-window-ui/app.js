@@ -167,12 +167,81 @@ const selectionQuote = createSelectionQuote({
   onAdded: () => closeQuickTaskForm()
 });
 const resultPane = new ResultPane({ root: resultContentEl, title: resultTitleEl });
+const THEME_STORAGE_KEY = "tft_agent_theme_mode_v1";
+const themeToggleButton = document.querySelector("#theme-toggle");
+const themeModeButtons = [...document.querySelectorAll("button[data-theme-mode]")];
+const colorSchemeMeta = document.querySelector('meta[name="color-scheme"]');
+const systemDarkMediaQuery = window.matchMedia?.("(prefers-color-scheme: dark)") ?? null;
+
+function readStoredThemeMode() {
+  try {
+    const value = localStorage.getItem(THEME_STORAGE_KEY);
+    return value === "dark" || value === "light" || value === "system" ? value : "light";
+  } catch {
+    return "light";
+  }
+}
+
+function resolveEffectiveTheme(mode) {
+  if (mode === "dark") return "dark";
+  if (mode === "system") return systemDarkMediaQuery?.matches ? "dark" : "light";
+  return "light";
+}
+
+let currentThemeMode = readStoredThemeMode();
+
+function updateThemeControls() {
+  const effective = resolveEffectiveTheme(currentThemeMode);
+  const isDark = effective === "dark";
+  document.documentElement.dataset.theme = effective;
+  if (colorSchemeMeta) colorSchemeMeta.setAttribute("content", effective);
+  if (themeToggleButton) {
+    const label = t(isDark ? "themeToggleToLight" : "themeToggleToDark");
+    themeToggleButton.setAttribute("aria-pressed", isDark ? "true" : "false");
+    themeToggleButton.setAttribute("aria-label", label);
+    themeToggleButton.setAttribute("title", label);
+  }
+  themeModeButtons.forEach((button) => {
+    const active = button.dataset.themeMode === currentThemeMode;
+    button.classList.toggle("active", active);
+    button.setAttribute("aria-pressed", active ? "true" : "false");
+  });
+}
+
+function applyThemeMode(mode, { persist = true } = {}) {
+  const normalized = mode === "dark" || mode === "light" || mode === "system" ? mode : "light";
+  currentThemeMode = normalized;
+  if (persist) {
+    try {
+      localStorage.setItem(THEME_STORAGE_KEY, normalized);
+    } catch {
+      // Ignore storage failures in restricted contexts.
+    }
+  }
+  updateThemeControls();
+}
+
+themeToggleButton?.addEventListener("click", () => {
+  const effective = resolveEffectiveTheme(currentThemeMode);
+  applyThemeMode(effective === "dark" ? "light" : "dark");
+});
+themeModeButtons.forEach((button) => {
+  button.addEventListener("click", () => {
+    applyThemeMode(button.dataset.themeMode);
+  });
+});
+systemDarkMediaQuery?.addEventListener?.("change", () => {
+  if (currentThemeMode === "system") updateThemeControls();
+});
+updateThemeControls();
+
 const titleBar = new TitleBar({
   root: document.querySelector("#title-bar"),
   localeRoot: shellEl,
   getLocale,
   onLocaleChange: (locale) => {
     setLocale(locale);
+    updateThemeControls();
     selectionQuote.refreshLocale();
     applySeasonTheme(state.seasonContext);
     rerenderLocalizedState();
@@ -480,6 +549,7 @@ function applySeasonTheme(context) {
   shellEl.dataset.seasonContextId = context.id;
   shellEl.dataset.seasonEnvironment = context.environment;
   shellEl.dataset.seasonTheme = context.themeId ?? "";
+  document.documentElement.dataset.seasonTheme = context.themeId ?? "";
   shellEl.dataset.seasonPreview = String(previewOnly);
   document.documentElement.style.setProperty("--season-primary", primary);
   document.documentElement.style.setProperty("--season-secondary", secondary);
